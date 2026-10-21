@@ -7,14 +7,415 @@
     "unresolved": []
   },
   "dist": "Test::Async",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/003-declaration.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-bundle' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/004-jobmgr.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 5.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/005-bootstrap.rakutest",
+      "raku": {
+        "first_failure": "we can use pass",
+        "nok": 12,
+        "ok": 0,
+        "plan": 12,
+        "secs": 28.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/006-parallel.rakutest",
+      "raku": {
+        "first_failure": "subtests start in parallel",
+        "nok": 3,
+        "ok": 0,
+        "plan": 3,
+        "secs": 5.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/010-basics.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/020-is.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/030-is-run.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/040-skip.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/050-todo.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/060-subtest.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-bundle' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/070-test-flunks.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/080-is-approx.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/080-local-bundle.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/090-is-deeply.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/091-cmp-deeply.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/100-isa-does-ok.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/110-can-ok.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/120-like-unlike.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/130-use-ok.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/140-dies-lives-ok.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/150-throws-fails.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/160-when.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/170-heavily-concurrent.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/180-dying-subtest.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/190-non-job-threads.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/200-exports.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/210-exit.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/220-test-assert.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
     "Test::Async": "raku_also_fails",
     "Test::Async::Aggregator": "ok",
-    "Test::Async::Base": "raku_also_fails",
-    "Test::Async::Decl": "Runtime error: slang activation for 'Test::Async::Decl' failed: Slang activation NYI: grammar rule override 'add_phaser' is not supported by this implementation (recognized: term:sym<identifier>, meth",
+    "Test::Async::Base": "ok",
+    "Test::Async::Decl": "ok",
     "Test::Async::Event": "ok",
-    "Test::Async::Hub": "raku_also_fails",
+    "Test::Async::Hub": "ok",
     "Test::Async::Job": "ok",
     "Test::Async::JobMgr": "ok",
     "Test::Async::Metamodel::BundleClassHOW": "ok",
@@ -22,19 +423,19 @@
     "Test::Async::Metamodel::HubHOW": "ok",
     "Test::Async::Metamodel::ReporterHOW": "ok",
     "Test::Async::Reporter": "ok",
-    "Test::Async::Reporter::TAP": "raku_also_fails",
+    "Test::Async::Reporter::TAP": "ok",
     "Test::Async::Result": "ok",
     "Test::Async::TestTool": "ok",
     "Test::Async::Utils": "ok",
-    "Test::Async::When": "raku_also_fails",
+    "Test::Async::When": "ok",
     "Test::Async::X": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-20",
+    "date": "2026-10-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86ede3c8",
+    "mutsu_commit": "7238f90c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -45,12 +446,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ES/TEST_ASYNC/46fb5e650e1f1103b7c409a707d033ff14a04c95.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 10,
+    "baseline_files": 1,
+    "mutsu_assertions": 10,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.1.17"

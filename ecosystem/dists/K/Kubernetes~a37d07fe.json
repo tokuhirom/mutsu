@@ -9,23 +9,22 @@
   "dist": "Kubernetes",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Unknown function: log-info",
         "nok": 0,
-        "ok": 4,
-        "plan": null,
-        "secs": 0.13,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-kubernetes.rakutest",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 9.13,
+        "secs": 12.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +37,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.47,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -51,7 +50,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.48,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -64,7 +63,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.54,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -87,10 +86,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-20",
+    "date": "2026-10-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86ede3c8",
+    "mutsu_commit": "7238f90c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -101,13 +100,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/K/UB/KUBERNETES/ed953546efbe86b488a6f9792444e59543b3de11.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 15,
     "baseline_files": 1,
-    "mutsu_assertions": 4,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 15,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.0.3"
 }

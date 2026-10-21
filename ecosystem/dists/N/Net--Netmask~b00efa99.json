@@ -9,22 +9,23 @@
   "dist": "Net::Netmask",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 184,
+        "first_failure": "did we throws-like Exception?",
+        "nok": 2,
+        "ok": 182,
         "plan": 184,
-        "secs": 1.99,
+        "secs": 1.47,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/01-basic.t",
       "raku": {
         "nok": 0,
         "ok": 184,
         "plan": 184,
-        "secs": 4.66,
+        "secs": 4.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +37,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 3.53,
+        "secs": 2.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +47,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 2.95,
+        "secs": 2.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +59,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 0.19,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +69,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 0.89,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +81,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 0.2,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +91,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 1.02,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,7 +103,7 @@
         "nok": 0,
         "ok": 197,
         "plan": 197,
-        "secs": 0.59,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +113,7 @@
         "nok": 0,
         "ok": 197,
         "plan": 197,
-        "secs": 1.0,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -124,7 +125,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.18,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -134,7 +135,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.91,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -146,10 +147,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-20",
+    "date": "2026-10-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86ede3c8",
+    "mutsu_commit": "7238f90c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -160,13 +161,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/N/ET/NET_NETMASK/c7c1c3bcfc1f137f7efff71294e44fcb52dadbc6.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 461,
     "baseline_files": 6,
-    "mutsu_assertions": 461,
-    "parity_files": 6,
-    "regressed_files": 0
+    "mutsu_assertions": 459,
+    "parity_files": 5,
+    "regressed_files": 1
   },
   "version": "0.2.1"
 }

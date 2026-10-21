@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.53,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,53 +39,53 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 15.94,
+        "secs": 20.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "Easy Pancakes",
-        "nok": 5,
+        "first_failure": "No such method 'chars' for invocant of type 'Any'",
+        "nok": 0,
         "ok": 0,
-        "plan": 5,
-        "secs": 0.73,
+        "plan": null,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/examples.t",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.17,
+        "secs": 2.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "Weekend brunch: YAML front matter, optional, fixed and servings",
-        "nok": 4,
+        "first_failure": "No such method 'chars' for invocant of type 'Any'",
+        "nok": 0,
         "ok": 0,
-        "plan": 4,
-        "secs": 0.8,
+        "plan": null,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/features.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.17,
+        "secs": 2.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -99,53 +99,53 @@
         "nok": 0,
         "ok": 3,
         "plan": null,
-        "secs": 2.0,
+        "secs": 1.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": ".data is-deeply",
-        "nok": 4,
+        "first_failure": "Unable to parse recipe at line 2 near 'ource: https://www.j'",
+        "nok": 0,
         "ok": 0,
-        "plan": 4,
-        "secs": 0.42,
+        "plan": null,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/full_data.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.0,
+        "secs": 1.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "quantity through hash access",
-        "nok": 11,
+        "first_failure": "Unable to parse recipe at line 2 near 'na cake",
+        "nok": 0,
         "ok": 0,
-        "plan": 11,
-        "secs": 0.43,
+        "plan": null,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/math.t",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.84,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -158,7 +158,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.52,
+        "secs": 10.72,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -168,7 +168,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.04,
+        "secs": 3.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -177,11 +177,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'made' for invocant of type 'Any'",
+        "first_failure": "Unable to parse recipe at line 2 near 'na cake",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.43,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -191,30 +191,30 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 0.91,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "testBasicDirection",
-        "nok": 67,
+        "first_failure": "Unable to parse recipe at line 1 near ' bit of chilli",
+        "nok": 0,
         "ok": 0,
-        "plan": 67,
-        "secs": 4.05,
+        "plan": null,
+        "secs": 4.12,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/spec-data.t",
       "raku": {
         "nok": 0,
         "ok": 67,
         "plan": 67,
-        "secs": 2.39,
+        "secs": 2.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -226,10 +226,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-20",
+    "date": "2026-10-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86ede3c8",
+    "mutsu_commit": "7238f90c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

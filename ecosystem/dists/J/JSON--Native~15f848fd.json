@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 31.97,
+        "secs": 32.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 9.42,
+        "secs": 9.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 6.02,
+        "secs": 6.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 10.94,
+        "secs": 11.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,7 +59,7 @@
         "nok": 1,
         "ok": 6,
         "plan": 7,
-        "secs": 0.65,
+        "secs": 0.67,
         "skip": 1,
         "todo": 0,
         "verdict": "fail"
@@ -69,7 +69,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 4.93,
+        "secs": 4.67,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -82,29 +82,30 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.73,
+        "secs": 1.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 6,
+        "first_failure": "<!pretty> makes compact output the default",
+        "nok": 4,
+        "ok": 2,
         "plan": 6,
-        "secs": 0.73,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/05-drop-in.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 4.79,
+        "secs": 5.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -118,10 +119,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-20",
+    "date": "2026-10-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86ede3c8",
+    "mutsu_commit": "7238f90c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -136,9 +137,9 @@
   "totals": {
     "baseline_assertions": 65,
     "baseline_files": 4,
-    "mutsu_assertions": 64,
-    "parity_files": 3,
-    "regressed_files": 1
+    "mutsu_assertions": 60,
+    "parity_files": 2,
+    "regressed_files": 2
   },
   "version": "0.1.0"
 }

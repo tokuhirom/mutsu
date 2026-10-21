@@ -23,7 +23,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.51,
+        "secs": 8.04,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -37,29 +37,30 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 10.64,
+        "secs": 8.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type Array does not support associative indexing.",
         "nok": 0,
-        "ok": 26,
+        "ok": 13,
         "plan": 26,
-        "secs": 0.85,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/03-dfo.t",
       "raku": {
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 9.33,
+        "secs": 7.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -73,7 +74,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 10.93,
+        "secs": 8.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -85,10 +86,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-20",
+    "date": "2026-10-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86ede3c8",
+    "mutsu_commit": "7238f90c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -99,13 +100,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AN/DAN_PANDAS/1a37d5f98c4b014633282d982d1f24cfbca3a055.tar.gz"
   },
-  "status": "green",
+  "status": "red",
   "totals": {
     "baseline_assertions": 26,
     "baseline_files": 1,
-    "mutsu_assertions": 26,
-    "parity_files": 1,
-    "regressed_files": 0
+    "mutsu_assertions": 13,
+    "parity_files": 0,
+    "regressed_files": 1
   },
   "version": "0.0.3"
 }

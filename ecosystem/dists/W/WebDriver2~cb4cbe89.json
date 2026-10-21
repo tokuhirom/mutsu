@@ -20,140 +20,7 @@
     "unresolved": []
   },
   "dist": "WebDriver2",
-  "files": [
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 48,
-        "plan": 48,
-        "secs": 1.81,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/00-sanity/use.t",
-      "raku": {
-        "nok": 0,
-        "ok": 48,
-        "plan": 48,
-        "secs": 4.95,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 30,
-        "plan": 30,
-        "secs": 0.93,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/01-basic/build-basic.t",
-      "raku": {
-        "nok": 0,
-        "ok": 30,
-        "plan": 30,
-        "secs": 4.27,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.69,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/01-basic/multi-page.t",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 2.98,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 0.92,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/01-basic/navigator-basic.t",
-      "raku": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 2.13,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 20,
-        "plan": 20,
-        "secs": 0.79,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/01-basic/tree-basic.t",
-      "raku": {
-        "nok": 0,
-        "ok": 20,
-        "plan": 20,
-        "secs": 2.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.4,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/01-basic/visit-tree.t",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 2.82,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
     "WebDriver2": "ok",
     "WebDriver2::Command": "ok",
@@ -271,13 +138,13 @@
     "WebDriver2::Command::Window-Handle": "ok",
     "WebDriver2::Command::Window-Handles": "ok",
     "WebDriver2::Constants": "ok",
-    "WebDriver2::Driver": "ok",
+    "WebDriver2::Driver": "Cannot call private method 'screenshot' on package WebDriver2::Driver because it does not trust WebDriver2::Internal-Element",
     "WebDriver2::Driver-Actions": "ok",
-    "WebDriver2::Driver::Chrome": "ok",
-    "WebDriver2::Driver::Edge": "ok",
-    "WebDriver2::Driver::Firefox": "ok",
-    "WebDriver2::Driver::Provider": "ok",
-    "WebDriver2::Driver::Safari": "ok",
+    "WebDriver2::Driver::Chrome": "Cannot call private method 'screenshot' on package WebDriver2::Driver because it does not trust WebDriver2::Internal-Element",
+    "WebDriver2::Driver::Edge": "Cannot call private method 'screenshot' on package WebDriver2::Driver because it does not trust WebDriver2::Internal-Element",
+    "WebDriver2::Driver::Firefox": "Cannot call private method 'screenshot' on package WebDriver2::Driver because it does not trust WebDriver2::Internal-Element",
+    "WebDriver2::Driver::Provider": "Cannot call private method 'screenshot' on package WebDriver2::Driver because it does not trust WebDriver2::Internal-Element",
+    "WebDriver2::Driver::Safari": "Cannot call private method 'screenshot' on package WebDriver2::Driver because it does not trust WebDriver2::Internal-Element",
     "WebDriver2::Driver::Server": "ok",
     "WebDriver2::Element-Actions": "ok",
     "WebDriver2::HTTP::Cookie": "ok",
@@ -324,14 +191,14 @@
     "WebDriver2::SUT::Tree::URL": "ok",
     "WebDriver2::SUT::Tree::Visitable": "ok",
     "WebDriver2::SUT::Tree::Visitor": "ok",
-    "WebDriver2::Test": "ok",
+    "WebDriver2::Test": "Cannot call private method 'screenshot' on package WebDriver2::Driver because it does not trust WebDriver2::Internal-Element",
     "WebDriver2::Test::Adapter": "ok",
     "WebDriver2::Test::Config-From-File": "ok",
     "WebDriver2::Test::Debugging": "ok",
     "WebDriver2::Test::Locating-Test": "ok",
-    "WebDriver2::Test::PO-Test": "ok",
-    "WebDriver2::Test::Service-Test": "ok",
-    "WebDriver2::Test::Template": "ok",
+    "WebDriver2::Test::PO-Test": "Cannot call private method 'screenshot' on package WebDriver2::Driver because it does not trust WebDriver2::Internal-Element",
+    "WebDriver2::Test::Service-Test": "Cannot call private method 'screenshot' on package WebDriver2::Driver because it does not trust WebDriver2::Internal-Element",
+    "WebDriver2::Test::Template": "Cannot call private method 'screenshot' on package WebDriver2::Driver because it does not trust WebDriver2::Internal-Element",
     "WebDriver2::Until": "ok",
     "WebDriver2::Until::Command": "ok",
     "WebDriver2::Until::Command::Displayed": "ok",
@@ -352,10 +219,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-20",
+    "date": "2026-10-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86ede3c8",
+    "mutsu_commit": "7238f90c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -366,12 +233,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/W/EB/WEBDRIVER2/ea2aaa957a701768f91ddeb88d2ab535d3c71a54.tar.gz"
   },
-  "status": "green",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 128,
-    "baseline_files": 6,
-    "mutsu_assertions": 128,
-    "parity_files": 6,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
     "regressed_files": 0
   },
   "version": "0.1.12"

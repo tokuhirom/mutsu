@@ -9,22 +9,23 @@
   "dist": "Locale::Dates",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 15,
+        "first_failure": "The object is-a 'Locale::Dates'",
+        "nok": 1,
+        "ok": 1,
         "plan": 15,
-        "secs": 0.09,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 1.46,
+        "secs": 1.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +37,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.11,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +47,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.57,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,10 +59,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-20",
+    "date": "2026-10-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86ede3c8",
+    "mutsu_commit": "7238f90c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -72,13 +73,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/OC/LOCALE_DATES/6ce30e09aeda5f524519a78ef73a3fd5516fa41f.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 31,
     "baseline_files": 2,
-    "mutsu_assertions": 31,
-    "parity_files": 2,
-    "regressed_files": 0
+    "mutsu_assertions": 17,
+    "parity_files": 1,
+    "regressed_files": 1
   },
   "version": "0.0.7"
 }

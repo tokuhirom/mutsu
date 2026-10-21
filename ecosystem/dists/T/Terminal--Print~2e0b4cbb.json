@@ -20,7 +20,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 2,
-        "secs": 15.07,
+        "secs": 10.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -34,7 +34,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.25,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,29 +48,30 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.64,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Cannot resolve caller draw-box(A:D: Int:D, Int:D, Int:D, Int:D, :style(Str)); none of these signatures matches:",
         "nok": 0,
-        "ok": 35,
-        "plan": 35,
-        "secs": 0.97,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/20-boxdrawing.t",
       "raku": {
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 2.68,
+        "secs": 1.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -93,10 +94,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-20",
+    "date": "2026-10-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86ede3c8",
+    "mutsu_commit": "7238f90c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -107,13 +108,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ER/TERMINAL_PRINT/692e36c295c7868f0d2afcd1454fde631f1a1cb5.tar.gz"
   },
-  "status": "green",
+  "status": "red",
   "totals": {
     "baseline_assertions": 35,
     "baseline_files": 1,
-    "mutsu_assertions": 35,
-    "parity_files": 1,
-    "regressed_files": 0
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
   },
   "version": "0.978"
 }

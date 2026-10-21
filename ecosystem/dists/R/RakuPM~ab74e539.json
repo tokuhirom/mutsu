@@ -22,7 +22,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 14,
-        "secs": 17.79,
+        "secs": 26.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -32,11 +32,11 @@
       "cmp": "no_baseline",
       "path": "t/author-bump.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-bump-test-1792535109' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-bump-test-1792622106' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 0.74,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 17,
-        "secs": 1.03,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -60,11 +60,11 @@
       "cmp": "no_baseline",
       "path": "t/author-dist.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-dist-test-1792535115' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-dist-test-1792622115' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 19,
-        "secs": 1.1,
+        "secs": 1.98,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -74,11 +74,11 @@
       "cmp": "no_baseline",
       "path": "t/author-publish.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-publish-test-1792535118' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-publish-test-1792622120' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 0.92,
+        "secs": 1.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -88,11 +88,11 @@
       "cmp": "no_baseline",
       "path": "t/author-refresh.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-author-refresh-2-1792535157' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-author-refresh-2-1792622161' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.05,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -102,11 +102,11 @@
       "cmp": "no_baseline",
       "path": "t/author-remote.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-remote-test-1792535124' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-remote-test-1792622129' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.12,
+        "secs": 1.57,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -116,11 +116,11 @@
       "cmp": "no_baseline",
       "path": "t/author-upload.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-upload-test-1792535126' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-upload-test-1792622134' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.83,
+        "secs": 1.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -134,7 +134,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 10.21,
+        "secs": 14.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -148,7 +148,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 38.38,
+        "secs": 59.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -162,7 +162,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.01,
+        "secs": 1.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -174,7 +174,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 1.66,
+        "secs": 2.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -184,7 +184,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.12,
+        "secs": 3.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -194,11 +194,11 @@
       "cmp": "no_baseline",
       "path": "t/by-distro-depends.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-bydistro-2-1792535226' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-bydistro-2-1792622266' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 11,
         "plan": null,
-        "secs": 0.88,
+        "secs": 1.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -208,11 +208,11 @@
       "cmp": "no_baseline",
       "path": "t/clean.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/_t-clean-2-1792535229/src/lib' with mode '0o777': Failed to mkdir: no such file or directory",
+        "first_failure": "Failed to create directory '/tmp/_t-clean-2-1792622271/src/lib' with mode '0o777': Failed to mkdir: no such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.34,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -226,7 +226,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.01,
+        "secs": 1.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -238,7 +238,7 @@
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 0.21,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -248,7 +248,7 @@
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 2.41,
+        "secs": 3.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -258,11 +258,11 @@
       "cmp": "no_baseline",
       "path": "t/cli-version.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-cliver-2-1792535240' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-cliver-2-1792622286' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 3,
         "ok": 1,
         "plan": null,
-        "secs": 2.66,
+        "secs": 3.69,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -272,11 +272,11 @@
       "cmp": "no_baseline",
       "path": "t/client-write-lock.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-wl-2-1792535245' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-wl-2-1792622293' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.07,
+        "secs": 1.89,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -288,7 +288,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 0.44,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -298,7 +298,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 1.49,
+        "secs": 2.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -308,11 +308,11 @@
       "cmp": "no_baseline",
       "path": "t/depends.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-native-test-2-1792535249' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-native-test-2-1792622301' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 15,
         "plan": 28,
-        "secs": 0.84,
+        "secs": 1.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -324,7 +324,7 @@
         "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 0.32,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -334,7 +334,7 @@
         "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 0.93,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -348,7 +348,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 0.72,
+        "secs": 1.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -362,7 +362,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 16,
-        "secs": 1.03,
+        "secs": 1.79,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -372,11 +372,11 @@
       "cmp": "no_baseline",
       "path": "t/external-deps.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-ext-2-1792535259' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-ext-2-1792622318' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 13,
         "plan": null,
-        "secs": 1.18,
+        "secs": 1.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -386,11 +386,11 @@
       "cmp": "no_baseline",
       "path": "t/file-lock-token.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-locktok-2-1792535262' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-locktok-2-1792622323' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 20,
-        "secs": 1.38,
+        "secs": 1.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -404,7 +404,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 0.84,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -418,7 +418,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.29,
+        "secs": 2.86,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -428,11 +428,11 @@
       "cmp": "no_baseline",
       "path": "t/git-cache-key-safety.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-gitkey-2-1792535273' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-gitkey-2-1792622342' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.01,
+        "secs": 1.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -444,7 +444,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 0.29,
+        "secs": 1.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -454,7 +454,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 2.56,
+        "secs": 5.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -464,11 +464,11 @@
       "cmp": "no_baseline",
       "path": "t/http-debug.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/rakupm-dbg-1792535242-2-331480913.log: Read-only file system",
+        "first_failure": "Failed to open file /tmp/rakupm-dbg-1792622316-2-815373731.log: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.83,
+        "secs": 1.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -482,7 +482,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.99,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -496,7 +496,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.11,
+        "secs": 240.1,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -510,7 +510,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.17,
+        "secs": 1.72,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -524,7 +524,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.57,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -536,7 +536,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.09,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -560,7 +560,7 @@
         "nok": 0,
         "ok": 3,
         "plan": null,
-        "secs": 0.85,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -572,7 +572,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 0.08,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -582,7 +582,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 0.79,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -595,7 +595,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 2,
-        "secs": 0.31,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -605,7 +605,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.49,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -617,7 +617,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.32,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -627,7 +627,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.58,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -639,7 +639,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.21,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -649,7 +649,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.94,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -663,7 +663,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.86,
+        "secs": 1.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -673,11 +673,11 @@
       "cmp": "no_baseline",
       "path": "t/local-index-cache.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-lidx-2-1792535661' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-lidx-2-1792622748' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.99,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -687,11 +687,11 @@
       "cmp": "no_baseline",
       "path": "t/local-repo.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-localrepo-2-1792535664' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-localrepo-2-1792622753' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.94,
+        "secs": 1.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -705,7 +705,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.85,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -715,11 +715,11 @@
       "cmp": "no_baseline",
       "path": "t/lock-file.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-lockfile-2-1792535670' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-lockfile-2-1792622761' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.12,
+        "secs": 1.99,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -731,7 +731,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.08,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -741,7 +741,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.55,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -753,7 +753,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 0.47,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -763,7 +763,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 0.92,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -775,7 +775,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.76,
+        "secs": 1.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -785,7 +785,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 1.81,
+        "secs": 2.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -799,7 +799,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.11,
+        "secs": 1.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -813,7 +813,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.12,
+        "secs": 1.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -825,7 +825,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 0.32,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -835,7 +835,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 0.84,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -845,11 +845,11 @@
       "cmp": "no_baseline",
       "path": "t/multi-version.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-multiver-2-1792535686' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-multiver-2-1792622785' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.38,
+        "secs": 1.73,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -861,7 +861,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 34.68,
+        "secs": 75.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -871,7 +871,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 20.85,
+        "secs": 34.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -885,7 +885,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.23,
+        "secs": 1.5,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -895,11 +895,11 @@
       "cmp": "no_baseline",
       "path": "t/native-lib-scan.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-native-scan-1792535711' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-native-scan-1792622867' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 0.9,
+        "secs": 1.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -909,11 +909,11 @@
       "cmp": "no_baseline",
       "path": "t/native-lib.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-nativelib-2-1792535751' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-nativelib-2-1792622909' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 40,
         "plan": 50,
-        "secs": 1.38,
+        "secs": 1.8,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -925,7 +925,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.17,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -935,7 +935,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.84,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -947,7 +947,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.2,
+        "secs": 0.25,
         "skip": 2,
         "todo": 0,
         "verdict": "pass"
@@ -957,7 +957,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.81,
+        "secs": 1.08,
         "skip": 2,
         "todo": 0,
         "verdict": "pass"
@@ -971,7 +971,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.92,
+        "secs": 1.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -985,7 +985,7 @@
         "nok": 0,
         "ok": 48,
         "plan": 85,
-        "secs": 1.39,
+        "secs": 3.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -999,7 +999,7 @@
         "nok": 2,
         "ok": 11,
         "plan": 13,
-        "secs": 3.57,
+        "secs": 4.48,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -1011,7 +1011,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.3,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1021,7 +1021,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.22,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1035,7 +1035,7 @@
         "nok": 0,
         "ok": 92,
         "plan": null,
-        "secs": 1.56,
+        "secs": 1.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1049,7 +1049,7 @@
         "nok": 10,
         "ok": 8,
         "plan": 20,
-        "secs": 5.99,
+        "secs": 6.87,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -1061,7 +1061,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 0.13,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1071,7 +1071,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 0.81,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1081,11 +1081,11 @@
       "cmp": "no_baseline",
       "path": "t/provides-scan.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-provides-scan-2-1792535798/Demo-Dist' with mode '0o777': Failed to mkdir: no such file or directory",
+        "first_failure": "Failed to create directory '/tmp/rakupm-provides-scan-2-1792622969/Demo-Dist' with mode '0o777': Failed to mkdir: no such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.65,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1095,11 +1095,11 @@
       "cmp": "no_baseline",
       "path": "t/prune-other-versions.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-prune-2-1792535800' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-prune-2-1792622972' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.81,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1109,11 +1109,11 @@
       "cmp": "no_baseline",
       "path": "t/query-commands.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-query-cmds-2-1792535802' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-query-cmds-2-1792622976' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.89,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1123,11 +1123,11 @@
       "cmp": "no_baseline",
       "path": "t/query-installed-store.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-query-2-1792535805' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-query-2-1792622979' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.9,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1137,11 +1137,11 @@
       "cmp": "no_baseline",
       "path": "t/rakulib-shadow.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/raku-pm-shadow-2-848017.txt: Read-only file system",
+        "first_failure": "Failed to open file /tmp/raku-pm-shadow-2-996088.txt: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 0.72,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1151,11 +1151,11 @@
       "cmp": "no_baseline",
       "path": "t/reinstall.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-reinstall-2-1792535810' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-reinstall-2-1792622984' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.87,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1169,7 +1169,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 0.55,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1182,7 +1182,7 @@
         "nok": 2,
         "ok": 22,
         "plan": 24,
-        "secs": 0.5,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -1192,7 +1192,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 1.14,
+        "secs": 1.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1204,7 +1204,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.32,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1214,7 +1214,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.5,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1224,11 +1224,11 @@
       "cmp": "no_baseline",
       "path": "t/resources.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-res-2-1792535817' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-res-2-1792622993' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.85,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1242,7 +1242,7 @@
         "nok": 1,
         "ok": 6,
         "plan": 7,
-        "secs": 0.56,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -1256,7 +1256,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.5,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1266,11 +1266,11 @@
       "cmp": "no_baseline",
       "path": "t/search-local.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-search-local-2-1792535822' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-search-local-2-1792623000' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.54,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1280,11 +1280,11 @@
       "cmp": "no_baseline",
       "path": "t/search-rank.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-search-rank-2-1792535824' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-search-rank-2-1792623002' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.57,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1294,11 +1294,11 @@
       "cmp": "no_baseline",
       "path": "t/shell-env.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-shell-2-1792535826' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-shell-2-1792623005' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.58,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1308,11 +1308,11 @@
       "cmp": "no_baseline",
       "path": "t/site-install.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-site-2-1792535827' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-site-2-1792623007' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.62,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1324,7 +1324,7 @@
         "nok": 0,
         "ok": 99,
         "plan": 99,
-        "secs": 0.21,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1334,7 +1334,7 @@
         "nok": 0,
         "ok": 99,
         "plan": 99,
-        "secs": 0.55,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1344,11 +1344,11 @@
       "cmp": "no_baseline",
       "path": "t/store-depends-fidelity.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-dep-2-1792535830' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-dep-2-1792623011' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.54,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1362,7 +1362,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 16,
-        "secs": 0.59,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1372,11 +1372,11 @@
       "cmp": "no_baseline",
       "path": "t/store-precomp.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-store-precomp-2-1792535834' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-store-precomp-2-1792623016' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.54,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1386,11 +1386,11 @@
       "cmp": "no_baseline",
       "path": "t/store-provides-ext.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-provides-ext-2-1792535835' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-provides-ext-2-1792623018' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.54,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1400,11 +1400,11 @@
       "cmp": "no_baseline",
       "path": "t/store-verify.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-store-verify-2-1792535837' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-store-verify-2-1792623020' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.48,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1414,11 +1414,11 @@
       "cmp": "no_baseline",
       "path": "t/test-cwd-relative.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-relpath-2-1792535839' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-relpath-2-1792623023' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.62,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1432,7 +1432,7 @@
         "nok": 0,
         "ok": 4,
         "plan": null,
-        "secs": 0.45,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1442,11 +1442,11 @@
       "cmp": "no_baseline",
       "path": "t/tester-log.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-tlog-2-1792535842' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-tlog-2-1792623027' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.58,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1458,7 +1458,7 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 0.12,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1468,7 +1468,7 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 0.65,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1482,7 +1482,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.71,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1492,11 +1492,11 @@
       "cmp": "no_baseline",
       "path": "t/uninstall-range.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/_t-uninstall-range-2-1792535846/src/lib' with mode '0o777': Failed to mkdir: no such file or directory",
+        "first_failure": "Failed to create directory '/tmp/_t-uninstall-range-2-1792623034/src/lib' with mode '0o777': Failed to mkdir: no such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.59,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1506,11 +1506,11 @@
       "cmp": "no_baseline",
       "path": "t/uninstall-store.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/_t-uninstall-store-2-1792535848/src/lib' with mode '0o777': Failed to mkdir: no such file or directory",
+        "first_failure": "Failed to create directory '/tmp/_t-uninstall-store-2-1792623037/src/lib' with mode '0o777': Failed to mkdir: no such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.5,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1524,7 +1524,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.39,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1534,11 +1534,11 @@
       "cmp": "no_baseline",
       "path": "t/verify-consistency.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakupm-verify-2-1792535850' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/rakupm-verify-2-1792623041' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.68,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1551,7 +1551,7 @@
         "nok": 2,
         "ok": 97,
         "plan": 99,
-        "secs": 0.26,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -1561,7 +1561,7 @@
         "nok": 0,
         "ok": 99,
         "plan": 99,
-        "secs": 0.64,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1573,7 +1573,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 0.28,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1583,7 +1583,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 0.64,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1595,7 +1595,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.06,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1605,7 +1605,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.42,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1657,10 +1657,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-20",
+    "date": "2026-10-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86ede3c8",
+    "mutsu_commit": "7238f90c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

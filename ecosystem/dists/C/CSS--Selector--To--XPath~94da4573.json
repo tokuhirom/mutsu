@@ -16,22 +16,23 @@
   "dist": "CSS::Selector::To::XPath",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Calling private method 'terms' must be fully qualified with the package containing that private method.",
         "nok": 0,
-        "ok": 118,
-        "plan": 119,
-        "secs": 1.18,
+        "ok": 15,
+        "plan": null,
+        "secs": 0.56,
         "skip": 0,
-        "todo": 1,
-        "verdict": "pass"
+        "todo": 0,
+        "verdict": "die"
       },
       "path": "t/01_xpath.t",
       "raku": {
         "nok": 0,
         "ok": 118,
         "plan": 119,
-        "secs": 17.34,
+        "secs": 22.56,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
@@ -43,7 +44,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.24,
+        "secs": 0.27,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -53,7 +54,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.54,
+        "secs": 0.73,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -65,7 +66,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.28,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -75,7 +76,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.63,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -87,7 +88,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.26,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -97,7 +98,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.51,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -109,10 +110,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-20",
+    "date": "2026-10-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86ede3c8",
+    "mutsu_commit": "7238f90c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -123,13 +124,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_SELECTOR_TO_XPATH/d693d2f5d2bf110fc96edc146bafddda25284801.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 129,
     "baseline_files": 4,
-    "mutsu_assertions": 129,
-    "parity_files": 4,
-    "regressed_files": 0
+    "mutsu_assertions": 26,
+    "parity_files": 3,
+    "regressed_files": 1
   },
   "version": "0.0.9"
 }

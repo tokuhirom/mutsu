@@ -20,22 +20,23 @@
   "dist": "Algorithm::Evolutionary::Simple",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 43,
+        "first_failure": "Evaluated to",
+        "nok": 1,
+        "ok": 42,
         "plan": 43,
-        "secs": 0.31,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/00-functions.t",
       "raku": {
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 3.44,
+        "secs": 2.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -47,7 +48,7 @@
         "nok": 0,
         "ok": 286,
         "plan": 286,
-        "secs": 0.61,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -57,7 +58,7 @@
         "nok": 0,
         "ok": 286,
         "plan": 286,
-        "secs": 1.99,
+        "secs": 1.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -69,7 +70,7 @@
         "nok": 0,
         "ok": 4058,
         "plan": 4058,
-        "secs": 21.51,
+        "secs": 24.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,7 +80,7 @@
         "nok": 0,
         "ok": 4058,
         "plan": 4058,
-        "secs": 11.71,
+        "secs": 7.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -93,7 +94,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 2,
-        "secs": 0.97,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -105,7 +106,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.18,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -115,7 +116,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.83,
+        "secs": 1.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -137,7 +138,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.91,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -150,10 +151,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-20",
+    "date": "2026-10-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86ede3c8",
+    "mutsu_commit": "7238f90c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -164,13 +165,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/LG/ALGORITHM_EVOLUTIONARY_SIMPLE/5150a3a64161fcea6b01b5dc4e7980ec2768125c.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 4395,
     "baseline_files": 5,
-    "mutsu_assertions": 4395,
-    "parity_files": 5,
-    "regressed_files": 0
+    "mutsu_assertions": 4394,
+    "parity_files": 4,
+    "regressed_files": 1
   },
   "version": "0.0.8"
 }

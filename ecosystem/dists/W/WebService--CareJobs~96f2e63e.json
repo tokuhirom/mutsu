@@ -11,22 +11,23 @@
   "dist": "WebService::CareJobs",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Could not find symbol '&Result' in 'WebService::CareJobs'",
         "nok": 0,
-        "ok": 40,
-        "plan": 40,
-        "secs": 0.44,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/01-client.rakutest",
       "raku": {
         "nok": 0,
         "ok": 40,
         "plan": 40,
-        "secs": 6.52,
+        "secs": 7.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +40,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.83,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -51,10 +52,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-20",
+    "date": "2026-10-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86ede3c8",
+    "mutsu_commit": "7238f90c",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -65,13 +66,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/W/EB/WEBSERVICE_CAREJOBS/0b5be80c4e708fbae8d23cb5fa4d2b3a294e505b.tar.gz"
   },
-  "status": "green",
+  "status": "red",
   "totals": {
     "baseline_assertions": 40,
     "baseline_files": 1,
-    "mutsu_assertions": 40,
-    "parity_files": 1,
-    "regressed_files": 0
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
   },
   "version": "1.0.0"
 }
