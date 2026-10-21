@@ -168,6 +168,7 @@ pub(crate) fn walk_regex_node_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Re
         RegexNode::NamedCapture {
             name: _,
             array: _,
+            hash: _,
             regex,
         } => v.visit_regex_node_mut(regex),
         RegexNode::Subrule {

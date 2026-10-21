@@ -1463,6 +1463,7 @@ t/control/block-scope-registry-skip.t
 t/control/block-self-ref-in-map.t
 t/control/block-sub-shadows-outer-code-var.t
 t/control/block-sub-sibling-call-after-exit.t
+t/control/block-use-import-called-from-ternary-in-sub.t
 t/control/block-use-main-declared-after.t
 t/control/block-use-runtime-lib-type-scoped.t
 t/control/block-value-while-until-modifiers.t
@@ -4630,6 +4631,7 @@ t/oo/role/mro-role-hides.t
 t/oo/role/mro-roles-last-declared-first.t
 t/oo/role/multi-method-nested-role-narrowness.t
 t/oo/role/multi-method-roles.t
+t/oo/role/multi-mixin-role-vs-unrelated-nominal.t
 t/oo/role/multi-subset-param-vs-unrelated-role-param-narrowness.t
 t/oo/role/my-enum-and-type-params-in-role.t
 t/oo/role/my-role-compound-name-qualification.t
@@ -5266,6 +5268,7 @@ t/rakuast/rakuast-regex-decl-trivia-and-modifiers.t
 t/rakuast/rakuast-regex-declaration-code-blocks.t
 t/rakuast/rakuast-regex-declaration-export-traits.t
 t/rakuast/rakuast-regex-dynamic-arguments.t
+t/rakuast/rakuast-regex-hash-capture-alias.t
 t/rakuast/rakuast-regex-internal-modifier.t
 t/rakuast/rakuast-regex-literal-hash-index.t
 t/rakuast/rakuast-regex-match-markers.t
@@ -5669,6 +5672,7 @@ t/regex/regex-interpolated-module-our-var.t
 t/regex/regex-interpolation-compiled-forms.t
 t/regex/regex-interpolation-hyphen-var.t
 t/regex/regex-interpolation.t
+t/regex/regex-last-declines-compiled.t
 t/regex/regex-lazy-candidate-enumeration.t
 t/regex/regex-leaf-atoms-compiled.t
 t/regex/regex-left-recursion-key-identity.t
@@ -6202,6 +6206,7 @@ t/routines/dispatch/adr0110-trir-call-out-dispatch.t
 t/routines/dispatch/anonymous-any-multi-dispatch.t
 t/routines/dispatch/assoc-multidim-lvalue-edges.t
 t/routines/dispatch/begin-selective-import-proto-multi.t
+t/routines/dispatch/block-imports-merge-multi-family-of-two-modules.t
 t/routines/dispatch/block-local-sub-dispatch.t
 t/routines/dispatch/block-multi-call-after-exit.t
 t/routines/dispatch/block-multi-where-runs-once.t
@@ -6318,6 +6323,7 @@ t/routines/dispatch/multi-star-hash-ambiguity.t
 t/routines/dispatch/multi-stub-class-invocant-implemented.t
 t/routines/dispatch/multi-sub.t
 t/routines/dispatch/multi-subset-base-type-narrowing.t
+t/routines/dispatch/multi-subset-default-rejects-candidate.t
 t/routines/dispatch/multi-subset-predicate-runs-once.t
 t/routines/dispatch/multi-type-dispatch-regressions.t
 t/routines/dispatch/multi-udismiley-ambiguity-leak.t

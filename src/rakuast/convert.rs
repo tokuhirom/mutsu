@@ -4962,10 +4962,18 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
             RakuAstClass::RegexCapturingGroup,
             vec![node_field(None, regex_node(child)?)],
         ),
-        RegexNode::NamedCapture { name, array, regex } => {
+        RegexNode::NamedCapture {
+            name,
+            array,
+            hash,
+            regex,
+        } => {
             let mut fields = vec![leaf_field(Some("name"), Value::str(name.clone()))];
             if *array {
                 fields.push(leaf_field(Some("array"), Value::truth(true)));
+            }
+            if *hash {
+                fields.push(leaf_field(Some("hash"), Value::truth(true)));
             }
             fields.push(node_field(Some("regex"), regex_node(regex)?));
             (RakuAstClass::RegexNamedCapture, fields)

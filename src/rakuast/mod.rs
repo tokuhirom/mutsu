@@ -2374,6 +2374,19 @@ pub fn construct(
                 "RakuAST::Regex::NamedCapture.new expects `array` to be Bool",
             ));
         }
+        let hash = named_arg(args, "hash").unwrap_or_else(|| Value::truth(false));
+        if !matches!(hash.view(), ValueView::Bool(_)) {
+            return Err(RuntimeError::new(
+                "RakuAST::Regex::NamedCapture.new expects `hash` to be Bool",
+            ));
+        }
+        if matches!(array.view(), ValueView::Bool(true))
+            && matches!(hash.view(), ValueView::Bool(true))
+        {
+            return Err(RuntimeError::new(
+                "RakuAST::Regex::NamedCapture.new cannot combine `array` and `hash`",
+            ));
+        }
         let mut fields = vec![RakuAstField {
             name: Some("name"),
             value: RakuAstFieldValue::Node(name),
@@ -2382,6 +2395,12 @@ pub fn construct(
             fields.push(RakuAstField {
                 name: Some("array"),
                 value: RakuAstFieldValue::Node(array),
+            });
+        }
+        if matches!(hash.view(), ValueView::Bool(true)) {
+            fields.push(RakuAstField {
+                name: Some("hash"),
+                value: RakuAstFieldValue::Node(hash),
             });
         }
         fields.push(RakuAstField {

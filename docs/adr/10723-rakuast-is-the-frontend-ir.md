@@ -1723,3 +1723,28 @@ and executable round trips; the seven affected language test files run in
 both frontends. The captured-closure regex case remains a separate RegexTree
 boundary (#14350) because its `%<chars>=` alias is not represented by the
 static tree.
+
+### 6.92 S10: hash capture aliases in static regex trees (2026-10-21)
+
+`%<name>=ATOM` and `%name=ATOM` now parse into the shared `RegexNode::NamedCapture`
+with a hash kind distinct from scalar and array capture aliases. RakuAST uses
+`Regex::NamedCapture(hash => True)` for this mutsu extension: the current
+Rakudo oracle rejects hash variables in regexes as reserved, while mutsu's
+ordinary frontend implements the spec's hash capture semantics. Constructed
+nodes validate mutually exclusive array/hash kinds; lowering sets the existing
+matcher token's `hash_capture`, so each iteration files its key in the same
+execution path. The serialized node shape bumps the cache format to 44.
+Static hash alias names are capped at 1,024 characters; larger names decline
+conversion with a catchable boundary error.
+
+The same source file also contains an intentionally invalid unpaired `~`.
+Structural regex validation now recognizes a leftover tilde marker across
+nested patterns before the RakuAST conversion boundary. The check only walks
+the already parsed token tree, with bounded recursion; it does not evaluate
+regex code. `t/rakuast/rakuast-regex-hash-capture-alias.t` covers source and
+constructed nodes, hash filing, and the diagnostic. The language regression
+`t/regex/regex-last-declines-compiled.t` runs in both frontends.
+The frontend-mode TAP test now checks the newly supported alias in the main
+unit and an EVAL unit. A converter-level unit test supplies a deliberately
+unmodelled Regex value to keep the no-fallback invariant stable as source
+coverage grows.

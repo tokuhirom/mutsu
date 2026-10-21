@@ -329,6 +329,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         RegexNamedCapture => &[
             ("name", Absent::Required),
             ("array", Absent::False),
+            ("hash", Absent::False),
             ("regex", Absent::Required),
         ],
         RegexAssertionNamed => &[("name", Absent::Required), ("capturing", Absent::False)],

@@ -125,3 +125,23 @@ pub(crate) fn with_caller_names<T>(
     let _caller = super::bareword::CallerNames::install(types, terms);
     convert()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unmodelled_literal_refuses_instead_of_falling_back() {
+        let stmts = vec![Stmt::Expr(crate::ast::Expr::Literal(
+            crate::value::Value::regex("a".to_owned()),
+        ))];
+        let error = round_trip(&stmts).expect_err("a regex value without source tree must refuse");
+        let reported = refusal(error);
+        assert!(reported.message.contains("MUTSU_RAKUAST"));
+        assert!(
+            reported
+                .message
+                .contains("literal Regex without a declarator tree")
+        );
+    }
+}
