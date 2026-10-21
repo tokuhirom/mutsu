@@ -87,42 +87,98 @@ impl Interpreter {
         self.check_type_capture_inheritance(stmts)
     }
 
-    /// Run the unit's top-level `use` of a module that imports through a
-    /// `sub EXPORT` hook before the CHECK-time validation, as rakudo does at
-    /// BEGIN time: what such a hook imports depends on the `use` arguments and
-    /// no static scan can predict it (#13441). The statements run here (inside
-    /// the EVAL's import scope) and are dropped from the unit, so the checks
-    /// read the real import set and the hook is not run a second time.
-    // Cost: O(u) static checks plus the load and hook of each hook-importing
-    // `use`, u = top-level statements.
+    /// Run the unit's top-level `use`s and `import`s before the CHECK-time
+    /// validation, as rakudo does at BEGIN time, so the checks can read what
+    /// they really import (#13441). The ones that count are the module loads
+    /// the compiled unit would run through `OpCode::UseModule` / `ImportModule`
+    /// ([`crate::compiler::begin_use::loads_module_in_position`] holds the
+    /// special cases the compile arm makes, so pragmas, `:from<NQP>` and the
+    /// like are left to it), ahead of the first `use lib` / BEGIN, which need
+    /// the unit's own position.
+    ///
+    /// A module that imports through a `sub EXPORT` hook is the exception that
+    /// cannot run twice: what it imports depends on the `use` arguments and its
+    /// hook has side effects, so its statement is dropped from the unit. Every
+    /// other pre-run statement stays in the unit: the in-position run
+    /// re-imports idempotently and records the lexical import set the unit's
+    /// by-name calls read (ADR-8751), which this out-of-unit run has no id for.
+    // Cost: O(u) static checks plus the load of each pre-run `use`, u =
+    // top-level statements.
     fn run_eval_hook_uses(&mut self, stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
-        let is_hook_use = |this: &Self, stmt: &Stmt| {
-            matches!(stmt, Stmt::Use { module, condition: None, .. } if this.module_imports_through_export_hook(module))
-        };
-        if !stmts.iter().any(|stmt| is_hook_use(self, stmt)) {
+        let limit = stmts
+            .iter()
+            .position(|stmt| {
+                matches!(stmt, Stmt::Use { module, .. } if module == "lib")
+                    || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
+            })
+            .unwrap_or(stmts.len());
+        #[derive(Clone, Copy, PartialEq)]
+        enum Prerun {
+            No,
+            /// Runs here and stays in the unit.
+            Keep,
+            /// Runs here and is dropped from the unit (a `sub EXPORT` hook).
+            Drop,
+        }
+        // An `import` is pre-run only for a module an earlier pre-run `use`
+        // loaded: one the unit declares itself does not exist yet.
+        let mut loaded: HashSet<&str> = HashSet::new();
+        let mut plan: Vec<Prerun> = Vec::with_capacity(stmts.len());
+        for (idx, stmt) in stmts.iter().enumerate() {
+            plan.push(match stmt {
+                _ if idx >= limit => Prerun::No,
+                Stmt::Import { module, .. } if loaded.contains(module.as_str()) => Prerun::Keep,
+                Stmt::Use { arg, .. } => match crate::compiler::begin_use::loads_module_in_position(stmt) {
+                    Some(module) if self.module_imports_through_export_hook(module) => {
+                        loaded.insert(module);
+                        Prerun::Drop
+                    }
+                    // Its arguments would be evaluated twice.
+                    Some(module) if arg.is_none() => {
+                        loaded.insert(module);
+                        Prerun::Keep
+                    }
+                    _ => Prerun::No,
+                },
+                _ => Prerun::No,
+            });
+        }
+        if plan.iter().all(|p| *p == Prerun::No) {
             return Ok(stmts);
         }
-        let (uses, rest): (Vec<Stmt>, Vec<Stmt>) =
-            stmts.into_iter().partition(|stmt| is_hook_use(self, stmt));
-        for stmt in &uses {
-            let Stmt::Use { module, arg, tags, .. } = stmt else {
-                continue;
-            };
-            // The `use` arguments are what the module's `sub EXPORT` sees
-            // (the compiler pushes one value per top-level list element).
-            let arg_exprs: Vec<&Expr> = match arg {
-                Some(Expr::ArrayLiteral(items)) => items.iter().collect(),
-                Some(other) => vec![other],
-                None => Vec::new(),
-            };
-            let mut args = Vec::with_capacity(arg_exprs.len());
-            for expr in arg_exprs {
-                args.push(self.eval_block_value(&[Stmt::Expr(expr.clone())])?);
+        let mut rest = Vec::with_capacity(stmts.len());
+        for (stmt, how) in stmts.into_iter().zip(plan) {
+            match (&stmt, how) {
+                (_, Prerun::No) => {}
+                (Stmt::Import { module, tags }, _) => {
+                    self.import_module(module, tags)
+                        .map_err(|err| self.in_place_use_error(module, err))?;
+                }
+                (Stmt::Use { module, arg, tags, .. }, _) => {
+                    // The `use` arguments are what the module's `sub EXPORT`
+                    // sees (the compiler pushes one value per top-level list
+                    // element).
+                    let arg_exprs: Vec<&Expr> = match arg {
+                        Some(Expr::ArrayLiteral(items)) => items.iter().collect(),
+                        Some(other) => vec![other],
+                        None => Vec::new(),
+                    };
+                    let mut args = Vec::with_capacity(arg_exprs.len());
+                    for expr in arg_exprs {
+                        args.push(self.eval_block_value(&[Stmt::Expr(expr.clone())])?);
+                    }
+                    self.module.pending_use_export_args = (!args.is_empty()).then_some(args);
+                    // In position, like the compiled `use`: a LEAVE phaser the
+                    // hook attaches (`$*R.find-attach-target`) belongs to this
+                    // compunit.
+                    self.with_use_attach_depth(|this| this.use_module_with_tags(module, tags))
+                        .map_err(|err| self.in_place_use_error(module, err))?;
+                }
+                _ => {}
             }
-            self.module.pending_use_export_args = (!args.is_empty()).then_some(args);
-            // In position, like the compiled `use`: a LEAVE phaser the hook
-            // attaches (`$*R.find-attach-target`) belongs to this compunit.
-            self.with_use_attach_depth(|this| this.use_module_with_tags(module, tags))?;
+            if how != Prerun::Drop {
+                rest.push(stmt);
+            }
         }
         Ok(rest)
     }
