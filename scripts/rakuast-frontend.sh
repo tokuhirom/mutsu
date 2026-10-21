@@ -84,15 +84,30 @@ case "${1:-check}" in
         grep -m1 -o 'does not round-trip through RakuAST: .*' | head -c 400)
       if [ -n "$msg" ]; then
         printf 'REFUSE\t%s\t%s\n' "$f" "${msg#does not round-trip through RakuAST: }"
-      elif timeout 30 "$MUTSU_BIN" "$f" >/dev/null 2>&1 </dev/null; then
-        printf 'PASS\t%s\n' "$f"
       else
-        printf 'DIFF\t%s\n' "$f"
+        timeout 30 "$MUTSU_BIN" "$f" >/dev/null 2>&1 </dev/null
+        rc=$?
+        if [ "$rc" -eq 0 ]; then
+          printf 'PASS\t%s\n' "$f"
+        elif [ "$rc" -ge 128 ] && [ "$rc" -ne 143 ]; then
+          # Killed by a signal (139 = SIGSEGV, 134 = SIGABRT, ...): a crash of
+          # the interpreter, not a diff. The file is named so it can be rerun
+          # under the debugger (#12499). A `timeout` expiry (124) is a DIFF.
+          printf 'CRASH\t%s\t%s\n' "$f" "$rc"
+        else
+          printf 'DIFF\t%s\n' "$f"
+        fi
       fi
     }
     export -f cause_of
     xargs -P "$JOBS" -I{} bash -c 'cause_of {}' < "$out/outside.txt" > "$out/results.tsv"
     python3 -I scripts/rakuast-causes.py "$out/results.tsv"
+    # A crash is never filed under DIFF: print the files so the run that hit it
+    # is not lost (#12499).
+    if grep -q '^CRASH' "$out/results.tsv"; then
+      echo "rakuast-frontend: the interpreter was killed by a signal on:" >&2
+      grep '^CRASH' "$out/results.tsv" | cut -f2,3 >&2
+    fi
     ;;
   *)
     echo "usage: $0 check|survey|update|causes" >&2
