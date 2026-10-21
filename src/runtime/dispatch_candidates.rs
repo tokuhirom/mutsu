@@ -152,6 +152,11 @@ impl Interpreter {
         if sub.with_str(|n| matches!(n, "Any" | "Mu")) {
             return false;
         }
+        if sub.with_str(|sub| {
+            sup.with_str(|sup| crate::builtin_types::ancestry::builtin_role_ancestors(sub).contains(&sup))
+        }) {
+            return true;
+        }
         sup.with_str(|sup| {
             self.type_hierarchy_distance(sup, &Value::package(sub)) < UNRELATED_DISTANCE
         })
