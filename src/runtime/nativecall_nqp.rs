@@ -89,11 +89,22 @@ impl Interpreter {
             // read the C global `$symbol` of `$libname` as `$target`. The
             // library name arrives already resolved (`guess_library_name`);
             // an empty name is the process's own symbol space.
-            // Cost: O(1) after the library is loaded; O(n), n = chars, for a Str target.
+            // Cost: O(r) after loading, r = composed roles of a mixin target;
+            // O(n), n = chars, for a Str target; O(1) for a plain Pointer target.
             "nativecallglobal" => {
                 let library = operand(args, 0);
                 let symbol = operand(args, 1).to_string_value();
-                let Some(target) = type_operand_name(&operand(args, 2)) else {
+                let target_value = operand(args, 2);
+                let target = match target_value.view() {
+                    ValueView::Mixin(inner, mixins) => {
+                        match self.mixin_instance_type_name(&target_value, inner, mixins) {
+                            Ok(name) => Some(name),
+                            Err(error) => return Some(Err(error)),
+                        }
+                    }
+                    _ => type_operand_name(&target_value),
+                };
+                let Some(target) = target else {
                     return Some(Err(RuntimeError::new(
                         "nqp::nativecallglobal expects a type object as its target",
                     )));

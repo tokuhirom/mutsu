@@ -10,7 +10,7 @@
 //! `Proxy` is upstream NativeCall's; this module is the primitive behind its
 //! `FETCH`, `nqp::nativecallglobal($libname, $symbol, $target-type)`.
 //!
-//! **It dereferences.** The symbol's address is where the variable *lives*, and
+//! **Scalar targets dereference.** The symbol's address is where the variable *lives*, and
 //! the value is read from it — `cglobal('libc.so.6', 'optind', int32)` is `1`,
 //! not the address of `optind`. (Verified against Rakudo.) A missing library or
 //! symbol throws, which is what lets the common existence probe work:
@@ -21,10 +21,10 @@
 //!
 //! That probe is how `NativeLibs::Searcher` finds a versioned shared object, and
 //! through it how `DBIish`'s `mysql` and `Pg` drivers locate their client
-//! libraries — the reason this exists. Note what it implies: the symbol probed
-//! is usually a *function* (`mysql_init`), so the dereference reads the first
-//! word of its machine code. That is meaningless as a pointer and deliberately
-//! unused; only "did the lookup throw" is being asked.
+//! libraries — the reason this exists. A Pointer target wraps the symbol's
+//! address without dereferencing, for both functions and variables (as in
+//! Rakudo). Callers can cast that address to a function signature or explicitly
+//! dereference it to read a pointer-valued global.
 
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -71,17 +71,12 @@ impl Interpreter {
         };
 
         let short = short_base_name(target);
-        // A pointer-shaped target reads a `void*` out of the variable and wraps
-        // it. `Pointer.new(0)` is a legitimate defined value, so unlike a native
-        // call's NULL *return* (which is the class's type object) a null global
-        // stays a defined `Pointer` holding 0.
+        // Pointer targets wrap the symbol address itself, including for data
+        // symbols. Reading a pointer-valued global requires an explicit cast
+        // or dereference by the caller, matching Rakudo's NativeCall contract.
         if short == "Pointer" || short.starts_with("Pointer[") {
-            // SAFETY: as above — `addr` is a live symbol address, and the
-            // declared type says a pointer lives there. Same trust every
-            // NativeCall signature already gets.
-            let held = unsafe { (addr as *const usize).read_unaligned() };
             // Upstream NativeCall's own Pointer type, when it is loaded.
-            if let Some(built) = self.native_pointer_of_declared(target, held, false) {
+            if let Some(built) = self.native_pointer_of_declared(target, addr, false) {
                 return built;
             }
             // No upstream type resolves: `Pointer` comes from `use NativeCall`,
