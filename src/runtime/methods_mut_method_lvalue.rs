@@ -1314,7 +1314,7 @@ impl Interpreter {
                 }
             }
             if found_public_rw {
-                // A `$` attribute that holds a `Proxy` (bound there by
+                // An attribute that holds a `Proxy` (bound there by
                 // `Attribute.set_value`, as Red does for every model column)
                 // is assigned through the Proxy: the accessor hands out that
                 // very container, so `$obj.attr = v` is its STORE. Replacing
@@ -1323,13 +1323,11 @@ impl Interpreter {
                 // The storer is cloned out so the attribute map's read guard
                 // is gone before STORE runs: a STORE body that writes this
                 // very instance's attributes would otherwise queue behind it.
-                let proxy_storer = if attr_sigil == '$' {
-                    match attributes.as_map().get(method).map(Value::view) {
-                        Some(ValueView::Proxy { storer, .. }) => Some(Value::clone(storer)),
-                        _ => None,
-                    }
-                } else {
-                    None
+                // An `@`/`%` attribute bound to a Proxy (AttrX::Mooish's
+                // `AttrProxy`) is assigned through it the same way.
+                let proxy_storer = match attributes.as_map().get(method).map(Value::view) {
+                    Some(ValueView::Proxy { storer, .. }) => Some(Value::clone(storer)),
+                    _ => None,
                 };
                 if let Some(storer) = proxy_storer {
                     let current_attrs = attributes.to_map();
