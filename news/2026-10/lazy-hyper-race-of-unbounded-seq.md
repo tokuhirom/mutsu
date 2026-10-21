@@ -11,4 +11,4 @@ lazy list tagged as `HyperSeq`/`RaceSeq`, so its stages stream like any lazy `ma
 `HyperSeq`. Nothing is batched across threads, as before. The `HyperSeq`/`RaceSeq` rows
 decline a `LazyList` receiver so the lazy step answers.
 
-Part of #11276; closes #13918. Pinned in `t/collections/lazy-seq/lazy-hyper-seq.t`.
+Part of #11276 and #13918 (the issue stays open for ADR-13918: batching and a deferred body). Pinned in `t/collections/lazy-seq/lazy-hyper-seq.t`.
