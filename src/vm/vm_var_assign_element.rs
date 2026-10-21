@@ -582,13 +582,15 @@ impl Interpreter {
         let _struct_guard =
             self.named_root_struct_guard(code, target_slot, Self::const_str(code, name_idx));
         self.with_package_lexical_seeded(code, name_idx, |vm| {
-            vm.exec_index_assign_expr_named_op_unseeded(
-                code,
-                name_idx,
-                is_positional,
-                target_slot,
-                element_share,
-            )
+            vm.with_own_container_seeded(code, name_idx, target_slot, |vm| {
+                vm.exec_index_assign_expr_named_op_unseeded(
+                    code,
+                    name_idx,
+                    is_positional,
+                    target_slot,
+                    element_share,
+                )
+            })
         })
     }
 
