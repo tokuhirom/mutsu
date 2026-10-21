@@ -102,6 +102,15 @@ is EVAL(Q[
     ~OpaquePairArgument.parse('ab')
 ].AST), 'ab', 'a positional Pair containing an object is retained in the binding window';
 
+is EVAL(Q[
+    grammar ComputedName {
+        token TOP { <word> }
+        token word($name = 'alpha') { <::($name)> }
+        token alpha { a }
+    }
+    ComputedName.parse('a')<word>.hash.keys.elems
+].AST), 0, 'specializing a defaulted computed rule name does not make a named capture';
+
 my $assertion = RakuAST::Regex::Assertion::Named::Args.new(
         name => RakuAST::Name.from-identifier('word'),
         args => RakuAST::ArgList.new(RakuAST::QuotedString.new(

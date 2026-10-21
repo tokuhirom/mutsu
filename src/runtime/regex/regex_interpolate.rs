@@ -719,7 +719,19 @@ impl Interpreter {
                 .filter(|name| !regex_local_vars.contains(*name))
                 .cloned().collect();
             let rendered_args: Vec<String> = spec.arg_exprs.iter()
-                .map(|arg| self.bake_params_in_code_text(arg, &params))
+                .map(|arg| {
+                    let rendered = self.bake_params_in_code_text(arg, &params);
+                    // A computed symbolic name does not create a capture under
+                    // that name. Specializing a parameter must not make it static.
+                    if spec.lookup_name == "::"
+                        && !self.symbolic_name_is_constant(arg)
+                        && self.symbolic_name_is_constant(&rendered)
+                    {
+                        format!("{rendered}.Str")
+                    } else {
+                        rendered
+                    }
+                })
                 .collect();
             out.push('<');
             out.push_str(&inner[..open_idx + 1]);
