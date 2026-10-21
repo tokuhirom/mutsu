@@ -83,15 +83,6 @@ pub(crate) struct LexicalImportCapture {
     /// The core listop families whose candidates extend CORE's dispatch set
     /// (ADR-0044 D1): they keep the registry path.
     core_extending: HashSet<Symbol>,
-    /// Whether the `use` is at the importing unit's top level (no import scope
-    /// of the unit is open). Its multi families keep the registry path:
-    /// (an operator family binds: its uses are not routine calls with
-    /// containers) -- their dispatcher value does not carry the caller's argument containers
-    /// to a candidate's raw or `rw` parameter yet (a block-scoped `use` has
-    /// the same gap).
-    // TODO: bind a top-level family lexically once a dispatcher value passes
-    // the caller's containers to its winner.
-    top_level: bool,
     /// The proto of each family in `multi_defs` whose body does more than
     /// dispatch: the family's dispatcher value runs it.
     protos: HashMap<Symbol, std::sync::Arc<crate::ast::FunctionDef>>,
@@ -131,16 +122,10 @@ impl Interpreter {
         let block_multis = id_section(&text, BLOCK_MULTIS_MARK);
         let block_vars = id_section(&text, BLOCK_VARS_MARK);
         let importer = self.executing_unit_sym_for_module_load();
-        let top_level = self
-            .module
-            .import_scope_stack
-            .last()
-            .is_none_or(|scope| scope.unit != importer);
         let capture = LexicalImportCapture {
             block_multis,
             core_extending: HashSet::new(),
             block_vars,
-            top_level,
             unit: importer,
             routines: Vec::new(),
             amp_env_keys: HashSet::new(),
@@ -221,8 +206,7 @@ impl Interpreter {
         if entries.is_empty()
             || !entries.iter().all(|(key, _)| key.as_str().contains('/'))
             || self.module.lexical_import_capture.as_ref().is_some_and(|capture| {
-                (capture.top_level && !name.contains(":<"))
-                    || capture.block_multis.contains(&Symbol::intern(name))
+                capture.block_multis.contains(&Symbol::intern(name))
             })
         {
             return false;
@@ -469,7 +453,6 @@ impl Interpreter {
         let importer = self.executing_unit_sym_for_module_load();
         if let Some(capture) = self.module.lexical_import_capture.as_mut()
             && capture.unit == importer
-            && !(capture.top_level && !name.contains(":<"))
             && !capture.block_multis.contains(&Symbol::intern(name))
         {
             capture
