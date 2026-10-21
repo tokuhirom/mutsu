@@ -471,11 +471,12 @@ pub(crate) fn mixin_step(target: &Value, method_sym: Symbol) -> Option<MixinStep
             ValueView::Array(..) | ValueView::Seq(_) | ValueView::Hash(..) | ValueView::Pair(..)
         )
     {
-        return Some(match crate::builtins::method_table::collection_render_names::raku(inner, &[])
-        {
-            Some(answer) => MixinStep::Answer(answer),
-            None => MixinStep::Decline,
-        });
+        return Some(
+            match crate::builtins::method_table::collection_render_names::raku(inner, &[]) {
+                Some(answer) => MixinStep::Answer(answer),
+                None => MixinStep::Decline,
+            },
+        );
     }
     Some(MixinStep::Delegate(inner.as_ref().clone()))
 }
