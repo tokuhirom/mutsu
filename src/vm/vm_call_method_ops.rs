@@ -842,6 +842,7 @@ impl Interpreter {
             return Ok(());
         }
         let target = Self::lazy_slip_receiver(target, method);
+        let target = Self::shaped_iteration_receiver(target, method);
         let target = match self.take_seq_prefix(&target, method, &args)? {
             Some(prefix) => prefix,
             None => target,

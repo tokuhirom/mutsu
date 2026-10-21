@@ -517,6 +517,16 @@ impl Interpreter {
                 let Some(current_val) = self.env().get(var_name).cloned() else {
                     return;
                 };
+                // A multi-dimensional shaped array iterates its leaves (#14248).
+                if kind == crate::value::ArrayKind::Shaped
+                    && let Some(updated) =
+                        Self::shaped_leaf_writeback(source_val.as_ref(), idx, &current_val)
+                {
+                    if let Some(updated_value) = updated {
+                        self.write_back_container_source(code, source, None, &source_val, updated_value);
+                    }
+                    return;
+                }
                 if idx >= items.len() {
                     return;
                 }
