@@ -532,6 +532,9 @@ impl Interpreter {
                     // sequence (excluding the current element), `next` skips the
                     // current element. This makes `(^Inf).grep({last if …})`
                     // terminate instead of running forever.
+                    if source_idx == 0 {
+                        self.run_callback_first_phasers(&func, &elem)?;
+                    }
                     let applied: Result<Vec<Value>, RuntimeError> = if is_grep {
                         match self.vm_grep_item_matches(&func, &elem) {
                             Ok(true) => Ok(vec![elem]),
