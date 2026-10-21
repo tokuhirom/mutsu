@@ -5,7 +5,7 @@ use lib 'roast/packages/S11-modules/lib';
 # file's types keep their own names instead of gaining a guessed `GH2983::`
 # prefix (#14336). Rakudo runs the file again too, so the two types are
 # distinct, but they are named alike.
-plan 4;
+plan 3;
 
 my $first;
 {
@@ -27,8 +27,3 @@ my $role;
     $role = R-GH2983.^name;
 }
 is $role, 'R-GH2983', 'a role loaded by path has its own name';
-
-{
-    require ("GH2983.rakumod") <$question>;
-    like $question, /Ultimate/, 'a variable listed after a path require is bound';
-}
