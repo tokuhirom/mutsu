@@ -122,7 +122,9 @@ impl Interpreter {
         // An `EVAL`'s set: each `EVAL` is a compilation of its own. A set
         // holding a `sub EXPORT` hook's values: the hook runs again, and its
         // run notes what the block hides from its callees.
-        if id.resolve().contains(crate::runtime::lexical_imports::EVAL_UNIT_MARK)
+        let text = id.resolve();
+        if text.contains(crate::runtime::lexical_imports::EVAL_UNIT_MARK)
+            || text.contains(crate::runtime::lexical_imports::MODULE_UNIT_MARK)
             || self.module.lexical_import_hook_values.contains_key(&id)
         {
             return None;

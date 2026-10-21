@@ -32,6 +32,10 @@ pub(crate) enum InputKey {
     LanguageVersionStartsWith(String),
     /// `nqp_ops_sys::uname_const_value(name)`, folded into a constant.
     UnameConst(String),
+    /// The variables, constants and types a `use` of `module` with `tags`
+    /// binds in its block, by the parse-time scan of `module`
+    /// (`Compiler::block_imported_vars_fingerprint`).
+    BlockImportedVars { module: String, tags: Vec<String> },
 }
 
 /// The answer a question got.
@@ -39,6 +43,7 @@ pub(crate) enum InputKey {
 pub(crate) enum InputValue {
     Bool(bool),
     Int(Option<i64>),
+    Text(String),
 }
 
 /// Everything one recorded compile asked, with the answers it got.
@@ -50,8 +55,24 @@ pub(crate) struct CompileInputs {
 impl CompileInputs {
     /// Whether every recorded question still gets the recorded answer.
     // Cost: O(q), q = recorded questions (each re-asked once).
-    pub(crate) fn still_hold(&self) -> bool {
-        self.answers.iter().all(|(key, value)| ask(key) == *value)
+    /// The modules whose parse-time export scan the compile read
+    /// ([`InputKey::BlockImportedVars`]): a validation needs their scans.
+    // Cost: O(q), q = recorded questions.
+    pub(crate) fn scanned_modules(&self) -> impl Iterator<Item = &str> {
+        self.answers.keys().filter_map(|key| match key {
+            InputKey::BlockImportedVars { module, .. } => Some(module.as_str()),
+            _ => None,
+        })
+    }
+
+    /// The first recorded question whose answer changed, with the recorded
+    /// and the current answer, if any.
+    // Cost: O(q), q = recorded questions (each re-asked once).
+    pub(crate) fn first_changed(&self) -> Option<(&InputKey, &InputValue, InputValue)> {
+        self.answers.iter().find_map(|(key, value)| {
+            let now = ask(key);
+            (now != *value).then_some((key, value, now))
+        })
     }
 
     /// Number of recorded questions.
@@ -163,6 +184,9 @@ fn ask(key: &InputKey) -> InputValue {
         InputKey::UnameConst(name) => {
             InputValue::Int(crate::runtime::nqp_ops_sys::uname_const_value(name))
         }
+        InputKey::BlockImportedVars { module, tags } => InputValue::Text(
+            super::Compiler::block_imported_vars_fingerprint(module, tags),
+        ),
     }
 }
 
@@ -217,7 +241,20 @@ pub(crate) fn current_language_version_starts_with(prefix: &str) -> bool {
 pub(crate) fn uname_const_value(name: &str) -> Option<i64> {
     match ask_and_record(InputKey::UnameConst(name.to_string())) {
         InputValue::Int(v) => v,
-        InputValue::Bool(_) => None,
+        InputValue::Bool(_) | InputValue::Text(_) => None,
+    }
+}
+
+/// Record that the compile read the parse-time scan of `module` for what a
+/// `use` of it with `tags` binds in its block.
+// Cost: O(v), v = the module's exported variables.
+pub(crate) fn note_block_imported_vars(module: &str, tags: &[String]) {
+    let recording = RECORDING.with(|r| r.borrow().is_some());
+    if recording {
+        ask_and_record(InputKey::BlockImportedVars {
+            module: module.to_string(),
+            tags: tags.to_vec(),
+        });
     }
 }
 

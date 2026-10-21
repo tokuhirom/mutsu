@@ -1136,6 +1136,7 @@ mod lexical_stash;
 mod lexsub_aliases;
 mod method_values;
 mod mixin_rhs;
+mod module_unit_sets;
 mod native_str_coercion;
 mod nqp_atomic_forms;
 mod nqp_cond_forms;
@@ -1214,6 +1215,10 @@ pub(crate) struct Compiler {
     /// The main unit's top-level import sets whose `use` the compile has not
     /// reached yet (`defer_unit_lexical_use_sets`).
     deferred_unit_sets: Vec<Symbol>,
+    /// The names a module unit's top level declares itself, which its
+    /// `use`s do not bind in its pad (`module_unit_sets`); `None` outside a
+    /// module unit's mainline.
+    module_unit_own_names: Option<std::collections::HashSet<String>>,
     /// The source line of each main-unit top-level `use` that has a set.
     unit_set_line: HashMap<Symbol, i64>,
     /// The sets of `lexical_import_chain` the main unit's own top-level `use`
@@ -2079,6 +2084,7 @@ impl Compiler {
             lexical_import_chain: Vec::new(),
             lexical_set_decl_mark: HashMap::new(),
             deferred_unit_sets: Vec::new(),
+            module_unit_own_names: None,
             unit_set_line: HashMap::new(),
             unit_active_sets: HashSet::new(),
             variables_pragma: None,

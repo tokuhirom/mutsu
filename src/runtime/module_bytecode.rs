@@ -232,6 +232,40 @@ fn verify_enabled() -> bool {
 }
 
 impl Interpreter {
+    /// The canonical export scans of `modules`, each resolved as the load
+    /// will resolve it, for a module mainline's compile or its validation
+    /// (`parser::canonical_export_scans`).
+    // Cost: one module resolution and one scan per module.
+    fn canonical_use_scans<'a>(
+        &self,
+        modules: impl IntoIterator<Item = &'a str>,
+    ) -> crate::parser::CanonicalScans {
+        crate::parser::canonical_export_scans(modules.into_iter().map(|module| {
+            let path = self
+                .resolve_module_path(module)
+                .map(|(path, _)| path.to_string_lossy().into_owned());
+            (module.to_string(), path)
+        }))
+    }
+
+    /// The modules the `use`s anywhere in `stmts` name: a block's `use`
+    /// reads the scan too (`Compiler::bind_block_imported_vars`).
+    // Cost: O(n), n = size of the AST.
+    fn use_modules_of(stmts: &[Stmt]) -> Vec<&str> {
+        struct Uses<'ast>(Vec<&'ast str>);
+        impl<'ast> crate::ast_visit::Visit<'ast> for Uses<'ast> {
+            fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+                if let Stmt::Use { module, .. } = stmt {
+                    self.0.push(module.as_str());
+                }
+                crate::ast_visit::walk_stmt(self, stmt);
+            }
+        }
+        let mut uses = Uses(Vec::new());
+        crate::ast_visit::walk_stmts(&mut uses, stmts);
+        uses.0
+    }
+
     /// Compile a module's mainline `body`, from the cache when it can serve
     /// it. See the module docs.
     // Cost: O(n), n = size of the compiled code (decoding, or compiling).
@@ -253,14 +287,34 @@ impl Interpreter {
         let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(compile_unit);
         let unit = &slot.unit;
         let session = compile_session::content_session_id(unit.unit_key, unit.occurrence);
+        let validation_scans = slot
+            .cached
+            .as_ref()
+            .map(|cached| self.canonical_use_scans(cached.inputs.scanned_modules()));
         let cached = slot
             .cached
             .as_ref()
-            .filter(|cached| cached.context == context && cached.inputs.still_hold())
+            .filter(|cached| {
+                if cached.context != context {
+                    trace(slot, "context changed");
+                    return false;
+                }
+                match cached.inputs.first_changed() {
+                    Some((key, was, now)) => {
+                        trace(
+                            slot,
+                            &format!("input changed: {key:?}: {was:?} -> {now:?}"),
+                        );
+                        false
+                    }
+                    None => true,
+                }
+            })
             .and_then(|cached| {
                 let decoded = crate::precomp_codec::decode_compiled(&cached.payload).ok()?;
                 Some((cached.latches, decoded))
             });
+        drop(validation_scans);
         let (mut code, mut fns) = match cached {
             Some((latches, decoded)) => {
                 trace(slot, "hit");
@@ -271,6 +325,7 @@ impl Interpreter {
                 if verify_enabled() {
                     let _session = compile_session::enter_session(session);
                     let stmts = body.stmts()?;
+                    let _scans = self.canonical_use_scans(Self::use_modules_of(stmts));
                     compiler.defer_unit_lexical_use_sets(stmts, true);
                     let fresh = compiler.compile(stmts);
                     verify_same(&unit.source_path, &decoded, &fresh);
@@ -279,6 +334,7 @@ impl Interpreter {
             }
             None => {
                 let stmts = body.stmts()?;
+                let _scans = self.canonical_use_scans(Self::use_modules_of(stmts));
                 let _session = compile_session::enter_session(session);
                 let recording = compile_inputs::start();
                 compiler.defer_unit_lexical_use_sets(stmts, true);

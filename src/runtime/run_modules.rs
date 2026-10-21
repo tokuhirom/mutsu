@@ -1184,8 +1184,8 @@ impl Interpreter {
             // lexicals are just as much its own, and they move into a bucket
             // keyed by the compunit itself (ADR-12529 §3, slice 24; see
             // `vm_compunit_lexicals`).
-            let unit_lex_names: Vec<String> = facts.unit_lexical_names.clone();
-            let saved_unit_lex: Vec<(String, Option<Value>)> = unit_lex_names
+            let mut unit_lex_names: Vec<String> = facts.unit_lexical_names.clone();
+            let mut saved_unit_lex: Vec<(String, Option<Value>)> = unit_lex_names
                 .iter()
                 .map(|n| (n.clone(), self.env.get(n).cloned()))
                 .collect();
@@ -1246,6 +1246,8 @@ impl Interpreter {
             let saved_monkey_see_no_eval = self.monkey_see_no_eval_snapshot();
             let saved_imports = std::mem::take(&mut self.module.module_imported_names);
             let saved_export_terms = std::mem::take(&mut self.module.module_export_terms);
+            let saved_unit_bound_imports =
+                std::mem::take(&mut self.module.module_unit_bound_imports);
             let saved_imported_routine_aliases =
                 std::mem::take(&mut self.module.imported_routine_aliases);
             let saved_pending_rw_writeback_len = self.pending_rw_writeback_sources.len();
@@ -1314,6 +1316,11 @@ impl Interpreter {
                     self.env.remove("=finish");
                 }
             }
+            // A readonly binding the body makes (`my $x := 'v'`) marks its
+            // name, and the body runs in the loader's env: the mark is the
+            // module's own and goes with the load, or the loader's `my $x`
+            // of the same name is refused its assignment.
+            let readonly_mark = self.enter_readonly_frame();
             let result = match self.establish_pod_variables_from_stmts_in(
                 &module_source,
                 facts.pod_ranges.as_ref(),
@@ -1327,6 +1334,7 @@ impl Interpreter {
                 }),
                 Err(err) => Err(err),
             };
+            self.exit_readonly_frame(readonly_mark);
             self.module.import_target_package = saved_import_target;
             // The importer's tables come back, but the module's named docs are
             // kept under its unit: its declarations outlive the load, and so
@@ -1348,7 +1356,15 @@ impl Interpreter {
             self.pending_rw_writeback_sources
                 .truncate(saved_pending_rw_writeback_len);
             self.module.strict_mode = saved_strict_mode;
-            let imported = std::mem::replace(&mut self.module.module_imported_names, saved_imports);
+            let mut imported =
+                std::mem::replace(&mut self.module.module_imported_names, saved_imports);
+            self.take_module_unit_bound_imports(
+                saved_unit_bound_imports,
+                &saved_plain_env,
+                &mut unit_lex_names,
+                &mut saved_unit_lex,
+                &mut imported,
+            );
             let module_routine_aliases = std::mem::replace(
                 &mut self.module.imported_routine_aliases,
                 saved_imported_routine_aliases,

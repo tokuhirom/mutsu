@@ -12,7 +12,9 @@ pub(crate) mod exported_vars;
 mod import_tags;
 mod installed_repo;
 mod nested_imports;
+mod scanned_exports;
 mod source_scan;
+
 use decl_scan::scan_module_decls;
 use dynamic_stash::probe_dynamic_exports;
 use enum_values::import_admits;
@@ -22,6 +24,8 @@ use export_hook::{
     collect_unit_scope_routines, declares_export_sub,
 };
 pub(crate) use import_tags::register_import_tags;
+use scanned_exports::record_scanned_exports;
+pub(crate) use scanned_exports::{CanonicalScans, canonical_export_scans};
 
 /// Everything one module-file scan learns that importers need replayed:
 /// the `is export` subs, the declared type names (own + transitive), and the
@@ -306,27 +310,7 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
         // a zero-argument slang activation would call its four-argument
         // EXPORT with no arguments and fail every Slangify-based module.
         record_use_scan_outcome(module, module != "Slangify" && scan.uses_slangify);
-        exported_vars::record(
-            module,
-            if scan.dynamic_export_stash {
-                None
-            } else if scan.declares_export_hook {
-                // The hook's literal keys only (ADR-8751): what else the
-                // module exports keeps the run-time import.
-                Some(exported_vars::hook_vars(module, &scan.hook_value_keys))
-            } else {
-                Some(scan.exported_vars.as_slice().into())
-            },
-        );
-        exported_types::record_hook_type_keys(module, &scan.hook_type_keys);
-        if scan.unlisted_exported_vars || scan.declares_export_hook {
-            exported_vars::record_incomplete(module);
-        }
-        exported_types::record(
-            module,
-            (!scan.declares_export_hook && !scan.dynamic_export_stash)
-                .then(|| scan.exported_types.as_slice().into()),
-        );
+        record_scanned_exports(module, &scan);
         apply_scan_types(&scan, import_tags);
         nested_imports::record(&scan);
         apply_module_exports(&scan.exports);
@@ -611,6 +595,10 @@ fn find_and_scan_module(module: &str) -> Option<Rc<ModuleScanResult>> {
         record_scan_dep(module, None, None);
         return None;
     };
+    scan_module_at(module, path)
+}
+
+fn scan_module_at(module: &str, path: String) -> Option<Rc<ModuleScanResult>> {
     if let Some(hit) = MODULE_SCAN_CACHE.with(|c| c.borrow().get(&path).cloned()) {
         record_scan_result_as_dep(module, &path, &hit);
         return Some(hit);
