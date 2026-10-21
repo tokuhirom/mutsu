@@ -4,7 +4,7 @@ use Test;
 # receiver bypasses (ADR-11276 slice 5, #11276). The rows answer each of these
 # receivers; every expected value is Rakudo's.
 
-plan 31;
+plan 35;
 
 # A user `Real` class: the `Real` role's methods bridge through `Bridge`.
 class R does Real { has $.v; method Bridge { $!v.Num } }
@@ -61,3 +61,7 @@ is-deeply Supply.from-list(1, 2, 3).head(2).list, (1, 2), 'Supply.head';
 # The core type objects' class-level methods.
 use nqp;
 is nqp::elems(Thread.usage), 6, 'Thread.usage';
+is nqp::elems(ThreadPoolScheduler.usage), 10, 'ThreadPoolScheduler.usage on the type object';
+is nqp::elems($*SCHEDULER.usage), 10, 'ThreadPoolScheduler.usage on the scheduler';
+ok Kernel.cpu-cores > 0, 'Kernel.cpu-cores on the type object';
+ok Kernel.total-memory > 0, 'Kernel.total-memory on the type object';

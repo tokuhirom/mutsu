@@ -37,6 +37,16 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::TYPE_OBJECT_OK,
         named: &[],
     },
+    // `Thread.usage`, a class method: the process-wide thread counters
+    // (`runtime::thread_usage`).
+    MethodRow {
+        owner: "Thread",
+        name: "usage",
+        arity: 0,
+        handler: Handler::Narrow(usage_row),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
     row!("Thread", "app_lifetime", Handler::Narrow(app_lifetime_row)),
     row!("Thread", "Str", Handler::Narrow(str_row)),
     row!("Thread", "gist", Handler::Narrow(gist_row)),
@@ -129,6 +139,15 @@ fn initial_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeE
     let attrs = attrs_of(target, "Thread")?;
     Some(Ok(Value::truth(
         attrs.get("is_initial").is_some_and(Value::truthy),
+    )))
+}
+
+/// `Thread.usage`: started, aborted, completed, joined, yields and the
+/// highest thread id, as a native int list.
+// Cost: O(1).
+fn usage_row(_target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    Some(Ok(super::supplier_scheduler::native_int_row(
+        &crate::runtime::thread_usage::thread_usage(),
     )))
 }
 
