@@ -301,7 +301,7 @@ impl Interpreter {
             self.nominal_type_conforms(x, y)
         });
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
-        self.bind_ranked_candidates(name, args, ranked, rejected)
+        self.bind_ranked_candidates(name, args, fetched.as_deref(), ranked, rejected)
     }
 
     /// `args` with every `Proxy` argument (also under a `VarRef`) replaced by
@@ -333,6 +333,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         args: &[Value],
+        fetched: Option<&[Value]>,
         ranked: Vec<(MultiRank, Arc<FunctionDef>)>,
         mut rejected: Option<&mut std::collections::HashSet<u64>>,
     ) -> Resolved {
@@ -382,7 +383,17 @@ impl Interpreter {
                     .count();
                 positional_arg_count == def.params.len()
             } else {
-                self.args_match_multi_candidate_in_scope(args, &def)
+                // A candidate that binds the caller's container (`is rw`,
+                // `is raw`, `\x`, `|c`) is matched on the Proxy itself; any
+                // other sees what the Proxy's FETCH answered, as the binder
+                // type-checks it (`multi f(%h)` for a Proxy over a Hash).
+                let match_args = match fetched {
+                    Some(fetched) if !def.param_defs.iter().any(|p| p.binds_caller_container()) => {
+                        fetched
+                    }
+                    _ => args,
+                };
+                self.args_match_multi_candidate_in_scope(match_args, &def)
             };
             if let Some(e) = self.take_where_exception() {
                 if threw.is_none() {
