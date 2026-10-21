@@ -139,25 +139,6 @@ pub(crate) fn native_method_0arg(
     native_method_0arg_cascade(target, method_sym)
 }
 
-/// The row a plain `Match` reaches for `method` (its own, then `Cool`'s
-/// audited text rows and `Mu`'s and `Any`'s audited ones), invoked on a match
-/// the table has no shape for (a grammar cursor, an instance of a `Match`
-/// subclass): their structure is a `Match`'s, so every such row reads them as
-/// it reads a plain match.
-// Cost: O(1) to find the row, plus the row's own cost.
-pub(crate) fn match_owner_row(
-    target: &Value,
-    method: Symbol,
-    args: &[Value],
-) -> Option<Result<Value, RuntimeError>> {
-    crate::builtins::method_table::answer_as(
-        crate::value::DispatchShape::Match,
-        target,
-        method,
-        args,
-    )
-}
-
 /// [`native_method_0arg`] without the method table: the name-matching
 /// cascade, which `method_table`'s debug cross-check also runs.
 pub(crate) fn native_method_0arg_cascade(
@@ -190,17 +171,6 @@ pub(crate) fn native_method_0arg_cascade(
             }
         }
         None => {}
-    }
-
-    // A lazy Match the table has no shape for (a grammar cursor) answers
-    // `Match`'s rows here, straight from the capture node, so the probe
-    // gauntlet in between (each a `view()`, which would materialize the Match)
-    // never runs for the scalar accessors (`from`, `to`, `pos`, `Str`, ...).
-    // Cost: O(k) to find the row, k = rows named `method`, plus the row's own.
-    if target.is_lazy_match_value()
-        && let Some(result) = match_owner_row(target, method_sym, &[])
-    {
-        return Some(result);
     }
 
     // Seq consumed/cached state checks.
@@ -630,24 +600,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // `method_table::instances::exception::redirect` (ADR-11276 §9.39);
     // `line`, `file` and `filename` are mutsu's own accessors. The control
     // methods (`throw`, `resume`, ...) are interpreter rows (§9.163).
-    // Match object methods
-    if let ValueView::Instance { .. } = target.view()
-        && target.is_match_instance()
-    {
-        // `Match`'s rows answer a match the table has no shape for (a grammar
-        // cursor, an instance of a subclass) through their owner.
-        if let Some(result) = match_owner_row(target, Symbol::intern(method), &[]) {
-            return Some(result);
-        }
-        // `Any`'s list methods (`self.list.METHOD`) were answered on the
-        // positional captures before the call reached here
-        // (`method_table::receiver_step`, §9.98); every other name is
-        // answered on the Match itself, never on its matched string (§9.96):
-        // a row of `Mu`, `Any`, `Capture` or `Cool` it reaches, or the generic
-        // arms below. `.so` of a zero-width match is True (#9180), and a name
-        // Rakudo's `Match` lacks is `X::Method::NotFound`.
-    }
-
     // A receiver with no shape that is a `Cool` reaches `Cool`'s text rows
     // once the cascade declined it (ADR-11276 §9.79); an instance needs the
     // interpreter's MRO and is answered by the entries that have one.
