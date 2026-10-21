@@ -120,7 +120,9 @@ impl Interpreter {
                 args.push(self.eval_block_value(&[Stmt::Expr(expr.clone())])?);
             }
             self.module.pending_use_export_args = (!args.is_empty()).then_some(args);
-            self.use_module_with_tags(module, tags)?;
+            // In position, like the compiled `use`: a LEAVE phaser the hook
+            // attaches (`$*R.find-attach-target`) belongs to this compunit.
+            self.with_use_attach_depth(|this| this.use_module_with_tags(module, tags))?;
         }
         Ok(rest)
     }
