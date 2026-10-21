@@ -124,8 +124,8 @@ impl Compiler {
                 let id = Self::with_block_multis(id, local);
                 if !self.lexical_import_chain.contains(&id) {
                     self.lexical_import_chain.push(id);
-                    let mark = self.inherited_scope_routine_decls.len()
-                        + self.scope_routine_decls.len();
+                    let mark =
+                        self.inherited_scope_routine_decls.len() + self.scope_routine_decls.len();
                     self.lexical_set_decl_mark.insert(id, mark);
                 }
             }
@@ -210,11 +210,9 @@ impl Compiler {
     fn set_id_matches(id: Symbol, base_text: &str) -> bool {
         let text = id.resolve();
         text.as_str() == base_text
-            || text
-                .strip_prefix(base_text)
-                .is_some_and(|rest| {
-                    rest.starts_with(crate::runtime::lexical_imports::BLOCK_MULTIS_MARK)
-                })
+            || text.strip_prefix(base_text).is_some_and(|rest| {
+                rest.starts_with(crate::runtime::lexical_imports::BLOCK_MULTIS_MARK)
+            })
     }
 
     /// Declare the import sets of the main unit's top-level `use`s (ADR-8751).

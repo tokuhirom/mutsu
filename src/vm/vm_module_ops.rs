@@ -123,7 +123,7 @@ impl Interpreter {
                 // The type's own name; else the module that is the type
                 // (`unit role A::B::R is export` in `A/B/R.rakumod`) or one
                 // it declares inside its package.
-                let in_module = format!("{module}::{name}");
+                let in_module = crate::qualified::qualified_text(module, name);
                 [name, module, in_module.as_str()]
                     .into_iter()
                     .filter(|candidate| {
