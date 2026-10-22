@@ -235,7 +235,7 @@ pub(crate) fn native_method_0arg_cascade(
             method,
         ));
     }
-    dispatch_core(target, method)
+    dispatch_core(target, method_sym)
 }
 
 /// True for a value whose element count cannot be reported, so numeric/count
@@ -367,7 +367,8 @@ pub(crate) fn unicode_foldcase(s: &str) -> String {
     out
 }
 
-fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
+fn dispatch_core(target: &Value, method_sym: Symbol) -> Option<Result<Value, RuntimeError>> {
+    let method = method_sym.as_str();
     // `Code.Capture` and `Code.clone` are rows of the method table
     // (`method_table::code`, ADR-12523 slice 5).
     if matches!(method, "Capture" | "clone")
@@ -404,5 +405,5 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // A receiver with no shape that is a `Cool` reaches `Cool`'s text rows
     // once the cascade declined it (ADR-11276 §9.79); an instance needs the
     // interpreter's MRO and is answered by the entries that have one.
-    crate::builtins::method_table::answer_shapeless(None, target, Symbol::intern(method), &[])
+    crate::builtins::method_table::answer_shapeless(None, target, method_sym, &[])
 }
