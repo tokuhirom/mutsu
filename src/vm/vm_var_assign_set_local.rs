@@ -1329,8 +1329,9 @@ impl Interpreter {
         // above excludes outright because a named bind denotes another
         // variable. Restricted to a DECLARATION: a parameter bind reaches this
         // same store, and an `is raw` / `\x` parameter bound to an array must
-        // stay assignable.
-        let bind_marks_non_scalar_container = is_vardecl
+        // stay assignable. A statement-level rebind (`$x := f(@a)`) marks it
+        // just as the declaration `my $x := f(@a)` does.
+        let bind_marks_non_scalar_container = (is_vardecl || is_rebind)
             && scalar_bind
             && ((unnamed_bind_source
                 && !bind_marks_itemized_scalar
@@ -2439,7 +2440,11 @@ impl Interpreter {
             // the bind's own decision and let the assignment through (#9277).
             // A bind to a bare type object (`$v := IB`, #9730) is the same
             // shape with a different wording and needs the same exception.
-            if !self.no_readonly_vars() && !bind_marks_immutable && !bind_marks_type_object {
+            if !self.no_readonly_vars()
+                && !bind_marks_immutable
+                && !bind_marks_non_scalar_container
+                && !bind_marks_type_object
+            {
                 self.unmark_readonly(name);
             }
             if crate::env::sigilless_readonly_keys_possible() {
