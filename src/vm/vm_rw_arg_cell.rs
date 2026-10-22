@@ -98,4 +98,64 @@ impl Interpreter {
             args[idx] = cell;
         }
     }
+
+    /// Publish the caller's shared cell for a scalar `is rw`/`is raw` argument
+    /// into env before the general binder runs (#12907).
+    ///
+    /// A frame entered through the light path keeps an `is rw` parameter only in
+    /// its local slot, as a shared `ContainerRef` cell (ADR-0109); env has no
+    /// entry for it. The binder looks the caller's cell up by name in env, found
+    /// none and boxed a fresh cell, so a write by the callee never reached the
+    /// caller's variable (`sub top($l is rw) { typed($l) }`).
+    // Cost: O(p), p = parameters of the callee.
+    pub(super) fn publish_rw_arg_cells(
+        &mut self,
+        param_defs: &[crate::ast::ParamDef],
+        args: &[Value],
+    ) {
+        for (idx, pd) in param_defs
+            .iter()
+            .filter(|pd| !pd.is_invocant && !pd.named)
+            .enumerate()
+        {
+            if !pd.traits.iter().any(|t| t == "rw" || t == "raw") {
+                continue;
+            }
+            let Some(arg) = args.get(idx) else { break };
+            let Some(slot) = arg.varref_slot().filter(|slot| *slot != u32::MAX) else {
+                continue;
+            };
+            let ValueView::VarRef { name, .. } = arg.view() else {
+                continue;
+            };
+            let Some(cell) = self.locals.get(slot as usize).filter(|v| v.is_container_ref())
+            else {
+                continue;
+            };
+            let cell = cell.clone();
+            self.env_mut().insert(name.resolve().to_string(), cell);
+        }
+    }
+
+    /// [`Self::publish_rw_arg_cells`] for a call whose arguments carry no
+    /// `VarRef` (a method call): the caller's argument variables are named by
+    /// the call site's slot map instead.
+    // Cost: O(s), s = slotted argument sources of the call.
+    pub(super) fn publish_rw_arg_cells_by_source(&mut self) {
+        if self.pending_call_arg_source_slots.is_empty() {
+            return;
+        }
+        let cells: Vec<(crate::symbol::Symbol, Value)> = self
+            .pending_call_arg_source_slots
+            .iter()
+            .filter(|(_, slot)| **slot != u32::MAX)
+            .filter_map(|(name, slot)| {
+                let cell = self.locals.get(*slot as usize)?;
+                cell.is_container_ref().then(|| (*name, cell.clone()))
+            })
+            .collect();
+        for (name, cell) in cells {
+            self.env_mut().insert(name.resolve().to_string(), cell);
+        }
+    }
 }
