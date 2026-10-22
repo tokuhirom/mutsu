@@ -603,36 +603,7 @@ impl Interpreter {
                 .map(|kw| kw.to_string_value());
             let (declare_how_installed, declare_how_has_compose) =
                 if let Some(keyword) = declare_how_keyword {
-                    let how_name = crate::qualified::qualified(
-                        Symbol::intern("EXPORTHOW::DECLARE"),
-                        Symbol::intern(&keyword),
-                    );
-                    // The HOW can be either a constant in the env or a class
-                    // registered at this name in the type registry.
-                    let how_type = self
-                        .get_env_with_main_alias_sym(how_name.as_str(), how_name)
-                        .or_else(|| {
-                            self.registry()
-                                .classes
-                                .contains_key(how_name.as_str())
-                                .then(|| Value::package(how_name))
-                        })
-                        .or_else(|| {
-                            // A built-in declarator whose HOW the module's
-                            // `EXPORTHOW::SUPERSEDE` replaced.
-                            let name = crate::qualified::qualified(
-                                Symbol::intern("EXPORTHOW::SUPERSEDE"),
-                                Symbol::intern(&keyword),
-                            );
-                            self.get_env_with_main_alias_sym(name.as_str(), name)
-                                .or_else(|| {
-                                    self.registry()
-                                        .classes
-                                        .contains_key(name.as_str())
-                                        .then(|| Value::package(name))
-                                })
-                        })
-                        .or_else(|| self.slang_declarator_how(&keyword));
+                    let how_type = self.declarator_how_type(&keyword);
                     if let Some(how_type) = how_type {
                         (
                             true,
@@ -1163,6 +1134,27 @@ impl Interpreter {
         self.stack.push(val);
     }
 
+    /// The HOW a declaration written with the declarator `keyword` is built
+    /// with: the module's `EXPORTHOW::DECLARE` entry, the `EXPORTHOW::SUPERSEDE`
+    /// entry that replaces a built-in declarator's HOW, or a slang's own record.
+    // Cost: O(1), a bounded number of env and registry probes.
+    fn declarator_how_type(&mut self, keyword: &str) -> Option<Value> {
+        let probe = |this: &mut Self, package: &str| {
+            let name = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(keyword));
+            // The HOW can be either a constant in the env or a class
+            // registered at this name in the type registry.
+            this.get_env_with_main_alias_sym(name.as_str(), name).or_else(|| {
+                this.registry()
+                    .classes
+                    .contains_key(name.as_str())
+                    .then(|| Value::package(name))
+            })
+        };
+        probe(self, "EXPORTHOW::DECLARE")
+            .or_else(|| probe(self, "EXPORTHOW::SUPERSEDE"))
+            .or_else(|| self.slang_declarator_how(keyword))
+    }
+
     /// Push the role group most recently installed by `RegisterRole`.
     /// `RoleGroupToCandidate` immediately converts it to the individual role
     /// declaration that expression position must yield.
@@ -1653,6 +1645,20 @@ impl Interpreter {
             // A class composed before this registration ran (a hoisted shell)
             // copied the role's methods and attributes without these captures.
             self.give_role_captures_to_composed_classes(&qualified_name);
+
+            // A role declared through a superseded `role` declarator (or a
+            // role-kind slang declarator) is built with that declarator's HOW.
+            let declare_how_keyword = custom_traits
+                .iter()
+                .find(|(trait_name, _)| trait_name == crate::parser::DECLARE_HOW_TRAIT)
+                .and_then(|(_, arg)| arg.as_ref())
+                .and_then(crate::opcode::DeclTraitArg::literal)
+                .map(|kw| kw.to_string_value());
+            if let Some(keyword) = declare_how_keyword
+                && let Some(how_type) = self.declarator_how_type(&keyword)
+            {
+                self.install_custom_class_how(&qualified_name, how_type)?;
+            }
 
             self.record_module_owned_type(&qualified_name);
             self.types.last_registered_role_key = Some(qualified_name.clone());
