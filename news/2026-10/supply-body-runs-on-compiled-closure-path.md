@@ -10,7 +10,7 @@ The carrier had also given the body, as a side effect of going through
 `run_nested`, the panic-to-exception boundary: a Rust panic raised by the body
 (overflow, index out of range) reached the consumer's QUIT as a catchable
 "Internal error". `call_compiled_closure` has no such frame, so the body's
-re-entry point (`run_supply_body`) now wraps the call in
+re-entry point (`run_on_demand_body_streaming`) now wraps the call in
 `run_guarded_against_panic`, which shares its `catch_unwind` and frame-recovery
 steps with `run_inner_guarded`.
 
