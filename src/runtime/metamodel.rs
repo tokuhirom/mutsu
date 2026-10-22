@@ -636,11 +636,17 @@ impl Interpreter {
     pub(crate) fn declare_drive_how_protocol(
         &mut self,
         class_name: &str,
+        is_rw: bool,
     ) -> Result<(), RuntimeError> {
         let Some(how_val) = self.registry().class_how_values.get(class_name).cloned() else {
             return Ok(());
         };
         let type_obj = Value::package(Symbol::intern(class_name));
+        // `is rw` on the declaration reaches the HOW's `set_rw` (ValueClass's
+        // HOW dies there: "value-class Bla can't be rw").
+        if is_rw && self.declare_how_has_user_method(&how_val, "set_rw") {
+            self.call_method_with_values(how_val.clone(), "set_rw", vec![type_obj.clone()])?;
+        }
         if self.declare_how_has_user_method(&how_val, "new_type") {
             self.types.pending_declare_new_type = Some(type_obj.clone());
             let result = self.call_method_with_values(
