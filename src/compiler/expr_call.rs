@@ -317,8 +317,16 @@ impl Compiler {
         }
         let is_positional = args.iter().skip(4).find_map(|a| match a {
             Expr::Literal(v) => match v.view() {
-                crate::value::ValueView::Str(s) if s.as_ref() == crate::ast::SUBSCRIPT_POSITIONAL_MARKER => Some(true),
-                crate::value::ValueView::Str(s) if s.as_ref() == crate::ast::SUBSCRIPT_ASSOCIATIVE_MARKER => Some(false),
+                crate::value::ValueView::Str(s)
+                    if s.as_ref() == crate::ast::SUBSCRIPT_POSITIONAL_MARKER =>
+                {
+                    Some(true)
+                }
+                crate::value::ValueView::Str(s)
+                    if s.as_ref() == crate::ast::SUBSCRIPT_ASSOCIATIVE_MARKER =>
+                {
+                    Some(false)
+                }
                 _ => None,
             },
             _ => None,
