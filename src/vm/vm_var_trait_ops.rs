@@ -92,6 +92,49 @@ impl Interpreter {
         through_cell
     }
 
+    pub(super) fn exec_var_trait_ctl_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        ctl: crate::opcode::VarTraitCtl,
+        slot: Option<u32>,
+    ) -> Result<(), RuntimeError> {
+        use crate::opcode::VarTraitCtl;
+        let name = Self::const_str(code, name_idx).to_string();
+        match ctl {
+            VarTraitCtl::Site(site) => {
+                self.control.var_trait_site = site.map(|(site, owner)| crate::ast::VarTraitSite {
+                    site: Self::const_str(code, site).to_string(),
+                    owner: Self::const_str(code, owner).to_string(),
+                });
+            }
+            VarTraitCtl::SeedStash => {
+                let seeded = self
+                    .read_var_trait_target(code, slot, &name)
+                    .unwrap_or(Value::NIL);
+                self.stack.push(seeded);
+            }
+            VarTraitCtl::SeedRestore => {
+                let seeded = self.stack.pop().unwrap_or(Value::NIL);
+                if !matches!(seeded.view(), ValueView::Nil | ValueView::Package(_))
+                    && !self.write_var_trait_target(code, slot, &name, seeded.clone())
+                {
+                    self.set_env_with_main_alias(&name, seeded);
+                }
+            }
+            VarTraitCtl::Replay { site_idx, kind_idx } => {
+                let site = Self::const_str(code, site_idx).to_string();
+                let kind = Self::const_str(code, kind_idx).to_string();
+                if let Some(written) = self.replay_var_trait_phasers(&site, &kind, &name)?
+                    && !self.write_var_trait_target(code, slot, &name, written.clone())
+                {
+                    self.set_env_with_main_alias(&name, written);
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn exec_apply_var_trait_op(
         &mut self,
         code: &CompiledCode,
@@ -102,40 +145,6 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         let trait_name = Self::const_str(code, trait_name_idx).to_string();
-        if trait_name == crate::runtime::begin_prologue::VAR_TRAIT_SITE {
-            let site = self.stack.pop().unwrap_or(Value::NIL);
-            self.control.var_trait_site = (!site.is_nil()).then(|| site.to_string_value());
-            return Ok(());
-        }
-        if trait_name == crate::runtime::begin_prologue::VAR_TRAIT_SEED_STASH {
-            let seeded = self
-                .read_var_trait_target(code, slot, name)
-                .unwrap_or(Value::NIL);
-            self.stack.push(seeded);
-            return Ok(());
-        }
-        if trait_name == crate::runtime::begin_prologue::VAR_TRAIT_SEED_RESTORE {
-            let seeded = self.stack.pop().unwrap_or(Value::NIL);
-            if !matches!(seeded.view(), ValueView::Nil | ValueView::Package(_)) {
-                let name = name.to_string();
-                if !self.write_var_trait_target(code, slot, &name, seeded.clone()) {
-                    self.set_env_with_main_alias(&name, seeded);
-                }
-            }
-            return Ok(());
-        }
-        if let Some(kind) =
-            trait_name.strip_prefix(crate::runtime::begin_prologue::VAR_TRAIT_REPLAY)
-        {
-            let site = self.stack.pop().unwrap_or(Value::NIL).to_string_value();
-            let name = name.to_string();
-            if let Some(written) = self.replay_var_trait_phasers(&site, kind, &name)?
-                && !self.write_var_trait_target(code, slot, &name, written.clone())
-            {
-                self.set_env_with_main_alias(&name, written);
-            }
-            return Ok(());
-        }
         // Consume the `StashVarDeclInit` capture unconditionally, right here, so
         // a declaration whose trait takes some *other* branch below cannot leave
         // a stale RHS behind for the next custom-container tie to pick up.

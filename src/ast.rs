@@ -936,6 +936,36 @@ pub(crate) fn next_end_phaser_index() -> u32 {
     NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
+/// What an attribute's `is built` trait says (`has $.x is built(...)`).
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    bincode::Encode,
+    bincode::Decode,
+)]
+pub(crate) enum BuiltTrait {
+    /// `is built(False)`: `.new` leaves the attribute alone.
+    No,
+    /// `is built`: `.new` initializes it from the named argument.
+    Yes,
+    /// `is built(:bind)`: `.new` binds the named argument to it.
+    Bind,
+}
+
+impl BuiltTrait {
+    /// Whether `.new` initializes the attribute from a named argument.
+    // Cost: O(1).
+    pub(crate) fn is_built(self) -> bool {
+        self != Self::No
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum PhaserKind {
     Begin,
@@ -2033,6 +2063,42 @@ pub(crate) struct NestedTypeShell {
     pub(crate) decl: Stmt,
 }
 
+/// The declaration a lifted variable trait runs for.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct VarTraitSite {
+    /// The key `Variable.block.add_phaser` files its phasers under.
+    pub(crate) site: String,
+    /// The type of the code object that owns the declaration (`Sub`,
+    /// `Method`, `Submethod`, `Block`), as `Variable.block.^name` reports it.
+    pub(crate) owner: String,
+}
+
+/// One step of a lifted variable-trait application (ADR-12131, #14463): what
+/// the BEGIN prologue and the declaring scope's phaser queues do around a
+/// `my $x is foo` declaration, as a typed node instead of a synthetic trait
+/// name.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum VarTraitOp {
+    /// Applies the user trait `trait_name` (with its argument) to the variable.
+    Apply {
+        trait_name: String,
+        arg: Option<Expr>,
+    },
+    /// Sets, or with `None` clears, the declaration site the traits applied
+    /// after it file their `Variable.block` phasers under.
+    Site(Option<VarTraitSite>),
+    /// Replays the phasers of `kind` (`ENTER`, `LEAVE`, ...) filed under
+    /// `site`.
+    Replay { site: String, kind: String },
+    /// Pushes the variable's current value, which the declaration that
+    /// follows would overwrite (the declaration of a lifted variable whose
+    /// block's `ENTER` queue may have seeded it).
+    SeedStash,
+    /// Pops the value [`VarTraitOp::SeedStash`] pushed and puts it back when it
+    /// is defined.
+    SeedRestore,
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Stmt {
     VarDecl {
@@ -2309,6 +2375,12 @@ pub(crate) enum Stmt {
         tags: Vec<String>,
     },
     Block(Vec<Stmt>),
+    /// A step of a lifted variable-trait application on the declared variable
+    /// `name`; see [`VarTraitOp`].
+    VarTrait {
+        name: String,
+        op: VarTraitOp,
+    },
     /// Non-lexical statement sequence used by parser desugarings.
     SyntheticBlock(Vec<Stmt>),
     /// Opens the region of a loop iteration whose early exit runs the loop's
@@ -2630,7 +2702,7 @@ pub(crate) enum Stmt {
         /// `is DEPRECATED` message: None = not deprecated, Some("") = deprecated without message,
         /// Some(msg) = deprecated with custom message.
         deprecated_message: Option<String>,
-        is_built: Option<bool>,
+        is_built: Option<BuiltTrait>,
         /// Unknown traits: list of `(kind, name, arg)` tuples for unknown trait
         /// applications (e.g., `is bar` -> `("is", "bar", None)`, `is doc('x')` ->
         /// `("is", "doc", Some(<'x'>))`, `will bar` -> `("will", "bar", None)`).

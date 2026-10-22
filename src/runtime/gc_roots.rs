@@ -132,9 +132,6 @@ impl Interpreter {
         for code in self.attached_leave_phasers() {
             visitor.visit_value(code);
         }
-        for env in self.closure_env_overrides.values() {
-            env.visit_values(visitor);
-        }
         for env in &self.caller_env_stack {
             env.visit_values(visitor);
         }
@@ -272,7 +269,6 @@ impl Interpreter {
         }
         visit_map_values(visitor, &self.lexicals.escaped_our_lexical_cells);
         visit_map_values(visitor, &self.lexicals.state_vars);
-        visit_map_values(visitor, &self.lexicals.closure_captured_state);
         self.control
             .once_values
             .visit_done_values(|v| visitor.visit_value(v));

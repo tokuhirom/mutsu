@@ -116,7 +116,7 @@ was subsumed and deleted in #2758. The remaining 3 mechanisms are non-redundant 
 | Mechanism | Role | Deletable? (empirical) |
 |------|------|----------------|
 | `owned_captures` (`compute_owned_captures`) | Loop per-iteration **value freezing** | ❌ read-only captures are not cell-ified, no substitute |
-| `closure_captured_state` (per-instance value freeze + writeback) | State maintenance for returned closures | ❌ load-bearing for precompiled deserialize (cells cannot be serialized, `precompilation.t` regression)|
+| `closure_captured_state` (per-instance value freeze + writeback) | State maintenance for returned closures | ❌ in 2026-06 (load-bearing for precompiled deserialize, `precompilation.t` regression); ✅ retired 2026-10-22 by ADR-0055 slice 5 (#14521), GH2897 green |
 | `box_captured_lexicals` | Cell creation at capture time (escape/loop) | ❌ capture time is the right place. Moving to declaration time breaks `let`/`temp` restore (`let.t` regression)|
 | `multi_captured_mutated_locals` (#2751) | Sibling-closure boxing (interim proxy) | ✅ subsumed by the #2758 escape signal, deleted |
 

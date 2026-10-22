@@ -250,11 +250,6 @@ impl Interpreter {
             .filter(|v| v.is_container_ref())
     }
 
-    /// Get a cloned copy of the persisted closure env for a given closure id.
-    pub(crate) fn get_closure_env_override(&self, id: u64) -> Option<crate::env::Env> {
-        self.closure_env_overrides.get(&id).cloned()
-    }
-
     /// Check whether a sub has an active (non-empty) wrap chain.
     pub(crate) fn has_wrap_chain(&self, sub_id: u64) -> bool {
         self.dispatch
@@ -684,26 +679,6 @@ impl Interpreter {
         })
     }
 
-    /// Read per-closure-instance captured-variable state (hot closure-call path).
-    pub(crate) fn get_closure_captured_state(&self, id: u64, name: Symbol) -> Option<&Value> {
-        self.lexicals.closure_captured_state.get(&(id, name))
-    }
-
-    /// Persist per-closure-instance captured-variable state (hot closure-call path).
-    ///
-    /// A package variable (`$P::x`) is global, not captured: a per-instance
-    /// copy would pin the closure to the value it last wrote and hide every
-    /// later write from elsewhere (User::Timezone's override), so it is never
-    /// persisted.
-    pub(crate) fn set_closure_captured_state(&mut self, id: u64, name: Symbol, value: Value) {
-        if crate::qualified::is_package_var(name) {
-            return;
-        }
-        self.lexicals
-            .closure_captured_state
-            .insert((id, name), value);
-    }
-
     /// Drop all per-closure-instance captured-variable state for a closure id.
     /// Used by the react drive loop so a `whenever`/`LAST`/`QUIT` callback re-reads
     /// its captured-outer lexicals from the live caller env (which every sibling
@@ -838,12 +813,6 @@ impl Interpreter {
                 },
             )
         }
-    }
-
-    pub(crate) fn clear_closure_captured_state_for(&mut self, id: u64) {
-        self.lexicals
-            .closure_captured_state
-            .retain(|(entry_id, _), _| *entry_id != id);
     }
 
     /// Build the shared-store key for a `once` site at bytecode position

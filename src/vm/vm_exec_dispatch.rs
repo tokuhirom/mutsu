@@ -7777,6 +7777,15 @@ impl Interpreter {
                 self.exec_apply_var_trait_op(code, *name_idx, *trait_name_idx, *has_arg, *slot)?;
                 *ip += 1;
             }
+            // Cost: O(1) for the site and the seed steps; a replay runs the phasers filed under its site (O(p), p = phasers filed).
+            OpCode::VarTraitCtl {
+                name_idx,
+                ctl,
+                slot,
+            } => {
+                self.exec_var_trait_ctl_op(code, *name_idx, *ctl, *slot)?;
+                *ip += 1;
+            }
             // Cost: O(1) (one indexed caller frame, one hashed probe).
             OpCode::GetCallerVar { name_idx, depth } => {
                 let name = Self::const_str(code, *name_idx);

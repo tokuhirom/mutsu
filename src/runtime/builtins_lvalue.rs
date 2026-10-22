@@ -514,63 +514,10 @@ impl Interpreter {
                 self.record_caller_var_writeback(&name);
             }
         }
-        // After STORE executes, propagate its closure env changes to FETCH's
-        // closure env override so that shared captured variables stay in sync.
-        // This is needed because mutsu closures capture environments by value
-        // (copy-on-write), so two closures from the same scope diverge on mutation.
-        self.sync_proxy_closure_envs(&fetcher, &storer);
         if fetcher.is_nil() {
             return Ok(None);
         }
         Ok(Some(fetcher))
-    }
-
-    /// Synchronize closure environment overrides between Proxy FETCH and STORE.
-    /// After STORE modifies captured variables, propagate those changes to FETCH
-    /// so both closures see the same state for shared variables.
-    fn sync_proxy_closure_envs(&mut self, fetcher: &Value, storer: &Value) {
-        let (Some(fetch_data), Some(store_data)) = (
-            match fetcher.view() {
-                ValueView::Sub(d) => Some(d),
-                _ => None,
-            },
-            match storer.view() {
-                ValueView::Sub(d) => Some(d),
-                _ => None,
-            },
-        ) else {
-            return;
-        };
-        let fetch_id = fetch_data.id;
-        let store_id = store_data.id;
-        // Get the updated STORE env (after call_sub_value persisted it)
-        let store_env = match self.closure_env_overrides.get(&store_id) {
-            Some(env) => env.clone(),
-            None => return,
-        };
-        // Find variables that are shared between FETCH and STORE captured envs
-        let fetch_base = self
-            .closure_env_overrides
-            .get(&fetch_id)
-            .cloned()
-            .unwrap_or_else(|| fetch_data.env.clone());
-        let mut updated_fetch = fetch_base.clone();
-        let mut changed = false;
-        for key in fetch_base.keys() {
-            // Skip internal/metadata keys
-            if key.starts_with("__mutsu_") || key.starts_with("&?") || key == "?LINE" {
-                continue;
-            }
-            if let Some(store_val) = store_env.get_sym(*key)
-                && fetch_base.get_sym(*key) != Some(store_val)
-            {
-                updated_fetch.insert_sym(*key, store_val.clone());
-                changed = true;
-            }
-        }
-        if changed {
-            self.closure_env_overrides.insert(fetch_id, updated_fetch);
-        }
     }
 
     pub(super) fn assign_named_sub_lvalue_with_values(

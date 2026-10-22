@@ -304,7 +304,10 @@ impl Interpreter {
         policy: SupplyDrivePolicy,
         prewired: Option<(ReactWaker, Vec<(u64, u64)>)>,
     ) -> Result<(), RuntimeError> {
-        if react_subs.is_empty() {
+        // An empty list with nested `whenever`s queued for adoption is not
+        // empty: a static source's replay registered them and the loop's first
+        // round adopts them.
+        if react_subs.is_empty() && self.async_state.pending_react_subscriptions.is_empty() {
             // Defensive: a prewired caller never passes an empty subscription
             // list, but if one did, its sinks must not leak.
             if let Some((_, sink_regs)) = prewired {
@@ -397,7 +400,7 @@ impl Interpreter {
 
     /// Is this value one of the 5-element `[source, body, [LAST…], [QUIT…], id]`
     /// arrays `whenever` registers, rather than a value a supply body emitted?
-    pub(super) fn is_whenever_subscription_marker(value: &Value) -> bool {
+    pub(crate) fn is_whenever_subscription_marker(value: &Value) -> bool {
         let ValueView::Array(items, ..) = value.view() else {
             return false;
         };
@@ -430,14 +433,6 @@ impl Interpreter {
         // sequences; the drive loop's ordered retirement then retires it as soon
         // as it owes nothing. Dropping the marker outright discarded them.
         let pending: Vec<Value> = std::mem::take(&mut self.async_state.pending_react_subscriptions);
-        for marker in &pending {
-            if let ValueView::Array(items, ..) = marker.view()
-                && items.len() >= 2
-                && let ValueView::Sub(data) = items[1].view()
-            {
-                self.async_state.nested_react_callbacks.insert(data.id);
-            }
-        }
         let first_new = react_subs.len();
         let mut stream_base = None;
         let finished = self.build_react_subscriptions(&pending, react_subs, &mut stream_base)?;

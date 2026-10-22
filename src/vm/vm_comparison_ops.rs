@@ -173,6 +173,13 @@ fn deref_allomorph_numeric(v: Value) -> Value {
 
 /// Recursively apply cmp semantics to two values (for use in list element comparison).
 pub(super) fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
+    // A list element held in a scalar container (`($a, 1)`, `($!attr, 1)`) is
+    // compared by its value, not stringified (#14170).
+    if matches!(left.view(), ValueView::ContainerRef(_))
+        || matches!(right.view(), ValueView::ContainerRef(_))
+    {
+        return cmp_values(&left.deref_container(), &right.deref_container());
+    }
     // Handle NaN
     if is_nan_value(left) || is_nan_value(right) {
         return left.string_value_cow().cmp(&right.string_value_cow());

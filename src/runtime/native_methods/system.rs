@@ -94,14 +94,9 @@ impl Interpreter {
     // Cost: one cycle collect (see `gc::collect_on_request`) plus the pending
     // DESTROYs.
     pub(crate) fn request_garbage_collection(&mut self) -> Result<(), RuntimeError> {
-        // Clear persisted closure environments to release stale Instance
-        // references that would otherwise prevent DESTROY from firing.
-        // This mimics a real GC that would trace live references and
-        // collect unreachable objects.
-        self.closure_env_overrides.clear();
         crate::gc::collect_on_request();
         // Process pending DESTROY submethods for objects whose refcount
-        // dropped to 0 (possibly including items freed by the clear above).
+        // dropped to 0 (possibly including items the collect just freed).
         self.run_pending_instance_destroys()
     }
 

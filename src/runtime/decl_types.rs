@@ -23,7 +23,7 @@ pub(crate) struct ClassDef {
     pub(crate) attributes: Vec<ClassAttributeDef>,
     pub(crate) attribute_types: HashMap<String, String>, // attr_name -> type constraint
     pub(crate) attribute_smileys: HashMap<String, String>, // attr_name -> smiley ("D", "U", "_")
-    pub(crate) attribute_built: HashMap<String, bool>,
+    pub(crate) attribute_built: HashMap<String, crate::ast::BuiltTrait>,
     /// Attributes declared with NativeCall's `HAS` scope — stored *by value*
     /// inside the enclosing `is repr('CStruct')` class instead of as a pointer
     /// to the member (`runtime::cstruct_layout`). Empty for every ordinary
@@ -53,7 +53,7 @@ pub(crate) struct RoleDef {
     /// without it, a composing class never learns to bind that attribute
     /// from a same-named constructor argument, so `Type.new(exception =>
     /// $x)` left `$!exception` undefined.
-    pub(crate) attribute_built: HashMap<String, bool>,
+    pub(crate) attribute_built: HashMap<String, crate::ast::BuiltTrait>,
     pub(crate) methods: HashMap<String, Vec<MethodDef>>,
     pub(crate) is_stub_role: bool,
     pub(crate) is_hidden: bool,

@@ -78,7 +78,7 @@ pub(crate) struct ControlState {
     /// The declaration site whose lifted variable trait is running now
     /// (`Variable.block.add_phaser` files its phaser under it), or `None`
     /// when the trait runs at the declaration itself.
-    pub(crate) var_trait_site: Option<String>,
+    pub(crate) var_trait_site: Option<crate::ast::VarTraitSite>,
     /// Phasers variable traits added through `Variable.block`, as
     /// `(kind, code)` by declaration site; the block's own ENTER/LEAVE/KEEP/UNDO
     /// queues replay them on every entry.

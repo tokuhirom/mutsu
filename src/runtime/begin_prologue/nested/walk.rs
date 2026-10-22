@@ -15,7 +15,11 @@ use crate::ast_visit::{VisitMut, walk_expr_mut, walk_stmt_mut};
 
 impl VisitMut for Walker<'_> {
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
-        self.walk_list(body, Frame::default(), |_| {});
+        let frame = Frame {
+            owner: std::mem::take(&mut self.next_owner),
+            ..Frame::default()
+        };
+        self.walk_list(body, frame, |_| {});
     }
 
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
@@ -219,7 +223,8 @@ impl Walker<'_> {
                 body,
                 ..
             } => {
-                let frame = Self::params_frame(params.iter().cloned());
+                let mut frame = Self::params_frame(params.iter().cloned());
+                frame.owner = "Sub";
                 self.walk_list(body, frame, |w| {
                     if let Some(e) = name_expr {
                         w.visit_expr_mut(e);
@@ -248,9 +253,11 @@ impl Walker<'_> {
                 param_defs,
                 custom_traits,
                 body,
+                is_submethod,
                 ..
             } if self.directly_in_package() => {
-                let frame = Self::params_frame(params.iter().cloned());
+                let mut frame = Self::params_frame(params.iter().cloned());
+                frame.owner = if *is_submethod { "Submethod" } else { "Method" };
                 self.walk_list(body, frame, |w| {
                     if let Some(e) = name_expr {
                         w.visit_expr_mut(e);
@@ -347,6 +354,14 @@ impl Walker<'_> {
                     walk_expr_mut(self, expr);
                 }
             }
+            // `sub { ... }`: its body is the next statement list walked.
+            Expr::AnonSub {
+                is_block: false, ..
+            } => {
+                self.next_owner = "Sub";
+                walk_expr_mut(self, expr);
+                self.next_owner = "";
+            }
             Expr::AnonSubParams {
                 params,
                 param_defs,
@@ -354,7 +369,8 @@ impl Walker<'_> {
                 body,
                 ..
             } => {
-                let frame = Self::params_frame(params.iter().cloned());
+                let mut frame = Self::params_frame(params.iter().cloned());
+                frame.owner = "Sub";
                 self.walk_list(body, frame, |w| {
                     w.visit_params(param_defs);
                     for e in custom_traits

@@ -1494,7 +1494,16 @@ impl Interpreter {
             if has_subclass_attr {
                 target
             } else {
-                let fetched = self.auto_fetch_proxy(&target)?;
+                let mut fetched = self.auto_fetch_proxy(&target)?;
+                // What the Proxy FETCHed may itself hold Proxy elements (an
+                // array built with `@bound[$n++] := proxy`): a renderer reads
+                // them through their containers.
+                if crate::runtime::Interpreter::renders_receiver_elements(method)
+                    && crate::runtime::Interpreter::holds_nested_proxy(&fetched)
+                {
+                    // A Proxy hands its value back itemized (`$[..]`).
+                    fetched = Value::scalar(self.resolve_proxies_in_value(&fetched)?);
+                }
                 // The shadow query above saw the Proxy, not the value it
                 // holds: a user method of the fetched value's class (a
                 // `Blob`-doing class's own `Str`) takes the call from the

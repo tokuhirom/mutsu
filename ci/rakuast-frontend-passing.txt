@@ -237,6 +237,7 @@ t/collections/hash/tied-hash-store-initialize.t
 t/collections/hash/tied-hash-store-oddnumber.t
 t/collections/hyper-operand-element-container.t
 t/collections/immutable-element-store-and-bind.t
+t/collections/is-array-new-type-object-elements.t
 t/collections/is-array-subclass-compound-assign.t
 t/collections/is-list-subclass.t
 t/collections/is-map-subclass-qualified-raku.t
@@ -689,6 +690,7 @@ t/collections/subscript/chained-interpolation-subscript.t
 t/collections/subscript/chained-subscript-assign-bool-index.t
 t/collections/subscript/chained-subscript-store-refuses-defined-value.t
 t/collections/subscript/compound-assign-parenthesized-subscript.t
+t/collections/subscript/compound-assign-user-positional-subscript.t
 t/collections/subscript/computed-index-single-itemize.t
 t/collections/subscript/computed-slice-result.t
 t/collections/subscript/delete-pos-whatevercode-subscript.t
@@ -1829,6 +1831,7 @@ t/exceptions/repeat-call-backtrace-frame.t
 t/exceptions/resumable-control-signal-indirect-call.t
 t/exceptions/resume-after-binding-failure.t
 t/exceptions/resume-store-op-raise.t
+t/exceptions/resume-typed-element-store.t
 t/exceptions/resume.t
 t/exceptions/return-exception.t
 t/exceptions/return-from-catch-in-method.t
@@ -2232,6 +2235,7 @@ t/io/iospec-rel2abs-win32-edge-cases.t
 t/io/iospec-unix-split-edge-cases.t
 t/io/is-lazy-io-lines.t
 t/io/kernel-cpu-cores.t
+t/io/kernel-distro-new-arguments.t
 t/io/kernel-distro-vm-rows.t
 t/io/kernel-type-object-hostname.t
 t/io/lazy-seq-into-user-slurpy.t
@@ -2739,6 +2743,7 @@ t/modules/compound-declared-type-does-not-shadow-core-in-module.t
 t/modules/compunit/builtin-distribution-role.t
 t/modules/compunit/compunit-can-install.t
 t/modules/compunit/compunit-filesystem-meta6-provides.t
+t/modules/compunit/compunit-handle-export-how-package.t
 t/modules/compunit/compunit-handle-export-package.t
 t/modules/compunit/compunit-loader-class-rows.t
 t/modules/compunit/compunit-loader-source-file.t
@@ -2931,6 +2936,8 @@ t/modules/import-export/imported-exported-proto-local-multi.t
 t/modules/import-export/imported-listop-angle-arg.t
 t/modules/import-export/imported-multi-where-candidates-keep-declaration-order.t
 t/modules/import-export/imported-my-type-does-not-shadow.t
+t/modules/import-export/imported-postcircumfix-slice-adverbs-unit.t
+t/modules/import-export/imported-postcircumfix-slice-adverbs.t
 t/modules/import-export/imported-proto-builtin-name-code-value.t
 t/modules/import-export/imported-proto-shadows-outer-sub.t
 t/modules/import-export/imported-routine-where-clause-is-checked.t
@@ -3538,6 +3545,7 @@ t/nativecall/nativecall-buf-lifetime.t
 t/nativecall/nativecall-callback-param.t
 t/nativecall/nativecall-callback-pointer-arg-upstream-type.t
 t/nativecall/nativecall-callback-typed-params.t
+t/nativecall/nativecall-captured-type-alias.t
 t/nativecall/nativecall-carray.t
 t/nativecall/nativecall-cast-runtime-return-type.t
 t/nativecall/nativecall-cglobal-symbol-address.t
@@ -3590,6 +3598,7 @@ t/nativecall/nativecall-type-surface.t
 t/nativecall/nativecall-typed-pointer.t
 t/nativecall/nativecall-types-module.t
 t/nativecall/nativecall-types-tag.t
+t/nativecall/nativecall-unset-carray-attr-smartmatch.t
 t/nativecall/nativecallcast-uninstantiable-target.t
 t/nativecall/nativecast-blob-address.t
 t/nativecall/nativecast-mixin-type.t
@@ -4924,6 +4933,7 @@ t/oo/role/role-type-object-repr.t
 t/oo/role/role-type-object-stringify-skips-pun.t
 t/oo/role/role-type-param-smiley.t
 t/oo/role/role-ud-multi-dispatch.t
+t/oo/role/role-unimplemented-message-site-key.t
 t/oo/role/roles-excludes-class-parent.t
 t/oo/role/roles-non-transitive-adverb.t
 t/oo/role/roles-stubs-regression.t
@@ -5403,6 +5413,7 @@ t/rakuast/rakuast-set-operator-spelling.t
 t/rakuast/rakuast-shaped-array-parameter.t
 t/rakuast/rakuast-sigilled-constant.t
 t/rakuast/rakuast-sigilless-declarator-init.t
+t/rakuast/rakuast-sigilless-pointy-container.t
 t/rakuast/rakuast-signature-decl.t
 t/rakuast/rakuast-signature-literal-bind.t
 t/rakuast/rakuast-signature-literal.t
@@ -6910,6 +6921,7 @@ t/routines/signature/pointy-code-param.t
 t/routines/signature/pointy-hash-subsignature-hyper-unspace.t
 t/routines/signature/pointy-param-constraint-no-leak-to-caller.t
 t/routines/signature/pointy-param-typed-sigilless.t
+t/routines/signature/pointy-sigilless-param-element-container.t
 t/routines/signature/pointy-sigilless-param-is-a-term.t
 t/routines/signature/pointy-sigilless-param-traits.t
 t/routines/signature/pointy-signature-trailing-comma.t
@@ -8335,6 +8347,7 @@ t/vm/writeback/proxy-renders-through-fetch.t
 t/vm/writeback/proxy-store-boundary.t
 t/vm/writeback/proxy-store-receives-nil.t
 t/vm/writeback/proxy-subclass-getattr-and-mu-bind.t
+t/vm/writeback/proxy-subclass-lexical-name.t
 t/vm/writeback/proxy-subclass-user-methods.t
 t/vm/writeback/proxy-what-fetch.t
 t/vm/writeback/raw-invocant-arrives-as-container.t

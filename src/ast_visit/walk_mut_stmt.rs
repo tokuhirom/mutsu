@@ -4,7 +4,7 @@
 //! that owns the name.
 
 use super::{VisitMut, exprs_mut, params_mut, traits_mut, walk_call_arg_mut, walk_regex_tree_mut};
-use crate::ast::Stmt;
+use crate::ast::{Stmt, VarTraitOp};
 
 /// Visits every statement of `body` through [`VisitMut::visit_stmt_mut`].
 // Cost: O(n), n = size of `body`'s subtree.
@@ -208,6 +208,11 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
         }
         Stmt::Need { module: _ } => {}
         Stmt::Import { module: _, tags: _ } => {}
+        Stmt::VarTrait { name: _, op } => {
+            if let VarTraitOp::Apply { arg: Some(arg), .. } = op {
+                v.visit_expr_mut(arg);
+            }
+        }
         Stmt::Block(body)
         | Stmt::SyntheticBlock(body)
         | Stmt::React { body, .. }

@@ -35,19 +35,6 @@ impl Interpreter {
         cb: &Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        // A `whenever`/`LAST`/`QUIT` callback shares the enclosing react block's
-        // lexicals. Each closure call persists its captured-outer free vars as
-        // per-instance state (keyed by the callback's Sub id) and restores that
-        // snapshot on re-entry. For a react callback that is wrong: on re-entry it
-        // would restore a *stale* snapshot of a shared lexical (e.g. `my $order`
-        // that a sibling `whenever` just updated), clobbering the sibling's write.
-        // Drop this callback's per-instance state so it reads the shared lexical
-        // from the live caller env — which every sibling writes back to.
-        if let ValueView::Sub(data) = cb.view()
-            && !self.async_state.nested_react_callbacks.contains(&data.id)
-        {
-            self.clear_closure_captured_state_for(data.id);
-        }
         // Every `whenever`/`LAST`/`QUIT`/`CLOSE` callback body dispatches
         // through here, on whichever thread actually runs it, so a `done`
         // raised anywhere in its dynamic extent (directly or via a nested

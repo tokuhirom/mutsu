@@ -1893,3 +1893,15 @@ dynamic, package and anonymous variables, restoring the parser's existing
 `Expr::Itemize` path for arrays and hashes. The contextualizer test checks both
 attribute kinds through EVAL, and `roast/S32-exceptions/misc2.t` passes in
 RakuAST frontend mode.
+
+### 6.101 S4: sigilless pointy closure parameters (2026-10-22)
+
+A single sigilless parameter on a `PointyBlock` must retain its `ParamDef` when
+lowered. Collapsing it to `Expr::Lambda` preserved the term name but discarded
+the parameter metadata the closure binder needs to alias an indexed argument's
+container. Such pointy blocks now lower through `Expr::AnonSubParams`, matching
+the ordinary parser's representation. The focused RakuAST test checks the
+`ParameterTarget::Term` shape and array/hash element writes through stored,
+code-variable, ampersand and immediate calls. The existing
+`t/routines/signature/pointy-sigilless-param-element-container.t` regression
+passes under the RakuAST frontend.

@@ -193,11 +193,10 @@ impl Interpreter {
     /// Stabilization is further restricted to routines whose compiled body
     /// writes NO free variable (`CompiledCode::free_var_writes`/
     /// `free_var_container_writes` both empty). `call_compiled_closure_with_topic`
-    /// persists a mutated free var into `Interpreter::closure_captured_state`,
-    /// keyed by `data.id`, and replays it on the NEXT call sharing that id
+    /// used to persist a mutated free var per closure id (a store ADR-0055
+    /// slice 5 retired) and replay it on the NEXT call sharing that id
     /// instead of the live value from the (possibly since-reassigned) outer
-    /// binding — correct for a genuine per-clone closure factory, but wrong
-    /// here: stabilizing the id let that persisted state leak ACROSS repeated
+    /// binding: stabilizing the id let that persisted state leak ACROSS repeated
     /// mentions of the very sub the ticket's fix was stabilizing, so a
     /// reassignment of the captured variable between two `&f` mentions (e.g.
     /// `$runs = 0;` between two `sub elems is nodal { $runs⚛++; ... }` uses in

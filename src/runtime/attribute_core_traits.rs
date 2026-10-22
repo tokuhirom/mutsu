@@ -59,7 +59,7 @@ impl AttrCoreTraitEffects {
     pub(crate) fn fold_into(
         &self,
         attributes: &mut [crate::runtime::ClassAttributeDef],
-        attribute_built: &mut HashMap<String, bool>,
+        attribute_built: &mut HashMap<String, crate::ast::BuiltTrait>,
         attr_name: &str,
     ) {
         if self.rw
@@ -68,7 +68,14 @@ impl AttrCoreTraitEffects {
             attr.is_rw = true;
         }
         if let Some(built) = self.built {
-            attribute_built.insert(attr_name.to_string(), built);
+            attribute_built.insert(
+                attr_name.to_string(),
+                if built {
+                    crate::ast::BuiltTrait::Yes
+                } else {
+                    crate::ast::BuiltTrait::No
+                },
+            );
         }
     }
 }

@@ -583,13 +583,38 @@ impl Interpreter {
         routines
     }
 
+    /// Whether the code running now is a module's own top level (or a role
+    /// body composed from it) while a routine of its importer is still on the
+    /// stack: the module sees its own `use`s, not the importer's scopes (#14481).
+    // Cost: O(1).
+    fn running_module_mainline(&self) -> bool {
+        !self.module.module_loading_unit_stack.is_empty()
+            && self.executing_unit_sym_for_module_load() != self.executing_unit_sym()
+    }
+
+    /// The import sets around code running in a module's own top level: the
+    /// open blocks of that module, then its top-level `use`s.
+    // Cost: O(s), s = open import scopes' sets.
+    fn module_mainline_import_chain(&self) -> Vec<Symbol> {
+        let unit = self.executing_unit_sym_for_module_load();
+        self.module
+            .import_scope_stack
+            .iter()
+            .rev()
+            .filter(|scope| scope.unit == unit)
+            .flat_map(|scope| scope.lexical_sets.iter().rev())
+            .copied()
+            .chain(self.running_unit_lexical_sets())
+            .collect()
+    }
+
     /// The import sets the running unit's top-level `use`s filled, innermost
     /// first.
     // Cost: O(s), s = sets the unit filled.
     fn running_unit_lexical_sets(&self) -> impl Iterator<Item = Symbol> + '_ {
         self.module
             .unit_lexical_sets
-            .get(&self.executing_unit_sym())
+            .get(&self.executing_unit_sym_for_module_load())
             .filter(|_| !self.module.unit_sets_hidden)
             .into_iter()
             .flat_map(|sets| sets.iter().rev().copied())
@@ -599,8 +624,22 @@ impl Interpreter {
     /// innermost first: what a lookup by a run-time name sees.
     // Cost: O(s), s = open import scopes' sets.
     pub(crate) fn active_lexical_import_chain(&self) -> Vec<Symbol> {
+        if self.running_module_mainline() {
+            return self.module_mainline_import_chain();
+        }
         if let Some(chain) = &self.module.eval_import_chain {
-            return chain.clone();
+            let mut chain = chain.clone();
+            // A routine of another compunit the EVAL'd code called (a role
+            // body composed in the EVAL, #14481) sees its own unit's
+            // top-level `use`s, which the EVAL's chain cannot name.
+            if self.module.eval_import_unit != Some(self.executing_unit_sym()) {
+                for set in self.running_unit_lexical_sets() {
+                    if !chain.contains(&set) {
+                        chain.push(set);
+                    }
+                }
+            }
+            return chain;
         }
         self.module
             .import_scope_stack
@@ -619,6 +658,9 @@ impl Interpreter {
     /// that records no `EVAL` site keeps every open set.
     // Cost: O(s + e), s = open import scopes' sets, e = the code's EVAL site chains.
     pub(crate) fn eval_lexical_import_chain(&self) -> Vec<Symbol> {
+        if self.running_module_mainline() {
+            return self.module_mainline_import_chain();
+        }
         let Some(code) = self.running_code() else {
             return self.active_lexical_import_chain();
         };

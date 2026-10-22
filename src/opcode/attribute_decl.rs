@@ -57,7 +57,7 @@ pub(crate) struct CompiledAttrDecl {
     pub(crate) is_default: Option<DeclTraitArg>,
     pub(crate) is_type: Option<String>,
     pub(crate) deprecated_message: Option<String>,
-    pub(crate) is_built: Option<bool>,
+    pub(crate) is_built: Option<crate::ast::BuiltTrait>,
     pub(crate) unknown_traits: Vec<(String, String, Option<DeclTraitArg>)>,
     /// Declared shape dimensions for an `@`-sigil attribute (`has @.a[2]`),
     /// extracted once from the raw `default` expression's compiler-generated
