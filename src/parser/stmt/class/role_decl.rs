@@ -415,6 +415,8 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
 
     if kw != "role" {
         custom_traits.push(crate::parser::declare_how_marker(kw.to_string()));
+    } else if let Some(marker) = super::super::simple::supersede_marker("role") {
+        custom_traits.push(marker);
     }
     let role_stmt = Stmt::RoleDecl {
         name: Symbol::intern(&name),

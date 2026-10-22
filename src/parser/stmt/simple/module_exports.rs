@@ -63,6 +63,9 @@ struct ModuleScanResult {
     /// `(keyword, HOW type name)` pairs. A `use` of the module makes each
     /// keyword parse as a class-like declarator for the rest of the unit.
     declare_keywords: Vec<(String, String)>,
+    /// Built-in declarators (`class`, `role`) whose HOW the module replaces
+    /// through `EXPORTHOW::SUPERSEDE`.
+    supersede_keywords: Vec<String>,
     /// Whether this module's own scan left the parse-time type index
     /// incomplete (it imported something that could not be resolved and
     /// scanned). Replayed into the importer on a cache hit, exactly like
@@ -319,6 +322,9 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
         }
         for (keyword, _how_type) in &scan.declare_keywords {
             register_declare_keyword(keyword, false);
+        }
+        for keyword in &scan.supersede_keywords {
+            register_supersede_keyword(keyword);
         }
     } else if module == "JSON::Fast" {
         // Nothing on the module ladder supplies `JSON::Fast`, so the native
@@ -1000,6 +1006,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         tagged_enum_values,
         value_terms,
         declare_keywords: decls.declare_keywords,
+        supersede_keywords: decls.supersede_keywords,
         type_index_incomplete,
         uses_slangify,
         declares_export_hook,

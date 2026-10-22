@@ -336,9 +336,44 @@ pub(crate) fn register_declare_keyword(keyword: &str, is_role: bool) {
     });
 }
 
-/// The currently registered declarator keywords.
+/// The currently registered declarator keywords (the superseded built-in
+/// declarators of [`register_supersede_keyword`] are not new keywords).
 pub(crate) fn declare_keyword_names() -> Vec<String> {
-    DECLARE_KEYWORDS.with(|m| m.borrow().keys().cloned().collect())
+    DECLARE_KEYWORDS.with(|m| {
+        m.borrow()
+            .keys()
+            .filter(|k| !k.starts_with(SUPERSEDE_PREFIX))
+            .cloned()
+            .collect()
+    })
+}
+
+/// Table key of a superseded built-in declarator; kept in the declarator table
+/// so it shares its unit scoping and nested-scan snapshots.
+const SUPERSEDE_PREFIX: &str = "SUPERSEDE::";
+
+/// Record that a `use`d module's `EXPORTHOW::SUPERSEDE` replaces the HOW of the
+/// built-in declarator `keyword` (`class`, `role`, ...) for the rest of the unit.
+pub(crate) fn register_supersede_keyword(keyword: &str) {
+    DECLARE_KEYWORDS.with(|m| {
+        m.borrow_mut().insert(
+            format!("{SUPERSEDE_PREFIX}{keyword}"),
+            DeclareKeyword {
+                is_role: keyword == "role",
+            },
+        );
+    });
+}
+
+/// The `__mutsu_declare_how` marker a declaration written with the built-in
+/// declarator `keyword` carries when `EXPORTHOW::SUPERSEDE` replaced its HOW.
+pub(crate) fn supersede_marker(keyword: &str) -> Option<(String, Option<crate::ast::Expr>)> {
+    DECLARE_KEYWORDS
+        .with(|m| {
+            m.borrow()
+                .contains_key(&format!("{SUPERSEDE_PREFIX}{keyword}"))
+        })
+        .then(|| crate::parser::declare_how_marker(keyword.to_string()))
 }
 
 /// Does `keyword` declare a role rather than a class?
