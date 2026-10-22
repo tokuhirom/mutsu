@@ -520,6 +520,7 @@ t/collections/nth-whatevercode.t
 t/collections/num32-array-element-store.t
 t/collections/ords-returns-seq.t
 t/collections/positional-read-of-a-non-positional.t
+t/collections/proxy-fetch-result-holds-bound-proxy-elements.t
 t/collections/range-pair/pair-cyclic-gist.t
 t/collections/range-pair/pair-freeze.t
 t/collections/range-pair/pair-hash-coercion.t
@@ -6263,6 +6264,7 @@ t/routines/closure/closure-return-carries-only-own-writes.t
 t/routines/closure/closure-sees-by-name-write.t
 t/routines/closure/closure-sees-later-rebind.t
 t/routines/closure/closure-selective-env-sync.t
+t/routines/closure/closure-state-lives-in-captured-cells.t
 t/routines/closure/closure-topic-readonly.t
 t/routines/closure/closure-upvalue.t
 t/routines/closure/closure.t
