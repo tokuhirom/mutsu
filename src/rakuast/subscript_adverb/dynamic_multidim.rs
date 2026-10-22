@@ -166,6 +166,35 @@ fn convert_subscript(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> {
     })())
 }
 
+pub(super) fn convert_conditional(
+    source: &Expr,
+    condition: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
+    let (subscript, adverbs) = match source {
+        Expr::MultiDimIndex { .. } => (source.clone(), Vec::new()),
+        _ => subscript_adverb::adverbs(source)
+            .ok_or_else(|| super::convert_unsupported("conditional multidimensional delete"))?,
+    };
+    let Expr::MultiDimIndex {
+        target,
+        dimensions,
+        is_positional,
+    } = &subscript
+    else {
+        return Err(super::convert_unsupported(
+            "conditional multidimensional delete",
+        ));
+    };
+    let mut pairs = adverbs
+        .iter()
+        .map(colonpair)
+        .collect::<Result<Vec<_>, _>>()?;
+    let delete_pair =
+        subscript_adverb::source_pair("delete", condition.clone(), BinaryForm::ColonPairValue);
+    pairs.push(Value::rakuast(Box::new(convert_expr(&delete_pair)?)));
+    subscript_dims_node(target, dimensions, *is_positional, None, pairs)
+}
+
 fn structural_hash<T: Hash + ?Sized>(value: &T) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     value.hash(&mut hasher);

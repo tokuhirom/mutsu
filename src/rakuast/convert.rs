@@ -3304,7 +3304,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Spelling::PackageIndirect { package, key } => {
                 super::symbolic_deref::convert_package_indirect(package, key)
             }
-            Spelling::NamedSubscript { .. } | Spelling::ConflictingSubscript { .. } => {
+            Spelling::NamedSubscript { .. }
+            | Spelling::ConflictingSubscript { .. }
+            | Spelling::ConditionalMultidimDelete { .. } => {
                 Err(unsupported("subscript adverb source form"))
             }
             Spelling::CompositionWhatever(source) => {

@@ -35,6 +35,12 @@ mod hyperslice;
 /// `None` when it is not one.
 // Cost: O(n), n = AST nodes under `expr`.
 pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> {
+    if let Expr::Spelled(spelled) = expr
+        && let crate::ast::spelled::Spelling::ConditionalMultidimDelete { source, condition } =
+            &spelled.spelling
+    {
+        return Some(dynamic_multidim::convert_conditional(source, condition));
+    }
     if let Some(node) = dynamic_multidim::convert_dynamic(expr) {
         return Some(node);
     }

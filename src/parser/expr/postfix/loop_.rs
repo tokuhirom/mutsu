@@ -2632,6 +2632,10 @@ fn postfix_expr_loop_from(
                     }
                     DeleteAdverb::Delete(Some(cond)) => {
                         let original_expr = expr.clone();
+                        let source_condition = cond.clone();
+                        let is_multidim = matches!(&original_expr, Expr::MultiDimIndex { .. })
+                            || matches!(&original_expr, Expr::Call { name, .. }
+                                if name == "__mutsu_multidim_subscript_adverb");
                         if let Expr::MultiDimIndex {
                             target: mdt,
                             dimensions: dims,
@@ -2657,7 +2661,7 @@ fn postfix_expr_loop_from(
                                 Expr::Ternary {
                                     cond: Box::new(cond),
                                     then_expr: Box::new(delete_expr),
-                                    else_expr: Box::new(original_expr),
+                                    else_expr: Box::new(original_expr.clone()),
                                 }
                             } else {
                                 delete_expr
@@ -2672,7 +2676,7 @@ fn postfix_expr_loop_from(
                                     args,
                                     listop: false,
                                 };
-                                expr = conditional_delete(cond, delete_expr, original_expr);
+                                expr = conditional_delete(cond, delete_expr, original_expr.clone());
                             }
                         } else if matches!(&original_expr, Expr::Call { name, .. } if name == "__mutsu_multidim_subscript_adverb")
                         {
@@ -2701,12 +2705,20 @@ fn postfix_expr_loop_from(
                                 expr = Expr::Ternary {
                                     cond: Box::new(cond),
                                     then_expr: Box::new(delete_expr),
-                                    else_expr: Box::new(original_expr),
+                                    else_expr: Box::new(original_expr.clone()),
                                 };
                             }
                         } else {
                             let delete_expr = delete_key(original_expr.clone());
-                            expr = conditional_delete(cond, delete_expr, original_expr);
+                            expr = conditional_delete(cond, delete_expr, original_expr.clone());
+                        }
+                        if is_multidim {
+                            expr = Expr::spelled(expr, || {
+                                crate::ast::spelled::Spelling::ConditionalMultidimDelete {
+                                    source: Box::new(original_expr),
+                                    condition: Box::new(source_condition),
+                                }
+                            });
                         }
                     }
                 }

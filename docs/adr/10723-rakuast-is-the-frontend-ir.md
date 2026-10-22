@@ -1838,6 +1838,9 @@ the shared target and dimensions, then emits the original array or hash
 postcircumfix with its ordered static colonpairs and a
 `ColonPair::Variable("delete")`. This covers bare `:$delete`, value adverbs
 such as `:k:$delete`, and existence adverbs such as `:exists:kv:$delete`.
+The parser keeps the distinct `:delete(EXPR)` spelling only during RakuAST
+analysis, so its condition converts to `ColonPair::Value` even when the
+execution ternary is otherwise identical to `:$delete`.
 The execution expansion remains in the parser/compiler path; lowering uses
 the existing subscript-adverb expansion.
 
