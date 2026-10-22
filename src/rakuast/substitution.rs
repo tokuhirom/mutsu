@@ -219,9 +219,8 @@ pub(super) fn adverb_node(adverb: &RegexAdverb) -> Result<RakuAstNode, RuntimeEr
     let expr = crate::parser::parse_adverb_argument(argument)
         .ok_or_else(|| unsupported_what("regex adverb argument"))?;
     let value = convert_expr(&expr)?;
-    // What cannot be spelled again cannot be lowered: refuse it here.
     let dynamic_position = matches!(adverb.name.as_str(), "p" | "pos" | "c" | "continue");
-    if argument_text(&value).is_none() && !dynamic_position {
+    if crate::regex_tree::expression_argument_source(&expr).is_none() && !dynamic_position {
         return Err(unsupported_what("regex adverb argument"));
     }
     let semilist = RakuAstNode {
@@ -317,8 +316,8 @@ pub(super) fn lower_adverb(node: &RakuAstNode) -> Result<RegexAdverb, RuntimeErr
         }
         RakuAstClass::ColonPairValue => {
             let value = named_child(node, "value")?;
-            let argument = parenthesized_expression(value)
-                .and_then(argument_text)
+            let expression = parenthesized_expression(value).ok_or_else(|| unsupported(node))?;
+            let argument = crate::regex_tree::expression_argument_source(&lower_expr(expression)?)
                 .ok_or_else(|| unsupported(node))?;
             Ok(RegexAdverb {
                 name: leaf_str(node, "key")?,

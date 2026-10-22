@@ -1538,6 +1538,7 @@ fn quantified_source(
 /// Parser-created trees retain their exact argument source in
 /// `RegexNode::Callable::arg_source`; this is only the construction fallback.
 mod expression_source;
+pub(crate) use expression_source::expression_argument_source;
 pub(crate) use expression_source::expression_source;
 struct Parser {
     chars: Vec<char>,

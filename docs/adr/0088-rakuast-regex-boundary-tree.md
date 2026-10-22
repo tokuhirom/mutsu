@@ -1742,3 +1742,17 @@ matcher and source spelling.
 character-class arguments, EVAL of parsed and constructed nodes, and a
 grammar declaration round-trip. The RakuAST frontend now passes all 17
 assertions in `roast/6.c/S05-grammar/parse_and_parsefile-6c.t`.
+
+## 76. Expression-valued regex arguments (2026-10-22)
+
+Regex adverb values and Unicode property predicates now reconstruct their
+source from the lowered expression tree, including comma lists, Whatever
+terms and Whatever-derived indexes. The parser gives a leading Whatever in an
+adverb argument the same item context it has inside parentheses. A Whatever
+subtraction keeps its compact `*-N` spelling because the existing counted
+matcher consumes that form.
+
+`t/rakuast/rakuast-regex-expression-arguments.t` pins the RakuAST expression
+nodes and EVAL behavior. The frontend now passes
+`roast/S05-modifier/counted.t`, `roast/S05-modifier/counted-match.t`, and
+`roast/S05-metasyntax/unicode-property-pair.t` (160 assertions).
