@@ -221,18 +221,6 @@ pub(crate) fn native_method_0arg_cascade(
             MixinStep::Delegate(inner) => native_method_0arg(&inner, method_sym),
         };
     }
-    // A call the method table answers has no arm below this point: the row is
-    // the method's only implementation (ADR-11276 §9.88). `native_method_0arg`
-    // asked the table before the cascade, so this declines only for the two
-    // callers that run the cascade without it: the debug cross-check, which
-    // takes a decline as agreement, and the VM entry whose user-override veto
-    // refused the row, where the interpreter must answer instead. The probes
-    // above stay in front of the rows, so the cross-check still verifies them.
-    // Cost: O(1) when no row has the name (a bit test); otherwise a tag probe,
-    // one hash lookup and, for a row found, its handler.
-    if crate::builtins::method_table::answer(target, method_sym, &[]).is_some() {
-        return None;
-    }
     // Native int coercer methods (.byte(), .int8(), .uint16(), etc.). Rakudo
     // declares these on `Cool`, so a `Pair` — which is not Cool — has no such
     // method; answering one here made `.^can('bool')` true for every value and
@@ -247,7 +235,7 @@ pub(crate) fn native_method_0arg_cascade(
             method,
         ));
     }
-    dispatch_core(target, method)
+    dispatch_core(target, method_sym)
 }
 
 /// True for a value whose element count cannot be reported, so numeric/count
@@ -379,7 +367,8 @@ pub(crate) fn unicode_foldcase(s: &str) -> String {
     out
 }
 
-fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
+fn dispatch_core(target: &Value, method_sym: Symbol) -> Option<Result<Value, RuntimeError>> {
+    let method = method_sym.as_str();
     // `Code.Capture` and `Code.clone` are rows of the method table
     // (`method_table::code`, ADR-12523 slice 5).
     if matches!(method, "Capture" | "clone")
@@ -416,5 +405,5 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // A receiver with no shape that is a `Cool` reaches `Cool`'s text rows
     // once the cascade declined it (ADR-11276 §9.79); an instance needs the
     // interpreter's MRO and is answered by the entries that have one.
-    crate::builtins::method_table::answer_shapeless(None, target, Symbol::intern(method), &[])
+    crate::builtins::method_table::answer_shapeless(None, target, method_sym, &[])
 }

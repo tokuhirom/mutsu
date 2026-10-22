@@ -143,27 +143,6 @@ impl Interpreter {
                 return Some(self.settle_native_warning(result));
             }
         }
-        // `Any` is not a `Cool` (#7773): the cascades below recognize a `Cool`
-        // method by NAME and answer out of the stringified receiver, which for
-        // a type object is its gist -- so `$undefined.uc` answered `"(ANY)"`.
-        // The interpreter entry (`call_method_with_values`) carries the twin of
-        // this gate; the OPCODE path reaches the cascades without passing
-        // through it.
-        if let Some(err) = crate::runtime::cool_method_not_found_on_any(target, method_sym.as_str())
-        {
-            return Some(Err(err));
-        }
-        if let Some(result) = self.cool_instance_text_via_str(target, method_sym.as_str(), args) {
-            return Some(result);
-        }
-        // The `Cool`-subtype sibling (#9772): `Str.comb` / `Int.uc` on the type
-        // object refuse it instead of answering out of its gist.
-        if let Some(result) = self.cool_type_object_default_fmt(target, method_sym.as_str(), args) {
-            return Some(result);
-        }
-        if let Some(result) = self.cool_type_object_string_method(target, method_sym.as_str()) {
-            return Some(result);
-        }
         // ADR-0068 §20: the cascades read a shared Array/Hash receiver with
         // nothing held, as the table's own entry (`dispatch::call`) would not:
         // a leaf read holds the node's stripe, any other read runs on a
@@ -224,21 +203,6 @@ impl Interpreter {
         // `as_str`, not `resolve`: see `native_method_0arg`. An owned copy of
         // an already-`&'static str` per native method call.
         let method_name: &str = method_sym.as_str();
-        // A mixed-in role's rows (a wrapper role's `gist`, ADR-11276, #11276)
-        // ahead of the native arms below that would answer the bare inner
-        // value; as in `call_method_with_values`.
-        if let Some(owners) =
-            crate::builtins::method_table::mixin_role_owners_of(target, method_name)
-            && let Some(result) = crate::builtins::method_table::invoke_owner(
-                self,
-                &owners.iter().map(String::as_str).collect::<Vec<_>>(),
-                method_name,
-                args,
-                || target.clone(),
-            )
-        {
-            return Some(result);
-        }
         // `.REPR` / `.WHERE` on a NativeCall handle. Telling a `nativecast`ed
         // CStruct/CUnion/CArray from an ordinary instance needs the class
         // registry, so the pure native path cannot answer these — and it must
@@ -299,10 +263,7 @@ impl Interpreter {
         // dropped (`method_table::implicit_named`).
         let stripped = crate::builtins::strip_undeclared_nameds(method_name, args);
         let args: &[Value] = stripped.as_deref().unwrap_or(args);
-        if args.len() == 2 {
-            // No cascade takes two arguments: a row with no shape may.
-            crate::builtins::method_table::answer_shapeless(Some(self), target, method_sym, args)
-        } else if args.len() == 1 {
+        if args.len() == 1 {
             crate::builtins::native_method_1arg_without_table(target, method_sym, &args[0]).or_else(
                 || {
                     crate::builtins::method_table::answer_shapeless(
