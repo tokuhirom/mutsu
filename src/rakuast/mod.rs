@@ -3430,8 +3430,7 @@ fn routine_default_scope(node: &RakuAstNode) -> Option<&'static str> {
 /// needs for the round trip (the atom of a regex alias to a variable).
 // Cost: O(1).
 pub(crate) fn is_unvisited_field(node: &RakuAstNode, field: &RakuAstField) -> bool {
-    infix_func::is_hidden_adverbs(node, field)
-        || regex_variable_alias::is_source_field(node, field)
+    infix_func::is_hidden_adverbs(node, field) || regex_variable_alias::is_source_field(node, field)
 }
 
 pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
@@ -3598,7 +3597,10 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     if class == RakuAstClass::ArgList {
         names.push("push");
     }
-    if matches!(class, RakuAstClass::ApplyInfix | RakuAstClass::ApplyListInfix) {
+    if matches!(
+        class,
+        RakuAstClass::ApplyInfix | RakuAstClass::ApplyListInfix
+    ) {
         names.push("add-colonpair");
     }
     if class == RakuAstClass::StatementList {

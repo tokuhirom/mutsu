@@ -4975,7 +4975,10 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             {
                 // An interpolating word quote (`:a«$x»`) is no single literal
                 // word; the ordinary lowering below handles it.
-                match super::quoted_string::word_quote_content(value_node).ok().flatten() {
+                match super::quoted_string::word_quote_content(value_node)
+                    .ok()
+                    .flatten()
+                {
                     Some((false, true, word))
                         if !word.is_empty() && !word.contains(char::is_whitespace) =>
                     {
