@@ -45,7 +45,76 @@ impl Interpreter {
         if let Some(lexicals) = lexicals {
             self.bind_package_body_lexicals(&name, lexicals);
         }
+        // The names the body's own scope declares are its bindings, never a
+        // write to a same-named enclosing lexical (#13428).
+        let declared: Vec<Symbol> = (decls_idx != u32::MAX)
+            .then(|| code.constants.get(decls_idx as usize))
+            .flatten()
+            .and_then(Value::as_list_items)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(Symbol::intern)
+                    .collect()
+            })
+            .unwrap_or_default();
+        // The declared element and key types of the block's `@`/`%` lexicals
+        // live in env lanes (`__mutsu_type::%seen`,
+        // `__mutsu_hash_key_type::%seen`) under names every package block
+        // shares. Hide the enclosing scope's for the body, so what is found
+        // afterwards is what the body declared; the enclosing scope's are put
+        // back below (#12907, PDF's `my %seen{Any}` next to `my %seen{Hash}`).
+        let body_lanes: Vec<Symbol> = lexicals
+            .into_iter()
+            .flat_map(|lexicals| lexicals.split('\n').map(Symbol::intern))
+            .chain(declared.iter().copied())
+            .filter(|decl| decl.as_str().starts_with(['@', '%']))
+            .flat_map(|decl| {
+                let mut lanes = vec![Self::type_meta_key_for_sym(decl)];
+                if decl.as_str().starts_with('%') {
+                    lanes.push(Self::hash_key_meta_key_for_sym(decl));
+                }
+                lanes
+            })
+            .collect();
+        let outer_lanes: Vec<(Symbol, Option<Value>)> = body_lanes
+            .iter()
+            .map(|lane| (*lane, self.env().get_sym(*lane).cloned()))
+            .collect();
+        for lane in &body_lanes {
+            self.env_mut().remove_sym(*lane);
+        }
         let result = self.run_range(code, *ip + 1, body_end, compiled_fns);
+        // What the body declared, recorded per package: its routines read the
+        // record whatever way they are entered (`declared_meta_lane` asks the
+        // running package's record before the calling frames', as a unit's)
+        // and the named-call entry re-injects it
+        // (`inject_class_body_statics`). Then the enclosing scope's lanes
+        // again.
+        for lane in &body_lanes {
+            if let Some(ValueView::Str(tc)) = self.env().get_sym(*lane).map(Value::view) {
+                let tc = tc.as_str().to_owned();
+                crate::runtime::cow_table_mut(&mut self.lexicals.unit_lexical_meta_lanes)
+                    .entry(name.clone())
+                    .or_default()
+                    .insert(lane.resolve(), Value::str(tc.clone()));
+                crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_types)
+                    .entry(name.clone())
+                    .or_default()
+                    .insert(lane.resolve(), tc);
+            }
+        }
+        for (lane, previous) in outer_lanes {
+            match previous {
+                Some(value) => {
+                    self.env_mut().insert_sym(lane, value);
+                }
+                None => {
+                    self.env_mut().remove_sym(lane);
+                }
+            }
+        }
         if let Some(lexicals) = lexicals {
             let saved_env = match &save {
                 BlockEnvSave::Tier(parent) => &**parent,
@@ -89,20 +158,6 @@ impl Interpreter {
         // `package Zef::CLI { my $CONFIG = preprocess-args-config-mutate(...); ... }`).
         let mut package_lexicals: Vec<(String, Value)> = Vec::new();
         let mut write_back: Vec<(Symbol, Value)> = Vec::new();
-        // The names the body's own scope declares are its bindings, never a
-        // write to a same-named enclosing lexical (#13428).
-        let declared: Vec<Symbol> = (decls_idx != u32::MAX)
-            .then(|| code.constants.get(decls_idx as usize))
-            .flatten()
-            .and_then(Value::as_list_items)
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(Symbol::intern)
-                    .collect()
-            })
-            .unwrap_or_default();
         for (k, v) in writes.iter() {
             let k = *k;
             let in_outer = env.contains_key_sym(k) && !declared.contains(&k);
@@ -212,6 +267,17 @@ impl Interpreter {
                 }
             }
             write_back.retain(|(k, _)| !lane_keys.contains(k));
+        }
+        // The block's subs enter with its `@`/`%` lexicals injected (and the
+        // caller's same-named lanes cleared), as a class's methods do with
+        // its statics.
+        for (bare, _) in &package_lexicals {
+            if bare.starts_with(['@', '%']) {
+                crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_names)
+                    .entry(name.clone())
+                    .or_default()
+                    .insert(bare.clone());
+            }
         }
         drop(writes);
         if !package_lexicals.is_empty() {
