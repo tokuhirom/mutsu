@@ -10178,7 +10178,7 @@ impl CompiledCode {
             | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
             | OpCode::MultiDimIndexAssignNested { name_idx: idx, .. }
             | OpCode::IndexElemAutoviv { name_idx: idx, .. }
-                if matches!(self.constants.get(*idx as usize).map(Value::view), Some(ValueView::Str(name)) if name.starts_with('$')) =>
+                if matches!(self.constants.get(*idx as usize).map(Value::view), Some(ValueView::Str(name)) if !name.starts_with(['@', '%', '&'])) =>
             {
                 Some(*idx)
             }
