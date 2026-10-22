@@ -430,14 +430,6 @@ impl Interpreter {
         // sequences; the drive loop's ordered retirement then retires it as soon
         // as it owes nothing. Dropping the marker outright discarded them.
         let pending: Vec<Value> = std::mem::take(&mut self.async_state.pending_react_subscriptions);
-        for marker in &pending {
-            if let ValueView::Array(items, ..) = marker.view()
-                && items.len() >= 2
-                && let ValueView::Sub(data) = items[1].view()
-            {
-                self.async_state.nested_react_callbacks.insert(data.id);
-            }
-        }
         let first_new = react_subs.len();
         let mut stream_base = None;
         let finished = self.build_react_subscriptions(&pending, react_subs, &mut stream_base)?;

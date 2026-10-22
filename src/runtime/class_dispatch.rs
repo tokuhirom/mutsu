@@ -430,24 +430,8 @@ impl Interpreter {
         {
             let mut call_args = vec![inv_value.clone()];
             call_args.extend(args);
-            let wrapper_id = if let ValueView::Sub(wd) = outermost.view() {
-                Some(wd.id)
-            } else {
-                None
-            };
             self.shift_arg_sources_for_wrap_invocant();
             let result = self.call_sub_value(outermost, call_args);
-            // Propagate closure variable mutations from the wrapper back to
-            // the current env so captured variables are visible to the caller.
-            if let Some(wid) = wrapper_id
-                && let Some(persisted) = self.closure_env_overrides.get(&wid).cloned()
-            {
-                for (k, v) in persisted.iter() {
-                    if self.env.contains_key_sym(*k) {
-                        self.env.insert_sym(*k, v.clone());
-                    }
-                }
-            }
             self.pop_method_samewith_context();
             self.dispatch.method_dispatch_stack.pop();
             // The wrapped call mutated attributes (if any) through the live

@@ -743,37 +743,9 @@ impl Interpreter {
                     arg_sources: self.pending_call_arg_sources().cloned(),
                     dispatch_token: 0,
                 };
-                let (wrapper_id, wrapper_base_env) = if let ValueView::Sub(wd) = outermost.view() {
-                    (Some(wd.id), Some(wd.env.clone()))
-                } else {
-                    (None, None)
-                };
                 self.push_wrap_dispatch_frame(frame);
                 let result = self.call_method_wrapper(outermost, sanitized_args);
                 self.pop_wrap_dispatch_frame();
-                // Propagate closure variable mutations from the wrapper back to
-                // the current env so captured variables (e.g. $seen = True) are
-                // visible to the caller. Only write back keys the wrapper actually
-                // *changed* relative to its captured lexical snapshot: a persisted
-                // value equal to the wrapper's capture is stale (never mutated) and
-                // must not clobber the caller's live value (e.g. the `$h` that holds
-                // this very WrapHandle, captured as Nil mid-`my $h = &foo.wrap(...)`).
-                if let Some(wid) = wrapper_id
-                    && let Some(persisted) = self.closure_env_overrides.get(&wid).cloned()
-                {
-                    for (k, v) in persisted.iter() {
-                        if !self.env.contains_key_sym(*k) {
-                            continue;
-                        }
-                        let unchanged = wrapper_base_env
-                            .as_ref()
-                            .is_some_and(|base| base.get_sym(*k) == Some(v));
-                        if unchanged {
-                            continue;
-                        }
-                        self.env.insert_sym(*k, v.clone());
-                    }
-                }
                 return result;
             }
             let (sanitized_args, callsite_line) = self.sanitize_call_args(&args);
@@ -1057,16 +1029,6 @@ impl Interpreter {
                 self.cur_source_line = line;
             }
             self.push_caller_env();
-            let persist_closure_env =
-                data.name.is_empty() || !self.has_function(&data.name.resolve());
-            let closure_base_env = if persist_closure_env {
-                self.closure_env_overrides
-                    .get(&data.id)
-                    .cloned()
-                    .unwrap_or_else(|| data.env.clone())
-            } else {
-                data.env.clone()
-            };
             // Free vars this closure lexically OWNS: the creating frame declares
             // them and never mutates them after the capture op ran (the compiler's
             // `authoritative_free_vars`, plus the runtime-vouched
@@ -1086,7 +1048,7 @@ impl Interpreter {
                 auth_free_vars.contains(&k) || data.authoritative_captures.contains(&k)
             };
             let mut new_env = saved_env.clone();
-            for (k, v) in &closure_base_env {
+            for (k, v) in &data.env {
                 // A captured `ContainerRef` is a shared container cell (box-on-
                 // capture / lever C): the single source of truth for that lexical,
                 // so it must OVERWRITE any stale value the caller env holds (a
@@ -1155,7 +1117,7 @@ impl Interpreter {
             // object's method read `$!attr` off that other object. Resolve
             // through the tier-walking get and force-install (self is lexical;
             // a method's own invocant is bound from its args after this).
-            if let Some(captured_self) = closure_base_env.get("self").cloned() {
+            if let Some(captured_self) = data.env.get("self").cloned() {
                 new_env.insert("self".to_string(), captured_self);
             }
             self.env = new_env.clone();
@@ -1541,22 +1503,6 @@ impl Interpreter {
                     self.restore_let_saves(let_mark);
                 }
             }
-            if persist_closure_env {
-                let mut persisted_closure_env = closure_base_env.clone();
-                for key in closure_base_env.keys() {
-                    // Dynamics belong to the live dynamic frame, not to the
-                    // closure's per-instance state: persisting one pins the
-                    // closure to the first call's value (#12279).
-                    if key.is_dynamic_var_env_key() {
-                        continue;
-                    }
-                    if let Some(value) = self.env.get_sym(*key).cloned() {
-                        persisted_closure_env.insert_sym(*key, value);
-                    }
-                }
-                self.closure_env_overrides
-                    .insert(data.id, persisted_closure_env);
-            }
             // Preserve map rw topic writeback across env restoration
             let rw_map_topic = self.env.get("__mutsu_rw_map_topic__").cloned();
             let mut merged = saved_env;
@@ -1591,8 +1537,7 @@ impl Interpreter {
             // was installed with overwrite on entry (`is_authoritative` above),
             // so writing it back would push the closure's private binding onto a
             // caller lexical that merely shares the name — the `whenever` body of
-            // a `supply { my $x … }`, whose per-instance state lives in
-            // `closure_env_overrides` instead.
+            // a `supply { my $x … }`, whose state lives in its captured cell.
             let is_body_private = |k: crate::symbol::Symbol| {
                 data.authoritative_captures.contains(&k)
                     || runtime_body_declared.contains(&k)
@@ -1639,7 +1584,7 @@ impl Interpreter {
                     // binding: entry installed it over the caller's same-named
                     // lexical (closure-wins), so it is not a caller mutation.
                     if body_entry_env.get_sym(*k) == Some(v)
-                        || closure_base_env.get_sym(*k) == Some(v)
+                        || data.env.get_sym(*k) == Some(v)
                     {
                         continue;
                     }

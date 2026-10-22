@@ -608,23 +608,10 @@ impl Interpreter {
             terminal,
         );
         let outermost = chain.last().expect("accessor wrap chain is non-empty");
-        let wrapper_id = match outermost.1.view() {
-            ValueView::Sub(data) => Some(data.id),
-            _ => None,
-        };
         let mut call_args = vec![target];
         call_args.extend(args);
         self.shift_arg_sources_for_wrap_invocant();
         let result = self.call_sub_value(outermost.1.clone(), call_args);
-        if let Some(wrapper_id) = wrapper_id
-            && let Some(persisted) = self.closure_env_overrides.get(&wrapper_id).cloned()
-        {
-            for (key, value) in persisted.iter() {
-                if self.env.contains_key_sym(*key) {
-                    self.env.insert_sym(*key, value.clone());
-                }
-            }
-        }
         self.pop_method_samewith_context();
         self.dispatch.method_dispatch_stack.pop();
         result

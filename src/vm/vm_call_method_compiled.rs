@@ -324,83 +324,8 @@ impl Interpreter {
             self.enter_method_wrap_chain(cn, method, owner_sym, method_def, args, target.clone())?;
         let mut call_args = vec![target.clone()];
         call_args.extend(args.to_vec());
-        let wrapper_id = if let ValueView::Sub(wd) = outermost.view() {
-            Some(wd.id)
-        } else {
-            None
-        };
-        // What the wrapper's closure held for each captured name BEFORE this
-        // call. The write-back below must propagate only names the wrapper
-        // actually MUTATED; a name whose post-call value still equals what it
-        // captured was never assigned by the wrapper, and writing it back would
-        // overwrite an unrelated caller lexical that merely shares the name.
-        // This matters because `capture_closure_env` snapshots the WHOLE env
-        // once `reflective_name_access_possible()` latches (any `EVAL`/`::()`
-        // anywhere in the program does it), so a wrapper captures every lexical
-        // that happened to be live where it was created — including block-local
-        // leftovers from unrelated compunits.
-        let wrapper_base_env: Option<crate::env::Env> = wrapper_id.and_then(|wid| {
-            self.get_closure_env_override(wid)
-                .or_else(|| match outermost.view() {
-                    ValueView::Sub(wd) => Some(wd.env.clone()),
-                    _ => None,
-                })
-        });
         self.shift_arg_sources_for_wrap_invocant();
         let result = self.call_method_wrapper(outermost, call_args);
-        // Propagate closure variable mutations from the wrapper back to the
-        // current env so captured variables are visible to the caller.
-        if let Some(wid) = wrapper_id
-            && let Some(persisted) = self.get_closure_env_override(wid)
-        {
-            for (k, v) in persisted.iter() {
-                // `$_`, `$/` and `$!` are per-routine: each call gets its own,
-                // and the caller's is restored from its saved env — the same
-                // rule `pop_caller_env_with_writeback` applies to dynamics. The
-                // wrapper's persisted copy is the *callee's* topic, so writing
-                // it back reset the caller's `$_` to `Any` on every wrapped
-                // call. OO::Monitors wraps every monitor method, so any
-                // `$monitor.method(...)` destroyed the caller's topic —
-                // Cro::HTTP::Client's `$!connection-cache.add-pipeline($pipeline)`
-                // did exactly that in the middle of a `whenever` body, and the
-                // `.request = $request-object` two lines later died with
-                // "cannot assign through .request on non-instance".
-                // `self` is per-frame for the same reason and even more sharply:
-                // OO::Monitors installs its wrapper from
-                // `MetamodelX::MonitorHOW.add_method`, whose own `self` is the
-                // HOW, so writing it back left the CALLER's `self` bound to a
-                // `MetamodelX::MonitorHOW` — every later `$!attr` read in that
-                // frame then threw "P6opaque: no such attribute".
-                if k.with_str(|s| {
-                    matches!(Self::normalize_var_meta_name(s), "_" | "/" | "!") || s == "self"
-                }) {
-                    continue;
-                }
-                // Only a name the wrapper CHANGED reaches the caller. See
-                // `wrapper_base_env`: the capture is the whole env, so without
-                // this the wrapper republishes every lexical that was live
-                // where it was created over the caller's same-named ones. The
-                // `$_`/`$/`/`$!`/`self` skips above stay as a belt-and-braces
-                // guard for names that are per-frame even when they *do*
-                // differ.
-                // `cheaply_unchanged` is O(1) and conservative — it proves
-                // "unchanged" only by Arc identity / scalar compare, so a value
-                // it cannot classify is treated as changed and still written
-                // back. That is the right bias here, and it also keeps a
-                // container whose CONTENTS the wrapper mutated correct: those
-                // are already visible to the caller through the shared cell, so
-                // skipping the handle write-back loses nothing.
-                if wrapper_base_env.as_ref().is_some_and(|base| {
-                    base.get_sym(*k)
-                        .is_some_and(|old| crate::vm::vm_method_dispatch::cheaply_unchanged(old, v))
-                }) {
-                    continue;
-                }
-                if self.env().contains_key_sym(*k) {
-                    self.env_mut().insert_sym(*k, v.clone());
-                }
-            }
-        }
         self.pop_method_dispatch();
         self.pop_method_samewith_context();
         Some(result)

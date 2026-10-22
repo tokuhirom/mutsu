@@ -271,9 +271,9 @@ pub(crate) fn is_magic_sigilless_key(name: &str) -> bool {
 /// are stored sigil-less), `@*x` → `"@*x"`, `%*VAR` → `"%*VAR"`, `&*f` → `"&*f"`.
 ///
 /// A dynamic variable is resolved through the *caller* chain at call time, never
-/// from a lexical capture. Closure machinery that freezes a captured value per
-/// closure instance (`closure_captured_state`) must therefore skip these names:
-/// persisting one pins the closure to the value seen on its first call, so a later
+/// from a lexical capture. Closure machinery that carries a captured value across
+/// calls must therefore skip these names: persisting one pins the closure to the
+/// value seen on its first call, so a later
 /// re-assignment by the caller becomes invisible (`our %*VAR = ...` re-set per row
 /// of a truth table left every row reading row 1's bindings — roast
 /// integration/99problems-41-to-50.t P46).

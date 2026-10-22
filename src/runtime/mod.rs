@@ -2041,7 +2041,6 @@ pub struct Interpreter {
     /// let through because the bound object has a user `STORE`: the store that
     /// follows routes through `STORE` instead of rebinding the name (#9551).
     pub(crate) pending_sigilless_store: Option<String>,
-    closure_env_overrides: HashMap<u64, Env>,
     /// Sigilless parameter names (`\attr`, `my \x`) of the routine whose body is
     /// about to be compiled by the interpret path (`compile_block_value_opts`).
     /// The multi/user-sub fallback runs a body via a *fresh* `Compiler`, which
