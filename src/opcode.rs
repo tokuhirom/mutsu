@@ -11402,7 +11402,7 @@ impl CompiledCode {
         let vouched: std::collections::HashSet<Symbol> = self
             .locals
             .iter()
-            .filter(|name| crate::env::is_plain_user_lexical(name))
+            .filter(|name| crate::env::is_user_lexical_or_term_key(name))
             .map(|name| Symbol::intern(name))
             .filter(|sym| {
                 // Reassigned / inc-dec'd by name (directly or by a nested closure).
@@ -11652,7 +11652,7 @@ impl CompiledCode {
             .filter(|sym| !self.for_loop_param_syms.contains(sym))
             .filter(|sym| {
                 sym.with_str(|s| {
-                    crate::env::is_plain_user_lexical(s)
+                    crate::env::is_user_lexical_or_term_key(s)
                         && !s.starts_with('&')
                         && !own.contains(s)
                         // `%$h` / `@$a` read through `GetHashVar("%h")`, which
