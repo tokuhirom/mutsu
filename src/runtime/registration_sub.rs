@@ -1074,7 +1074,17 @@ impl Interpreter {
         }
         // Auto-detect @_ / %_ usage for subs without explicit signatures
         let (mut effective_param_defs, empty_sig) = if let Some(metadata) = metadata {
-            (metadata.effective_param_defs.clone(), metadata.empty_sig)
+            // The plan records the declaration as written; a declared
+            // signature is `param_defs` itself, which the caller may have
+            // rewritten (type aliases its declaring frame resolved, see
+            // `exec_register_sub_op_in_registry`). Only a signature-less
+            // routine's implicit `*@_`/`*%_` comes from the plan.
+            let defs = if param_defs.is_empty() {
+                metadata.effective_param_defs.clone()
+            } else {
+                param_defs.to_vec()
+            };
+            (defs, metadata.empty_sig)
         } else if param_defs.is_empty() && params.is_empty() {
             let (use_positional, use_named) =
                 crate::method_signature_shared::auto_signature_uses(body);
@@ -1439,10 +1449,7 @@ impl Interpreter {
                     .is_some_and(|rt| self.declared_type_alias_target(rt).is_some())
                     || self
                         .canonical_signature_param_types(&existing.param_defs)
-                        .is_some()
-                    // The declaring frame resolved an alias the env does not
-                    // hold (a pad term), which the check above cannot see.
-                    || !same_signature_types(&existing.param_defs, &new_def.param_defs));
+                        .is_some());
             redeclares_hoisted_twin = refines_aliases;
             // The installed def carries the alias-resolved return type (the
             // in-sequence pass rewrites `--> Pointer` to the type the constant
@@ -2782,24 +2789,4 @@ impl Interpreter {
     fn in_inlined_block_frame(&self) -> bool {
         self.routine_stack.last().is_some_and(|f| f.is_inlined_block)
     }
-}
-
-/// Whether two signatures spell every parameter type alike, including the
-/// types of nested signatures and `&callback (...)` signatures.
-// Cost: O(p), p = parameters including nested signatures.
-fn same_signature_types(a: &[crate::ast::ParamDef], b: &[crate::ast::ParamDef]) -> bool {
-    a.len() == b.len()
-        && a.iter().zip(b).all(|(x, y)| {
-            x.type_constraint == y.type_constraint
-                && match (&x.sub_signature, &y.sub_signature) {
-                    (Some(xs), Some(ys)) => same_signature_types(xs, ys),
-                    (None, None) => true,
-                    _ => false,
-                }
-                && match (&x.code_signature, &y.code_signature) {
-                    (Some((xs, xr)), Some((ys, yr))) => same_signature_types(xs, ys) && xr == yr,
-                    (None, None) => true,
-                    _ => false,
-                }
-        })
 }

@@ -154,7 +154,9 @@ impl Interpreter {
     /// class or role.
     // Cost: O(1).
     pub(crate) fn constraint_type_value(&self, name: &str) -> Option<Value> {
-        if let Some(v) = self.type_name_binding(name)
+        // Read through the shared cell a term a mainline routine captures is
+        // boxed into (`exec_register_sub_op_in_registry`).
+        if let Some(v) = self.type_name_binding(name).map(|v| v.deref_container())
             && matches!(v.view(), ValueView::Package(_))
         {
             return Some(v);

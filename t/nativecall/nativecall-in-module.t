@@ -10,7 +10,9 @@ use NCPointerMod;
 plan 4;
 
 my $p = alloc-aligned(16, 256);
-isa-ok $p, Pointer, 'module returned a Pointer object';
+# The program does not `use NativeCall`, so `Pointer` is not a name here
+# (rakudo rejects it at compile time): check the type by its full name.
+is $p.^name, 'NativeCall::Types::Pointer', 'module returned a Pointer object';
 ok $p.Int > 0, 'the module allocated a non-NULL block (is rw out-parameter worked across the module boundary)';
 ok $p.Int %% 16, 'the block honours the requested alignment';
 lives-ok { release($p) }, 'the module can free the block';
