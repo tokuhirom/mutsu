@@ -1776,6 +1776,9 @@ pub(crate) struct Compiler {
     /// reaches the name's slot (a body `my`, an inline loop or block
     /// parameter, see `alloc_local`) removes the name.
     readonly_scalar_params: std::collections::HashSet<String>,
+    /// The enclosing routines' [`Self::readonly_scalar_params`], seen by a nested
+    /// closure body: a captured readonly parameter stays one there (#14209).
+    enclosing_readonly_scalar_params: std::collections::HashSet<String>,
     /// Subset of `constant_vars` whose declaring lexical block is still open.
     /// Constants are `our`-scoped (installed in the package), so once their
     /// declaring block has exited, their stale local slot must not be reused —
@@ -2174,6 +2177,7 @@ impl Compiler {
             enclosing_noncontainer_bound_vars: std::collections::HashSet::new(),
             decont_scalar_params: std::collections::HashSet::new(),
             readonly_scalar_params: std::collections::HashSet::new(),
+            enclosing_readonly_scalar_params: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
             lexical_type_shadows: std::collections::HashSet::new(),
             lexical_types_in_scope: std::collections::HashSet::new(),
@@ -2926,6 +2930,18 @@ impl Compiler {
         // does not declare the same name itself (that declaration shadows it).
         sub.enclosing_noncontainer_bound_vars
             .extend(self.noncontainer_bound_vars.iter().cloned());
+        // A name this scope rebinds is writable there, so only the ones it
+        // does not declare itself carry over (conservative: unsure = writable).
+        sub.enclosing_readonly_scalar_params.extend(
+            self.readonly_scalar_params
+                .iter()
+                .chain(
+                    self.enclosing_readonly_scalar_params
+                        .iter()
+                        .filter(|n| !self.local_map.contains_key(n.as_str())),
+                )
+                .cloned(),
+        );
         sub.enclosing_noncontainer_bound_vars.extend(
             self.enclosing_noncontainer_bound_vars
                 .iter()
@@ -3856,6 +3872,15 @@ impl Compiler {
         folded
     }
 
+    /// Whether `name` is a readonly `$` parameter of the routine being compiled,
+    /// or of an enclosing one that this body captures without rebinding it.
+    // Cost: O(1).
+    pub(super) fn is_readonly_scalar_param(&self, name: &str) -> bool {
+        self.readonly_scalar_params.contains(name)
+            || (self.enclosing_readonly_scalar_params.contains(name)
+                && !self.local_map.contains_key(name))
+    }
+
     /// Whether `expr` reads a readonly `$` parameter of the routine being
     /// compiled ([`Self::readonly_scalar_params`]), directly or as the value
     /// of a `key => $p` named argument. Such an operand is a value, not a
@@ -3864,13 +3889,13 @@ impl Compiler {
     // Cost: O(1).
     pub(super) fn is_readonly_param_operand(&self, expr: &Expr) -> bool {
         match expr {
-            Expr::Var(name) => self.readonly_scalar_params.contains(name.as_str()),
+            Expr::Var(name) => self.is_readonly_scalar_param(name),
             Expr::Binary {
                 op: crate::token_kind::TokenKind::FatArrow,
                 right,
                 ..
             } => {
-                matches!(right.as_ref(), Expr::Var(name) if self.readonly_scalar_params.contains(name.as_str()))
+                matches!(right.as_ref(), Expr::Var(name) if self.is_readonly_scalar_param(name))
             }
             _ => false,
         }
