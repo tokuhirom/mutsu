@@ -957,6 +957,45 @@ impl Interpreter {
         // A raw ContainerRef arriving directly from an lvalue return remains
         // transparent, including for introspection methods. Only the distinct
         // `.VAR` view above reflects its Scalar container identity.
+        // ADR-13823: a vivifying method's receiver that is an element location
+        // (`@a[2].push`, `%h<k>.ASSIGN-KEY`) is remembered before it is
+        // decontainerized, so an `Any:U` row can store the fresh container
+        // through it.
+        let receiver_cell = (crate::builtins::method_table::vivifies_undefined_receiver(method)
+            && matches!(
+                target.view(),
+                ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. }
+            ))
+        .then(|| target.clone());
+        // The deferred token of a missing element is vivified by
+        // `hash_entry_invocant`, which stores without the element's type check;
+        // the check a cell store makes belongs here (`my Int @z; @z[0].push(1)`
+        // refuses the Array). A typed-container element constraint is handled by
+        // the subscript producer, which stores the typed container itself.
+        if let Some(cell) = &receiver_cell
+            && let Some((ty, sigil)) = cell
+                .hash_entry_locate()
+                .and_then(|t| t.element_constraint())
+            && !ty.starts_with("Array[")
+            && !ty.starts_with("Hash[")
+            && {
+                let current = cell.deref_container();
+                match current.view() {
+                    ValueView::Nil => true,
+                    ValueView::Package(p) => !self.has_user_method(&p.resolve(), method),
+                    _ => false,
+                }
+            }
+        {
+            let fresh = if matches!(method, "ASSIGN-KEY" | "BIND-KEY") {
+                Value::hash(crate::value::ValueMap::default())
+            } else {
+                Value::real_array(Vec::new())
+            };
+            if !self.type_matches_value(&ty, &fresh) {
+                return Err(self.type_check_assignment_failure(sigil, &ty, &fresh));
+            }
+        }
         let target = if method != "VAR" {
             match target.view() {
                 // A `.VAR` view answers container metadata as Scalar. Other
@@ -1948,8 +1987,17 @@ impl Interpreter {
                 {
                     self.dispatch.method_dispatch_pure = false;
                     let mut detached = target.descalarize().clone();
-                    let mut place =
-                        crate::builtins::method_table::ReceiverPlace::detached(&mut detached);
+                    let undefined_element = matches!(detached.view(), ValueView::Nil)
+                        || matches!(detached.view(), ValueView::Package(p) if {
+                            let p = p.resolve();
+                            p == "Any" || p == "Mu" || p.starts_with("Array[") || p.starts_with("Hash[")
+                        });
+                    let mut place = match &receiver_cell {
+                        Some(cell) if undefined_element => {
+                            crate::builtins::method_table::ReceiverPlace::cell(cell, &detached)
+                        }
+                        _ => crate::builtins::method_table::ReceiverPlace::detached(&mut detached),
+                    };
                     if let Some(result) = crate::builtins::method_table::invoke_mut(
                         self, &mut place, method_sym, &args,
                     ) {

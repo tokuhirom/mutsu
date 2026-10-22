@@ -45,6 +45,14 @@ pub(crate) enum ReceiverPlace<'a> {
     /// A container with no binding: an `is Array` instance's storage, a
     /// by-value receiver (`f().push(1)`, `[1, 2].pop`).
     Detached(&'a mut Value),
+    /// A subscript element reached as a location (`@a[2].push`, `%h<k>.ASSIGN-KEY`,
+    /// ADR-13823): `cell` is the element's `ContainerRef` or the deferred
+    /// `HashEntryRef` of a key that does not exist yet, `value` what it holds
+    /// now. It has no name and no VM slot; a row that vivifies an undefined
+    /// receiver stores the fresh container through the cell
+    /// ([`Self::receiver_cell`]) and then grows it on a detached place over the
+    /// same shared node.
+    Cell { cell: &'a Value, value: &'a Value },
 }
 
 impl<'a> ReceiverPlace<'a> {
@@ -90,7 +98,7 @@ impl<'a> ReceiverPlace<'a> {
                 code: *code,
                 arg_sources,
             }),
-            ReceiverPlace::Detached(_) => None,
+            ReceiverPlace::Detached(_) | ReceiverPlace::Cell { .. } => None,
         }
     }
 
@@ -120,7 +128,7 @@ impl<'a> ReceiverPlace<'a> {
             ReceiverPlace::Var { arg_sources, .. } => {
                 arg_sources.get(index).and_then(|s| s.as_deref())
             }
-            ReceiverPlace::Detached(_) => None,
+            ReceiverPlace::Detached(_) | ReceiverPlace::Cell { .. } => None,
         }
     }
 
@@ -137,6 +145,21 @@ impl<'a> ReceiverPlace<'a> {
         } = self
         {
             interp.update_local_if_exists(code, name, &cell);
+        }
+    }
+
+    /// An element location, read as `value` now.
+    // Cost: O(1).
+    pub(crate) fn cell(cell: &'a Value, value: &'a Value) -> Self {
+        ReceiverPlace::Cell { cell, value }
+    }
+
+    /// The element location behind a [`ReceiverPlace::Cell`] receiver.
+    // Cost: O(1).
+    pub(crate) fn receiver_cell(&self) -> Option<&Value> {
+        match self {
+            ReceiverPlace::Cell { cell, .. } => Some(cell),
+            _ => None,
         }
     }
 
@@ -161,7 +184,7 @@ impl<'a> ReceiverPlace<'a> {
     pub(crate) fn code(&self) -> Option<&'a CompiledCode> {
         match self {
             ReceiverPlace::Var { code, .. } => *code,
-            ReceiverPlace::Detached(_) => None,
+            ReceiverPlace::Detached(_) | ReceiverPlace::Cell { .. } => None,
         }
     }
 
@@ -170,7 +193,7 @@ impl<'a> ReceiverPlace<'a> {
     // Cost: O(1).
     pub(crate) fn value(&self) -> &Value {
         match self {
-            ReceiverPlace::Var { value, .. } => value,
+            ReceiverPlace::Var { value, .. } | ReceiverPlace::Cell { value, .. } => value,
             ReceiverPlace::Detached(value) => value,
         }
     }
@@ -188,7 +211,7 @@ impl<'a> ReceiverPlace<'a> {
             ReceiverPlace::Var { name, .. } if !name.is_empty() => {
                 interp.env_root_descended_mut(name)
             }
-            ReceiverPlace::Var { .. } => None,
+            ReceiverPlace::Var { .. } | ReceiverPlace::Cell { .. } => None,
             ReceiverPlace::Detached(value) => Some(&mut **value),
         }
     }
@@ -242,6 +265,9 @@ impl<'a> ReceiverPlace<'a> {
                 }
             }
             ReceiverPlace::Detached(slot) => **slot = new,
+            // A location is written through `receiver_cell` by a row that can
+            // report a failed store; there is no infallible replacement.
+            ReceiverPlace::Cell { .. } => {}
         }
     }
 

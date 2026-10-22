@@ -44,10 +44,42 @@ impl Interpreter {
     pub(crate) fn exec_index_invocant_ref_op(
         &mut self,
         is_positional: bool,
+        vivify: bool,
     ) -> Result<(), RuntimeError> {
-        if crate::runtime::raw_invocant::any_raw_invocant_method_possible()
-            && let Some(cell) = self.take_subscript_element_cell(is_positional, false)
+        // A Junction key threads the whole load over its values: every addressed
+        // element is vivified to an `Array` and the call autothreads over a
+        // Junction of the stored shared nodes (`%h{ any 0, 1 }.push: 42`).
+        let junction_key = if vivify && self.stack.len() >= 2 {
+            self.stack.last().cloned()
+        } else {
+            None
+        };
+        if let Some(key) = &junction_key
+            && let ValueView::Junction { kind, values } = key.view()
         {
+            self.stack.pop();
+            let container = self.stack.pop().unwrap_or(Value::NIL);
+            let mut elems = Vec::with_capacity(values.len());
+            for v in values.iter() {
+                self.stack.push(container.clone());
+                self.stack.push(v.clone());
+                self.exec_index_invocant_ref_op(is_positional, true)?;
+                let element = self.stack.pop().unwrap_or(Value::NIL);
+                elems.push(self.vivify_element_array(element)?);
+            }
+            self.stack.push(Value::junction(kind, elems));
+            return Ok(());
+        }
+        // A vivifying method name takes the element's location even when it is
+        // missing (the deferred token), so `CallMethod` can store a fresh
+        // container into it; any other receiver only needs an existing cell,
+        // and only when a raw-invocant callee could bind it.
+        if (vivify || crate::runtime::raw_invocant::any_raw_invocant_method_possible())
+            && let Some(cell) = self.take_subscript_element_cell(is_positional, vivify)
+        {
+            if vivify {
+                self.vivify_typed_hole(&cell)?;
+            }
             // `skip_postcircumfix_overload` is scoped to ONE subscript dispatch
             // and is consumed by `exec_index_op_with_positional`; consume it
             // here too so producing a cell instead cannot leak the suppression
@@ -61,6 +93,71 @@ impl Interpreter {
         self.exec_index_op_with_positional(is_positional)?;
         self.hllize_vm_collection_on_top();
         Ok(())
+    }
+
+    /// An element of a typed container (`my Array of Int @x`, whose cells
+    /// enforce `Array[Int]`) must be a container of that type: a hole is
+    /// vivified to one (a plain `Array` store would lose the element type),
+    /// and a defined element is tagged with it, so the method grows it through
+    /// its own type check.
+    // Cost: O(1) for an untyped or non-container element; a cell store for a
+    // typed hole.
+    fn vivify_typed_hole(&mut self, cell: &Value) -> Result<(), RuntimeError> {
+        let constraint = match cell.view() {
+            ValueView::ContainerRef(c) => crate::value::lookup_cell_constraint(&c).map(|c| c.ty),
+            ValueView::HashEntryRef { .. } => cell
+                .hash_entry_locate()
+                .and_then(|t| t.element_constraint())
+                .map(|(ty, _)| ty),
+            _ => None,
+        };
+        let Some(ty) = constraint else {
+            return Ok(());
+        };
+        if !ty.starts_with("Array[") && !ty.starts_with("Hash[") {
+            return Ok(());
+        }
+        let current = cell.deref_container();
+        match current.descalarize().view() {
+            ValueView::Array(..) | ValueView::Hash(..) => {
+                Self::tag_element_value_type_in_place(current.descalarize(), &ty);
+            }
+            ValueView::Nil | ValueView::Package(_) => {
+                let fresh = if ty.starts_with("Array[") {
+                    Value::real_array(Vec::new())
+                } else {
+                    Value::hash(crate::value::ValueMap::default())
+                };
+                Self::tag_element_value_type_in_place(&fresh, &ty);
+                if let Some(stored) = self.assign_lvalue_container(cell, fresh) {
+                    stored?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// An element location produced for a Junction-threaded vivifying call:
+    /// an undefined element is replaced by a fresh `Array` stored through the
+    /// location, and the element's container node is answered.
+    // Cost: O(1) for a cell store.
+    fn vivify_element_array(&mut self, element: Value) -> Result<Value, RuntimeError> {
+        if !element.is_container_ref() && !matches!(element.view(), ValueView::HashEntryRef { .. })
+        {
+            return Ok(element);
+        }
+        let current = element.deref_container();
+        let undefined = matches!(current.view(), ValueView::Nil)
+            || matches!(current.view(), ValueView::Package(p) if p == "Any" || p == "Mu");
+        if !undefined {
+            return Ok(current);
+        }
+        let fresh = Value::real_array(Vec::new());
+        if let Some(stored) = self.assign_lvalue_container(&element, fresh.clone()) {
+            stored?;
+        }
+        Ok(fresh)
     }
 
     /// A raw `VMArray`/`VMHash` element read through a Raku subscript comes

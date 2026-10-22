@@ -1330,14 +1330,17 @@ impl Compiler {
     /// to `IndexElemAutoviv` instead and is left alone: it hands back the
     /// element's shared node for in-place mutation, which is a different
     /// contract from replacing the element.
-    pub(super) fn mark_trailing_index_as_invocant_ref(&mut self, target: &Expr) {
+    pub(super) fn mark_trailing_index_as_invocant_ref(&mut self, target: &Expr, vivify: bool) {
         if !matches!(target, Expr::Index { .. }) {
             return;
         }
         if let Some(last) = self.code.ops.last_mut()
             && let OpCode::Index { is_positional } = *last
         {
-            *last = OpCode::IndexInvocantRef { is_positional };
+            *last = OpCode::IndexInvocantRef {
+                is_positional,
+                vivify,
+            };
         }
     }
 

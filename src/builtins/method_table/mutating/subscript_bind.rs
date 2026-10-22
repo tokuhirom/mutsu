@@ -62,18 +62,37 @@ pub(super) fn hash_bind_key(
     if !place.came_through_vm() {
         return None;
     }
-    let mut hash = place.value().deref_container().descalarize().clone();
+    let hash = place.value().deref_container().descalarize().clone();
     if !matches!(hash.view(), ValueView::Hash(..)) {
         return None;
     }
-    let key_arg = match interp.prepare_hash_key_arg(&hash, args[0].clone()) {
-        Ok(key) => key,
+    let source_var = place.arg_source(1).map(str::to_string);
+    let (value, install) = match bind_key_in(interp, &hash, args, source_var.as_deref()) {
+        Ok(bound) => bound,
         Err(error) => return Some(Err(error)),
     };
+    if let Some((name, cell)) = install {
+        place.install_source_cell(interp, &name, cell);
+    }
+    place.reseat(interp);
+    Some(Ok(value))
+}
+
+/// Bind `args[1]` under key `args[0]` of `hash` (a `Hash` value), in place on
+/// its shared node. `source_var` is the caller's variable behind the value,
+/// when the call site named one; the cell to install for it is answered.
+// Cost: O(1) expected for the hash write, plus the key normalisation.
+pub(super) fn bind_key_in(
+    interp: &mut Interpreter,
+    hash: &Value,
+    args: &[Value],
+    source_var: Option<&str>,
+) -> Result<(Value, Option<(String, Value)>), RuntimeError> {
+    let mut hash = hash.clone();
+    let key_arg = interp.prepare_hash_key_arg(&hash, args[0].clone())?;
     let value = args[1].clone();
     let mut install: Option<(String, Value)> = None;
-    let source_var = place.arg_source(1).map(str::to_string);
-    let cell = interp.bind_key_source_cell(source_var.as_deref(), &value, &mut install);
+    let cell = interp.bind_key_source_cell(source_var, &value, &mut install);
     hash.with_hash_mut(|gc| {
         let data = crate::value::gc_data_mut(gc);
         let key = if data.key_type.is_some() {
@@ -87,11 +106,7 @@ pub(super) fn hash_bind_key(
         };
         data.map.insert(key, Value::container_ref(cell));
     });
-    if let Some((name, cell)) = install {
-        place.install_source_cell(interp, &name, cell);
-    }
-    place.reseat(interp);
-    Some(Ok(value))
+    Ok((value, install))
 }
 
 /// `BIND-KEY` on a `Set`, `Bag`, `Mix` or their mutable forms: refused.

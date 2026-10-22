@@ -117,6 +117,10 @@ fn grow(
     match value.view() {
         ValueView::Nil => {}
         ValueView::Package(name) if name == "Any" || name == "Mu" => {}
+        // A typed container's hole (`my Array of Int @x` reads one as
+        // `Array[Int]`) vivifies to a container of that type.
+        ValueView::Package(name)
+            if place.receiver_cell().is_some() && name.resolve().starts_with("Array[") => {}
         // Any other type object a named binding holds (`my Int $x`, `my $x =
         // Foo`) is an undefined invocant too: the binding vivifies through
         // an ordinary assignment, whose type check refuses an `Array` into
@@ -129,6 +133,17 @@ fn grow(
         | ValueView::Rat(..)
         | ValueView::Complex(..) => return Some(Err(make_multi_no_match_error(method))),
         _ => return None,
+    }
+    if place.receiver_cell().is_some() {
+        let mut fresh = Value::real_array(Vec::new());
+        if let ValueView::Package(name) = value.view() {
+            Interpreter::tag_element_value_type_in_place(&fresh, &name.resolve());
+        }
+        if let Err(err) = vivify_cell(interp, place, &fresh) {
+            return Some(Err(err));
+        }
+        let mut array = ReceiverPlace::detached(&mut fresh);
+        return array_row(interp, &mut array, args, named);
     }
     if let Some(name) = place.name() {
         let name = name.to_string();
@@ -173,12 +188,42 @@ fn grow(
         let mut array = place.rebound(&vivified)?;
         return array_row(interp, &mut array, args, named);
     }
-    let mut fresh = Value::real_array(Vec::new());
-    let mut array = ReceiverPlace::detached(&mut fresh);
-    match array_row(interp, &mut array, args, named)? {
-        Ok(_) => Some(Ok(fresh)),
-        Err(err) => Some(Err(err)),
+    // A receiver with no binding and no location (`f().push(1)`, a read-only
+    // accessor's value) has nowhere to keep the container it would vivify.
+    let type_name = match value.view() {
+        ValueView::Package(name) => name.resolve().to_string(),
+        _ => "Any".to_string(),
+    };
+    Some(Err(RuntimeError::assignment_ro_type_object(&type_name)))
+}
+
+/// Store `fresh` into the element location a [`ReceiverPlace::Cell`] names, the
+/// vivification of an undefined element (`@a[2].push`): obeys the element's
+/// constraint like any assignment to it, and creates a missing hash key.
+// Cost: O(1) for a cell store; O(p) in the key path for a deferred hash entry.
+fn vivify_cell(
+    interp: &mut Interpreter,
+    place: &ReceiverPlace<'_>,
+    fresh: &Value,
+) -> Result<(), RuntimeError> {
+    let Some(cell) = place.receiver_cell() else {
+        return Ok(());
+    };
+    match interp.assign_lvalue_container(cell, fresh.clone()) {
+        Some(Err(err)) => Err(err),
+        _ => Ok(()),
     }
+}
+
+/// Whether a method of this name autovivifies an undefined receiver (the rows
+/// above): the subscript receiver producer hands such a call the element's
+/// location even when the element does not exist yet (ADR-13823).
+// Cost: O(1), a short name compare.
+pub(crate) fn vivifies_undefined_receiver(name: &str) -> bool {
+    matches!(
+        name,
+        "push" | "append" | "unshift" | "prepend" | "ASSIGN-KEY" | "BIND-KEY"
+    )
 }
 
 /// The type a name holds when it is bound straight to a type object, with no
@@ -212,7 +257,10 @@ fn containerless_type_object(interp: &Interpreter, name: &str, value: &Value) ->
 fn undefined_hash_receiver(value: &Value) -> bool {
     match value.descalarize().view() {
         ValueView::Nil => true,
-        ValueView::Package(name) => name == "Any" || name == "Mu" || name == "Hash",
+        ValueView::Package(name) => {
+            let name = name.resolve();
+            name == "Any" || name == "Mu" || name == "Hash" || name.starts_with("Hash[")
+        }
         _ => false,
     }
 }
@@ -231,6 +279,17 @@ fn vivify_hash_then(
 ) -> Answer {
     if !undefined_hash_receiver(place.value()) {
         return None;
+    }
+    if place.receiver_cell().is_some() {
+        let mut fresh = Value::hash(crate::value::ValueMap::default());
+        if let ValueView::Package(name) = place.value().view() {
+            Interpreter::tag_element_value_type_in_place(&fresh, &name.resolve());
+        }
+        if let Err(err) = vivify_cell(interp, place, &fresh) {
+            return Some(Err(err));
+        }
+        let mut hash = ReceiverPlace::detached(&mut fresh);
+        return hash_row(interp, &mut hash, args, named);
     }
     let name = place.name()?.to_string();
     if let Some(type_name) = containerless_type_object(interp, &name, place.value()) {
@@ -274,6 +333,18 @@ fn any_bind_key(
 ) -> Answer {
     if !undefined_hash_receiver(place.value()) {
         return None;
+    }
+    if place.receiver_cell().is_some() {
+        let fresh = Value::hash(crate::value::ValueMap::default());
+        if let ValueView::Package(name) = place.value().view() {
+            Interpreter::tag_element_value_type_in_place(&fresh, &name.resolve());
+        }
+        if let Err(err) = vivify_cell(interp, place, &fresh) {
+            return Some(Err(err));
+        }
+        return Some(
+            super::subscript_bind::bind_key_in(interp, &fresh, args, None).map(|(value, _)| value),
+        );
     }
     let name = place.name()?.to_string();
     // A type object with no container has no `BIND-KEY` candidate at all.

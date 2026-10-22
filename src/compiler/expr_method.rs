@@ -901,6 +901,18 @@ impl Compiler {
             }
             _ => self.compile_expr(target),
         }
+        // A vivifying method on a public `is rw` attribute accessor
+        // (`$o.attr.push(1)`) needs the attribute's container to store the
+        // fresh Array into; the marker asks the accessor read for it (ADR-13823).
+        // Inert for every other zero-argument call, which ignores the flag.
+        if crate::builtins::method_table::vivifies_undefined_receiver(name.resolve().as_str())
+            && matches!(
+                target,
+                Expr::MethodCall { args, modifier: None, quoted: false, .. } if args.is_empty()
+            )
+        {
+            self.mark_trailing_method_call_as_accessor_ref();
+        }
         // ADR-0067's subscript-receiver producer: a raw invocant parameter binds
         // the caller's container, and for `@a[0].mut` / `%h<a>.mut` the only
         // place that container can come from is the subscript itself — the
@@ -908,7 +920,10 @@ impl Compiler {
         // has already been read onto the stack. Rawness is not statically
         // knowable (it depends on the element's runtime type), so the swap is
         // unconditional and the gate is at run time.
-        self.mark_trailing_index_as_invocant_ref(target);
+        self.mark_trailing_index_as_invocant_ref(
+            target,
+            crate::builtins::method_table::vivifies_undefined_receiver(name.resolve().as_str()),
+        );
         let arity = args.len() as u32;
         let arg_sources_idx = self.add_arg_sources_constant(args);
         let mname = name.resolve();
@@ -1005,7 +1020,7 @@ impl Compiler {
         // The subscript-receiver producer applies to the dynamic spelling too:
         // the method name is a runtime value, so rawness is even less knowable
         // here than for a literal name.
-        self.mark_trailing_index_as_invocant_ref(target);
+        self.mark_trailing_index_as_invocant_ref(target, true);
         self.compile_expr(name_expr);
         let arity = args.len() as u32;
         // ADR-0054 S3: bake `|EXPR` positions before compiling the args

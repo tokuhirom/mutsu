@@ -95,10 +95,10 @@ impl Compiler {
         method_name: &crate::symbol::Symbol,
     ) -> bool {
         let method = method_name.resolve();
-        let is_mutating = matches!(
-            method.as_str(),
-            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
-        );
+        // The push family (`@a[0].push`) is not here: it takes the subscript
+        // receiver producer (`IndexInvocantRef { vivify }`), which vivifies an
+        // undefined element through its location for any base (ADR-13823).
+        let is_mutating = matches!(method.as_str(), "pop" | "shift" | "splice");
         if !is_mutating {
             return false;
         }
