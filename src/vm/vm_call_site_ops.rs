@@ -94,6 +94,15 @@ impl Interpreter {
         r.inspect_err(|e| self.record_call_resume_point(code, ip, e))
     }
 
+    /// Raku method call sites HLL-ize their result, including `is raw`
+    /// methods. Subroutine calls deliberately keep their raw result (#14290).
+    // Cost: O(1).
+    pub(super) fn hllize_method_return(&mut self) {
+        if let Some(value) = self.stack.pop() {
+            self.stack.push(Self::hllize_value(value));
+        }
+    }
+
     /// `OpCode::CallMethod` at `code.ops[ip]`.
     pub(super) fn exec_call_method_site(
         &mut self,

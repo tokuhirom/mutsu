@@ -5377,6 +5377,7 @@ impl Interpreter {
             // memoized for one registry write generation (`user_method_probe_memo.rs`).
             OpCode::CallMethod { .. } => {
                 self.exec_call_method_site(code, *ip)?;
+                self.hllize_method_return();
                 *ip += 1;
             }
             // Cost: O(a) plus the method body, a = arguments (the MRO probes and the
@@ -5420,12 +5421,14 @@ impl Interpreter {
                 // Slice F: drain any `is rw` method-param writeback into the caller's slots.
                 self.apply_pending_rw_writeback(code);
                 self.drain_pending_local_updates_after_call(code);
+                self.hllize_method_return();
                 *ip += 1;
             }
             // Cost: as CallMethodDynamic, O(a) plus the body; the attribute snapshot/mirror is
             // O(1) for a non-attribute receiver.
             OpCode::CallMethodDynamicMut { .. } => {
                 self.exec_call_method_mut_site(code, *ip)?;
+                self.hllize_method_return();
                 *ip += 1;
             }
             // Cost: O(1) amortized (see exec_array_push_op).
@@ -5445,6 +5448,7 @@ impl Interpreter {
             // receiver env snapshot/compare O(1).
             OpCode::CallMethodMut { .. } => {
                 self.exec_call_method_mut_site(code, *ip)?;
+                self.hllize_method_return();
                 *ip += 1;
             }
             // Cost: O(a) plus the callee's body, a = arguments.
