@@ -11,7 +11,7 @@
 //! parenthesised expression.
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::regex_tree::{CharClassElement, EnumerationElement, PropertyPredicate, RegexTree};
+use crate::regex_tree::{CharClassElement, EnumerationElement, PropertyPredicate};
 use crate::value::{RuntimeError, Value, ValueView};
 
 fn named(name: &'static str, value: Value) -> RakuAstField {
@@ -98,8 +98,7 @@ fn convert_predicate(predicate: &PropertyPredicate) -> Result<Value, RuntimeErro
             let expr = crate::parser::parse_adverb_argument(text)
                 .ok_or_else(|| super::convert::unsupported("property predicate"))?;
             let value = super::convert::convert_expr(&expr)?;
-            // What cannot be spelled again cannot be lowered: refuse it here.
-            if predicate_text(&value).is_none() {
+            if crate::regex_tree::expression_argument_source(&expr).is_none() {
                 return Err(super::convert::unsupported("property predicate"));
             }
             let semilist = RakuAstNode {
@@ -113,61 +112,6 @@ fn convert_predicate(predicate: &PropertyPredicate) -> Result<Value, RuntimeErro
                 vec![positional(Value::rakuast(Box::new(semilist)))],
             ))
         }
-    }
-}
-
-/// The text of a predicate argument that is a number or a plain string; `None`
-/// for any other expression.
-// Cost: O(|text|).
-fn predicate_text(value: &RakuAstNode) -> Option<String> {
-    match value.class {
-        RakuAstClass::IntLiteral => {
-            Some(super::lower::positional_leaf(value).ok()?.to_string_value())
-        }
-        RakuAstClass::QuotedString => {
-            let segments = value.fields.iter().find(|f| f.name == Some("segments"))?;
-            let RakuAstFieldValue::List(items) = &segments.value else {
-                return None;
-            };
-            let [only] = items.as_slice() else {
-                return None;
-            };
-            let ValueView::RakuAst(segment) = only.view() else {
-                return None;
-            };
-            let text = super::lower::positional_leaf(segment)
-                .ok()?
-                .to_string_value();
-            let escaped: String = text
-                .chars()
-                .flat_map(|ch| match ch {
-                    '\\' | '"' | '$' | '@' | '%' | '&' | '{' | '}' => vec!['\\', ch],
-                    _ => vec![ch],
-                })
-                .collect();
-            Some(format!("\"{escaped}\""))
-        }
-        RakuAstClass::QuotedRegex | RakuAstClass::QuotedRegexRx => {
-            if super::lower::bool_field(value, "match-immediately").ok()? {
-                return None;
-            }
-            if value
-                .fields
-                .iter()
-                .any(|field| field.name == Some("adverbs"))
-            {
-                return None;
-            }
-            let body = super::lower::named_child(value, "body").ok()?;
-            let tree = RegexTree {
-                body: super::lower::lower_regex_node(body).ok()?,
-                match_immediately: false,
-                adverbs: Vec::new(),
-                declaration_kind: None,
-            };
-            Some(format!("/{}/", tree.to_source()))
-        }
-        _ => None,
     }
 }
 
@@ -455,7 +399,10 @@ fn lower_predicate(value: &Value) -> Option<PropertyPredicate> {
                 return None;
             };
             let expression = super::lower::named_child(statement, "expression").ok()?;
-            Some(PropertyPredicate::Args(predicate_text(expression)?))
+            let expression = super::lower::lower_expr(expression).ok()?;
+            Some(PropertyPredicate::Args(
+                crate::regex_tree::expression_argument_source(&expression)?,
+            ))
         }
         _ => None,
     }

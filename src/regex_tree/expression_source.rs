@@ -1,4 +1,19 @@
 //! Source reconstruction for main-slang expressions embedded in regex trees.
+
+/// Render a parenthesized argument expression, preserving a top-level comma
+/// list as the comma list rather than an array composer.
+// Cost: O(n), n = total expression size.
+pub(crate) fn expression_argument_source(expr: &crate::ast::Expr) -> Option<String> {
+    match expr {
+        crate::ast::Expr::ArrayLiteral(items) => items
+            .iter()
+            .map(expression_source)
+            .collect::<Option<Vec<_>>>()
+            .map(|parts| parts.join(", ")),
+        other => expression_source(other),
+    }
+}
+
 pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
     fn quote_string(value: &str) -> String {
         let mut out = String::with_capacity(value.len() + 2);
@@ -112,7 +127,7 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
         }
         // A WhateverCode (`* + 1`) is spelled as the expression over its `*`s.
         crate::ast::Expr::WhateverCurry(inner) => expression_source(inner),
-        crate::ast::Expr::WhateverArg => Some("*".to_string()),
+        crate::ast::Expr::Whatever | crate::ast::Expr::WhateverArg => Some("*".to_string()),
         crate::ast::Expr::Grouped(inner) => Some(format!("({})", expression_source(inner)?)),
         crate::ast::Expr::CaptureVar(name) => Some(format!("$<{name}>")),
         crate::ast::Expr::Var(_) | crate::ast::Expr::ArrayVar(_) | crate::ast::Expr::HashVar(_) => {
@@ -125,6 +140,19 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             crate::compiler::helpers_ops::token_kind_to_op_name(op),
             expression_source(expr)?
         )),
+        // Whatever-derived match indexes such as `*-1` need the operator
+        // attached to `*`; whitespace would turn the parser's compact nth
+        // spelling into an invalid index token.
+        crate::ast::Expr::Binary {
+            left,
+            op,
+            right,
+            ..
+        } if matches!(left.as_ref(), crate::ast::Expr::Whatever)
+            && crate::compiler::helpers_ops::token_kind_to_op_name(op) == "-" =>
+        {
+            Some(format!("*-{}", expression_source(right)?))
+        }
         crate::ast::Expr::Binary {
             left,
             op: crate::token_kind::TokenKind::FatArrow,

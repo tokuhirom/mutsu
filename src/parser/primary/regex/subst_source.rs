@@ -157,9 +157,19 @@ pub(crate) fn subst_pattern_source(
 /// when it does not parse as one.
 // Cost: O(|source|).
 pub(crate) fn parse_adverb_argument(source: &str) -> Option<Expr> {
-    match crate::parser::stmt::assign::parse_comma_or_expr(source.trim()) {
+    let source = source.trim();
+    match crate::parser::stmt::assign::parse_comma_or_expr(source) {
         Ok((rest, expr)) if rest.trim().is_empty() => Some(expr),
-        _ => None,
+        _ => {
+            // A leading `*` is a Whatever term only in item context. Parsing
+            // the same source inside parentheses supplies that context; remove
+            // the synthetic grouping after verifying the whole argument.
+            let grouped = format!("({source})");
+            match crate::parser::stmt::assign::parse_comma_or_expr(&grouped) {
+                Ok((rest, Expr::Grouped(inner))) if rest.trim().is_empty() => Some(*inner),
+                _ => None,
+            }
+        }
     }
 }
 
@@ -201,4 +211,21 @@ pub(crate) fn rx_execution_value(body: String, adverbs: &[RegexAdverb]) -> Optio
     }
     let pattern = apply_inline_match_adverbs(body, &parsed);
     Some(build_regex_with_adverbs(pattern, &parsed))
+}
+
+#[cfg(test)]
+mod adverb_argument_tests {
+    use super::parse_adverb_argument;
+
+    #[test]
+    fn whatever_counted_arguments_retain_reconstructable_source() {
+        for source in ["*", "*-1"] {
+            let expression = parse_adverb_argument(source)
+                .unwrap_or_else(|| panic!("failed to parse regex argument {source:?}"));
+            assert!(
+                crate::regex_tree::expression_argument_source(&expression).is_some(),
+                "failed to reconstruct regex argument {source:?}: {expression:?}"
+            );
+        }
+    }
 }
