@@ -1,6 +1,6 @@
 # ADR-12131: Variable traits can register phasers on their owning block
 
-- **Status**: Proposed
+- **Status**: Accepted (user decision 2026-10-22; see §6). Follow-ups: [#14462](https://github.com/tokuhirom/mutsu/issues/14462), [#14463](https://github.com/tokuhirom/mutsu/issues/14463)
 - **Date**: 2026-10-07
 - **Addresses**: [#12131](https://github.com/tokuhirom/mutsu/issues/12131)
 - **Related**: [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md)
@@ -125,3 +125,25 @@ settle the questions above, so the status stays Proposed.
 - Still open: the compile-time `Block` identity section 4 describes, which
   would let `Block.add_phaser` target an enclosing block rather than the
   declaring one.
+
+## 6. Resolution of the open questions (2026-10-22)
+
+Accepted with §4's representation questions answered as follows:
+
+- **Compile-time execution path:** the ADR-0134 BEGIN prologue. A user variable trait is lifted
+  out of its declaration and runs once, before the owning block is first entered. This applies
+  to every body that declares variables: nested blocks, routines, methods, role bodies and the
+  unit. A body the lift does not reach yet is a bug against this decision, not an accepted
+  limitation: today a method or role body runs the handler on every call (#14462).
+- **The `Block` a handler sees:** `Variable.block` is a handle on the declaring code object. It
+  reports that object's type (`Sub`, `Method`, `Block`, ...), as Rakudo's does (#14462).
+  `add_phaser` files the phaser under the declaration; the declaring scope replays the filed
+  phasers from its own queues (ENTER before the body, the exit kinds on exit, in Rakudo's order).
+  Those are the same block-scope queues as ADR-0076's, so a filed phaser runs on every entry,
+  including the first. Targeting a block other than the declaring one is not part of this
+  decision; it needs its own issue if a consumer appears.
+- **How the lifted pieces talk to each other:** through typed AST nodes compiled to bytecode,
+  not through synthetic trait names. The `__site` / `__replay_phasers:` / `__seed_*` names the
+  first slice used are an implementation detail to be replaced (#14463).
+- **The declaration's value:** a value an ENTER phaser assigned before the declaration ran
+  survives the declaration, as with Rakudo's pre-allocated lexical.
