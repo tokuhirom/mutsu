@@ -1041,6 +1041,11 @@ impl Interpreter {
                 self.dispatch.suppress_binding_error_enhance = true;
                 return self.call_compiled_closure(&data, &cf.code, call_args, fns);
             }
+            if let Some(cc) = data.compiled_code.clone() {
+                let empty_fns = CompiledFns::default();
+                let fns = data.compiled_fns.as_deref().unwrap_or(&empty_fns);
+                return self.call_compiled_closure(&data, &cc, call_args, fns);
+            }
             let saved_env = self.env.clone();
             let saved_readonly = self.enter_readonly_frame();
             if let Some(line) = self.test_pending_callsite_line {
