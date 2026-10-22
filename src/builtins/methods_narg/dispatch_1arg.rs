@@ -32,12 +32,15 @@ pub(crate) fn native_method_1arg_without_table(
     arg: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
     native_method_1arg_cascade(target, method_sym, arg).or_else(|| {
-        crate::builtins::method_table::answer_shapeless(
+        if crate::liveness_probe::skip("c1_shapeless") { return None; }
+        let r = crate::builtins::method_table::answer_shapeless(
             None,
             target.descalarize(),
             method_sym,
             std::slice::from_ref(arg),
-        )
+        );
+        if r.is_some() { crate::liveness_probe::hit("c1_shapeless"); }
+        r
     })
 }
 
@@ -55,11 +58,13 @@ fn native_method_1arg_cascade(
     // table first, so the decline step below sees the receiver the table was
     // asked about.
     // Cost: O(1) tag probes for a receiver in no such state.
-    match crate::builtins::method_table::receiver_step::step(target, method, 1) {
+    match crate::builtins::method_table::receiver_step::step(target, method, 1).filter(|_| !crate::liveness_probe::skip("c1_step")) {
         Some(crate::builtins::method_table::receiver_step::Step::Redirect(receiver, _)) => {
+            crate::liveness_probe::hit("c1_step_redirect");
             return native_method_1arg(&receiver, method_sym, arg);
         }
         Some(crate::builtins::method_table::receiver_step::Step::Answer(answer)) => {
+            crate::liveness_probe::hit("c1_step_answer");
             return Some(answer);
         }
         Some(crate::builtins::method_table::receiver_step::Step::Itself) | None => {}
@@ -70,9 +75,10 @@ fn native_method_1arg_cascade(
     // the cascade without it (`native_method_1arg_without_table`).
     // Cost: O(1) when no row has the name (a bit test); otherwise a tag probe,
     // one hash lookup and, for a row found, its handler.
-    if crate::builtins::method_table::answer(target, method_sym, std::slice::from_ref(arg))
+    if !crate::liveness_probe::skip("c1_decline") && crate::builtins::method_table::answer(target, method_sym, std::slice::from_ref(arg))
         .is_some()
     {
+        crate::liveness_probe::hit("c1_decline");
         return None;
     }
     // A positional index of a receiver whose row binds it (`Int:D`, and every
@@ -80,14 +86,17 @@ fn native_method_1arg_cascade(
     // `method_table::index_arg` (ADR-11276 §9.105).
     // Cost: O(1), a bit test, a tag probe and one hash lookup.
     if matches!(method, "AT-POS" | "EXISTS-POS")
+        && !crate::liveness_probe::skip("c1_indexarg")
         && crate::builtins::method_table::index_arg::binds(target, method_sym)
     {
+        crate::liveness_probe::hit("c1_indexarg");
         return None;
     }
     // A list with no settled shape (a lazy or unreified `Seq`, a `LazyList`)
     // reads its element through `Seq`'s `AT-POS`/`EXISTS-POS` rows; any other
     // receiver with no shape is `answer_shapeless`'s (§9.154).
-    if matches!(method, "AT-POS" | "EXISTS-POS") {
+    if matches!(method, "AT-POS" | "EXISTS-POS") && !crate::liveness_probe::skip("c1_atpos") {
+        crate::liveness_probe::hit("c1_atpos");
         return crate::builtins::method_table::answer_as(
             crate::value::DispatchShape::Seq,
             target,

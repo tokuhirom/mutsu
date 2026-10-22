@@ -149,19 +149,23 @@ impl Interpreter {
         // The interpreter entry (`call_method_with_values`) carries the twin of
         // this gate; the OPCODE path reaches the cascades without passing
         // through it.
-        if let Some(err) = crate::runtime::cool_method_not_found_on_any(target, method_sym.as_str())
+        if let Some(err) = crate::runtime::cool_method_not_found_on_any(target, method_sym.as_str()).filter(|_| !crate::liveness_probe::skip("t_cool_nf"))
         {
+            crate::liveness_probe::hit("t_cool_nf");
             return Some(Err(err));
         }
-        if let Some(result) = self.cool_instance_text_via_str(target, method_sym.as_str(), args) {
+        if let Some(result) = self.cool_instance_text_via_str(target, method_sym.as_str(), args).filter(|_| !crate::liveness_probe::skip("t_cool_text")) {
+            crate::liveness_probe::hit("t_cool_text");
             return Some(result);
         }
         // The `Cool`-subtype sibling (#9772): `Str.comb` / `Int.uc` on the type
         // object refuse it instead of answering out of its gist.
-        if let Some(result) = self.cool_type_object_default_fmt(target, method_sym.as_str(), args) {
+        if let Some(result) = self.cool_type_object_default_fmt(target, method_sym.as_str(), args).filter(|_| !crate::liveness_probe::skip("t_cool_fmt")) {
+            crate::liveness_probe::hit("t_cool_fmt");
             return Some(result);
         }
-        if let Some(result) = self.cool_type_object_string_method(target, method_sym.as_str()) {
+        if let Some(result) = self.cool_type_object_string_method(target, method_sym.as_str()).filter(|_| !crate::liveness_probe::skip("t_cool_str")) {
+            crate::liveness_probe::hit("t_cool_str");
             return Some(result);
         }
         // ADR-0068 §20: the cascades read a shared Array/Hash receiver with
@@ -218,7 +222,9 @@ impl Interpreter {
         if let Some(view) = self
             .try_any_list_view_method(target, method_sym.as_str(), args)
             .transpose()
+            .filter(|_| !crate::liveness_probe::skip("r_listview"))
         {
+            crate::liveness_probe::hit("r_listview");
             return Some(view);
         }
         // `as_str`, not `resolve`: see `native_method_0arg`. An owned copy of
@@ -229,6 +235,7 @@ impl Interpreter {
         // value; as in `call_method_with_values`.
         if let Some(owners) =
             crate::builtins::method_table::mixin_role_owners_of(target, method_name)
+            && !crate::liveness_probe::skip("r_mixinrole")
             && let Some(result) = crate::builtins::method_table::invoke_owner(
                 self,
                 &owners.iter().map(String::as_str).collect::<Vec<_>>(),
@@ -237,6 +244,7 @@ impl Interpreter {
                 || target.clone(),
             )
         {
+            crate::liveness_probe::hit("r_mixinrole");
             return Some(result);
         }
         // `.REPR` / `.WHERE` on a NativeCall handle. Telling a `nativecast`ed
@@ -247,8 +255,10 @@ impl Interpreter {
         // (Measured: doing this the other way round segfaults.)
         if args.is_empty()
             && matches!(method_name, "REPR" | "WHERE")
+            && !crate::liveness_probe::skip("r_reprwhere")
             && let Some(v) = self.try_native_handle_repr_where(target, method_name)
         {
+            crate::liveness_probe::hit("r_reprwhere");
             return Some(Ok(v));
         }
         // `.Capture` that must call user methods / drain a live source (Channel/
@@ -256,14 +266,17 @@ impl Interpreter {
         // targets fall through to the pure native `value_to_capture` below.
         if method_name == "Capture"
             && args.is_empty()
+            && !crate::liveness_probe::skip("r_capture")
             && let Some(r) = self.try_interpreter_capture(target)
         {
+            crate::liveness_probe::hit("r_capture");
             return Some(r);
         }
         // Eager list operations cannot run on a lazy/infinite source: throw
         // X::Cannot::Lazy instead of hanging while the native impl materializes
         // it (matches raku).
-        if let Some(err) = crate::runtime::Interpreter::lazy_guard_error(method_name, target) {
+        if let Some(err) = crate::runtime::Interpreter::lazy_guard_error(method_name, target).filter(|_| !crate::liveness_probe::skip("r_lazyguard")) {
+            crate::liveness_probe::hit("r_lazyguard");
             return Some(Err(err));
         }
         // A declaration of the program takes the call from the built-in row:
@@ -271,22 +284,26 @@ impl Interpreter {
         // ordinary, overridable methods), a role mixed in, an `augment` or
         // `.wrap` of a built-in type. The one shadow query (ADR-11276 §2.3).
         if self.user_shadows_builtin(target, method_sym, args, false) {
+            crate::liveness_probe::hit("r_shadow");
             return None;
         }
-        if let Some(value) = self.inherited_adhoc_method(target, method_name, args) {
+        if let Some(value) = self.inherited_adhoc_method(target, method_name, args).filter(|_| !crate::liveness_probe::skip("r_adhoc")) {
+            crate::liveness_probe::hit("r_adhoc");
             return Some(Ok(value));
         }
         // The receiver guard the interpreter's entry runs too: an
         // interpreter-side handler, a computed exception message, a `Cool`
         // name the receiver lacks.
-        if self.native_receiver_guard(target, method_name) {
+        if !crate::liveness_probe::skip("r_recvguard") && self.native_receiver_guard(target, method_name) {
+            crate::liveness_probe::hit("r_recvguard");
             return None;
         }
         // `Range.int-bounds($from is rw, $to is rw --> Bool)`: writes the bounds
         // into the caller's containers, so it needs `&mut self` and the call
         // site's arg-source names (see `vm/vm_range_int_bounds.rs`). The
         // zero-argument candidate stays in the pure arity cascade below.
-        if Self::is_range_int_bounds_rw(target, method_name, args) {
+        if !crate::liveness_probe::skip("r_intbounds") && Self::is_range_int_bounds_rw(target, method_name, args) {
+            crate::liveness_probe::hit("r_intbounds");
             return Some(self.range_int_bounds_rw(target));
         }
         // A named argument the method does not accept must not be counted as a
@@ -297,20 +314,29 @@ impl Interpreter {
         // interceptor above (`contains` / `starts-with` / `ends-with` /
         // `substr-eq`) or declared on the method's rows; a name no row binds is
         // dropped (`method_table::implicit_named`).
-        let stripped = crate::builtins::strip_undeclared_nameds(method_name, args);
+        let stripped = crate::builtins::strip_undeclared_nameds(method_name, args).filter(|_| !crate::liveness_probe::skip("r_strip"));
+        if stripped.is_some() { crate::liveness_probe::hit("r_strip"); }
         let args: &[Value] = stripped.as_deref().unwrap_or(args);
         if args.len() == 2 {
             // No cascade takes two arguments: a row with no shape may.
-            crate::builtins::method_table::answer_shapeless(Some(self), target, method_sym, args)
+            if crate::liveness_probe::skip("r_shapeless2") { return None; }
+            let r = crate::builtins::method_table::answer_shapeless(Some(self), target, method_sym, args);
+            if r.is_some() { crate::liveness_probe::hit("r_shapeless2"); }
+            r
         } else if args.len() == 1 {
-            crate::builtins::native_method_1arg_without_table(target, method_sym, &args[0]).or_else(
+            let r = if crate::liveness_probe::skip("r_cascade1") { None } else { crate::builtins::native_method_1arg_without_table(target, method_sym, &args[0]) };
+            if r.is_some() { crate::liveness_probe::hit("r_cascade1"); }
+            r.or_else(
                 || {
-                    crate::builtins::method_table::answer_shapeless(
+                    if crate::liveness_probe::skip("r_shapeless1") { return None; }
+                    let r = crate::builtins::method_table::answer_shapeless(
                         Some(self),
                         target,
                         method_sym,
                         &args[..1],
-                    )
+                    );
+                    if r.is_some() { crate::liveness_probe::hit("r_shapeless1"); }
+                    r
                 },
             )
         } else if args.is_empty() {
@@ -318,14 +344,19 @@ impl Interpreter {
             // the table for this very receiver and method before calling here,
             // and a row it would answer from but the lever-A gate above refused
             // must not answer here either.
-            crate::builtins::methods_0arg::native_method_0arg_cascade(target, method_sym).or_else(
+            let r = if crate::liveness_probe::skip("r_cascade0") { None } else { crate::builtins::methods_0arg::native_method_0arg_cascade(target, method_sym) };
+            if r.is_some() { crate::liveness_probe::hit("r_cascade0"); }
+            r.or_else(
                 || {
-                    crate::builtins::method_table::answer_shapeless(
+                    if crate::liveness_probe::skip("r_shapeless0") { return None; }
+                    let r = crate::builtins::method_table::answer_shapeless(
                         Some(self),
                         target,
                         method_sym,
                         &[],
-                    )
+                    );
+                    if r.is_some() { crate::liveness_probe::hit("r_shapeless0"); }
+                    r
                 },
             )
         } else {

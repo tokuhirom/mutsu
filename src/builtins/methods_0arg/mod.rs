@@ -157,11 +157,12 @@ pub(crate) fn native_method_0arg_cascade(
     // hash-like receiver and a `Match` answer `Any`'s `self.list.METHOD`
     // methods on their list, an enum member its base's.
     // Cost: O(1) tag probes for a receiver in no such state.
-    match crate::builtins::method_table::receiver_step::step(target, method, 0) {
-        Some(Step::Redirect(receiver, _)) => return native_method_0arg(&receiver, method_sym),
-        Some(Step::Answer(answer)) => return Some(answer),
+    match crate::builtins::method_table::receiver_step::step(target, method, 0).filter(|_| !crate::liveness_probe::skip("c0_step")) {
+        Some(Step::Redirect(receiver, _)) => { crate::liveness_probe::hit("c0_step_redirect"); return native_method_0arg(&receiver, method_sym) },
+        Some(Step::Answer(answer)) => { crate::liveness_probe::hit("c0_step_answer"); return Some(answer) },
         Some(Step::Itself) => {
             if let ValueView::Scalar(inner) = target.view() {
+                crate::liveness_probe::hit("c0_step_itself");
                 // An itemized lazy sequence renders the prefix it pulls,
                 // which only the interpreter can.
                 if matches!(inner.view(), ValueView::LazyList(_)) {
@@ -183,12 +184,15 @@ pub(crate) fn native_method_0arg_cascade(
             // .cache marks as cached; handled fully here (the actual cache impl is
             // in the per-method handler below, this just marks state).
             items.mark_cache_requested();
-        } else if method == "is-lazy" && items.is_consumed() {
+        } else if method == "is-lazy" && items.is_consumed() && !crate::liveness_probe::skip("c0_seq_islazy") {
+            crate::liveness_probe::hit("c0_seq_islazy");
             // Read-only check: throws on consumed Seq but does NOT consume.
             return Some(Err(crate::value::seq_consumed_error()));
         } else if method == "kv"
+            && !crate::liveness_probe::skip("c0_seq_kv")
             && let Some((_, _, true)) = items.peek_io_lines_parts()
         {
+            crate::liveness_probe::hit("c0_seq_kv");
             // `.kv` on a not-yet-touched `IO::Handle.lines`/`.words` Seq is
             // itself terminal: `reify_or_consume_seq_target`'s own `"kv"`
             // special case (`vm/vm_helpers_lazy.rs`) already built this
@@ -207,18 +211,19 @@ pub(crate) fn native_method_0arg_cascade(
 
     // An instance of a user subclass of `Int` answers `Int`'s methods on its
     // payload (`builtins::native_base`).
-    if let Some(result) = super::native_base::dispatch(target, method_sym, &[]) {
+    if !crate::liveness_probe::skip("c0_native_base") && let Some(result) = super::native_base::dispatch(target, method_sym, &[]) {
+        crate::liveness_probe::hit("c0_native_base");
         return Some(result);
     }
 
     // A `but`-mixed value: the mixin's overrides answer first, any other
     // method is the wrapped value's (`method_table::receiver_step::mixin_step`).
-    if let Some(step) = crate::builtins::method_table::receiver_step::mixin_step(target, method_sym)
+    if let Some(step) = crate::builtins::method_table::receiver_step::mixin_step(target, method_sym).filter(|_| !crate::liveness_probe::skip("c0_mixin"))
     {
         return match step {
-            MixinStep::Decline => None,
-            MixinStep::Answer(answer) => Some(answer),
-            MixinStep::Delegate(inner) => native_method_0arg(&inner, method_sym),
+            MixinStep::Decline => { crate::liveness_probe::hit("c0_mixin_decline"); None },
+            MixinStep::Answer(answer) => { crate::liveness_probe::hit("c0_mixin_answer"); Some(answer) },
+            MixinStep::Delegate(inner) => { crate::liveness_probe::hit("c0_mixin_delegate"); native_method_0arg(&inner, method_sym) },
         };
     }
     // A call the method table answers has no arm below this point: the row is
@@ -230,7 +235,8 @@ pub(crate) fn native_method_0arg_cascade(
     // above stay in front of the rows, so the cross-check still verifies them.
     // Cost: O(1) when no row has the name (a bit test); otherwise a tag probe,
     // one hash lookup and, for a row found, its handler.
-    if crate::builtins::method_table::answer(target, method_sym, &[]).is_some() {
+    if !crate::liveness_probe::skip("c0_decline") && crate::builtins::method_table::answer(target, method_sym, &[]).is_some() {
+        crate::liveness_probe::hit("c0_decline");
         return None;
     }
     // Native int coercer methods (.byte(), .int8(), .uint16(), etc.). Rakudo
@@ -239,7 +245,8 @@ pub(crate) fn native_method_0arg_cascade(
     // broke callers that probe `.^can($field)` before trying the next
     // candidate. `bool` and the C-width aliases are not coercion methods at all
     // (see `is_native_int_coerce_method`).
-    if runtime::native_types::is_native_int_coerce_method(method) && target.isa_check("Cool") {
+    if runtime::native_types::is_native_int_coerce_method(method) && target.isa_check("Cool") && !crate::liveness_probe::skip("c0_intcoerce") {
+        crate::liveness_probe::hit("c0_intcoerce");
         // `Range.Numeric` is its element count.
         let elems = crate::builtins::method_table::scalars::numify::numeric_range_elems(target);
         return Some(raku_repr::native_int_coerce_method(
@@ -383,8 +390,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // `Code.Capture` and `Code.clone` are rows of the method table
     // (`method_table::code`, ADR-12523 slice 5).
     if matches!(method, "Capture" | "clone")
+        && !crate::liveness_probe::skip("d_code")
         && let Some(answer) = crate::builtins::method_table::code::pure_answer(target, method)
     {
+        crate::liveness_probe::hit("d_code");
         return Some(answer);
     }
 
@@ -392,15 +401,19 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // `.statements`, etc. return the node's field values. `.gist`/`.raku`/`.^name`
     // are handled elsewhere, so a non-accessor method name falls through.
     if let ValueView::RakuAst(node) = target.view()
+        && !crate::liveness_probe::skip("d_rakuast")
         && let Some(v) = crate::rakuast::node_accessor(node, method)
     {
+        crate::liveness_probe::hit("d_rakuast");
         return Some(Ok(v));
     }
     if let ValueView::Instance { attributes, .. } = target.view()
         && let Some(base) = attributes.rakuast_base()
         && let ValueView::RakuAst(node) = base.view()
+        && !crate::liveness_probe::skip("d_rakuast_inst")
         && let Some(value) = crate::rakuast::node_accessor(node, method)
     {
+        crate::liveness_probe::hit("d_rakuast_inst");
         return Some(Ok(value));
     }
 
@@ -416,5 +429,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // A receiver with no shape that is a `Cool` reaches `Cool`'s text rows
     // once the cascade declined it (ADR-11276 §9.79); an instance needs the
     // interpreter's MRO and is answered by the entries that have one.
-    crate::builtins::method_table::answer_shapeless(None, target, Symbol::intern(method), &[])
+    if crate::liveness_probe::skip("d_shapeless") { return None; }
+    let r = crate::builtins::method_table::answer_shapeless(None, target, Symbol::intern(method), &[]);
+    if r.is_some() { crate::liveness_probe::hit("d_shapeless"); }
+    r
 }
