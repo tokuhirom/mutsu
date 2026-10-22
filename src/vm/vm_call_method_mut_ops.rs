@@ -193,6 +193,7 @@ impl Interpreter {
         name_idx: u32,
         arity: u32,
         target_name_idx: u32,
+        target_slot: Option<u32>,
         modifier_idx: Option<u32>,
         quoted: bool,
         arg_sources_idx: Option<u32>,
@@ -202,6 +203,7 @@ impl Interpreter {
             MethodName::from_const(code, name_idx, quoted),
             arity,
             target_name_idx,
+            target_slot,
             modifier_idx,
             arg_sources_idx,
         )
@@ -216,6 +218,7 @@ impl Interpreter {
         name: MethodName<'_>,
         arity: u32,
         target_name_idx: u32,
+        target_slot: Option<u32>,
         modifier_idx: Option<u32>,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
@@ -265,6 +268,7 @@ impl Interpreter {
             name,
             arity,
             target_name_idx,
+            target_slot,
             modifier_idx,
             quoted,
             arg_sources_idx,
@@ -370,6 +374,7 @@ impl Interpreter {
         name: MethodName<'_>,
         arity: u32,
         target_name_idx: u32,
+        target_slot: Option<u32>,
         modifier_idx: Option<u32>,
         quoted: bool,
         arg_sources_idx: Option<u32>,
@@ -520,7 +525,11 @@ impl Interpreter {
                 // reported the array as `uint8`. Same fix as the sibling
                 // element-assignment/`:delete` handlers (`seed_env_from_scalar_slot`).
                 self.seed_env_from_scalar_slot(code, None, target_name);
-                self.wrap_native_int_items(None, target_name, args)
+                self.wrap_native_int_items(
+                    self.store_decl(code, target_slot, false),
+                    target_name,
+                    args,
+                )
             } else {
                 args
             };

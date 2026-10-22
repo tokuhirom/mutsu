@@ -66,6 +66,7 @@ impl Interpreter {
                 MethodName::dynamic(&method),
                 arity,
                 target_name_idx,
+                target_slot,
                 modifier_idx,
                 arg_sources_idx,
             ),
