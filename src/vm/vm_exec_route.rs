@@ -392,6 +392,7 @@ impl Interpreter {
             | OpCode::UseLibPath
             | OpCode::UseModule { .. } => self.exec_ops_group_14(code, ip, compiled_fns),
             OpCode::ApplyVarTrait { .. }
+            | OpCode::VarTraitCtl { .. }
             | OpCode::AssignExprLocal(..)
             | OpCode::AssignReadOnly
             | OpCode::BindCallerVar { .. }

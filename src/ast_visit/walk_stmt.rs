@@ -2,7 +2,7 @@
 //! [`super`] for why every field is named.
 
 use super::{NameKind, Visit, exprs, names, params, traits, walk_call_arg, walk_regex_tree};
-use crate::ast::Stmt;
+use crate::ast::{Stmt, VarTraitOp};
 
 /// Visits every statement of `body` through [`Visit::visit_stmt`].
 // Cost: O(n), n = size of `body`'s subtree.
@@ -239,6 +239,15 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
         Stmt::Import { module, tags } => {
             v.visit_name(module, NameKind::Module);
             names(v, tags, NameKind::Module);
+        }
+        // The variable it names was reported by its declaration.
+        Stmt::VarTrait { name: _, op } => {
+            if let VarTraitOp::Apply {
+                arg: Some(arg), ..
+            } = op
+            {
+                v.visit_expr(arg);
+            }
         }
         Stmt::Block(body)
         | Stmt::SyntheticBlock(body)

@@ -204,6 +204,9 @@ enum BindingKind {
         static_decl: Box<Stmt>,
         assign: Option<Box<Stmt>>,
         cell: Option<String>,
+        /// A user variable trait the prologue applies to the cell
+        /// ([`Walker::lift_var_traits`]).
+        lifted_traits: bool,
     },
     Opaque,
     /// A `my` variable of a package body. The package's static store holds it,
@@ -265,6 +268,7 @@ impl Walker<'_> {
                 static_decl: Box::new(static_decl),
                 assign: assign.map(Box::new),
                 cell: None,
+                lifted_traits: false,
             },
             _ => BindingKind::Opaque,
         };
@@ -424,16 +428,14 @@ impl Walker<'_> {
             BindingKind::Local { static_decl, .. } if self.cell_names_inner_type(static_decl)
         );
         // A declaration with a trait (`is default(...)`, or a user trait the
-        // prologue applies to the cell, which leaves the `VAR_TRAIT_SEEDED`
-        // marker) keeps the copy: those are applied around the declaration's
-        // own store, which a bind does not go through.
+        // prologue applies to the cell) keeps the copy: those are applied
+        // around the declaration's own store, which a bind does not go through.
         let has_trait = matches!(
             &self.frames[frame].bindings[binding].kind,
-            BindingKind::Local { static_decl, .. }
-                if matches!(&**static_decl, Stmt::VarDecl { custom_traits, .. }
-                    if custom_traits.iter().any(|(t, _)| {
-                        !t.starts_with("__") || t == var_traits::VAR_TRAIT_SEEDED
-                    }))
+            BindingKind::Local { static_decl, lifted_traits, .. }
+                if *lifted_traits
+                    || matches!(&**static_decl, Stmt::VarDecl { custom_traits, .. }
+                        if custom_traits.iter().any(|(t, _)| !t.starts_with("__")))
         );
         let bind = !untyped && !has_trait && matches!(sigil_of(&name), "@" | "%");
         let BindingKind::Local {
@@ -441,6 +443,7 @@ impl Walker<'_> {
             static_decl,
             assign,
             cell,
+            lifted_traits: _,
         } = &mut self.frames[frame].bindings[binding].kind
         else {
             unreachable!("only a Local binding gets a cell")

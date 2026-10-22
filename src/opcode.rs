@@ -799,6 +799,22 @@ pub(crate) struct WheneverPhaser {
     pub(crate) cc_idx: u32,
 }
 
+/// The control step a [`OpCode::VarTraitCtl`] performs around a lifted
+/// variable-trait application (ADR-12131); the typed twin of
+/// [`crate::ast::VarTraitOp`] with its strings in the constant pool.
+#[derive(Debug, Clone, Copy, bincode::Encode, bincode::Decode)]
+pub(crate) enum VarTraitCtl {
+    /// Sets the declaration site (constant index), or clears it.
+    Site(Option<u32>),
+    /// Replays the phasers of one kind filed under a site (both constant
+    /// indices).
+    Replay { site_idx: u32, kind_idx: u32 },
+    /// Pushes the variable's value, if the slot has one.
+    SeedStash,
+    /// Pops the pushed value and restores it when it is defined.
+    SeedRestore,
+}
+
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 #[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum OpCode {
@@ -4667,6 +4683,16 @@ pub(crate) enum OpCode {
         name_idx: u32,
         trait_name_idx: u32,
         has_arg: bool,
+        slot: Option<u32>,
+    },
+
+    /// A control step around a lifted variable-trait application (ADR-12131):
+    /// the declaration site, a phaser replay or the seed stash/restore.
+    /// Stack: `[] → []`, except `SeedStash` (`[] → [value]`) and
+    /// `SeedRestore` (`[value] → []`). `slot` is as for `ApplyVarTrait`.
+    VarTraitCtl {
+        name_idx: u32,
+        ctl: VarTraitCtl,
         slot: Option<u32>,
     },
 

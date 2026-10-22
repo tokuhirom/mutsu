@@ -132,4 +132,42 @@ impl Compiler {
             })
         }
     }
+
+    /// A step of a lifted variable-trait application (ADR-12131), on a
+    /// variable the declaration has already bound; the same `ApplyVarTrait`
+    /// a declaration emits in place, or the typed control step around it.
+    pub(in crate::compiler) fn compile_var_trait_stmt(&mut self, name: &str, op: &VarTraitOp) {
+        use crate::opcode::VarTraitCtl;
+        let name_idx = self.code.add_constant(Value::str(name.to_string()));
+        let slot = self.local_map.get(name).copied();
+        let mut constant = |s: &mut Self, text: &str| s.code.add_constant(Value::str(text.to_string()));
+        let ctl = match op {
+            VarTraitOp::Apply { trait_name, arg } => {
+                if let Some(arg) = arg {
+                    let escaping = Self::is_closure_literal_arg(arg);
+                    self.with_escape(escaping, |s| s.compile_expr(arg));
+                }
+                let trait_name_idx = constant(self, trait_name);
+                self.code.emit(OpCode::ApplyVarTrait {
+                    name_idx,
+                    trait_name_idx,
+                    has_arg: arg.is_some(),
+                    slot,
+                });
+                return;
+            }
+            VarTraitOp::Site(site) => VarTraitCtl::Site(site.as_deref().map(|t| constant(self, t))),
+            VarTraitOp::Replay { site, kind } => VarTraitCtl::Replay {
+                site_idx: constant(self, site),
+                kind_idx: constant(self, kind),
+            },
+            VarTraitOp::SeedStash => VarTraitCtl::SeedStash,
+            VarTraitOp::SeedRestore => VarTraitCtl::SeedRestore,
+        };
+        self.code.emit(OpCode::VarTraitCtl {
+            name_idx,
+            ctl,
+            slot,
+        });
+    }
 }

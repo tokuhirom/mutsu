@@ -2027,6 +2027,32 @@ pub(crate) struct NestedTypeShell {
     pub(crate) decl: Stmt,
 }
 
+/// One step of a lifted variable-trait application (ADR-12131, #14463): what
+/// the BEGIN prologue and the declaring scope's phaser queues do around a
+/// `my $x is foo` declaration, as a typed node instead of a synthetic trait
+/// name.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum VarTraitOp {
+    /// Applies the user trait `trait_name` (with its argument) to the variable.
+    Apply {
+        trait_name: String,
+        arg: Option<Expr>,
+    },
+    /// Sets, or with `None` clears, the declaration site the traits applied
+    /// after it file their `Variable.block` phasers under.
+    Site(Option<String>),
+    /// Replays the phasers of `kind` (`ENTER`, `LEAVE`, ...) filed under
+    /// `site`.
+    Replay { site: String, kind: String },
+    /// Pushes the variable's current value, which the declaration that
+    /// follows would overwrite (the declaration of a lifted variable whose
+    /// block's `ENTER` queue may have seeded it).
+    SeedStash,
+    /// Pops the value [`VarTraitOp::SeedStash`] pushed and puts it back when it
+    /// is defined.
+    SeedRestore,
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Stmt {
     VarDecl {
@@ -2303,6 +2329,12 @@ pub(crate) enum Stmt {
         tags: Vec<String>,
     },
     Block(Vec<Stmt>),
+    /// A step of a lifted variable-trait application on the declared variable
+    /// `name`; see [`VarTraitOp`].
+    VarTrait {
+        name: String,
+        op: VarTraitOp,
+    },
     /// Non-lexical statement sequence used by parser desugarings.
     SyntheticBlock(Vec<Stmt>),
     /// Opens the region of a loop iteration whose early exit runs the loop's
