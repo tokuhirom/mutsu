@@ -186,6 +186,23 @@ impl Interpreter {
         if result.is_ok() && self.pending_where_exception.is_none() {
             return Ok(());
         }
+        self.exec_one_failed(code, at, ip, result)
+    }
+
+    /// The not-`Ok` tail of [`Self::exec_one`], kept out of line so the
+    /// per-op wrapper stays a probe and a return (#14287: inlining it cost
+    /// ~9% of `bench-mandelbrot`).
+    // Cost: as [`Self::finish_op_result`], plus O(h) for the handlers offered
+    // a resumable exception ([`Self::resume_op_raise`]).
+    #[cold]
+    #[inline(never)]
+    fn exec_one_failed(
+        &mut self,
+        code: &CompiledCode,
+        at: usize,
+        ip: &mut usize,
+        result: Result<(), RuntimeError>,
+    ) -> Result<(), RuntimeError> {
         match self.finish_op_result(code, *ip, result) {
             // Only an op that raised without moving `ip` resumes in place;
             // a control-flow signal may leave `ip` anywhere, even past the end.
