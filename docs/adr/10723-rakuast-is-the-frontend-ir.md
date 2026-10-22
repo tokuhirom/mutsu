@@ -1810,3 +1810,20 @@ It also elides an explicit Sub or Method scope equal to its derived default.
 No source-provenance marker or second resolver is needed for the current
 routine contract. `t/rakuast/rakuast-routine-scope.t` checks parsed and built
 nodes, both frontend modes, constructor output, and values before/after EVAL.
+
+### 6.96 S10: explicit existence values and hash hyperslices (2026-10-22)
+
+The parser's `Expr::Exists` retains an explicit `:exists(False)` argument,
+which the generic subscript-adverb expansion inverse cannot distinguish from
+`:!exists` by truth value alone. Conversion now emits the explicit argument
+as `ColonPair::Value` on the existing array or hash postcircumfix. This also
+preserves explicit zero and dynamic values; lowering still uses the existing
+subscript-adverb execution path.
+
+The 6.e hash `Expr::HyperSlice` is represented as `Postcircumfix::HashIndex`
+with a `Term::HyperWhatever` index and its `k`, `v`, `kv`, `tree`, `deepk` or
+`deepkv` colonpair. Lowering restores the shared hyperslice AST node before
+the generic subscript-adverb expansion. The focused
+`t/rakuast/rakuast-subscript-exists-hyperslice.t` records the Rakudo shapes
+and EVAL behavior. All 111 assertions in the array/hash `exists-adverb.t`
+and hash `hyperslice.t` roast files now pass in frontend mode.
