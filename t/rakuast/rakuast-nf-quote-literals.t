@@ -13,7 +13,7 @@ plan 11;
 
 is Q[q:nfc'abc'].AST.statements[0].expression.gist, q:to/END/.chomp, 'q:nfc reads as a quote with an nfc processor';
 RakuAST::QuotedString.new(
-  processors => <nfc>,
+  processors => ("nfc",),
   segments   => (
     RakuAST::StrLiteral.new("abc"),
   )
@@ -31,7 +31,7 @@ for <nfc NFC nfd NFD nfkc NFKC nfkd NFKD> -> $adverb, $type {
 }
 
 my $built = RakuAST::QuotedString.new(
-    processors => <nfd>,
+    processors => ("nfd",),
     segments   => (RakuAST::StrLiteral.new("\x[1E9B]\x[0323]"),),
 );
 my $value = EVAL $built;

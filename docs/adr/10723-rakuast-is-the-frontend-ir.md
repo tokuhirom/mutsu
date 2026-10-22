@@ -1962,7 +1962,7 @@ they name (S02; `roast/S15-string-types/NF-types.t`, `NFK-types.t`). Rakudo
 `QuotedString` refuses an unknown processor. A quote adverb that post-processes
 the quoted text is what `QuotedString.processors` models (`words`, `val`,
 `exec`, `format`), so mutsu reads the quote as
-`QuotedString(processors => <nfc>, segments => (StrLiteral(TEXT),))`. The
+`QuotedString(processors => ("nfc",), segments => (StrLiteral(TEXT),))`. The
 parser folds the quote into its `Uni` value while parsing, so `TEXT` is the
 normalized text; lowering normalizes it again through the parser's
 `normalized_quote`, which leaves it unchanged. No `.AST` consumer can meet the

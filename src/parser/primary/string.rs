@@ -31,7 +31,8 @@ pub(super) use helpers::{
 pub(in crate::parser::primary) use interp_content::parse_interpolation_block;
 pub(super) use interp_content::{finalize_interpolation, parse_closure_part};
 pub(super) use interp_var::try_interpolate_var;
-pub(super) use q_string::{big_q_string, normalized_quote, q_string};
+pub(super) use q_string::{big_q_string, q_string};
+pub(crate) use q_string::normalized_quote;
 pub(super) use quoted::{corner_bracket_string, parse_backslash_c_bracket};
 pub(crate) use regex_quote::{decode_q_regex_quote, decode_qq_regex_quote};
 // Reachable from other `crate::parser` submodules (e.g. pointy-block literal

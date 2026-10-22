@@ -14,7 +14,7 @@ for a quote adverb that post-processes its text: a processor, as `:w` is
 ```raku
 say Q[q:nfc'abc'].AST.statements[0].expression;
 # RakuAST::QuotedString.new(
-#   processors => <nfc>,
+#   processors => ("nfc",),
 #   segments   => (
 #     RakuAST::StrLiteral.new("abc"),
 #   )
