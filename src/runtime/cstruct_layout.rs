@@ -300,7 +300,12 @@ fn interned_c_string(s: &str) -> *const std::ffi::c_char {
 /// laid-out type. A wrong declaration corrupts memory here exactly as it does in
 /// Rakudo.
 pub(crate) unsafe fn write_field(base: usize, field: &FieldLayout, value: &crate::value::Value) {
-    let to_int = crate::runtime::to_int;
+    // `to_int` numifies a `Bool` to 0, so `has bool $.b` given `True` (a named
+    // argument `:b`, an attributive `:$!b` bind) stored a zero byte.
+    let to_int = |v: &crate::value::Value| match v.deref_container().view() {
+        crate::value::ValueView::Bool(b) => i64::from(b),
+        _ => crate::runtime::to_int(v),
+    };
     let to_num = |v: &crate::value::Value| crate::runtime::utils::to_float_value(v).unwrap_or(0.0);
     let ptr = (base + field.offset) as *mut u8;
     unsafe {
