@@ -373,15 +373,20 @@ impl<'ast> Visit<'ast> for DeclScan {
                 if *is_export
                     && (*is_our || is_constant)
                     && self.spine
-                    && !self.prefix.is_empty()
                     && !name.is_empty()
                     && !name.starts_with('&')
                 {
+                    // Outside every package the variable is a `GLOBAL` one.
+                    let package = if self.prefix.is_empty() {
+                        "GLOBAL".to_string()
+                    } else {
+                        self.prefix.clone()
+                    };
                     self.out
                         .exported_vars
                         .push(super::exported_vars::ExportedVar {
                             name: name.clone(),
-                            package: self.prefix.clone(),
+                            package,
                             tags: export_tags.clone(),
                             term: crate::term_names::is_term_constant_decl(name, custom_traits),
                             hook: false,
