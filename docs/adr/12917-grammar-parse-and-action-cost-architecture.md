@@ -1,7 +1,27 @@
 # ADR-12917: Where a grammar parse with actions spends its time, and what to change
 
-- **Status**: Proposed (2026-10-12). Measurement and ranking only; each direction lands as its
-  own slice under #12917.
+- **Status**: Accepted (user decision 2026-10-22; proposed 2026-10-12). The binding decision is
+  direction 2's semantics; see "Scope of the decision". Follow-up:
+  [#14510](https://github.com/tokuhirom/mutsu/issues/14510).
+
+## Scope of the decision (2026-10-22)
+
+This ADR was written as a measurement and a ranking. Its Outcome sections record that the
+ranking of direction 2 was wrong as a speed estimate. What is accepted, and binds later work, is
+narrower than the ranking:
+
+- **A `$var` in a regex is a match-time atom, never spliced source.** A `Str` value matches as a
+  literal (honouring `:i`/`:m`), a `Regex` value is entered as a call frame, and the variable is
+  read when the matcher reaches it, as Rakudo compiles it. A rule body's parse, compiled
+  program, NFA and call edges are therefore independent of the values its variables hold. This
+  holds for every `$var` interpolation, not only for the rule-parameter shape that landed first.
+  The remaining spliced-source path is a correctness bug as well as a cost: it misses an
+  assignment a code block makes before the variable is reached (#14510). `<$var>`, which
+  interpolates its value as regex source, keeps that different meaning.
+- **A call with arguments to a statically named rule is an edge of the left-call graph.**
+- Directions 1 and 3-5 are performance slices of #12917, ordered by measurement; they record
+  no decision beyond what their own PRs need, and the order may change when a re-profile says
+  so.
 
 ## Context
 
