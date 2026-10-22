@@ -70,7 +70,8 @@ impl Interpreter {
             // the `Blob` type object, which stringifies to "" with a warning.
             Value::package(Symbol::intern("Blob")),
         );
-        attrs.insert("desc".to_string(), Value::str(String::new()));
+        // Rakudo leaves a `Kernel`'s `desc` unset: the `Str` type object.
+        attrs.insert("desc".to_string(), Value::package(Symbol::intern("Str")));
         attrs.insert("release".to_string(), Value::str(release));
         attrs.insert("hardware".to_string(), Value::str(hardware));
         attrs.insert("arch".to_string(), Value::str(arch_str));

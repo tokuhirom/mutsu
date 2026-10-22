@@ -128,7 +128,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
     row!("Kernel", "gist", 0, Handler::Narrow(name)),
     row!("Kernel", "Str", 0, Handler::Narrow(name)),
-    row!("Kernel", "raku", 0, Handler::Narrow(kernel_raku)),
     attr!("VM", "name"),
     attr!("VM", "auth"),
     attr!("VM", "version"),
@@ -312,16 +311,6 @@ fn kernel_endian(target: &Value, _: &[Value]) -> Answer {
         crate::value::EnumValue::Int(index),
         index as usize,
     )))
-}
-
-/// `Kernel.raku`.
-// Cost: O(n), n = chars of the rendering.
-fn kernel_raku(target: &Value, _: &[Value]) -> Answer {
-    Some(Ok(Value::str(format!(
-        "Kernel.new(release => Str, hardware => Str, arch => Str, bits => Int, name => \"{}\", auth => \"{}\", version => Version, signature => Blob, desc => Str)",
-        text(target, "name"),
-        text(target, "auth")
-    ))))
 }
 
 // Cost: O(1) plus one syscall.
