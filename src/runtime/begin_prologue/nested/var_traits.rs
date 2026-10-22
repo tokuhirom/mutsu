@@ -37,9 +37,11 @@ const BUILTIN_VARIABLE_TRAITS: &[&str] = &[
 
 /// Whether `name` is a trait only a user `trait_mod:<is>` can claim.
 fn is_user_trait(name: &str) -> bool {
-    !name.starts_with("__")
-        && name.starts_with(|c: char| c.is_ascii_lowercase())
-        && !BUILTIN_VARIABLE_TRAITS.contains(&name)
+    // An escaped `is __x` is a user trait whatever its first letter.
+    name.starts_with(crate::ast::USER_TRAIT_ESCAPE)
+        || (!name.starts_with("__")
+            && name.starts_with(|c: char| c.is_ascii_lowercase())
+            && !BUILTIN_VARIABLE_TRAITS.contains(&name))
 }
 
 /// Whether a declaration with these traits applies a user trait, which the
