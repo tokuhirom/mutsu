@@ -119,10 +119,7 @@ impl Interpreter {
                 // Hash or object the call handed back, so it is identical to
                 // the variable that routine returned. A name that owns a
                 // Scalar (`my $h = @a`) stays a distinct container.
-                (
-                    ValueView::Array(..) | ValueView::Hash(..) | ValueView::Instance { .. },
-                    _,
-                ) => {
+                (ValueView::Array(..) | ValueView::Hash(..) | ValueView::Instance { .. }, _) => {
                     !self.name_denotes_scalar_container(left_name)
                         && !self.name_denotes_scalar_container(right_name)
                         && crate::runtime::values_identical(&left, &right)
