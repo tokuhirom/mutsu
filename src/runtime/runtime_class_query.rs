@@ -446,7 +446,7 @@ impl Interpreter {
         };
         let recorded = self.lexicals.class_body_static_types.get(class_name);
         let mut stale = Vec::new();
-        for (k, _) in statics.iter() {
+        for k in statics.keys() {
             if !k.starts_with(['@', '%']) {
                 continue;
             }
