@@ -639,12 +639,16 @@ impl Interpreter {
             return Ok(());
         };
         let attr_class_name = attr_class_name.resolve();
-        let has_compose = self.class_mro(&attr_class_name).iter().any(|c| {
-            self.registry()
-                .user_method_overloads(c.as_str(), "compose")
-                .is_some()
-        });
-        if !has_compose {
+        let has_method = |this: &Self, method: &str| {
+            this.class_mro(&attr_class_name).iter().any(|c| {
+                this.registry()
+                    .user_method_overloads(c.as_str(), method)
+                    .is_some()
+            })
+        };
+        let has_compose = has_method(self, "compose");
+        let has_container_init = has_method(self, "container_initializer");
+        if !has_compose && !has_container_init {
             return Ok(());
         }
         let type_obj = Value::package(Symbol::intern(class_name));
@@ -663,7 +667,31 @@ impl Interpreter {
                 Symbol::intern(&attr_class_name),
                 attributes.as_map().clone(),
             );
-            self.call_method_with_values(object, "compose", vec![type_obj.clone()])?;
+            if has_compose {
+                self.call_method_with_values(object.clone(), "compose", vec![type_obj.clone()])?;
+            }
+            // `container_initializer` answers a Callable that builds the
+            // attribute's initial container (ValueClass: `-> { Tuple.new }`
+            // for `@`, `-> { ValueMap.new }` for `%`). The container types the
+            // construction paths already build from an `is Type` trait are the
+            // channel for it.
+            // TODO: the callable is run once here to learn the container's
+            // type; an initializer that depends on the object is not modelled.
+            if has_container_init && matches!(attr.sigil, '@' | '%') {
+                let init =
+                    self.call_method_with_values(object, "container_initializer", vec![])?;
+                if matches!(init.view(), ValueView::Sub(_))
+                    && let Ok(sample) = self.eval_call_on_value(init, Vec::new())
+                {
+                    let type_name = match sample.view() {
+                        ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+                        _ => crate::runtime::utils::value_type_name(&sample).to_string(),
+                    };
+                    self.registry_mut()
+                        .class_attribute_is_types
+                        .insert((class_name.to_string(), attr.name.clone()), type_name);
+                }
+            }
         }
         Ok(())
     }

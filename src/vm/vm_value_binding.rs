@@ -126,7 +126,7 @@ impl Interpreter {
     /// Seat a containerless value in the binding's own immutable home when
     /// doing so preserves its iteration and itemization semantics.
     // Cost: O(1).
-    pub(super) fn readonly_value_binding(value: Value, kind: crate::ast::ReadonlyKind) -> Value {
+    pub(crate) fn readonly_value_binding(value: Value, kind: crate::ast::ReadonlyKind) -> Value {
         if Self::binding_cell_keeps_value_semantics(&value) {
             Value::container_ref(crate::gc::Gc::new(
                 crate::value::ContainerCell::new_readonly_binding(value, kind),
