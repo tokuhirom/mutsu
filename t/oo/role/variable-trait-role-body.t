@@ -21,13 +21,12 @@ class E does P[Str] {}
 role W { my $wv is foo; my $plain = 3; method p { $plain } }
 class F does W {}
 
-is @log.elems, 3, 'one handler call per role, not per composition';
-is @log.sort.join(','), '$pv:Sub,$rv:Sub,$wv:Sub', 'each with its variable and a Sub block';
+role I { my $iv is foo = 4; method v { $iv } }
+class G does I {}
+
+is @log.elems, 4, 'one handler call per role, not per composition';
+is @log.sort.join(','), '$iv:Sub,$pv:Sub,$rv:Sub,$wv:Sub', 'each with its variable and a Sub block';
 is A.new.x + B.new.x + C.new.x, 3, 'the role still composes and works';
 is D.new.t ~ E.new.t, 'IntStr', 'a parametric role still binds its parameter per composition';
 is F.new.p, 3, 'an ordinary variable beside it is unaffected';
-
-multi trait_mod:<is>(Variable:D $v, :$bar!) { }
-role I { my $iv is bar = 4; method v { $iv } }
-class G does I {}
-is G.new.v, 4, 'a variable with an initializer keeps its value';
+is G.new.v, 4, 'a variable with an initializer keeps its value and runs its trait once';

@@ -273,16 +273,6 @@ impl Walker<'_> {
         let Some((name, applied)) = liftable_traits(stmt, true) else {
             return false;
         };
-        // A role body's variable with an initializer stays where it is: the
-        // lifted form splits the declaration from its assignment, and a method
-        // of the role captures the variable's value at the declaration, so it
-        // would never see the assigned one (#14616).
-        if in_role_body
-            && matches!(stmt, Stmt::VarDecl { custom_traits, .. }
-                if custom_traits.iter().any(|(t, _)| t == "__has_initializer"))
-        {
-            return false;
-        }
         // `Variable.block.add_phaser` files its phaser under this site; the
         // scope's own phaser queues replay them.
         let site = super::next_slot("__var_trait_site_");
