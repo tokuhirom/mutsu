@@ -1,8 +1,8 @@
 # ADR-10723: RakuAST is mutsu's frontend IR — the parser emits RakuAST, the internal AST becomes the lowered form
 
-- **Status**: Proposed (2026-10-02). Supersedes [ADR-0011](0011-rakuast-model-layer-and-phasing.md)
-  once accepted. Stage 0's mode and CI ratchet have landed (§6); Stage 1 round-trip slices are
-  ongoing; Stages 2–4 have not started.
+- **Status**: Accepted (user decision 2026-10-22; proposed 2026-10-02). Supersedes the pipeline
+  decision of [ADR-0011](0011-rakuast-model-layer-and-phasing.md). The §4 questions stay gates
+  before Stage 2.
 - **Date**: 2026-10-02
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#10723](https://github.com/tokuhirom/mutsu/issues/10723). Roadmap:

@@ -2,8 +2,10 @@
 
 - **Status**: Accepted (2026-07-18); Phase 6 superseded by
   [ADR-9885](9885-experimental-macros-not-planned.md) (2026-10-11: Rakudo removed the
-  experimental macros, so Phase 6 is withdrawn); the rest proposed to be superseded by
-  [ADR-10723](10723-rakuast-is-the-frontend-ir.md) (2026-10-02, Proposed).
+  experimental macros, so Phase 6 is withdrawn); the pipeline decision superseded by
+  [ADR-10723](10723-rakuast-is-the-frontend-ir.md) (accepted 2026-10-22). The representation
+  (`Value::RakuAst`, `RakuAstClass`, the field table, the type-object registry, construction)
+  stays, as ADR-10723 §3 records.
   The live inventory link below is dead — the roadmap is [#7564](https://github.com/tokuhirom/mutsu/issues/7564). **Progress (2026-08-02): Phases 1–5 have substantially
   landed** across ~37 slices (PRs #4679, #4729–#4804 and successors) — read (`Q[…].AST` +
   `.gist`), the type-object registry, construction, and `EVAL($tree)` lowering through the

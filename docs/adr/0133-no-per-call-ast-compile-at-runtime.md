@@ -1,6 +1,7 @@
 # ADR-0133: Runtime executes precompiled chunks — no per-call AST compile
 
-- **Status**: Proposed (Slice 1 — signature expressions — implemented with #10107; later slices open)
+- **Status**: Accepted (user decision 2026-10-22); implemented (#10107, #10118, #10119, #10120,
+  #10121)
 - **Date**: 2026-09-29
 - **Related**: [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md) (declarations
   compile to plans; D2c compiled attribute defaults as child chunks),
