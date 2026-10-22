@@ -1827,3 +1827,23 @@ the generic subscript-adverb expansion. The focused
 `t/rakuast/rakuast-subscript-exists-hyperslice.t` records the Rakudo shapes
 and EVAL behavior. All 111 assertions in the array/hash `exists-adverb.t`
 and hash `hyperslice.t` roast files now pass in frontend mode.
+
+### 6.97 S10: dynamic multidimensional subscript adverbs (2026-10-22)
+
+The parser executes a 6.e multidimensional `:$delete` through a ternary: the
+false branch reads the original subscript, while the true branch calls the
+by-name delete primitive. The existing inverse for static subscript adverbs
+cannot recover that ternary's source form. RakuAST conversion now validates
+the shared target and dimensions, then emits the original array or hash
+postcircumfix with its ordered static colonpairs and a
+`ColonPair::Variable("delete")`. This covers bare `:$delete`, value adverbs
+such as `:k:$delete`, and existence adverbs such as `:exists:kv:$delete`.
+The parser keeps the distinct `:delete(EXPR)` spelling only during RakuAST
+analysis, so its condition converts to `ColonPair::Value` even when the
+execution ternary is otherwise identical to `:$delete`.
+The execution expansion remains in the parser/compiler path; lowering uses
+the existing subscript-adverb expansion.
+
+`t/rakuast/rakuast-multidim-dynamic-adverbs.t` records Rakudo's node shapes.
+The 812 assertions in `roast/S32-array/multislice-6e.t` and 549 in
+`roast/S32-hash/multislice-6e.t` now pass in frontend mode.

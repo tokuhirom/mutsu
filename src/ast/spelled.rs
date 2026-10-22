@@ -82,6 +82,12 @@ pub(crate) enum Spelling {
         subscript: Box<Expr>,
         pairs: Vec<Expr>,
     },
+    /// `:delete(EXPR)` on a multidimensional subscript shares an execution
+    /// expansion with `:$delete`, but its RakuAST colonpair has a value.
+    ConditionalMultidimDelete {
+        source: Box<Expr>,
+        condition: Box<Expr>,
+    },
     /// A bare Whatever operand of `o` is expanded to a closure for execution;
     /// the public RakuAST keeps the written composition and Whatever argument.
     CompositionWhatever(Box<Expr>),
