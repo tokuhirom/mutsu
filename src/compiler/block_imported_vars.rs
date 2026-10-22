@@ -66,6 +66,17 @@ impl Compiler {
         }
     }
 
+    /// The binding declarations a `use` of `module` with `tags` adds to the
+    /// scope holding it, by the parse-time scan: what an `EVAL`'s lexical
+    /// cleanup counts among the snippet's own lexicals.
+    // Cost: O(v), v = the module's exported variables.
+    pub(crate) fn imported_var_decls(module: &str, tags: &[String]) -> Vec<Stmt> {
+        Self::scanned_block_imported_var_bindings(module, tags)
+            .into_iter()
+            .map(|(.., stmt)| stmt)
+            .collect()
+    }
+
     /// The suffix of a lexical import set id that names the variables the
     /// block declares for the `use` of `module` with `tags`
     /// (`runtime::lexical_imports::BLOCK_VARS_MARK`); empty when there are

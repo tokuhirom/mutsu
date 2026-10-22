@@ -335,27 +335,35 @@ impl Compiler {
     /// lexical to the EVAL, so it binds as a block's `use` does.
     // Cost: O(s), s = top-level statements.
     ///
-    /// Its sets bind routines, multis and operators only: an `EVAL`'s
-    /// top-level declarations are not a pad of their own in mutsu (a `my`
-    /// there reaches the caller's later `EVAL`s), so the variables, constants
-    /// and types it imports keep the env alias that `with_eval_import_scope`
-    /// rolls back. The set ids leave out their `BLOCK_VARS_MARK` section,
-    /// which tells `Stmt::Use`'s compile to declare none, and carry
-    /// `EVAL_UNIT_MARK`: a block's `use` of the same import list fills a set
-    /// of its own, which an `EVAL`'s rolled-back import must not stand in for
+    /// The variables, constants and types such a `use` imports are declared
+    /// as the EVAL's own top-level lexicals, like a `my` there: the EVAL's
+    /// lexical cleanup (`run_eval_unit_stmts`, `eval_declared_lexical_keys`)
+    /// takes them out of the caller's env once the EVAL returns. The set ids
+    /// carry `EVAL_UNIT_MARK`: a block's `use` of the same import list fills
+    /// a set of its own, which an `EVAL`'s import must not stand in for
     /// (`lexical_import_replay`).
     pub(crate) fn enter_eval_unit_lexical_uses(&mut self, stmts: &[Stmt]) {
-        let mut local_multis: Option<Vec<String>> = None;
-        for stmt in stmts {
-            if let Some(id) = Self::lexical_use_set_id(stmt) {
-                let id = Self::eval_unit_set_id(id);
-                let local = local_multis.get_or_insert_with(|| Self::block_multi_names(stmts));
-                let id = Self::with_block_multis(id, local);
-                if !self.lexical_import_chain.contains(&id) {
-                    self.lexical_import_chain.push(id);
-                }
+        for id in Self::eval_unit_use_set_ids(stmts).into_iter().flatten() {
+            if !self.lexical_import_chain.contains(&id) {
+                self.lexical_import_chain.push(id);
             }
         }
+    }
+
+    /// The lexical import set id of each top-level statement of an `EVAL`'d
+    /// unit `stmts` that is a `use` filling one
+    /// ([`Self::enter_eval_unit_lexical_uses`]), `None` for every other.
+    // Cost: O(s), s = top-level statements.
+    pub(crate) fn eval_unit_use_set_ids(stmts: &[Stmt]) -> Vec<Option<Symbol>> {
+        let mut local_multis: Option<Vec<String>> = None;
+        stmts
+            .iter()
+            .map(|stmt| {
+                let id = Self::eval_unit_set_id(Self::lexical_use_set_id(stmt)?);
+                let local = local_multis.get_or_insert_with(|| Self::block_multi_names(stmts));
+                Some(Self::with_block_multis(id, local))
+            })
+            .collect()
     }
 
     /// The import sets of the main unit's top-level `use`s, innermost first:
@@ -370,16 +378,11 @@ impl Compiler {
         probe.deferred_unit_sets.into_iter().rev().collect()
     }
 
-    /// The id of the `EVAL`-unit set for the block set id `id`: without the
-    /// variables section it names (`BLOCK_VARS_MARK`), marked
-    /// `EVAL_UNIT_MARK`.
+    /// The id of the `EVAL`-unit set for the block set id `id`: the same
+    /// import list, marked `EVAL_UNIT_MARK`.
     // Cost: O(n), n = length of `id`.
     fn eval_unit_set_id(id: Symbol) -> Symbol {
-        let text = id.resolve();
-        let base = text
-            .split_once(crate::runtime::lexical_imports::BLOCK_VARS_MARK)
-            .map_or(text.as_str(), |(base, _)| base);
-        Symbol::intern(&format!("{base}{EVAL_UNIT_MARK}"))
+        Symbol::intern(&format!("{}{EVAL_UNIT_MARK}", id.resolve()))
     }
 
     /// Start this (EVAL) unit inside the import sets `innermost_first` of the

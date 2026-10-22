@@ -518,15 +518,16 @@ impl Interpreter {
     pub(crate) fn note_block_bound_import(&mut self, name: &str) {
         let name = crate::runtime::term_names::term_spelling(name).unwrap_or(name);
         let term = crate::runtime::term_names::term_key(name);
-        // A module unit's own top-level `use` binds in the module's
-        // mainline: the import is the module unit's, recorded as its
-        // provenance, which the module's own routines consult
-        // (`bare_name_visible_here`).
-        if self
-            .module
-            .lexical_import_capture
-            .as_ref()
-            .is_some_and(|capture| capture.module_unit)
+        // A unit's own top-level `use` binds in the unit's mainline (a
+        // module unit's, or the program's, which opens no import scope): the
+        // import is the unit's, recorded as its provenance, which the unit's
+        // own routines consult (`bare_name_visible_here`).
+        if self.module.import_scope_stack.is_empty()
+            || self
+                .module
+                .lexical_import_capture
+                .as_ref()
+                .is_some_and(|capture| capture.module_unit)
         {
             self.note_unit_env_import(Symbol::intern(name));
             self.note_unit_env_import(Symbol::intern(&term));

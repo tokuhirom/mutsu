@@ -169,9 +169,13 @@ impl Interpreter {
         if plan.iter().all(|p| *p == Prerun::No) {
             return Ok(stmts);
         }
+        // The set each top-level `use` fills when the unit runs: the pre-run
+        // imports into it too, so what the unit declares as its own lexicals
+        // (`Compiler::bind_block_imported_vars`) writes no env alias here.
+        let set_ids = crate::compiler::Compiler::eval_unit_use_set_ids(&stmts);
         let mut rest = Vec::with_capacity(stmts.len());
         let mut preran: HashSet<String> = HashSet::new();
-        for (idx, (stmt, how)) in stmts.into_iter().zip(plan).enumerate() {
+        for (idx, ((stmt, how), set_id)) in stmts.into_iter().zip(plan).zip(set_ids).enumerate() {
             match (&stmt, how) {
                 (_, Prerun::No) => {}
                 (Stmt::Import { module, tags }, _) => {
@@ -197,8 +201,17 @@ impl Interpreter {
                     // hook attaches (`$*R.find-attach-target`) belongs to this
                     // compunit.
                     self.module.eval_hook_recording = idx < lifted;
+                    let set_id = set_id.filter(|_| how == Prerun::Keep);
+                    let outer = set_id.map(|id| self.begin_lexical_import_capture(id));
                     let loaded = self
                         .with_use_attach_depth(|this| this.use_module_with_tags(module, tags));
+                    if let (Some(id), Some(outer)) = (set_id, outer) {
+                        if loaded.is_ok() {
+                            self.finish_lexical_import_capture(id, outer);
+                        } else {
+                            self.module.lexical_import_capture = outer;
+                        }
+                    }
                     self.module.eval_hook_recording = false;
                     loaded.map_err(|err| self.in_place_use_error(module, err))?;
                 }

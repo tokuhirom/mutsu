@@ -137,6 +137,43 @@ impl<'ast> Visit<'ast> for ModuleNames {
     }
 }
 
+/// The constants, value terms and types the `use`s of a subtree import, by
+/// the parse-time scan of each module: what a `use` declares as lexicals of the
+/// scope holding it (`Compiler::bind_block_imported_vars`).
+#[derive(Default)]
+struct ImportedTerms {
+    names: HashSet<String>,
+}
+
+impl<'ast> Visit<'ast> for ImportedTerms {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        if let Stmt::Use {
+            module,
+            tags,
+            arg: None,
+            condition: None,
+            ..
+        } = stmt
+        {
+            self.names.extend(
+                crate::parser::scanned_exported_vars(module)
+                    .iter()
+                    .flat_map(|vars| vars.iter())
+                    .filter(|var| var.term && var.imported_by(tags))
+                    .map(|var| var.name.clone()),
+            );
+            self.names.extend(
+                crate::parser::scanned_exported_types(module)
+                    .iter()
+                    .flat_map(|types| types.iter())
+                    .filter(|ty| ty.imported_by(tags))
+                    .map(|ty| ty.name.clone()),
+            );
+        }
+        walk_stmt(self, stmt);
+    }
+}
+
 /// The callees of every by-name call in a subtree.
 #[derive(Default)]
 struct CallNames {
@@ -404,10 +441,24 @@ impl Interpreter {
         // A term a hook bound in the import sets of the blocks the `EVAL`
         // runs in (ADR-8751): a bare word of the snippet reads it.
         let hook_terms = self.active_lexical_import_hook_terms();
+        // The constants the snippet's `use`s declare (`ImportedTerms`).
+        let mut terms = ImportedTerms::default();
+        walk_stmts(&mut terms, stmts);
+        // The routines the pre-run of its top-level `use`s bound in the
+        // unit's own lexical import sets (`run_eval_hook_uses`).
+        let unit_sets: Vec<Symbol> = crate::compiler::Compiler::eval_unit_use_set_ids(stmts)
+            .into_iter()
+            .flatten()
+            .collect();
         self.check_eval_unit_routines(stmts, |name| {
             imported.types.contains(name)
                 || (hook && name.starts_with(|c: char| c.is_lowercase()))
                 || hook_terms.iter().any(|term| term == name)
+                || terms.names.contains(name)
+                || (!unit_sets.is_empty()
+                    && self
+                        .lexical_import_operator_binding(&unit_sets, Symbol::intern(name))
+                        .is_some())
         })
     }
 
@@ -425,6 +476,9 @@ impl Interpreter {
         let mut modules = ModuleNames::default();
         walk_stmts(&mut modules, stmts);
         declared.extend(modules.names);
+        let mut imported = ImportedTerms::default();
+        walk_stmts(&mut imported, stmts);
+        declared.extend(imported.names);
         let types = self.eval_declared_types(stmts);
         // A `use` of a module that imports through a `sub EXPORT` hook brings
         // in whatever names the hook returns for the `use`'s arguments

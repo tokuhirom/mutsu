@@ -70,14 +70,28 @@ impl<'ast> Visit<'ast> for EvalLexicalKeys {
                 // `env_key` rejects for an uppercase name (a type-like
                 // spelling the capture must keep). Declared by the snippet it
                 // is still the snippet's own lexical, so it must not outlive
-                // the EVAL.
-                if custom_traits.iter().any(|(t, _)| t == "__sigilless_decl") {
+                // the EVAL. A `my constant Name` is stored the same way.
+                if custom_traits.iter().any(|(t, _)| {
+                    t == "__sigilless_decl"
+                        || (t == "__constant" && !name.starts_with(['$', '@', '%', '&']))
+                }) {
                     let term = crate::term_names::term_key(name);
                     self.keys
                         .insert(crate::runtime::sigilless_readonly_key(&term).to_string());
                     self.keys.insert(term);
                 }
                 walk_stmt(self, stmt);
+            }
+            // A `use` declares what it imports as lexicals of the scope that
+            // holds it (`Compiler::bind_block_imported_vars`).
+            Stmt::Use {
+                module,
+                tags,
+                arg: None,
+                condition: None,
+                ..
+            } => {
+                walk_stmts(self, &crate::compiler::Compiler::imported_var_decls(module, tags));
             }
             // A lexically scoped type is bound in the snippet's pad like a `my`
             // variable: its bare name shadows (and, once the snippet returns,

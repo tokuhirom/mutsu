@@ -20,6 +20,7 @@ pub(super) fn record_scanned_exports(module: &str, scan: &ModuleScanResult) {
             Some(
                 exported_vars::hook_vars(module, &scan.hook_value_keys)
                     .iter()
+                    .chain(exported_vars::hook_vars(module, &scan.hook_type_keys).iter())
                     .chain(scan.exported_vars.iter())
                     .cloned()
                     .collect(),
