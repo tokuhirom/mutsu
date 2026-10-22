@@ -10,7 +10,9 @@ fn skip_id() -> &'static Option<String> {
 }
 
 pub(crate) fn skip(id: &str) -> bool {
-    skip_id().as_deref() == Some(id)
+    skip_id()
+        .as_deref()
+        .is_some_and(|list| list.split(',').any(|s| s == id))
 }
 
 pub(crate) fn hit(id: &'static str) {
