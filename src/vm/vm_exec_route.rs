@@ -392,7 +392,6 @@ impl Interpreter {
             | OpCode::UseLibPath
             | OpCode::UseModule { .. } => self.exec_ops_group_14(code, ip, compiled_fns),
             OpCode::ApplyVarTrait { .. }
-            | OpCode::VarTraitCtl { .. }
             | OpCode::AssignExprLocal(..)
             | OpCode::AssignReadOnly
             | OpCode::BindCallerVar { .. }
@@ -421,6 +420,7 @@ impl Interpreter {
             | OpCode::SetLocalDecl { .. }
             | OpCode::SetVarDynamic { .. }
             | OpCode::SigillessAggregateStore { .. }
+            | OpCode::VarTraitCtl { .. }
             | OpCode::WheneverScope { .. }
             | OpCode::WrapPackageVarRef { .. } => self.exec_ops_group_15(code, ip, compiled_fns),
             OpCode::LetBlock { .. }
