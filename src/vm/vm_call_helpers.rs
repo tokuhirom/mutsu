@@ -44,6 +44,14 @@ impl Interpreter {
                 ValueView::Str(name) => Value::pair(name.to_string(), val.clone()),
                 _ => Value::pair(key.to_string_value(), val.clone()),
             },
+            // A Pair carrying a role mixin (`$pair but R`, CSS::Grammar's
+            // typed tokens) names its argument the same; the role plays no
+            // part in an argument list (#14158).
+            ValueView::Mixin(inner, _)
+                if matches!(inner.view(), ValueView::ValuePair(..) | ValueView::Pair(..)) =>
+            {
+                Self::namify_pair_item(inner.as_ref().clone())
+            }
             _ => item,
         }
     }
