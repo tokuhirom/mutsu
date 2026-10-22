@@ -2,6 +2,15 @@ use super::vm_control_ops::ForLoopSpec;
 use super::*;
 use crate::opcode::{CompiledCode, CompiledFns};
 
+/// What one hyper/race worker batch hands back: its interpreter, the batch
+/// result, and the stdout / stderr it produced.
+type HyperBatchOut = (
+    crate::runtime::Interpreter,
+    Result<Vec<Value>, RuntimeError>,
+    String,
+    String,
+);
+
 impl Interpreter {
     /// Worker count for a hyper/race op over `n` iterations: one worker per
     /// item for tiny lists (so inter-item `await` still sees a peer thread),
@@ -180,6 +189,7 @@ impl Interpreter {
         block: Value,
         is_map: bool,
         _is_hyper: bool,
+        config: Option<(Option<i64>, Option<i64>)>,
     ) -> Result<Vec<Value>, RuntimeError> {
         if items.is_empty() {
             return Ok(Vec::new());
@@ -199,14 +209,25 @@ impl Interpreter {
         // Cap concurrency. For small lists (<=64 items), give each item its
         // own thread so that inter-item synchronization (e.g. Promises) works.
         // Larger lists use one worker per CPU (not a hard cap of 4, and not
-        // a sequential fallback past 1000 items).
-        // TODO: store batch/degree on HyperSeq/RaceSeq so user params are used.
+        // a sequential fallback past 1000 items). A `:batch` / `:degree` the
+        // user gave (`config`) replaces the matching default: `:batch` is the
+        // items per worker task, `:degree` the number of tasks in flight.
+        let (user_batch, user_degree) = config.unwrap_or((None, None));
         let degree = if items.len() <= 64 {
             items.len()
         } else {
             Self::hyper_worker_degree(items.len())
         };
-        let batch_size = std::cmp::max(1, items.len().div_ceil(degree));
+        let batch_size = match user_batch {
+            Some(b) => usize::try_from(b).unwrap_or(1).max(1),
+            None => std::cmp::max(
+                1,
+                items.len().div_ceil(
+                    user_degree.map_or(degree, |d| usize::try_from(d).unwrap_or(1).max(1)),
+                ),
+            ),
+        };
+        let in_flight = user_degree.map(|d| usize::try_from(d).unwrap_or(1).max(1));
         let batches: Vec<Vec<Value>> = items
             .chunks(batch_size)
             .map(|chunk| chunk.to_vec())
@@ -229,9 +250,18 @@ impl Interpreter {
             String,
             String,
         );
-        let mut handles: Vec<crate::runtime::worker_pool::TaskHandle<ThreadResult>> =
-            Vec::with_capacity(num_batches);
+        let mut handles: std::collections::VecDeque<
+            crate::runtime::worker_pool::TaskHandle<ThreadResult>,
+        > = std::collections::VecDeque::with_capacity(num_batches);
+        let mut joined: Vec<ThreadResult> = Vec::with_capacity(num_batches);
         for batch in batches {
+            // `:degree` bounds the batches in flight: join the oldest first.
+            if let Some(limit) = in_flight {
+                while handles.len() >= limit {
+                    let handle = handles.pop_front().expect("in flight");
+                    joined.push(self.join_hyper_batch(handle));
+                }
+            }
             let thread_interp = self.clone_for_thread();
             let block_clone = block.clone();
             let is_map_flag = is_map;
@@ -239,7 +269,7 @@ impl Interpreter {
             // Promises between items) still works: the submit-side starvation
             // check gives every batch its own worker, same concurrency as
             // thread-per-batch. Workers keep the large user-code stack.
-            handles.push(crate::runtime::worker_pool::submit_joinable(move || {
+            handles.push_back(crate::runtime::worker_pool::submit_joinable(move || {
                 // CP-3 collapse: the cloned per-thread Interpreter *is* the Interpreter.
                 let mut vm = thread_interp;
                 let mut results = Vec::with_capacity(batch.len());
@@ -294,17 +324,9 @@ impl Interpreter {
         let mut all_results = Vec::with_capacity(items.len());
         let mut first_error: Option<RuntimeError> = None;
         for handle in handles {
-            // STW-aware: blocked on a worker join = quiescent for the GC.
-            let (thread_interp, batch_result, output, stderr) =
-                crate::gc::block_quiescent(|| handle.join()).unwrap_or_else(|_| {
-                    let interp = self.clone_for_thread();
-                    (
-                        interp,
-                        Err(RuntimeError::new("Thread panicked in hyper/race")),
-                        String::new(),
-                        String::new(),
-                    )
-                });
+            joined.push(self.join_hyper_batch(handle));
+        }
+        for (thread_interp, batch_result, output, stderr) in joined {
             self.emit_output(&output);
             self.emit_stderr(&stderr);
             // Shared vars are synced through the shared Arc<RwLock<>>
@@ -346,6 +368,113 @@ impl Interpreter {
             return Err(e);
         }
         Ok(all_results)
+    }
+
+    /// One parallel step of a lazy `.hyper` / `.race` map/grep stage (#14421):
+    /// pull up to `degree x batch` source elements on this thread, run the
+    /// stage over them on the worker pool (`degree` batches of `batch` in
+    /// flight, results in source order, which `race` may also use), and append
+    /// what came out to the list's cache. How far ahead the source is read is
+    /// unspecified in Raku; the pull is bounded by `degree x batch`, never
+    /// unbounded. Answers `false` when the stage is not a plain callable
+    /// map/grep, so the caller takes the serial path.
+    // Cost: O(degree x batch) source pulls and callback calls per step, run
+    // `degree` at a time.
+    pub(super) fn lazy_pipe_parallel_step(
+        &mut self,
+        list: &LazyList,
+    ) -> Result<bool, RuntimeError> {
+        use crate::value::HyperKind;
+        let kind = list.hyper_kind();
+        if kind == HyperKind::Plain {
+            return Ok(false);
+        }
+        let (source, func, is_grep, source_idx, plain) = {
+            let spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();
+            (
+                spec.source.clone(),
+                spec.func.clone(),
+                spec.is_grep,
+                spec.source_idx,
+                spec.index_transform.is_none() && spec.adaptor.is_none(),
+            )
+        };
+        let callable = matches!(
+            func.view(),
+            ValueView::Sub(..)
+                | ValueView::WeakSub(..)
+                | ValueView::Routine { .. }
+                | ValueView::Mixin(..)
+        );
+        if !plain || !callable {
+            return Ok(false);
+        }
+        let (batch, degree) = list.hyper_config().unwrap_or((None, None));
+        let batch = batch.map_or(64, |b| b.max(1));
+        let degree = degree.map_or_else(
+            || {
+                std::thread::available_parallelism()
+                    .map(|c| c.get() as i64)
+                    .unwrap_or(4)
+            },
+            |d| d.max(1),
+        );
+        let window = usize::try_from(batch.saturating_mul(degree)).unwrap_or(usize::MAX);
+        let mut items = Vec::new();
+        let mut exhausted = false;
+        while items.len() < window {
+            match self.pull_source_element(&source, source_idx + items.len())? {
+                Some(elem) => items.push(elem),
+                None => {
+                    exhausted = true;
+                    break;
+                }
+            }
+        }
+        if source_idx == 0
+            && let Some(first) = items.first()
+        {
+            self.run_callback_first_phasers(&func, first)?;
+        }
+        let produced = if items.is_empty() {
+            Vec::new()
+        } else {
+            self.exec_hyper_race_map_grep(
+                &items,
+                func,
+                !is_grep,
+                kind == HyperKind::Hyper,
+                Some((Some(batch), Some(degree))),
+            )?
+        };
+        {
+            let mut spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();
+            spec.source_idx = source_idx + items.len();
+            spec.done |= exhausted;
+        }
+        list.cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_or_insert_with(Vec::new)
+            .extend(produced);
+        Ok(true)
+    }
+
+    /// Join one hyper/race worker batch (STW-aware: blocked on a worker join
+    /// is quiescent for the GC); a panicked worker is an error result.
+    // Cost: O(1) plus the wait for the batch.
+    fn join_hyper_batch(
+        &mut self,
+        handle: crate::runtime::worker_pool::TaskHandle<HyperBatchOut>,
+    ) -> HyperBatchOut {
+        crate::gc::block_quiescent(|| handle.join()).unwrap_or_else(|_| {
+            (
+                self.clone_for_thread(),
+                Err(RuntimeError::new("Thread panicked in hyper/race")),
+                String::new(),
+                String::new(),
+            )
+        })
     }
 
     /// Reify one `.hyper.map` callback result on the joining thread. A

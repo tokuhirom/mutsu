@@ -486,6 +486,12 @@ impl Interpreter {
                 continue;
             }
 
+            // A lazy `.hyper` / `.race` stage runs a batch window on the worker
+            // pool (#14421).
+            if self.lazy_pipe_parallel_step(list)? {
+                continue;
+            }
+
             // Snapshot the stage so no pipe lock is held across the pull/apply
             // (which may recursively pull from a nested pipe source).
             let (source, func, is_grep, source_idx, index_transform) = {
