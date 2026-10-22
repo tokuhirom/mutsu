@@ -28,24 +28,24 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         }
     }
 
-    let (rest, clauses, else_block) = if keyword("orwith", rest).is_some()
-        || keyword("elsif", rest).is_some()
-    {
-        // The whole `orwith`/`elsif` continuation — *multiple* `orwith`
-        // clauses and a trailing `else` included — is the shared if-chain
-        // parser's.
-        let (r, (clauses, else_block)) = parse_elsif_chain(rest)?;
-        (r, clauses, else_block)
-    } else if let Some(r) = keyword("else", rest) {
-        let (r, _) = ws(r)?;
-        let (r, block) = super::conditionals::topic_clause_block(r, Some("single else pointy parameter"))?;
-        (r, Vec::new(), Some(block))
-    } else {
-        // No orwith/else found — don't consume whitespace/newlines past the
-        // closing brace, so the caller sees the statement boundary correctly
-        // (e.g. `do with X { ... }\nsay ...` should not absorb `say`).
-        (rest_before_ws, Vec::new(), None)
-    };
+    let (rest, clauses, else_block) =
+        if keyword("orwith", rest).is_some() || keyword("elsif", rest).is_some() {
+            // The whole `orwith`/`elsif` continuation — *multiple* `orwith`
+            // clauses and a trailing `else` included — is the shared if-chain
+            // parser's.
+            let (r, (clauses, else_block)) = parse_elsif_chain(rest)?;
+            (r, clauses, else_block)
+        } else if let Some(r) = keyword("else", rest) {
+            let (r, _) = ws(r)?;
+            let (r, block) =
+                super::conditionals::topic_clause_block(r, Some("single else pointy parameter"))?;
+            (r, Vec::new(), Some(block))
+        } else {
+            // No orwith/else found — don't consume whitespace/newlines past the
+            // closing brace, so the caller sees the statement boundary correctly
+            // (e.g. `do with X { ... }\nsay ...` should not absorb `say`).
+            (rest_before_ws, Vec::new(), None)
+        };
 
     let node = crate::ast::parsed::Conditional {
         kind: if is_without {

@@ -18,7 +18,10 @@ pub(super) fn lower_conditional(
 }
 
 // Cost: O(n), n = size of the conditional.
-fn read_conditional(node: &RakuAstNode, kind: ConditionalKind) -> Result<Conditional, RuntimeError> {
+fn read_conditional(
+    node: &RakuAstNode,
+    kind: ConditionalKind,
+) -> Result<Conditional, RuntimeError> {
     let block_name = match kind {
         ConditionalKind::If | ConditionalKind::With => "then",
         ConditionalKind::Unless | ConditionalKind::Without => "body",

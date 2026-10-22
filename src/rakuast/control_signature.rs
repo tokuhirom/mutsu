@@ -1,9 +1,7 @@
 //! Written control signatures and their shared parser expansions.
 
 use super::convert::{convert_expr, node_field, pointy_block};
-use super::lower::{
-    name_for_unpack_params, signature_positional_params,
-};
+use super::lower::{name_for_unpack_params, signature_positional_params};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{ControlPointyKind, ParamDef, SourceForm, Stmt};
 use crate::value::RuntimeError;
@@ -146,4 +144,3 @@ pub(super) fn params(block: &RakuAstNode) -> Result<Vec<ParamDef>, RuntimeError>
     name_for_unpack_params(&mut names, &mut defs);
     Ok(defs)
 }
-

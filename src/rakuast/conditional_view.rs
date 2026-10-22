@@ -4,7 +4,9 @@
 //! the statement's own origin is added by the statement list, as for every
 //! statement.
 
-use super::convert::{convert_expr, node_field, pointy_block, signature_block_node, topic_block_node};
+use super::convert::{
+    convert_expr, node_field, pointy_block, signature_block_node, topic_block_node,
+};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::parsed::{BlockParams, ClauseKind, Conditional, ConditionalKind, ParsedBlock};
 use crate::value::{RuntimeError, Value, ValueView};
@@ -84,7 +86,9 @@ fn with_block_origins(mut node: RakuAstNode, block: &ParsedBlock) -> RakuAstNode
         return node;
     };
     let mut blockoid = RakuAstNode::clone(blockoid);
-    blockoid.fields.extend(super::origin::span_field(block.blockoid));
+    blockoid
+        .fields
+        .extend(super::origin::span_field(block.blockoid));
     if let Some(list_field) = blockoid.fields.first_mut()
         && let RakuAstFieldValue::Node(list) = &list_field.value
         && let ValueView::RakuAst(list) = list.view()
