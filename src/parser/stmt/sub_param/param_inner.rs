@@ -1171,6 +1171,11 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         p.type_constraint = type_constraint;
         p.required = required;
         p.optional_marker = opt_marker;
+        let (rest, tail) = super::helpers::parse_subsig_tail(rest)?;
+        p.traits = tail.traits;
+        p.trait_args = tail.trait_args;
+        p.where_constraint = tail.where_constraint;
+        p.default = tail.default;
         return Ok((rest, p));
     }
 

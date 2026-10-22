@@ -1847,3 +1847,20 @@ the existing subscript-adverb expansion.
 `t/rakuast/rakuast-multidim-dynamic-adverbs.t` records Rakudo's node shapes.
 The 812 assertions in `roast/S32-array/multislice-6e.t` and 549 in
 `roast/S32-hash/multislice-6e.t` now pass in frontend mode.
+
+### 6.98 S4: anonymous callable tails and typed scalar slurpies (2026-10-22)
+
+The parameter parser already recognizes a bare `&` as an anonymous callable,
+but returned before parsing the ordinary `is`, `where`, and default tail.
+Thus `:(& is raw = &say)` fell into a permissive signature-literal fallback
+without declared parameters, which the RakuAST converter correctly refused.
+The bare callable now uses the shared parameter-tail parser, retaining those
+fields in the structured signature value and its RakuAST parameter.
+
+Rakudo accepts `Code *$block` as a typed scalar slurpy while rejecting a
+typed positional array slurpy such as `Int *@a`. RakuAST conversion now keeps
+the type on scalar slurpies and retains that rejection for arrays and hashes.
+The focused `t/rakuast/rakuast-anonymous-callable-typed-slurpy.t` compares
+both node shapes with Rakudo. `roast/S06-signature/introspection.t` and
+`roast/S06-signature/slurpy-blocks.t` now pass in frontend mode. Two other
+signature files from the earlier survey were already green on current main.
