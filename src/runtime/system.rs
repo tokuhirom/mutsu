@@ -96,12 +96,14 @@ impl Interpreter {
     /// like are left to it), ahead of the first `use lib` / BEGIN, which need
     /// the unit's own position.
     ///
-    /// A module that imports through a `sub EXPORT` hook is the exception that
-    /// cannot run twice: what it imports depends on the `use` arguments and its
-    /// hook has side effects, so its statement is dropped from the unit. Every
-    /// other pre-run statement stays in the unit: the in-position run
-    /// re-imports idempotently and records the lexical import set the unit's
-    /// by-name calls read (ADR-8751), which this out-of-unit run has no id for.
+    /// A module that imports through a `sub EXPORT` hook cannot run twice:
+    /// what it imports depends on the `use` arguments and its hook has side
+    /// effects. A top-level one's statement is dropped from the unit. A nested
+    /// one stays in its block and replays the map the pre-run recorded
+    /// (`ModuleState::eval_hook_results`). Every other pre-run statement stays
+    /// in the unit: the in-position run re-imports idempotently and records the
+    /// lexical import set the unit's by-name calls read (ADR-8751), which this
+    /// out-of-unit run has no id for.
     // Cost: O(u) static checks plus the load of each pre-run `use`, u =
     // top-level statements.
     fn run_eval_hook_uses(&mut self, mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
@@ -113,9 +115,7 @@ impl Interpreter {
                 || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
         });
         if !positional {
-            let nested = super::eval_nested_hook_uses::take_nested_hook_uses(&mut stmts, &|m| {
-                self.module_imports_through_export_hook(m)
-            });
+            let nested = super::eval_nested_hook_uses::take_nested_hook_uses(&mut stmts);
             lifted = nested.len();
             if !nested.is_empty() {
                 stmts.splice(0..0, nested);
@@ -143,8 +143,9 @@ impl Interpreter {
         for (idx, stmt) in stmts.iter().enumerate() {
             plan.push(match stmt {
                 _ if idx >= limit => Prerun::No,
-                // A statement lifted from a block: its hook module's `use`
-                // moved here, any other module's stays in the block.
+                // A copy of a `use` nested in a block, which stays there; a
+                // hook module's records the map its `sub EXPORT` returns, for
+                // the in-position run to replay.
                 Stmt::Use { module, .. } if idx < lifted => {
                     loaded.insert(module.as_str());
                     Prerun::Drop
@@ -170,7 +171,7 @@ impl Interpreter {
         }
         let mut rest = Vec::with_capacity(stmts.len());
         let mut preran: HashSet<String> = HashSet::new();
-        for (stmt, how) in stmts.into_iter().zip(plan) {
+        for (idx, (stmt, how)) in stmts.into_iter().zip(plan).enumerate() {
             match (&stmt, how) {
                 (_, Prerun::No) => {}
                 (Stmt::Import { module, tags }, _) => {
@@ -195,8 +196,11 @@ impl Interpreter {
                     // In position, like the compiled `use`: a LEAVE phaser the
                     // hook attaches (`$*R.find-attach-target`) belongs to this
                     // compunit.
-                    self.with_use_attach_depth(|this| this.use_module_with_tags(module, tags))
-                        .map_err(|err| self.in_place_use_error(module, err))?;
+                    self.module.eval_hook_recording = idx < lifted;
+                    let loaded = self
+                        .with_use_attach_depth(|this| this.use_module_with_tags(module, tags));
+                    self.module.eval_hook_recording = false;
+                    loaded.map_err(|err| self.in_place_use_error(module, err))?;
                 }
                 _ => {}
             }
@@ -266,11 +270,17 @@ impl Interpreter {
                 } else {
                     stmts
                 };
-                let stmts = self.run_eval_hook_uses(stmts)?;
-                let validated = self.validate_eval_source(&stmts);
-                self.module.eval_prerun_modules.clear();
-                validated?;
-                self.run_eval_unit_stmts(stmts)
+                // The hook maps the pre-run recorded are replayed by the
+                // unit's own `use`s and end with the unit.
+                let outer_hook_results = std::mem::take(&mut self.module.eval_hook_results);
+                let ran = self.run_eval_hook_uses(stmts).and_then(|stmts| {
+                    let validated = self.validate_eval_source(&stmts);
+                    self.module.eval_prerun_modules.clear();
+                    validated?;
+                    self.run_eval_unit_stmts(stmts)
+                });
+                self.module.eval_hook_results = outer_hook_results;
+                ran
             }
             Err(parse_err) => {
                 // BEGIN blocks should execute even when a later parse error occurs.
