@@ -909,7 +909,7 @@ impl Interpreter {
             // traits could dispatch through it.  Drive the user protocol only
             // after the body has registered its own declarations.
             if declare_how_installed {
-                self.declare_drive_how_protocol(&storage_name)?;
+                self.declare_drive_how_protocol(&storage_name, *class_is_rw)?;
                 if declare_how_has_compose {
                     self.registry_mut()
                         .pending_class_compose
