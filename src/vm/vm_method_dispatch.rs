@@ -3283,6 +3283,11 @@ fn merge_method_env(
                     // variable (the Text::CSV 66_formula.t leak, via env
                     // instead of the global map).
                     || s.strip_prefix("__mutsu_type::").is_some_and(is_method_local)
+                    // The same for an object hash's key type, which a class
+                    // injects with its body statics (`my %seen{List}` of a
+                    // `unit class`): merged back it rewrote the caller's
+                    // same-named `%seen{Any}`.
+                    || s.strip_prefix("__mutsu_hash_key_type::").is_some_and(is_method_local)
             }) {
                 return None;
             }
