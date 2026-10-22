@@ -122,9 +122,45 @@ fn associative_store(
         [to_store] => to_store.clone(),
         _ => return None,
     };
+    // A typed hash (`Hash[Int]`, `my Int %h`) checks each stored value against
+    // its element type before the node is replaced, so a refused store leaves
+    // the hash as it was.
+    let values = stored_hash_values(&to_store);
+    if let Err(err) = interp.check_array_value_element_types(&target, &values) {
+        return Some(Err(err));
+    }
     if let Err(err) = interp.store_into_hash(&gc, &to_store) {
         return Some(Err(err));
     }
     place.reseat(interp);
     Some(Ok(target.deitemize_for_sigil_bind()))
+}
+
+/// The values `Hash.STORE` is about to file under keys: a `Pair`'s value, the
+/// odd-position items of a flat key/value list, or a hash's values.
+// Cost: O(n), n = items in `to_store`.
+fn stored_hash_values(to_store: &Value) -> Vec<Value> {
+    let items = crate::runtime::utils::value_to_list(to_store);
+    let mut values = Vec::with_capacity(items.len());
+    let mut flat = false;
+    for item in &items {
+        match item.view() {
+            ValueView::Pair(_, value) => values.push(value.clone()),
+            ValueView::Hash(map) if !flat => values.extend(map.values().cloned()),
+            _ => {
+                // A bare (non-pair) item is a key; its value is the next one.
+                flat = true;
+                values.push(item.clone());
+            }
+        }
+    }
+    if flat {
+        // Keys sit at even positions: keep the odd ones only.
+        values = items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, v)| (i % 2 == 1).then(|| v.clone()))
+            .collect();
+    }
+    values
 }
