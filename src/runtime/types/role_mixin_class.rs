@@ -67,6 +67,7 @@ impl Interpreter {
             trusts: &[],
             own_attribute_names: &[],
             attr_decls: &[],
+            attr_type_aliases: &[],
             method_name_chunks: &[],
             method_decls: &[],
             declared_static_names: &[],

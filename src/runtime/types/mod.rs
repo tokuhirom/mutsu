@@ -1193,7 +1193,9 @@ impl Interpreter {
         // Coercion parens were already unwrapped above, so `[` here is always
         // a parameterization.
         let base_name = if base.contains('[') && !base.contains('(') {
-            base.to_string()
+            // Through a `constant CA2 = CArray` alias: the type object must
+            // carry the spelling a `CA2[uint16].new` value does.
+            self.resolved_type_capture_name(base)
         } else {
             Self::optional_type_object_name(base)
         };

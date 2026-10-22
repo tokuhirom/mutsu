@@ -5,7 +5,7 @@ use super::convert::{build_type_node, leaf_field, name_from_identifier, node_fie
 use super::lower::named_child;
 use super::{RakuAstClass as C, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, SignatureVar};
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value};
 
 fn node(class: C, fields: Vec<RakuAstField>) -> RakuAstNode {
     RakuAstNode { class, fields }
@@ -83,13 +83,8 @@ pub(super) fn convert(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let (Expr::Literal(value) | Expr::LiteralSrc(value, _)) = expr else {
         return Err(unsupported("nonconstant signature literal postconstraint"));
     };
-    let type_name = match value.view() {
-        ValueView::Str(_) => "Str",
-        ValueView::Int(_) | ValueView::BigInt(_) => "Int",
-        ValueView::Num(_) => "Num",
-        ValueView::Rat(..) => "Rat",
-        _ => return Err(unsupported("signature literal postconstraint value")),
-    };
+    let type_name = super::literal_parameter::value_type(value)
+        .ok_or_else(|| unsupported("signature literal postconstraint value"))?;
     Ok(node(
         C::Parameter,
         vec![

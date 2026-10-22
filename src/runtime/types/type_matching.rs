@@ -120,7 +120,7 @@ impl Interpreter {
     /// Only a name currently bound to a plain type object counts, and never one
     /// that is already a type name in its own right, so an ordinary
     /// parameterization such as `CArray[uint64]` is left untouched.
-    fn type_alias_target(&self, name: &str) -> Option<String> {
+    pub(crate) fn type_alias_target(&self, name: &str) -> Option<String> {
         // A definiteness smiley (`Int:D`, `Str:U`) never names an alias: an
         // alias is declared under a plain identifier, so the env walk below
         // could only miss -- and it ran on every `Int:D` check in a program
@@ -137,6 +137,35 @@ impl Interpreter {
             return None;
         }
         self.resolve_type_alias_chain(name)
+    }
+
+    /// `constraint` with a `constant` alias in the base of a parameterization
+    /// followed (`CA2[uint16]` -> `CArray[uint16]` under `constant CA2 =
+    /// CArray`). A declaration records its type this way while the alias is
+    /// still in scope: the frames that check it later (a submethod run by the
+    /// constructor) do not see the declaring scope's constants.
+    ///
+    /// `aliases` are the declaring frame's own `(alias, type)` pairs, which win
+    /// over the env: the frame's pad is not reachable by name from here.
+    pub(crate) fn resolve_parameterized_alias_base(
+        &self,
+        constraint: &str,
+        aliases: &[(String, String)],
+    ) -> String {
+        if let Some(open) = constraint.find('[')
+            && constraint.ends_with(']')
+        {
+            let base = &constraint[..open];
+            let target = aliases
+                .iter()
+                .find(|(alias, _)| alias == base)
+                .map(|(_, target)| target.clone())
+                .or_else(|| self.type_alias_target(base));
+            if let Some(target) = target {
+                return format!("{target}{}", &constraint[open..]);
+            }
+        }
+        constraint.to_string()
     }
 
     pub(crate) fn resolved_type_capture_name(&self, constraint: &str) -> String {
@@ -266,7 +295,15 @@ impl Interpreter {
             let resolved_base = if base.contains('\u{0}') {
                 base.to_string()
             } else {
-                self.lexical_env_remap_name(base)
+                let remapped = self.lexical_env_remap_name(base);
+                // `constant CA2 = CArray` makes `CA2[uint16]` mean
+                // `CArray[uint16]`, as it does when the expression is
+                // evaluated.
+                if remapped == base {
+                    self.type_alias_target(base).unwrap_or(remapped)
+                } else {
+                    remapped
+                }
             };
             if resolved_inner != inner || resolved_base != base {
                 return Some(format!("{}[{}]", resolved_base, resolved_inner));

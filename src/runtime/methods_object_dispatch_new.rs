@@ -1871,6 +1871,15 @@ impl Interpreter {
                 // owns its elements, so pull them now (ADR-0058).
                 self.reify_map_grep_seq(&val)?;
                         Self::coerce_attr_value_by_sigil(val, sigil)
+                    } else if default_is_seed
+                        && attr_type_constraint
+                            .as_deref()
+                            .is_some_and(|tc| tc.contains('[') && !tc.contains('('))
+                    {
+                        // The seed of a parameterized type (`has CA2[uint16] $.k`)
+                        // is its type object; evaluating the spelling as a bare
+                        // word cannot see a `constant CA2 = CArray` alias.
+                        self.seed_attr_value(class_key, &attr_name, sigil, &attr_type_constraints)
                     } else if let Some(arg) = default {
                         // Fast path: simple literal defaults (e.g. from native types
                         // like `has uint32 $.a` which generate `default: Int(0)`)
