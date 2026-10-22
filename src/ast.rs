@@ -2950,6 +2950,11 @@ pub(crate) enum Stmt {
     /// is the first statement of the `SyntheticBlock` that holds the
     /// expansion, and the compiler emits nothing for it.
     SourceForm(Box<SourceForm>),
+    /// A construct the parser built in its RakuAST shape, kept only by a parse
+    /// whose tree the RakuAST conversion reads (ADR-10723 Stage 2,
+    /// [`parsed`]). Every other parse lowers it where it is built, so the
+    /// compiler never sees one.
+    Ast(Box<parsed::ParsedStmt>),
     /// Set the current source line number (for deprecation tracking, etc.).
     /// The span is the byte range of the statement that follows in the unit's
     /// source, which is what its RakuAST `origin` answers (ADR-10723 §4).
@@ -3091,6 +3096,7 @@ pub(crate) mod loop_cond_decl;
 mod lvalue;
 pub(crate) mod method_assign_decl;
 pub(crate) mod package_header;
+pub(crate) mod parsed;
 mod placeholder_kind;
 pub(crate) mod placeholders;
 pub(crate) mod routine_trait;

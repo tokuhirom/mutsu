@@ -44,6 +44,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
         // analysis every source expression twice, ahead of the declarations
         // the expansion makes (see `ast::signature_decl`).
         Stmt::SourceForm(form) => v.visit_source_form(form),
+        Stmt::Ast(node) => super::walk_parsed(v, node),
         Stmt::MarkReadonly(name, _) => v.visit_name(name, NameKind::MarkReadonly),
         Stmt::MarkBind
         | Stmt::Proceed

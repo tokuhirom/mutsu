@@ -13,7 +13,8 @@ use conditional::*;
 use super::name_parts::{self, NameShape};
 use super::routine_lower::lower_sub;
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{ContextKind, Expr, GivenWithKind, ParamDef, Stmt, WithBlockKind};
+use crate::ast::{ContextKind, Expr, GivenWithKind, ParamDef, Stmt};
+use crate::ast::parsed::ConditionalKind;
 use crate::regex_tree::{RegexNode, RegexTree};
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -95,6 +96,10 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
         RakuAstClass::StatementList => {
             let mut stmts = Vec::with_capacity(node.fields.len());
             for f in &node.fields {
+                // The list's own origin (ADR-10723 Stage 2) is no statement.
+                if super::origin::is_origin(f) {
+                    continue;
+                }
                 let child = child_node(&f.value)?;
                 super::infix_func::note_declaration(child);
                 if let Some(line) = super::origin::line_of(child) {
@@ -551,18 +556,12 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::VarDeclarationTerm => lower_term_declaration(node),
         RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_statement(node),
         RakuAstClass::ApplyDottyInfix => Ok(Stmt::Expr(lower_dotty_assign(node, true)?)),
-        RakuAstClass::StatementIf => lower_if(node),
-        // `with X { … }` / `without X { … }`. Both rebuild the conditional the
-        // parser desugars them into, tagged so a round trip renders the same
-        // node again. `without` names its block `body`, not `then`, and takes
-        // no continuation clauses.
-        RakuAstClass::StatementWith => lower_with_block(node, WithBlockKind::With),
-        RakuAstClass::StatementWithout => lower_with_block(node, WithBlockKind::Without),
-        // `unless C { … }`. mutsu stores it as a negated condition plus the
-        // `is_unless` flag, which is what the converter reads back, so the
-        // lowerer has to re-plant both. raku's node names the block `body`
-        // (not `then`) and cannot carry `elsif`/`else`.
-        RakuAstClass::StatementUnless => super::control_signature::lower_unless(node),
+        // The conditional family reads the node into the parser's own
+        // `Conditional` and lowers that (ADR-10723 Stage 2).
+        RakuAstClass::StatementIf => lower_conditional(node, ConditionalKind::If),
+        RakuAstClass::StatementWith => lower_conditional(node, ConditionalKind::With),
+        RakuAstClass::StatementWithout => lower_conditional(node, ConditionalKind::Without),
+        RakuAstClass::StatementUnless => lower_conditional(node, ConditionalKind::Unless),
         RakuAstClass::StatementLoopWhile | RakuAstClass::StatementLoopUntil => lower_while(node),
         RakuAstClass::StatementLoop => lower_cstyle_loop(node),
         // `repeat { … } while/until C` runs the body once before testing the
