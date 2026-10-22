@@ -70,6 +70,10 @@ pub(super) static ROWS: &[MethodRow] = &[
         "set-expression",
         |t, a| t.rakuast_set_field("set-expression", a[0].clone())
     ),
+    // One row serves both classes (a name is declared once); the handler
+    // refuses any other node.
+    node_row!("RakuAST::ApplyInfix", "add-colonpair", |t, a| t
+        .rakuast_add_colonpair(a[0].clone())),
     origin_row!("RakuAST::Origin", "from", 0, origin_position),
     origin_row!("RakuAST::Origin", "to", 0, origin_end),
     origin_row!("RakuAST::Origin", "source", 0, origin_source),
@@ -153,7 +157,11 @@ fn original_line(target: &Value, args: &[Value]) -> Option<Result<Value, Runtime
 // Cost: O(f + c), f = fields of `node`, c = child nodes listed in them.
 pub(super) fn children(node: &RakuAstNode) -> Vec<Value> {
     let mut out = Vec::new();
-    for field in &node.fields {
+    for field in node
+        .fields
+        .iter()
+        .filter(|field| !crate::rakuast::is_unvisited_field(node, field))
+    {
         match &field.value {
             RakuAstFieldValue::Node(v) if crate::rakuast::is_node_value(v) => {
                 out.push(v.clone());

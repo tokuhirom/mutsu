@@ -2052,3 +2052,29 @@ Known gaps, both rakudo-visible: a comment between a statement and its `;`
 (`Sub`, `Block`, `VarDeclaration`, `Call::*`, ...) have no origin; those arrive
 with their construct families, as the parser starts building them. Code::Coverable
 (#11413) waits on those families.
+
+### 6.106 S10: adverbs on a list-associative infix (2026-10-22)
+
+`$z & $y :adverb` on a user `infix:<&>` is an `ApplyListInfix`. Rakudo 2026.09
+keeps its adverbs in the private `$!adverbs`, filled by `add-colonpair`; the
+constructor form, the accessors and `visit-children` leave them out, and EVAL
+passes them to the operator. The converter keeps them in the same hidden
+`adverbs` field (`rakuast::is_unvisited_field` keeps it out of accessors and
+`visit-children`, the renderer omits it; §6.103's `source-alias` atom is kept
+out the same way), and lowering appends them to the
+outermost call, where the parser attaches them. This lifts §6.46's
+two-operand restriction. `ApplyInfix.add-colonpair` and
+`ApplyListInfix.add-colonpair` are the rakudo mutators, answering `Nil`.
+(The row is declared once, on `ApplyInfix`, and its handler serves both.)
+Lowering decides "the unit declares this operator" from the statement lists it
+passes; it now also counts the operators the scope that runs the `EVAL`
+makes visible (`rakuast::with_caller_operators`, installed for an `EVAL`
+string's round trip and for `EVAL` of a node), so `sub infix:<&> …;
+EVAL '1 & 2'` calls the user operator under `MUTSU_RAKUAST=1`, as on the
+ordinary frontend, instead of building a junction. A colonpair whose value is
+an interpolating word quote (`:person«$user»`) no longer refuses: only a
+literal single word becomes the allomorph term. That the parser calls an
+overloaded junction operator pairwise when it carries adverbs is #14630; that
+an adverb on a core infix is dropped is #14644. The executable contract is
+`t/rakuast/rakuast-list-infix-adverbs.t`; `roast/integration/advent2013-day10.t`
+passes in frontend mode.

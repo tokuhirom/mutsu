@@ -273,7 +273,12 @@ impl Interpreter {
                 // CHECK-time diagnostic. Valid converted units are checked
                 // after lowering, when imported names have been resolved.
                 let stmts = if let Some((types, terms)) = caller_names {
-                    match crate::rakuast::frontend::round_trip_eval(&stmts, || types, || terms) {
+                    match crate::rakuast::frontend::round_trip_eval(
+                        &stmts,
+                        || types,
+                        || terms,
+                        op_names,
+                    ) {
                         Ok(lowered) => lowered,
                         Err(refusal) => {
                             self.validate_eval_source(&stmts)?;

@@ -622,6 +622,7 @@ pub(crate) mod routine_cell;
 pub(crate) use routine_cell::{RoutineCell, RoutinePrototype};
 mod quanthash_store;
 pub(crate) mod raku_repr;
+mod rakuast_colonpair;
 pub(crate) mod shaped_array;
 pub(crate) use nanbox::CONTAINER_CELLS;
 #[cfg(feature = "jit")]
