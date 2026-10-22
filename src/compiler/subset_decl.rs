@@ -43,8 +43,10 @@ impl Compiler {
                 // built below, which smartmatches exactly as the checker would.
                 let mut names = TypeNameScan(false);
                 names.visit_expr(pred);
-                let with_closure =
-                    names.0 || (is_closure && !self.decl_time_expr_free_var_syms(pred).is_empty());
+                // A value predicate reads outer lexicals just the same
+                // (`where .starts-with($header)`), and the checker runs in the
+                // caller's scope, which may be another compunit's.
+                let with_closure = names.0 || !self.decl_time_expr_free_var_syms(pred).is_empty();
                 // `.^refinement` needs the predicate as a callable. A code
                 // literal is that already; anything else (`where /a/`) is
                 // wrapped as a block that smartmatches the value, as rakudo
