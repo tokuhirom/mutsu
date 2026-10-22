@@ -232,6 +232,24 @@ fn verify_enabled() -> bool {
 }
 
 impl Interpreter {
+    /// Compile a module's mainline `stmts` that has no cache slot (the
+    /// bytecode cache is off, or the unit may not use it) as the cached path
+    /// compiles it: a module unit, whose top-level `use`s fill its lexical
+    /// import sets, under the canonical scans of the modules it `use`s.
+    // Cost: O(n), n = size of the compiled code.
+    pub(crate) fn compile_module_mainline_uncached(
+        &self,
+        stmts: &[Stmt],
+    ) -> (CompiledCode, CompiledFns) {
+        let (mut compiler, compile_unit) = self.block_compiler();
+        let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(compile_unit);
+        let _scans = self.canonical_use_scans(Self::use_modules_of(stmts));
+        compiler.defer_unit_lexical_use_sets(stmts, true);
+        let (mut code, mut fns) = compiler.compile(stmts);
+        self.inherit_frame_lexical_for_body(stmts, &mut code, &mut fns);
+        (code, fns)
+    }
+
     /// The canonical export scans of `modules`, each resolved as the load
     /// will resolve it, for a module mainline's compile or its validation
     /// (`parser::canonical_export_scans`).

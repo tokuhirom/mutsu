@@ -870,7 +870,7 @@ impl Interpreter {
     }
 
     pub(super) fn run_block(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
-        self.run_block_with(stmts, None, None)
+        self.run_block_with(stmts, None, None, false)
     }
 
     /// [`Self::run_block`] for a body written under `origin`'s lexical scopes
@@ -880,7 +880,7 @@ impl Interpreter {
         stmts: &[Stmt],
         origin: Option<&crate::opcode::CompiledCode>,
     ) -> Result<(), RuntimeError> {
-        self.run_block_with(stmts, None, origin)
+        self.run_block_with(stmts, None, origin, false)
     }
 
     /// [`Self::run_block`] for a module's mainline: its main body is compiled
@@ -902,15 +902,19 @@ impl Interpreter {
                 )?;
                 self.run_compiled_block_raw(&code, &fns)
             }
-            slot => self.run_block_with(ast.stmts()?, slot, None),
+            slot => self.run_block_with(ast.stmts()?, slot, None, true),
         }
     }
 
+    /// Run `stmts` with their block phasers. `module_unit`: they are a
+    /// module's mainline, whose main body compiles as one with or without a
+    /// cache `slot` (`compile_module_mainline_uncached`).
     fn run_block_with(
         &mut self,
         stmts: &[Stmt],
         slot: Option<super::module_bytecode::ModuleCodeSlot>,
         origin: Option<&crate::opcode::CompiledCode>,
+        module_unit: bool,
     ) -> Result<(), RuntimeError> {
         let (pre_ph, enter_ph, success_ph, failure_ph, post_ph, body_main) =
             self.split_block_phasers(stmts);
@@ -934,6 +938,10 @@ impl Interpreter {
                     super::module_bytecode::MainlineBody::Split(&body_main),
                     slot,
                 )?;
+                self.run_compiled_block_raw(&code, &fns)
+            }
+            _ if module_unit && !body_main.is_empty() => {
+                let (code, fns) = self.compile_module_mainline_uncached(&body_main);
                 self.run_compiled_block_raw(&code, &fns)
             }
             _ if origin.is_some() && !body_main.is_empty() => {
