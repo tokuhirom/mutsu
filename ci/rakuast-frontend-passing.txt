@@ -5169,6 +5169,7 @@ t/rakuast/rakuast-declared-name-nested.t
 t/rakuast/rakuast-declared-name.t
 t/rakuast/rakuast-declared-nil-and-grouped-decl.t
 t/rakuast/rakuast-declared-sub-bareword.t
+t/rakuast/rakuast-deprecated-anon-sub-call.t
 t/rakuast/rakuast-desugar-boundary.t
 t/rakuast/rakuast-do-whenever.t
 t/rakuast/rakuast-dotty-term-method.t
