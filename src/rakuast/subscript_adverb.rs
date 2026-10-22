@@ -28,10 +28,65 @@ use crate::ast::subscript_adverb::{self, Adverb};
 use crate::value::{RuntimeError, Value, ValueView};
 use std::borrow::Cow;
 
+mod hyperslice;
+
 /// The postcircumfix node for `expr` when it is a subscript with adverbs;
 /// `None` when it is not one.
 // Cost: O(n), n = AST nodes under `expr`.
 pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> {
+    if let Expr::HyperSlice { target, adverb } = expr {
+        let pair = colonpair(&(
+            hyperslice::name(*adverb).to_string(),
+            Expr::Literal(Value::TRUE),
+        ));
+        return Some(pair.and_then(|pair| {
+            subscript_dims_node(target, &[Expr::HyperWhatever], false, None, vec![pair])
+        }));
+    }
+    // The parser records an explicit `:exists(False)` value in `arg`. The
+    // generic expansion inverse cannot infer that syntax from a false value:
+    // it would rebuild `:!exists` and fail the structural identity check.
+    if let Expr::Exists {
+        target,
+        negated: false,
+        delete: false,
+        arg: Some(arg),
+        adverb: crate::ast::ExistsAdverb::None,
+    } = expr
+    {
+        let pair = colonpair_value_expr(&Expr::Binary {
+            left: Box::new(Expr::Literal(Value::str_from("exists"))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: arg.clone(),
+            form: Default::default(),
+        });
+        return Some(pair.and_then(|pair| {
+            let colonpairs = vec![Value::rakuast(Box::new(pair))];
+            match target.as_ref() {
+                Expr::Index {
+                    target,
+                    index,
+                    is_positional: false,
+                    spelling: crate::ast::IndexSpelling::Angle,
+                } if angle_key_text(index).is_some() => {
+                    angle_subscript_node(target, index, None, colonpairs)
+                }
+                Expr::Index {
+                    target,
+                    index,
+                    is_positional,
+                    ..
+                } => subscript_dims_node(
+                    target,
+                    std::slice::from_ref(index.as_ref()),
+                    *is_positional,
+                    None,
+                    colonpairs,
+                ),
+                _ => Err(convert_unsupported("explicit existence subscript")),
+            }
+        }));
+    }
     if let Expr::Spelled(spelled) = expr
         && let crate::ast::spelled::Spelling::NamedSubscript { subscript, pairs }
         | crate::ast::spelled::Spelling::ConflictingSubscript { subscript, pairs } =
@@ -275,6 +330,22 @@ pub(super) fn lower(subscript: Expr, postfix: &RakuAstNode) -> Result<Expr, Runt
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
+    if let Expr::Index {
+        target,
+        index,
+        is_positional: false,
+        ..
+    } = &subscript
+        && matches!(index.as_ref(), Expr::HyperWhatever)
+        && let [(key, Expr::Literal(value))] = adverbs.as_slice()
+        && matches!(value.view(), ValueView::Bool(true))
+        && let Some(adverb) = hyperslice::adverb(key)
+    {
+        return Ok(Expr::HyperSlice {
+            target: target.clone(),
+            adverb,
+        });
+    }
     if adverbs
         .iter()
         .any(|(key, _)| !subscript_adverb::is_builtin_name(key))
