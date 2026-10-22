@@ -1300,9 +1300,14 @@ impl Interpreter {
         let (prefix, variant) = (prefix.as_str(), variant_sym.as_str());
         // The prefix must resolve through the lexical env to an enum type object.
         // The prefix is most often a `constant`, a term (#9962).
-        let Some(ValueView::Package(pkg)) =
-            self.type_name_binding(prefix).as_ref().map(Value::view)
-        else {
+        // A module's `our constant Alias = Enum` lives in the module's package
+        // symbols, not in the importer's env (#14174).
+        let binding = self.type_name_binding(prefix).or_else(|| {
+            self.toplevel_package_symbol(prefix)
+                .or_else(|| self.get_our_var(prefix))
+                .cloned()
+        });
+        let Some(ValueView::Package(pkg)) = binding.as_ref().map(Value::view) else {
             return None;
         };
         let pkg_sym = pkg;
