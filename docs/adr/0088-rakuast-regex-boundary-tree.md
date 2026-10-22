@@ -1700,3 +1700,15 @@ constructed nodes, EVAL, and matching. The RakuAST frontend now passes
 refusal in `roast/S05-capture/caps.t` is gone, but that file reaches a separate
 separator-capture execution mismatch at line 89. Other regex source-tree
 refusals remain in the #8033 campaign.
+
+## 73. Named captures in quantified separators (2026-10-22)
+
+The regex source renderer now keeps a nonnumeric named-capture alias compact
+(`$<name>=body`). A space around `=` made the execution parser interpret a
+quantifier separator as a method call on `Match` after RakuAST lowering, even
+though the source tree retained the correct `Regex::NamedCapture` node. Numeric
+aliases keep their distinct `$2 = body` rendering for static numbering.
+
+`t/rakuast/rakuast-regex-named-separator-capture.t` checks the source shape and
+execution of `%` and `%%` separators, including a zero-width capture. The
+RakuAST frontend now passes all 56 assertions in `roast/S05-capture/caps.t`.
