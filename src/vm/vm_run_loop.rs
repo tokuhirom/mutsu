@@ -206,6 +206,42 @@ impl Interpreter {
         }
     }
 
+    /// Run `body` (user code the interpreter re-enters) inside the same
+    /// `catch_unwind` panic->`X::AdHoc` boundary as [`Self::run_inner_guarded`],
+    /// restoring the call-frame state the unwind skipped. For a re-entry that
+    /// reaches the body without going through `run_nested`, such as a closure
+    /// called straight onto `call_compiled_closure`.
+    // Cost: O(d), d = the call frames the panic unwound past (O(1) when it does not panic).
+    pub(crate) fn run_guarded_against_panic<T>(
+        &mut self,
+        body: impl FnOnce(&mut Self) -> Result<T, RuntimeError>,
+    ) -> Result<T, RuntimeError> {
+        install_vm_panic_hook();
+        let prev = IN_VM_PANIC_BOUNDARY.with(|f| f.replace(true));
+        let entry_call_frame_depth = self.call_frames.len();
+        let entry_stack_depth = self.stack.len();
+        let entry_caller_env_depth = self.caller_env_stack_depth();
+        let entry_let_saves_mark = self.let_saves_len();
+        let entry_test_assertion_depth = self.test_assertion_line_stack_depth();
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| body(self)));
+        IN_VM_PANIC_BOUNDARY.with(|f| f.set(prev));
+        match caught {
+            Ok(r) => r,
+            Err(payload) => {
+                self.recover_call_frames_after_panic(
+                    entry_call_frame_depth,
+                    entry_stack_depth,
+                    entry_caller_env_depth,
+                    entry_let_saves_mark,
+                    entry_test_assertion_depth,
+                );
+                Err(Self::vm_panic_error(panic_payload_message(
+                    payload.as_ref(),
+                )))
+            }
+        }
+    }
+
     /// Build a catchable `X::AdHoc` error from a caught panic message.
     pub(crate) fn vm_panic_error(message: String) -> RuntimeError {
         let message = format!("Internal error: {message}");

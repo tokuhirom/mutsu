@@ -246,7 +246,11 @@ impl Interpreter {
         self.async_state
             .active_supply_emitters
             .push(emitter.clone());
-        let mut result = self.call_sub_value(on_demand_cb, vec![emitter]);
+        // The body is user code re-entered on this thread: a Rust panic it
+        // raises (overflow, index out of range) must reach the consumer's QUIT
+        // as the catchable error the VM boundary produces, not unwind the
+        // process (#8185).
+        let mut result = self.run_guarded_against_panic(|me| me.call_sub_value(on_demand_cb, vec![emitter]));
         self.async_state.active_supply_emitters.pop();
         // The body's own bare `done` (`ast::Stmt::SupplyBodyDone`) always ends
         // just this synchronous call — absorb it here rather than relying on
