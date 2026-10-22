@@ -1,10 +1,10 @@
 # ADR-14477: A code value's methods are found through its class's MRO
 
-- **Status**: Proposed
+- **Status**: Accepted (2026-10-22)
 - **Date**: 2026-10-22
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#14477](https://github.com/tokuhirom/mutsu/issues/14477)
-- **Supersedes (once Accepted)**: the outcome of [ADR-12523](12523-code-methods-need-a-dispatch-shape.md) §7
+- **Supersedes**: the outcome of [ADR-12523](12523-code-methods-need-a-dispatch-shape.md) §7
   ("No `DispatchShape::Code`")
 - **Related**: [ADR-11276](11276-built-in-methods-are-handler-rows.md) (handler rows),
   #14081 (the per-site owner hooks; `routine_owners_of` is its last row), #14080 (the receiver step)
