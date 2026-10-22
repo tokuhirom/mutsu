@@ -1548,13 +1548,12 @@ impl Interpreter {
                 let raw = name.resolve();
                 let name = raw.split('\0').next().unwrap_or("");
                 let own = constraint.split('\0').next().unwrap_or("");
-                let same = |long: &str, short: &str| {
-                    long == short
-                        || long
-                            .strip_suffix(short)
-                            .is_some_and(|head| head.ends_with("::"))
+                let same_subset = |a: &str, b: &str| {
+                    a == b
+                        || crate::qualified::unqualified_part(Symbol::intern(a))
+                            == crate::qualified::unqualified_part(Symbol::intern(b))
                 };
-                if (same(name, own) || same(own, name))
+                if same_subset(name, own)
                     && (self.registry().subsets.contains_key(raw.as_str())
                         || self.registry().subsets.contains_key(name))
                 {
