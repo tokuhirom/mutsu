@@ -331,7 +331,7 @@ impl Interpreter {
             // the role's attributes into the class when its body runs.
             // `is built(...)` is read from the class by `Attribute.is_built`, so
             // the body's `$?CLASS.^attributes.grep(*.is_built)` needs it too.
-            let built: Vec<(String, bool)> = cx
+            let built: Vec<(String, crate::ast::BuiltTrait)> = cx
                 .pending_attrs
                 .iter()
                 .filter(|(_, d)| !(d.is_my || d.is_our || d.is_alias))

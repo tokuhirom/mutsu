@@ -936,6 +936,28 @@ pub(crate) fn next_end_phaser_index() -> u32 {
     NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
+/// What an attribute's `is built` trait says (`has $.x is built(...)`).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, bincode::Encode,
+    bincode::Decode,
+)]
+pub(crate) enum BuiltTrait {
+    /// `is built(False)`: `.new` leaves the attribute alone.
+    No,
+    /// `is built`: `.new` initializes it from the named argument.
+    Yes,
+    /// `is built(:bind)`: `.new` binds the named argument to it.
+    Bind,
+}
+
+impl BuiltTrait {
+    /// Whether `.new` initializes the attribute from a named argument.
+    // Cost: O(1).
+    pub(crate) fn is_built(self) -> bool {
+        self != Self::No
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum PhaserKind {
     Begin,
@@ -2630,7 +2652,7 @@ pub(crate) enum Stmt {
         /// `is DEPRECATED` message: None = not deprecated, Some("") = deprecated without message,
         /// Some(msg) = deprecated with custom message.
         deprecated_message: Option<String>,
-        is_built: Option<bool>,
+        is_built: Option<BuiltTrait>,
         /// Unknown traits: list of `(kind, name, arg)` tuples for unknown trait
         /// applications (e.g., `is bar` -> `("is", "bar", None)`, `is doc('x')` ->
         /// `("is", "doc", Some(<'x'>))`, `will bar` -> `("will", "bar", None)`).

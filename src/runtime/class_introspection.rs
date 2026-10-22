@@ -592,7 +592,7 @@ impl Interpreter {
                 continue;
             };
             if let Some(&built) = def.attribute_built.get(attr_name) {
-                return built;
+                return built.is_built();
             }
             let mut declared = false;
             for attr in def.attributes.iter().filter(|a| a.name == attr_name) {

@@ -228,7 +228,7 @@ impl Interpreter {
             .classes
             .get(owner)
             .and_then(|cd| cd.attribute_built.get(attr_name).copied())
-            .unwrap_or(is_public);
+            .map_or(is_public, crate::ast::BuiltTrait::is_built);
         meta.insert("is_built".to_string(), Value::truth(is_built));
         // `is required` introspection: `.required` returns the type object `Mu`
         // when not required, `1` for a bare `is required`, and the reason string

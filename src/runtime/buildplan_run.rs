@@ -167,7 +167,10 @@ impl Interpreter {
         let owner_obj = Value::package(Symbol::intern(&task.owner));
         let inited = || Self::nqp_attr_inited(instance, Some(&owner_obj), &task.name);
         match task.code {
-            INIT_OBJ..=INIT_STR => {
+            // TODO: `is built(:bind)` should bind the caller's container; the
+            // named arguments reach a plan decontainerized, so a bound
+            // attribute is stored like an assigned one (#14260).
+            INIT_OBJ..=INIT_STR | BIND_OBJ => {
                 let Some(arg_name) = task.payload.as_ref().map(|p| p.to_string_value()) else {
                     return Ok(());
                 };
@@ -188,7 +191,7 @@ impl Interpreter {
                     .map(|p| p.to_string_value());
                 return Err(RuntimeError::attribute_required(&task.name, why.as_deref()));
             }
-            DEFAULT_OBJ..=DEFAULT_STR if !inited() => {
+            DEFAULT_OBJ..=DEFAULT_STR | BIND_DEFAULT_OBJ if !inited() => {
                 let value = self.plan_default_value(instance, task)?;
                 self.plan_bind_attr(instance, task, value);
             }
