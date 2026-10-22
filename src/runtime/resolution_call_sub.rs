@@ -1597,6 +1597,16 @@ impl Interpreter {
                         .compiled_code
                         .as_ref()
                         .is_some_and(|cc| cc.dynamic_declared_sym.contains(&k))
+                    // A block-declared enum's bare-key alias belongs to the block
+                    // too: it shadows a caller's same-named enum key only inside.
+                    || data.compiled_code.as_ref().is_some_and(|cc| {
+                        k.with_str(|s| {
+                            s.strip_prefix("__mutsu_enum_bare_").is_some_and(|bare| {
+                                cc.my_declared_enum_sym
+                                    .contains(&crate::symbol::Symbol::intern(bare))
+                            })
+                        })
+                    })
             };
             for (k, v) in self.env.iter() {
                 if k == "_" || k == "@_" {
@@ -1615,7 +1625,12 @@ impl Interpreter {
                     // `try-versions` has its own `Str $libname` = 'mariadb',
                     // and every probe after the first read the clobbered value
                     // (NativeLibs, the DBIish mysql path).
-                    if body_entry_env.get_sym(*k) == Some(v) {
+                    // Likewise a value still equal to the closure's own captured
+                    // binding: entry installed it over the caller's same-named
+                    // lexical (closure-wins), so it is not a caller mutation.
+                    if body_entry_env.get_sym(*k) == Some(v)
+                        || closure_base_env.get_sym(*k) == Some(v)
+                    {
                         continue;
                     }
                     // Unlike the non-merge_all branch below, this path is used
