@@ -2555,18 +2555,6 @@ pub fn construct(
         let assertion = named_arg(args, "assertion").ok_or_else(|| {
             RuntimeError::new("RakuAST::Regex::Assertion::Alias.new requires `assertion`")
         })?;
-        match assertion.view() {
-            ValueView::RakuAst(node)
-                if matches!(
-                    node.class,
-                    RakuAstClass::RegexAssertionNamed | RakuAstClass::RegexAssertionNamedArgs
-                ) => {}
-            _ => {
-                return Err(RuntimeError::new(
-                    "RakuAST::Regex::Assertion::Alias.new expects `assertion` to be a named regex assertion",
-                ));
-            }
-        }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::RegexAssertionAlias,
             fields: vec![

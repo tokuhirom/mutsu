@@ -28,7 +28,8 @@
   beginning-of-string anchors after atoms, block-range ratchets, dynamic
   match-position adverbs, regex expression arguments, and regex literal source
   form implemented 2026-10-16 through 2026-10-17;
-  direct hash interpolation is reserved by Rakudo and mutsu;
+  callable-alias and anonymous-scalar-before-quote source forms implemented
+  2026-10-22; direct hash interpolation is reserved by Rakudo and mutsu;
   explicit block signatures, other complex block
   values, other dynamic contents, and the complete execution-tree
   migration remain)
@@ -1680,3 +1681,22 @@ choose the unquoted form; other expressions keep their ordinary source form.
 The focused test checks the source node, successful matching, and lexical
 reassignment, and the existing 178-assertion dynamic-arguments test now passes
 through the RakuAST frontend.
+
+## 72. Callable aliases and anonymous interpolation before a quote (2026-10-22)
+
+The static regex source parser retains `<alias=&callable>` as an
+`Assertion::Alias` over `Assertion::Callable`, including a callable held by a
+scalar. The constructor and lowerer accept that child shape, and execution
+still uses the existing matcher. The parser also retains the bare `$` before a
+quoted atom (`$'x'` and `$"x"`) as `Regex::Interpolation` over an anonymous
+state scalar, then rebuilds the same spelling when lowered. Both forms had
+caused a regex value to lose its source tree and be refused by the RakuAST
+frontend.
+
+`t/rakuast/rakuast-regex-source-roast-cohort.t` checks Rakudo's node shapes,
+constructed nodes, EVAL, and matching. The RakuAST frontend now passes
+`roast/S05-interpolation/lexicals.t`, `roast/S05-match/capturing-contexts.t`,
+`roast/S05-match/raku.t`, and `roast/S05-metasyntax/unknown.t`. The first
+refusal in `roast/S05-capture/caps.t` is gone, but that file reaches a separate
+separator-capture execution mismatch at line 89. Other regex source-tree
+refusals remain in the #8033 campaign.
