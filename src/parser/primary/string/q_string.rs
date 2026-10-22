@@ -403,7 +403,7 @@ pub(crate) fn parse_nf_form<'a>(rest_after_nf: &'a str, nf_name: &str) -> PResul
     }
     let (rest, content) = read_delimited_content(rest_after_nf, false)?;
     let literal =
-        normalized_quote(nf_name, &content).ok_or_else(|| PError::expected("q string"))?;
+        normalized_quote(nf_name, content).ok_or_else(|| PError::expected("q string"))?;
     Ok((rest, literal))
 }
 
