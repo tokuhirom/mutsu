@@ -9,7 +9,7 @@ the same files, which turns the two questions every parallel run asks into looku
 - **What comes next?** The highest-ranked free lane's next issue. `scripts/next-issue` computes
   it from the labels; nobody maintains an ordered list by hand.
 
-The user decided this layout on 2026-10-11, along with the current focus: the three
+The user decided this layout on 2026-10-11, along with the current focus: the
 architecture campaigns rank first.
 
 ## Lane order
@@ -21,19 +21,18 @@ lane's next item is chosen (below). *Slots* is how many agents may work the lane
 | Rank | Lane | Kind | Carrier | Slots | What it covers |
 | ---: | --- | --- | --- | ---: | --- |
 | 1 | `lane:env` | campaign | #12529 | 1 | ADR-12529: names resolve through the static link; the frame `Env`, closure capture and flatten machinery, scoping of `$/` / `$!` / `@_` |
-| 2 | `lane:method-table` | campaign | #11276 | 1 | ADR-11276: built-in methods as rows of the one method table; retiring the name-matching dispatch cascades |
-| 3 | `lane:rakuast` | campaign | #7564 | 1 | ADR-10723: RakuAST as the frontend IR (`src/rakuast/`, `t/rakuast/`) |
-| 4 | `lane:threads` | queue | | 1 | Cross-thread sharing, atomics, Promise/Channel/Supply, GC refcount races |
-| 5 | `lane:roles` | queue | | 1 | Role composition and role-body timing, the MOP, `Metamodel::*` |
-| 6 | `lane:multi` | queue | | 1 | Multi dispatch: candidate ranking, `callsame`/`nextsame`, `X::Multi::*` |
-| 7 | `lane:modules` | queue | | 1 | `use`/`need`/`import`, `EXPORT`, `CompUnit::*`, packages and stashes |
-| 8 | `lane:begin` | queue | | 1 | `BEGIN`/compile-time execution (ADR-0134), hoisting, `EVAL` unit semantics |
-| 9 | `lane:regex` | queue | | 1 | Regex/grammar engine correctness and speed |
-| 10 | `lane:core` | queue | | 2 | Self-contained core-semantics bugs (values, containers, Seq/List, formatting, IO) |
-| 11 | `lane:parser` | queue | | 1 | Parser gaps; fixes land here even during RakuAST Stage 2 (see below) |
-| 12 | `lane:nqp` | campaign | #11488 | 1 | `nqp::` op coverage and representation fidelity |
-| 13 | `lane:arch` | campaign | #10779 | 1 | Interpreter decomposition, slow-path ratchets, compiler carriers |
-| 14 | `lane:tooling` | queue | | 1 | LSP, profiler, REPL, precompilation store, crash reporting, NativeCall storage |
+| 2 | `lane:rakuast` | campaign | #7564 | 1 | ADR-10723: RakuAST as the frontend IR (`src/rakuast/`, `t/rakuast/`) |
+| 3 | `lane:threads` | queue | | 1 | Cross-thread sharing, atomics, Promise/Channel/Supply, GC refcount races |
+| 4 | `lane:roles` | queue | | 1 | Role composition and role-body timing, the MOP, `Metamodel::*` |
+| 5 | `lane:multi` | queue | | 1 | Multi dispatch: candidate ranking, `callsame`/`nextsame`, `X::Multi::*` |
+| 6 | `lane:modules` | queue | | 1 | `use`/`need`/`import`, `EXPORT`, `CompUnit::*`, packages and stashes |
+| 7 | `lane:begin` | queue | | 1 | `BEGIN`/compile-time execution (ADR-0134), hoisting, `EVAL` unit semantics |
+| 8 | `lane:regex` | queue | | 1 | Regex/grammar engine correctness and speed |
+| 9 | `lane:core` | queue | | 2 | Self-contained core-semantics bugs (values, containers, Seq/List, formatting, IO), and the remainder of the built-in method-table work (#11276; `lane:method-table` was retired on 2026-10-22, the bulk being done) |
+| 10 | `lane:parser` | queue | | 1 | Parser gaps; fixes land here even during RakuAST Stage 2 (see below) |
+| 11 | `lane:nqp` | campaign | #11488 | 1 | `nqp::` op coverage and representation fidelity |
+| 12 | `lane:arch` | campaign | #10779 | 1 | Interpreter decomposition, slow-path ratchets, compiler carriers |
+| 13 | `lane:tooling` | queue | | 1 | LSP, profiler, REPL, precompilation store, crash reporting, NativeCall storage |
 | — | `lane:perf` | perf | | 1 | Every `todo:perf` issue not absorbed by a campaign. Always exactly one solo agent (`perf-tuning` skill), independent of rank |
 
 ## How a lane's next item is chosen
@@ -59,8 +58,8 @@ fixes it. Two rules keep the rest of the backlog out of a campaign's way:
 - **Do not fix a bug on a path a campaign is retiring.** An issue whose fix would land in the
   old mechanism goes into the campaign's lane (as a sub-issue of the carrier when the ADR
   maps it to a phase) and waits for, or is worked as, that phase.
-- **Write new code the campaign's way.** A ticket in another lane that adds a built-in method
-  adds a method-table row, never a new name-matching branch; a new lexical lookup goes
+- **Write new code the campaign's way.** A ticket that adds a built-in method
+  adds a method-table row (ADR-11276), never a new name-matching branch; a new lexical lookup goes
   through the static link, never a new env probe. Then the ticket does not conflict with
   the campaign but advances it.
 
