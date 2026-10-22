@@ -1501,7 +1501,8 @@ impl Interpreter {
                 if crate::runtime::Interpreter::renders_receiver_elements(method)
                     && crate::runtime::Interpreter::holds_nested_proxy(&fetched)
                 {
-                    fetched = self.resolve_proxies_in_value(&fetched)?;
+                    // A Proxy hands its value back itemized (`$[..]`).
+                    fetched = self.resolve_proxies_in_value(&fetched)?.itemize();
                 }
                 // The shadow query above saw the Proxy, not the value it
                 // holds: a user method of the fetched value's class (a
