@@ -190,19 +190,11 @@ impl Interpreter {
     /// looked up before its `RegisterSub` ran) falls back to today's
     /// fresh-mint behavior, unchanged.
     ///
-    /// Stabilization is further restricted to routines whose compiled body
-    /// writes NO free variable (`CompiledCode::free_var_writes`/
-    /// `free_var_container_writes` both empty). `call_compiled_closure_with_topic`
-    /// used to persist a mutated free var per closure id (a store ADR-0055
-    /// slice 5 retired) and replay it on the NEXT call sharing that id
-    /// instead of the live value from the (possibly since-reassigned) outer
-    /// binding: stabilizing the id let that persisted state leak ACROSS repeated
-    /// mentions of the very sub the ticket's fix was stabilizing, so a
-    /// reassignment of the captured variable between two `&f` mentions (e.g.
-    /// `$runs = 0;` between two `sub elems is nodal { $runs⚛++; ... }` uses in
-    /// `roast/S03-metaops/hyper.t`) was silently ignored by the next call.
-    /// A def with no `compiled_routine` at all (so the check cannot be made)
-    /// conservatively skips stabilization too.
+    /// A routine that writes a free variable gets the stable id too: the
+    /// per-id replay of a mutated free variable that once made that unsafe
+    /// (`roast/S03-metaops/hyper.t`'s `$runs⚛++`) was retired with
+    /// `closure_captured_state` (ADR-0055 slice 5), so a reassignment of the
+    /// captured variable between two `&f` mentions is seen by the next call.
     pub(crate) fn sub_value_from_function_def(&self, def: crate::runtime::FunctionDef) -> Value {
         let compiled_body = def.compiled.clone();
         if let Some(code) = def.dispatchee {
@@ -243,11 +235,7 @@ impl Interpreter {
         let writes_free_vars = compiled_body.as_ref().map(|body| body.get()).is_none_or(|cf| {
             !cf.code.free_var_writes.is_empty() || !cf.code.free_var_container_writes.is_empty()
         });
-        let stable_id = if writes_free_vars {
-            None
-        } else {
-            self.registration_clone_id(&def.package.resolve(), &def.name.resolve())
-        };
+        let stable_id = self.registration_clone_id(&def.package.resolve(), &def.name.resolve());
         // The routine's own bytecode rides along, so calling this code object runs
         // compiled code instead of re-compiling the AST body copied below
         // (ADR-0019 C6c).
