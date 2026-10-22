@@ -212,6 +212,10 @@ pub(crate) const GIST_ELEM_CAP: usize = 100;
 // list level, walked once for the cycle probe).
 pub(crate) fn gist_head(v: &Value) -> Value {
     const KEEP: usize = GIST_ELEM_CAP + 1;
+    // The length test and the copy of the head read one node that another
+    // thread may be shrinking in place (`shift`, `splice`): hold its stripe
+    // across both, or the slice start can pass the new end (ADR-0068, #13632).
+    let _guard = crate::value::container_lock::ContainerStructGuard::acquire_for(None, v);
     match v.view() {
         ValueView::Array(data, kind)
             if data.len() > KEEP
