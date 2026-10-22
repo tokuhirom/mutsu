@@ -942,6 +942,17 @@ impl Interpreter {
             {
                 return i;
             }
+            // A role the class itself composes is as near as a direct parent:
+            // rakudo ranks a role and a parent class by their declared types,
+            // which are unrelated, so the class MRO (which lists composed
+            // roles after `Mu`) must not push the role behind a parent
+            // candidate that is no narrower on its declared type.
+            if self.has_role(base)
+                && let Some(roles) = self.registry().class_composed_roles.get(cn.as_str())
+                && roles.iter().any(|r| r == base)
+            {
+                return self.composed_role_distance(roles, base);
+            }
             // `mro_readonly` falls back to a live parents-only walk when the
             // registry's cached `ClassDef::mro` is still empty (this method
             // takes `&self`, so it cannot compute-and-cache like

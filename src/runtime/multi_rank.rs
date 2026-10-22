@@ -178,6 +178,17 @@ impl RankProfile {
         self_wins && other_wins
     }
 
+    /// Whether some positional slot both candidates type has a different
+    /// DECLARED type in each. With equal distances those types are unrelated
+    /// (a related pair differs in distance), and rakudo then ties the pair
+    /// instead of reading `is rw` / `is raw` as narrowness.
+    // Cost: O(1), the profile length is a constant.
+    pub(crate) fn declared_differs(&self, other: &RankProfile) -> bool {
+        (0..PROFILE_LEN).any(|i| {
+            matches!((self.declared[i], other.declared[i]), (Some(a), Some(b)) if a != b)
+        })
+    }
+
     /// Rakudo's per-parameter comparison by DECLARED type over the positional
     /// slots both candidates type: `(self wins one, other wins one)`. A type
     /// that strictly conforms to the other's wins; the same type is won by a
@@ -353,9 +364,21 @@ impl MultiRank {
     /// still beats a bare `multi f()`.
     // Cost: O(1).
     fn refinement_cmp(&self, other: &MultiRank) -> Ordering {
-        let ord = other.refinement.cmp(&self.refinement);
+        // `is rw` / `is raw` only breaks a tie between parameters of the same
+        // type (`multi f(TH $h)` / `multi f(Hash $h is raw)` tie for a value
+        // that is both).
+        let writable = if self.constrained_slot == 0 { 2 } else { 3 };
+        let by_type = self.profile.declared_differs(&other.profile);
+        let key = |r: &MultiRank| {
+            let mut key = r.refinement;
+            if by_type {
+                key[writable] = 0;
+            }
+            key
+        };
+        let ord = key(other).cmp(&key(self));
         let rest = |r: &MultiRank| {
-            let mut rest = r.refinement;
+            let mut rest = key(r);
             rest[r.constrained_slot] = 0;
             rest
         };
