@@ -1,7 +1,7 @@
 use Test;
 use nqp;
 
-plan 17;
+plan 19;
 
 class HLLBoundary {
     method items { nqp::list(1, 2, 3) }
@@ -41,3 +41,9 @@ my $list := SharedBoundary.items;
 nqp::push($raw, 13);
 is $list.elems, 3, 'HLL conversion shares the original raw storage';
 is nqp::islist($raw), 1, 'conversion leaves the original raw value raw';
+
+use experimental :rakuast;
+my $infix = Q[1 + 2].AST.statements[0].expression;
+ok $infix.left === $infix.left, 'a method returning a RakuAST node keeps its identity';
+my $node = RakuAST::IntLiteral.new(1);
+ok nqp::hllize($node) === $node, 'nqp::hllize returns a non-collection object itself';
