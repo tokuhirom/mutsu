@@ -3497,6 +3497,11 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::IndirectTypeLookupAssign { expr, value } => {
             super::symbolic_deref::convert_type_assign(expr, value)
         }
+        Expr::IndirectCodeLookup {
+            package,
+            name,
+            caller,
+        } => super::symbolic_deref::convert_indirect_code(package, name, *caller),
         // `::("x")` / `::($name)` ->
         // `Term::Name(Name(Part::Empty.new, Part::Expression(EXPR)))`, the
         // leading `::` being an empty name edge (measured on 2026.09). The
