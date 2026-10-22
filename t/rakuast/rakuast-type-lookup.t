@@ -25,11 +25,12 @@ plan 11;
 
 # --- .^methods (default) sees the class's own model methods ------------------
 my @m = RakuAST::IntLiteral.^methods.map(*.name).sort;
-is @m, <new value>, '.^methods lists the model constructor and accessor';
+is @m, <new value visit visit-children visit-dfs>,
+    '.^methods lists the model constructor, accessor and inherited visitors';
 
-# --- .^methods(:local) agrees for a leaf class ------------------------------
-is RakuAST::IntLiteral.^methods(:local).map(*.name).sort, @m,
-    '.^methods(:local) agrees with the default for a leaf model class';
+# --- .^methods(:local) excludes methods inherited from RakuAST::Node --------
+is RakuAST::IntLiteral.^methods(:local).map(*.name).sort, <new value>,
+    '.^methods(:local) lists only the leaf model methods';
 
 # --- :all adds the Any/Mu tail on top ---------------------------------------
 my @all = RakuAST::IntLiteral.^methods(:all).map(*.name);
