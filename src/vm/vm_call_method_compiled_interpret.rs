@@ -525,6 +525,7 @@ impl Interpreter {
             // entry cached before a method it names got wrapped.
             if let Some(entry) = self.caches.fast_method_cache.get(&cache_key)
                 && args.len() <= entry.positional_count
+                && args.len() >= entry.required_positional_count
             {
                 let needs_default_eval =
                     entry.has_defaults && args.len() < entry.positional_count && {
