@@ -5086,6 +5086,7 @@ t/rakuast/rakuast-absent-field-accessors.t
 t/rakuast/rakuast-accessors.t
 t/rakuast/rakuast-allomorph-word-quote.t
 t/rakuast/rakuast-also-is-roundtrip.t
+t/rakuast/rakuast-anon-and-typed-term-declarations.t
 t/rakuast/rakuast-anon-declarator-docs.t
 t/rakuast/rakuast-anon-regex-declarator.t
 t/rakuast/rakuast-anon-sub-signature.t
@@ -5165,6 +5166,7 @@ t/rakuast/rakuast-declaration-loose-tail.t
 t/rakuast/rakuast-declaration-modifier-cohort.t
 t/rakuast/rakuast-declaration-postfix-term.t
 t/rakuast/rakuast-declaration-traits.t
+t/rakuast/rakuast-declaration-user-compound-assign.t
 t/rakuast/rakuast-declarations-as-terms.t
 t/rakuast/rakuast-declare-how-declarator.t
 t/rakuast/rakuast-declared-name-nested.t

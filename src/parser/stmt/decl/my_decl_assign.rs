@@ -83,11 +83,14 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         });
     }
     if let Some((stripped, op_name)) = super::super::assign::parse_custom_compound_assign_op(rest) {
-        return handle_compound_assign(stripped, s, None, |var_expr, rhs| Expr::InfixFunc {
-            name: op_name,
-            left: Box::new(var_expr),
-            right: vec![rhs],
-            modifier: None,
+        let written = format!("{op_name}=");
+        return handle_compound_assign(stripped, s, Some(&written), |var_expr, rhs| {
+            Expr::InfixFunc {
+                name: op_name,
+                left: Box::new(var_expr),
+                right: vec![rhs],
+                modifier: None,
+            }
         });
     }
 

@@ -1218,8 +1218,10 @@ fn lower_term_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         if callee.is_some() {
             return Err(unsupported(node));
         }
+        // The invocant is the declared type, `Mu` when untyped.
+        let invocant = type_constraint.clone().unwrap_or_else(|| "Mu".to_string());
         let expr = Expr::MethodCall {
-            target: Box::new(Expr::BareWord("Mu".to_string())),
+            target: Box::new(Expr::BareWord(invocant)),
             name: crate::symbol::Symbol::intern(&method),
             args,
             modifier: None,
@@ -1231,7 +1233,7 @@ fn lower_term_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 anonymous: false,
                 name: name.clone(),
                 expr,
-                type_constraint: None,
+                type_constraint,
                 is_state: false,
                 is_our: false,
                 is_dynamic: false,

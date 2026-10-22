@@ -3555,6 +3555,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if let Some(capture) = super::match_vars::convert_positional(name) {
                 return Ok(capture);
             }
+            // The parser's re-read of an anonymous `my $` declaration in the
+            // loose tail of `my $ = 5 andthen ...`; `decl_tail` swaps the
+            // declaration itself in for it.
+            if name == "__ANON_STATE#" {
+                return Ok(anonymous_declaration(None, "$", None));
+            }
             if is_desugar_marker(name) && !crate::ast::anon_state::is_scalar(name) {
                 return Err(desugared(name));
             }
@@ -6693,7 +6699,7 @@ fn desugared(name: &str) -> RuntimeError {
 /// `VarDeclaration::Anonymous(scope?, sigil, initializer?)`: a bare `$` / `@`
 /// / `%`, which is a `state` variable of its block, or a declared `my $`,
 /// whose default scope rakudo omits. Rakudo gives it no name.
-fn anonymous_declaration(
+pub(super) fn anonymous_declaration(
     scope: Option<&'static str>,
     sigil: &str,
     initializer: Option<RakuAstNode>,

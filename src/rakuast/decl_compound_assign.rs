@@ -33,12 +33,31 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         ValueView::Str(op) => op.to_string(),
         _ => return Err(unsupported(node)),
     };
-    // Only the built-in compound operators have the parser's declaration
-    // expansion; `Z=` and user-defined ones stay the boundary.
-    let Some(compound) = crate::parser::compound_assign_op_from_name(&op) else {
-        return Err(unsupported(node));
-    };
     let rhs = lower_expr(named_child(node, "right")?)?;
+    // A user-declared operator (`my $x foo= 6`) is the parser's `InfixFunc`
+    // over the declared variable; only the built-in operators have a compound
+    // assignment kind.
+    let Some(compound) = crate::parser::compound_assign_op_from_name(&op) else {
+        let Stmt::VarDecl { name, .. } = &decl else {
+            return Err(unsupported(node));
+        };
+        let name = name.clone();
+        let value = crate::ast::Expr::InfixFunc {
+            name: op.clone(),
+            left: Box::new(crate::ast::Expr::Var(name.clone())),
+            right: vec![rhs.clone()],
+            modifier: None,
+        };
+        return Ok(crate::ast::decl_compound_assign::expand(
+            decl,
+            name,
+            value,
+            Some(crate::ast::decl_compound_assign::Source {
+                op: format!("{op}="),
+                rhs,
+            }),
+        ));
+    };
     // `has $!g //= 5`: the attribute's own expansion. A public `$.g` keeps no
     // source in the parser, so the converter never renders one.
     if let Stmt::HasDecl {
