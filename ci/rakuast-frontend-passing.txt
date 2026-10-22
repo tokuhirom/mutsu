@@ -4941,6 +4941,7 @@ t/rakuast/rakuast-declared-name-nested.t
 t/rakuast/rakuast-declared-name.t
 t/rakuast/rakuast-declared-nil-and-grouped-decl.t
 t/rakuast/rakuast-declared-sub-bareword.t
+t/rakuast/rakuast-deprecated-anon-sub-call.t
 t/rakuast/rakuast-desugar-boundary.t
 t/rakuast/rakuast-do-whenever.t
 t/rakuast/rakuast-dotty-term-method.t
@@ -8054,4 +8055,3 @@ t/vm/writeback/sigilless-type-object-no-writeback.t
 t/vm/writeback/undefine-lvalue-writeback-coherence.t
 t/vm/writeback/wrapped-sub-rw-writeback.t
 t/vm/zeroarg-env-dirty.t
-t/rakuast/rakuast-deprecated-anon-sub-call.t
