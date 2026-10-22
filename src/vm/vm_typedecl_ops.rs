@@ -601,6 +601,7 @@ impl Interpreter {
                 .and_then(|(_, arg)| arg.as_ref())
                 .and_then(crate::opcode::DeclTraitArg::literal)
                 .map(|kw| kw.to_string_value());
+            let declare_how_keyword_text = declare_how_keyword.clone();
             let (declare_how_installed, declare_how_has_compose) =
                 if let Some(keyword) = declare_how_keyword {
                     let how_type = self.declarator_how_type(&keyword);
@@ -910,6 +911,13 @@ impl Interpreter {
             // after the body has registered its own declarations.
             if declare_how_installed {
                 self.declare_drive_how_protocol(&storage_name, *class_is_rw)?;
+                // The declarator's `<kw>-attr` entry is the metaclass of the
+                // class's `has` attributes (ValueClass's `value-class-attr`).
+                if let Some(keyword) = &declare_how_keyword_text
+                    && let Some(attr_class) = self.declarator_how_type(&format!("{keyword}-attr"))
+                {
+                    self.compose_declare_attribute_metaclass(&storage_name, &attr_class)?;
+                }
                 if declare_how_has_compose {
                     self.registry_mut()
                         .pending_class_compose
