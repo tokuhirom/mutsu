@@ -512,6 +512,9 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     if let Some(stmt) = super::decl_tail::lower(node) {
         return stmt;
     }
+    if let Some(declarations) = lower_comma_declarations(node)? {
+        return Ok(declarations);
+    }
     match node.class {
         RakuAstClass::StatementPrefixReact => super::react::lower_react(node),
         // `sub f { … }(ARGS)`: the parser's declaration-then-call expansion.
@@ -845,6 +848,51 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         }
         _ => Ok(Stmt::Expr(lower_expr(node)?)),
     }
+}
+
+/// A comma list of declarations is one source statement whose execution is
+/// the declarations in order, with no new lexical scope.
+// Cost: O(n), n = declaration operand nodes.
+fn lower_comma_declarations(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError> {
+    if node.class != RakuAstClass::ApplyListInfix {
+        return Ok(None);
+    }
+    let infix = named_child(node, "infix")?;
+    if infix.class != RakuAstClass::Infix
+        || !matches!(positional_leaf(infix)?.view(), ValueView::Str(op) if op.as_str() == ",")
+    {
+        return Ok(None);
+    }
+    let operands = list_field(node, "operands")?;
+    if operands.len() < 2
+        || !operands.iter().all(|value| {
+            matches!(value.view(), ValueView::RakuAst(child) if matches!(child.class,
+                RakuAstClass::VarDeclarationSimple
+                    | RakuAstClass::VarDeclarationSignature
+                    | RakuAstClass::VarDeclarationTerm
+                    | RakuAstClass::VarDeclarationConstant))
+        })
+    {
+        return Ok(None);
+    }
+    let mut source = Vec::with_capacity(operands.len());
+    let mut expanded = Vec::new();
+    for value in operands {
+        let ValueView::RakuAst(child) = value.view() else {
+            return Err(unsupported(node));
+        };
+        let statement = lower_stmt_inner(child)?;
+        match &statement {
+            Stmt::SyntheticBlock(parts) => expanded.extend(parts.iter().cloned()),
+            _ => expanded.push(statement.clone()),
+        }
+        source.push(statement);
+    }
+    expanded.insert(
+        0,
+        Stmt::SourceForm(Box::new(crate::ast::SourceForm::CommaDeclarations(source))),
+    );
+    Ok(Some(Stmt::SyntheticBlock(expanded)))
 }
 
 // Cost: O(n + t), n = Native node fields, t = its traits.
@@ -2522,7 +2570,23 @@ fn lower_cstyle_loop(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         false => None,
     };
     let step = match node.fields.iter().any(|f| f.name == Some("increment")) {
-        true => Some(lower_expr(named_child(node, "increment")?)?),
+        true => {
+            let increment = named_child(node, "increment")?;
+            if increment.class == RakuAstClass::ApplyListInfix
+                && matches!(positional_leaf(named_child(increment, "infix")?)?.view(), ValueView::Str(op) if op.as_str() == ",")
+            {
+                let mut statements = Vec::new();
+                for operand in list_field(increment, "operands")? {
+                    let ValueView::RakuAst(operand) = operand.view() else {
+                        return Err(unsupported(increment));
+                    };
+                    statements.push(Stmt::Expr(lower_expr(operand)?));
+                }
+                Some(Expr::desugar_block(statements))
+            } else {
+                Some(lower_expr(increment)?)
+            }
+        }
         false => None,
     };
     let body = lower_block(named_child(node, "body")?)?;

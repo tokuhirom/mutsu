@@ -5,7 +5,7 @@ use super::super::super::super::helpers::{ws, ws1};
 use super::super::super::super::parse_result::{PError, parse_char};
 use super::super::super::{ident, keyword};
 use super::super::helpers::register_term_symbol_from_decl_name;
-use crate::ast::{ParamTrait, SignatureVar as DestructureVar};
+use crate::ast::{ParamTrait, SignatureGroup, SignatureVar as DestructureVar};
 
 /// Parse the `is rw` / `is raw` / `is copy` / `is readonly` traits a
 /// declarator-list element may carry (`my ($a is rw, $b) := ...`). An unknown
@@ -48,22 +48,30 @@ Can only use 'is rw' on a scalar ('$' sigil) parameter, not '{name}'"
     Ok((r, found))
 }
 
-/// Recursively collect the (flattened) sigilless/sigilled targets of a nested
-/// destructure group `(\e, (\f, \g), $h)`, appending one `DestructureVar` per
-/// leaf to `vars`. Returns the remaining input past the closing `)`.
+/// Collect the flattened targets and the source nesting of a declaration group.
+// Cost: O(n), n = targets and delimiters, with nesting bounded at 128.
 pub(super) fn collect_nested_group_vars<'a>(
     input: &'a str,
     vars: &mut Vec<DestructureVar>,
-) -> Result<&'a str, PError> {
+    depth: usize,
+) -> Result<(&'a str, SignatureGroup), PError> {
+    if depth > 128 {
+        return Err(PError::fatal(
+            "nested declaration group exceeds 128 levels".to_string(),
+        ));
+    }
     let (mut r, _) = parse_char(input, '(')?;
     let (r2, _) = ws(r)?;
     r = r2;
+    let mut members = Vec::new();
     loop {
         if r.starts_with(')') {
             break;
         }
         if r.starts_with('(') {
-            r = collect_nested_group_vars(r, vars)?;
+            let (rest, group) = collect_nested_group_vars(r, vars, depth + 1)?;
+            members.push(group);
+            r = rest;
         } else if let Some(after_backslash) = r.strip_prefix('\\') {
             let (r2, name) = ident(after_backslash)?;
             register_term_symbol_from_decl_name(&name);
@@ -79,6 +87,7 @@ pub(super) fn collect_nested_group_vars<'a>(
                 literal_value: None,
                 param_trait: None,
             });
+            members.push(SignatureGroup::Var(vars.len() - 1));
             r = r2;
         } else {
             let sigil = r.as_bytes().first().copied().unwrap_or(0);
@@ -102,6 +111,7 @@ pub(super) fn collect_nested_group_vars<'a>(
                     literal_value: None,
                     param_trait: None,
                 });
+                members.push(SignatureGroup::Var(vars.len() - 1));
                 r = r2;
             } else {
                 return Err(PError::expected(
@@ -118,5 +128,5 @@ pub(super) fn collect_nested_group_vars<'a>(
         }
     }
     let (r, _) = parse_char(r, ')')?;
-    Ok(r)
+    Ok((r, SignatureGroup::Group(members)))
 }

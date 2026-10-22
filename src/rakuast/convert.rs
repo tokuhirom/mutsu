@@ -471,6 +471,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Some(crate::ast::SourceForm::SignatureDecl(decl)) => Ok(Some(statement_expression(
                 super::signature_decl::convert(decl)?,
             ))),
+            Some(crate::ast::SourceForm::CommaDeclarations(declarations)) => Ok(Some(
+                statement_expression(comma_declarations_node(declarations)?),
+            )),
             Some(crate::ast::SourceForm::AttributeGroup(attributes)) => Ok(Some(
                 statement_expression(super::attribute_group::to_signature(attributes)?),
             )),
@@ -2713,11 +2716,17 @@ pub(super) fn var_declaration(
         fields.push(leaf_field(Some("scope"), Value::str(s.to_string())));
     }
     if let Some(t) = type_name.filter(|_| !is_anonymous) {
-        fields.push(node_field(Some("type"), build_type_node(t)?));
+        fields.push(node_field(
+            Some("type"),
+            super::type_build::declaration_type_node(t)?,
+        ));
     }
     fields.push(leaf_field(Some("sigil"), Value::str(sigil.to_string())));
     if let Some(t) = type_name.filter(|_| is_anonymous) {
-        fields.push(node_field(Some("type"), build_type_node(t)?));
+        fields.push(node_field(
+            Some("type"),
+            super::type_build::declaration_type_node(t)?,
+        ));
     }
     if let Some(tw) = twigil {
         fields.push(leaf_field(Some("twigil"), Value::str(tw.to_string())));
@@ -3348,6 +3357,19 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Spelling::BracketedAssignment { depth } => {
                 super::meta_infix::convert_bracketed_assignment(&spelled.expr, *depth)
             }
+            Spelling::LoopStepComma => {
+                let Expr::DoBlock { body, .. } = &spelled.expr else {
+                    return Err(unsupported("loop step comma without its execution block"));
+                };
+                let mut expressions = Vec::with_capacity(body.len());
+                for statement in body {
+                    let Stmt::Expr(expression) = statement else {
+                        return Err(unsupported("non-expression loop step item"));
+                    };
+                    expressions.push(expression.clone());
+                }
+                comma_list_node(&expressions)
+            }
             Spelling::BareStatement => super::bare_prefix::bare_statement_node(&spelled.expr),
             Spelling::PackageIndirect { package, key } => {
                 super::symbolic_deref::convert_package_indirect(package, key)
@@ -3957,6 +3979,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }) => declaration_modifier_node(declaration, condition, *kind),
             Some(crate::ast::SourceForm::SignatureDecl(decl)) => {
                 super::signature_decl::convert(decl)
+            }
+            Some(crate::ast::SourceForm::CommaDeclarations(declarations)) => {
+                comma_declarations_node(declarations)
             }
             Some(crate::ast::SourceForm::AttributeGroup(attributes)) => {
                 super::attribute_group::to_signature(attributes)
@@ -7174,6 +7199,42 @@ fn labelled_control_call(name: &'static str, label: &str) -> RakuAstNode {
 }
 
 /// A comma list `1, 2, 3` -> `ApplyListInfix(infix => ",", operands)`.
+/// The source declarations of `my $x = 1, my $y = 2` as one comma application.
+// Cost: O(n), n = declarations and their nested nodes.
+fn comma_declarations_node(declarations: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let mut operands = Vec::with_capacity(declarations.len());
+    for declaration in declarations {
+        let statement = convert_stmt(declaration)?
+            .ok_or_else(|| unsupported("empty declaration in comma list"))?;
+        if statement.class != RakuAstClass::StatementExpression {
+            return Err(unsupported("non-expression declaration in comma list"));
+        }
+        let expression = statement
+            .fields
+            .iter()
+            .find(|field| field.name == Some("expression"))
+            .and_then(|field| match &field.value {
+                RakuAstFieldValue::Node(value) => match value.view() {
+                    ValueView::RakuAst(node) => Some(node.clone()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .ok_or_else(|| unsupported("declaration expression in comma list"))?;
+        operands.push(Value::rakuast(Box::new(expression)));
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::ApplyListInfix,
+        fields: vec![
+            node_field(Some("infix"), plain_infix(",")),
+            RakuAstField {
+                name: Some("operands"),
+                value: RakuAstFieldValue::List(operands),
+            },
+        ],
+    })
+}
+
 fn comma_list_node(items: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let mut operands = Vec::with_capacity(items.len());
     for it in items {

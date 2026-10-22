@@ -69,6 +69,9 @@ pub(crate) enum Spelling {
     /// `$x [[+]]= 6`: bracket depth of an assignment whose executable form
     /// folds the bracketed infix into an ordinary compound assignment.
     BracketedAssignment { depth: usize },
+    /// A C-style loop's comma-separated increment expressions, executed as
+    /// a do-block but represented as one list infix in RakuAST.
+    LoopStepComma,
     /// `gather say 1`, `try say 1`, `start say 1`, `once say 1`, `BEGIN say 1`:
     /// a statement prefix written over a bare statement. The wrapped
     /// expression is the same prefix over the one-statement block
