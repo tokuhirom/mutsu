@@ -188,6 +188,7 @@ impl Interpreter {
         // it as soon as the importer's frames are what the unit walk reaches.
         let saved_unit = self.current_unit;
         self.current_unit = self.unit_of_declaring_file(def.source_file.as_deref());
+        let hook_args = export_args.clone();
         let result = self.compile_and_call_function_def(&def, export_args, &empty_fns);
         self.current_unit = saved_unit;
         let result = result?;
@@ -197,6 +198,9 @@ impl Interpreter {
         // keeping the candidates for a later import's re-run.
         let candidates = self.export_routine_candidates();
         self.remove_export_routine();
+        if let Some(m) = self.module.module_load_stack.last().cloned() {
+            self.record_eval_hook_result(&m, &hook_args, &result);
+        }
         self.install_export_map(&result, importer.as_deref());
         if let Some(m) = self.module.module_load_stack.last().cloned() {
             // `module_env` is the module's own scope: a re-`use` of an
@@ -222,6 +226,13 @@ impl Interpreter {
             .pending_use_export_args
             .take()
             .unwrap_or_default();
+        // The `EVAL` pre-run already ran this `use`'s hook: install its map.
+        if let Some(result) = self.replay_eval_hook_result(module, &export_args) {
+            let importer = self.module.module_load_stack.last().cloned();
+            self.install_export_map(&result, importer.as_deref());
+            return Ok(());
+        }
+        let hook_args = export_args.clone();
         let saved_env = self.env.clone();
         let result = match def {
             ModuleExportDef::Sub(candidates, mut module_env) => {
@@ -268,8 +279,42 @@ impl Interpreter {
         // load the same way the first one did.
         self.restore_caller_env_keeping_dynamics(saved_env);
         let importer = self.module.module_load_stack.last().cloned();
+        self.record_eval_hook_result(module, &hook_args, &result);
         self.install_export_map(&result, importer.as_deref());
         Ok(())
+    }
+
+    /// The key an `EVAL` pre-run's hook result is kept under.
+    // Cost: O(|module| + total length of the arguments).
+    fn hook_replay_key(module: &str, args: &[Value]) -> String {
+        let mut key = module.to_string();
+        for arg in args {
+            key.push('\u{1f}');
+            key.push_str(&arg.to_string_value());
+        }
+        key
+    }
+
+    /// Keep `result`, the map the hook of `module` returned for `args`, when
+    /// an `EVAL` pre-run is running it.
+    // Cost: O(1) when not recording; else one key build and table write.
+    fn record_eval_hook_result(&mut self, module: &str, args: &[Value], result: &Value) {
+        if self.module.eval_hook_recording {
+            let key = Self::hook_replay_key(module, args);
+            self.module.eval_hook_results.insert(key, result.clone());
+        }
+    }
+
+    /// The map a pre-run already got from the hook of `module` for `args`.
+    // Cost: O(1) when nothing was recorded; else one key build and lookup.
+    fn replay_eval_hook_result(&self, module: &str, args: &[Value]) -> Option<Value> {
+        if self.module.eval_hook_results.is_empty() {
+            return None;
+        }
+        self.module
+            .eval_hook_results
+            .get(&Self::hook_replay_key(module, args))
+            .cloned()
     }
 
     /// Install the symbols named by an `EXPORT` return value. Accepts a single

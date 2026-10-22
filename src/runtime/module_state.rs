@@ -477,6 +477,13 @@ pub(crate) struct ModuleState {
     /// validation runs, whose names the checks read from the interpreter, not
     /// from the module's source (`run_eval_hook_uses`, #13441).
     pub(crate) eval_prerun_modules: HashSet<String>,
+    /// What each `sub EXPORT` hook returned while an `EVAL` unit's pre-run
+    /// ran it, by module and `use` arguments (`hook_replay_key`). The same
+    /// `use` left in its block replays the map instead of running the hook a
+    /// second time (`run_eval_hook_uses`).
+    pub(crate) eval_hook_results: HashMap<String, Value>,
+    /// Whether a hook run now records its map in `eval_hook_results`.
+    pub(crate) eval_hook_recording: bool,
     /// The routine-table version an import scope's exit last found free of
     /// a module-declared `GLOBAL::MAIN` candidate
     /// (`drop_foreign_global_main_candidates`), so a later exit over the same
@@ -697,6 +704,8 @@ impl ModuleState {
             lexical_operator_import_sets: HashSet::new(),
             eval_import_chain: None,
             eval_prerun_modules: HashSet::new(),
+            eval_hook_results: HashMap::new(),
+            eval_hook_recording: false,
             foreign_main_clean_version: None,
             lexical_import_replays: Default::default(),
             lexical_operator_candidate_defs: Default::default(),
@@ -797,6 +806,8 @@ impl ModuleState {
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
             eval_import_chain: self.eval_import_chain.clone(),
             eval_prerun_modules: self.eval_prerun_modules.clone(),
+            eval_hook_results: self.eval_hook_results.clone(),
+            eval_hook_recording: false,
             foreign_main_clean_version: self.foreign_main_clean_version,
             lexical_import_replays: self.lexical_import_replays.clone(),
             lexical_operator_candidate_defs: self.lexical_operator_candidate_defs.clone(),
