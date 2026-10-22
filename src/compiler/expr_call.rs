@@ -1158,6 +1158,55 @@ impl Compiler {
             self.code.emit(OpCode::Pop);
             self.code.emit(OpCode::GetGlobal(tmp_result_idx));
             return;
+        } else if name == "__mutsu_assign_method_lvalue"
+            && args.len() >= 4
+            && let Expr::Index {
+                target: index_target,
+                ..
+            } = &args[0]
+            && matches!(index_target.as_ref(), Expr::Index { .. })
+            && index_target.index_root().container_var_key().is_some()
+        {
+            // A chained subscript target (`%h<a><b>.substr-rw(0, 1) = v`): the
+            // method mutates a detached copy of the element, so evaluate the
+            // element once into a temporary, run the method on it, and store
+            // the temporary back through the same chained subscript.
+            let tmp_target_name = format!(
+                "__mutsu_tmp_assign_method_target_{}",
+                self.code.constants.len()
+            );
+            let tmp_result_name = format!(
+                "__mutsu_tmp_assign_method_result_{}",
+                self.code.constants.len()
+            );
+            let tmp_target_idx = self.code.add_constant(Value::str(tmp_target_name.clone()));
+            let tmp_result_idx = self.code.add_constant(Value::str(tmp_result_name));
+            let call_name_idx = self.code.add_constant(Value::str(name.resolve()));
+
+            self.compile_expr(&args[0]);
+            self.code.emit(OpCode::SetGlobal(tmp_target_idx));
+
+            self.code.emit(OpCode::GetGlobal(tmp_target_idx));
+            self.compile_expr(&args[1]);
+            self.compile_expr(&args[2]);
+            self.compile_expr(&args[3]);
+            self.code.emit(OpCode::LoadConst(tmp_target_idx));
+            self.code.emit(OpCode::CallFunc {
+                name_idx: call_name_idx,
+                arity: 5,
+                arg_sources_idx: None,
+                literal_native_args: 0,
+                static_arg_types: false,
+            });
+            self.code.emit(OpCode::SetGlobal(tmp_result_idx));
+
+            self.compile_expr(&crate::parser::assign_to_target_expr(
+                args[0].clone(),
+                Expr::Var(tmp_target_name),
+            ));
+            self.code.emit(OpCode::Pop);
+            self.code.emit(OpCode::GetGlobal(tmp_result_idx));
+            return;
         } else if name == "atomic-fetch"
             && args.len() == 1
             && let Expr::Var(var_name) = &args[0]
