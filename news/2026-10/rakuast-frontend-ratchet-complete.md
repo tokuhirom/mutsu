@@ -1,0 +1,1 @@
+The RakuAST frontend CI ratchet now includes the remaining `t/` tests added by concurrent mainline work. Each newly listed file passed under `MUTSU_RAKUAST=1`, so future frontend changes must preserve their ordinary test results too.
