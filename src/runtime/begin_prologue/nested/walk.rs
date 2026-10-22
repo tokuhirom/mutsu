@@ -15,7 +15,11 @@ use crate::ast_visit::{VisitMut, walk_expr_mut, walk_stmt_mut};
 
 impl VisitMut for Walker<'_> {
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
-        self.walk_list(body, Frame::default(), |_| {});
+        let frame = Frame {
+            owner: std::mem::take(&mut self.next_owner),
+            ..Frame::default()
+        };
+        self.walk_list(body, frame, |_| {});
     }
 
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
@@ -349,6 +353,14 @@ impl Walker<'_> {
                 } else {
                     walk_expr_mut(self, expr);
                 }
+            }
+            // `sub { ... }`: its body is the next statement list walked.
+            Expr::AnonSub {
+                is_block: false, ..
+            } => {
+                self.next_owner = "Sub";
+                walk_expr_mut(self, expr);
+                self.next_owner = "";
             }
             Expr::AnonSubParams {
                 params,

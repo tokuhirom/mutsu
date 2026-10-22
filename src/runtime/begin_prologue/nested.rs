@@ -149,6 +149,7 @@ pub(super) fn lift_in_stmt<'a>(
         unit,
         frames: Vec::new(),
         lifted,
+        next_owner: "",
     };
     walker.walk_stmt(stmt, None);
 }
@@ -158,6 +159,8 @@ struct Walker<'a> {
     unit: UnitContext,
     frames: Vec<Frame>,
     lifted: &'a mut Lifted,
+    /// The owner type of the next scope [`VisitMut::visit_stmts_mut`] opens.
+    next_owner: &'static str,
 }
 
 #[derive(Default)]
