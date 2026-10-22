@@ -37,10 +37,26 @@ const DYNAMIC: &str = "__DYNAMIC__";
 // Cost: O(v), v = variants.
 pub(super) fn enum_term_node(
     variants: &[(String, Option<Expr>)],
-    form: EnumVariantForm,
+    form: &EnumVariantForm,
 ) -> Result<RakuAstNode, RuntimeError> {
     match form {
         EnumVariantForm::Words => word_term(variants, "words"),
+        EnumVariantForm::EmptyWords(raw) => Ok(RakuAstNode {
+            class: RakuAstClass::QuotedString,
+            fields: vec![
+                RakuAstField {
+                    name: Some("processors"),
+                    value: RakuAstFieldValue::List(vec![
+                        Value::str_from("words"),
+                        Value::str_from("val"),
+                    ]),
+                },
+                RakuAstField {
+                    name: Some("segments"),
+                    value: RakuAstFieldValue::List(vec![str_literal(raw.to_string())]),
+                },
+            ],
+        }),
         EnumVariantForm::QuoteWords => word_term(variants, "quotewords"),
         EnumVariantForm::PairList => pair_list_term(variants),
         EnumVariantForm::Computed => match variants {
@@ -138,6 +154,18 @@ fn str_literal(text: String) -> Value {
 
 /// The parenthesized pair-list term.
 fn pair_list_term(variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, RuntimeError> {
+    if variants.is_empty() {
+        return Ok(RakuAstNode {
+            class: RakuAstClass::CircumfixParentheses,
+            fields: vec![node_field(
+                None,
+                RakuAstNode {
+                    class: RakuAstClass::SemiList,
+                    fields: Vec::new(),
+                },
+            )],
+        });
+    }
     let operands = variants
         .iter()
         .map(|(name, value)| {
@@ -203,6 +231,7 @@ fn lower_word_term(term: &RakuAstNode) -> Result<(Variants, EnumVariantForm), Ru
         _ => return Err(unsupported(term)),
     };
     let mut variants = Vec::new();
+    let mut empty_text = None;
     for segment in list_field(term, "segments")? {
         let ValueView::RakuAst(segment) = segment.view() else {
             return Err(unsupported(term));
@@ -213,6 +242,9 @@ fn lower_word_term(term: &RakuAstNode) -> Result<(Variants, EnumVariantForm), Ru
                 let ValueView::Str(text) = text.view() else {
                     return Err(unsupported(term));
                 };
+                if variants.is_empty() && text.split_whitespace().next().is_none() {
+                    empty_text = Some(text.to_string());
+                }
                 variants.extend(text.split_whitespace().map(|name| (name.to_string(), None)));
             }
             RakuAstClass::QuoteWordsAtom if form == EnumVariantForm::QuoteWords => {
@@ -220,6 +252,11 @@ fn lower_word_term(term: &RakuAstNode) -> Result<(Variants, EnumVariantForm), Ru
             }
             _ => return Err(unsupported(term)),
         }
+    }
+    if variants.is_empty()
+        && let (EnumVariantForm::Words, Some(text)) = (&form, empty_text)
+    {
+        return Ok((variants, EnumVariantForm::EmptyWords(text.into())));
     }
     Ok((variants, form))
 }

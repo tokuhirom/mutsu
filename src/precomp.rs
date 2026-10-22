@@ -144,7 +144,7 @@ pub(crate) fn interpreter_version() -> String {
     // 44: static regex named captures distinguish hash aliases.
     // 45: interpolating word quotes retain their source delimiter.
     // 46: compile inputs record the scan behind a `use`'s block bindings.
-    const CACHE_FORMAT_VERSION: u32 = 46;
+    const CACHE_FORMAT_VERSION: u32 = 47;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
