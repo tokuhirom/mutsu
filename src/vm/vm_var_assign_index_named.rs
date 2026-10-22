@@ -324,7 +324,7 @@ impl Interpreter {
     /// and so does a type object, so this asks about a defined value only.
     ///
     /// This is section E of #7556, and it is deliberately NOT
-    /// [`Interpreter::subscript_descent_refusal`]: that one answers "may a
+    /// [`Interpreter::subscript_descent_refusal_at`]: that one answers "may a
     /// chained store DESCEND through this slot", where an `Array` of any kind
     /// is a legitimate target. Here the subscript is the LAST one, so the
     /// question is whether the value does `Positional`/`Associative` at all --
@@ -4435,13 +4435,6 @@ impl Interpreter {
     ///
     /// TODO: compile to bytecode — see the two paragraphs above for the rows
     /// this predicate cannot decide.
-    pub(crate) fn subscript_descent_refusal(
-        slot: &Value,
-        outer_positional: bool,
-    ) -> Option<RuntimeError> {
-        Self::subscript_descent_refusal_at(slot, outer_positional, None)
-    }
-
     /// The `Pair` rule, shared by the chained-store walk above and by the
     /// COMPUTED-target store (`f(){key} = v`, `OpCode::IndexAssignGeneric`).
     ///
@@ -4558,9 +4551,9 @@ impl Interpreter {
         aggregate.replace_container_contents(&coerced)
     }
 
-    /// [`Interpreter::subscript_descent_refusal`] told which key the next
-    /// subscript addresses, so a `Pair` slot can name the value the store would
-    /// have had to modify (see the `Pair` arm below).
+    /// [`Interpreter::subscript_descent_refusal_at`] with the key the next
+    /// subscript addresses known, so a `Pair` slot can name the value the store
+    /// would have had to modify (see the `Pair` arm below).
     pub(crate) fn subscript_descent_refusal_at(
         slot: &Value,
         outer_positional: bool,
@@ -5444,11 +5437,20 @@ impl Interpreter {
                                 // A defined non-container value in the slot is
                                 // refused rather than clobbered, the same rule
                                 // the two-level chain applies.
-                                if let Some(err) =
-                                    Self::subscript_descent_refusal(&arr[i], next_positional)
-                                {
+                                let next_key = indices.get(level + 1).map(String::as_str);
+                                if let Some(err) = Self::subscript_descent_refusal_at(
+                                    &arr[i],
+                                    next_positional,
+                                    next_key,
+                                ) {
                                     return Err(err);
                                 }
+                                // A `Pair` whose value is the container the next
+                                // subscript addresses (`@a[1]<s><e> = v` with
+                                // `@a[1] = s => {...}`) is stepped through at
+                                // the next level, not replaced here.
+                                let pair_holds_next = !next_positional
+                                    && Self::pair_subscript_aggregate(&arr[i], next_key).is_some();
                                 // Autovivify if needed. A `ContainerRef` is a
                                 // `:=`-bound cell that holds (and is descended to)
                                 // a container on the next iteration; treating it
@@ -5461,7 +5463,8 @@ impl Interpreter {
                                     ValueView::Array(..)
                                         | ValueView::Hash(..)
                                         | ValueView::ContainerRef(..)
-                                ) && !Self::is_storage_backed_instance(&arr[i]);
+                                ) && !Self::is_storage_backed_instance(&arr[i])
+                                    && !pair_holds_next;
                                 if needs_viv {
                                     binding_creates_path = true;
                                     arr[i] = Self::fresh_autoviv_container(next_positional);
