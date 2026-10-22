@@ -1712,3 +1712,18 @@ aliases keep their distinct `$2 = body` rendering for static numbering.
 `t/rakuast/rakuast-regex-named-separator-capture.t` checks the source shape and
 execution of `%` and `%%` separators, including a zero-width capture. The
 RakuAST frontend now passes all 56 assertions in `roast/S05-capture/caps.t`.
+
+## 74. Enumeration escapes and embedded comments (2026-10-22)
+
+The shared regex source tree now models `\\b` and `\\B` inside a character
+class as a `BackSpace` class with the appropriate negation. A standalone
+hand-built `BackSpace` node renders as a positive or negative enumerated
+class, because bare `\\b` and `\\B` are obsolete regex syntax. Unknown
+escaped letters inside an enumeration are literal `Character` entries, as in
+Rakudo. Character-class arithmetic skips comments between its terms while
+still treating `#` inside an enumeration as a possible member.
+
+`t/rakuast/rakuast-regex-enumeration-escapes.t` covers the read direction,
+round-tripping, and hand-built lowering. The RakuAST frontend now passes
+`roast/S05-metasyntax/regex.t` and `roast/S05-metasyntax/charset.t` (158
+assertions together).
