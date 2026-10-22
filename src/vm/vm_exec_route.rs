@@ -243,7 +243,7 @@ impl Interpreter {
             | OpCode::Put(..)
             | OpCode::Say(..) => self.exec_ops_group_08(code, ip, compiled_fns),
             OpCode::ClearElementSource
-            | OpCode::DeleteIndexExpr
+            | OpCode::DeleteIndexExpr(..)
             | OpCode::DeleteIndexNamed(..)
             | OpCode::HyperSlice(..)
             | OpCode::Index { .. }

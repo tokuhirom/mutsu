@@ -111,7 +111,7 @@ pub(crate) fn note_dispatcher_mention(s: &str) {
 /// subscript protocol from the *syntax* rather than guessing from the index's
 /// runtime type: `$c[0]` is `EXISTS-POS`/`AT-POS` and `$c{0}` is
 /// `EXISTS-KEY`/`AT-KEY`, however the index happens to be typed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub enum SubscriptKind {
     /// The subscript's bracket is not recorded (a zen slice, or a target the
     /// compiler did not recognise as an `Index`). The VM falls back to the
@@ -3065,7 +3065,10 @@ pub(crate) enum OpCode {
     /// local slot (§1.5: the mutated container is written back through this exact
     /// slot instead of a by-name `code.locals` search — docs/lexical-scope-slot-
     /// campaign.md). `None` for a non-local / EVAL-carrier container.
-    DeleteIndexNamed(u32, Option<u32>),
+    ///
+    /// The third field is the bracket the subscript was written with, for the user
+    /// `postcircumfix` candidate that takes `:delete` (#14538).
+    DeleteIndexNamed(u32, Option<u32>, SubscriptKind),
     /// Delete from a computed container, `[target, index] → [deleted]`.
     ///
     /// Only emitted for the `:exists:delete` combination on a container that is
@@ -3074,7 +3077,10 @@ pub(crate) enum OpCode {
     /// exists result, and the deleted value is then popped. The index may be a
     /// single key or index, a Whatever, an Array or a Range. An immutable `Map`
     /// refuses. Named containers use [`Self::DeleteIndexNamed`].
-    DeleteIndexExpr,
+    ///
+    /// The field is the bracket the subscript was written with (see
+    /// [`Self::DeleteIndexNamed`]).
+    DeleteIndexExpr(SubscriptKind),
     /// Multi-dimensional indexing: @a[$x;$y;$z]
     /// Stack: `[target, dim0, dim1, ..., dimN] → [result]`
     ///
@@ -10045,7 +10051,7 @@ impl CompiledCode {
             // like an element assign: a scalar `$x` holding the container must
             // be captured too, or a closure run after its frame is gone (a
             // deferred `.map` the caller sinks) mutates a stale copy.
-            | OpCode::DeleteIndexNamed(idx, _)
+            | OpCode::DeleteIndexNamed(idx, _, _)
             | OpCode::PostIncrementIndex(idx, ..)
             | OpCode::PostDecrementIndex(idx, ..)
             | OpCode::PreIncrementIndex(idx, ..)
@@ -10204,7 +10210,7 @@ impl CompiledCode {
             | OpCode::PostDecrementIndex(name_idx, ..)
             | OpCode::PreIncrementIndex(name_idx, ..)
             | OpCode::PreDecrementIndex(name_idx, ..) => Some(*name_idx),
-            OpCode::DeleteIndexNamed(name_idx, _) => Some(*name_idx),
+            OpCode::DeleteIndexNamed(name_idx, _, _) => Some(*name_idx),
             OpCode::IndexAssignPseudoStashNamed { stash_name_idx, .. } => Some(*stash_name_idx),
             OpCode::IndexAssignPseudoStashKeyed { stash_name_idx } => Some(*stash_name_idx),
             OpCode::ArrayPush {

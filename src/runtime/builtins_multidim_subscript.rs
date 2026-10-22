@@ -167,6 +167,51 @@ impl Interpreter {
         Err(RuntimeError::x_adverb(&what, &source, &nogo, &unexpected))
     }
 
+    /// A user-declared `multi sub postcircumfix:<{ }>`/`<[ ]>` taking the
+    /// `:exists` / `:delete` adverb as a named argument (`(PCM:D $c, \key,
+    /// *%adv)`) answers the subscript itself, as it does for the value
+    /// adverbs. `None` when `target` is no object, or no candidate accepts
+    /// `(target, index, :adverb(truthy))`. The candidates a block-scoped `use`
+    /// imported come first when the caller wrapped the op in a
+    /// `LexImportBuiltinOp` prefix (ADR-8751 stage 2).
+    // Cost: O(1) when the target is not an object; otherwise one candidate resolution.
+    pub(crate) fn user_postcircumfix_for_exists_delete(
+        &mut self,
+        target: &Value,
+        index: &Value,
+        adverb: &str,
+        truthy: bool,
+        is_positional: bool,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let target = target.deref_container();
+        // Rakudo's core `postcircumfix:<[ ]>` has typed `:exists`/`:delete`
+        // candidates (`Int:D $pos`, `Iterable:D`, `Whatever`, ...) that beat a
+        // user candidate with an untyped index, so a positional subscript
+        // stays with the core routine; the `{ }` core candidates take an
+        // untyped key and tie with the user one.
+        if is_positional
+            || !matches!(
+                target.view(),
+                ValueView::Instance { .. } | ValueView::Mixin(..)
+            )
+        {
+            return Ok(None);
+        }
+        let op_name = crate::lexical_builtin_op::postcircumfix_of_subscript(is_positional);
+        let call_args = vec![
+            target,
+            index.clone(),
+            Value::pair(adverb.to_string(), Value::truth(truthy)),
+        ];
+        if let Some(result) = self.try_lexical_operator_candidates(op_name, call_args.clone()) {
+            return result;
+        }
+        match self.resolve_function_with_types(op_name, &call_args)? {
+            Some(def) => self.call_routine_def(&def, call_args).map(Some),
+            None => Ok(None),
+        }
+    }
+
     // Cost: O(1) when the target is not an object; otherwise one candidate resolution.
     fn user_postcircumfix_for_adverb(
         &mut self,

@@ -5665,17 +5665,17 @@ impl Interpreter {
             }
             // Cost: O(1) amortized for a single index/key; O(k) for a slice (see
             // exec_delete_index_named_op).
-            OpCode::DeleteIndexNamed(name_idx, slot) => {
+            OpCode::DeleteIndexNamed(name_idx, slot, kind) => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
                 self.with_package_lexical_seeded(code, *name_idx, |vm| {
-                    vm.exec_delete_index_named_op(code, *name_idx, *slot)
+                    vm.exec_delete_index_named_op(code, *name_idx, *slot, *kind)
                 })?;
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
             // Cost: O(1) amortized for a single index/key; O(k) for a slice, k = indices.
-            OpCode::DeleteIndexExpr => {
-                self.exec_delete_index_expr_op()?;
+            OpCode::DeleteIndexExpr(kind) => {
+                self.exec_delete_index_expr_op(*kind)?;
                 *ip += 1;
             }
             // Cost: O(d), d = indices (a shaped array's shape lookup is O(d) too, see array_depth).
