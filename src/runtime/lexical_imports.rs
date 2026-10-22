@@ -592,6 +592,22 @@ impl Interpreter {
             && self.executing_unit_sym_for_module_load() != self.executing_unit_sym()
     }
 
+    /// The import sets around code running in a module's own top level: the
+    /// open blocks of that module, then its top-level `use`s.
+    // Cost: O(s), s = open import scopes' sets.
+    fn module_mainline_import_chain(&self) -> Vec<Symbol> {
+        let unit = self.executing_unit_sym_for_module_load();
+        self.module
+            .import_scope_stack
+            .iter()
+            .rev()
+            .filter(|scope| scope.unit == unit)
+            .flat_map(|scope| scope.lexical_sets.iter().rev())
+            .copied()
+            .chain(self.running_unit_lexical_sets())
+            .collect()
+    }
+
     /// The import sets the running unit's top-level `use`s filled, innermost
     /// first.
     // Cost: O(s), s = sets the unit filled.
@@ -609,7 +625,7 @@ impl Interpreter {
     // Cost: O(s), s = open import scopes' sets.
     pub(crate) fn active_lexical_import_chain(&self) -> Vec<Symbol> {
         if self.running_module_mainline() {
-            return self.running_unit_lexical_sets().collect();
+            return self.module_mainline_import_chain();
         }
         if let Some(chain) = &self.module.eval_import_chain {
             let mut chain = chain.clone();
@@ -643,7 +659,7 @@ impl Interpreter {
     // Cost: O(s + e), s = open import scopes' sets, e = the code's EVAL site chains.
     pub(crate) fn eval_lexical_import_chain(&self) -> Vec<Symbol> {
         if self.running_module_mainline() {
-            return self.running_unit_lexical_sets().collect();
+            return self.module_mainline_import_chain();
         }
         let Some(code) = self.running_code() else {
             return self.active_lexical_import_chain();
