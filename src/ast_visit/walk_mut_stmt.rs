@@ -209,10 +209,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
         Stmt::Need { module: _ } => {}
         Stmt::Import { module: _, tags: _ } => {}
         Stmt::VarTrait { name: _, op } => {
-            if let VarTraitOp::Apply {
-                arg: Some(arg), ..
-            } = op
-            {
+            if let VarTraitOp::Apply { arg: Some(arg), .. } = op {
                 v.visit_expr_mut(arg);
             }
         }

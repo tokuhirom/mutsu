@@ -242,10 +242,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
         }
         // The variable it names was reported by its declaration.
         Stmt::VarTrait { name: _, op } => {
-            if let VarTraitOp::Apply {
-                arg: Some(arg), ..
-            } = op
-            {
+            if let VarTraitOp::Apply { arg: Some(arg), .. } = op {
                 v.visit_expr(arg);
             }
         }

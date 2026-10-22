@@ -1,4 +1,5 @@
 use super::*;
+use crate::ast::VarTraitOp;
 
 impl Compiler {
     /// Declare a fresh array and apply its default before the initializer
@@ -140,7 +141,8 @@ impl Compiler {
         use crate::opcode::VarTraitCtl;
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
         let slot = self.local_map.get(name).copied();
-        let mut constant = |s: &mut Self, text: &str| s.code.add_constant(Value::str(text.to_string()));
+        let constant =
+            |s: &mut Self, text: &str| s.code.add_constant(Value::str(text.to_string()));
         let ctl = match op {
             VarTraitOp::Apply { trait_name, arg } => {
                 if let Some(arg) = arg {
