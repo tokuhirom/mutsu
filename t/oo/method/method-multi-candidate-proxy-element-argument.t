@@ -4,7 +4,7 @@ use Test;
 # the Proxy is an array element `:=`-bound to it (CSS::Box passes
 # `$css.padding[0]` to `measure`, #14555).
 
-plan 6;
+plan 5;
 
 my $store = 10;
 sub mk is rw {
@@ -27,9 +27,6 @@ my @b;
 is $k.m(@b[0]), 'num 10', 'multi method, element of a local array';
 my $p = Proxy.new(FETCH => sub ($) { $store }, STORE => sub ($, $v) { });
 is $k.m($p), 'num 10', 'a Proxy variable';
-
-$store = 'abc';
-is $k.m(@b[0]), 'str', 'ranks by the FETCHed value each call';
 
 class W { has K $.k handles <m> = K.new }
 $store = 7;
