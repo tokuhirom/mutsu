@@ -8054,3 +8054,4 @@ t/vm/writeback/sigilless-type-object-no-writeback.t
 t/vm/writeback/undefine-lvalue-writeback-coherence.t
 t/vm/writeback/wrapped-sub-rw-writeback.t
 t/vm/zeroarg-env-dirty.t
+t/rakuast/rakuast-deprecated-anon-sub-call.t

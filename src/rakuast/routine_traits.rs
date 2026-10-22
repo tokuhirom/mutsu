@@ -43,7 +43,7 @@ use super::convert::{
 };
 use super::lower::{named_child, named_child_or_positional, positional_leaf};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::Expr;
+use crate::ast::{Expr, Stmt};
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The tag a bare `is export` exports under.
@@ -441,13 +441,10 @@ pub(super) fn lower_custom(
         // `DEPRECATED` / `DEPRECATED:message`, as the parser keeps it.
         return match named_child(t, "argument") {
             Err(_) if t.fields.len() == 1 => Ok(Some(("DEPRECATED".to_string(), None))),
-            Ok(argument) => match lower_argument(owner, argument)? {
-                Expr::Literal(v) => match v.as_str() {
-                    Some(message) if !message.is_empty() => {
-                        Ok(Some((format!("DEPRECATED:{message}"), None)))
-                    }
-                    _ => Ok(None),
-                },
+            Ok(argument) => match fold_constant_message(&lower_argument(owner, argument)?) {
+                Some(message) if !message.is_empty() => {
+                    Ok(Some((format!("DEPRECATED:{message}"), None)))
+                }
                 _ => Ok(None),
             },
             Err(_) => Ok(None),
@@ -468,6 +465,33 @@ pub(super) fn lower_custom(
         Err(_) => return Ok(None),
     };
     Ok(Some((name, argument)))
+}
+
+/// The string a `DEPRECATED` message argument statically evaluates to: a string
+/// literal, or an immediately invoked parameterless anonymous sub / block whose
+/// body is one such expression (`(sub { "a" })()`, rakudo's RT #120908 shape).
+/// Anything else needs declaration-time evaluation, which the static routine
+/// metadata cannot carry, so it is refused rather than silently reinterpreted.
+// Cost: O(a), a = size of the argument.
+fn fold_constant_message(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Literal(v) => v.as_str().map(str::to_string),
+        Expr::Grouped(inner) => fold_constant_message(inner),
+        Expr::CallOn { target, args } if args.is_empty() => {
+            let Expr::Grouped(callee) = target.as_ref() else {
+                return None;
+            };
+            let Expr::AnonSub { body, .. } = callee.as_ref() else {
+                return None;
+            };
+            let mut stmts = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+            match (stmts.next(), stmts.next()) {
+                (Some(Stmt::Expr(inner)), None) => fold_constant_message(inner),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 // Cost: O(a), a = size of the argument.
