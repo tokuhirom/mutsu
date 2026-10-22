@@ -1772,7 +1772,7 @@ impl Interpreter {
                 let mut out = Vec::with_capacity(items.len());
                 for it in items.iter() {
                     if let ValueView::Sub(..) = it.view() {
-                        out.push(self.call_sub_value(it.clone(), vec![len.clone()], false)?);
+                        out.push(self.call_sub_value(it.clone(), vec![len.clone()])?);
                     } else {
                         out.push(it.clone());
                     }
@@ -1784,7 +1784,7 @@ impl Interpreter {
                     ValueView::Array(items, ..) => Value::int(items.len() as i64),
                     _ => Value::int(0),
                 };
-                Ok(vec![self.call_sub_value(dim.clone(), vec![len], false)?])
+                Ok(vec![self.call_sub_value(dim.clone(), vec![len])?])
             }
             _ => Ok(vec![dim.clone()]),
         }
@@ -2192,7 +2192,7 @@ impl Interpreter {
                     ValueView::Array(items, ..) => Value::int(items.len() as i64),
                     _ => Value::int(0),
                 };
-                let result = self.call_sub_value(idx.clone(), vec![len], false)?;
+                let result = self.call_sub_value(idx.clone(), vec![len])?;
                 current =
                     Self::index_array_multidim(&current, std::slice::from_ref(&result), false)
                         .unwrap_or(Value::NIL);
@@ -2206,8 +2206,7 @@ impl Interpreter {
                 let mut resolved_items = Vec::with_capacity(items.len());
                 for item in items.iter() {
                     if let ValueView::Sub(..) = item.view() {
-                        let result =
-                            self.vm_call_sub_value(item.clone(), vec![len.clone()], false)?;
+                        let result = self.vm_call_sub_value(item.clone(), vec![len.clone()])?;
                         resolved_items.push(result);
                     } else {
                         resolved_items.push(item.clone());

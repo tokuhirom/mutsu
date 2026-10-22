@@ -293,7 +293,7 @@ impl Interpreter {
         ));
         self.push_samewith_callable_context(dispatcher);
         self.pending_skip_constraint_recheck = trust_constraints;
-        let result = self.call_sub_value(candidate, args, false);
+        let result = self.call_sub_value(candidate, args);
         // Not consumed (the call took a path with no general bind): never let
         // it reach an unrelated later bind.
         self.pending_skip_constraint_recheck = false;

@@ -604,7 +604,7 @@ impl Interpreter {
                     self.cur_source_line = entry.line;
                 }
             }
-            let call_result = self.call_sub_value(target.clone(), args, false);
+            let call_result = self.call_sub_value(target.clone(), args);
             self.env = saved_env;
             self.cur_source_line = saved_line;
             let value = match call_result {
@@ -629,7 +629,7 @@ impl Interpreter {
         }
         if method == "callwith" {
             // &sub.callwith(args) — call the sub directly with provided args
-            return Some(self.call_sub_value(target.clone(), args, false));
+            return Some(self.call_sub_value(target.clone(), args));
         }
         // Cost: O(n), n = requested method-name length.
         if method == "can" {

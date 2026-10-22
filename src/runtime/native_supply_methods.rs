@@ -93,7 +93,7 @@ impl Interpreter {
             // here (#12864): a nested one is a member of the same group, so
             // it has finished too or is not counted.
             for cb in take_supplier_close_callbacks(cid as u64) {
-                self.call_sub_value(cb, vec![], true)?;
+                self.call_sub_value(cb, vec![])?;
             }
             return Ok(false);
         }
@@ -113,7 +113,7 @@ impl Interpreter {
             if let Some(ValueView::Int(cid)) = attrs.get("close_supplier_id").map(|v| v.view()) {
                 self.close_supply_child_taps(cid as u64)?;
                 for cb in take_supplier_close_callbacks(cid as u64) {
-                    self.call_sub_value(cb, vec![], true)?;
+                    self.call_sub_value(cb, vec![])?;
                 }
             }
             // `done` inside a `whenever` body ends the enclosing supply the
@@ -126,7 +126,7 @@ impl Interpreter {
             if let Some(down) = attrs.get("done_cb")
                 && Self::supply_has_active_callback(down)
             {
-                let _ = self.call_sub_value(down.clone(), vec![], true);
+                let _ = self.call_sub_value(down.clone(), vec![]);
             }
             return Ok(false);
         }
@@ -159,7 +159,7 @@ impl Interpreter {
             if let Some(done_cb) = attrs.get("done_cb")
                 && Self::supply_has_active_callback(done_cb)
             {
-                self.call_sub_value(done_cb.clone(), vec![], true)?;
+                self.call_sub_value(done_cb.clone(), vec![])?;
             }
             supplier_reset(supplier_id);
             return Ok(false);
@@ -189,7 +189,7 @@ impl Interpreter {
         // X::ControlFlow, routed by `invoke_done_callback_or_quit`).
         let react_done_handler =
             stamped.then(crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new);
-        let res = self.call_sub_value(done_cb, Vec::new(), true);
+        let res = self.call_sub_value(done_cb, Vec::new());
         drop(react_done_handler);
         if emitter.is_some() {
             self.async_state.active_supply_emitters.pop();
@@ -527,7 +527,7 @@ impl Interpreter {
         // Per-thread, not per-process: the phaser body runs synchronously here,
         // so only a `done` raised on this thread can be its doing.
         let done_before = thread_supplier_done_count();
-        let result = self.call_sub_value(quit_cb, vec![reason], true);
+        let result = self.call_sub_value(quit_cb, vec![reason]);
         let matched = self.when_matched();
         self.set_when_matched(saved_when);
         // If the phaser called `done` (it ran `$emitter.done()`), the supply

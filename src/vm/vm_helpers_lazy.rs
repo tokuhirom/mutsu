@@ -144,7 +144,7 @@ impl Interpreter {
         let mut items = Vec::new();
         'from_loop: while items.len() < limit {
             'body_redo: loop {
-                match self.call_sub_value(body_callable.clone(), vec![], true) {
+                match self.call_sub_value(body_callable.clone(), vec![]) {
                     Ok(value) => {
                         if !value.is_nil() {
                             items.push(value);

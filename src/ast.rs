@@ -1723,6 +1723,8 @@ pub(crate) enum Expr {
     IndirectCodeLookup {
         package: Box<Expr>,
         name: String,
+        /// Whether the source selected its package through `CALLER::(...)`.
+        caller: bool,
     },
     /// Symbolic variable dereference: $::("name"), @::("name"), %::("name")
     /// Resolves a variable by name at runtime. The sigil is "$", "@", or "%".
@@ -1869,9 +1871,10 @@ pub(crate) enum PackageKind {
 /// Runtime enum registration only needs the normalized `(name, value)` pairs,
 /// but Rakudo's AST preserves whether the source used a word quote or a
 /// parenthesized pair list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum EnumVariantForm {
     Words,
+    EmptyWords(Box<str>),
     QuoteWords,
     PairList,
     Computed,

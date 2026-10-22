@@ -1864,3 +1864,23 @@ The focused `t/rakuast/rakuast-anonymous-callable-typed-slurpy.t` compares
 both node shapes with Rakudo. `roast/S06-signature/introspection.t` and
 `roast/S06-signature/slurpy-blocks.t` now pass in frontend mode. Two other
 signature files from the earlier survey were already green on current main.
+
+### 6.99 S10: empty enum, signed Complex and temporized undefine terms (2026-10-22)
+
+An empty angle enum retains its raw whitespace in `EnumVariantForm::EmptyWords`
+so `my enum E < >` reads as a word-quoted term with a literal space. An empty
+parenthesized enum reads as `Circumfix::Parentheses(SemiList())`. Lowering the
+word-quoted form restores the empty body rather than inventing a member. The
+serialized enum form advances the precompilation cache format to 47.
+
+A Complex value with a negative or non-finite imaginary component now reads
+as a whole `ComplexLiteral`; only a finite, nonnegative imaginary value with
+positive real zero uses the `Postfix("i")` reconstruction. This preserves both
+signed zeros of an angle Complex literal.
+
+The parser's `temp undefine($var) = VALUE` save/restore node now converts to
+the source `ApplyInfix(ApplyPrefix("temp", Call::Name("undefine")), Assignment,
+VALUE)`. Lowering that shape restores the same `undefine_first` save/restore
+node. The focused `t/rakuast/rakuast-residual-source-terms.t` records Rakudo's
+read shapes and signed-zero EVAL behavior. The enum basic, negative-zero and
+scalar undefine roast files now pass in frontend mode.

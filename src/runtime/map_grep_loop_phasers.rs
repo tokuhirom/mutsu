@@ -75,7 +75,7 @@ impl Interpreter {
             phaser_data.compiled_fns = None;
             phaser_data.compiled_routine = None;
             let phaser = Value::sub_value(crate::gc::Gc::new(phaser_data));
-            self.call_sub_value(phaser, args.clone(), false)?;
+            self.call_sub_value(phaser, args.clone())?;
         }
         Ok(())
     }

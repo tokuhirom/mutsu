@@ -618,7 +618,7 @@ impl Interpreter {
         };
         let code = args.first().cloned().unwrap_or(Value::NIL);
         for value in values.iter() {
-            match self.call_sub_value(code.clone(), vec![value.clone()], false) {
+            match self.call_sub_value(code.clone(), vec![value.clone()]) {
                 Ok(_) => {}
                 // A matching `when` inside the block leaves that block with
                 // `succeed`. That ends the *eigenstate's* iteration, not the

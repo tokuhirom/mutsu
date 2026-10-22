@@ -503,7 +503,21 @@ impl Interpreter {
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
-        self.compile_and_call_function_def_inner(def, args, compiled_fns, None, false)
+        self.compile_and_call_function_def_inner(def, args, compiled_fns, None, false, true)
+    }
+
+    /// [`Self::compile_and_call_qualified_def`] for a routine nothing matched
+    /// against these arguments: a lexically imported plain routine is called
+    /// as it stands, so its `where` clauses still have to run at the bind
+    /// (they are not an earlier candidate match's verdict).
+    // Cost: O(1) on top of the call.
+    pub(crate) fn compile_and_call_unmatched_qualified_def(
+        &mut self,
+        def: &crate::ast::FunctionDef,
+        args: Vec<Value>,
+        compiled_fns: &CompiledFns,
+    ) -> Result<Value, RuntimeError> {
+        self.compile_and_call_function_def_inner(def, args, compiled_fns, None, false, false)
     }
 
     /// [`Self::compile_and_call_function_def`] for a `CallFunc` whose
@@ -518,7 +532,7 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         caller: Option<(&CompiledCode, &[Value])>,
     ) -> Result<Value, RuntimeError> {
-        self.compile_and_call_function_def_inner(def, args, compiled_fns, caller, true)
+        self.compile_and_call_function_def_inner(def, args, compiled_fns, caller, true, true)
     }
 
     /// [`Self::compile_and_call_function_def_at`] for a call site that names
@@ -536,7 +550,7 @@ impl Interpreter {
         callsite_name: Symbol,
     ) -> Result<Value, RuntimeError> {
         let bare = !crate::qualified::is_qualified(callsite_name);
-        self.compile_and_call_function_def_inner(def, args, compiled_fns, caller, bare)
+        self.compile_and_call_function_def_inner(def, args, compiled_fns, caller, bare, true)
     }
 
     fn compile_and_call_function_def_inner(
@@ -546,6 +560,7 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         caller: Option<(&CompiledCode, &[Value])>,
         resolved_by_bare_name: bool,
+        where_verdict_known: bool,
     ) -> Result<Value, RuntimeError> {
         if let Some(code) = &def.dispatchee {
             return self.call_value_dispatchee_def(def, code.clone(), args, compiled_fns);
@@ -701,10 +716,11 @@ impl Interpreter {
         // whenever this fires -- `is_positional_light_call_eligible` refuses
         // any `where_constraint` and any non-fast type -- so the flag is always consumed by `call_compiled_function_named`
         // below and never leaks into an unrelated later call.
-        self.pending_skip_constraint_recheck = def
-            .param_defs
-            .iter()
-            .any(|pd| self.param_runs_constraint_predicate(pd));
+        self.pending_skip_constraint_recheck = where_verdict_known
+            && def
+                .param_defs
+                .iter()
+                .any(|pd| self.param_runs_constraint_predicate(pd));
         let result = if light_eligible {
             // No caller `CompiledCode` in scope here (see the `None` passed
             // to `is_positional_light_call_eligible` above) -- eligibility

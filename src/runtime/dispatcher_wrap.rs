@@ -198,7 +198,7 @@ impl Interpreter {
         {
             return self.vm_call_on_value(wrapper, args, None);
         }
-        self.call_sub_value(wrapper, args, false)
+        self.call_sub_value(wrapper, args)
     }
 
     /// Push the `MethodDispatchFrame` for a dispatcher wrap: the

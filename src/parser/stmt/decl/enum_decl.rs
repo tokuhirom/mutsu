@@ -145,12 +145,17 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
         (rest, variants, EnumVariantForm::QuoteWords)
     } else if input.starts_with('<') {
         let (r, _) = parse_char(input, '<')?;
+        let body_start = r;
         let mut variants = Vec::new();
         let mut r = r;
+        let mut empty_body = None;
         loop {
             let (r2, _) =
                 take_while_opt(r, |c: char| c == ' ' || c == '\t' || c == '\n' || c == '\r');
             if let Some(r2) = r2.strip_prefix('>') {
+                if variants.is_empty() {
+                    empty_body = Some(body_start[..body_start.len() - r2.len() - 1].into());
+                }
                 r = r2;
                 break;
             }
@@ -160,7 +165,8 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
             variants.push((word.to_string(), None));
             r = r2;
         }
-        (r, variants, EnumVariantForm::Words)
+        let form = empty_body.map_or(EnumVariantForm::Words, EnumVariantForm::EmptyWords);
+        (r, variants, form)
     } else if input.starts_with('(') {
         let (r, body) = parse_paren_enum_body(input)?;
         let variants = enum_variants_from_body(&body)
@@ -380,12 +386,17 @@ pub(super) fn parse_enum_decl_body_with_type(
         (rest, variants, EnumVariantForm::QuoteWords)
     } else if rest.starts_with('<') {
         let (r, _) = parse_char(rest, '<')?;
+        let body_start = r;
         let mut variants = Vec::new();
         let mut r = r;
+        let mut empty_body = None;
         loop {
             let (r2, _) =
                 take_while_opt(r, |c: char| c == ' ' || c == '\t' || c == '\n' || c == '\r');
             if let Some(r2) = r2.strip_prefix('>') {
+                if variants.is_empty() {
+                    empty_body = Some(body_start[..body_start.len() - r2.len() - 1].into());
+                }
                 r = r2;
                 break;
             }
@@ -395,7 +406,8 @@ pub(super) fn parse_enum_decl_body_with_type(
             variants.push((word.to_string(), None));
             r = r2;
         }
-        (r, variants, EnumVariantForm::Words)
+        let form = empty_body.map_or(EnumVariantForm::Words, EnumVariantForm::EmptyWords);
+        (r, variants, form)
     } else if rest.starts_with('(') {
         // The body is an ordinary parenthesized term (see `parse_paren_enum_body`).
         // A failure here is a real syntax error in a construct we are already

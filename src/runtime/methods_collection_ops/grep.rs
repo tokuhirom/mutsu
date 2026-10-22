@@ -249,7 +249,7 @@ impl Interpreter {
                                 _ => Value::int(current),
                             };
                             'redo_item: loop {
-                                match self.call_sub_value(func.clone(), vec![item.clone()], false) {
+                                match self.call_sub_value(func.clone(), vec![item.clone()]) {
                                     Ok(pred) => {
                                         if self.eval_predicate_truthy(&pred) {
                                             result.push(item.clone());

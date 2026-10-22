@@ -154,7 +154,7 @@ fn visit_children(
     };
     let callable = args.first()?;
     for child in children(node) {
-        if let Err(e) = interp.call_sub_value(callable.clone(), vec![child], false) {
+        if let Err(e) = interp.call_sub_value(callable.clone(), vec![child]) {
             return Some(Err(e));
         }
     }

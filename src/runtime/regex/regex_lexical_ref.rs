@@ -181,7 +181,7 @@ impl Interpreter {
             // pre-pass splices in while the pattern is parsed (see
             // `regex_qq_token_scope`); one that throws is left out.
             let value = if key.starts_with(qq_prefix) {
-                match self.call_sub_value(value.clone(), Vec::new(), false) {
+                match self.call_sub_value(value.clone(), Vec::new()) {
                     Ok(result) => Value::str(result.to_string_value()),
                     Err(_) => continue,
                 }

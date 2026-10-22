@@ -43,7 +43,7 @@ impl Interpreter {
             // `:filter` transforms the selected word (default: tclc).
             let transformed = match &filter {
                 Some(f) => self
-                    .call_sub_value(f.clone(), vec![word], false)?
+                    .call_sub_value(f.clone(), vec![word])?
                     .to_string_value(),
                 None => crate::value::tclc_str(&segment),
             };

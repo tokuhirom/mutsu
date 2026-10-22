@@ -7,6 +7,8 @@
 //! $::($n)         Var::Package(name => Name(Part::Empty, Part::Expression($n)), sigil => "$")
 //! $::($n) = 5     ApplyInfix(Var::Package(…), Assignment(:item), 5)
 //! ::($n) = 5      ApplyInfix(Term::Name(Name(Part::Empty, Part::Expression($n))), Assignment, 5)
+//! &::($n)::f     Var::Package(Name(Part::Empty, Part::Expression($n), Part::Simple("f")), "&")
+//! &CALLER::($n)::f has Part::Simple("CALLER") in place of Part::Empty.
 //! ```
 //!
 //! The parser keeps the variable forms as [`Expr::SymbolicDeref`] /
@@ -17,9 +19,9 @@
 use super::convert::{assignment_around, convert_expr, leaf_field, node_field};
 use super::lower::{lower_expr, named_child};
 use super::name_parts::{self, NameShape};
-use super::{RakuAstClass, RakuAstNode};
+use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// The `Name(Part::Empty, Part::Expression(EXPR))` of a dynamic lookup.
 pub(super) fn indirect_name(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
@@ -43,6 +45,78 @@ pub(super) fn convert(sigil: &str, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             leaf_field(Some("sigil"), Value::str(sigil.to_string())),
         ],
     })
+}
+
+/// `&::(EXPR)::name` and `&CALLER::(EXPR)::name` as a package code variable.
+// Cost: O(n), n = nodes of the package expression plus the static name.
+pub(super) fn convert_indirect_code(
+    package: &Expr,
+    name: &str,
+    caller: bool,
+) -> Result<RakuAstNode, RuntimeError> {
+    let mut parts = Vec::with_capacity(3);
+    parts.push(if caller {
+        name_parts::simple_part("CALLER")
+    } else {
+        name_parts::leading_empty()
+    });
+    parts.push(Value::rakuast(Box::new(RakuAstNode {
+        class: RakuAstClass::NamePartExpression,
+        fields: vec![node_field(None, convert_expr(package)?)],
+    })));
+    parts.push(name_parts::simple_part(name));
+    Ok(RakuAstNode {
+        class: RakuAstClass::VarPackage,
+        fields: vec![
+            node_field(Some("name"), name_parts::name_from_parts(parts)),
+            leaf_field(Some("sigil"), Value::str("&".to_string())),
+        ],
+    })
+}
+
+/// Recognize the two measured dynamic code-variable name shapes.
+// Cost: O(n), n = name parts.
+pub(super) fn lower_indirect_code(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+    if node.class != RakuAstClass::VarPackage
+        || super::lower::leaf_str(node, "sigil").ok()?.as_str() != "&"
+    {
+        return None;
+    }
+    let name = named_child(node, "name").ok()?;
+    let RakuAstFieldValue::List(parts) = &name.fields.first()?.value else {
+        return None;
+    };
+    let [first, middle, last] = parts.as_slice() else {
+        return None;
+    };
+    let caller = match first.view() {
+        ValueView::RakuAst(part) if part.class == RakuAstClass::NamePartEmpty => false,
+        ValueView::RakuAst(part)
+            if part.class == RakuAstClass::NamePartSimple
+                && name_parts::part_identifier(first).as_deref() == Some("CALLER") =>
+        {
+            true
+        }
+        _ => return None,
+    };
+    let ValueView::RakuAst(middle) = middle.view() else {
+        return None;
+    };
+    if middle.class != RakuAstClass::NamePartExpression {
+        return None;
+    }
+    let RakuAstFieldValue::Node(package) = &middle.fields.first()?.value else {
+        return None;
+    };
+    let ValueView::RakuAst(package) = package.view() else {
+        return None;
+    };
+    let name = name_parts::part_identifier(last)?;
+    Some(lower_expr(package).map(|package| Expr::IndirectCodeLookup {
+        package: Box::new(package),
+        name,
+        caller,
+    }))
 }
 
 /// `$::($n) = v`.

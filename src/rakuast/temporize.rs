@@ -8,7 +8,7 @@
 //! it (see `ast::temporize`); this module renders that as the prefix node and
 //! rebuilds the same statement from it.
 
-use super::convert::{convert_expr, leaf_field, node_field};
+use super::convert::{assignment_around, convert_expr, leaf_field, node_field};
 use super::lower::{
     infix_is_assignment, infix_is_compound_assignment, lower_compound_assign_expr,
     lower_dotty_assign, lower_expr, lower_var_decl, named_child, named_child_or_positional,
@@ -61,6 +61,24 @@ fn is_scalar_variable(target: &Target) -> bool {
 /// is not one the parser builds.
 // Cost: O(n), n = size of the statement.
 pub(super) fn convert(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> {
+    if let Stmt::Let {
+        name,
+        index: None,
+        value: Some(value),
+        is_temp: true,
+        undefine_first: true,
+        nested_lvalue: false,
+    } = stmt
+    {
+        return Some((|| {
+            let call = Expr::Call {
+                name: crate::symbol::Symbol::intern("undefine"),
+                args: vec![temporize::variable_expr(name)],
+                listop: false,
+            };
+            assignment_around(prefix_node(true, convert_expr(&call)?), false, value)
+        })());
+    }
     let temporized = temporize::recognize(stmt)?;
     Some(convert_temporized(&temporized))
 }
@@ -225,6 +243,22 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         return Ok(Stmt::SyntheticBlock(vec![decl, saved]));
     }
     let lvalue = lower_expr(operand)?;
+    if let Expr::Call { name, args, .. } = &lvalue
+        && *name == crate::symbol::Symbol::intern("undefine")
+        && let [var] = args.as_slice()
+        && let Some(name) = var.container_var_key()
+        && is_temp
+        && let After::Value(value) = &after
+    {
+        return Ok(Stmt::Let {
+            name,
+            index: None,
+            value: Some(Box::new(value.clone())),
+            is_temp: true,
+            undefine_first: true,
+            nested_lvalue: false,
+        });
+    }
     let (name, index) = match &lvalue {
         Expr::Index { target, index, .. } => (
             temporize::base_name(target).ok_or_else(|| unsupported(node))?,

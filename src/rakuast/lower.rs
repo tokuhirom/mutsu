@@ -4927,6 +4927,11 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             _ => Err(unsupported(node)),
         },
         // `$x` / `@a` / `%h` / `&f` -> the sigil-specific variable expression.
+        RakuAstClass::VarPackage
+            if let Some(lookup) = super::symbolic_deref::lower_indirect_code(node) =>
+        {
+            lookup
+        }
         RakuAstClass::VarPackage if let Some(deref) = super::symbolic_deref::lower(node) => deref,
         RakuAstClass::VarLexical
         | RakuAstClass::VarPackage

@@ -395,7 +395,7 @@ impl Interpreter {
         if has_bytecode {
             self.vm_call_on_value(callable.clone(), call_args, None)
         } else {
-            self.call_sub_value(callable.clone(), call_args, true)
+            self.call_sub_value(callable.clone(), call_args)
         }
     }
 
@@ -413,7 +413,7 @@ impl Interpreter {
 
     fn dethunk(&mut self, val: Value) -> Result<Value, RuntimeError> {
         match val.view() {
-            ValueView::Sub(_) | ValueView::WeakSub(_) => self.call_sub_value(val, vec![], false),
+            ValueView::Sub(_) | ValueView::WeakSub(_) => self.call_sub_value(val, vec![]),
             _ => Ok(val),
         }
     }
@@ -594,7 +594,7 @@ impl Interpreter {
         if elements.len() > 2 && Self::combiner_needs_multi_arg(combiner) {
             // Pass all elements at once for operators with special
             // multi-arg semantics (e.g. set symmetric difference).
-            return self.call_sub_value(combiner.clone(), elements, false);
+            return self.call_sub_value(combiner.clone(), elements);
         }
         match Self::op_associativity(combiner) {
             OpAssoc::Right => {
@@ -602,7 +602,7 @@ impl Interpreter {
                 let mut rev = elements.into_iter().rev();
                 let mut acc = rev.next().unwrap_or(Value::NIL);
                 for elem in rev {
-                    acc = self.call_sub_value(combiner.clone(), vec![elem, acc], false)?;
+                    acc = self.call_sub_value(combiner.clone(), vec![elem, acc])?;
                 }
                 Ok(acc)
             }
@@ -611,9 +611,7 @@ impl Interpreter {
                 for pair in elements.windows(2) {
                     let r = self.call_sub_value(
                         combiner.clone(),
-                        vec![pair[0].clone(), pair[1].clone()],
-                        false,
-                    )?;
+                        vec![pair[0].clone(), pair[1].clone()])?;
                     if !r.truthy() {
                         return Ok(Value::truth(false));
                     }
@@ -624,7 +622,7 @@ impl Interpreter {
                 // Left-associative (default): fold from left
                 let mut acc = elements[0].clone();
                 for elem in &elements[1..] {
-                    acc = self.call_sub_value(combiner.clone(), vec![acc, elem.clone()], false)?;
+                    acc = self.call_sub_value(combiner.clone(), vec![acc, elem.clone()])?;
                 }
                 Ok(acc)
             }

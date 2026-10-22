@@ -315,7 +315,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
                 v.visit_expr_mut(value);
             }
         }
-        Expr::IndirectCodeLookup { package, name: _ } => v.visit_expr_mut(package),
+        Expr::IndirectCodeLookup { package, .. } => v.visit_expr_mut(package),
         Expr::SymbolicDeref { sigil: _, expr } => v.visit_expr_mut(expr),
         Expr::SymbolicDerefAssign {
             sigil: _,

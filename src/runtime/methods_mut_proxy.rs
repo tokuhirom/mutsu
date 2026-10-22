@@ -25,7 +25,7 @@ impl Interpreter {
         // `:&STORE`, which carries no `compiled_code` of its own -- goes through
         // the ordinary sub-call dispatch. A by-name AST re-run of the body here
         // used to do nothing at all for the named-sub shape (#10811).
-        let result = self.call_sub_value(callback.clone(), args, false)?;
+        let result = self.call_sub_value(callback.clone(), args)?;
         Ok((result, instance_attrs.clone()))
     }
 

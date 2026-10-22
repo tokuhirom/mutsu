@@ -202,7 +202,7 @@ fn run(
 ) -> Result<Value, RuntimeError> {
     let receiver = place.value().descalarize().clone();
     let args = resolve_callable_count(&receiver, method, args.to_vec(), |f, a| {
-        interp.call_sub_value(f, a, false)
+        interp.call_sub_value(f, a)
     })?;
     if matches!(method, "set" | "unset") {
         // Key each object by its user `WHICH`, which the pure mutator cannot run.

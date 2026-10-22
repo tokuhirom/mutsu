@@ -681,6 +681,16 @@ impl Interpreter {
                 if cc.is_routine && k.is_routine_owned() {
                     continue;
                 }
+                // A named routine's capture is taken when the routine is
+                // registered, before a file-scope `my %h` / `my @a` declared
+                // after it has run; the aggregate it holds is then whichever
+                // same-named one was visible at that point (another compunit's
+                // `%seen{Hash}` for a module's `my %seen{Any}`, #12907). An
+                // aggregate is a shared container the live binding already
+                // reaches, so a routine keeps that rather than the snapshot.
+                if cc.is_routine && k.with_str(|n| n.starts_with(['@', '%'])) {
+                    continue;
+                }
                 self.env_mut().insert_sym(k, v);
             }
         }

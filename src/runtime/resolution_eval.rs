@@ -1114,7 +1114,7 @@ impl Interpreter {
             self.upvalues = saved_upvalues;
             result
         } else {
-            self.call_sub_value(code.clone(), Vec::new(), true)
+            self.call_sub_value(code.clone(), Vec::new())
         }
     }
 

@@ -87,7 +87,7 @@ impl Interpreter {
         self.threads
             .lock_async_recursion
             .retain(|id| *id != lock_id);
-        let result = self.call_sub_value(code_val, vec![], false);
+        let result = self.call_sub_value(code_val, vec![]);
         self.threads.lock_async_recursion = saved;
         result
     }
@@ -105,7 +105,7 @@ impl Interpreter {
         crate::runtime::native_methods::acquire_lock(&lock, me)?;
         self.enter_critical_section();
         self.threads.lock_async_recursion.push(lock_id);
-        let result = self.call_sub_value(code_val.clone(), vec![], false);
+        let result = self.call_sub_value(code_val.clone(), vec![]);
         self.threads.lock_async_recursion.pop();
         self.leave_critical_section();
         let _ = crate::runtime::native_methods::release_lock(&lock, me);

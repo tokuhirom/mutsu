@@ -193,7 +193,7 @@ impl Interpreter {
         // Resolve by-block arity before borrowing self mutably for the closure.
         let by_arity = by.as_ref().map(|b| self.extrema_callable_arity(b));
         Self::minmax_from_values_generic(&positional, by.as_ref(), by_arity, |c, a| {
-            self.call_sub_value(c.clone(), a, true)
+            self.call_sub_value(c.clone(), a)
         })
     }
 

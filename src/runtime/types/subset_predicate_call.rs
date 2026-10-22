@@ -19,7 +19,7 @@ impl Interpreter {
         let called = if compiled {
             self.vm_call_on_value(callable, vec![arg], None)
         } else {
-            self.call_sub_value(callable, vec![arg], false)
+            self.call_sub_value(callable, vec![arg])
         };
         match called {
             Ok(v) => {

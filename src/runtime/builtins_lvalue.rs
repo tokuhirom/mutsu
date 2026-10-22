@@ -33,7 +33,7 @@ impl Interpreter {
             // FETCH receives the Proxy as its `.VAR`, as `auto_fetch_proxy`
             // hands it over.
             let invocant = Value::proxy_parts(fetcher.clone(), storer, subclass, true);
-            return self.call_sub_value(fetcher, vec![invocant], true);
+            return self.call_sub_value(fetcher, vec![invocant]);
         }
         Ok(result)
     }
@@ -445,11 +445,11 @@ impl Interpreter {
         let Some(fetcher) = self.store_proxy_lvalue(&proxy, value)? else {
             return Ok(Value::NIL);
         };
-        let fetched = self.call_sub_value(fetcher.clone(), vec![proxy], true);
+        let fetched = self.call_sub_value(fetcher.clone(), vec![proxy]);
         match fetched {
             Ok(value) => Ok(value),
             Err(err) if err.message.contains("Too many positionals") => {
-                let value = self.call_sub_value(fetcher, Vec::new(), true)?;
+                let value = self.call_sub_value(fetcher, Vec::new())?;
                 Ok(value)
             }
             Err(err) => Err(err),
@@ -486,10 +486,10 @@ impl Interpreter {
                 .collect(),
         );
         let store_result =
-            self.call_sub_value(storer.clone(), vec![proxy.clone(), value.clone()], true);
+            self.call_sub_value(storer.clone(), vec![proxy.clone(), value.clone()]);
         if let Err(err) = store_result {
             if err.message.contains("Too many positionals") {
-                self.call_sub_value(storer.clone(), vec![value], true)?;
+                self.call_sub_value(storer.clone(), vec![value])?;
             } else {
                 return Err(err);
             }
@@ -706,7 +706,7 @@ impl Interpreter {
             let was_lvalue = self.in_lvalue_assignment;
             self.in_lvalue_assignment = true;
             self.lexicals.readonly_rw_tail = None;
-            let result = self.call_sub_value(callable, call_args, false);
+            let result = self.call_sub_value(callable, call_args);
             self.in_lvalue_assignment = was_lvalue;
             return self.assign_through_rw_result(result?, value);
         }
@@ -767,7 +767,7 @@ impl Interpreter {
                 let was_lvalue = self.in_lvalue_assignment;
                 self.in_lvalue_assignment = true;
                 self.lexicals.readonly_rw_tail = None;
-                let result = self.call_sub_value(Value::sub_value(data), call_args, true);
+                let result = self.call_sub_value(Value::sub_value(data), call_args);
                 self.in_lvalue_assignment = was_lvalue;
                 let result = result?;
                 if rw_capable {

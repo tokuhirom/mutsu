@@ -281,7 +281,7 @@ impl Interpreter {
                 let mut best_key: Option<Value> = None;
                 for value in values {
                     let key = if let Some(ref map_fn) = mapper {
-                        self.call_supply_callback(map_fn.clone(), vec![value.clone()], true)?
+                        self.call_supply_callback(map_fn.clone(), vec![value.clone()])?
                     } else {
                         value.clone()
                     };
@@ -452,13 +452,13 @@ impl Interpreter {
                 let mut result = Vec::new();
                 for val in &values {
                     let key = if let Some(ref f) = as_fn {
-                        self.call_supply_callback(f.clone(), vec![val.clone()], true)?
+                        self.call_supply_callback(f.clone(), vec![val.clone()])?
                     } else {
                         val.clone()
                     };
                     let found = seen_keys.iter().any(|s| {
                         if let Some(ref f) = with_fn {
-                            self.call_supply_callback(f.clone(), vec![s.clone(), key.clone()], true)
+                            self.call_supply_callback(f.clone(), vec![s.clone(), key.clone()])
                                 .map(|v| v.truthy())
                                 .unwrap_or(false)
                         } else {
@@ -779,9 +779,7 @@ impl Interpreter {
                         }
                         match self.call_supply_callback(
                             comp.clone(),
-                            vec![a.clone(), b.clone()],
-                            false,
-                        ) {
+                            vec![a.clone(), b.clone()]) {
                             Ok(result) => {
                                 // Handle Order enum (Less=-1, Same=0, More=1)
                                 let n = match result.view() {
@@ -896,9 +894,7 @@ impl Interpreter {
                             let total = source_values.len() as i64;
                             let result = self.call_sub_value(
                                 args.first().unwrap().clone(),
-                                vec![Value::int(total)],
-                                true,
-                            )?;
+                                vec![Value::int(total)])?;
                             let n = result.to_f64() as i64;
                             if n < 0 { 0 } else { n as usize }
                         }
@@ -1064,9 +1060,7 @@ impl Interpreter {
                     for val in source_values.iter().skip(1) {
                         acc = self.call_supply_callback(
                             reducer.clone(),
-                            vec![acc, val.clone()],
-                            false,
-                        )?;
+                            vec![acc, val.clone()])?;
                         produced.push(acc.clone());
                     }
                 }
@@ -1310,7 +1304,7 @@ impl Interpreter {
                 let mut cur_max_key: Option<Value> = None;
                 for val in source_values {
                     let key = if let Some(ref func) = mapper {
-                        self.call_supply_callback(func.clone(), vec![val.clone()], true)?
+                        self.call_supply_callback(func.clone(), vec![val.clone()])?
                     } else {
                         val.clone()
                     };
@@ -1608,7 +1602,7 @@ impl Interpreter {
                             tuple.push(other[i].clone());
                         }
                         if let Some(ref wf) = with_fn {
-                            let combined = self.call_supply_callback(wf.clone(), tuple, false)?;
+                            let combined = self.call_supply_callback(wf.clone(), tuple)?;
                             zipped.push(combined);
                         } else {
                             zipped.push(Value::array(tuple));
@@ -1642,7 +1636,7 @@ impl Interpreter {
                 let source_values = self.supply_get_values(attributes)?;
                 let mut results = Vec::new();
                 for val in source_values {
-                    let result = self.call_supply_callback(block.clone(), vec![val], true)?;
+                    let result = self.call_supply_callback(block.clone(), vec![val])?;
                     let mut inner_attrs = HashMap::new();
                     inner_attrs.insert("values".to_string(), Value::array(vec![result]));
                     inner_attrs.insert("taps".to_string(), Value::array(Vec::new()));

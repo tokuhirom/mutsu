@@ -233,7 +233,7 @@ impl Interpreter {
                 Ok(acc)
             }
             RowCombine::With { func, fold: true } => self.zip_with_combine_row(func, row),
-            RowCombine::With { func, fold: false } => self.call_sub_value(func.clone(), row, false),
+            RowCombine::With { func, fold: false } => self.call_sub_value(func.clone(), row),
         }
     }
 

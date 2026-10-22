@@ -60,7 +60,7 @@ impl Interpreter {
         let mut unique_items: Vec<Value> = Vec::new();
         for item in values {
             let key = if let Some(ref func) = as_fn {
-                self.call_supply_callback(func.clone(), vec![item.clone()], true)?
+                self.call_supply_callback(func.clone(), vec![item.clone()])?
             } else {
                 item.clone()
             };
@@ -68,7 +68,7 @@ impl Interpreter {
             let mut duplicate = false;
             for seen in &seen_keys {
                 let is_same = if let Some(ref func) = with_fn {
-                    self.call_supply_callback(func.clone(), vec![seen.clone(), key.clone()], true)?
+                    self.call_supply_callback(func.clone(), vec![seen.clone(), key.clone()])?
                         .truthy()
                 } else {
                     values_identical(seen, &key)
@@ -195,7 +195,7 @@ impl Interpreter {
             }
             _ => {
                 // Assume callable (Sub, block, etc.)
-                self.call_supply_callback(mapper.clone(), vec![value.clone()], true)
+                self.call_supply_callback(mapper.clone(), vec![value.clone()])
             }
         }
     }
@@ -283,7 +283,7 @@ impl Interpreter {
             match action {
                 SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
                     Self::sleep_for_supply_delay(delay_seconds);
-                    let _ = self.call_supply_callback(tap, vec![emitted], true);
+                    let _ = self.call_supply_callback(tap, vec![emitted]);
                 }
                 SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
                     let deferred_promises = supplier_done_deferred(sid2);

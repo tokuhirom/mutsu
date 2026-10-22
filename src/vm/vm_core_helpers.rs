@@ -43,9 +43,8 @@ impl Interpreter {
         &mut self,
         func: Value,
         args: Vec<Value>,
-        merge_all: bool,
     ) -> Result<Value, RuntimeError> {
-        self.loan_env_for(|i| i.call_sub_value(func, args, merge_all))
+        self.loan_env_for(|i| i.call_sub_value(func, args))
     }
 
     #[inline]

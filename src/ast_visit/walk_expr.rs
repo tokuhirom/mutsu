@@ -356,7 +356,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
                 v.visit_expr(value);
             }
         }
-        Expr::IndirectCodeLookup { package, name } => {
+        Expr::IndirectCodeLookup { package, name, .. } => {
             v.visit_expr(package);
             v.visit_name(name, NameKind::Symbolic);
         }

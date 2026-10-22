@@ -340,7 +340,7 @@ impl Interpreter {
         let result = match active {
             Some(r) => r,
             None => {
-                let r = self.call_sub_value(thunk.clone(), Vec::new(), false).ok()?;
+                let r = self.call_sub_value(thunk.clone(), Vec::new()).ok()?;
                 Value::str(r.to_string_value())
             }
         };

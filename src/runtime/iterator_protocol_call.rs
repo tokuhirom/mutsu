@@ -163,7 +163,7 @@ impl crate::Interpreter {
     // Cost: O(d), d = duplicates skipped, each one or two callback calls.
     fn squish_pull_one(&mut self, scan: &mut SquishScan) -> Result<Value, RuntimeError> {
         let key_of = |this: &mut Self, item: &Value| match scan.as_func.clone() {
-            Some(func) => this.call_sub_value(func, vec![item.clone()], true),
+            Some(func) => this.call_sub_value(func, vec![item.clone()]),
             None => Ok(item.clone()),
         };
         if !scan.initialized {
@@ -180,7 +180,7 @@ impl crate::Interpreter {
             let key = key_of(self, &item)?;
             let duplicate = match scan.with_func.clone() {
                 Some(func) => self
-                    .call_sub_value(func, vec![scan.prev_key.clone(), key.clone()], true)?
+                    .call_sub_value(func, vec![scan.prev_key.clone(), key.clone()])?
                     .truthy(),
                 None => crate::runtime::values_identical(&scan.prev_key, &key),
             };
