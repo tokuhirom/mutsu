@@ -135,6 +135,9 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         };
         return Ok(Expr::HeredocInterpolation(content.to_string(), true));
     }
+    if let Some(literal) = super::nf_quote::lower(node) {
+        return literal;
+    }
     if node
         .fields
         .iter()

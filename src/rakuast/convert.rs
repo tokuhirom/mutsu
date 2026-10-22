@@ -6960,6 +6960,8 @@ pub(super) fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
             class: RakuAstClass::ComplexLiteral,
             fields: vec![leaf_field(None, v.clone())],
         }),
+        // `q:nfc'…'` and its siblings: see `nf_quote`.
+        ValueView::Uni(uni) => super::nf_quote::convert(uni),
         // `v6.d`, `v1.2.3+`.
         ValueView::Version { .. } => Ok(RakuAstNode {
             class: RakuAstClass::VersionLiteral,
