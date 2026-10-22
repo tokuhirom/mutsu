@@ -5119,6 +5119,7 @@ t/rakuast/rakuast-bareword-scope-shadowing.t
 t/rakuast/rakuast-bind-declaration.t
 t/rakuast/rakuast-bind-where.t
 t/rakuast/rakuast-blocks.t
+t/rakuast/rakuast-call-assign-declaration-list.t
 t/rakuast/rakuast-call-assign-initializer.t
 t/rakuast/rakuast-call-lvalue-assign.t
 t/rakuast/rakuast-callable-and-slurpy-signatures.t

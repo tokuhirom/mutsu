@@ -705,6 +705,14 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             let (decl, role, init) = crate::ast::var_does::recognize(stmt).expect("just checked");
             does_declaration(decl, role, init)
         }
+        // `my Int $c .= new(), 5`: a `.=` declaration with sunk list items.
+        Stmt::SyntheticBlock(_)
+            if super::decl_tail::convert_call_assign_list(stmt)
+                .is_some_and(|node| node.is_ok()) =>
+        {
+            let node = super::decl_tail::convert_call_assign_list(stmt).expect("just checked");
+            Ok(Some(statement_expression(node?)))
+        }
         // `my $x = 1 and 2` / `my $x = 1, 2, 3`: the declaration and the tail the
         // parser re-attaches to it are one expression.
         Stmt::SyntheticBlock(_) if crate::ast::decl_tail::recognize(stmt).is_some() => {
