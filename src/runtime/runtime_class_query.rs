@@ -410,6 +410,10 @@ impl Interpreter {
         for (k, v) in self.class_body_static_meta_lanes(class_name) {
             self.env.insert(k, v);
         }
+        for lane in self.class_body_static_stale_lanes(class_name) {
+            // Not removed: an enclosing frame's entry would show through.
+            self.env.insert_sym(lane, Value::NIL);
+        }
     }
 
     /// The env metadata lanes of `class_name`'s `@`/`%` statics recorded when
@@ -429,6 +433,35 @@ impl Interpreter {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// The env metadata lanes of `class_name`'s `@`/`%` statics that carry NO
+    /// recorded declaration (an untyped `my %seen`, or `{Any}`): a lane of the
+    /// same name in the calling frame belongs to another package's variable,
+    /// and must not answer for these.
+    // Cost: O(s), s = statics of `class_name`.
+    fn class_body_static_stale_lanes(&self, class_name: &str) -> Vec<Symbol> {
+        let Some(statics) = self.lexicals.package_lexicals.get(class_name) else {
+            return Vec::new();
+        };
+        let recorded = self.lexicals.class_body_static_types.get(class_name);
+        let mut stale = Vec::new();
+        for k in statics.keys() {
+            if !k.starts_with(['@', '%']) {
+                continue;
+            }
+            let sym = Symbol::intern(k);
+            let mut lanes = vec![Self::type_meta_key_for_sym(sym)];
+            if k.starts_with('%') {
+                lanes.push(Self::hash_key_meta_key_for_sym(sym));
+            }
+            for lane in lanes {
+                if !recorded.is_some_and(|types| types.contains_key(lane.as_str())) {
+                    stale.push(lane);
+                }
+            }
+        }
+        stale
     }
 
     /// [`Self::inject_class_body_statics`], recording each injected name's
@@ -456,6 +489,10 @@ impl Interpreter {
         for (k, v) in self.class_body_static_meta_lanes(class_name) {
             saved.push((k.clone(), self.env.get(&k).cloned()));
             self.env.insert(k, v);
+        }
+        for lane in self.class_body_static_stale_lanes(class_name) {
+            saved.push((lane.resolve(), self.env.get_sym(lane).cloned()));
+            self.env.insert_sym(lane, Value::NIL);
         }
     }
 

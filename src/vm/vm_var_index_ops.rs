@@ -1269,6 +1269,25 @@ impl Interpreter {
         let index = if let ValueView::LazyList(ll) = index.view() {
             let within = match target.view() {
                 ValueView::Array(items, _) => self.lazy_index_prefix_within(&ll, items.len()),
+                // An `is Array` subclass instance reads the same way: its
+                // elements are its backing storage's (`$a[1, 3 ... *]`).
+                ValueView::Instance { attributes, .. } => attributes
+                    .as_map()
+                    .get("__mutsu_array_storage")
+                    .and_then(|storage| match storage.view() {
+                        ValueView::Array(items, _) => Some(items.len()),
+                        _ => None,
+                    })
+                    .and_then(|len| self.lazy_index_prefix_within(&ll, len))
+                    // The prefix ends with the first index past the end, which
+                    // the Array slice loop stops at and an instance's per-index
+                    // read would answer `Any` for.
+                    .map(|prefix| {
+                        prefix.map(|mut indices| {
+                            indices.pop();
+                            indices
+                        })
+                    }),
                 _ => None,
             };
             let items = match within {

@@ -122,9 +122,42 @@ fn associative_store(
         [to_store] => to_store.clone(),
         _ => return None,
     };
+    // A typed hash (`Hash[Int]`, `my Int %h`) checks each stored value against
+    // its element type before the node is replaced, so a refused store leaves
+    // the hash as it was.
+    let values = stored_hash_values(&to_store);
+    if let Err(err) = interp.check_array_value_element_types(&target, &values) {
+        return Some(Err(err));
+    }
     if let Err(err) = interp.store_into_hash(&gc, &to_store) {
         return Some(Err(err));
     }
     place.reseat(interp);
     Some(Ok(target.deitemize_for_sigil_bind()))
+}
+
+/// The values `Hash.STORE` is about to file under keys. Like Rakudo's
+/// `Hash.STORE`, each item is taken on its own: a `Pair` stores its value, a
+/// `Hash` its values, and any other item is a key whose value is the item that
+/// follows it.
+// Cost: O(n), n = items in `to_store`.
+fn stored_hash_values(to_store: &Value) -> Vec<Value> {
+    let items = crate::runtime::utils::value_to_list(to_store);
+    let mut values = Vec::with_capacity(items.len());
+    let mut iter = items.iter();
+    while let Some(item) = iter.next() {
+        match item.view() {
+            ValueView::Pair(_, value) | ValueView::ValuePair(_, value) => {
+                values.push(value.clone())
+            }
+            ValueView::Hash(map) => values.extend(map.values().cloned()),
+            // A bare key: its value is the next item.
+            _ => {
+                if let Some(value) = iter.next() {
+                    values.push(value.clone());
+                }
+            }
+        }
+    }
+    values
 }

@@ -174,6 +174,45 @@ impl Interpreter {
             }
             package_lexicals.push((bare, v.clone()));
         }
+        // The declared element and key types of the block's `@`/`%` lexicals
+        // live in env lanes (`__mutsu_type::%seen`,
+        // `__mutsu_hash_key_type::%seen`) under names every package block
+        // shares: left in the enclosing env, the next block declaring a
+        // same-named typed hash overwrote them, and this block's routines then
+        // checked their stores against the other's types (#12907, PDF's
+        // `my %seen{Any}` next to `my %seen{Hash}`). Record them per package,
+        // for the routines' entry to put back (`inject_class_body_statics`),
+        // and keep them out of the enclosing env.
+        let mut lane_keys: Vec<Symbol> = Vec::new();
+        for (bare, _) in &package_lexicals {
+            if bare.starts_with(['@', '%']) {
+                // The block's subs enter with its `@`/`%` lexicals injected
+                // (and the caller's same-named lanes cleared), as a class's
+                // methods do with its statics.
+                crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_names)
+                    .entry(name.clone())
+                    .or_default()
+                    .insert(bare.clone());
+                let sym = Symbol::intern(bare);
+                lane_keys.push(Self::type_meta_key_for_sym(sym));
+                if bare.starts_with('%') {
+                    lane_keys.push(Self::hash_key_meta_key_for_sym(sym));
+                }
+            }
+        }
+        if !lane_keys.is_empty() {
+            for (k, v) in writes.iter() {
+                if lane_keys.contains(k)
+                    && let ValueView::Str(tc) = v.view()
+                {
+                    crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_types)
+                        .entry(name.clone())
+                        .or_default()
+                        .insert(k.resolve(), tc.as_str().to_owned());
+                }
+            }
+            write_back.retain(|(k, _)| !lane_keys.contains(k));
+        }
         drop(writes);
         if !package_lexicals.is_empty() {
             let store = self.package_lexicals_cow_mut().entry(name).or_default();
