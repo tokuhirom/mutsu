@@ -17,7 +17,90 @@ use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::{Value, VarRefDeclared};
 
+/// The slot an element / compound / push-family store holds for its target,
+/// when the running code declares that variable (`BindingDesc::declared_here`).
+/// `None` for a target the code does not declare (a free variable, an `EVAL`'d
+/// or symbolic name, a global): those ask the by-name record.
+pub(crate) type StoreDecl<'a> = Option<(&'a CompiledCode, usize)>;
+
 impl Interpreter {
+    /// The slot a named element store targets, when it is one the running
+    /// code declares: the compiler-baked `target_slot` (resolved at emit time
+    /// from `local_map`), valid only when no sigilless alias redirected the
+    /// store to another variable.
+    // Cost: O(1).
+    pub(super) fn store_decl<'a>(
+        &self,
+        code: &'a CompiledCode,
+        target_slot: Option<u32>,
+        aliased: bool,
+    ) -> StoreDecl<'a> {
+        let idx = target_slot? as usize;
+        (!aliased && idx < self.locals.len() && code.declares_slot(idx)).then_some((code, idx))
+    }
+
+    /// The value constraint a store into `name` checks against: the declaring
+    /// slot's record when the store holds one, else the by-name record.
+    // Cost: O(1) for a held slot declared untyped; else the record probe,
+    // O(d), d = the running frame's tiers (held slot) or the env tiers walked.
+    pub(crate) fn decl_type_constraint(&self, decl: StoreDecl<'_>, name: &str) -> Option<String> {
+        let Some((code, idx)) = decl else {
+            return self.var_type_constraint(name);
+        };
+        if code.declared_constraint(idx) == DeclaredConstraint::Untyped {
+            return None;
+        }
+        match self
+            .own_var_type_constraint_value_sym(Symbol::intern(name))?
+            .view()
+        {
+            crate::value::ValueView::Str(tc) => Some(tc.as_str().to_owned()),
+            _ => None,
+        }
+    }
+
+    /// [`Self::element_constraint_for`] with the by-name fallback replaced by
+    /// the declaring slot's record when the store holds one.
+    // Cost: O(1) metadata read; else `decl_type_constraint`'s.
+    pub(crate) fn element_constraint_for_decl(
+        &self,
+        decl: StoreDecl<'_>,
+        var_name: &str,
+        value: &Value,
+    ) -> Option<String> {
+        if let Some(info) = self.container_type_metadata(value) {
+            return (!info.value_type.is_empty()).then_some(info.value_type);
+        }
+        self.decl_type_constraint(decl, var_name)
+    }
+
+    /// Whether a store into the variable `name_sym` has a value constraint,
+    /// slot-first as [`Self::decl_type_constraint`] without building the text.
+    // Cost: as `decl_type_constraint`, without the copy.
+    pub(crate) fn decl_has_type_constraint(&self, decl: StoreDecl<'_>, name_sym: Symbol) -> bool {
+        match decl {
+            Some((code, idx)) => {
+                code.declared_constraint(idx) != DeclaredConstraint::Untyped
+                    && self.own_var_type_constraint_value_sym(name_sym).is_some()
+            }
+            None => self.var_type_constraint_sym(name_sym).is_some(),
+        }
+    }
+
+    /// The object-hash key constraint of `name`, slot-first as
+    /// [`Self::decl_type_constraint`].
+    // Cost: O(1) expected for a held slot; else `var_hash_key_constraint`'s probe.
+    pub(crate) fn decl_hash_key_constraint(
+        &self,
+        decl: StoreDecl<'_>,
+        name: &str,
+    ) -> Option<String> {
+        match decl {
+            Some(_) => self.own_var_hash_key_constraint_sym(Symbol::intern(name)),
+            None => self.var_hash_key_constraint(name),
+        }
+    }
+
     /// The constraint a store into `code`'s slot `idx` (named `name`)
     /// checks against.
     // Cost: O(1) for a slot the code declares untyped; else

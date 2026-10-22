@@ -26,7 +26,12 @@ impl Interpreter {
     /// the target name is typed does this fall through to
     /// `typed_container_default`'s own generic real-Array/Hash default
     /// (`Any`).
-    pub(crate) fn assign_store_nil_default(&mut self, name: &str, container: &Value) -> Value {
+    pub(crate) fn assign_store_nil_default(
+        &mut self,
+        decl: StoreDecl<'_>,
+        name: &str,
+        container: &Value,
+    ) -> Value {
         if let Some(def) = self.container_default(container) {
             return def;
         }
@@ -43,7 +48,7 @@ impl Interpreter {
         if let Some(def) = self.var_default(name) {
             return def.clone();
         }
-        if let Some(constraint) = loan_env!(self, var_type_constraint(name)) {
+        if let Some(constraint) = self.decl_type_constraint(decl, name) {
             if let Some(def) = super::vm_var_ops::native_element_default(&constraint) {
                 return def;
             }
@@ -176,7 +181,7 @@ impl Interpreter {
         if !has_nil_elements {
             return value;
         }
-        let default = self.assign_store_nil_default(name, &value);
+        let default = self.assign_store_nil_default(None, name, &value);
         let ValueView::Array(items, kind) = value.view() else {
             unreachable!("has_nil_elements only true for ValueView::Array");
         };

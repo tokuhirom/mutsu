@@ -6128,6 +6128,7 @@ impl Interpreter {
                 name_idx,
                 outer_positional,
                 inner_positional,
+                target_slot,
             } => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
                 self.with_package_lexical_seeded(code, *name_idx, |vm| {
@@ -6136,6 +6137,7 @@ impl Interpreter {
                         *name_idx,
                         *outer_positional,
                         *inner_positional,
+                        *target_slot,
                     )
                 })?;
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
@@ -6146,6 +6148,7 @@ impl Interpreter {
                 name_idx,
                 depth,
                 positional_flags_idx,
+                target_slot,
             } => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
                 self.with_package_lexical_seeded(code, *name_idx, |vm| {
@@ -6154,6 +6157,7 @@ impl Interpreter {
                         *name_idx,
                         *depth,
                         *positional_flags_idx,
+                        *target_slot,
                     )
                 })?;
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);

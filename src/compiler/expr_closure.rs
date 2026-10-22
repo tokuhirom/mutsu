@@ -987,11 +987,13 @@ impl Compiler {
             for (idx_expr, _) in chain.iter().rev() {
                 self.compile_expr(idx_expr);
             }
+            let target_slot = self.local_map.get(&name).copied();
             let name_idx = self.code.add_constant(Value::str(name));
             self.code.emit(OpCode::IndexAssignDeepNested {
                 name_idx,
                 depth,
                 positional_flags_idx,
+                target_slot,
             });
         } else if let Some((name, inner_index, inner_positional)) =
             self.index_assign_nested_target(target)
@@ -1002,11 +1004,13 @@ impl Compiler {
             self.compile_bind_index_value(value);
             self.compile_expr(index);
             self.compile_expr(inner_index);
+            let target_slot = self.local_map.get(&name).copied();
             let name_idx = self.code.add_constant(Value::str(name));
             self.code.emit(OpCode::IndexAssignExprNested {
                 name_idx,
                 outer_positional,
                 inner_positional,
+                target_slot,
             });
         } else if let Expr::MethodCall {
             target: method_target,

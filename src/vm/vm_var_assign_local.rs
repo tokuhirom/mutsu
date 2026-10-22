@@ -696,8 +696,13 @@ impl Interpreter {
     /// Wrap `val` for storage into the native-integer array named by `var_name`
     /// (e.g. `-1` -> `255` for a `uint8` array). Returns the value unchanged when
     /// the variable is not a native integer array or wrapping does not apply.
-    pub(crate) fn wrap_native_int_for_var(&mut self, var_name: &str, val: Value) -> Value {
-        if let Some(constraint) = loan_env!(self, var_type_constraint(var_name))
+    pub(crate) fn wrap_native_int_for_var(
+        &mut self,
+        decl: StoreDecl<'_>,
+        var_name: &str,
+        val: Value,
+    ) -> Value {
+        if let Some(constraint) = self.decl_type_constraint(decl, var_name)
             && (crate::runtime::native_types::is_native_int_type(&constraint)
                 || constraint == "num32")
         {

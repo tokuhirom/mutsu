@@ -520,7 +520,7 @@ impl Interpreter {
                 // reported the array as `uint8`. Same fix as the sibling
                 // element-assignment/`:delete` handlers (`seed_env_from_scalar_slot`).
                 self.seed_env_from_scalar_slot(code, None, target_name);
-                self.wrap_native_int_items(target_name, args)
+                self.wrap_native_int_items(None, target_name, args)
             } else {
                 args
             };

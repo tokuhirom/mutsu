@@ -459,6 +459,10 @@ impl Interpreter {
         // The baked slot is for `original_var_name` (the pre-alias target name), so
         // the sigilless-alias write-back below uses it directly — also gated OFF.
         let orig_slot = if shadow_active { target_slot } else { None };
+        // The slot this store holds when the running code declares the target
+        // (ADR-13757): its constraint comes from that slot's record, never
+        // from a by-name walk. An aliased or undeclared target asks by name.
+        let decl = self.store_decl(code, target_slot, sigilless_alias_target.is_some());
         // (B) per-store env-write: a scalar-held container
         // (`my $b = "hi".encode; $b[0] = 200`, `my $m = %h.Map; $m<c> = 9`) skips
         // its env mirror, so the env reads throughout this env-centric handler
@@ -469,7 +473,7 @@ impl Interpreter {
         // Pre-compute fill value for native typed arrays (e.g. int->0, num->0e0, str->"")
         // Must be done before mutable borrows to avoid borrow conflicts.
         let native_fill = {
-            let tc = loan_env!(self, var_type_constraint(&var_name));
+            let tc = self.decl_type_constraint(decl, &var_name);
             Self::native_fill_for_constraint(tc.as_deref())
         };
         // Capture the old Arc pointer before any mutation so the post-mutation
@@ -945,7 +949,7 @@ impl Interpreter {
         // indices expanded to an explicit index list so the slice-assign path
         // distributes each value to a single element (rather than checking the
         // whole RHS list against the scalar element type).
-        let vtc_native = loan_env!(self, var_type_constraint(&var_name))
+        let vtc_native = self.decl_type_constraint(decl, &var_name)
             .as_deref()
             .is_some_and(crate::runtime::native_types::is_native_array_element_type);
         // Read through a container cell: passing `@b` to a *scalar* parameter
@@ -1138,7 +1142,7 @@ impl Interpreter {
                     Value::hash(ValueMap::default())
                 }
             });
-            self.assign_store_nil_default(&var_name, &container)
+            self.assign_store_nil_default(decl, &var_name, &container)
         } else {
             val
         };
@@ -1432,7 +1436,7 @@ impl Interpreter {
                     Some(ValueView::Package(_))
                 );
             if is_undefined {
-                let constraint_owned = loan_env!(self, var_type_constraint(&var_name));
+                let constraint_owned = self.decl_type_constraint(decl, &var_name);
                 let type_name_check = declared_type.as_deref().or(constraint_owned.as_deref());
                 if type_name_check.is_some_and(|t| matches!(t, "Mix" | "Set" | "Bag")) {
                     let type_name = type_name_check.unwrap_or("Mix");
@@ -1702,7 +1706,7 @@ impl Interpreter {
         // their elements: `my num @a; @a[0] := $x` is illegal.
         if bind_mode
             && var_name.starts_with('@')
-            && let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
+            && let Some(constraint) = self.decl_type_constraint(decl, &var_name)
             && crate::runtime::native_types::is_native_array_element_type(&constraint)
         {
             return Err(RuntimeError::new(format!(
@@ -1914,7 +1918,7 @@ impl Interpreter {
                     vals.into_iter()
                         .map(|v| {
                             if v.is_nil() {
-                                self.assign_store_nil_default(&var_name, &container)
+                                self.assign_store_nil_default(decl, &var_name, &container)
                             } else {
                                 v
                             }
@@ -1926,11 +1930,11 @@ impl Interpreter {
                 // The value the slots past the end of the RHS get -- see
                 // `slice_pad_value`. Computed once here, before the `&mut
                 // self.env` borrows below.
-                let pad = self.slice_pad_value(&var_name);
+                let pad = self.slice_pad_value(decl, &var_name);
                 // Per-element type check for slice assignment to a typed array,
                 // e.g. `my Array @x; @x[0,2] = 2, 3` must reject each Int element.
                 if var_name.starts_with('@')
-                    && let Some(constraint) = self.element_store_constraint(&var_name)
+                    && let Some(constraint) = self.element_store_constraint(decl, &var_name)
                 {
                     for v in &vals {
                         if !v.is_nil() && !self.type_matches_value(&constraint, v) {
@@ -2230,14 +2234,14 @@ impl Interpreter {
                 // container (`my MixHash $m; $m{@keys} = ...`), so only a
                 // parameterised one says what its elements must be -- the same
                 // reduction the single-element store path applies.
-                let slice_constraint = match self.element_store_constraint(&var_name) {
+                let slice_constraint = match self.element_store_constraint(decl, &var_name) {
                     Some(c) if !var_name.starts_with('@') && !var_name.starts_with('%') => {
                         self.scalar_container_element_constraint(&c)
                     }
                     other => other,
                 };
                 let slice_constraint = slice_constraint.filter(|c| !self.is_container_subclass(c));
-                let key_constraint = loan_env!(self, var_hash_key_constraint(&var_name));
+                let key_constraint = self.decl_hash_key_constraint(decl, &var_name);
                 // A slice invokes the key parameter before storing each value.
                 // Validate in that order so a later bad key does not hide an
                 // earlier value failure, or vice versa.
@@ -2281,7 +2285,7 @@ impl Interpreter {
                 }
                 let mut celled_inner = celled_hash.as_ref().map(|cell| cell.load());
                 let slice_is_object_hash =
-                    loan_env!(self, var_hash_key_constraint(&var_name)).is_some();
+                    self.decl_hash_key_constraint(decl, &var_name).is_some();
                 // Phase 2 Stage 2 (hash slice bind): pre-read each bind source
                 // before the mutable container borrow, reusing an existing
                 // `ContainerRef` cell binding or creating a fresh cell to
@@ -2389,7 +2393,7 @@ impl Interpreter {
             _ => {
                 // For object hashes, use .WHICH as the internal key.
                 let key_constraint = if var_name.starts_with('%') {
-                    loan_env!(self, var_hash_key_constraint(&var_name))
+                    self.decl_hash_key_constraint(decl, &var_name)
                 } else {
                     None
                 };
@@ -2451,7 +2455,7 @@ impl Interpreter {
                             sym.resolve().as_str(),
                             "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
                         )
-                ) || loan_env!(self, var_type_constraint(&var_name))
+                ) || self.decl_type_constraint(decl, &var_name)
                     .as_deref()
                     .is_some_and(|c| {
                         matches!(c, "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash")
@@ -2468,7 +2472,7 @@ impl Interpreter {
                 } else {
                     idx.to_string_value()
                 };
-                let array_elem_constraint = self.element_store_constraint(&var_name);
+                let array_elem_constraint = self.element_store_constraint(decl, &var_name);
                 // For a `$`-sigil variable a CONTAINER type describes the whole
                 // container, not its elements — but a PARAMETERISED one says
                 // exactly what its elements must be, and Rakudo checks each
@@ -2555,7 +2559,7 @@ impl Interpreter {
                 // native scalar; itemize_value_for_element_store only touches
                 // Array/Hash/Seq/Mixin).
                 let native_store_val = Self::itemize_value_for_element_store(
-                    self.wrap_native_int_for_var(&var_name, val.clone()),
+                    self.wrap_native_int_for_var(decl, &var_name, val.clone()),
                 );
                 // Resolve GenericRange with WhateverCode endpoints (e.g. @a[*-4 .. *-1] = ...)
                 let resolved_idx;
@@ -2582,7 +2586,7 @@ impl Interpreter {
                 // e.g. `my Array @x; @x[0,2] = 2, 3` must reject each Int element.
                 if let Some((_, ref rhs_values)) = range_slice
                     && (var_name.starts_with('@') || var_name.starts_with('%'))
-                    && let Some(constraint) = self.element_store_constraint(&var_name)
+                    && let Some(constraint) = self.element_store_constraint(decl, &var_name)
                 {
                     for v in rhs_values {
                         if !v.is_nil() && !self.type_matches_value(&constraint, v) {
@@ -2791,7 +2795,7 @@ impl Interpreter {
                 // Autovivify Nil-valued typed containers (MixHash, BagHash, SetHash)
                 // before the main container dispatch so they are handled correctly.
                 {
-                    let constraint = loan_env!(self, var_type_constraint(&var_name));
+                    let constraint = self.decl_type_constraint(decl, &var_name);
                     let effective_type = declared_type.as_deref().or(constraint.as_deref());
                     if let Some(type_name) = effective_type
                         && matches!(type_name, "MixHash" | "BagHash" | "SetHash")
@@ -3559,6 +3563,7 @@ impl Interpreter {
         name_idx: u32,
         outer_positional: bool,
         inner_positional: bool,
+        target_slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         // #8069: the chained store's own fast lane, consulted before the body
         // for the same reason the two single-subscript lanes are consulted
@@ -3567,7 +3572,13 @@ impl Interpreter {
         // touches nothing unless it commits, so a decline leaves the body
         // running exactly as it did before.
         if let Some(result) =
-            self.try_fast_nested_element_assign(code, name_idx, outer_positional, inner_positional)
+            self.try_fast_nested_element_assign(
+                code,
+                name_idx,
+                outer_positional,
+                inner_positional,
+                target_slot,
+            )
         {
             return result;
         }
@@ -3576,6 +3587,7 @@ impl Interpreter {
             name_idx,
             outer_positional,
             inner_positional,
+            target_slot,
         );
         if result.is_err() {
             self.restore_nested_store_local(code, name_idx);
@@ -3608,6 +3620,7 @@ impl Interpreter {
         name_idx: u32,
         outer_positional: bool,
         inner_positional: bool,
+        target_slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         // A target variable still holding a deferred vivification token has no
         // container at either level yet; walk-create the whole chain instead of
@@ -3620,8 +3633,9 @@ impl Interpreter {
             return result;
         }
         let var_name = Self::const_str(code, name_idx).to_string();
+        let decl = self.store_decl(code, target_slot, false);
         let native_fill = {
-            let tc = loan_env!(self, var_type_constraint(&var_name));
+            let tc = self.decl_type_constraint(decl, &var_name);
             Self::native_fill_for_constraint(tc.as_deref())
         };
         let inner_idx = self.stack.pop().unwrap_or(Value::NIL);
@@ -3705,6 +3719,7 @@ impl Interpreter {
                     name_idx,
                     outer_positional,
                     inner_positional,
+                    target_slot,
                 )?;
                 self.stack.pop();
             }
@@ -3973,7 +3988,7 @@ impl Interpreter {
         // would need to create a Hash value which won't match the constraint
         // (e.g. `my Int %h; %h<z><t> = 3` should die because %h<z> can't be a Hash).
         if var_name.starts_with('%')
-            && let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
+            && let Some(constraint) = self.decl_type_constraint(decl, &var_name)
         {
             let inner_value = if outer_positional {
                 Value::real_array(Vec::new())
@@ -5051,9 +5066,15 @@ impl Interpreter {
         name_idx: u32,
         depth: u32,
         positional_flags_idx: u32,
+        target_slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        let result =
-            self.exec_index_assign_deep_nested_op_body(code, name_idx, depth, positional_flags_idx);
+        let result = self.exec_index_assign_deep_nested_op_body(
+            code,
+            name_idx,
+            depth,
+            positional_flags_idx,
+            target_slot,
+        );
         if result.is_err() {
             // See `restore_nested_store_local`.
             self.restore_nested_store_local(code, name_idx);
@@ -5067,6 +5088,7 @@ impl Interpreter {
         name_idx: u32,
         depth: u32,
         positional_flags_idx: u32,
+        target_slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         // As in the two-level op: a deferred token target has no container at
         // any level, so walk-create the whole chain from the token's path.
@@ -5085,8 +5107,9 @@ impl Interpreter {
         if let Some(err) = self.lvalue_root_temp_not_a_container(&var_name) {
             return Err(err);
         }
+        let decl = self.store_decl(code, target_slot, false);
         let native_fill = {
-            let tc = loan_env!(self, var_type_constraint(&var_name));
+            let tc = self.decl_type_constraint(decl, &var_name);
             Self::native_fill_for_constraint(tc.as_deref())
         };
         let depth = depth as usize;
@@ -5143,6 +5166,7 @@ impl Interpreter {
                     name_idx,
                     depth as u32,
                     positional_flags_idx,
+                    target_slot,
                 )?;
                 self.stack.pop();
             }

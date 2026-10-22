@@ -72,7 +72,7 @@ impl Interpreter {
                     if let Err(err) = self.check_container_element_types(name, target, &items) {
                         return Some(Err(err));
                     }
-                    let items = self.wrap_native_int_items(name, items);
+                    let items = self.wrap_native_int_items(None, name, items);
                     let front = matches!(method, "unshift" | "prepend");
                     let result = self.celled_array_extend(name, items, front)?;
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
@@ -131,7 +131,7 @@ impl Interpreter {
                 if let Err(err) = self.check_container_element_types(name, target, &items) {
                     return Some(Err(err));
                 }
-                let items = self.wrap_native_int_items(name, items);
+                let items = self.wrap_native_int_items(None, name, items);
                 let front = matches!(method, "unshift" | "prepend");
                 Some(Ok(self.shared_array_extend(name, items, front)))
             }

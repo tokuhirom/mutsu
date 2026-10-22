@@ -96,6 +96,7 @@ impl Interpreter {
         name_idx: u32,
         outer_positional: bool,
         inner_positional: bool,
+        target_slot: Option<u32>,
     ) -> Option<Result<(), RuntimeError>> {
         // The name-keyed cross-thread lanes own the store whenever a thread
         // shares this env, and this is their own gate.
@@ -186,7 +187,7 @@ impl Interpreter {
         // an autovivified intermediate container is allowed to be.
         if self.var_default(var_name).is_some()
             || self.is_readonly_sym(var_sym)
-            || self.var_type_constraint_sym(var_sym).is_some()
+            || self.decl_has_type_constraint(self.store_decl(code, target_slot, false), var_sym)
         {
             return None;
         }

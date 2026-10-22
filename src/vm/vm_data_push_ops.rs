@@ -22,7 +22,12 @@ impl Interpreter {
     /// in-range `Any` elements — see ADR-0049 §8's Row 29 follow-up note —
     /// but `.raku`/`eqv`/`.List` all read the raw stored element, so the
     /// mismatch was real and visible there).
-    fn push_nil_to_elem_default(&mut self, target_name: &str, val: Value) -> Value {
+    fn push_nil_to_elem_default(
+        &mut self,
+        decl: StoreDecl<'_>,
+        target_name: &str,
+        val: Value,
+    ) -> Value {
         let has_nil = match val.view() {
             ValueView::Slip(items) => items.iter().any(Value::is_nil),
             _ => val.is_nil(),
@@ -35,7 +40,7 @@ impl Interpreter {
             .get(target_name)
             .cloned()
             .unwrap_or_else(|| Value::real_array(Vec::new()));
-        let default = self.assign_store_nil_default(target_name, &target);
+        let default = self.assign_store_nil_default(decl, target_name, &target);
         match val.view() {
             ValueView::Slip(items) => Value::slip(
                 items
@@ -65,6 +70,7 @@ impl Interpreter {
         value_source_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let target_name = Self::const_str(code, target_name_idx);
+        let decl = self.store_decl(code, target_slot, false);
         // A variable trait replaces the declaration's plain Array with a
         // custom positional container. Its name-keyed env mirror can still
         // hold the initializer's Array while the local slot already holds
@@ -141,15 +147,15 @@ impl Interpreter {
         // interpreter fallback.
         if self.threads.shared_vars_active {
             let val = self.stack.pop().unwrap_or(Value::NIL);
-            let val = self.push_nil_to_elem_default(target_name, val);
+            let val = self.push_nil_to_elem_default(decl, target_name, val);
             // The declared element type governs this push exactly as it does the
             // single-threaded one below. `shared_vars_active` latches on for the
             // rest of the process at the first `start`, so without this a
             // `my uint32 @W` stopped truncating to 32 bits once ANY thread had
             // been spawned anywhere — and `Digest::SHA1`, whose message schedule
             // relies on that truncation, then produced a silently wrong digest.
-            self.check_push_element_type(target_name, &val)?;
-            let val = self.wrap_native_int_push_value(target_name, val);
+            self.check_push_element_type(decl, target_name, &val)?;
+            let val = self.wrap_native_int_push_value(decl, target_name, val);
             let target = dispatch_target.clone();
             // Track B/Track C: a `state @a` under an active thread context is a
             // shared `ContainerRef` cell. Push INTO the cell under its lock
@@ -248,7 +254,7 @@ impl Interpreter {
         }
         let mut val = {
             let popped = self.stack.pop().unwrap_or(Value::NIL);
-            self.push_nil_to_elem_default(target_name, popped)
+            self.push_nil_to_elem_default(decl, target_name, popped)
         };
         // A pushed element is a COPY of the value, never the container it was
         // read out of -- only a bind aliases. The pushed expression can still
@@ -328,8 +334,8 @@ impl Interpreter {
         // after the first thread spawned anywhere in the process — and since
         // `Digest::SHA1`'s message schedule relies on that truncation, a `sha1`
         // call after any `start` silently produced a WRONG digest.
-        self.check_push_element_type(target_name, &val)?;
-        let val = self.wrap_native_int_push_value(target_name, val);
+        self.check_push_element_type(decl, target_name, &val)?;
+        let val = self.wrap_native_int_push_value(decl, target_name, val);
 
         // TODO: compile to bytecode — non-simple-target push, blocked-by:
         // first-class container identity Phase 2 (closure-captured ContainerRef
@@ -464,11 +470,12 @@ impl Interpreter {
     /// the bench-CI watch.
     fn check_push_element_type(
         &mut self,
+        decl: StoreDecl<'_>,
         target_name: &str,
         val: &Value,
     ) -> Result<(), RuntimeError> {
         let target = self.env().get(target_name).cloned().unwrap_or(Value::NIL);
-        let Some(type_name) = self.element_constraint_for(target_name, &target) else {
+        let Some(type_name) = self.element_constraint_for_decl(decl, target_name, &target) else {
             return Ok(());
         };
         // Owned clone of the Slip backing (a view guard's borrow cannot
@@ -494,8 +501,13 @@ impl Interpreter {
 
     /// Wrap a pushed value (or every element of a pushed `Slip`) to the native
     /// integer width of `target_name`'s element type. A no-op for boxed arrays.
-    fn wrap_native_int_push_value(&mut self, target_name: &str, val: Value) -> Value {
-        let Some(constraint) = self.native_int_element_constraint(target_name) else {
+    fn wrap_native_int_push_value(
+        &mut self,
+        decl: StoreDecl<'_>,
+        target_name: &str,
+        val: Value,
+    ) -> Value {
+        let Some(constraint) = self.native_int_element_constraint(decl, target_name) else {
             return val;
         };
         match val.view() {
@@ -515,17 +527,26 @@ impl Interpreter {
     /// ADR-0042 slice 1: routed through `element_constraint_for` (see
     /// `check_push_element_type`), so the container's own metadata answers
     /// first.
-    pub(crate) fn native_int_element_constraint(&mut self, name: &str) -> Option<String> {
+    pub(crate) fn native_int_element_constraint(
+        &mut self,
+        decl: StoreDecl<'_>,
+        name: &str,
+    ) -> Option<String> {
         let target = self.env().get(name).cloned().unwrap_or(Value::NIL);
-        let constraint = self.element_constraint_for(name, &target)?;
+        let constraint = self.element_constraint_for_decl(decl, name, &target)?;
         (crate::runtime::native_types::is_native_int_type(&constraint) || constraint == "num32")
             .then_some(constraint)
     }
 
     /// Wrap every element of a multi-argument push/append onto a native integer
     /// array (`my uint8 @e; @e.push(1, 300, 2)` stores `1, 44, 2`).
-    pub(crate) fn wrap_native_int_items(&mut self, name: &str, items: Vec<Value>) -> Vec<Value> {
-        let Some(constraint) = self.native_int_element_constraint(name) else {
+    pub(crate) fn wrap_native_int_items(
+        &mut self,
+        decl: StoreDecl<'_>,
+        name: &str,
+        items: Vec<Value>,
+    ) -> Vec<Value> {
+        let Some(constraint) = self.native_int_element_constraint(decl, name) else {
             return items;
         };
         items
