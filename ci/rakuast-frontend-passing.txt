@@ -552,6 +552,7 @@ t/collections/range-pair/range-bigint-index.t
 t/collections/range-pair/range-bounds-and-rotor.t
 t/collections/range-pair/range-element-rows.t
 t/collections/range-pair/range-elems-bigint-precision.t
+t/collections/range-pair/range-endpoint-positional-subclass.t
 t/collections/range-pair/range-gist.t
 t/collections/range-pair/range-i64-bounds.t
 t/collections/range-pair/range-in-named-scalar-subscript-indexes.t
@@ -4165,6 +4166,7 @@ t/oo/method/gate-b-jit-method-mut-writeback.t
 t/oo/method/gate-b-method-lvalue-writeback.t
 t/oo/method/has-decl-nested-in-method-closures.t
 t/oo/method/has-decl-nested-in-method.t
+t/oo/method/hash-subclass-method-keeps-attr-writes.t
 t/oo/method/hash-subclass-qualified-base-method.t
 t/oo/method/hash-subclass-store-in-method.t
 t/oo/method/hyper-callable-method.t
@@ -8261,6 +8263,7 @@ t/vm/writeback/proxy-at-key-decontainerized-args.t
 t/vm/writeback/proxy-bind-with-begin-in-unit.t
 t/vm/writeback/proxy-binds-container-not-value.t
 t/vm/writeback/proxy-fetch-gets-proxy-object.t
+t/vm/writeback/proxy-fetch-in-sink-context.t
 t/vm/writeback/proxy-fetch-returns-rw-container.t
 t/vm/writeback/proxy-list-transparency.t
 t/vm/writeback/proxy-lvalue-sub-assign-no-fetch.t
