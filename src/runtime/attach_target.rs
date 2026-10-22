@@ -174,7 +174,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let mut first_err = None;
         for code in phasers.into_iter().rev() {
-            if let Err(e) = self.call_sub_value(code, Vec::new(), false)
+            if let Err(e) = self.call_sub_value(code, Vec::new())
                 && first_err.is_none()
             {
                 first_err = Some(e);
@@ -386,7 +386,7 @@ impl Interpreter {
                 "add_phaser: a {kind} phaser can only be added from a variable trait of a nested block"
             ))));
         }
-        Some(self.call_sub_value(code, Vec::new(), false).map(|_| Value::NIL))
+        Some(self.call_sub_value(code, Vec::new()).map(|_| Value::NIL))
     }
 
     /// Run the `kind` phasers the lifted variable traits of declaration `site`
@@ -419,7 +419,7 @@ impl Interpreter {
         let saved_value = self.trait_mod_writeback_value.take();
         let mut result = Ok(());
         for code in phasers {
-            if let Err(e) = self.call_sub_value(code, Vec::new(), false) {
+            if let Err(e) = self.call_sub_value(code, Vec::new()) {
                 result = Err(e);
                 break;
             }

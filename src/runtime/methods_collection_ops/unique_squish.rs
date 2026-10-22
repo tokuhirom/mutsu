@@ -124,9 +124,9 @@ impl Interpreter {
             // `squish` keeps only the previous needle and rakudo never caches
             // it there (see `cache_seq_needle`).
             Some(func) if state.mode == DistinctMode::Squish => {
-                self.call_sub_value(func, vec![item.clone()], true)?
+                self.call_sub_value(func, vec![item.clone()])?
             }
-            Some(func) => cache_seq_needle(self.call_sub_value(func, vec![item.clone()], true)?),
+            Some(func) => cache_seq_needle(self.call_sub_value(func, vec![item.clone()])?),
             None => item.clone(),
         };
         // The default comparison is `===`, i.e. `.WHICH`; resolve a user
@@ -138,7 +138,7 @@ impl Interpreter {
             let duplicate = match (state.prev.take(), state.with_fn.clone()) {
                 (None, _) => false,
                 (Some(prev), Some(func)) => self
-                    .call_sub_value(func, vec![prev, key.clone()], true)?
+                    .call_sub_value(func, vec![prev, key.clone()])?
                     .truthy(),
                 (Some(prev), None) => values_identical(&prev, &key),
             };
@@ -152,7 +152,7 @@ impl Interpreter {
             let mut found = false;
             for prev in state.with_seen.clone() {
                 if self
-                    .call_sub_value(func.clone(), vec![prev, key.clone()], true)?
+                    .call_sub_value(func.clone(), vec![prev, key.clone()])?
                     .truthy()
                 {
                     found = true;
@@ -317,20 +317,20 @@ impl Interpreter {
         squished_items.push(items[0].clone());
 
         let mut prev_key = if let Some(func) = as_func.clone() {
-            self.call_sub_value(func, vec![items[0].clone()], true)?
+            self.call_sub_value(func, vec![items[0].clone()])?
         } else {
             items[0].clone()
         };
 
         for item in items.iter().skip(1) {
             let key = if let Some(func) = as_func.clone() {
-                self.call_sub_value(func, vec![item.clone()], true)?
+                self.call_sub_value(func, vec![item.clone()])?
             } else {
                 item.clone()
             };
 
             let duplicate = if let Some(func) = with_func.clone() {
-                self.call_sub_value(func, vec![prev_key.clone(), key.clone()], true)?
+                self.call_sub_value(func, vec![prev_key.clone(), key.clone()])?
                     .truthy()
             } else {
                 // `===` is `.WHICH`; resolve a user `WHICH` (see `runtime::which_identity`).

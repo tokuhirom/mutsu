@@ -172,7 +172,7 @@ impl Interpreter {
         for i in 0..min_len {
             let tuple: Vec<Value> = supply_values.iter().map(|sv| sv[i].clone()).collect();
             if let Some(ref wf) = with_fn {
-                let combined = self.call_supply_callback(wf.clone(), tuple, false)?;
+                let combined = self.call_supply_callback(wf.clone(), tuple)?;
                 zipped.push(combined);
             } else {
                 zipped.push(Value::array(tuple));
@@ -571,7 +571,7 @@ impl Interpreter {
         let mut mapped_values = Vec::with_capacity(source_values.len());
         let mut quit = None;
         for value in source_values {
-            match self.call_supply_callback(mapper.clone(), vec![value], true) {
+            match self.call_supply_callback(mapper.clone(), vec![value]) {
                 Ok(mapped) => mapped_values.push(mapped),
                 Err(e) => {
                     quit = Some(Self::supply_stage_quit_reason(e)?);
@@ -825,12 +825,12 @@ impl Interpreter {
                 }
             }
             TransformMode::Map => {
-                let mapped = self.call_supply_callback(callable, vec![value], true)?;
+                let mapped = self.call_supply_callback(callable, vec![value])?;
                 self.handle_supply_forward(downstream_supplier_id, mapped)?;
             }
             TransformMode::Do => {
                 // Side-effect only: the original value passes through.
-                self.call_supply_callback(callable, vec![value.clone()], true)?;
+                self.call_supply_callback(callable, vec![value.clone()])?;
                 self.handle_supply_forward(downstream_supplier_id, value)?;
             }
         }

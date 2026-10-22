@@ -344,7 +344,7 @@ impl Interpreter {
                 && cand_data.param_defs.iter().any(|pd| pd.slurpy)
             {
                 let candidate = Self::bind_family_dispatcher(candidate, family_name, func);
-                    return self.call_sub_value(candidate, call_args, false);
+                    return self.call_sub_value(candidate, call_args);
             }
         }
         // User candidates of a built-in operator add to it: a call none of
@@ -370,7 +370,7 @@ impl Interpreter {
         }
         if let Some(candidate) = candidates.first() {
             let candidate = Self::bind_family_dispatcher(candidate, family_name, func);
-                    return self.call_sub_value(candidate, call_args, false);
+                    return self.call_sub_value(candidate, call_args);
         }
         Err(self.multi_no_match_error(family_name.unwrap_or(""), &call_args))
     }
@@ -482,7 +482,7 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         let ValueView::Sub(data) = dispatcher.view() else {
-            return self.call_sub_value(dispatcher.clone(), args, false);
+            return self.call_sub_value(dispatcher.clone(), args);
         };
         let candidates: Vec<Value> = data
             .env
@@ -502,7 +502,6 @@ impl Interpreter {
         &mut self,
         func: Value,
         args: Vec<Value>,
-        merge_all: bool,
     ) -> Result<Value, RuntimeError> {
         // ADR-0058: a slurpy parameter FLATTENS a `Seq` argument
         // (`{ [+] @_ } o *.map(* * 2)` sums the mapped elements, not the Seq),
@@ -633,7 +632,7 @@ impl Interpreter {
         if let ValueView::Junction { kind, values } = func.view() {
             let mut results = Vec::with_capacity(values.len());
             for callable in values.iter() {
-                results.push(self.call_sub_value(callable.clone(), args.clone(), merge_all)?);
+                results.push(self.call_sub_value(callable.clone(), args.clone())?);
             }
             return Ok(Value::junction(kind, results));
         }
@@ -947,7 +946,7 @@ impl Interpreter {
                         call_args.clone(),
                         func_for_family,
                     );
-                    let result = self.call_sub_value(proto, call_args, false);
+                    let result = self.call_sub_value(proto, call_args);
                     self.pop_proto_dispatch_frame();
                     return result;
                 }
@@ -987,7 +986,7 @@ impl Interpreter {
                 data.env.get("__mutsu_compose_left").cloned(),
                 data.env.get("__mutsu_compose_right").cloned(),
             ) {
-                let right_result = self.call_sub_value(right, call_args, false)?;
+                let right_result = self.call_sub_value(right, call_args)?;
                 // ADR-0058: `composed_result_to_args` spreads a `Seq` result
                 // into the left callable's arguments by reading its elements
                 // through pure code, so a still-deferred `.map`/`.grep` result
@@ -1004,7 +1003,7 @@ impl Interpreter {
                     _ => !left_variadic && left_params.len() == 1,
                 };
                 let left_args = Self::composed_result_to_args(right_result, left_expects_single);
-                return self.call_sub_value(left, left_args, false);
+                return self.call_sub_value(left, left_args);
             }
             // Reject arguments for blocks with explicitly empty signatures
             // (e.g. `-> { ... }` which takes 0 parameters).
@@ -1112,7 +1111,7 @@ impl Interpreter {
                 // up for grabs — hence the `is_authoritative` escape hatch, which
                 // covers exactly the never-mutated captures where "same name" can
                 // safely be read as "the closure's own binding".
-                if (merge_all && !is_authoritative(*k)) || k.is_dynamic_var_env_key() {
+                if k.is_dynamic_var_env_key() || k.with_str(crate::env::is_match_var_env_key) {
                     // A dynamic variable resolves against the live caller chain,
                     // never against the creator's snapshot (VM twin: the
                     // don't-overwrite capture tier in `call_compiled_closure`).
@@ -1598,102 +1597,56 @@ impl Interpreter {
                         .compiled_code
                         .as_ref()
                         .is_some_and(|cc| cc.dynamic_declared_sym.contains(&k))
+                    // A block-declared enum's bare-key alias belongs to the block
+                    // too: it shadows a caller's same-named enum key only inside.
+                    || data.compiled_code.as_ref().is_some_and(|cc| {
+                        k.with_str(|s| {
+                            s.strip_prefix("__mutsu_enum_bare_").is_some_and(|bare| {
+                                cc.my_declared_enum_sym
+                                    .contains(&crate::symbol::Symbol::intern(bare))
+                            })
+                        })
+                    })
             };
-            if merge_all {
-                for (k, v) in self.env.iter() {
-                    if k == "_" || k == "@_" {
-                        continue;
-                    }
-                    if is_body_private(*k) {
-                        continue;
-                    }
-                    if merged.contains_key_sym(*k) {
-                        // Only propagate what the body actually CHANGED (vs its
-                        // body-entry snapshot). An entry equal to that snapshot is
-                        // the callee's own captured lexical, not a mutation, and
-                        // writing it back would overwrite an unrelated caller
-                        // variable that merely shares the name — `cglobal`'s FETCH
-                        // captures `$libname` = 'libmariadb.so.0', its caller
-                        // `try-versions` has its own `Str $libname` = 'mariadb',
-                        // and every probe after the first read the clobbered value
-                        // (NativeLibs, the DBIish mysql path).
-                        if body_entry_env.get_sym(*k) == Some(v) {
-                            continue;
-                        }
-                        // Unlike the non-merge_all branch below, this path is used
-                        // by native-invoked callbacks (Promise/Supply/reduce/lvalue
-                        // Proxy/on-switch, ...) where nothing else drains
-                        // `pending_rw_writeback_sources` right after the call. Any
-                        // value type the body actually changed (not just scalars)
-                        // must be tracked here, or the caller's cached local slot
-                        // stays stale until an unrelated later call happens to drain
-                        // it (io-cathandle.t on-switch: `$args = (a, b)` assigns a
-                        // List, which the old Bool/Int/Num/Str/Rat-only whitelist
-                        // silently dropped).
-                        captured_outer_writes.push(k.resolve().to_string());
-                        merged.insert_sym(*k, v.clone());
-                    } else if k.starts_with("__mutsu_var_meta::") {
-                        merged.insert_sym(*k, v.clone());
-                    }
+            for (k, v) in self.env.iter() {
+                if k == "_" || k == "@_" {
+                    continue;
                 }
-            } else {
-                // Names bound from subsignature parameters are block-local and
-                // must not be written back to the caller (otherwise a parameter
-                // such as `|c(Str $x)` would clobber a caller variable that
-                // happens to share the parameter's name).
-                let mut subsig_names = std::collections::HashSet::new();
-                for pd in data.param_defs.iter() {
-                    Self::collect_sub_signature_names(&pd.sub_signature, &mut subsig_names);
+                if is_body_private(*k) {
+                    continue;
                 }
-                for (k, v) in self.env.iter() {
-                    if k == "_" || k == "@_" || subsig_names.contains(&k.resolve()) {
+                if merged.contains_key_sym(*k) {
+                    // Only propagate what the body actually CHANGED (vs its
+                    // body-entry snapshot). An entry equal to that snapshot is
+                    // the callee's own captured lexical, not a mutation, and
+                    // writing it back would overwrite an unrelated caller
+                    // variable that merely shares the name — `cglobal`'s FETCH
+                    // captures `$libname` = 'libmariadb.so.0', its caller
+                    // `try-versions` has its own `Str $libname` = 'mariadb',
+                    // and every probe after the first read the clobbered value
+                    // (NativeLibs, the DBIish mysql path).
+                    // Likewise a value still equal to the closure's own captured
+                    // binding: entry installed it over the caller's same-named
+                    // lexical (closure-wins), so it is not a caller mutation.
+                    if body_entry_env.get_sym(*k) == Some(v)
+                        || closure_base_env.get_sym(*k) == Some(v)
+                    {
                         continue;
                     }
-                    if is_body_private(*k) {
-                        continue;
-                    }
-                    if matches!(v.view(), ValueView::Array(..)) {
-                        // Arrays are Arc-shared; in-place mutations are already
-                        // visible to the caller, and reassignment should propagate
-                        // -- but only to a caller variable. An array the closure
-                        // owns (its creating routine's `*@m`) is not the caller's:
-                        // writing it into the caller env leaked it, and the next
-                        // closure of the same routine read that stale copy (#9429).
-                        if !is_authoritative(*k) {
-                            merged.insert_sym(*k, v.clone());
-                        }
-                    } else if merged.contains_key_sym(*k)
-                        && matches!(
-                            v.view(),
-                            ValueView::Bool(_)
-                                | ValueView::Int(_)
-                                | ValueView::Num(_)
-                                | ValueView::Str(_)
-                                | ValueView::Rat(_, _)
-                        )
-                        // Only write a captured scalar back to the caller when the
-                        // body actually changed it from its body-entry value. A
-                        // value equal to the entry snapshot is a stale capture, not
-                        // a mutation, and must not clobber the caller's live value.
-                        && body_entry_env.get_sym(*k) != Some(v)
-                    {
-                        captured_outer_writes.push(k.resolve().to_string());
-                        merged.insert_sym(*k, v.clone());
-                    } else if merged.contains_key_sym(*k)
-                        && matches!(v.view(), ValueView::ContainerRef(_))
-                        && body_entry_env.get_sym(*k) != Some(v)
-                    {
-                        // A shared `ContainerRef` cell installed under a caller
-                        // variable's name DURING this call — an rw param's alias
-                        // boxing performed by a nested call (a method-wrap
-                        // wrapper's callsame reaching an `is rw` original), or a
-                        // box-on-capture of the caller's lexical. The cell IS the
-                        // variable's live container now; dropping it here would
-                        // sever the alias and leave the caller's plain value
-                        // stale (the wrap chain's last hop).
-                        captured_outer_writes.push(k.resolve().to_string());
-                        merged.insert_sym(*k, v.clone());
-                    }
+                    // Unlike the non-merge_all branch below, this path is used
+                    // by native-invoked callbacks (Promise/Supply/reduce/lvalue
+                    // Proxy/on-switch, ...) where nothing else drains
+                    // `pending_rw_writeback_sources` right after the call. Any
+                    // value type the body actually changed (not just scalars)
+                    // must be tracked here, or the caller's cached local slot
+                    // stays stale until an unrelated later call happens to drain
+                    // it (io-cathandle.t on-switch: `$args = (a, b)` assigns a
+                    // List, which the old Bool/Int/Num/Str/Rat-only whitelist
+                    // silently dropped).
+                    captured_outer_writes.push(k.resolve().to_string());
+                    merged.insert_sym(*k, v.clone());
+                } else if k.starts_with("__mutsu_var_meta::") {
+                    merged.insert_sym(*k, v.clone());
                 }
             }
             // Record the captured-outer scalar writes for precise caller-slot

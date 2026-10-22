@@ -399,9 +399,7 @@ impl Interpreter {
             for tap in &supply_taps {
                 let _ = self.call_sub_value(
                     tap.clone(),
-                    vec![Value::str(collected_merged.clone())],
-                    true,
-                );
+                    vec![Value::str(collected_merged.clone())]);
             }
         }
     }
@@ -448,7 +446,7 @@ impl Interpreter {
         };
         if !text.is_empty() {
             for tap in value_taps {
-                let _ = self.call_sub_value(tap.clone(), vec![Value::str(text.clone())], true);
+                let _ = self.call_sub_value(tap.clone(), vec![Value::str(text.clone())]);
             }
         }
         if let Some(sid) = sid {
@@ -460,7 +458,7 @@ impl Interpreter {
                 // The stream ended cleanly: now (not at tap time) it is done.
                 for done_tap in get_supply_done_taps(sid) {
                     if !done_tap.is_nil() {
-                        let _ = self.call_sub_value(done_tap, Vec::new(), true);
+                        let _ = self.call_sub_value(done_tap, Vec::new());
                     }
                 }
             }

@@ -82,7 +82,7 @@ impl Interpreter {
         {
             match kind {
                 ScheduledCueKind::Emit => {
-                    self.call_sub_value(real_cb, payload, true)?;
+                    self.call_sub_value(real_cb, payload)?;
                 }
                 ScheduledCueKind::Done => {
                     self.invoke_done_callback(real_cb)?;

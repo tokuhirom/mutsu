@@ -252,7 +252,7 @@ impl Interpreter {
                             .map(|(k, v)| (*k, v.clone()))
                             .collect(),
                     );
-                    let result = self.call_sub_value(code.clone(), call_args, bind_dollar_topic)?;
+                    let result = self.call_sub_value(code.clone(), call_args)?;
                     if let ValueView::Sub(sub) = code.view() {
                         let closure_writebacks: Vec<(crate::symbol::Symbol, Value)> =
                             if let Some(ov) = self.closure_env_overrides.get(&sub.id) {

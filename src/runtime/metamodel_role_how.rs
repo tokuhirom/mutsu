@@ -65,7 +65,7 @@ impl Interpreter {
         let Some(block) = self.registry().role_body_blocks.get(role_name).cloned() else {
             return Ok(());
         };
-        self.call_sub_value(block, vec![target], false)?;
+        self.call_sub_value(block, vec![target])?;
         Ok(())
     }
 }

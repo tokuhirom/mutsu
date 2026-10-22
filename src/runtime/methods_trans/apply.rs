@@ -245,7 +245,7 @@ impl Interpreter {
             .then(|| self.env_mut().publish_match_var(topic.clone()));
         self.env_mut().insert("_".to_string(), topic);
 
-        let result = self.call_sub_value(closure.clone(), vec![], true);
+        let result = self.call_sub_value(closure.clone(), vec![]);
         if let Some(old) = old_match {
             self.env_mut().restore_match_var(old);
         }

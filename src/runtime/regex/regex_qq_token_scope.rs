@@ -117,7 +117,7 @@ impl Interpreter {
         }
         let mut saved = prior.unwrap_or_default();
         for (key, thunk) in thunks.iter() {
-            let Ok(result) = self.call_sub_value(thunk.clone(), Vec::new(), false) else {
+            let Ok(result) = self.call_sub_value(thunk.clone(), Vec::new()) else {
                 continue;
             };
             saved.push((key.clone(), self.env.get(key).cloned()));

@@ -489,7 +489,7 @@ impl Interpreter {
                         .is_ok();
                     self.restore_env_preserving_dynamics(saved_env);
                     if bound {
-                        let result = self.call_sub_value(candidate.clone(), args, false)?;
+                        let result = self.call_sub_value(candidate.clone(), args)?;
                         return Ok(Some(result));
                     }
                 }

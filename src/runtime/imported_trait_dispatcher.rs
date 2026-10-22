@@ -65,7 +65,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let dispatcher = self.imported_trait_dispatcher(name)?;
-        match self.call_sub_value(dispatcher, args.to_vec(), false) {
+        match self.call_sub_value(dispatcher, args.to_vec()) {
             Err(e) if Self::is_trait_mod_no_candidate(&e) => None,
             other => Some(other),
         }

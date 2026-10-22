@@ -149,7 +149,7 @@ impl Interpreter {
                 // argument. That source name does not describe the invocant
                 // passed to the logger and must not appear in dd's output.
                 let saved_sources = self.take_pending_call_arg_sources();
-                let result = self.call_sub_value(snitcher.clone(), vec![logged_arg], false);
+                let result = self.call_sub_value(snitcher.clone(), vec![logged_arg]);
                 self.set_pending_call_arg_sources(saved_sources);
                 result
             }

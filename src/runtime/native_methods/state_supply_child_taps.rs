@@ -161,7 +161,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         self.close_supply_child_taps(emitter_supplier_id)?;
         for cb in super::take_supplier_close_callbacks(emitter_supplier_id) {
-            self.call_sub_value(cb, vec![], true)?;
+            self.call_sub_value(cb, vec![])?;
         }
         Ok(())
     }

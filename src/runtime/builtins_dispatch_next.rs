@@ -225,7 +225,7 @@ impl Interpreter {
         // this stack is correct there too.
         if let Some(ctx) = self.dispatch.samewith_context_stack.last().cloned() {
             if let Some(callable) = ctx.callable {
-                return self.call_sub_value(callable, args.to_vec(), false);
+                return self.call_sub_value(callable, args.to_vec());
             }
             if let Some(inv) = ctx.invocant {
                 // Method dispatch. A multi method re-dispatches on the same
@@ -973,7 +973,7 @@ impl Interpreter {
                 if let ValueView::Sub(data) = next.view() {
                     self.dispatch.wrap_skip_once = Some(data.id);
                 }
-                let result = self.call_sub_value(next, call_args, false)?;
+                let result = self.call_sub_value(next, call_args)?;
                 if tail_call {
                     return Err(RuntimeError::return_signal(result));
                 }
@@ -1134,7 +1134,7 @@ impl Interpreter {
                     if let ValueView::Sub(data) = code.view() {
                         self.dispatch.wrap_skip_once = Some(data.id);
                     }
-                    let result = self.call_sub_value(code, call_args, false)?;
+                    let result = self.call_sub_value(code, call_args)?;
                     if tail_call {
                         return Err(RuntimeError::return_signal(result));
                     }

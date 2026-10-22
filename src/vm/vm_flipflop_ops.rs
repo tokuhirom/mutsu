@@ -49,7 +49,7 @@ impl Interpreter {
                 } else {
                     call_args
                 };
-                let result = self.call_sub_value(callable, call_args, false)?;
+                let result = self.call_sub_value(callable, call_args)?;
                 self.apply_pending_rw_writeback(code);
                 self.stack.push(result);
                 return Ok(());

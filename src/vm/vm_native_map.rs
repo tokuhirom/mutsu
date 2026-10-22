@@ -132,11 +132,9 @@ impl Interpreter {
                 // argument as a writable lvalue (see
                 // `bind_function_args_values`), so no other plumbing is needed.
                 let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(chunk[0].clone()));
-                let res = match self.call_sub_value(
-                    block.clone(),
-                    vec![Value::container_ref(cell.clone())],
-                    false,
-                ) {
+                let res = match self
+                    .call_sub_value(block.clone(), vec![Value::container_ref(cell.clone())])
+                {
                     Ok(v) => v,
                     Err(e) => return Some(Err(e)),
                 };

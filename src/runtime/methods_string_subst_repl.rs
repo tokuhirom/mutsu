@@ -145,7 +145,7 @@ impl Interpreter {
             } else {
                 Value::str(matched_text.to_string())
             };
-            let result = self.call_sub_value(replacement.clone(), vec![match_value], false)?;
+            let result = self.call_sub_value(replacement.clone(), vec![match_value])?;
             return Ok(cased(result.to_string_value()));
         }
         let sub_data = match replacement_val.as_ref().map(Value::view) {

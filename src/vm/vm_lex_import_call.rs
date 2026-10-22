@@ -204,7 +204,7 @@ impl Interpreter {
             && let ValueView::Sub(data) = Self::unwrap_callable_mixin(wrapped.clone()).view()
             && data.package == def.package
         {
-            return self.vm_call_sub_value(wrapped, args, false);
+            return self.vm_call_sub_value(wrapped, args);
         }
         let junction_indices: Vec<usize> = args
             .iter()

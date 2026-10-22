@@ -267,7 +267,7 @@ impl Interpreter {
                         ValueView::Array(items, ..) => Value::int(items.len() as i64),
                         _ => Value::int(0),
                     };
-                    let result = self.call_sub_value(idx.clone(), vec![len], false)?;
+                    let result = self.call_sub_value(idx.clone(), vec![len])?;
                     // Navigate to next dimension
                     let resolved_idx = result.clone();
                     current = multidim_index(&current, std::slice::from_ref(&resolved_idx));

@@ -118,7 +118,7 @@ impl Interpreter {
             // block's own free `&code` (FINALIZER's `register`). Call it as
             // the closure it is instead.
             ValueView::Sub(data) if !outer_code.owns_closure_body(&data.body) => {
-                return self.call_sub_value(code_val.clone(), Vec::new(), false);
+                return self.call_sub_value(code_val.clone(), Vec::new());
             }
             ValueView::Sub(data) => {
                 let (block_cc, block_fns, captured_bindings, writeback_bindings, captured_names) =

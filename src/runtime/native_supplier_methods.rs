@@ -157,7 +157,7 @@ impl Interpreter {
                         match action {
                             SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
                                 Self::sleep_for_supply_delay(delay_seconds);
-                                if let Err(err) = self.call_supply_tap(tap, vec![emitted], true) {
+                                if let Err(err) = self.call_supply_tap(tap, vec![emitted]) {
                                     // A `return` inside the tap callback targets the
                                     // callback's lexically enclosing routine: propagate
                                     // the signal unchanged so that routine's call frame

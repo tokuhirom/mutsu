@@ -33,7 +33,7 @@ impl Interpreter {
                         self.async_state
                             .supply_emit_buffer
                             .push(EmitFrame::default());
-                        let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+                        let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter]);
                         self.async_state
                             .supply_emit_buffer
                             .pop()

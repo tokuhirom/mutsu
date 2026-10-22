@@ -143,7 +143,7 @@ impl Interpreter {
         // call's dynamic extent — see `runtime::react_done_handler_depth`.
         let _react_done_handler =
             crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
-        let cb_result = self.call_sub_value(cb, vec![value.clone()], true);
+        let cb_result = self.call_sub_value(cb, vec![value.clone()]);
         drop(_react_done_handler);
         match cb_result {
             Err(e) if e.is_react_done() => {
@@ -151,7 +151,7 @@ impl Interpreter {
                 for close_cb in
                     crate::runtime::native_methods::take_supplier_close_callbacks(supplier_id)
                 {
-                    if let Err(ce) = self.call_sub_value(close_cb, Vec::new(), true) {
+                    if let Err(ce) = self.call_sub_value(close_cb, Vec::new()) {
                         return Some(Err(ce));
                     }
                 }
@@ -487,7 +487,7 @@ impl Interpreter {
             shared.on_resolve_in_supply_group(
                 Box::new(move |status, result, _output, _stderr| {
                     if status == "Kept" {
-                        let ran = thread_interp.call_supply_tap(callback, vec![result], true);
+                        let ran = thread_interp.call_supply_tap(callback, vec![result]);
                         let quit_fired = emitter_supplier_id
                             .map(|sid| {
                                 crate::runtime::native_methods::supplier_snapshot(sid)
@@ -499,10 +499,10 @@ impl Interpreter {
                             && !quit_fired
                             && let Some(last_cb) = last_cb
                         {
-                            let _ = thread_interp.call_sub_value(last_cb, Vec::new(), true);
+                            let _ = thread_interp.call_sub_value(last_cb, Vec::new());
                         }
                     } else if let Some(quit_cb) = quit_cb {
-                        let _ = thread_interp.call_sub_value(quit_cb, vec![result], true);
+                        let _ = thread_interp.call_sub_value(quit_cb, vec![result]);
                     }
                     // One-shot source complete: leave the enclosing done group.
                     if let Some(marker) = marker {

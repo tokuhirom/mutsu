@@ -92,7 +92,7 @@ impl Interpreter {
                 ValueView::Array(items, _) => items.len() as i64,
                 _ => 0,
             };
-            self.call_sub_value(key.clone(), vec![Value::int(len)], true)?
+            self.call_sub_value(key.clone(), vec![Value::int(len)])?
         } else {
             key.clone()
         };

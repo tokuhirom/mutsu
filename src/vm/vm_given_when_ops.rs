@@ -551,7 +551,7 @@ impl Interpreter {
                         } else {
                             vec![topic.clone()]
                         };
-                        self.vm_call_sub_value(cond_val.clone(), call_args, false)
+                        self.vm_call_sub_value(cond_val.clone(), call_args)
                             .map(|v| v.truthy())?
                     } else {
                         // Builtin/proto callables without explicit signature metadata:

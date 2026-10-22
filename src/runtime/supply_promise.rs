@@ -22,7 +22,6 @@ impl Interpreter {
         &mut self,
         tap: Value,
         args: Vec<Value>,
-        propagate_return: bool,
     ) -> Result<Value, RuntimeError> {
         // A `__SupplyDoWrappedTap` marker (see `make_supply_do_wrapped_tap`)
         // bundles a `.do($cb)` source's `do_callbacks` with the real outer
@@ -40,7 +39,7 @@ impl Interpreter {
             let attrs = attributes.as_map();
             if let Some(ValueView::Array(cbs, ..)) = attrs.get("do_callbacks").map(Value::view) {
                 for cb in cbs.iter().cloned().collect::<Vec<_>>() {
-                    self.call_supply_callback(cb, args.clone(), true)?;
+                    self.call_supply_callback(cb, args.clone())?;
                 }
             }
             attrs.get("real_tap").cloned().unwrap_or(Value::NIL)
@@ -83,7 +82,7 @@ impl Interpreter {
         // via a nested sub call) — see `runtime::react_done_handler_depth`.
         let _react_done_handler =
             crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
-        let res = self.call_supply_callback(tap, args, propagate_return);
+        let res = self.call_supply_callback(tap, args);
         let res = res.and_then(|value| {
             // Tap callbacks are invoked for their side effects; their return
             // value is discarded by the supply machinery.  Sink a deferred
@@ -247,7 +246,7 @@ impl Interpreter {
         self.async_state
             .active_supply_emitters
             .push(emitter.clone());
-        let mut result = self.call_sub_value(on_demand_cb, vec![emitter], false);
+        let mut result = self.call_sub_value(on_demand_cb, vec![emitter]);
         self.async_state.active_supply_emitters.pop();
         // The body's own bare `done` (`ast::Stmt::SupplyBodyDone`) always ends
         // just this synchronous call — absorb it here rather than relying on
@@ -1163,7 +1162,7 @@ impl Interpreter {
             // body's dynamic extent — see `runtime::react_done_handler_depth`.
             let _react_done_handler =
                 crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
-            let res = this.call_supply_callback(cb, args, true);
+            let res = this.call_supply_callback(cb, args);
             drop(_react_done_handler);
             let emitted = this
                 .async_state

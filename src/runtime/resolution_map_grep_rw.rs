@@ -130,9 +130,7 @@ impl Interpreter {
                         ));
                         let res = self.call_sub_value(
                             Value::sub_value(data.clone()),
-                            vec![Value::container_ref(cell.clone())],
-                            false,
-                        )?;
+                            vec![Value::container_ref(cell.clone())])?;
                         src.buf[i] = cell.load();
                         wrote_back.set(true);
                         res.deref_container()
@@ -160,7 +158,7 @@ impl Interpreter {
                         let v = if keeps_outer_topic {
                             self.vm_call_on_value(Value::sub_value(data.clone()), chunk, None)?
                         } else {
-                            self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?
+                            self.call_sub_value(Value::sub_value(data.clone()), chunk)?
                         };
                         if arity == 1
                             && !keeps_outer_topic

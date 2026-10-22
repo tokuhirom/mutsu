@@ -162,9 +162,7 @@ impl Interpreter {
                     });
                 let val = self.call_sub_value(
                     build_override.clone(),
-                    vec![inv.clone(), attr_type],
-                    false,
-                )?;
+                    vec![inv.clone(), attr_type])?;
                 // A `.map`/`.grep` result is still deferred; the attribute
                 // owns its elements, so pull them now (ADR-0058).
                 self.reify_map_grep_seq(&val)?;

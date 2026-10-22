@@ -187,7 +187,7 @@ impl Interpreter {
         if args.len() == 1 && matches!(args[0].view(), ValueView::Sub(..)) {
             // Callable arg: call with list length to get actual skip count
             let len_arg = Value::int(len as i64);
-            let result = self.call_sub_value(args[0].clone(), vec![len_arg], false)?;
+            let result = self.call_sub_value(args[0].clone(), vec![len_arg])?;
             let n = result.to_f64().max(0.0) as usize;
             return Ok(collect_spans(&[(n, len)]));
         }

@@ -37,7 +37,7 @@ impl Interpreter {
                 if let Some(ValueView::Array(taps, ..)) = attrs.get("taps").map(Value::view) {
                     for tap in taps.iter().cloned().collect::<Vec<_>>() {
                         if Self::supply_has_active_callback(&tap) {
-                            let _ = self.call_supply_callback(tap, vec![value.clone()], true);
+                            let _ = self.call_supply_callback(tap, vec![value.clone()]);
                         }
                     }
                 }
@@ -320,14 +320,12 @@ impl Interpreter {
                             for line in
                                 split_supply_chunks_into_lines(&[Value::str(collected)], chomp)
                             {
-                                let _ = self.call_supply_callback(tap_cb.clone(), vec![line], true);
+                                let _ = self.call_supply_callback(tap_cb.clone(), vec![line]);
                             }
                         } else {
                             let _ = self.call_supply_callback(
                                 tap_cb.clone(),
-                                vec![Value::str(collected)],
-                                true,
-                            );
+                                vec![Value::str(collected)]);
                         }
                     }
                     let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
@@ -714,7 +712,7 @@ impl Interpreter {
                                 // reaches the subscriber).
                                 if inner_attrs.as_map().contains_key("preserving") {
                                     for v in supplier_take_preserved_backlog(supplier_id) {
-                                        self.call_supply_callback(body_cb.clone(), vec![v], true)?;
+                                        self.call_supply_callback(body_cb.clone(), vec![v])?;
                                     }
                                 }
                                 // A non-live source can carry values seeded next
@@ -729,9 +727,7 @@ impl Interpreter {
                                     for v in seeded.iter() {
                                         self.call_supply_callback(
                                             body_cb.clone(),
-                                            vec![v.clone()],
-                                            true,
-                                        )?;
+                                            vec![v.clone()])?;
                                     }
                                 }
                                 // ADR-0031: the tap's `quit =>` is registered
@@ -1175,7 +1171,7 @@ impl Interpreter {
                             if body_done {
                                 // Synchronous body already closed: fire now.
                                 for cb in &own_close_cbs {
-                                    let _ = self.call_sub_value(cb.clone(), vec![], true);
+                                    let _ = self.call_sub_value(cb.clone(), vec![]);
                                 }
                             } else if let Some(p) = close_done_promise {
                                 // Async body: the drive loop fires the callbacks
@@ -1200,7 +1196,7 @@ impl Interpreter {
                             }
                         } else if body_done || emitter_done {
                             for cb in &own_close_cbs {
-                                self.call_sub_value(cb.clone(), vec![], true)?;
+                                self.call_sub_value(cb.clone(), vec![])?;
                             }
                         } else {
                             for cb in &own_close_cbs {
@@ -1259,7 +1255,7 @@ impl Interpreter {
                                 });
                             }
                             let key = if let Some(ref func) = as_fn {
-                                self.call_supply_callback(func.clone(), vec![item.clone()], true)?
+                                self.call_supply_callback(func.clone(), vec![item.clone()])?
                             } else {
                                 item.clone()
                             };
@@ -1268,9 +1264,7 @@ impl Interpreter {
                                 let is_same = if let Some(ref func) = with_fn {
                                     self.call_supply_callback(
                                         func.clone(),
-                                        vec![seen.clone(), key.clone()],
-                                        true,
-                                    )?
+                                        vec![seen.clone(), key.clone()])?
                                     .truthy()
                                 } else {
                                     values_identical(seen, &key)
@@ -1540,13 +1534,13 @@ impl Interpreter {
                 let mut result = Vec::new();
                 for val in &values {
                     let key = if let Some(ref f) = as_fn {
-                        self.call_supply_callback(f.clone(), vec![val.clone()], true)?
+                        self.call_supply_callback(f.clone(), vec![val.clone()])?
                     } else {
                         val.clone()
                     };
                     let found = seen_keys.iter().any(|s| {
                         if let Some(ref f) = with_fn {
-                            self.call_supply_callback(f.clone(), vec![s.clone(), key.clone()], true)
+                            self.call_supply_callback(f.clone(), vec![s.clone(), key.clone()])
                                 .map(|v| v.truthy())
                                 .unwrap_or(false)
                         } else {

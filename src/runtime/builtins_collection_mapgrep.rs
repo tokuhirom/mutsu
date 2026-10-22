@@ -384,7 +384,7 @@ impl Interpreter {
     /// Check if a value matches a snip matcher (Callable or type object).
     fn snip_matches(&mut self, item: &Value, matcher: &Value) -> Result<bool, RuntimeError> {
         if matches!(matcher.view(), ValueView::Sub(_)) {
-            let pred = self.call_sub_value(matcher.clone(), vec![item.clone()], true)?;
+            let pred = self.call_sub_value(matcher.clone(), vec![item.clone()])?;
             Ok(self.eval_predicate_truthy(&pred))
         } else {
             self.try_smart_match(item, matcher)
