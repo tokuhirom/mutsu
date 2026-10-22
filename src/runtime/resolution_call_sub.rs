@@ -1051,16 +1051,11 @@ impl Interpreter {
             // block entry, before the `my $done` it names has run. Its write
             // reaches the live frame through the caller env only, and the
             // carrier's exit writeback is what delivers it.
-            // A closure naming a block-declared routine (`lexsub_refs`) stays
-            // too: the compiled path attributes that routine's frame to the
-            // caller's file, which hides the declaring module's imports from
-            // it (IO::Socket::Async::SSL's `whenever ... { handle-connection }`).
             // TODO: hoist a phaser's block-declared lexicals into cells at block
-            // entry, and fix the lexsub file attribution, then drop both.
+            // entry, then drop the second condition.
             if let Some(cc) = data.compiled_code.clone().filter(|cc| {
                 !cc.is_supply_block_body
                     && cc.supply_emitter_sym.is_none()
-                    && cc.lexsub_refs.is_empty()
                     && !cc.free_var_writes.iter().any(|sym| {
                         sym.with_str(crate::env::is_plain_user_lexical)
                             && !data.env.get_sym(*sym).is_some_and(Value::is_container_ref)
