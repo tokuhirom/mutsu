@@ -355,6 +355,14 @@ impl Interpreter {
             let stmts = crate::rakuast::lower(node)?;
             return self.eval_lowered_unit(stmts);
         }
+        if let Some(first_arg) = Self::positional_value(args, 0)
+            && let ValueView::Instance { attributes, .. } = first_arg.view()
+            && let Some(base) = attributes.rakuast_base()
+            && let ValueView::RakuAst(node) = base.view()
+        {
+            let stmts = crate::rakuast::lower(node)?;
+            return self.eval_lowered_unit(stmts);
+        }
         // EVAL only accepts strings (and Buf), not blocks
         if let Some(first_arg) = Self::positional_value(args, 0) {
             match first_arg.view() {

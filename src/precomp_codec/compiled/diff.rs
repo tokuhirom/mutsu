@@ -3,6 +3,25 @@
 
 use crate::opcode::{CompiledCode, CompiledFns};
 
+/// `Symbol(821: "x")` -> `Symbol("x")`: interner ids differ between sessions, so
+/// the first divergence of two renderings would otherwise always be an id.
+fn strip_symbol_ids(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find("Symbol(") {
+        let (head, tail) = rest.split_at(i + "Symbol(".len());
+        out.push_str(head);
+        let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
+        rest = if tail[digits..].starts_with(": ") {
+            &tail[digits + 2..]
+        } else {
+            tail
+        };
+    }
+    out.push_str(rest);
+    out
+}
+
 /// The first field that differs between `a` and `b` (compared by `Debug`), as
 /// `field: <a> != <b>` with both sides truncated.
 // Cost: O(n), n = size of the chunks (each field rendered once per side).
@@ -42,7 +61,10 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
                     _ => format!("{:?}", a.$field) == format!("{:?}", b.$field),
                 };
                 if !same {
-                    let (da, db) = (format!("{:?}", a.$field), format!("{:?}", b.$field));
+                    let (da, db) = (
+                        strip_symbol_ids(&format!("{:?}", a.$field)),
+                        strip_symbol_ids(&format!("{:?}", b.$field)),
+                    );
                     let at = da.bytes().zip(db.bytes()).position(|(x, y)| x != y).unwrap_or(0);
                     let lo = at.saturating_sub(80);
                     let hi = |s: &str| (at + 160).min(s.len());

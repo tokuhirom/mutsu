@@ -3936,6 +3936,8 @@ pub(crate) struct LazyList {
     /// lazy pull and reports `HyperSeq` / `RaceSeq`. The work is not batched
     /// across threads, as for the settled `HyperSeq`.
     pub(crate) hyper_kind: HyperKind,
+    /// The `:batch` / `:degree` given to that `.hyper` / `.race`, for `.configuration`.
+    pub(crate) hyper_config: Option<(Option<i64>, Option<i64>)>,
     /// Set by `.cache` on a genuinely-lazy list: the result is a cached,
     /// re-iterable view, so sinking it is a no-op (it must NOT drain the
     /// underlying source). A bare lazy Seq sunk still drains; only the

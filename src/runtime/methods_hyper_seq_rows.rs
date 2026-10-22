@@ -116,16 +116,13 @@ impl Interpreter {
         })
     }
 
-    /// `.hyper(:$batch, :$degree)` / `.race(...)` on a list: the adverbs
-    /// validated (a non-positive one is `X::Invalid::Value`) and remembered
-    /// for `.configuration`.
-    // Cost: O(n), n = elements of the receiver.
-    pub(crate) fn hyperize_with_config(
-        &mut self,
-        target: &Value,
+    /// The `:batch` / `:degree` of a `.hyper` / `.race` call; a non-positive
+    /// one is `X::Invalid::Value`.
+    // Cost: O(a), a = arguments of the call.
+    pub(crate) fn hyper_adverbs(
         method: &str,
         args: &[Value],
-    ) -> Result<Value, RuntimeError> {
+    ) -> Result<(Option<i64>, Option<i64>), RuntimeError> {
         let mut batch: Option<i64> = None;
         let mut degree: Option<i64> = None;
         for arg in args {
@@ -154,6 +151,32 @@ impl Interpreter {
                 );
                 return Err(RuntimeError::typed("X::Invalid::Value", attrs));
             }
+        }
+        Ok((batch, degree))
+    }
+
+    /// `.hyper(:$batch, :$degree)` / `.race(...)` on a list: the adverbs
+    /// validated (a non-positive one is `X::Invalid::Value`) and remembered
+    /// for `.configuration`.
+    // Cost: O(n), n = elements of the receiver.
+    pub(crate) fn hyperize_with_config(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let (batch, degree) = Self::hyper_adverbs(method, args)?;
+        if let ValueView::LazyList(ll) = target.view()
+            && ll.renders_lazy_placeholder()
+        {
+            let kind = if method == "hyper" {
+                crate::value::HyperKind::Hyper
+            } else {
+                crate::value::HyperKind::Race
+            };
+            return Ok(Value::lazy_list(crate::gc::Gc::new(
+                ll.with_hyper_kind(kind, Some((batch, degree))),
+            )));
         }
         let body = crate::value::SeqBody::reified(crate::runtime::utils::value_to_list(target));
         body.set_hyper_config(batch, degree);

@@ -205,6 +205,16 @@ impl Interpreter {
         if !((method == "raku" || gist_default) && args.is_empty()) {
             return None;
         }
+        if let Some(base) = attributes.rakuast_base()
+            && let ValueView::RakuAst(node) = base.view()
+        {
+            let class_key = class_name.resolve();
+            let display_name = crate::value::user_facing_type_name(&class_key);
+            return Some(Ok(Value::str(crate::rakuast::subclass_gist(
+                display_name.as_ref(),
+                node,
+            ))));
+        }
         // An `is Str` subclass delegates `.raku`/`.gist` to its string payload,
         // so `class Foo is Str {}; Foo.new(:value("hi")).raku` is `"hi"` —
         // mirrors the `is Array`/`is Hash` backing-storage delegation below.
@@ -413,6 +423,24 @@ impl Interpreter {
             // own (it is synthesized on demand by the frame's `code`
             // accessor), so it is rebuilt here the same way and rendered
             // through the ordinary Code `.raku` dispatch.
+            // `HyperSeq.configuration` has no class declaration to read its
+            // public attributes from: its two fields are the whole object.
+            "HyperConfiguration" if method == "raku" => {
+                let attrs = attributes.as_map();
+                let fields: Vec<String> = ["batch", "degree"]
+                    .iter()
+                    .filter_map(|k| {
+                        attrs.get(*k).map(|a| {
+                            let a = crate::builtins::methods_0arg::raku_repr::raku_value(a);
+                            format!("{k} => {a}")
+                        })
+                    })
+                    .collect();
+                return Some(Ok(Value::str(format!(
+                    "HyperConfiguration.new({})",
+                    fields.join(", ")
+                ))));
+            }
             "Backtrace::Frame" => {
                 let attr_map = attributes.as_map();
                 let file_value = attr_map

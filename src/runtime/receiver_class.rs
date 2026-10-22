@@ -521,6 +521,13 @@ impl Interpreter {
         {
             return true;
         }
+        if let ValueView::Instance { attributes, .. } = target.view()
+            && let Some(base) = attributes.rakuast_base()
+            && let ValueView::RakuAst(node) = base.view()
+            && crate::rakuast::node_accessor(node, name).is_some()
+        {
+            return true;
+        }
         let chain = self.dispatch_owner_chain(target);
         chain_owner_probe(&chain, |owner| {
             crate::builtins::method_introspection::native_method_row_exists(owner, name)

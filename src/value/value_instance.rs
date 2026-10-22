@@ -90,6 +90,7 @@ impl Clone for InstanceAttrs {
             // not retag the original.
             side: Arc::new(RwLock::new(super::lazy_attrs::InstanceSide {
                 which: self.which_memo(),
+                rakuast_base: self.rakuast_base(),
                 lazy: None,
                 pending_attr_initializers: Default::default(),
             })),
@@ -141,6 +142,7 @@ impl InstanceAttrs {
         let mut attrs = Self::new(class_name, attributes, id, true);
         attrs.side = Arc::new(RwLock::new(super::lazy_attrs::InstanceSide {
             which: None,
+            rakuast_base: None,
             lazy: Some(source),
             pending_attr_initializers: Default::default(),
         }));
@@ -222,6 +224,23 @@ impl InstanceAttrs {
     pub(crate) fn set_which_memo(&self, which: Arc<str>) {
         if let Ok(mut slot) = self.side.write() {
             slot.which = Some(which);
+        }
+    }
+
+    /// The native RakuAST node whose model fields a user subclass inherits.
+    // Cost: O(1).
+    pub(crate) fn rakuast_base(&self) -> Option<Value> {
+        self.side
+            .read()
+            .ok()
+            .and_then(|side| side.rakuast_base.clone())
+    }
+
+    /// Attach the parent node once the native parent constructor has built it.
+    // Cost: O(1).
+    pub(crate) fn set_rakuast_base(&self, node: Value) {
+        if let Ok(mut side) = self.side.write() {
+            side.rakuast_base = Some(node);
         }
     }
 
@@ -366,6 +385,7 @@ impl InstanceAttrs {
         // from growing attributes back.
         if let Ok(mut side) = self.side.write() {
             side.lazy = None;
+            side.rakuast_base = None;
         }
         self.lazy_pending
             .store(false, std::sync::atomic::Ordering::Release);

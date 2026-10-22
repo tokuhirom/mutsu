@@ -54,6 +54,10 @@ pub(crate) static PULLS: &[LazyPull] = pulls![
     "Seq"."race" => race,
     "List"."hyper" => hyper,
     "List"."race" => race,
+    "HyperSeq"."configuration" => hyper_configuration,
+    "HyperSeq"."is-lazy" => hyper_is_lazy,
+    "RaceSeq"."configuration" => hyper_configuration,
+    "RaceSeq"."is-lazy" => hyper_is_lazy,
     "Seq"."cache" => cache,
     "Any"."cache" => cache,
     "Seq"."gist" => gist,
@@ -175,9 +179,13 @@ pub(super) fn owners_of(target: &Value) -> &'static [&'static str] {
     const SEQ: &[&str] = mro("Seq");
     const LIST: &[&str] = mro("List");
     const ARRAY: &[&str] = mro("Array");
+    const HYPER: &[&str] = mro("HyperSeq");
+    const RACE: &[&str] = mro("RaceSeq");
     match crate::value::type_name::value_type_name(target) {
         "Array" => ARRAY,
         "List" => LIST,
+        "HyperSeq" => HYPER,
+        "RaceSeq" => RACE,
         _ => SEQ,
     }
 }
@@ -314,12 +322,25 @@ fn cache(
 /// (nothing is batched across threads, as for a settled `HyperSeq`). A list
 /// that will end declines and is reified into the settled `HyperSeq`.
 // Cost: O(c), c = elements already cached (the list is cloned).
-fn hyperize(list: &LazyList, kind: crate::value::HyperKind) -> Option<Result<Value, RuntimeError>> {
+fn hyperize(
+    list: &LazyList,
+    kind: crate::value::HyperKind,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
     if !list.renders_lazy_placeholder() {
         return None;
     }
+    let method = if kind == crate::value::HyperKind::Hyper {
+        "hyper"
+    } else {
+        "race"
+    };
+    let config = match Interpreter::hyper_adverbs(method, args) {
+        Ok(config) => config,
+        Err(err) => return Some(Err(err)),
+    };
     Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-        list.with_hyper_kind(kind),
+        list.with_hyper_kind(kind, Some(config)),
     ))))
 }
 
@@ -328,9 +349,9 @@ fn hyper(
     _interp: &mut Interpreter,
     _target: &Value,
     list: &LazyList,
-    _args: &[Value],
+    args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    hyperize(list, crate::value::HyperKind::Hyper)
+    hyperize(list, crate::value::HyperKind::Hyper, args)
 }
 
 // Cost: as `hyperize`.
@@ -338,9 +359,37 @@ fn race(
     _interp: &mut Interpreter,
     _target: &Value,
     list: &LazyList,
-    _args: &[Value],
+    args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    hyperize(list, crate::value::HyperKind::Race)
+    hyperize(list, crate::value::HyperKind::Race, args)
+}
+
+/// `HyperSeq.configuration` of a lazy `.hyper` / `.race`: the `:batch` and
+/// `:degree` the list was tagged with.
+// Cost: O(1).
+fn hyper_configuration(
+    _interp: &mut Interpreter,
+    _target: &Value,
+    list: &LazyList,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() {
+        return None;
+    }
+    let (batch, degree) = list.hyper_config().unwrap_or((None, None));
+    Some(Ok(Interpreter::make_hyper_configuration(batch, degree)))
+}
+
+/// `HyperSeq.is-lazy`: a hyper or race sequence is never lazy, though the
+/// tagged list streams (the work is batched on demand).
+// Cost: O(1).
+fn hyper_is_lazy(
+    _interp: &mut Interpreter,
+    _target: &Value,
+    _list: &LazyList,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    args.is_empty().then_some(Ok(Value::FALSE))
 }
 
 /// `gist`/`Str`/`raku` of a list that may be infinite: rendering it would
