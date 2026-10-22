@@ -5985,7 +5985,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         return Ok(node);
     }
     if let Some(value) = &pd.literal_value {
-        return literal_parameter(pd, value);
+        return super::literal_parameter::convert(pd, value);
     }
     let type_capture = match type_capture_name(pd) {
         Some(name) => Some(type_capture_node(name)?),
@@ -6309,49 +6309,6 @@ fn parameter_trait_argument(argument: &Expr) -> Result<RakuAstNode, RuntimeError
         other => super::attribute::paren_argument(other),
     }
 }
-
-/// `sub f(1)` / `sub f("a")`: a `Parameter` with no target, the literal's type
-/// and the literal as its `value` (measured on rakudo 2026.09). The parser
-/// names it `__literal__`, gives it the literal's type unless one was written,
-/// and keeps the value.
-// Cost: O(1).
-fn literal_parameter(pd: &ParamDef, value: &Value) -> Result<RakuAstNode, RuntimeError> {
-    if pd.name != LITERAL_PARAM
-        || !matches!(
-            value.view(),
-            ValueView::Int(_)
-                | ValueView::BigInt(_)
-                | ValueView::Num(_)
-                | ValueView::Rat(..)
-                | ValueView::Str(_)
-        )
-    {
-        return Err(unsupported("literal-value parameter of another kind"));
-    }
-    // A sub's literal parameter carries its type (written or inferred); a pointy
-    // block's does not, and rakudo infers it from the value.
-    let inferred = match value.view() {
-        ValueView::Int(_) | ValueView::BigInt(_) => "Int",
-        ValueView::Num(_) => "Num",
-        ValueView::Rat(..) => "Rat",
-        _ => "Str",
-    };
-    let type_name = pd.type_constraint.as_deref().unwrap_or(inferred);
-    Ok(RakuAstNode {
-        class: RakuAstClass::Parameter,
-        fields: vec![
-            node_field(Some("type"), build_type_node(type_name)?),
-            RakuAstField {
-                name: Some("optional"),
-                value: RakuAstFieldValue::Node(Value::truth(false)),
-            },
-            leaf_field(Some("value"), value.clone()),
-        ],
-    })
-}
-
-/// The parser's name for a literal-value parameter.
-pub(super) const LITERAL_PARAM: &str = "__literal__";
 
 /// A basic `::T` capture is represented by `Parameter.type-captures` rather
 /// than by the parameter's ordinary `type` node. Smiley-constrained and other
