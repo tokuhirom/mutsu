@@ -668,6 +668,20 @@ impl Interpreter {
                 self.env_mut().insert_sym(*sym, val);
             }
         }
+        // EXPERIMENT (ADR-0055 slice 2): the whole capture beats the caller.
+        if std::env::var_os("MUTSU_CLOSURE_FLIP").is_some() {
+            let keys: Vec<(Symbol, Value)> = capture_tier
+                .iter()
+                .filter(|(k, _)| k.with_str(crate::env::is_plain_user_lexical))
+                .map(|(k, v)| (*k, v.clone()))
+                .collect();
+            for (k, v) in keys {
+                if cc.is_routine && k.is_routine_owned() {
+                    continue;
+                }
+                self.env_mut().insert_sym(k, v);
+            }
+        }
         // An enum key this closure read is lexical to the scope that declared it,
         // so the captured binding beats a same-named key the caller sees (a
         // routine's `enum M2 <Normal>` against the caller's `Volume::Normal`).
