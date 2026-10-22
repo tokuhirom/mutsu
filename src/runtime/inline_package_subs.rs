@@ -45,6 +45,14 @@ impl Interpreter {
         let mut collector = InlinePackageSubCollector::default();
         crate::ast_visit::walk_stmts(&mut collector, stmts);
         let unit_package = self.current_package();
+        // The routines are late-bound: they see every set of the unit's own
+        // top-level `use`s, not only those above them. An `EVAL`'s sets are
+        // its own (`enter_eval_unit_lexical_uses`).
+        let unit_import_sets = if only_nested {
+            Vec::new()
+        } else {
+            crate::compiler::Compiler::unit_use_set_ids(stmts)
+        };
         let declarations: Vec<_> = collector
             .out
             .into_iter()
@@ -180,8 +188,15 @@ impl Interpreter {
                 is_rw,
                 is_raw,
             );
-            let compiled =
-                self.compile_forward_declared_sub(name, &params, &param_defs, &body, is_rw, is_raw);
+            let compiled = self.compile_forward_declared_sub(
+                name,
+                &params,
+                &param_defs,
+                &body,
+                is_rw,
+                is_raw,
+                &unit_import_sets,
+            );
             let traits: Vec<(String, Option<crate::opcode::DeclTraitArg>)> = custom_traits
                 .iter()
                 .filter(|(trait_name, _)| {
@@ -253,6 +268,7 @@ impl Interpreter {
                             &body,
                             is_rw,
                             is_raw,
+                            &unit_import_sets,
                         );
                         let alt_outcome = self.register_sub_alternate_decl(
                             &name.resolve(),

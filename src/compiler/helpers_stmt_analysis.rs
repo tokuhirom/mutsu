@@ -358,6 +358,18 @@ impl Compiler {
         }
     }
 
+    /// The import sets of the main unit's top-level `use`s, innermost first:
+    /// the chain a routine of the unit is compiled under
+    /// ([`Self::defer_unit_lexical_use_sets`], which this mirrors). For a
+    /// compile of a routine body made outside the unit's own compile, such as
+    /// the CHECK-time pre-registration of an inline package's subs.
+    // Cost: O(s), s = statements of the unit.
+    pub(crate) fn unit_use_set_ids(stmts: &[Stmt]) -> Vec<Symbol> {
+        let mut probe = Compiler::new();
+        probe.defer_unit_lexical_use_sets(stmts, false);
+        probe.deferred_unit_sets.into_iter().rev().collect()
+    }
+
     /// The id of the `EVAL`-unit set for the block set id `id`: without the
     /// variables section it names (`BLOCK_VARS_MARK`), marked
     /// `EVAL_UNIT_MARK`.

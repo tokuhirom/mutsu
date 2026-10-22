@@ -307,6 +307,20 @@ impl Interpreter {
         &mut self,
         def: &crate::ast::FunctionDef,
     ) -> Arc<CompiledFunction> {
+        self.otf_compile_function_def_in_sets(def, &[])
+    }
+
+    /// [`Self::otf_compile_function_def`] for a routine of a unit whose
+    /// top-level `use`s fill the import sets `import_sets` (innermost first):
+    /// its calls to an imported routine resolve through them
+    /// (`OpCode::LexImportCall`, ADR-8751), as they do in the body the unit's
+    /// own compile makes.
+    // Cost: as `otf_compile_function_def`.
+    pub(crate) fn otf_compile_function_def_in_sets(
+        &mut self,
+        def: &crate::ast::FunctionDef,
+        import_sets: &[Symbol],
+    ) -> Arc<CompiledFunction> {
         let fingerprint = def.body_fingerprint();
         // The key discriminates (body, defining package), and both halves are
         // already integers: the fingerprint is memoized on the def, and the
@@ -324,7 +338,12 @@ impl Interpreter {
                 0xD6E8_FEB8_6659_FD93
             } else {
                 0
-            };
+            }
+            // A body compiled inside import sets differs from the same body
+            // outside them.
+            ^ import_sets.iter().fold(0u64, |acc, set| {
+                (acc.rotate_left(7) ^ set.id() as u64).wrapping_mul(0xA24B_AED4_963E_E407)
+            });
         if let Some(cached) = self.caches.otf_compile_cache.get(&cache_key) {
             return cached.clone();
         }
@@ -340,7 +359,7 @@ impl Interpreter {
         // stay per-interpreter and everything else shares one body process-wide
         // — the same sharing `imported_compiled_fns` and plan-attached
         // `def.compiled` bodies already do.
-        let shareable = !Self::routine_body_facts(def).declares_state;
+        let shareable = !Self::routine_body_facts(def).declares_state && import_sets.is_empty();
         if shareable && let Some(cached) = global_otf_cache().lock().unwrap().get(&cache_key) {
             let cached = Arc::clone(cached);
             self.caches
@@ -372,6 +391,9 @@ impl Interpreter {
             // Resolve $?DISTRIBUTION from the function's defining package (or an
             // enclosing module's distribution for a nested package / role method).
             compiler.current_distribution = self.resolve_package_distribution(&pkg);
+            if !import_sets.is_empty() {
+                compiler.seed_lexical_import_chain(import_sets.to_vec());
+            }
             let cc = compiler.compile_routine_closure_body(
                 &def.params,
                 &def.param_defs,
