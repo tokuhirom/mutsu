@@ -2207,6 +2207,23 @@ impl Interpreter {
                     .and_then(|pd| pd.type_constraint.as_deref())
                     .or(implicit_any_fail.then_some("Any"))
                 {
+                    // A `Proxy` argument is checked (and bound) by what its FETCH
+                    // answers, as the sub binder does; `Mu` and an `is rw` /
+                    // `is raw` parameter keep the Proxy itself.
+                    if val.is_proxy_value()
+                        && constraint != "Mu"
+                        && !pd.is_some_and(|pd| {
+                            pd.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw"))
+                        })
+                    {
+                        match self.auto_fetch_proxy(&val) {
+                            Ok(fetched) => val = fetched,
+                            Err(e) => {
+                                unwind_fast_bind!();
+                                return Err(e);
+                            }
+                        }
+                    }
                     let resolved_constraint = match pd {
                         Some(pd) => self.resolved_param_constraint(pd, constraint),
                         None => self.resolved_type_capture_name(constraint),

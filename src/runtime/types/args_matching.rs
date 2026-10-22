@@ -474,6 +474,18 @@ impl Interpreter {
                 // had just refused to match, because the *message* derefs and
                 // the matcher did not.
                 let mut arg_for_checks = arg_for_checks.map(|v| v.deref_container());
+                // A `Proxy` argument (an array element `:=`-bound to one, an
+                // `is rw` accessor's result) is checked by what its FETCH
+                // answers, as the binder does; `Mu` and an `is rw`/`is raw`
+                // parameter keep the Proxy itself.
+                if let Some(v) = &arg_for_checks
+                    && v.is_proxy_value()
+                    && pd.type_constraint.as_deref().is_some_and(|tc| tc != "Mu")
+                    && !pd.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw"))
+                    && let Ok(fetched) = self.auto_fetch_proxy(v)
+                {
+                    arg_for_checks = Some(fetched);
+                }
                 // Whether an actual argument was passed for this param (vs. an
                 // unsupplied optional filled with its type object below). It
                 // decides which value a `where` post-constraint is tested
