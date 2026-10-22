@@ -271,7 +271,13 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let unit = self.unit_of_source_sym(data.source_file_sym());
         let saved_unit = std::mem::replace(&mut self.current_unit, unit);
+        // The body's `exec_one` points `current_code` at `cc`, which the
+        // caller may free as soon as this returns (a `where * > 3` WhateverCode
+        // built and dropped by the binder). Hand the caller's frame back so a
+        // later `running_code()` never dereferences freed bytecode.
+        let saved_code = self.current_code;
         let result = self.call_compiled_closure_in_unit(data, cc, args, topic, compiled_fns);
+        self.current_code = saved_code;
         self.current_unit = saved_unit;
         result
     }

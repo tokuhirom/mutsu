@@ -192,7 +192,23 @@ impl Interpreter {
         // the Proxy's STORE when the modified aggregate is installed.
         let was_proxy = current.is_proxy_value();
         let current = if was_proxy {
-            self.auto_fetch_proxy(&current)?
+            let proxy = current;
+            let fetched = self.auto_fetch_proxy(&proxy)?;
+            // A Proxy whose FETCH answers a type object holds no aggregate yet
+            // (an unset array attribute behind an `is entry`-style accessor):
+            // the element store autovivifies one and STOREs it through the
+            // Proxy, then writes into what the Proxy now holds.
+            if !is_bind && (matches!(fetched.view(), ValueView::Package(_)) || fetched.is_nil()) {
+                let fresh = if matches!(index.view(), ValueView::Int(_)) {
+                    Value::real_array(Vec::new())
+                } else {
+                    Value::hash(crate::value::ValueMap::default())
+                };
+                self.store_proxy_lvalue(&proxy, fresh)?;
+                self.auto_fetch_proxy(&proxy)?
+            } else {
+                fetched
+            }
         } else {
             current
         };

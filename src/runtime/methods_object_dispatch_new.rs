@@ -446,7 +446,8 @@ impl Interpreter {
             // them. A `Distro` built from arguments leaves the rest unset
             // (type objects, `name`/`auth` "unknown"), as in Rakudo; only the
             // argument-less `Distro.new` mirrors the process.
-            // TODO: `Kernel.new(:name<k>)` honours its arguments in Rakudo too.
+            // `Kernel.new(:name<k>)` honours its arguments too, over the
+            // attributes the process gives it.
             let named: Vec<(String, Value)> = args
                 .iter()
                 .filter_map(|arg| match arg.view() {
@@ -464,6 +465,10 @@ impl Interpreter {
                     .get("name")
                     .is_some_and(|n| n.to_string_value() == "mswin32");
                 attrs.insert("is-win".to_string(), Value::truth(is_win));
+            } else if class == "Kernel" {
+                for (key, value) in named {
+                    attrs.insert(key, value);
+                }
             }
             return Ok(Value::make_instance(class_name, attrs));
         }

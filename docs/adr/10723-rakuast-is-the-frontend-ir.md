@@ -1905,3 +1905,12 @@ the ordinary parser's representation. The focused RakuAST test checks the
 code-variable, ampersand and immediate calls. The existing
 `t/routines/signature/pointy-sigilless-param-element-container.t` regression
 passes under the RakuAST frontend.
+
+### 6.102 S10: superseded built-in class and role HOWs (2026-10-22)
+
+Rakudo's `RakuAST::Class` and `RakuAST::Role` constructor forms do not render
+the unit's `EXPORTHOW::SUPERSEDE` context. The converter therefore carries the
+parser's effective built-in HOW in hidden `source-supersede` metadata, which
+the RakuAST renderer omits. Lowering restores the parser marker so subsequent
+class and role registration uses the superseding HOW without leaking it to a
+different compilation unit.

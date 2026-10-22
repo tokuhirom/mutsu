@@ -805,6 +805,20 @@ impl Interpreter {
         result.map(|_precompiled| ())
     }
 
+    /// Whether what the loaded `module` registered is still there: a routine
+    /// under its package, or the package itself (`require` reloads a module
+    /// whose routines an import scope's pop dropped).
+    // Cost: O(f), f = registered routines (a prefix scan, stopping at the first hit).
+    fn module_still_registered(&self, module: &str) -> bool {
+        let prefix = format!("{module}::");
+        self.is_known_package(module)
+            || self
+                .registry()
+                .functions
+                .keys()
+                .any(|k| k.as_str().starts_with(&prefix))
+    }
+
     /// Load `module` from an already-resolved `source_path` as its own
     /// compilation unit, without importing its exports into the caller.
     /// Returns whether the source came from the precompilation cache.
@@ -823,6 +837,12 @@ impl Interpreter {
         module: &str,
         source_path: std::path::PathBuf,
     ) -> Result<bool, RuntimeError> {
+        // `need` of a unit a `use` (or an earlier `need`) already loaded
+        // hands back the same compunit: running its body again redeclares
+        // its routines (#14539, CompUnit::Util `load('NativeCall')`).
+        if self.module.loaded_modules.contains(module) && self.module_still_registered(module) {
+            return Ok(false);
+        }
         let order = self
             .control
             .module_load_order

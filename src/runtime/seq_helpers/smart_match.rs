@@ -2168,10 +2168,11 @@ impl Interpreter {
             {
                 left.to_string_value() == right.to_string_value()
             }
-            // Date/DateTime ~~ Str: Str.ACCEPTS(Date/DateTime) compares the
-            // temporal value's string representation with the matcher.
+            // Date/DateTime/CompUnit ~~ Str: Str.ACCEPTS(Any:D) compares the
+            // value's string representation (a CompUnit's is its short-name,
+            // CompUnit::Util's `find-loaded('Test')`) with the matcher.
             (ValueView::Instance { class_name: cn, .. }, ValueView::Str(_))
-                if matches!(cn.resolve().as_ref(), "Date" | "DateTime") =>
+                if matches!(cn.resolve().as_ref(), "Date" | "DateTime" | "CompUnit") =>
             {
                 left.to_string_value() == right.to_string_value()
             }

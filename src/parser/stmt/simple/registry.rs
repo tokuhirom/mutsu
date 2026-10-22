@@ -292,6 +292,7 @@ pub(crate) fn reset_user_subs() {
         }
     });
     DECLARE_KEYWORDS.with(|m| m.borrow_mut().clear());
+    EXPORTHOW_ERRORS.with(|e| e.borrow_mut().clear());
     super::slang_modes::reset_slang_modes();
     // ... and, like the language revision above, a nested parse that was asked
     // for a localized slang (`Str.AST("JA")`) re-establishes its vocabulary
@@ -317,22 +318,82 @@ pub(crate) fn set_current_language_version(version: &str) {
 /// a parse-time concern: which metaclass the declaration is built with is
 /// resolved at registration time, from the module's `EXPORTHOW::DECLARE`
 /// constant or from the slang's own record (ADR-0091 §2.2).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct DeclareKeyword {
     /// Whether the keyword declares a `role` rather than a `class`. An
     /// EXPORTHOW::DECLARE keyword is always class-like; a slang declarator
     /// says which through its `$*PKGDECL` (ADR-0091).
     pub(crate) is_role: bool,
+    /// The module whose `EXPORTHOW` registered the entry; a second module
+    /// registering the same declarator is an `X::EXPORTHOW::Conflict`.
+    pub(crate) source: String,
+}
+
+/// What an `EXPORTHOW` import got wrong, reported once the unit is parsed.
+#[derive(Clone, Debug)]
+pub(crate) enum ExportHowError {
+    /// `X::EXPORTHOW::Conflict`: `directive` is `DECLARE` or `SUPERSEDE`.
+    Conflict {
+        directive: &'static str,
+        declarator: String,
+    },
+    /// `X::EXPORTHOW::NothingToSupersede`.
+    NothingToSupersede { declarator: String },
+}
+
+/// Key of the pending [`ExportHowError`] in the declarator table, which gives
+/// it the table's unit scoping and nested-scan snapshots.
+const EXPORTHOW_ERROR_KEY: &str = "!error";
+
+/// The package declarators the language has before any import.
+const BUILTIN_DECLARATORS: [&str; 7] = [
+    "class", "role", "grammar", "module", "package", "knowhow", "native",
+];
+
+thread_local! {
+    static EXPORTHOW_ERRORS: RefCell<HashMap<String, ExportHowError>> =
+        RefCell::new(HashMap::new());
+}
+
+fn note_exporthow_error(error: ExportHowError) {
+    // The first problem of a unit is the one reported.
+    EXPORTHOW_ERRORS.with(|e| {
+        e.borrow_mut()
+            .entry(EXPORTHOW_ERROR_KEY.to_string())
+            .or_insert(error);
+    });
+}
+
+/// The `EXPORTHOW` problem the unit's imports caused, if any (taken once).
+pub(crate) fn take_exporthow_error() -> Option<ExportHowError> {
+    EXPORTHOW_ERRORS.with(|e| e.borrow_mut().remove(EXPORTHOW_ERROR_KEY))
 }
 
 /// Register a declarator keyword (from a `use`d module's EXPORTHOW::DECLARE
 /// block, or from a slang's `package_declarator:sym<kw>` candidate) for the
 /// rest of the compilation unit: `keyword Name { ... }` then parses like
 /// `class`/`role` with the declarator's HOW protocol driving registration.
-pub(crate) fn register_declare_keyword(keyword: &str, is_role: bool) {
+pub(crate) fn register_declare_keyword(module: &str, keyword: &str, is_role: bool) {
     DECLARE_KEYWORDS.with(|m| {
-        m.borrow_mut()
-            .insert(keyword.to_string(), DeclareKeyword { is_role });
+        let mut m = m.borrow_mut();
+        // A built-in declarator, or one another module imported, cannot be
+        // declared again.
+        let taken = BUILTIN_DECLARATORS.contains(&keyword)
+            || m.get(keyword).is_some_and(|d| d.source != module);
+        if taken {
+            note_exporthow_error(ExportHowError::Conflict {
+                directive: "DECLARE",
+                declarator: keyword.to_string(),
+            });
+            return;
+        }
+        m.insert(
+            keyword.to_string(),
+            DeclareKeyword {
+                is_role,
+                source: module.to_string(),
+            },
+        );
     });
 }
 
@@ -354,12 +415,28 @@ const SUPERSEDE_PREFIX: &str = "SUPERSEDE::";
 
 /// Record that a `use`d module's `EXPORTHOW::SUPERSEDE` replaces the HOW of the
 /// built-in declarator `keyword` (`class`, `role`, ...) for the rest of the unit.
-pub(crate) fn register_supersede_keyword(keyword: &str) {
+pub(crate) fn register_supersede_keyword(module: &str, keyword: &str) {
     DECLARE_KEYWORDS.with(|m| {
-        m.borrow_mut().insert(
-            format!("{SUPERSEDE_PREFIX}{keyword}"),
+        let mut m = m.borrow_mut();
+        let key = format!("{SUPERSEDE_PREFIX}{keyword}");
+        if !BUILTIN_DECLARATORS.contains(&keyword) && !m.contains_key(keyword) {
+            note_exporthow_error(ExportHowError::NothingToSupersede {
+                declarator: keyword.to_string(),
+            });
+            return;
+        }
+        if m.get(&key).is_some_and(|d| d.source != module) {
+            note_exporthow_error(ExportHowError::Conflict {
+                directive: "SUPERSEDE",
+                declarator: keyword.to_string(),
+            });
+            return;
+        }
+        m.insert(
+            key,
             DeclareKeyword {
                 is_role: keyword == "role",
+                source: module.to_string(),
             },
         );
     });
@@ -384,12 +461,23 @@ pub(crate) fn declare_keyword_is_role(keyword: &str) -> bool {
 /// Snapshot / restore the DECLARE keyword table around a nested module scan
 /// (the nested parse's reset clears it, and any keywords the scanned module
 /// itself imports are lexical to that module, not to the importer).
-pub(in crate::parser) fn declare_keywords_snapshot() -> HashMap<String, DeclareKeyword> {
-    DECLARE_KEYWORDS.with(|m| m.borrow().clone())
+pub(in crate::parser) fn declare_keywords_snapshot() -> DeclareSnapshot {
+    DeclareSnapshot(
+        DECLARE_KEYWORDS.with(|m| m.borrow().clone()),
+        EXPORTHOW_ERRORS.with(|e| e.borrow().clone()),
+    )
 }
 
-pub(in crate::parser) fn restore_declare_keywords(saved: HashMap<String, DeclareKeyword>) {
-    DECLARE_KEYWORDS.with(|m| *m.borrow_mut() = saved);
+/// The declarator table and the pending `EXPORTHOW` problem, as saved by
+/// [`declare_keywords_snapshot`].
+pub(in crate::parser) struct DeclareSnapshot(
+    HashMap<String, DeclareKeyword>,
+    HashMap<String, ExportHowError>,
+);
+
+pub(in crate::parser) fn restore_declare_keywords(saved: DeclareSnapshot) {
+    DECLARE_KEYWORDS.with(|m| *m.borrow_mut() = saved.0);
+    EXPORTHOW_ERRORS.with(|e| *e.borrow_mut() = saved.1);
 }
 
 pub(crate) fn current_language_version() -> String {

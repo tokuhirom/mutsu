@@ -8,7 +8,7 @@ The campaign replaces the 2026-07 "add `nqp::` ops on demand only" rule
 op set is a threshold function, so the whole documented set is closed category
 by category instead of one op per failing dist.
 
-**Measured 2026-10-04** with
+**Measured 2026-10-21** with
 
 ```sh
 scripts/nqp-op-coverage.py --mutsu target/debug/mutsu > table.md
@@ -43,7 +43,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Captures | 5 / 5 | 0 | #11496 |
 | Coercion | 10 / 10 | 0 | #11553 |
 | Conditional | 5 / 5 | 0 | #11500 |
-| Context Introspection | 24 / 24 | 0 |  |
+| Context Introspection | 24 / 24 | 0 | #11498 |
 | Loop/Control | 6 / 6 | 0 | #11500 |
 | Exception Handling | 15 / 15 | 0 | #11497 |
 | Processes | 4 / 4 | 0 | #11501 |
@@ -55,7 +55,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | NativeCall | 6 / 7 | 1 | #11504 |
 | Numeric | 17 / 17 | 0 | #11490 |
 | Objects | 30 / 31 | 1 | #11499 |
-| Parametric Extensions | 5 / 5 | 0 |  |
+| Parametric Extensions | 5 / 5 | 0 | #11499 |
 | Profiling | 1 / 3 | 2 | #11504 |
 | Serialization context | 15 / 16 | 1 | #11504 |
 | Stream Decoding | 10 / 10 | 0 | #11503 |

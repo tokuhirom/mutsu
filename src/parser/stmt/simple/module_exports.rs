@@ -321,10 +321,10 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
             apply_module_exports(&probe_dynamic_exports(module));
         }
         for (keyword, _how_type) in &scan.declare_keywords {
-            register_declare_keyword(keyword, false);
+            register_declare_keyword(module, keyword, false);
         }
         for keyword in &scan.supersede_keywords {
-            register_supersede_keyword(keyword);
+            register_supersede_keyword(module, keyword);
         }
     } else if module == "JSON::Fast" {
         // Nothing on the module ladder supplies `JSON::Fast`, so the native

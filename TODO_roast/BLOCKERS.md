@@ -147,7 +147,6 @@ unless noted.
 | Non-goal | `S06-advanced/return_function.t` | 0/4 (runs, all fail) | SORRY | Expects the old Pair-flattening behavior. rakudo also rejects it at compile time. Outside spectest.data |
 | Non-goal | `S10-packages/require-and-use--dead-file.t` | 3/18 | 2/18 FAIL | Return values of `require`/`use`/`no` and `%*INC` updates unimplemented. But raku itself also fails this file |
 | Non-goal | `S12-class/open_closed.t` | **SORRY** at line 17 (was 8/9) | SORRY (no `oo` module) | Line 17 is a roast-side typo: `throws-like '…', Exception, '…');` has an unbalanced `)`, so the file cannot compile anywhere; test 7 also had a typo (`method h` says `'called Qux.i'`). raku cannot load the `oo` module either. Awaiting an upstream fix |
-| Non-goal | `S12-meta/exporthow.t` | 9/12, notok 5, 6, 10 (2026-10-22) | none (runs to the plan) | `EXPORTHOW::SUPERSEDE` of `class` now works (#14241). Tests 5, 6 and 10 need `X::EXPORTHOW::NothingToSupersede` (superseding a declarator that does not exist) and `X::EXPORTHOW::Conflict` (two modules superseding/declaring the same declarator), neither thrown yet. Rakudo itself dies at line 22 (`ClassHOW` has no `tryit`) |
 | Non-goal | `S12-traits/basic.t` | 0 (dies before the plan: `Can only use : as invocant marker…`) | SORRY (removed) | Removed `trait_auxiliary` syntax. raku also rejects it |
 | Non-goal | `S12-traits/parameterized.t` | aborts at 6/8 | SORRY (removed) | Same as above (the `trait_auxiliary:<is>` category has been removed from the language) |
 | Non-goal | `S24-testing/6-done_testing.t` | dies after 2 tests | dies after 2 tests (same error) | New since the previous re-measure. Line 4 calls `ok 0, :todo(1)` — a `:todo` named argument that today's `Test` does not take; raku and mutsu both die with `Cannot resolve caller ok(Int:D, :todo(Int))`. mutsu matches raku = no implementation needed |
@@ -188,13 +187,6 @@ completed fix history lives in `news/`.
   multi-dimensional EXISTS-POS with Failure from a negative index; 64 needs a `but` mixin with a
   role implementing AT-POS + `substr-rw`. (BIND-POS/DELETE-POS and the shared-cell BIND-POS are
   done — pin: t/bind-pos-shared-cell.t.)
-- **`S12-meta/exporthow.t`** — as of 2026-10-14 the file does not compile in mutsu: the
-  `controller` declarator from `packages/S12-meta/lib/Declare.rakumod` (declared as
-  `class DECLARE::controller is Metamodel::ClassHOW` in `my package EXPORTHOW`) is never installed
-  (#13471). Before that, test 1 passed (X::EXPORTHOW::InvalidDirective validation on
-  module load). The rest needs EXPORTHOW SUPERSEDE of a custom meta-type HOW (a `tryit` method
-  added to ClassHOW), which reference rakudo also lacks — blocks the whitelist regardless of
-  mutsu.
 - **`S12-traits/basic.t`** — tests 2-4 need the obsolete `trait_auxiliary:<is>` feature; tests
   5-8 (class role composition) would pass but the EVAL on line 32 kills the program first.
 
@@ -208,8 +200,7 @@ where "needs lexical hoisting" was simply false).
    surface in a non-whitelisted file, so nothing gated it: #13470 (regex `^` after an atom; kills
    all of `S05-mass/rx.t`), #13472 (merged signal supplies complete at once; `exit` inside a signal
    `whenever` hangs — `6.c/MISC/bug-coverage-stress.t`), #13473 (`plan` unresolvable in a late
-   subtest — `S10-packages/basic.t`), #13471 (EXPORTHOW `class DECLARE::kw` spelling —
-   `S12-meta/exporthow.t`).
+   subtest — `S10-packages/basic.t`). (`S12-meta/exporthow.t` is whitelisted since #14536.)
 2. **`APPENDICES/A02-some-day-maybe/misc.t` — the new ★** (raku v2026.09 passes 6/6): #13469
    (`my @a[;]`) first, then re-check the remaining subtests.
 3. **`6.c/S02-names/pseudo-6c.t` — the stash road** (aborts at 56/161 on `::($our)::A43`; the

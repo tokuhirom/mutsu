@@ -46,6 +46,7 @@ pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name
 pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) use stmt::modifier::for_modifier_loop_params;
 pub(crate) use stmt::modifier::rewrite_placeholder_block_modifier_stmt;
+pub(crate) use stmt::simple::supersede_marker;
 pub(crate) use stmt::simple::{
     CanonicalScans, ExportedVar, canonical_export_scans, scanned_exported_types,
     scanned_exported_vars, scanned_exported_vars_complete, scanned_hook_type_keys,
@@ -606,6 +607,43 @@ fn build_vcs_conflict_error(lines: &[i64]) -> RuntimeError {
     err
 }
 
+/// Build the compile-time error a `use`d module's `EXPORTHOW` raises:
+/// `X::EXPORTHOW::Conflict` or `X::EXPORTHOW::NothingToSupersede`.
+fn build_exporthow_error(error: stmt::simple::ExportHowError) -> RuntimeError {
+    use stmt::simple::ExportHowError;
+    let mut attrs = std::collections::HashMap::new();
+    let (class, message) = match &error {
+        ExportHowError::Conflict {
+            directive,
+            declarator,
+        } => {
+            attrs.insert("directive".to_string(), Value::str(directive.to_string()));
+            attrs.insert("declarator".to_string(), Value::str(declarator.clone()));
+            (
+                "X::EXPORTHOW::Conflict",
+                format!(
+                    "'EXPORTHOW::{directive}::{declarator}' conflicts with an existing meta-object imported into this lexical scope"
+                ),
+            )
+        }
+        ExportHowError::NothingToSupersede { declarator } => {
+            attrs.insert("declarator".to_string(), Value::str(declarator.clone()));
+            (
+                "X::EXPORTHOW::NothingToSupersede",
+                format!("There is no package declarator '{declarator}' to supersede"),
+            )
+        }
+    };
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    let mut err = RuntimeError::new(message);
+    err.set_code(Some(RuntimeErrorCode::ParseGeneric));
+    err.exception = Some(Box::new(Value::make_instance(
+        crate::symbol::Symbol::intern(class),
+        attrs,
+    )));
+    err
+}
+
 /// Build the compile-time error rakudo raises when a `whenever` block appears
 /// outside the lexical scope of a `supply`/`react` block: `X::Comp::WheneverOutOfScope`.
 fn build_whenever_out_of_scope_error(line: i64) -> RuntimeError {
@@ -988,6 +1026,10 @@ fn parse_program_keeping(
                 // A `whenever` outside a `supply`/`react` block is a compile-time
                 // error in rakudo (X::Comp::WheneverOutOfScope).
                 Err(build_whenever_out_of_scope_error(line))
+            } else if let Some(error) = stmt::simple::take_exporthow_error() {
+                // A `use`d module's `EXPORTHOW` conflicts with a declarator
+                // already in scope, or supersedes one that does not exist.
+                Err(build_exporthow_error(error))
             } else if let Some(diag) = outer_redecl::find_scope_diagnostic(&mut stmts) {
                 // Redeclaring a lexical after referencing its outer binding in the
                 // same scope (X::Redeclaration::Outer), or `my $x = $x`
