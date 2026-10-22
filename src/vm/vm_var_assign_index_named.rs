@@ -5711,7 +5711,23 @@ impl Interpreter {
         // rather than treating the Proxy as an opaque non-container and
         // dropping the store in the generic catch-all below.
         let target = if target.is_proxy_value() {
-            self.auto_fetch_proxy(&target)?
+            let proxy = target;
+            let fetched = self.auto_fetch_proxy(&proxy)?;
+            // The Proxy holds no aggregate yet (its FETCH answered a type
+            // object, as an `is entry` accessor of an unset array attribute
+            // does): the element store autovivifies one and STOREs it through
+            // the Proxy, then writes into what the Proxy now holds.
+            if matches!(fetched.view(), ValueView::Package(_)) || fetched.is_nil() {
+                let fresh = if is_positional {
+                    Value::real_array(Vec::new())
+                } else {
+                    Value::hash(crate::value::ValueMap::default())
+                };
+                self.store_proxy_lvalue(&proxy, fresh)?;
+                self.auto_fetch_proxy(&proxy)?
+            } else {
+                fetched
+            }
         } else {
             target
         };
