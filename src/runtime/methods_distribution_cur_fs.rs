@@ -104,6 +104,26 @@ impl Interpreter {
                 if let Some(existing) = self.env.get(&cache_key).cloned() {
                     return Ok(existing);
                 }
+                // The repository's loaded list outlives the frame a `need`
+                // ran in: the same unit is the same compunit (#14539).
+                if let Some(existing) = self
+                    .module
+                    .cur_repo
+                    .loaded
+                    .get(&prefix)
+                    .and_then(|units| {
+                        units.iter().find(|unit| match unit.view() {
+                            crate::value::ValueView::Instance { attributes, .. } => attributes
+                                .as_map()
+                                .get("short-name")
+                                .is_some_and(|name| name.to_string_value() == short_name_str),
+                            _ => false,
+                        })
+                    })
+                    .cloned()
+                {
+                    return Ok(existing);
+                }
                 // Try to find the module file in the prefix directory
                 let relative = short_name_str.replace("::", "/");
                 let mut found_path = None;
