@@ -1041,7 +1041,23 @@ impl Interpreter {
                 self.dispatch.suppress_binding_error_enhance = true;
                 return self.call_compiled_closure(&data, &cf.code, call_args, fns);
             }
-            if let Some(cc) = data.compiled_code.clone() {
+            // A `supply` block body keeps the carrier below, which hands it its
+            // emitter and the panic->quit boundary (see `call_supply_callback`).
+            // So does a closure that writes a free variable it did not capture
+            // as a shared cell -- a phaser (`CLOSE { $done = True }`) built at
+            // block entry, before the `my $done` it names has run. Its write
+            // reaches the live frame through the caller env only, and the
+            // carrier's exit writeback is what delivers it.
+            // TODO: hoist a phaser's block-declared lexicals into cells at block
+            // entry, then drop the second condition.
+            if let Some(cc) = data.compiled_code.clone().filter(|cc| {
+                !cc.is_supply_block_body
+                    && cc.supply_emitter_sym.is_none()
+                    && !cc.free_var_writes.iter().any(|sym| {
+                        sym.with_str(crate::env::is_plain_user_lexical)
+                            && !data.env.get_sym(*sym).is_some_and(Value::is_container_ref)
+                    })
+            }) {
                 let empty_fns = CompiledFns::default();
                 let fns = data.compiled_fns.as_deref().unwrap_or(&empty_fns);
                 return self.call_compiled_closure(&data, &cc, call_args, fns);
