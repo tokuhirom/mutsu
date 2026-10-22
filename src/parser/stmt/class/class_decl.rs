@@ -241,12 +241,26 @@ pub(crate) fn reject_trailing_postfix(rest: &str) -> Result<(), PError> {
     Ok(())
 }
 
+/// Tag a declaration written with the built-in declarator `keyword` with the
+/// HOW marker when a `use`d module's `EXPORTHOW::SUPERSEDE` replaced it.
+pub(crate) fn apply_supersede(stmt: &mut Stmt, keyword: &str) {
+    let Some(marker) = super::super::simple::supersede_marker(keyword) else {
+        return;
+    };
+    if let Some(Stmt::ClassDecl { custom_traits, .. } | Stmt::RoleDecl { custom_traits, .. }) =
+        crate::ast::package_header::declaration_mut(stmt)
+    {
+        custom_traits.push(marker);
+    }
+}
+
 /// Parse `class` declaration.
 pub(crate) fn class_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("class", input).ok_or_else(|| PError::expected("class declaration"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, stmt) = class_decl_body(rest, false)?;
+    let (rest, mut stmt) = class_decl_body(rest, false)?;
     reject_trailing_postfix(rest)?;
+    apply_supersede(&mut stmt, "class");
     Ok((rest, stmt))
 }
 

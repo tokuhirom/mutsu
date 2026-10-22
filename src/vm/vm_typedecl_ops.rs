@@ -617,6 +617,21 @@ impl Interpreter {
                                 .contains_key(how_name.as_str())
                                 .then(|| Value::package(how_name))
                         })
+                        .or_else(|| {
+                            // A built-in declarator whose HOW the module's
+                            // `EXPORTHOW::SUPERSEDE` replaced.
+                            let name = crate::qualified::qualified(
+                                Symbol::intern("EXPORTHOW::SUPERSEDE"),
+                                Symbol::intern(&keyword),
+                            );
+                            self.get_env_with_main_alias_sym(name.as_str(), name)
+                                .or_else(|| {
+                                    self.registry()
+                                        .classes
+                                        .contains_key(name.as_str())
+                                        .then(|| Value::package(name))
+                                })
+                        })
                         .or_else(|| self.slang_declarator_how(&keyword));
                     if let Some(how_type) = how_type {
                         (

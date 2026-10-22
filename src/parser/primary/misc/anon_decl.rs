@@ -143,7 +143,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             repr: None,
             body,
             language_version: crate::parser::current_language_version(),
-            custom_traits: colons_marker(colons),
+            custom_traits: colons_marker(colons, "class"),
             is_unit: false,
             implicit_grammar_parent: false,
             is_grammar: false,
@@ -259,7 +259,7 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
             repr: None,
             body,
             language_version: crate::parser::current_language_version(),
-            custom_traits: colons_marker(colons),
+            custom_traits: colons_marker(colons, "grammar"),
             is_unit: false,
             implicit_grammar_parent,
             is_grammar: true,
@@ -319,7 +319,7 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
             body,
             is_rw: false,
             language_version: crate::parser::current_language_version(),
-            custom_traits: colons_marker(colons),
+            custom_traits: colons_marker(colons, "role"),
             decl_id: crate::ast::next_class_decl_id(),
         })),
     ))
@@ -346,12 +346,14 @@ pub(crate) fn prepend_does_header(body: &mut Vec<Stmt>, does_roles: &[String]) {
 
 /// The `custom_traits` of a declaration spelled with (`colons`) or without the
 /// empty name `::`.
-fn colons_marker(colons: bool) -> Vec<(String, Option<Expr>)> {
+fn colons_marker(colons: bool, keyword: &str) -> Vec<(String, Option<Expr>)> {
+    let mut traits = Vec::new();
     if colons {
-        vec![(ANON_COLONS_TRAIT.to_string(), None)]
-    } else {
-        Vec::new()
+        traits.push((ANON_COLONS_TRAIT.to_string(), None));
     }
+    // `EXPORTHOW::SUPERSEDE` replaced this built-in declarator's HOW.
+    traits.extend(crate::parser::stmt::simple::supersede_marker(keyword));
+    traits
 }
 
 /// After parsing `anon class`/`anon role`/`anon grammar` via the

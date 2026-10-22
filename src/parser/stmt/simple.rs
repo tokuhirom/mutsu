@@ -50,7 +50,8 @@ pub(crate) use l10n::{
     l10n_match_infix, l10n_match_keyword, l10n_named_alias, set_l10n_preseed, set_l10n_vocabulary,
 };
 pub(crate) use registry::{
-    DeclareKeyword, declare_keyword_is_role, declare_keyword_names, register_declare_keyword,
+    DeclareKeyword, declare_keyword_is_role, declare_keyword_names, register_declare_keyword, register_supersede_keyword,
+    supersede_marker,
 };
 pub(crate) use registry::{
     current_language_version, current_language_version_starts_with, set_current_language_version,
