@@ -220,6 +220,9 @@ impl Walker<'_> {
                     Frame {
                         bindings,
                         role: Some(params),
+                        // A role body is a `Sub`, which is what a variable
+                        // trait's `Variable.block` answers inside it.
+                        owner: "Sub",
                         ..Frame::default()
                     },
                 );
@@ -254,6 +257,7 @@ impl Walker<'_> {
     /// its own phasers.
     fn walk_members(&mut self, body: &mut Vec<Stmt>, frame: Frame) {
         let in_package = frame.package.is_some();
+        let in_role = frame.role.is_some() && !in_package;
         self.frames.push(frame);
         // A BEGIN written directly in a package body already runs while the
         // package is declared (it may change the package: `^add_role`), so it
@@ -275,6 +279,13 @@ impl Walker<'_> {
                 } => {
                     declares_begin |= in_package;
                     !in_package
+                }
+                // A role's own variable with a user trait: its lift gives the
+                // variable a static cell the trait is applied over (#14532).
+                Stmt::VarDecl { custom_traits, .. }
+                    if in_role && super::var_traits::applies_user_trait(custom_traits) =>
+                {
+                    true
                 }
                 // What the body imports, its routines see too.
                 Stmt::Use { .. } | Stmt::No { .. } | Stmt::Need { .. } | Stmt::Import { .. } => {
