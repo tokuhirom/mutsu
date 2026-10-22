@@ -155,17 +155,19 @@ pub(super) fn parameterized_type_node_at(
             fields.push(node_field(None, node));
         }
     }
+    // Rakudo omits `args` for an empty application (`R[]`).
+    let mut node_fields = vec![node_field(Some("base-type"), base)];
+    if !fields.is_empty() {
+        node_fields.push(node_field(
+            Some("args"),
+            RakuAstNode {
+                class: RakuAstClass::ArgList,
+                fields,
+            },
+        ));
+    }
     Ok(RakuAstNode {
         class: RakuAstClass::TypeParameterized,
-        fields: vec![
-            node_field(Some("base-type"), base),
-            node_field(
-                Some("args"),
-                RakuAstNode {
-                    class: RakuAstClass::ArgList,
-                    fields,
-                },
-            ),
-        ],
+        fields: node_fields,
     })
 }
