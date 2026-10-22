@@ -5163,6 +5163,7 @@ t/rakuast/rakuast-declaration-given-modifier.t
 t/rakuast/rakuast-declaration-headers.t
 t/rakuast/rakuast-declaration-loose-tail.t
 t/rakuast/rakuast-declaration-modifier-cohort.t
+t/rakuast/rakuast-declaration-postfix-term.t
 t/rakuast/rakuast-declaration-traits.t
 t/rakuast/rakuast-declarations-as-terms.t
 t/rakuast/rakuast-declare-how-declarator.t
