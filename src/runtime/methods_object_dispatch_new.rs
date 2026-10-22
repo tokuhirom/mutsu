@@ -1720,10 +1720,13 @@ impl Interpreter {
                 }
                 self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 self.enforce_attribute_smiley_constraints(class_key, &attrs, None)?;
+                // A type object cannot seed a numeric base's payload; an
+                // `is Array` / `is List` element can be any value (`Any`).
                 if matches!(
                     positional_ctor_args.first().map(Value::view),
                     Some(ValueView::Package(_))
-                ) {
+                ) && !class_mro.iter().any(|n| *n == "Array" || *n == "List")
+                {
                     return Err(RuntimeError::new("Cannot convert type object to Int"));
                 }
                 if class_mro.iter().any(|n| *n == "Array" || *n == "List")
