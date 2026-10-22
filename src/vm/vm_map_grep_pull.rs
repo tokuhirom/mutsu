@@ -176,6 +176,8 @@ impl Interpreter {
             *pos = items.len();
             return Ok(true);
         }
+        // A pure Int callback is served a batch (see `pure_int_prefix_batch`).
+        let needed = self.pure_int_prefix_batch(func.as_ref(), mode, items, *pos, needed);
         while out.produced.len() - produced_base < needed
             && (*pos < items.len() || plan.pending_slip.is_some())
         {
