@@ -257,37 +257,6 @@ impl Interpreter {
                             .collect(),
                     );
                     let result = self.call_sub_value(code.clone(), call_args)?;
-                    if let ValueView::Sub(sub) = code.view() {
-                        let closure_writebacks: Vec<(crate::symbol::Symbol, Value)> =
-                            if let Some(ov) = self.closure_env_overrides.get(&sub.id) {
-                                // The interpreter carrier keeps an anonymous block's
-                                // persistent captured state in `closure_env_overrides`.
-                                // Its ordinary non-`merge_all` exit path only copies
-                                // scalar captures into the caller env, so an object
-                                // assigned to a captured lexical can otherwise remain
-                                // stranded in the override. CAS callbacks need that
-                                // write immediately: `Concurrent::Stack.pop` returns
-                                // its captured `$taken` object after this call.
-                                if let Some(cc) = &sub.compiled_code {
-                                    cc.free_var_writes
-                                        .iter()
-                                        .filter_map(|sym| {
-                                            let value = ov.get_sym(*sym).cloned()?;
-                                            (sub.env.get_sym(*sym) != Some(&value))
-                                                .then_some((*sym, value))
-                                        })
-                                        .collect()
-                                } else {
-                                    Vec::new()
-                                }
-                            } else {
-                                Vec::new()
-                            };
-                        for (sym, value) in closure_writebacks {
-                            self.env.insert_sym(sym, value);
-                            self.record_caller_var_writeback(&sym.resolve());
-                        }
-                    }
                     if let Some(cas_pre_env) = cas_pre_env {
                         let changed: Vec<String> = self
                             .env

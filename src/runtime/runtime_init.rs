@@ -3114,7 +3114,6 @@ impl Interpreter {
             block_scope_depth: 0,
             pending_sigilless_store: None,
             regex_state: Default::default(),
-            closure_env_overrides: HashMap::new(),
             caches: Default::default(),
             pending_eval_sigilless: Vec::new(),
             pending_eval_placeholder_params: Vec::new(),

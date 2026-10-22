@@ -575,7 +575,6 @@ impl Interpreter {
             block_scope_depth: self.block_scope_depth,
             pending_sigilless_store: None,
             regex_state: self.regex_state.fork_for_thread(),
-            closure_env_overrides: self.closure_env_overrides.clone(),
             caches: self.caches.fork_for_thread(),
             pending_eval_sigilless: Vec::new(),
             pending_eval_placeholder_params: Vec::new(),

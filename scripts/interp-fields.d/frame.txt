@@ -6,7 +6,6 @@ call_frames
 call_ic
 caller_env_stack
 callframe_stack
-closure_env_overrides
 closures_created
 cur_source_line
 current_code

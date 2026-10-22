@@ -3,7 +3,6 @@ amp_param_shadowed_names
 atomic_var_seen
 block_declared_vars
 class_body_static_names
-closure_captured_state
 composed_nested_method_captures
 constant_var_names_seen
 escaped_our_lexical_cells

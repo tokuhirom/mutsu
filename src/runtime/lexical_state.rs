@@ -318,13 +318,6 @@ pub(crate) struct LexicalState {
     /// Populated at `RegisterClass` / `RegisterRole`, which always run before
     /// the type can be instantiated.
     pub(crate) type_body_written_lexicals: std::sync::Arc<std::collections::HashSet<String>>,
-    /// Per-closure-instance captured-variable state, keyed by
-    /// (closure instance id, captured variable Symbol). This is the hot
-    /// closure-call persistence store (loaded/saved on every closure call for
-    /// its free variables); a typed key avoids the per-call
-    /// `format!("__mutsu_closure_cap::{id}::{name}")` String allocation and the
-    /// String hashing that dominated the closure dispatch profile.
-    pub(crate) closure_captured_state: HashMap<(u64, Symbol), Value>,
     /// Variable dynamic-scope metadata used by `.VAR.dynamic`.
     pub(crate) var_dynamic_flags: HashMap<String, bool>,
     /// Variable binding aliases: maps target name -> source name.
@@ -470,7 +463,6 @@ impl LexicalState {
             hoist_pending_cells: Vec::new(),
             param_bound_aggregates: Default::default(),
             type_body_written_lexicals: Default::default(),
-            closure_captured_state: HashMap::new(),
             var_dynamic_flags: HashMap::new(),
             var_bindings: HashMap::new(),
             atomic_var_seen: false,
@@ -535,10 +527,6 @@ impl LexicalState {
             // A worker can instantiate a type registered on the parent, so the
             // set of method-written lexicals travels with the clone.
             type_body_written_lexicals: self.type_body_written_lexicals.clone(),
-            // Mirror state_vars: a thread clone starts with no persisted
-            // closure captured state (falls back to the captured-env initial
-            // values), exactly as before this store existed.
-            closure_captured_state: HashMap::new(),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
             var_bindings: HashMap::new(),
             // Inherit monotonically: if the parent ever registered an atomic var,

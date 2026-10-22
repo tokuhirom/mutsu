@@ -378,7 +378,6 @@ impl Interpreter {
 
         // Process any pending instance destroys (e.g. objects that were nilled
         // before the start block but whose DESTROY wasn't yet triggered).
-        self.closure_env_overrides.clear();
         self.run_pending_instance_destroys()?;
 
         // Drain shared thread output buffers (concurrent output interleaved in real order).

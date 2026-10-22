@@ -729,55 +729,6 @@ impl Interpreter {
                 self.env_mut().insert_sym(*sym, val);
             }
         }
-        // Override with persisted per-closure-instance captured variable state.
-        // This ensures that each closure instance maintains independent mutable
-        // state across calls (e.g. two closures from the same factory each get
-        // their own copy of captured variables).
-        //
-        // Only the closure's free variables can be mutated by its body, so only
-        // those carry per-instance state. Iterating `cc.free_var_syms` (a handful
-        // of names) instead of the whole captured env (~100 names) avoids that
-        // many `format!` allocations and state-var lookups per call.
-        let cap_overrides: Vec<(Symbol, Value)> = cc
-            .free_var_syms
-            .iter()
-            .filter_map(|k| {
-                let persisted = self.get_closure_captured_state(data.id, *k);
-                // Per-instance frozen state only exists for free vars the body
-                // (or a nested closure) actually WRITES. A read-only free var
-                // must always resolve to the live caller binding — e.g. a
-                // type-constrained scalar (not boxed into a ContainerRef cell)
-                // rewritten by the mainline between calls (`my Str $e = "Yes";
-                // ... $e = "No"`) would otherwise be clobbered by the value
-                // persisted at the end of the previous call.
-                if !cc.free_var_writes.contains(k)
-                    && !cc.free_var_container_writes.contains(k)
-                    && persisted.is_none()
-                {
-                    return None;
-                }
-                // Skip box-on-capture cells: a ContainerRef-captured lexical is a
-                // shared container, not per-instance frozen state, so the stale
-                // closure_captured_state value must not clobber the live Arc.
-                if matches!(
-                    data.env.get_sym(*k).map(Value::view),
-                    Some(ValueView::ContainerRef(_))
-                ) {
-                    return None;
-                }
-                // Skip dynamic variables: they are resolved through the caller
-                // chain at call time, so they carry no per-instance state (see
-                // `is_dynamic_var_name`). Nothing persists them either.
-                if k.with_str(crate::env::is_dynamic_var_name) {
-                    return None;
-                }
-                persisted.map(|val| (*k, val.clone()))
-            })
-            .collect();
-        for (k, val) in cap_overrides {
-            self.env_mut().insert_sym(k, val);
-        }
-
         // `readonly_vars` is keyed by bare name and follows the CALLER's frames,
         // so a readonly parameter of whoever calls this closure must not decide
         // whether its own captured `$x` may be assigned: restore the readonly
@@ -1668,9 +1619,9 @@ impl Interpreter {
         // name. Argument evaluation installs the dereferenced value in this
         // closure's overlay, hiding the ContainerRef stored in `data.env`; the
         // call-site drain has no local slot here from which to recover the cell.
-        // Rejoin the overlay to the captured cell before persisting/merging the
-        // closure state so both this closure's next invocation and its creator
-        // observe the writeback.
+        // Rejoin the overlay to the captured cell before merging the closure
+        // state so both this closure's next invocation and its creator observe
+        // the writeback.
         let pending_sources: rustc_hash::FxHashSet<Symbol> = self
             .pending_rw_writeback_sources
             .iter()
@@ -1679,8 +1630,7 @@ impl Interpreter {
             .collect();
         for source in pending_sources {
             // Dynamic variables belong to the live dynamic frame, never to the
-            // closure's lexical capture/state (same rule as cap_overrides and
-            // the normal persistence loop below).
+            // closure's lexical capture.
             if source.with_str(crate::env::is_dynamic_var_name) {
                 continue;
             }
@@ -1713,6 +1663,8 @@ impl Interpreter {
             let Some(captured) = data.env.get_sym(source) else {
                 continue;
             };
+            // A capture that is not a cell has no state that outlives this
+            // call (ADR-0055 slice 5): only a cell is rejoined.
             if let ValueView::ContainerRef(cell) = captured.view() {
                 let cell = cell.clone();
                 // A DIFFERENT cell in the live env means a nested callee
@@ -1733,29 +1685,6 @@ impl Interpreter {
                             .insert_sym(source, Value::container_ref(cell));
                     }
                 }
-            } else {
-                self.set_closure_captured_state(data.id, source, updated);
-            }
-        }
-
-        // Persist captured variable state so this closure instance retains
-        // its own mutable state across calls (independent from other closures).
-        // Mirror of `cap_overrides` above: only free variables can be mutated by
-        // the body, so only those need persisting — and dynamic variables are
-        // excluded there, so persisting them here would only pin the closure to
-        // the first call's value.
-        for k in &cc.free_var_syms {
-            if k.with_str(crate::env::is_dynamic_var_name) {
-                continue;
-            }
-            // Mirror of the `cap_overrides` write gate: a free var the body
-            // never writes carries no per-instance state, so persisting it
-            // would only pin the closure to a stale value.
-            if !cc.free_var_writes.contains(k) && !cc.free_var_container_writes.contains(k) {
-                continue;
-            }
-            if let Some(val) = self.env().get_sym(*k).cloned() {
-                self.set_closure_captured_state(data.id, *k, val);
             }
         }
 
