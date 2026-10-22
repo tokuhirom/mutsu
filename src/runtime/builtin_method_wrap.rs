@@ -162,7 +162,7 @@ impl Interpreter {
         call_args.push(invocant.clone());
         call_args.extend(args.iter().cloned());
         self.shift_arg_sources_for_wrap_invocant();
-        let result = self.call_sub_value(outermost, call_args, false);
+        let result = self.call_sub_value(outermost, call_args);
         self.pop_method_samewith_context();
         self.dispatch.method_dispatch_stack.pop();
         result

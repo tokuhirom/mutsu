@@ -87,9 +87,7 @@ impl Interpreter {
             let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
             let new_val = {
                 let call_args = if let ValueView::Sub(sub) = code.view() {
-                    if sub.params.is_empty() {
-                        self.env.insert("_".to_string(), current.clone());
-                        self.env.insert("$_".to_string(), current.clone());
+                    if sub.params.is_empty() && sub.empty_sig {
                         Vec::new()
                     } else {
                         vec![current.clone()]
@@ -97,7 +95,7 @@ impl Interpreter {
                 } else {
                     vec![current.clone()]
                 };
-                self.call_sub_value(code.clone(), call_args, true)?
+                self.call_sub_value(code.clone(), call_args)?
             };
             self.check_atomic_elem_type(name, &new_val)?;
             // The cell is a `Scalar` (a `$` variable or an element), so an
@@ -197,7 +195,7 @@ impl Interpreter {
                 } else {
                     vec![current.clone()]
                 };
-                self.call_sub_value(code.clone(), call_args, true)?
+                self.call_sub_value(code.clone(), call_args)?
             };
             self.check_atomic_elem_type(&arr_name, &new_val)?;
             let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());

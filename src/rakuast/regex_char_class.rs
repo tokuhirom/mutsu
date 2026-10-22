@@ -22,6 +22,7 @@ pub enum RegexCharClassKind {
     Escape,
     FormFeed,
     CarriageReturn,
+    BackSpace,
     Nul,
     Any,
     Specified,
@@ -30,7 +31,7 @@ pub enum RegexCharClassKind {
 use RegexCharClassKind as K;
 
 /// Every kind with its class name and its backslash class.
-const KINDS: [(RegexCharClassKind, &str, Option<BackslashClass>); 13] = [
+const KINDS: [(RegexCharClassKind, &str, Option<BackslashClass>); 14] = [
     (
         K::Digit,
         "RakuAST::Regex::CharClass::Digit",
@@ -82,6 +83,11 @@ const KINDS: [(RegexCharClassKind, &str, Option<BackslashClass>); 13] = [
         Some(BackslashClass::CarriageReturn),
     ),
     (
+        K::BackSpace,
+        "RakuAST::Regex::CharClass::BackSpace",
+        Some(BackslashClass::BackSpace),
+    ),
+    (
         K::Nul,
         "RakuAST::Regex::CharClass::Nul",
         Some(BackslashClass::Nul),
@@ -129,6 +135,7 @@ impl RegexCharClassKind {
             BackslashClass::Escape => K::Escape,
             BackslashClass::FormFeed => K::FormFeed,
             BackslashClass::CarriageReturn => K::CarriageReturn,
+            BackslashClass::BackSpace => K::BackSpace,
             BackslashClass::Nul => K::Nul,
         }
     }

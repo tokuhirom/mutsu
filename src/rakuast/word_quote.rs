@@ -1,11 +1,11 @@
 //! A `quotewords` string that interpolates or quotes a word (`«a $b "c d"»`,
-//! `<<a $b>>`, `qqww/a $b/`).
+//! `<<a $b>>`, `qqww/a $b/`, `Qww/"a b"/`).
 //!
 //! Measured against rakudo 2026.09, it is a `QuotedString` with
 //! `processors => <quotewords val>` whose segments are the text as written:
-//! every unquoted run (words and the whitespace between them) is interpolated
-//! as one `qq` string, and every quoted word is a `QuoteWordsAtom` over its
-//! own `QuotedString`. The parser keeps the raw text
+//! every unquoted run (words and the whitespace between them) is one string
+//! segment, interpolated only when the quote permits it. Every quoted word is
+//! a `QuoteWordsAtom` over its own `QuotedString`. The parser keeps the raw text
 //! (`Spelling::InterpolatingWords`), so the segments are re-derived here; the
 //! lowering splits them back into words and hands them to the parser's own
 //! `quotewords_from_words`.
@@ -25,14 +25,16 @@ pub(super) fn convert(
     val: bool,
     text: &str,
     delimiter: Option<char>,
+    interpolates: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
-    convert_nested(val, text, delimiter, 0)
+    convert_nested(val, text, delimiter, interpolates, 0)
 }
 
 fn convert_nested(
     val: bool,
     text: &str,
     delimiter: Option<char>,
+    interpolates: bool,
     depth: usize,
 ) -> Result<RakuAstNode, RuntimeError> {
     if depth >= 128 {
@@ -40,7 +42,7 @@ fn convert_nested(
             "a word quote nested beyond 128 levels",
         ));
     }
-    let parts = crate::parser::quotewords_spelled_parts(text, delimiter)
+    let parts = crate::parser::quotewords_spelled_parts(text, delimiter, interpolates)
         .ok_or_else(|| super::convert::unsupported("a word quote that does not parse"))?;
     let mut segments = Vec::new();
     for part in &parts {
@@ -64,6 +66,7 @@ fn convert_nested(
                     val,
                     inner,
                     delimiter,
+                    interpolates,
                     depth + 1,
                 )?)));
             }

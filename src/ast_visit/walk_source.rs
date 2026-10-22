@@ -61,6 +61,7 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
             v.visit_expr(value);
         }
         SourceForm::SignatureDecl(declaration) => v.visit_signature_decl(declaration),
+        SourceForm::CommaDeclarations(declarations) => walk_stmts(v, declarations),
         SourceForm::SignatureBind { signature, rhs } => {
             v.visit_expr(signature);
             v.visit_expr(rhs);
@@ -144,6 +145,7 @@ pub(crate) fn walk_signature_decl<'ast, V: Visit<'ast> + ?Sized>(
 ) {
     let SignatureDecl {
         vars,
+        group_shape: _,
         is_state: _,
         is_our: _,
         type_constraint,

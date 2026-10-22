@@ -195,7 +195,7 @@ impl Interpreter {
             .get_mut(&name)
             .and_then(|state| state.export_callback.take());
         if let Some(callback) = callback {
-            self.call_sub_value(callback, Vec::new(), false)?;
+            self.call_sub_value(callback, Vec::new())?;
         }
         Ok(Value::NIL)
     }

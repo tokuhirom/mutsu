@@ -91,7 +91,7 @@ impl Interpreter {
             if (!first_iteration || !repeat)
                 && let Some(cond) = cond_callable.clone()
             {
-                let cond_value = self.call_sub_value(cond, vec![], true)?;
+                let cond_value = self.call_sub_value(cond, vec![])?;
                 if !cond_value.truthy() {
                     break;
                 }
@@ -99,7 +99,7 @@ impl Interpreter {
             first_iteration = false;
 
             'body_redo: loop {
-                match self.call_sub_value(body_callable.clone(), vec![], true) {
+                match self.call_sub_value(body_callable.clone(), vec![]) {
                     Ok(value) => {
                         if !value.is_nil() {
                             items.push(value);
@@ -114,7 +114,7 @@ impl Interpreter {
             }
 
             if let Some(step) = step_callable.clone() {
-                match self.call_sub_value(step, vec![], true) {
+                match self.call_sub_value(step, vec![]) {
                     Ok(_) => {}
                     Err(e) if e.is_next() && label_matches(&e.label) => continue 'from_loop,
                     Err(e) if e.is_redo() && label_matches(&e.label) => continue 'from_loop,

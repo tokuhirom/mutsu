@@ -69,4 +69,21 @@ impl Interpreter {
         });
         true
     }
+
+    /// The backing storage (a shared handle on the Hash / Array held in the
+    /// attribute) an intermediate `is Hash` / `is Array` instance level of a
+    /// nested store descends into: the hash for an associative subscript, the
+    /// array for a positional one. `None` for any other value.
+    // Cost: O(1).
+    pub(super) fn storage_backed_step_target(v: &Value, positional: bool) -> Option<Value> {
+        let ValueView::Instance { attributes, .. } = v.view() else {
+            return None;
+        };
+        let key = if positional {
+            "__mutsu_array_storage"
+        } else {
+            "__mutsu_hash_storage"
+        };
+        attributes.as_map().get(key).cloned()
+    }
 }

@@ -114,6 +114,16 @@ impl Interpreter {
                 // A `Metamodel::Primitives.create_type` type object is a
                 // singleton like a Package.
                 (ValueView::CustomType(a), ValueView::CustomType(b)) => a.id == b.id,
+                // A `:=` binding of a name to a call's result (`my $h :=
+                // f(@a)`) leaves no Scalar behind: the name *is* the Array,
+                // Hash or object the call handed back, so it is identical to
+                // the variable that routine returned. A name that owns a
+                // Scalar (`my $h = @a`) stays a distinct container.
+                (ValueView::Array(..) | ValueView::Hash(..) | ValueView::Instance { .. }, _) => {
+                    !self.name_denotes_scalar_container(left_name)
+                        && !self.name_denotes_scalar_container(right_name)
+                        && crate::runtime::values_identical(&left, &right)
+                }
                 _ => false,
             }
         };

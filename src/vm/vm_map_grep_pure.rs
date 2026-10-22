@@ -45,6 +45,54 @@ impl Interpreter {
     }
 }
 
+impl Interpreter {
+    /// How many elements a prefix pull of a deferred `.map` may run, given the
+    /// `needed` it was asked for. A callback that is a total, side-effect-free
+    /// integer expression ([`pure_int_topic_expression`]) over Int elements
+    /// cannot be told from one that runs later, so a consumer that pulls one
+    /// element per iteration (`for`) is served a batch that grows with the
+    /// elements already consumed (the first pull runs exactly `needed`, so
+    /// `.head(1)` of a long map costs one callback call). Anything else, and
+    /// a pull whose elements are not all plain Ints, returns `needed` unchanged.
+    // Cost: O(w), w = the batch window (at most `PURE_BATCH_MAX` elements).
+    pub(super) fn pure_int_prefix_batch(
+        &self,
+        func: Option<&Value>,
+        mode: &MapGrepMode,
+        items: &MapGrepItems,
+        pos: usize,
+        needed: usize,
+    ) -> usize {
+        // The first pull of a Seq runs exactly what was asked; later pulls
+        // run ahead by as many elements as were consumed so far.
+        let want = pos.min(PURE_BATCH_MAX);
+        // Only an immutable snapshot of plain Ints: a live Array (or a
+        // container cell) can be written by the consumer between two pulls,
+        // and the element it holds then must be the one mapped.
+        let MapGrepItems::Snapshot(values) = items else {
+            return needed;
+        };
+        if want <= needed
+            || !matches!(mode, MapGrepMode::Map)
+            || !self.dispatch.user_declared_infix_ops.is_empty()
+            || !pure_int_topic_expression(func)
+        {
+            return needed;
+        }
+        let ints = values
+            .get(pos..)
+            .unwrap_or(&[])
+            .iter()
+            .take(want)
+            .take_while(|value| matches!(value.view(), ValueView::Int(_)))
+            .count();
+        needed.max(ints)
+    }
+}
+
+/// The most elements a pure Int callback runs ahead of its consumer.
+const PURE_BATCH_MAX: usize = 4096;
+
 /// Admit a simple binary expression of the current topic and an Int literal.
 /// Each admitted opcode has no user callback when both operands are native
 /// integers; `%%` also requires a nonzero divisor to avoid a Failure value.
@@ -53,28 +101,36 @@ fn pure_int_topic_expression(func: Option<&Value>) -> bool {
     let Some(ValueView::Sub(data)) = func.map(Value::view) else {
         return false;
     };
-    if !data.is_bare_block
-        || !data.params.is_empty()
-        || !data.param_defs.is_empty()
-        || !data.assumed_positional.is_empty()
-        || !data.assumed_named.is_empty()
-        || data.body.len() != 1
-    {
+    if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
         return false;
     }
     let Some(code) = &data.compiled_code else {
         return false;
     };
-    let [
-        OpCode::GetGlobal(topic_idx),
-        OpCode::LoadConst(value_idx),
-        operator,
-    ] = code.ops.as_slice()
-    else {
+    let [first, OpCode::LoadConst(value_idx), operator] = code.ops.as_slice() else {
         return false;
     };
-    if !matches!(code.constants.get(*topic_idx as usize).map(Value::view), Some(ValueView::Str(name)) if name.as_str() == "_")
+    // The topic is read either as the dynamic `$_` of a bare block, or as the
+    // one parameter of a WhateverCode (`*+1`), which keeps `_` as its param.
+    let reads_topic = if data.is_bare_block
+        && data.params.is_empty()
+        && data.param_defs.is_empty()
+        // Line markers (`Stmt::SetLine`, which a closure body carries since
+        // #14164) emit no op; only the statements count.
+        && data.body.iter().filter(|s| !s.is_marker()).count() == 1
     {
+        matches!(first, OpCode::GetGlobal(idx)
+            if matches!(code.constants.get(*idx as usize).map(Value::view),
+                Some(ValueView::Str(name)) if name.as_str() == "_"))
+    } else if crate::runtime::resolution_map_grep::sub_is_whatever_code(&data)
+        && data.params.len() == 1
+        && data.params[0] == "_"
+    {
+        matches!(first, OpCode::GetLocal(0)) && code.locals.len() == 1 && code.locals[0] == "_"
+    } else {
+        false
+    };
+    if !reads_topic {
         return false;
     }
     let Some(ValueView::Int(constant)) = code.constants.get(*value_idx as usize).map(Value::view)

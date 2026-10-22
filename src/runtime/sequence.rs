@@ -80,7 +80,7 @@ impl Interpreter {
             let elem = pulled[i].clone();
             let hit = match &end {
                 End::Closure(closure_val) => self
-                    .call_sub_value(closure_val.clone(), vec![elem.clone()], false)?
+                    .call_sub_value(closure_val.clone(), vec![elem.clone()])?
                     .truthy(),
                 End::Regex(pat) => self
                     .regex_find_first(pat, &elem.to_string_value())

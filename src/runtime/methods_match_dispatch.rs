@@ -510,9 +510,7 @@ impl Interpreter {
             ValueView::Sub(_) => {
                 let result = self.call_sub_value(
                     val.clone(),
-                    vec![Value::int(total_matches as i64)],
-                    false,
-                )?;
+                    vec![Value::int(total_matches as i64)])?;
                 let i = Self::value_to_nth_int(&result)?;
                 if i >= 1 && (i as usize) <= total_matches {
                     indices.push(i as usize);

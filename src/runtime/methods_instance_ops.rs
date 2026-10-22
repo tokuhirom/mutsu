@@ -615,7 +615,7 @@ impl Interpreter {
         let mut call_args = vec![target];
         call_args.extend(args);
         self.shift_arg_sources_for_wrap_invocant();
-        let result = self.call_sub_value(outermost.1.clone(), call_args, false);
+        let result = self.call_sub_value(outermost.1.clone(), call_args);
         if let Some(wrapper_id) = wrapper_id
             && let Some(persisted) = self.closure_env_overrides.get(&wrapper_id).cloned()
         {
@@ -1830,7 +1830,7 @@ impl Interpreter {
                 ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
             )
         {
-            return self.call_sub_value(callable, args, true);
+            return self.call_sub_value(callable, args);
         }
 
         // The `Code` rows of a regex and the `Routine` rows of a code-class
@@ -2115,7 +2115,7 @@ impl Interpreter {
                         return result;
                     }
                     if let Some(callable) = am.get("__mutsu_method_callable").cloned() {
-                        return self.call_sub_value(callable, args, false);
+                        return self.call_sub_value(callable, args);
                     }
                     if matches!(
                         am.get("is_dispatcher").map(Value::view),
@@ -2395,9 +2395,7 @@ impl Interpreter {
             for (condition, calculator) in fallbacks {
                 let cond = match self.call_sub_value(
                     condition,
-                    vec![target.clone(), name_val.clone()],
-                    false,
-                ) {
+                    vec![target.clone(), name_val.clone()]) {
                     Ok(v) => v,
                     Err(e) => return Some(Err(e)),
                 };
@@ -2407,13 +2405,13 @@ impl Interpreter {
                 // The calculator returns the method body (a Callable) for this
                 // name; invoke it with the invocant (and any call args).
                 let method_code =
-                    match self.call_sub_value(calculator, vec![target.clone(), name_val], false) {
+                    match self.call_sub_value(calculator, vec![target.clone(), name_val]) {
                         Ok(v) => v,
                         Err(e) => return Some(Err(e)),
                     };
                 let mut call_args = vec![target.clone()];
                 call_args.extend_from_slice(args);
-                return Some(self.call_sub_value(method_code, call_args, false));
+                return Some(self.call_sub_value(method_code, call_args));
             }
         }
         None

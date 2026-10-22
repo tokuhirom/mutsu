@@ -308,6 +308,17 @@ pub(crate) fn is_dynamic_var_env_key(key: &str) -> bool {
         .starts_with('*')
 }
 
+/// Whether `key` names the match state a regex operation publishes into the
+/// calling scope: `$/` and the positional captures `$0`, `$1`, ... (stored
+/// sigil-less). A closure a native routine runs against a fresh match (`trans`
+/// with `/(\W)/ => { ord($0) }`) reads these from its caller, never from the
+/// copy it captured when it was created.
+// Cost: O(k), k = key.len().
+#[inline]
+pub(crate) fn is_match_var_env_key(key: &str) -> bool {
+    key == "/" || (!key.is_empty() && key.bytes().all(|b| b.is_ascii_digit()))
+}
+
 /// Monotonic, process-global flag: set the first time any closure-writeback
 /// metadata key is inserted into *any* env. These keys --
 /// `__mutsu_sigilless_readonly::*`, `__mutsu_sigilless_alias::*`,
@@ -2137,8 +2148,18 @@ impl Env {
         // capture; its lexical outer is the program scope and the
         // declaration-scoped stores (unit lexicals, ADR-0024) its free
         // variables already resolve through.
+        //
+        // Only where the root says so: a program-scope routine
+        // (`outer_is_unit`) or a closure body (it holds its capture). A named
+        // sub declared inside a routine or a closure body has neither: its
+        // lexical outer is the activation that declared it, which is among the
+        // callers still chained here, so cutting the chain would hand a
+        // closure made in the sub `Nil` for every variable of that activation.
         if let Some(frame_root) = nodes.iter().position(|env| env.frame_root)
             && frame_root + 2 < nodes.len()
+            && (nodes[frame_root].outer_is_unit
+                || nodes[frame_root].outer_is_foreign_unit
+                || nodes[frame_root].fallback.is_some())
         {
             let tail = nodes[nodes.len() - 1];
             nodes.truncate(frame_root + 1);

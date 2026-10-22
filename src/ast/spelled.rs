@@ -51,16 +51,27 @@ pub(crate) enum Spelling {
         val: bool,
         text: Box<str>,
     },
-    /// `«a $b "c d"»`, `qqww/a $b/`: a `quotewords` quote whose text
-    /// interpolates or quotes a word. RakuAST keeps its segments, which the
-    /// conversion re-derives from the raw text.
+    /// `«a $b "c d"»`, `qqww/a $b/`, `Qww/"c d"/`: a `quotewords` quote
+    /// whose text is nonplain. RakuAST keeps its segments, which conversion
+    /// re-derives from the raw text.
     InterpolatingWords {
         /// Words become allomorphs (`val`).
         val: bool,
         text: Box<str>,
         /// The source delimiter for nested `<< >>` or `« »` word quotes.
         delimiter: Option<char>,
+        /// Whether unquoted text interpolates (`qqww`/angle quotes, unlike `Qww`).
+        interpolates: bool,
     },
+    /// `a !< b` / `a !eq b`: the parser evaluates this as `!(a < b)` but
+    /// RakuAST keeps the `MetaInfix::Negate` at the infix application.
+    NegatedInfix,
+    /// `$x [[+]]= 6`: bracket depth of an assignment whose executable form
+    /// folds the bracketed infix into an ordinary compound assignment.
+    BracketedAssignment { depth: usize },
+    /// A C-style loop's comma-separated increment expressions, executed as
+    /// a do-block but represented as one list infix in RakuAST.
+    LoopStepComma,
     /// `gather say 1`, `try say 1`, `start say 1`, `once say 1`, `BEGIN say 1`:
     /// a statement prefix written over a bare statement. The wrapped
     /// expression is the same prefix over the one-statement block
@@ -81,6 +92,12 @@ pub(crate) enum Spelling {
     ConflictingSubscript {
         subscript: Box<Expr>,
         pairs: Vec<Expr>,
+    },
+    /// `:delete(EXPR)` on a multidimensional subscript shares an execution
+    /// expansion with `:$delete`, but its RakuAST colonpair has a value.
+    ConditionalMultidimDelete {
+        source: Box<Expr>,
+        condition: Box<Expr>,
     },
     /// A bare Whatever operand of `o` is expanded to a closure for execution;
     /// the public RakuAST keeps the written composition and Whatever argument.

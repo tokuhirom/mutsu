@@ -223,7 +223,7 @@ impl Interpreter {
             self.async_state
                 .supply_emit_buffer
                 .push(EmitFrame::default());
-            let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+            let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter]);
             self.async_state
                 .supply_emit_buffer
                 .pop()
@@ -484,7 +484,7 @@ impl Interpreter {
                     return Ok(target);
                 }
                 let first = &closure_list[0];
-                self.call_sub_value(first.clone(), vec![target], false)
+                self.call_sub_value(first.clone(), vec![target])
             }
             // .tree(&closure, ...) — apply closures at depth levels
             ValueView::Sub(_) => {
@@ -515,9 +515,7 @@ impl Interpreter {
                     {
                         processed.push(self.call_sub_value(
                             closure.clone(),
-                            vec![Value::array_with_kind(inner.clone(), ArrayKind::List)],
-                            false,
-                        )?);
+                            vec![Value::array_with_kind(inner.clone(), ArrayKind::List)])?);
                     } else {
                         processed.push(Value::array_with_kind(inner.clone(), ArrayKind::List)); // already Arc-wrapped
                     }
@@ -527,7 +525,7 @@ impl Interpreter {
         }
         // Apply the closure at this depth level
         if let Some(closure) = closures.get(depth) {
-            self.call_sub_value(closure.clone(), vec![Value::array(processed)], false)
+            self.call_sub_value(closure.clone(), vec![Value::array(processed)])
         } else {
             Ok(Value::array(processed))
         }

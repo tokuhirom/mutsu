@@ -14,7 +14,7 @@
 //!         CharClassEnumerationElement::Character.new("q"))))
 //! ```
 
-use super::{CharClassAtom, Parser, RegexNode};
+use super::{BackslashClass, CharClassAtom, Parser, RegexNode};
 
 /// One `+`/`-` term of a character-class assertion.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -80,6 +80,10 @@ impl CharClassElement {
                         EnumerationElement::Range(from, to) => {
                             format!("{}..{}", enumeration_char(*from), enumeration_char(*to))
                         }
+                        EnumerationElement::Class(CharClassAtom::Backslash {
+                            class: BackslashClass::BackSpace,
+                            negated,
+                        }) => format!("\\{}", if *negated { 'B' } else { 'b' }),
                         EnumerationElement::Class(atom) => atom.to_source(),
                     })
                     .collect::<Vec<_>>()
@@ -148,10 +152,10 @@ impl Parser {
         // arithmetic. Rakudo omits it from the RakuAST model; the following
         // subtraction/union terms carry the source-level node structure.
         if self.consume_if('.') {
-            self.skip_plain_whitespace();
+            self.skip_whitespace();
         }
         loop {
-            self.skip_plain_whitespace();
+            self.skip_whitespace();
             if self.consume_if('>') {
                 break;
             }
@@ -169,7 +173,7 @@ impl Parser {
                 '[' | ':' if elements.is_empty() => false,
                 _ => return None,
             };
-            self.skip_plain_whitespace();
+            self.skip_whitespace();
             if self.consume_if('[') {
                 elements.push(CharClassElement::Enumeration {
                     negated,
@@ -316,6 +320,21 @@ impl Parser {
     /// character (`\]`).
     // Cost: O(k), k = length of the escape.
     fn parse_enumeration_escape(&mut self) -> Option<EnumerationElement> {
+        if let Some(letter @ ('b' | 'B')) = self.chars.get(self.pos + 1).copied() {
+            self.pos += 2;
+            return Some(EnumerationElement::Class(CharClassAtom::Backslash {
+                class: BackslashClass::BackSpace,
+                negated: letter == 'B',
+            }));
+        }
+        if let Some(&letter) = self.chars.get(self.pos + 1)
+            && (letter.is_alphanumeric() || letter == '_')
+            && BackslashClass::from_letter(letter).is_none()
+            && !matches!(letter, 'x' | 'X' | 'o' | 'O' | 'c' | 'C')
+        {
+            self.pos += 2;
+            return Some(EnumerationElement::Character(letter));
+        }
         match self.parse_escape()? {
             RegexNode::CharClass(atom) => Some(EnumerationElement::Class(atom)),
             RegexNode::Literal(text) => {

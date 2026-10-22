@@ -274,6 +274,8 @@ pub enum RakuAstClass {
     Postfix,
     Assignment,
     MetaInfixAssign,
+    MetaInfixNegate,
+    BracketedInfix,
     RegexSequentialConjunction,
     RegexConjunction,
     RegexBacktrackModifiedAtom,
@@ -645,6 +647,8 @@ impl RakuAstClass {
             Postfix => "RakuAST::Postfix",
             Assignment => "RakuAST::Assignment",
             MetaInfixAssign => "RakuAST::MetaInfix::Assign",
+            MetaInfixNegate => "RakuAST::MetaInfix::Negate",
+            BracketedInfix => "RakuAST::BracketedInfix",
             RegexSequentialConjunction => "RakuAST::Regex::SequentialConjunction",
             RegexConjunction => "RakuAST::Regex::Conjunction",
             RegexBacktrackModifiedAtom => "RakuAST::Regex::BacktrackModifiedAtom",
@@ -1489,6 +1493,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Escape),
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::FormFeed),
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::CarriageReturn),
+    RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::BackSpace),
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Nul),
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Any),
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Specified),
@@ -1537,6 +1542,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Postfix,
     RakuAstClass::Assignment,
     RakuAstClass::MetaInfixAssign,
+    RakuAstClass::MetaInfixNegate,
+    RakuAstClass::BracketedInfix,
     RakuAstClass::RegexSequentialConjunction,
     RakuAstClass::RegexConjunction,
     RakuAstClass::RegexBacktrackModifiedAtom,
@@ -2555,18 +2562,6 @@ pub fn construct(
         let assertion = named_arg(args, "assertion").ok_or_else(|| {
             RuntimeError::new("RakuAST::Regex::Assertion::Alias.new requires `assertion`")
         })?;
-        match assertion.view() {
-            ValueView::RakuAst(node)
-                if matches!(
-                    node.class,
-                    RakuAstClass::RegexAssertionNamed | RakuAstClass::RegexAssertionNamedArgs
-                ) => {}
-            _ => {
-                return Err(RuntimeError::new(
-                    "RakuAST::Regex::Assertion::Alias.new expects `assertion` to be a named regex assertion",
-                ));
-            }
-        }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::RegexAssertionAlias,
             fields: vec![
@@ -3683,6 +3678,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::FunctionInfix
             | RakuAstClass::Postfix
             | RakuAstClass::MetaInfixAssign
+            | RakuAstClass::MetaInfixNegate
+            | RakuAstClass::BracketedInfix
             | RakuAstClass::RegexSequentialConjunction
             | RakuAstClass::RegexConjunction
             | RakuAstClass::RegexBacktrackModifiedAtom

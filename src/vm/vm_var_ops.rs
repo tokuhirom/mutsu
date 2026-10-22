@@ -230,7 +230,7 @@ impl Interpreter {
             .try_compiled_method_or_interpret(instance.clone(), "elems", vec![])
             .unwrap_or(Value::int(0));
         let len = crate::runtime::to_int(&elems).max(0);
-        self.call_sub_value(idx.clone(), vec![Value::int(len)], false)
+        self.call_sub_value(idx.clone(), vec![Value::int(len)])
     }
 
     pub(super) fn instance_exists_pos_result(

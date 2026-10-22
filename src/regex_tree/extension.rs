@@ -90,6 +90,8 @@ pub(crate) enum RegexExtension {
     },
     /// `$^a`: a placeholder parameter of the enclosing block, interpolated.
     Placeholder { name: String, sequential: bool },
+    /// `$'x'` / `$"x"`: an anonymous scalar interpolation before a quote.
+    AnonymousInterpolation { sequential: bool },
     /// `@$ref`: a variable interpolated in the context its sigil names.
     ContextualizedVariable {
         sigil: char,
@@ -102,6 +104,12 @@ pub(crate) enum RegexExtension {
         alias: String,
         assertion: Box<RegexNode>,
     },
+    /// `<name regex>`: a named assertion with a regex argument rather than
+    /// an ordinary parenthesized or colon argument list.
+    NamedRegexArg {
+        name: String,
+        regex_arg: Box<RegexNode>,
+    },
 }
 
 impl RegexExtension {
@@ -110,6 +118,7 @@ impl RegexExtension {
     pub(crate) fn children(&self) -> Vec<&RegexNode> {
         match self {
             Self::Lookahead { assertion, .. } | Self::Alias { assertion, .. } => vec![assertion],
+            Self::NamedRegexArg { regex_arg, .. } => vec![regex_arg],
             Self::BacktrackModified { atom, .. } => vec![atom],
             Self::Tilde { goal, expr } => vec![goal, expr],
             Self::Conjunction(operands) | Self::SequentialConjunction(operands) => {
@@ -123,7 +132,8 @@ impl RegexExtension {
             | Self::InterpolatedQuote { .. }
             | Self::ContextualizedInterpolation { .. }
             | Self::ContextualizedVariable { .. }
-            | Self::Placeholder { .. } => Vec::new(),
+            | Self::Placeholder { .. }
+            | Self::AnonymousInterpolation { .. } => Vec::new(),
         }
     }
 
@@ -132,6 +142,7 @@ impl RegexExtension {
     pub(crate) fn children_mut(&mut self) -> Vec<&mut RegexNode> {
         match self {
             Self::Lookahead { assertion, .. } | Self::Alias { assertion, .. } => vec![assertion],
+            Self::NamedRegexArg { regex_arg, .. } => vec![regex_arg],
             Self::BacktrackModified { atom, .. } => vec![atom],
             Self::Tilde { goal, expr } => vec![goal, expr],
             Self::Conjunction(operands) | Self::SequentialConjunction(operands) => {
@@ -145,7 +156,8 @@ impl RegexExtension {
             | Self::InterpolatedQuote { .. }
             | Self::ContextualizedInterpolation { .. }
             | Self::ContextualizedVariable { .. }
-            | Self::Placeholder { .. } => Vec::new(),
+            | Self::Placeholder { .. }
+            | Self::AnonymousInterpolation { .. } => Vec::new(),
         }
     }
 
@@ -240,9 +252,13 @@ impl RegexExtension {
             }
             Self::ContextualizedVariable { sigil, name, .. } => format!("{sigil}${name}"),
             Self::Placeholder { name, .. } => format!("$^{name}"),
+            Self::AnonymousInterpolation { .. } => "$".to_string(),
             Self::Alias { alias, assertion } => {
                 let inner = assertion.to_source();
                 format!("<{alias}={}", inner.strip_prefix('<').unwrap_or(&inner))
+            }
+            Self::NamedRegexArg { name, regex_arg } => {
+                format!("<{name} {}>", regex_arg.to_source())
             }
         }
     }

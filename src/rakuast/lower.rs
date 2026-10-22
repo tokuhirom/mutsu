@@ -512,6 +512,9 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     if let Some(stmt) = super::decl_tail::lower(node) {
         return stmt;
     }
+    if let Some(declarations) = lower_comma_declarations(node)? {
+        return Ok(declarations);
+    }
     match node.class {
         RakuAstClass::StatementPrefixReact => super::react::lower_react(node),
         // `sub f { … }(ARGS)`: the parser's declaration-then-call expansion.
@@ -845,6 +848,51 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         }
         _ => Ok(Stmt::Expr(lower_expr(node)?)),
     }
+}
+
+/// A comma list of declarations is one source statement whose execution is
+/// the declarations in order, with no new lexical scope.
+// Cost: O(n), n = declaration operand nodes.
+fn lower_comma_declarations(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError> {
+    if node.class != RakuAstClass::ApplyListInfix {
+        return Ok(None);
+    }
+    let infix = named_child(node, "infix")?;
+    if infix.class != RakuAstClass::Infix
+        || !matches!(positional_leaf(infix)?.view(), ValueView::Str(op) if op.as_str() == ",")
+    {
+        return Ok(None);
+    }
+    let operands = list_field(node, "operands")?;
+    if operands.len() < 2
+        || !operands.iter().all(|value| {
+            matches!(value.view(), ValueView::RakuAst(child) if matches!(child.class,
+                RakuAstClass::VarDeclarationSimple
+                    | RakuAstClass::VarDeclarationSignature
+                    | RakuAstClass::VarDeclarationTerm
+                    | RakuAstClass::VarDeclarationConstant))
+        })
+    {
+        return Ok(None);
+    }
+    let mut source = Vec::with_capacity(operands.len());
+    let mut expanded = Vec::new();
+    for value in operands {
+        let ValueView::RakuAst(child) = value.view() else {
+            return Err(unsupported(node));
+        };
+        let statement = lower_stmt_inner(child)?;
+        match &statement {
+            Stmt::SyntheticBlock(parts) => expanded.extend(parts.iter().cloned()),
+            _ => expanded.push(statement.clone()),
+        }
+        source.push(statement);
+    }
+    expanded.insert(
+        0,
+        Stmt::SourceForm(Box::new(crate::ast::SourceForm::CommaDeclarations(source))),
+    );
+    Ok(Some(Stmt::SyntheticBlock(expanded)))
 }
 
 // Cost: O(n + t), n = Native node fields, t = its traits.
@@ -2485,13 +2533,19 @@ fn lower_while(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         );
     }
     let body = lower_block(block)?;
-    Ok(Stmt::While {
+    // `while my $x { }`: declared once before the loop, as the parser does.
+    let (hoisted_decl, cond) = crate::ast::loop_cond_decl::split_loop_cond_decl(cond);
+    let looped = Stmt::While {
         cond: negate_if(cond, is_until),
         body,
         label: node_label(node)?,
         is_statement_modifier: false,
         is_until,
         is_bare_term: false,
+    };
+    Ok(match hoisted_decl {
+        Some(decl) => crate::ast::loop_cond_decl::expand(decl, looped),
+        None => looped,
     })
 }
 
@@ -2522,7 +2576,23 @@ fn lower_cstyle_loop(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         false => None,
     };
     let step = match node.fields.iter().any(|f| f.name == Some("increment")) {
-        true => Some(lower_expr(named_child(node, "increment")?)?),
+        true => {
+            let increment = named_child(node, "increment")?;
+            if increment.class == RakuAstClass::ApplyListInfix
+                && matches!(positional_leaf(named_child(increment, "infix")?)?.view(), ValueView::Str(op) if op.as_str() == ",")
+            {
+                let mut statements = Vec::new();
+                for operand in list_field(increment, "operands")? {
+                    let ValueView::RakuAst(operand) = operand.view() else {
+                        return Err(unsupported(increment));
+                    };
+                    statements.push(Stmt::Expr(lower_expr(operand)?));
+                }
+                Some(Expr::desugar_block(statements))
+            } else {
+                Some(lower_expr(increment)?)
+            }
+        }
         false => None,
     };
     let body = lower_block(named_child(node, "body")?)?;
@@ -2711,12 +2781,69 @@ pub(super) fn infix_is_compound_assignment(node: &RakuAstNode) -> bool {
     named_child(node, "infix")
         .map(|child| {
             (child.class == RakuAstClass::MetaInfixAssign
-                && named_child_or_positional(child)
-                    .map(|inner| inner.class == RakuAstClass::Infix)
-                    .unwrap_or(true))
+                && (compound_assign_base(child).is_some()
+                    || bracketed_meta_assign(child).is_some()))
                 || reverse_assign_base(child).is_some()
         })
         .unwrap_or(false)
+}
+
+/// Peel bracketed infix pairs inside a compound assignment and read its base.
+// Cost: O(d), d = bracket depth, bounded at 128.
+fn compound_assign_base(assign: &RakuAstNode) -> Option<(String, usize)> {
+    if assign.class != RakuAstClass::MetaInfixAssign {
+        return None;
+    }
+    let mut inner = named_child_or_positional(assign).ok()?;
+    let mut depth = 0;
+    while inner.class == RakuAstClass::BracketedInfix {
+        depth += 1;
+        if depth > 128 {
+            return None;
+        }
+        inner = named_child_or_positional(inner).ok()?;
+    }
+    if inner.class != RakuAstClass::Infix {
+        return None;
+    }
+    match positional_leaf(inner).ok()?.view() {
+        ValueView::Str(op) => Some((op.to_string(), depth)),
+        _ => None,
+    }
+}
+
+/// The metaoperator and base infix nested inside a bracketed assignment.
+// Cost: O(d), d = bracket depth, bounded at 128.
+fn bracketed_meta_assign(assign: &RakuAstNode) -> Option<(&'static str, String)> {
+    if assign.class != RakuAstClass::MetaInfixAssign {
+        return None;
+    }
+    let mut inner = named_child_or_positional(assign).ok()?;
+    let mut depth = 0;
+    while inner.class == RakuAstClass::BracketedInfix {
+        depth += 1;
+        if depth > 128 {
+            return None;
+        }
+        inner = named_child_or_positional(inner).ok()?;
+    }
+    if depth == 0 {
+        return None;
+    }
+    let meta = match inner.class {
+        RakuAstClass::MetaInfixReverse => "R",
+        RakuAstClass::MetaInfixCross => "X",
+        RakuAstClass::MetaInfixZip => "Z",
+        _ => return None,
+    };
+    let base = named_child_or_positional(inner).ok()?;
+    if base.class != RakuAstClass::Infix {
+        return None;
+    }
+    match positional_leaf(base).ok()?.view() {
+        ValueView::Str(op) => Some((meta, op.to_string())),
+        _ => None,
+    }
 }
 
 /// The base operator of `Reverse(MetaInfix::Assign(Infix(OP)))` (`R-=`) or `=`
@@ -2761,10 +2888,30 @@ pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, Run
             expanded: Box::new(expanded),
         });
     }
-    let op = match positional_leaf(named_child_or_positional(meta)?)?.view() {
-        ValueView::Str(value) => value.to_string(),
-        _ => return Err(unsupported(node)),
-    };
+    if let Some((operator, base)) = bracketed_meta_assign(meta) {
+        let rhs = lower_expr(named_child(node, "right")?)?;
+        let expression = Expr::MetaOp {
+            meta: operator.to_string(),
+            op: base,
+            left: Box::new(target),
+            right: Box::new(rhs),
+        };
+        if node
+            .fields
+            .iter()
+            .any(super::compound_stmt::is_source_field)
+        {
+            return Ok(expression);
+        }
+        let raw = variable_spelling(named_child(node, "left")?)?;
+        let name = raw.strip_prefix('$').unwrap_or(&raw).to_string();
+        return Ok(Expr::AssignExpr {
+            name,
+            expr: Box::new(expression),
+            is_bind: false,
+        });
+    }
+    let (op, _) = compound_assign_base(meta).ok_or_else(|| unsupported(node))?;
     let rhs = lower_expr(named_child(node, "right")?)?;
     // `* *= 2` curries to `{ $_ *= 2 }`; the parser expands a bare `*` target
     // so, and a read-back tree spells that `*` as a priming argument.
@@ -2909,6 +3056,7 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
             | RakuAstClass::RatLiteral
             | RakuAstClass::StrLiteral
             | RakuAstClass::QuotedString
+            | RakuAstClass::TermName
     ) {
         let literal = match lower_expr(left)? {
             Expr::LiteralSrc(value, _) => Expr::Literal(value),
@@ -3424,7 +3572,7 @@ fn call_name_stash(node: &RakuAstNode) -> Option<String> {
 
 /// Lower a regex assertion name, preserving qualified name-part boundaries in
 /// the execution spelling used by the existing matcher.
-fn lower_regex_subrule_name(node: &RakuAstNode) -> Result<String, RuntimeError> {
+pub(super) fn lower_regex_subrule_name(node: &RakuAstNode) -> Result<String, RuntimeError> {
     if node.class != RakuAstClass::Name {
         return Err(unsupported(node));
     }
@@ -4927,6 +5075,11 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             _ => Err(unsupported(node)),
         },
         // `$x` / `@a` / `%h` / `&f` -> the sigil-specific variable expression.
+        RakuAstClass::VarPackage
+            if let Some(lookup) = super::symbolic_deref::lower_indirect_code(node) =>
+        {
+            lookup
+        }
         RakuAstClass::VarPackage if let Some(deref) = super::symbolic_deref::lower(node) => deref,
         RakuAstClass::VarLexical
         | RakuAstClass::VarPackage

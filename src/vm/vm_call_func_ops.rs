@@ -1545,7 +1545,7 @@ impl Interpreter {
                 .or_else(|| self.env().get(&ampname).cloned())
                 .filter(|v| matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_)))
             {
-                let result = self.vm_call_sub_value(callable, args, false)?;
+                let result = self.vm_call_sub_value(callable, args)?;
                 self.apply_pending_rw_writeback(code);
                 self.stack.push(result);
                 return Ok(());
@@ -1630,7 +1630,7 @@ impl Interpreter {
         if let Some(sub_val) = self.wrapped_sub_for_call(&name) {
             let mut args = args;
             self.box_rw_args_for_callable(code, &sub_val, &mut args, &arg_sources);
-            let result = self.vm_call_sub_value(sub_val, args, false)?;
+            let result = self.vm_call_sub_value(sub_val, args)?;
             // Slice F (multi-frame coherence): a wrapper closure (`&f.wrap(-> {
             // $seen = True; callsame })`) mutates a captured caller lexical by name.
             // The closure dispatch recorded it precisely (`pending_*_writeback`);
@@ -2099,6 +2099,7 @@ impl Interpreter {
             let cf_auto_fetch = !cf.returns_container();
             let pkg_sym = self.current_package_sym();
             self.set_pending_call_arg_sources_shared(arg_sources);
+            self.publish_rw_arg_cells(&cf.param_defs, &args);
             let result =
                 self.call_compiled_function_named(cf, args, compiled_fns, pkg_sym, name_sym);
             self.set_pending_call_arg_sources(None);
@@ -2512,6 +2513,7 @@ impl Interpreter {
                             .iter()
                             .any(|pd| self.param_runs_constraint_predicate(pd))
                     }) && self.has_multi_candidates_cached_sym(name_sym);
+                self.publish_rw_arg_cells(&cf.param_defs, &args);
                 let result =
                     self.call_compiled_function_named(cf, args, compiled_fns, pkg_sym, name_sym);
                 self.set_pending_call_arg_sources(None);

@@ -207,7 +207,12 @@ pub(crate) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
             if stmts.len() == 1 {
                 (r, Some(Box::new(stmts.into_iter().next().unwrap())))
             } else {
-                (r, Some(Box::new(Stmt::SyntheticBlock(stmts))))
+                let mut expanded = Vec::with_capacity(stmts.len() + 1);
+                expanded.push(Stmt::SourceForm(Box::new(
+                    crate::ast::SourceForm::CommaDeclarations(stmts.clone()),
+                )));
+                expanded.extend(stmts);
+                (r, Some(Box::new(Stmt::SyntheticBlock(expanded))))
             }
         };
         let (rest, _) = ws(rest)?;
@@ -257,7 +262,12 @@ pub(crate) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
             } else {
                 // Wrap multiple step expressions in a DoBlock
                 let stmts: Vec<Stmt> = exprs.into_iter().map(Stmt::Expr).collect();
-                (r, Some(Expr::desugar_block(stmts)))
+                (
+                    r,
+                    Some(Expr::spelled(Expr::desugar_block(stmts), || {
+                        crate::ast::spelled::Spelling::LoopStepComma
+                    })),
+                )
             }
         };
         let (rest, _) = ws(rest)?;

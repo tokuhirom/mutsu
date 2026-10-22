@@ -28,7 +28,8 @@
   beginning-of-string anchors after atoms, block-range ratchets, dynamic
   match-position adverbs, regex expression arguments, and regex literal source
   form implemented 2026-10-16 through 2026-10-17;
-  direct hash interpolation is reserved by Rakudo and mutsu;
+  callable-alias and anonymous-scalar-before-quote source forms implemented
+  2026-10-22; direct hash interpolation is reserved by Rakudo and mutsu;
   explicit block signatures, other complex block
   values, other dynamic contents, and the complete execution-tree
   migration remain)
@@ -1680,3 +1681,64 @@ choose the unquoted form; other expressions keep their ordinary source form.
 The focused test checks the source node, successful matching, and lexical
 reassignment, and the existing 178-assertion dynamic-arguments test now passes
 through the RakuAST frontend.
+
+## 72. Callable aliases and anonymous interpolation before a quote (2026-10-22)
+
+The static regex source parser retains `<alias=&callable>` as an
+`Assertion::Alias` over `Assertion::Callable`, including a callable held by a
+scalar. The constructor and lowerer accept that child shape, and execution
+still uses the existing matcher. The parser also retains the bare `$` before a
+quoted atom (`$'x'` and `$"x"`) as `Regex::Interpolation` over an anonymous
+state scalar, then rebuilds the same spelling when lowered. Both forms had
+caused a regex value to lose its source tree and be refused by the RakuAST
+frontend.
+
+`t/rakuast/rakuast-regex-source-roast-cohort.t` checks Rakudo's node shapes,
+constructed nodes, EVAL, and matching. The RakuAST frontend now passes
+`roast/S05-interpolation/lexicals.t`, `roast/S05-match/capturing-contexts.t`,
+`roast/S05-match/raku.t`, and `roast/S05-metasyntax/unknown.t`. The first
+refusal in `roast/S05-capture/caps.t` is gone, but that file reaches a separate
+separator-capture execution mismatch at line 89. Other regex source-tree
+refusals remain in the #8033 campaign.
+
+## 73. Named captures in quantified separators (2026-10-22)
+
+The regex source renderer now keeps a nonnumeric named-capture alias compact
+(`$<name>=body`). A space around `=` made the execution parser interpret a
+quantifier separator as a method call on `Match` after RakuAST lowering, even
+though the source tree retained the correct `Regex::NamedCapture` node. Numeric
+aliases keep their distinct `$2 = body` rendering for static numbering.
+
+`t/rakuast/rakuast-regex-named-separator-capture.t` checks the source shape and
+execution of `%` and `%%` separators, including a zero-width capture. The
+RakuAST frontend now passes all 56 assertions in `roast/S05-capture/caps.t`.
+
+## 74. Enumeration escapes and embedded comments (2026-10-22)
+
+The shared regex source tree now models `\\b` and `\\B` inside a character
+class as a `BackSpace` class with the appropriate negation. A standalone
+hand-built `BackSpace` node renders as a positive or negative enumerated
+class, because bare `\\b` and `\\B` are obsolete regex syntax. Unknown
+escaped letters inside an enumeration are literal `Character` entries, as in
+Rakudo. Character-class arithmetic skips comments between its terms while
+still treating `#` inside an enumeration as a possible member.
+
+`t/rakuast/rakuast-regex-enumeration-escapes.t` covers the read direction,
+round-tripping, and hand-built lowering. The RakuAST frontend now passes
+`roast/S05-metasyntax/regex.t` and `roast/S05-metasyntax/charset.t` (158
+assertions together).
+
+## 75. Spaced named regex arguments (2026-10-22)
+
+A named assertion with a spaced regex argument, such as `<lit 'a'>`, now has
+a source-tree extension carrying the target name and a child regex tree. The
+read direction emits `Regex::Assertion::Named::RegexArg`, while the write
+direction accepts that node for names other than the existing `before` and
+`after` lookarounds. Parenthesized and colon argument lists remain
+`Assertion::Named::Args`; execution continues through the original regex
+matcher and source spelling.
+
+`t/rakuast/rakuast-regex-spaced-argument.t` checks quote, literal, group and
+character-class arguments, EVAL of parsed and constructed nodes, and a
+grammar declaration round-trip. The RakuAST frontend now passes all 17
+assertions in `roast/6.c/S05-grammar/parse_and_parsefile-6c.t`.

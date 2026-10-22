@@ -1723,6 +1723,8 @@ pub(crate) enum Expr {
     IndirectCodeLookup {
         package: Box<Expr>,
         name: String,
+        /// Whether the source selected its package through `CALLER::(...)`.
+        caller: bool,
     },
     /// Symbolic variable dereference: $::("name"), @::("name"), %::("name")
     /// Resolves a variable by name at runtime. The sigil is "$", "@", or "%".
@@ -1869,9 +1871,10 @@ pub(crate) enum PackageKind {
 /// Runtime enum registration only needs the normalized `(name, value)` pairs,
 /// but Rakudo's AST preserves whether the source used a word quote or a
 /// parenthesized pair list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum EnumVariantForm {
     Words,
+    EmptyWords(Box<str>),
     QuoteWords,
     PairList,
     Computed,
@@ -2960,6 +2963,7 @@ pub(crate) mod dotty_assign;
 pub(crate) mod immediate_call;
 pub(crate) mod inline_subset_term;
 pub(crate) mod keyed_hash;
+pub(crate) mod loop_cond_decl;
 mod lvalue;
 pub(crate) mod method_assign_decl;
 pub(crate) mod package_header;
@@ -2979,8 +2983,8 @@ pub(crate) mod var_does;
 pub(crate) mod var_will;
 mod where_match;
 pub(crate) use signature_decl::{
-    ControlPointyKind, ParamTrait, SignatureDecl, SignatureInit, SignatureVar, SourceForm,
-    is_group_declaration, scope_statements,
+    ControlPointyKind, ParamTrait, SignatureDecl, SignatureGroup, SignatureInit, SignatureVar,
+    SourceForm, is_group_declaration, scope_statements,
 };
 pub(crate) mod regex_placeholders;
 pub(crate) mod result_decont;

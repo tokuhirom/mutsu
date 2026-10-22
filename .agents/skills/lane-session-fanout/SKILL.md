@@ -45,7 +45,7 @@ environment, `AGENTS.md` and the skills, so the prompt only needs the lane-speci
    `labels: ["lane:<name>"]`, `state: OPEN`, all pages; apply the queue rule (skip
    `tier:icebox`, `working` and sub-issues, parent-with-open-children first, `tier:S` > `B` > `N`,
    wrong answer before slow, `ecosystem`, oldest); check sub-issue status with `issue_read`.
-   A **campaign** lane (`env`, `method-table`, `rakuast`, `nqp`, `arch`) follows its carrier's
+   A **campaign** lane (`env`, `rakuast`, `nqp`, `arch`) follows its carrier's
    plan instead - name the carrier issue in the prompt.
 2. Post `Claiming: <branch>` (branch named `<type>/<issue>-<slug>` first), fix with a regression
    test and a `news/` entry, `scripts/dev gate`, PR, auto-merge (merge), `subscribe_pr_activity`.

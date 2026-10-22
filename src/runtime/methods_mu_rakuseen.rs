@@ -17,7 +17,7 @@ impl Interpreter {
             return Ok(Value::str(Self::rakuseen_backref_name(&id)));
         }
         self.raku_cycle_guards.rakuseen.enter(id.clone());
-        let result = self.call_sub_value(code.clone(), vec![], true);
+        let result = self.call_sub_value(code.clone(), vec![]);
         let cycle_hit = self.raku_cycle_guards.rakuseen.leave(&id);
         let rendered = result?;
         if cycle_hit {

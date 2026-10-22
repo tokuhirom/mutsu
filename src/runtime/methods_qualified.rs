@@ -1423,7 +1423,7 @@ impl Interpreter {
         ) {
             return None;
         }
-        let fetched = match self.call_sub_value(fetcher.clone(), vec![target.clone()], true) {
+        let fetched = match self.call_sub_value(fetcher.clone(), vec![target.clone()]) {
             Ok(v) => v,
             Err(e) => return Some(Err(e)),
         };

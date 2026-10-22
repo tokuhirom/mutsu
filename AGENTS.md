@@ -539,7 +539,7 @@ release targets (Linux/macOS × x64/arm64) are required; do not weaken one to pa
   near in-progress work → the issue queue **by lane** ([docs/lanes.md](docs/lanes.md)):
   `scripts/next-issue` names each free lane's next issue, highest-ranked lane first. One agent per
   lane (its `Slots`), so parallel agents take different lanes and do not conflict. Campaign lanes
-  (currently the env, method-table and RakuAST campaigns, ranked first) follow their carrier
+  (currently the env and RakuAST campaigns, ranked first) follow their carrier
   issue's plan; queue lanes follow the rule in that doc (`tier:S` > `tier:B` > `tier:N`, wrong
   answers before slow ones, `ecosystem` first, then oldest; `tier:icebox` is out). `todo:perf` is
   `lane:perf`: one solo profiling agent (`perf-tuning` skill).

@@ -1229,6 +1229,49 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // `$vec[1] := $x` on an `is Array` subclass instance held in a scalar:
+        // the element becomes the source variable's container (a shared cell),
+        // installed in the backing storage in place, as a plain Array's `:=`
+        // does. Without this the bind fell to the associative path, which
+        // spuriously created an attribute keyed by the index (#12907).
+        if is_positional
+            && bind_mode
+            && let Some(inst) = self.env().get(&var_name).map(Value::deref_container)
+            && matches!(&inst.view(), ValueView::Instance { attributes, .. }
+                if attributes.contains_key("__mutsu_array_storage"))
+        {
+            let key = crate::runtime::utils::to_int(&idx);
+            if key >= 0 {
+                let (bound, promoted) = match bind_sources.first() {
+                    Some(Some(source_name)) if !source_name.contains('\0') => {
+                        match self.env().get(source_name).map(Value::view) {
+                            Some(ValueView::ContainerRef(cell)) => {
+                                (Value::container_ref(cell.clone()), None)
+                            }
+                            _ => {
+                                let cell = self.promote_bind_source_cell(source_name, val.clone());
+                                (Value::container_ref(cell), Some(source_name.clone()))
+                            }
+                        }
+                    }
+                    _ => (val.clone(), None),
+                };
+                if Self::store_into_storage_backed_instance(
+                    &inst,
+                    &key.to_string(),
+                    true,
+                    bound.clone(),
+                    true,
+                ) {
+                    if let Some(src) = promoted {
+                        self.set_env_with_main_alias(&src, bound.clone());
+                        self.update_local_if_exists(code, &src, &bound);
+                    }
+                    self.stack.push(val);
+                    return Ok(());
+                }
+            }
+        }
         // `$h1{"a"} = 1` / `$h1{"a"} := $x` on an `is Hash`/`is Map` subclass
         // instance held in a scalar: delegate through ASSIGN-KEY/BIND-KEY on
         // the backing `__mutsu_hash_storage`, instead of falling through to
@@ -3761,7 +3804,7 @@ impl Interpreter {
                     if storer.is_nil() {
                         return Err(RuntimeError::assignment_ro(None));
                     }
-                    self.call_sub_value(storer.clone(), vec![elem.clone(), val.clone()], true)?;
+                    self.call_sub_value(storer.clone(), vec![elem.clone(), val.clone()])?;
                     self.stack.push(val);
                     return Ok(());
                 }
@@ -4033,6 +4076,10 @@ impl Interpreter {
         if let Some(handled) = self
             .env_root_descended_mut_tracked(&var_name, &mut nested_cell_addr)
             .and_then(|container| {
+                // An `is Array` subclass root is mutated through its backing
+                // storage, shared with the instance (#12907).
+                let mut storage = Self::storage_backed_step_target(container, inner_positional);
+                let container = storage.as_mut().unwrap_or(container);
                 let _struct_guard = crate::value::container_lock::ContainerStructGuard::acquire_for(
                     nested_cell_addr,
                     container,
@@ -4208,6 +4255,10 @@ impl Interpreter {
         let mut nested_cell_addr: Option<usize> = None;
         self.env_root_descended_mut_tracked(&var_name, &mut nested_cell_addr)
             .and_then(|container| {
+                // An `is Hash` subclass root is mutated through its backing
+                // storage, shared with the instance (#12907).
+                let mut storage = Self::storage_backed_step_target(container, inner_positional);
+                let container = storage.as_mut().unwrap_or(container);
                 let _struct_guard = crate::value::container_lock::ContainerStructGuard::acquire_for(
                     nested_cell_addr,
                     container,
@@ -5356,6 +5407,19 @@ impl Interpreter {
                         continue;
                     }
                 }
+            }
+
+            // An `is Hash` / `is Array` subclass instance at an intermediate
+            // level is descended into through its backing storage, which the
+            // walk then mutates in place; without this the level fell into the
+            // "autovivify the root itself" arm and replaced the instance
+            // (`$obj<a><b> = 1` on an `is Hash` object, #12907).
+            if level < depth - 1
+                && let Some(storage) =
+                    Self::storage_backed_step_target(unsafe { &*current }, is_positional)
+            {
+                object_step_containers.push(Box::new(storage));
+                current = &mut **object_step_containers.last_mut().unwrap() as *mut Value;
             }
 
             if level < depth - 1 {

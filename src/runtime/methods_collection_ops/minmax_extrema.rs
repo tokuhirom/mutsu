@@ -255,9 +255,7 @@ impl Interpreter {
             for item in values.into_iter().skip(1) {
                 let cmp_val = self.call_sub_value(
                     compare_or_key_fn.clone(),
-                    vec![item.clone(), best.clone()],
-                    true,
-                )?;
+                    vec![item.clone(), best.clone()])?;
                 let cmp = match cmp_val.view() {
                     ValueView::Enum {
                         enum_type, value, ..
@@ -280,10 +278,10 @@ impl Interpreter {
                 }
             }
         } else {
-            let mut best_key = self.call_sub_value(compare_or_key_fn.clone(), vec![best], true)?;
+            let mut best_key = self.call_sub_value(compare_or_key_fn.clone(), vec![best])?;
             for item in values.into_iter().skip(1) {
                 let key =
-                    self.call_sub_value(compare_or_key_fn.clone(), vec![item.clone()], true)?;
+                    self.call_sub_value(compare_or_key_fn.clone(), vec![item.clone()])?;
                 let cmp = compare_values(&key, &best_key);
                 let is_better = if want_max { cmp > 0 } else { cmp < 0 };
                 if is_better {

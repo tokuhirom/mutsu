@@ -1336,7 +1336,7 @@ impl RegexNode {
                 if !array && !hash && !name.is_empty() && name.bytes().all(|c| c.is_ascii_digit()) {
                     format!("${name} = {}", regex.to_source())
                 } else {
-                    format!("{sigil}<{name}> = {}", regex.to_source())
+                    format!("{sigil}<{name}>={}", regex.to_source())
                 }
             }
             Self::Subrule {
@@ -2213,16 +2213,17 @@ impl Parser {
                     assertion: Box::new(call),
                 }));
             }
-            // `<rx=$r>` / `<foo=[bao]>` / `<rx={$r}>`: an alias over an
-            // assertion that is no subrule call.
+            // `<rx=$r>` / `<foo=[bao]>` / `<wc=&wc>`: an alias over an
+            // assertion that is no named subrule call.
             if is_simple_subrule_name(alias)
                 && capturing
-                && target.starts_with(['$', '@', '%', '[', '-', '+', ':', '{'])
+                && target.starts_with(['$', '@', '%', '&', '[', '-', '+', ':', '{'])
                 && let Some(tree) =
                     RegexTree::parse_lookaround_body(&format!("<{target}>"), self.in_unit_parse)
                 && matches!(
                     tree.body,
                     RegexNode::RegexValueInterpolation { .. }
+                        | RegexNode::Callable { .. }
                         | RegexNode::CharClassAssertion(_)
                         | RegexNode::InterpolatedBlock { .. }
                 )
@@ -2241,6 +2242,23 @@ impl Parser {
         };
         if let Some(node) = symbolic::parse(name, capturing) {
             return Some(node);
+        }
+        if let Some(split) = name.find(char::is_whitespace) {
+            let target = name[..split].trim();
+            let arg = name[split..].trim();
+            if capturing && is_subrule_name(target) && !arg.is_empty() {
+                let regex_arg = RegexTree::parse_static_with_options(
+                    arg,
+                    false,
+                    true,
+                    None,
+                    self.in_unit_parse,
+                )?;
+                return Some(RegexNode::Extension(RegexExtension::NamedRegexArg {
+                    name: target.to_string(),
+                    regex_arg: Box::new(regex_arg.body),
+                }));
+            }
         }
         let (name, args) = parse_subrule_target(name)?;
         is_subrule_name(&name).then(|| RegexNode::Subrule {

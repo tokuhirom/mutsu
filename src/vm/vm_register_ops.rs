@@ -845,7 +845,11 @@ impl Interpreter {
         for sym in owned_captures {
             // A *mutated* capture is boxed into a genuinely-shared cell by
             // `box_captured_lexicals` and must keep its live `ContainerRef`.
-            if code.captured_mutated_locals.contains(sym) {
+            // The same holds for a free variable the creating code itself writes
+            // by name (a `Lock.protect` block bumping its enclosing `$todo`
+            // after creating a `cue` callback that reads it): the cell, not a
+            // snapshot, is what both of them must see.
+            if code.captured_mutated_locals.contains(sym) || code.free_var_writes.contains(sym) {
                 continue;
             }
             // So must an **rw for-loop parameter**: it aliases the source

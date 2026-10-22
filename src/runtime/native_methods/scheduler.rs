@@ -237,7 +237,7 @@ impl Interpreter {
             attributes.get("close_supplier_id").map(Value::view)
         {
             for cb in take_supplier_close_callbacks(cid as u64) {
-                self.call_sub_value(cb, vec![], true)?;
+                self.call_sub_value(cb, vec![])?;
             }
         }
         Ok(Value::TRUE)
@@ -469,7 +469,7 @@ impl Interpreter {
         if let Some(stop) = stop_cb {
             // Sync all shared vars so the callback closure sees updated values
             self.full_sync_shared_vars_to_env();
-            if let Ok(result) = self.call_sub_value(stop.clone(), Vec::new(), true) {
+            if let Ok(result) = self.call_sub_value(stop.clone(), Vec::new()) {
                 return result.truthy();
             }
         }
@@ -511,7 +511,7 @@ impl Interpreter {
         callback: &Value,
         catch_cb: &Option<Value>,
     ) -> Result<bool, RuntimeError> {
-        let result = self.call_sub_value(callback.clone(), Vec::new(), true);
+        let result = self.call_sub_value(callback.clone(), Vec::new());
         match result {
             Ok(_) => Ok(true),
             Err(e) => {
@@ -520,7 +520,7 @@ impl Interpreter {
                         .exception
                         .map(|boxed| *boxed)
                         .unwrap_or_else(|| Value::str(e.message.into_owned()));
-                    let _ = self.call_sub_value(catch.clone(), vec![exception], true);
+                    let _ = self.call_sub_value(catch.clone(), vec![exception]);
                 } else if let Some(handler) = state_scheduler::get_uncaught_handler() {
                     // No per-cue :catch: an uncaught exception goes to the
                     // scheduler's uncaught_handler (raku semantics). Pass a real
@@ -530,7 +530,7 @@ impl Interpreter {
                         attrs.insert("message".to_string(), Value::str(e.message.to_string()));
                         Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
                     });
-                    let _ = self.call_sub_value(handler, vec![exception], true);
+                    let _ = self.call_sub_value(handler, vec![exception]);
                 }
                 Ok(false)
             }
@@ -739,7 +739,7 @@ impl Interpreter {
             "progress-by" => {
                 let duration = args.first().map(|v| v.to_f64()).unwrap_or(0.0);
                 for cb in fake_scheduler_progress_by(sched_id, duration) {
-                    let _ = self.call_sub_value(cb, Vec::new(), true);
+                    let _ = self.call_sub_value(cb, Vec::new());
                 }
                 Ok(Value::NIL)
             }

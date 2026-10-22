@@ -371,7 +371,7 @@ impl Interpreter {
         if let Some(hook) = self.env.get("&*EXIT").cloned()
             && Self::is_exit_hook_callable(&hook)
         {
-            return self.call_sub_value(hook, vec![Value::int(code)], true);
+            return self.call_sub_value(hook, vec![Value::int(code)]);
         }
         self.request_process_exit(code);
         Ok(Value::NIL)

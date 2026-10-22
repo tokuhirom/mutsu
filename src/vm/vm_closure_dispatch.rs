@@ -668,6 +668,32 @@ impl Interpreter {
                 self.env_mut().insert_sym(*sym, val);
             }
         }
+        // ADR-0055 slice 2: the whole plain-lexical capture beats a same-named
+        // binding of the caller (not for a closure whose outer is the live
+        // program scope, which reads names through the static link).
+        if !(cc.static_name_lookup && data.env.is_program_scope_capture()) {
+            let keys: Vec<(Symbol, Value)> = capture_tier
+                .iter()
+                .filter(|(k, _)| k.with_str(crate::env::is_plain_user_lexical))
+                .map(|(k, v)| (*k, v.clone()))
+                .collect();
+            for (k, v) in keys {
+                if cc.is_routine && k.is_routine_owned() {
+                    continue;
+                }
+                // A named routine's capture is taken when the routine is
+                // registered, before a file-scope `my %h` / `my @a` declared
+                // after it has run; the aggregate it holds is then whichever
+                // same-named one was visible at that point (another compunit's
+                // `%seen{Hash}` for a module's `my %seen{Any}`, #12907). An
+                // aggregate is a shared container the live binding already
+                // reaches, so a routine keeps that rather than the snapshot.
+                if cc.is_routine && k.with_str(|n| n.starts_with(['@', '%'])) {
+                    continue;
+                }
+                self.env_mut().insert_sym(k, v);
+            }
+        }
         // An enum key this closure read is lexical to the scope that declared it,
         // so the captured binding beats a same-named key the caller sees (a
         // routine's `enum M2 <Normal>` against the caller's `Volume::Normal`).

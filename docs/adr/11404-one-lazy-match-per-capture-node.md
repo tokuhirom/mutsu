@@ -1,6 +1,7 @@
 # ADR-11404: One lazy Match per capture node
 
-- **Status**: Proposed (2026-10-12). Implemented in the PR that references #11404.
+- **Status**: Accepted (user decision 2026-10-22; proposed 2026-10-12). Implemented in the PR
+  that references #11404.
 
 ## Context
 

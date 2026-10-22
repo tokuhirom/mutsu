@@ -175,7 +175,7 @@ impl Interpreter {
                 return self.builtin_incdec_nomatch(&[op_label, result]);
             };
             let old = self
-                .call_sub_value(callable.clone(), call_args.clone(), true)?
+                .call_sub_value(callable.clone(), call_args.clone())?
                 .deref_container();
             let new = if is_inc {
                 self.increment_value_smart(&old)?

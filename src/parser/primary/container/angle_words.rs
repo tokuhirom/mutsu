@@ -69,6 +69,7 @@ fn spelled_quotewords<'a>(
                 val: true,
                 text: content.into(),
                 delimiter: open.chars().next(),
+                interpolates: true,
             }),
         ));
     }
@@ -309,6 +310,7 @@ pub(crate) fn spelled_subscript_index_expr(content: &str, delimiter: char) -> Ex
             val: true,
             text: content.into(),
             delimiter: Some(delimiter),
+            interpolates: true,
         })
     }
 }

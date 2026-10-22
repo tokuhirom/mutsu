@@ -167,7 +167,7 @@ impl Interpreter {
                     let owner_type = Value::package(Symbol::intern(owner));
                     if let Some(inc) = &include_cb {
                         let keep = self
-                            .call_sub_value(inc.clone(), vec![owner_type.clone()], false)?
+                            .call_sub_value(inc.clone(), vec![owner_type.clone()])?
                             .truthy();
                         if !keep {
                             continue;
@@ -175,7 +175,7 @@ impl Interpreter {
                     }
                     if let Some(om) = &omit_cb {
                         let drop = self
-                            .call_sub_value(om.clone(), vec![owner_type.clone()], false)?
+                            .call_sub_value(om.clone(), vec![owner_type.clone()])?
                             .truthy();
                         if drop {
                             continue;

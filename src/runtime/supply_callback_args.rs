@@ -22,7 +22,6 @@ impl Interpreter {
         &mut self,
         func: Value,
         args: Vec<Value>,
-        merge_all: bool,
     ) -> Result<Value, RuntimeError> {
         // A compiled block runs as bytecode, as a `.map` callback does: its
         // free variables are its capture's, never a same-named lexical of the
@@ -38,7 +37,7 @@ impl Interpreter {
         {
             return self.vm_call_on_value(func, emitted_args_positional(args), None);
         }
-        self.call_sub_value(func, emitted_args_positional(args), merge_all)
+        self.call_sub_value(func, emitted_args_positional(args))
     }
 }
 

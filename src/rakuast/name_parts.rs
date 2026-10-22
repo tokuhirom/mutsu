@@ -53,7 +53,7 @@ fn is_empty_part(value: &Value) -> bool {
 }
 
 /// The identifier of a `Name::Part::Simple`, or `None` for any other part.
-fn simple_part_name(value: &Value) -> Option<String> {
+pub(super) fn part_identifier(value: &Value) -> Option<String> {
     let ValueView::RakuAst(node) = value.view() else {
         return None;
     };
@@ -386,7 +386,7 @@ pub(super) fn package_and_expression(node: &RakuAstNode) -> Option<(String, &Rak
     };
     let package = package
         .iter()
-        .map(simple_part_name)
+        .map(part_identifier)
         .collect::<Option<Vec<_>>>()?;
     Some((package.join("::"), key))
 }
@@ -438,7 +438,7 @@ fn base_name_shape(node: &RakuAstNode) -> Option<NameShape<'_>> {
         };
         let tail = static_tail
             .iter()
-            .map(simple_part_name)
+            .map(part_identifier)
             .collect::<Option<Vec<_>>>()?;
         return Some(NameShape::Indirect {
             expr,
@@ -448,7 +448,7 @@ fn base_name_shape(node: &RakuAstNode) -> Option<NameShape<'_>> {
     }
     let names = middle
         .iter()
-        .map(simple_part_name)
+        .map(part_identifier)
         .collect::<Option<Vec<_>>>()?;
     match (leading, trailing, names.is_empty()) {
         // `::` alone: both edges, no identifier.

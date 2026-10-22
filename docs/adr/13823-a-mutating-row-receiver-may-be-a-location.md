@@ -1,6 +1,6 @@
 # ADR-13823: A mutating row's receiver may be a location
 
-- **Status**: Proposed (2026-10-20; revised 2026-10-21 after review)
+- **Status**: Accepted (user decision 2026-10-22; proposed 2026-10-20, revised 2026-10-21)
 - **Deciders**: tokuhirom, Claude
 - **Context**: [#13823](https://github.com/tokuhirom/mutsu/issues/13823). Amends the
   `ReceiverPlace` decision of [ADR-11276](11276-built-in-methods-are-handler-rows.md) §8.1

@@ -28,7 +28,7 @@ impl Interpreter {
                         _ => 0,
                     }
                 };
-                let resolved = self.call_sub_value(index.clone(), vec![Value::int(len)], true)?;
+                let resolved = self.call_sub_value(index.clone(), vec![Value::int(len)])?;
                 Ok(match resolved.view() {
                     ValueView::Int(i) => i,
                     _ => resolved.to_string_value().parse::<i64>().unwrap_or(0),

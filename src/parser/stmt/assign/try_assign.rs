@@ -619,6 +619,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         ));
     }
     if let Some((stripped, meta, op)) = parse_bracket_meta_assign_op(r2) {
+        let depth = r2.chars().take_while(|ch| *ch == '[').count();
         let (rest, _) = ws(stripped)?;
         let (rest, rhs) = match try_parse_assign_expr(rest) {
             Ok(r) => r,
@@ -630,18 +631,21 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             b'%' => Expr::HashVar(var),
             _ => Expr::Var(name.clone()),
         };
+        let assignment = Expr::AssignExpr {
+            name,
+            expr: Box::new(Expr::MetaOp {
+                meta,
+                op,
+                left: Box::new(var_expr),
+                right: Box::new(rhs),
+            }),
+            is_bind: false,
+        };
         return Ok((
             rest,
-            Expr::AssignExpr {
-                name,
-                expr: Box::new(Expr::MetaOp {
-                    meta,
-                    op,
-                    left: Box::new(var_expr),
-                    right: Box::new(rhs),
-                }),
-                is_bind: false,
-            },
+            Expr::spelled(assignment, || {
+                crate::ast::spelled::Spelling::BracketedAssignment { depth }
+            }),
         ));
     }
     if let Some((stripped, op_name)) = parse_custom_compound_assign_op(r2) {

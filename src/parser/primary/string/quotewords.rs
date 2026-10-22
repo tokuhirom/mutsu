@@ -179,15 +179,20 @@ pub(crate) enum QuoteWordsPart {
 pub(crate) fn quotewords_spelled_parts(
     content: &str,
     delimiter: Option<char>,
+    interpolates: bool,
 ) -> Option<Vec<QuoteWordsPart>> {
+    let cleaned = strip_quotewords_comments(content)?;
+    let content = cleaned.as_str();
     let mut parts = Vec::new();
     let mut run_start = 0;
     let mut pos = 0;
     let flush = |parts: &mut Vec<QuoteWordsPart>, from: usize, to: usize| {
         if from < to {
-            parts.push(QuoteWordsPart::Text(crate::parser::interpolate_qq_content(
-                &content[from..to],
-            )));
+            parts.push(QuoteWordsPart::Text(if interpolates {
+                crate::parser::interpolate_qq_content(&content[from..to])
+            } else {
+                Expr::Literal(crate::value::Value::str(content[from..to].to_string()))
+            }));
         }
     };
     while pos < content.len() {
@@ -230,4 +235,30 @@ pub(crate) fn quotewords_spelled_parts(
     }
     flush(&mut parts, run_start, content.len());
     Some(parts)
+}
+
+/// Remove comments between quote-words while keeping quoted atoms verbatim.
+/// Whitespace on either side remains in the source segment, matching Rakudo.
+// Cost: O(n), n = length of the quote text.
+fn strip_quotewords_comments(content: &str) -> Option<String> {
+    let mut result = String::new();
+    result.try_reserve(content.len()).ok()?;
+    let mut rest = content;
+    while !rest.is_empty() {
+        if let Some((next, _)) = parse_quotewords_quoted_atom(rest).ok()? {
+            let consumed = rest.len() - next.len();
+            result.push_str(&rest[..consumed]);
+            rest = next;
+        } else if let Some(after) = rest.strip_prefix("#`") {
+            rest = skip_quotewords_embedded_comment(after)?;
+        } else if let Some(after) = rest.strip_prefix('#') {
+            let end = after.find('\n').unwrap_or(after.len());
+            rest = &after[end..];
+        } else {
+            let ch = rest.chars().next()?;
+            result.push(ch);
+            rest = &rest[ch.len_utf8()..];
+        }
+    }
+    Some(result)
 }

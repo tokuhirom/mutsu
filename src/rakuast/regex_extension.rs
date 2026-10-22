@@ -6,8 +6,8 @@
 //! deparser to turn the statement back into the text the matcher reads.
 
 use super::convert::{
-    block_statements, convert_expr, leaf_field, node_field, quoted_string, regex_node, unsupported,
-    var_lexical,
+    block_statements, convert_expr, leaf_field, name_from_identifier, node_field, quoted_string,
+    regex_node, unsupported, var_lexical,
 };
 use super::lower::{lower_regex_node, lower_stmt, positional_leaf, rakuast_node_of};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -150,11 +150,34 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
                 ),
             ],
         },
+        RegexExtension::AnonymousInterpolation { sequential } => RakuAstNode {
+            class: RakuAstClass::RegexInterpolation,
+            fields: vec![
+                leaf_field(Some("sequential"), Value::truth(*sequential)),
+                node_field(
+                    Some("var"),
+                    RakuAstNode {
+                        class: RakuAstClass::VarDeclarationAnonymous,
+                        fields: vec![
+                            leaf_field(Some("scope"), Value::str_from("state")),
+                            leaf_field(Some("sigil"), Value::str_from("$")),
+                        ],
+                    },
+                ),
+            ],
+        },
         RegexExtension::Alias { alias, assertion } => RakuAstNode {
             class: RakuAstClass::RegexAssertionAlias,
             fields: vec![
                 leaf_field(Some("name"), Value::str(alias.clone())),
                 node_field(Some("assertion"), regex_node(assertion)?),
+            ],
+        },
+        RegexExtension::NamedRegexArg { name, regex_arg } => RakuAstNode {
+            class: RakuAstClass::RegexAssertionNamedRegexArg,
+            fields: vec![
+                node_field(Some("name"), name_from_identifier(name)),
+                node_field(Some("regex-arg"), regex_node(regex_arg)?),
             ],
         },
         RegexExtension::InterpolatedQuote { source, expr } => RakuAstNode {
@@ -219,9 +242,12 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError
             lower_branches(node).map(RegexExtension::SequentialConjunction)
         }
         RakuAstClass::RegexInterpolation => {
-            return lower_contextualized(node).or_else(|| lower_placeholder(node));
+            return lower_contextualized(node)
+                .or_else(|| lower_placeholder(node))
+                .or_else(|| lower_anonymous(node));
         }
         RakuAstClass::RegexAssertionAlias => return lower_alias(node),
+        RakuAstClass::RegexAssertionNamedRegexArg => return lower_named_regex_arg(node),
         RakuAstClass::RegexBacktrackModifiedAtom => lower_backtrack_modified(node),
         _ => return None,
     };
@@ -398,6 +424,27 @@ fn lower_placeholder(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeErro
     })())
 }
 
+/// A bare `$` interpolated immediately before a quote in a regex.
+// Cost: O(1).
+fn lower_anonymous(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
+    let var = super::lower::named_child(node, "var").ok()?;
+    if var.class != RakuAstClass::VarDeclarationAnonymous {
+        return None;
+    }
+    Some((|| {
+        if super::lower::leaf_str(var, "scope")? != "state"
+            || super::lower::leaf_str(var, "sigil")? != "$"
+        {
+            return Err(super::lower::unsupported(node));
+        }
+        Ok(RegexNode::Extension(
+            RegexExtension::AnonymousInterpolation {
+                sequential: super::lower::bool_field(node, "sequential")?,
+            },
+        ))
+    })())
+}
+
 /// `<rx=$r>` / `<foo=[bao]>` / `<q=::(EXPR)>`: an alias over an assertion
 /// that is no named subrule call (those are the tree's own `SubruleAlias`).
 fn lower_alias(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
@@ -413,6 +460,7 @@ fn lower_alias(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
         && !matches!(
             assertion.class,
             RakuAstClass::RegexAssertionInterpolatedVar
+                | RakuAstClass::RegexAssertionCallable
                 | RakuAstClass::RegexAssertionCharClass
                 | RakuAstClass::RegexAssertionInterpolatedBlock
         )
@@ -423,6 +471,24 @@ fn lower_alias(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
         Ok(RegexNode::Extension(RegexExtension::Alias {
             alias: super::lower::leaf_str(node, "name")?,
             assertion: Box::new(lower_regex_node(assertion)?),
+        }))
+    })())
+}
+
+/// `<name regex>` is a named assertion with a regex argument. The `before`
+/// and `after` names remain the lookaround forms handled by the core lowerer.
+fn lower_named_regex_arg(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
+    let name = super::lower::named_child(node, "name")
+        .and_then(super::lower::lower_regex_subrule_name)
+        .ok()?;
+    if matches!(name.as_str(), "before" | "after") {
+        return None;
+    }
+    Some((|| {
+        let regex_arg = super::lower::named_child(node, "regex-arg")?;
+        Ok(RegexNode::Extension(RegexExtension::NamedRegexArg {
+            name,
+            regex_arg: Box::new(lower_regex_node(regex_arg)?),
         }))
     })())
 }

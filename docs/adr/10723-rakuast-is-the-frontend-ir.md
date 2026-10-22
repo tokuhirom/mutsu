@@ -1810,3 +1810,77 @@ It also elides an explicit Sub or Method scope equal to its derived default.
 No source-provenance marker or second resolver is needed for the current
 routine contract. `t/rakuast/rakuast-routine-scope.t` checks parsed and built
 nodes, both frontend modes, constructor output, and values before/after EVAL.
+
+### 6.96 S10: explicit existence values and hash hyperslices (2026-10-22)
+
+The parser's `Expr::Exists` retains an explicit `:exists(False)` argument,
+which the generic subscript-adverb expansion inverse cannot distinguish from
+`:!exists` by truth value alone. Conversion now emits the explicit argument
+as `ColonPair::Value` on the existing array or hash postcircumfix. This also
+preserves explicit zero and dynamic values; lowering still uses the existing
+subscript-adverb execution path.
+
+The 6.e hash `Expr::HyperSlice` is represented as `Postcircumfix::HashIndex`
+with a `Term::HyperWhatever` index and its `k`, `v`, `kv`, `tree`, `deepk` or
+`deepkv` colonpair. Lowering restores the shared hyperslice AST node before
+the generic subscript-adverb expansion. The focused
+`t/rakuast/rakuast-subscript-exists-hyperslice.t` records the Rakudo shapes
+and EVAL behavior. All 111 assertions in the array/hash `exists-adverb.t`
+and hash `hyperslice.t` roast files now pass in frontend mode.
+
+### 6.97 S10: dynamic multidimensional subscript adverbs (2026-10-22)
+
+The parser executes a 6.e multidimensional `:$delete` through a ternary: the
+false branch reads the original subscript, while the true branch calls the
+by-name delete primitive. The existing inverse for static subscript adverbs
+cannot recover that ternary's source form. RakuAST conversion now validates
+the shared target and dimensions, then emits the original array or hash
+postcircumfix with its ordered static colonpairs and a
+`ColonPair::Variable("delete")`. This covers bare `:$delete`, value adverbs
+such as `:k:$delete`, and existence adverbs such as `:exists:kv:$delete`.
+The parser keeps the distinct `:delete(EXPR)` spelling only during RakuAST
+analysis, so its condition converts to `ColonPair::Value` even when the
+execution ternary is otherwise identical to `:$delete`.
+The execution expansion remains in the parser/compiler path; lowering uses
+the existing subscript-adverb expansion.
+
+`t/rakuast/rakuast-multidim-dynamic-adverbs.t` records Rakudo's node shapes.
+The 812 assertions in `roast/S32-array/multislice-6e.t` and 549 in
+`roast/S32-hash/multislice-6e.t` now pass in frontend mode.
+
+### 6.98 S4: anonymous callable tails and typed scalar slurpies (2026-10-22)
+
+The parameter parser already recognizes a bare `&` as an anonymous callable,
+but returned before parsing the ordinary `is`, `where`, and default tail.
+Thus `:(& is raw = &say)` fell into a permissive signature-literal fallback
+without declared parameters, which the RakuAST converter correctly refused.
+The bare callable now uses the shared parameter-tail parser, retaining those
+fields in the structured signature value and its RakuAST parameter.
+
+Rakudo accepts `Code *$block` as a typed scalar slurpy while rejecting a
+typed positional array slurpy such as `Int *@a`. RakuAST conversion now keeps
+the type on scalar slurpies and retains that rejection for arrays and hashes.
+The focused `t/rakuast/rakuast-anonymous-callable-typed-slurpy.t` compares
+both node shapes with Rakudo. `roast/S06-signature/introspection.t` and
+`roast/S06-signature/slurpy-blocks.t` now pass in frontend mode. Two other
+signature files from the earlier survey were already green on current main.
+
+### 6.99 S10: empty enum, signed Complex and temporized undefine terms (2026-10-22)
+
+An empty angle enum retains its raw whitespace in `EnumVariantForm::EmptyWords`
+so `my enum E < >` reads as a word-quoted term with a literal space. An empty
+parenthesized enum reads as `Circumfix::Parentheses(SemiList())`. Lowering the
+word-quoted form restores the empty body rather than inventing a member. The
+serialized enum form advances the precompilation cache format to 47.
+
+A Complex value with a negative or non-finite imaginary component now reads
+as a whole `ComplexLiteral`; only a finite, nonnegative imaginary value with
+positive real zero uses the `Postfix("i")` reconstruction. This preserves both
+signed zeros of an angle Complex literal.
+
+The parser's `temp undefine($var) = VALUE` save/restore node now converts to
+the source `ApplyInfix(ApplyPrefix("temp", Call::Name("undefine")), Assignment,
+VALUE)`. Lowering that shape restores the same `undefine_first` save/restore
+node. The focused `t/rakuast/rakuast-residual-source-terms.t` records Rakudo's
+read shapes and signed-zero EVAL behavior. The enum basic, negative-zero and
+scalar undefine roast files now pass in frontend mode.

@@ -287,7 +287,7 @@ impl Interpreter {
                 ValueView::Sub(_) | ValueView::Routine { .. } | ValueView::WeakSub(_)
             )
         {
-            self.call_sub_value(exit_fn, vec![Value::int(code)], false)?;
+            self.call_sub_value(exit_fn, vec![Value::int(code)])?;
             return Ok(());
         }
         self.control.exit_code = code;

@@ -556,11 +556,11 @@ impl Interpreter {
             (_, ValueView::Sub(data)) => {
                 let func = right.clone();
                 if data.compiled_code.is_none() {
-                    if let Ok(result) = self.call_sub_value(func.clone(), vec![left.clone()], false)
+                    if let Ok(result) = self.call_sub_value(func.clone(), vec![left.clone()])
                     {
                         return result.truthy();
                     }
-                    return match self.call_sub_value(func, vec![], false) {
+                    return match self.call_sub_value(func, vec![]) {
                         Ok(result) => result.truthy(),
                         Err(_) => false,
                     };
@@ -769,7 +769,7 @@ impl Interpreter {
                 }
                 // Fallback: call as sub
                 let func = right.clone();
-                match self.call_sub_value(func, vec![left.clone()], false) {
+                match self.call_sub_value(func, vec![left.clone()]) {
                     Ok(result) => result.truthy(),
                     Err(_) => false,
                 }
@@ -777,7 +777,7 @@ impl Interpreter {
             // Built-in routines used as callables in smartmatch
             (_, ValueView::Routine { .. }) => {
                 let func = right.clone();
-                match self.call_sub_value(func, vec![left.clone()], false) {
+                match self.call_sub_value(func, vec![left.clone()]) {
                     Ok(result) => result.truthy(),
                     Err(_) => false,
                 }

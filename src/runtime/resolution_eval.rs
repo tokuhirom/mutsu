@@ -865,6 +865,13 @@ impl Interpreter {
                 }
             }
         }
+        // A closure an EVAL'd unit creates and lets escape names the caller's
+        // lexicals by capture, and the caller may write them after the EVAL
+        // returns: nothing in the snippet shows that, so each plain scalar it
+        // captures becomes a shared cell here (ADR-0055 slice 2).
+        if is_eval_unit {
+            self.box_escaping_eval_captures(&code);
+        }
         self.block_scope_depth += 1;
         // A carrier block publishes its value through the topic (the compiler
         // ends every body with `SetTopic`, which `run_compiled_block` reads back)
@@ -1107,7 +1114,7 @@ impl Interpreter {
             self.upvalues = saved_upvalues;
             result
         } else {
-            self.call_sub_value(code.clone(), Vec::new(), true)
+            self.call_sub_value(code.clone(), Vec::new())
         }
     }
 
@@ -1282,6 +1289,38 @@ impl Interpreter {
                     self.pending_rw_writeback_sources.push(fname.to_string());
                 }
             });
+        }
+    }
+}
+
+impl Interpreter {
+    /// Give the caller's plain scalar lexicals that an escaping closure of the
+    /// EVAL'd unit `code` captures a shared cell in the swapped-in env.
+    // Cost: O(c * f), c = closures of the unit, f = their free variables.
+    fn box_escaping_eval_captures(&mut self, code: &CompiledCode) {
+        for (i, nested) in code.closure_compiled_codes.iter().enumerate() {
+            if !code.closure_escapes.get(i).copied().unwrap_or(false) {
+                continue;
+            }
+            for sym in &nested.free_var_syms {
+                if sym.with_str(|s| {
+                    !crate::env::is_plain_user_lexical(s)
+                        || s.starts_with(['@', '%', '&', '$'])
+                        || code.locals.iter().any(|l| l == s)
+                }) {
+                    continue;
+                }
+                if let Some(value) = self.env.get_sym(*sym).cloned()
+                    && !value.is_container_ref()
+                {
+                    self.env.insert_sym(
+                        *sym,
+                        Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
+                            value,
+                        ))),
+                    );
+                }
+            }
         }
     }
 }

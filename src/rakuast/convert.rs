@@ -471,6 +471,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Some(crate::ast::SourceForm::SignatureDecl(decl)) => Ok(Some(statement_expression(
                 super::signature_decl::convert(decl)?,
             ))),
+            Some(crate::ast::SourceForm::CommaDeclarations(declarations)) => Ok(Some(
+                statement_expression(comma_declarations_node(declarations)?),
+            )),
             Some(crate::ast::SourceForm::AttributeGroup(attributes)) => Ok(Some(
                 statement_expression(super::attribute_group::to_signature(attributes)?),
             )),
@@ -718,6 +721,12 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         {
             let decl = crate::ast::bind_decl::declaration(stmt).expect("just checked");
             var_decl_statement(var_decl_parts(decl)?, true)
+        }
+        // `while my $x { }` / `until my $x { }`: the declaration is the loop's
+        // condition (the parser hoists it out so it is declared once).
+        Stmt::SyntheticBlock(_) if crate::ast::loop_cond_decl::recognize(stmt).is_some() => {
+            let looped = crate::ast::loop_cond_decl::recognize(stmt).expect("just checked");
+            convert_stmt(&looped)
         }
         Stmt::VarDecl { .. } => var_decl_statement(var_decl_parts(stmt)?, false),
         Stmt::DocPhaser(inner) => Ok(Some(super::doc_phaser::convert(inner)?)),
@@ -1602,10 +1611,16 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             roles,
             ..
         } => {
-            if variants.is_empty() {
+            if variants.is_empty()
+                && !matches!(
+                    variant_form,
+                    crate::ast::EnumVariantForm::EmptyWords(_)
+                        | crate::ast::EnumVariantForm::PairList
+                )
+            {
                 return Err(unsupported("enum without a body"));
             }
-            let term = super::enum_term::enum_term_node(variants, *variant_form)?;
+            let term = super::enum_term::enum_term_node(variants, variant_form)?;
             // Field order matches raku: scope, name, of, traits, term.
             let mut fields: Vec<RakuAstField> = super::package_header::my_scope_field(*is_my)
                 .into_iter()
@@ -1837,6 +1852,17 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 node_field(Some("right"), convert_expr(expr)?),
             ],
         }))),
+        Stmt::Assign {
+            name,
+            expr: Expr::Spelled(spelled),
+            op: AssignOp::Assign,
+            ..
+        } if let Spelling::BracketedAssignment { depth } = &spelled.spelling => {
+            Ok(Some(statement_expression(super::compound_stmt::mark(
+                super::meta_infix::convert_bracketed_assignment(&spelled.expr, *depth)?,
+                name,
+            ))))
+        }
         Stmt::Assign { name, expr, op, .. } => match op {
             // `$x = EXPR` — the special `Assignment` infix (slice 2). A compound
             // assignment keeps its source-level metaop marker inside the ordinary
@@ -2696,11 +2722,17 @@ pub(super) fn var_declaration(
         fields.push(leaf_field(Some("scope"), Value::str(s.to_string())));
     }
     if let Some(t) = type_name.filter(|_| !is_anonymous) {
-        fields.push(node_field(Some("type"), build_type_node(t)?));
+        fields.push(node_field(
+            Some("type"),
+            super::type_build::declaration_type_node(t)?,
+        ));
     }
     fields.push(leaf_field(Some("sigil"), Value::str(sigil.to_string())));
     if let Some(t) = type_name.filter(|_| is_anonymous) {
-        fields.push(node_field(Some("type"), build_type_node(t)?));
+        fields.push(node_field(
+            Some("type"),
+            super::type_build::declaration_type_node(t)?,
+        ));
     }
     if let Some(tw) = twigil {
         fields.push(leaf_field(Some("twigil"), Value::str(tw.to_string())));
@@ -3299,12 +3331,58 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 val,
                 text,
                 delimiter,
-            } => super::word_quote::convert(*val, text, *delimiter),
+                interpolates,
+            } => super::word_quote::convert(*val, text, *delimiter, *interpolates),
+            Spelling::NegatedInfix => {
+                let Expr::Unary {
+                    op: crate::token_kind::TokenKind::Bang,
+                    expr,
+                    word: false,
+                } = &spelled.expr
+                else {
+                    return Err(unsupported(
+                        "negated infix spelling without a negated operator",
+                    ));
+                };
+                let Expr::Binary {
+                    left, op, right, ..
+                } = expr.as_ref()
+                else {
+                    return Err(unsupported(
+                        "negated infix spelling without a binary operator",
+                    ));
+                };
+                super::meta_infix::convert(
+                    "!",
+                    &token_kind_to_op_name(op),
+                    left,
+                    right,
+                    &spelled.expr,
+                )
+            }
+            Spelling::BracketedAssignment { depth } => {
+                super::meta_infix::convert_bracketed_assignment(&spelled.expr, *depth)
+            }
+            Spelling::LoopStepComma => {
+                let Expr::DoBlock { body, .. } = &spelled.expr else {
+                    return Err(unsupported("loop step comma without its execution block"));
+                };
+                let mut expressions = Vec::with_capacity(body.len());
+                for statement in body {
+                    let Stmt::Expr(expression) = statement else {
+                        return Err(unsupported("non-expression loop step item"));
+                    };
+                    expressions.push(expression.clone());
+                }
+                comma_list_node(&expressions)
+            }
             Spelling::BareStatement => super::bare_prefix::bare_statement_node(&spelled.expr),
             Spelling::PackageIndirect { package, key } => {
                 super::symbolic_deref::convert_package_indirect(package, key)
             }
-            Spelling::NamedSubscript { .. } | Spelling::ConflictingSubscript { .. } => {
+            Spelling::NamedSubscript { .. }
+            | Spelling::ConflictingSubscript { .. }
+            | Spelling::ConditionalMultidimDelete { .. } => {
                 Err(unsupported("subscript adverb source form"))
             }
             Spelling::CompositionWhatever(source) => {
@@ -3419,6 +3497,17 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if let Some(words) = super::word_quote::convert_words_atom(name.as_str(), args) {
                 return words;
             }
+            if name.as_str() == "__mutsu_unknown_backslash_escape"
+                && let [Expr::Literal(escape)] = args.as_slice()
+            {
+                return Err(RuntimeError::typed_msg(
+                    "X::Backslash::UnrecognizedSequence",
+                    format!(
+                        "Unrecognized backslash sequence: \\{}",
+                        escape.to_string_value()
+                    ),
+                ));
+            }
             if is_desugar_marker(name.as_str()) {
                 if name.as_str() == "__mutsu_assign_callable_lvalue"
                     && let [Expr::DoStmt(stmt), Expr::ArrayLiteral(call_args), value] =
@@ -3489,6 +3578,11 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::IndirectTypeLookupAssign { expr, value } => {
             super::symbolic_deref::convert_type_assign(expr, value)
         }
+        Expr::IndirectCodeLookup {
+            package,
+            name,
+            caller,
+        } => super::symbolic_deref::convert_indirect_code(package, name, *caller),
         // `::("x")` / `::($name)` ->
         // `Term::Name(Name(Part::Empty.new, Part::Expression(EXPR)))`, the
         // leading `::` being an empty name edge (measured on 2026.09). The
@@ -3637,6 +3731,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 // `120 = 3`: the written assignment to an immutable literal.
                 if let Some((literal, rhs)) = crate::parser::literal_assign_ro_parts(expr) {
                     return assignment_around(convert_expr(literal)?, false, rhs);
+                }
+                if let Some((lhs, rhs)) = crate::parser::assignment_ro_parts(expr) {
+                    return assignment_around(convert_expr(lhs)?, false, rhs);
                 }
                 return Err(unsupported("desugared do-block"));
             }
@@ -3888,6 +3985,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }) => declaration_modifier_node(declaration, condition, *kind),
             Some(crate::ast::SourceForm::SignatureDecl(decl)) => {
                 super::signature_decl::convert(decl)
+            }
+            Some(crate::ast::SourceForm::CommaDeclarations(declarations)) => {
+                comma_declarations_node(declarations)
             }
             Some(crate::ast::SourceForm::AttributeGroup(attributes)) => {
                 super::attribute_group::to_signature(attributes)
@@ -6057,9 +6157,9 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         }
         node
     } else if pd.slurpy || pd.double_slurpy {
-        // A typed slurpy is an error in rakudo (`Int *@a`); `where` follows the
-        // slurpy marker.
-        if pd.type_constraint.is_some() {
+        // Rakudo accepts a typed scalar slurpy (`Code *$block`) but rejects
+        // typed positional array/hash slurpies (`Int *@a`).
+        if ordinary_type_constraint.is_some() && sigil != "$" {
             return Err(unsupported("typed slurpy parameter"));
         }
         let mut node = slurpy_parameter(
@@ -6071,6 +6171,10 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
                 RakuAstClass::ParameterSlurpyFlattened
             },
         )?;
+        if let Some(t) = ordinary_type_constraint {
+            node.fields
+                .insert(0, node_field(Some("type"), build_type_node(t)?));
+        }
         if let Some(w) = pd.where_constraint.as_deref() {
             node.fields
                 .push(node_field(Some("where"), convert_expr(w)?));
@@ -6815,7 +6919,15 @@ pub(super) fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
         }),
         // `2i` / `3.5i`: the parser folds the imaginary literal to the
         // Complex value; rakudo keeps the number under a `Postfix("i")`.
-        ValueView::Complex(re, im) if re == 0.0 && !re.is_sign_negative() => imaginary_literal(im),
+        ValueView::Complex(re, im)
+            if re == 0.0
+                && !re.is_sign_negative()
+                && im.is_finite()
+                && im >= 0.0
+                && !im.is_sign_negative() =>
+        {
+            imaginary_literal(im)
+        }
         // `<1+2i>`: a complex number written whole.
         ValueView::Complex(..) => Ok(RakuAstNode {
             class: RakuAstClass::ComplexLiteral,
@@ -7093,6 +7205,42 @@ fn labelled_control_call(name: &'static str, label: &str) -> RakuAstNode {
 }
 
 /// A comma list `1, 2, 3` -> `ApplyListInfix(infix => ",", operands)`.
+/// The source declarations of `my $x = 1, my $y = 2` as one comma application.
+// Cost: O(n), n = declarations and their nested nodes.
+fn comma_declarations_node(declarations: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let mut operands = Vec::with_capacity(declarations.len());
+    for declaration in declarations {
+        let statement = convert_stmt(declaration)?
+            .ok_or_else(|| unsupported("empty declaration in comma list"))?;
+        if statement.class != RakuAstClass::StatementExpression {
+            return Err(unsupported("non-expression declaration in comma list"));
+        }
+        let expression = statement
+            .fields
+            .iter()
+            .find(|field| field.name == Some("expression"))
+            .and_then(|field| match &field.value {
+                RakuAstFieldValue::Node(value) => match value.view() {
+                    ValueView::RakuAst(node) => Some(node.clone()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .ok_or_else(|| unsupported("declaration expression in comma list"))?;
+        operands.push(Value::rakuast(Box::new(expression)));
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::ApplyListInfix,
+        fields: vec![
+            node_field(Some("infix"), plain_infix(",")),
+            RakuAstField {
+                name: Some("operands"),
+                value: RakuAstFieldValue::List(operands),
+            },
+        ],
+    })
+}
+
 fn comma_list_node(items: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let mut operands = Vec::with_capacity(items.len());
     for it in items {

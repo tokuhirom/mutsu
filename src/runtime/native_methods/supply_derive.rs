@@ -254,7 +254,7 @@ impl Interpreter {
                 let next = attributes.get("next").cloned().unwrap_or(Value::NIL);
                 if let Some(id) = reduce_id(attributes) {
                     let result = reduce_finish(id).unwrap_or(Value::NIL);
-                    self.call_sub_value(next, vec![result], true)?;
+                    self.call_sub_value(next, vec![result])?;
                 }
                 Ok(Value::NIL)
             }
@@ -276,7 +276,7 @@ impl Interpreter {
                     // emitted until the source is done.
                     let acc = reduce_take(id);
                     let next = match acc {
-                        Some(acc) => self.call_supply_callback(callable, vec![acc, arg], true)?,
+                        Some(acc) => self.call_supply_callback(callable, vec![acc, arg])?,
                         None => arg,
                     };
                     reduce_put(id, next);
@@ -299,9 +299,9 @@ impl Interpreter {
                     .map(Value::to_string_value)
                     .as_deref()
                 {
-                    Some("map") => Some(self.call_supply_callback(callable, vec![arg], true)?),
+                    Some("map") => Some(self.call_supply_callback(callable, vec![arg])?),
                     Some("do") => {
-                        self.call_supply_callback(callable, vec![arg.clone()], true)?;
+                        self.call_supply_callback(callable, vec![arg.clone()])?;
                         Some(arg)
                     }
                     _ => self.smart_match_values(&arg, &callable).then_some(arg),
@@ -373,22 +373,22 @@ impl Interpreter {
         let callable = attributes.get("callable").cloned().unwrap_or(Value::NIL);
         if let Some(id) = reduce_id(attributes) {
             let next_acc = match reduce_take(id) {
-                Some(acc) => self.call_supply_callback(callable, vec![acc, arg], true)?,
+                Some(acc) => self.call_supply_callback(callable, vec![acc, arg])?,
                 None => arg,
             };
             reduce_put(id, next_acc);
             return Ok(Value::NIL);
         }
         let out = match attributes.get("mode").map(Value::to_string_value).as_deref() {
-            Some("map") => Some(self.call_supply_callback(callable, vec![arg], true)?),
+            Some("map") => Some(self.call_supply_callback(callable, vec![arg])?),
             Some("do") => {
-                self.call_supply_callback(callable, vec![arg.clone()], true)?;
+                self.call_supply_callback(callable, vec![arg.clone()])?;
                 Some(arg)
             }
             _ => self.smart_match_values(&arg, &callable).then_some(arg),
         };
         if let Some(value) = out {
-            self.call_sub_value(next, vec![value], true)?;
+            self.call_sub_value(next, vec![value])?;
         }
         Ok(Value::NIL)
     }

@@ -319,7 +319,7 @@ impl Interpreter {
             arg_sources: None,
             dispatch_token: 0,
         });
-        let result = self.call_sub_value(outermost, call_args, false);
+        let result = self.call_sub_value(outermost, call_args);
         self.pop_wrap_dispatch_frame();
         result
     }
@@ -684,7 +684,7 @@ impl Interpreter {
         call_args.extend(arg_values.iter().cloned());
         LAST_TOKEN_METHOD_MATCH.with(|slot| slot.borrow_mut().take());
         let called = self.run_regex_sub_call_here(Some(pkg), |interp| {
-            interp.call_sub_value(meth, call_args, false)
+            interp.call_sub_value(meth, call_args)
         });
         let result = match called {
             Ok(v) => v,

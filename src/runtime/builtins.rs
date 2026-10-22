@@ -575,10 +575,10 @@ impl Interpreter {
         };
         let target_val = upgraded.unwrap_or(target_val);
         if matches!(target_val.view(), ValueView::Sub(_)) {
-            return self.call_sub_value(target_val, args, true);
+            return self.call_sub_value(target_val, args);
         }
         if matches!(target_val.view(), ValueView::Routine { .. }) {
-            return self.call_sub_value(target_val, args, false);
+            return self.call_sub_value(target_val, args);
         }
         if let ValueView::Junction { kind, values } = target_val.view() {
             let mut results = Vec::with_capacity(values.len());
@@ -603,9 +603,9 @@ impl Interpreter {
             }
             // Otherwise, delegate to the inner callable
             match inner.as_ref().view() {
-                ValueView::Sub(_) => return self.call_sub_value((*inner).clone(), args, true),
+                ValueView::Sub(_) => return self.call_sub_value((*inner).clone(), args),
                 ValueView::Routine { .. } => {
-                    return self.call_sub_value((*inner).clone(), args, false);
+                    return self.call_sub_value((*inner).clone(), args);
                 }
                 _ => {}
             }
@@ -908,7 +908,7 @@ impl Interpreter {
                     ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
                 );
                 if is_callable {
-                    self.call_sub_value(first, Vec::new(), false)
+                    self.call_sub_value(first, Vec::new())
                 } else {
                     Ok(first)
                 }
@@ -1025,7 +1025,7 @@ impl Interpreter {
                 if let Some(callable) = self.env.get("&emit").cloned()
                     && Self::env_callable_is_lexical_override(&callable, "emit")
                 {
-                    return self.call_sub_value(callable, vec![value], false);
+                    return self.call_sub_value(callable, vec![value]);
                 }
                 // `emit` is caught by the innermost *dynamically* enclosing
                 // supply, not the lexically enclosing one: a sub declared
@@ -1272,7 +1272,7 @@ impl Interpreter {
                 if let Some(func) = args.first()
                     && matches!(func.view(), ValueView::Sub(_))
                 {
-                    let value = self.call_sub_value(func.clone(), Vec::new(), false)?;
+                    let value = self.call_sub_value(func.clone(), Vec::new())?;
                     if let ValueView::Instance {
                         class_name,
                         attributes,
@@ -1309,7 +1309,7 @@ impl Interpreter {
                 );
                 if is_callable {
                     self.push_warn_suppression();
-                    let result = self.call_sub_value(first, Vec::new(), true);
+                    let result = self.call_sub_value(first, Vec::new());
                     self.pop_warn_suppression();
                     match result {
                         Err(e) if e.is_warn() => Ok(Value::NIL),

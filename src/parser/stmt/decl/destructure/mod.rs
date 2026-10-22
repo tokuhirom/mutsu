@@ -16,7 +16,7 @@ use elements::{collect_nested_group_vars, parse_element_traits};
 pub(crate) mod desugar;
 use crate::parser::stmt::assign::parse_comma_or_expr_no_word_logical;
 
-use crate::ast::{SignatureDecl, SignatureInit, SignatureVar as DestructureVar};
+use crate::ast::{SignatureDecl, SignatureGroup, SignatureInit, SignatureVar as DestructureVar};
 
 pub(in crate::parser::stmt) fn parse_destructuring_decl(
     input: &str,
@@ -27,6 +27,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
     let (rest, _) = parse_char(input, '(')?;
     let (rest, _) = ws(rest)?;
     let mut vars: Vec<DestructureVar> = Vec::new();
+    let mut group_shape = Vec::new();
     // A nested group's leaves are flattened into `vars`, so once one is
     // present `vars.len()` no longer counts the declared positionals.
     let mut has_nested_group = false;
@@ -43,7 +44,8 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
         // even on rakudo, so only flattening-without-error is required here.)
         if r.starts_with('(') {
             has_nested_group = true;
-            let r2 = collect_nested_group_vars(r, &mut vars)?;
+            let (r2, nested) = collect_nested_group_vars(r, &mut vars, 1)?;
+            group_shape.push(nested);
             let (r2, _) = ws(r2)?;
             if r2.starts_with(',') {
                 let (r2, _) = parse_char(r2, ',')?;
@@ -126,6 +128,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
                     literal_value: None,
                     param_trait: None,
                 });
+                group_shape.push(SignatureGroup::Var(vars.len() - 1));
                 r = after_tc_ws;
                 if let Some(after_comma) = r.strip_prefix(',') {
                     let (r2, _) = ws(after_comma)?;
@@ -162,6 +165,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
                 literal_value: None,
                 param_trait: None,
             });
+            group_shape.push(SignatureGroup::Var(vars.len() - 1));
             if r2.starts_with(',') {
                 let (r2, _) = parse_char(r2, ',')?;
                 let (r2, _) = ws(r2)?;
@@ -189,6 +193,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
                 literal_value: Some(lit_expr),
                 param_trait: None,
             });
+            group_shape.push(SignatureGroup::Var(vars.len() - 1));
             if r2.starts_with(',') {
                 let (r2, _) = parse_char(r2, ',')?;
                 let (r2, _) = ws(r2)?;
@@ -265,6 +270,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
                 literal_value: None,
                 param_trait,
             });
+            group_shape.push(SignatureGroup::Var(vars.len() - 1));
 
             if r2.starts_with(',') {
                 let (r2, _) = parse_char(r2, ',')?;
@@ -310,6 +316,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
         }
     }
 
+    let group_shape = has_nested_group.then_some(group_shape);
     let is_binding = rest.starts_with(":=") || rest.starts_with("::=");
     if rest.starts_with('=') || rest.starts_with("::=") || rest.starts_with(":=") {
         return parse_destructuring_with_rhs(
@@ -318,7 +325,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
             is_state,
             is_our,
             is_binding,
-            has_nested_group,
+            group_shape,
             (type_constraint, group_default_expr),
         );
     }
@@ -363,6 +370,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
     let (rest, _) = opt_char(rest, ';');
     let decl = SignatureDecl {
         vars,
+        group_shape,
         is_state,
         is_our,
         type_constraint,
@@ -384,7 +392,7 @@ fn parse_destructuring_with_rhs(
     is_state: bool,
     is_our: bool,
     is_binding: bool,
-    has_nested_group: bool,
+    group_shape: Option<Vec<SignatureGroup>>,
     (type_constraint, group_default): (Option<String>, Option<Expr>),
 ) -> PResult<'_, Stmt> {
     let rest = if let Some(stripped) = input.strip_prefix("::=") {
@@ -413,11 +421,12 @@ fn parse_destructuring_with_rhs(
 
     let decl = SignatureDecl {
         vars,
+        has_nested_group: group_shape.is_some(),
+        group_shape,
         is_state,
         is_our,
         type_constraint,
         group_default,
-        has_nested_group,
         init: Some(SignatureInit {
             is_binding,
             rhs: raw_rhs,

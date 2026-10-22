@@ -117,7 +117,7 @@ impl Interpreter {
             let mut call_args = Vec::with_capacity(args.len() + 1);
             call_args.push(target.clone());
             call_args.extend(args);
-            return self.call_sub_value(code, call_args, false);
+            return self.call_sub_value(code, call_args);
         }
         // A user `method ^find_method` answers every call on its type, the
         // internal ones too (`say` asking for `.gist`, `~` for `.Str`):

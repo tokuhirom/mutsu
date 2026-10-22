@@ -144,7 +144,7 @@ impl Interpreter {
 
         let matched = match test.view() {
             ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => self
-                .call_sub_value(test.clone(), vec![Value::str(entry_name.to_string())], true)
+                .call_sub_value(test.clone(), vec![Value::str(entry_name.to_string())])
                 .map(|v| {
                     // A predicate block whose sole/final statement is a bare
                     // regex (`{ /\.html$/ }`, the common `dir(:test)` shape)

@@ -129,7 +129,7 @@ impl Interpreter {
             // `$*THREAD` inside the thread is the very object `Thread.start`
             // / `Thread.new` handed out, so a mixin on either side is shared.
             super::set_current_thread_object(thread);
-            match thread_interp.call_sub_value(block, vec![], false) {
+            match thread_interp.call_sub_value(block, vec![]) {
                 Ok(_) => {}
                 Err(e) => {
                     eprintln!("Thread error: {}", e.message);

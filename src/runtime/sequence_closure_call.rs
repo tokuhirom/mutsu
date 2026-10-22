@@ -127,7 +127,7 @@ impl Interpreter {
                 let name = data.name.resolve();
                 self.call_function(name.strip_prefix('&').unwrap_or(&name), routine_args)
             }
-            _ => self.call_sub_value(generator.clone(), routine_args, false),
+            _ => self.call_sub_value(generator.clone(), routine_args),
         };
         Self::sequence_step_result(result, suppress_generator_error)
     }

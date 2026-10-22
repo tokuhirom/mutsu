@@ -1,7 +1,7 @@
 # ADR-11268: A live Supplier's emit waits for the reacts that tap it
 
-- **Status**: Proposed (2026-10-03). Implemented in the PR that closes #11268; awaiting the
-  maintainer's acceptance of the delivery model.
+- **Status**: Accepted (user decision 2026-10-22; proposed 2026-10-03). Implemented in the PR
+  that closes #11268.
 - **Date**: 2026-10-03
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#11268](https://github.com/tokuhirom/mutsu/issues/11268)
