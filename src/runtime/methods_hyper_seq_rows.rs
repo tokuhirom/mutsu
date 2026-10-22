@@ -88,7 +88,13 @@ impl Interpreter {
         if items.len() < 1000 {
             let block = args.first().cloned().unwrap_or(Value::NIL);
             let result =
-                self.exec_hyper_race_map_grep(&items, block, method == "map", is_hyper)?;
+                self.exec_hyper_race_map_grep(
+                    &items,
+                    block,
+                    method == "map",
+                    is_hyper,
+                    items.hyper_config(),
+                )?;
             return Ok(if is_hyper {
                 Value::hyper_seq(result)
             } else {
