@@ -174,6 +174,9 @@ impl AdaptInputs {
             std::sync::Arc::make_mut(trir).is_hidden_from_backtrace = self.is_hidden_from_backtrace;
         }
         adapted.source_file.clone_from(&self.source_file);
+        // The clone carries the memoized `source_file_sym` of the unadapted
+        // body (the compile-time ambient file); the def's own file replaces it.
+        adapted.source_file_sym_cache = std::sync::OnceLock::new();
         adapted.stamp_source_file(self.source_file.clone());
         // `captured_fatal_mode` (#9521) is already correct on `compiled` -- baked in
         // at compile time (`Compiler::fatal_pragma_active`) -- and the clone above
