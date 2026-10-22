@@ -14,3 +14,8 @@ variable the block itself wrote afterwards (`$todo++` after a `cue`), because th
 per-iteration capture freeze only exempted variables the creating code *owned*.
 It now also exempts free variables the creating code writes by name. The old
 caller-priority merge had been hiding this; `roast/S17-lowlevel/lock.t` found it.
+
+Match variables (`$/`, `$0`, `$1`, ...) are likewise read from the caller, not
+from the closure's captured copy: `trans` with `/(\W)/ => { ord($0) }` publishes
+the match in the calling scope before running the closure
+(`roast/S05-transliteration/trans.t`).
