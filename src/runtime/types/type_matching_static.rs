@@ -84,8 +84,11 @@ impl Interpreter {
         fn bare_metaclass(name: &str) -> &str {
             name.strip_prefix("Perl6::").unwrap_or(name)
         }
-        if bare_metaclass(constraint) == "Metamodel::ClassHOW"
+        // Cost: O(1) for every value type but a `...GrammarHOW`: the last-byte
+        // test keeps the string compares off the `Num`/`Int` hot path.
+        if value_type.as_bytes().last() == Some(&b'W')
             && bare_metaclass(value_type) == "Metamodel::GrammarHOW"
+            && bare_metaclass(constraint) == "Metamodel::ClassHOW"
         {
             return true;
         }
