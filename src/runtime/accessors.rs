@@ -50,6 +50,13 @@ impl Interpreter {
         if s.is_empty() {
             return false;
         }
+        // A NUL only occurs in the registry identity of a lexical type
+        // (`M::C\0<decl-id>:D`), which a return constraint carries once it
+        // has been resolved. It names a type, never a value expression, and
+        // must not be handed to EVAL (#14145).
+        if s.contains('\u{0}') {
+            return false;
+        }
         // Coercion types like Str(Numeric:D) or Foo:D() are type constraints, not definite returns
         if s.contains('(') && s.ends_with(')') {
             return false;
