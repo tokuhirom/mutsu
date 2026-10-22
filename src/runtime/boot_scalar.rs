@@ -40,6 +40,13 @@ fn boot_box(name: Symbol, value: Value) -> Value {
 }
 
 impl Interpreter {
+    /// Convert an NQP value at a Raku HLL boundary, sharing the conversion
+    /// used by `nqp::hllize` and method-call results.
+    // Cost: O(1).
+    pub(crate) fn hllize_value(value: Value) -> Value {
+        Self::unbox_boot_scalar(&value).unwrap_or_else(|| value.hllize_vm_collection())
+    }
+
     /// `nqp::bootint()` / `bootnum()` / `bootstr()`: the type object.
     // Cost: O(1).
     pub(crate) fn boot_scalar_type(op: &str) -> Option<Value> {

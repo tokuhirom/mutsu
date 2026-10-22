@@ -114,9 +114,14 @@ impl Value {
     /// `nqp::hllize` of a raw collection: the high-level `List` / `Hash` view
     /// of the same storage node (a different object, shared elements). A
     /// native-element `VMArray` has no high-level mapping and stays raw, as in
-    /// Rakudo; every other value is returned unchanged.
+    /// Rakudo; every other value is returned unchanged -- the same object,
+    /// never re-encoded, since re-packing an `Arc`-backed value (a RakuAST
+    /// node, say) allocates a fresh box and breaks its `===` identity.
     // Cost: O(1).
     pub(crate) fn hllize_vm_collection(self) -> Value {
+        if !self.is_vm_collection() {
+            return self;
+        }
         match self.into_repr() {
             ValueRepr::VmArray(data) if data.nqp_elem == NqpElemKind::Object => {
                 Value::Array(data, ArrayKind::List)

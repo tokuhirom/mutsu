@@ -249,10 +249,7 @@ impl Interpreter {
             // Cost: O(1).
             "hllize" => {
                 let v = args.first().cloned().unwrap_or(Value::NIL);
-                Ok(match Self::unbox_boot_scalar(&v) {
-                    Some(unboxed) => unboxed,
-                    None => v.hllize_vm_collection(),
-                })
+                Ok(Self::hllize_value(v))
             }
 
             // nqp::what($v) — the type object of $v, i.e. `$v.WHAT` at the
