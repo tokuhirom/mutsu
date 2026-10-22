@@ -6059,9 +6059,9 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         }
         node
     } else if pd.slurpy || pd.double_slurpy {
-        // A typed slurpy is an error in rakudo (`Int *@a`); `where` follows the
-        // slurpy marker.
-        if pd.type_constraint.is_some() {
+        // Rakudo accepts a typed scalar slurpy (`Code *$block`) but rejects
+        // typed positional array/hash slurpies (`Int *@a`).
+        if ordinary_type_constraint.is_some() && sigil != "$" {
             return Err(unsupported("typed slurpy parameter"));
         }
         let mut node = slurpy_parameter(
@@ -6073,6 +6073,10 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
                 RakuAstClass::ParameterSlurpyFlattened
             },
         )?;
+        if let Some(t) = ordinary_type_constraint {
+            node.fields
+                .insert(0, node_field(Some("type"), build_type_node(t)?));
+        }
         if let Some(w) = pd.where_constraint.as_deref() {
             node.fields
                 .push(node_field(Some("where"), convert_expr(w)?));
