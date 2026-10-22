@@ -1112,7 +1112,7 @@ impl Interpreter {
                 // up for grabs — hence the `is_authoritative` escape hatch, which
                 // covers exactly the never-mutated captures where "same name" can
                 // safely be read as "the closure's own binding".
-                if (merge_all && !is_authoritative(*k)) || k.is_dynamic_var_env_key() {
+                if k.is_dynamic_var_env_key() {
                     // A dynamic variable resolves against the live caller chain,
                     // never against the creator's snapshot (VM twin: the
                     // don't-overwrite capture tier in `call_compiled_closure`).
