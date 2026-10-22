@@ -371,7 +371,19 @@ impl Interpreter {
                     // A `my class`/`my role` is also bound in the
                     // type-only key space (`lexical_type_key`).
                     let type_key = crate::term_names::lexical_type_key(&key);
-                    [key, type_key]
+                    // The `constant` marker the declaration leaves
+                    // (`my constant uc`, `my \lc`) is the EVAL's too: left
+                    // behind it makes the next EVAL parse that name as a
+                    // declared term, one that shadows a builtin routine.
+                    let marker = |name: &str| {
+                        crate::meta_ns::MetaNs::ConstantVar
+                            .key_for_str(name)
+                            .as_str()
+                            .to_string()
+                    };
+                    let (marker_key, marker_sigilless) =
+                        (marker(&key), marker(&format!("\\{key}")));
+                    [key, type_key, marker_key, marker_sigilless]
                 })
                 .map(|key| {
                     let sym = crate::symbol::Symbol::intern(&key);
