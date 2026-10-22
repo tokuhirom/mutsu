@@ -5,7 +5,7 @@ use Test;
 # element's location, for any base expression (#13823). Expected values are
 # the `raku` output.
 
-plan 20;
+plan 22;
 
 {
     my @a;
@@ -95,4 +95,13 @@ plan 20;
     my %w;
     %w<x><y>.push(1);
     is %w.raku, '{:x(${:y($[1])})}', 'a nested subscript still vivifies';
+}
+{
+    class Key { }
+    my Array %o{Key};
+    my $k = Key.new;
+    %o{$k}.push(1);
+    %o{$k}.append(2);
+    is %o.keys.map(*.^name).join(','), 'Key', 'an object hash keeps the key object of a vivified entry';
+    is %o.values.raku, '($[1, 2],).Seq', 'and grows the stored Array';
 }

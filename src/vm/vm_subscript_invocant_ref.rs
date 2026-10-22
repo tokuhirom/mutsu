@@ -325,6 +325,20 @@ impl Interpreter {
             } else {
                 Value::hash_key_encode(index)
             };
+            // An object hash remembers the key OBJECT beside its `.WHICH` string;
+            // the deferred token writes only the string, so register the object
+            // now (`my Array %h{K}; %h{$k}.push(1)` must leave a `K` key).
+            if argument && object_hash {
+                let mut hash = target.clone();
+                hash.with_hash_mut(|gc| {
+                    let data = crate::value::gc_data_mut(gc);
+                    if !data.map.contains_key(key.as_str()) {
+                        data.original_keys
+                            .get_or_insert_with(crate::value::ValueMap::default)
+                            .insert(key.clone(), index.clone());
+                    }
+                });
+            }
             // A MISSING key hands back the deferred token, exactly like the
             // array arm past the end.
             target.hash_slot_ref(&key, true)?
