@@ -260,6 +260,9 @@ impl Interpreter {
                 | ValueView::Pair(..)
                 | ValueView::ValuePair(..)
                 | ValueView::Capture { .. }
+                // A `Proxy` dispatches on what its FETCH answers, which can
+                // change between calls: no cacheable key.
+                | ValueView::Proxy { .. }
                 // A `VarRef` nested inside a `VarRef` is not a shape the
                 // unwrap above produces; refuse it rather than guess.
                 | ValueView::VarRef { .. } => return false,
