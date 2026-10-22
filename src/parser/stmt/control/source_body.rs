@@ -176,6 +176,7 @@ mod tests {
     fn signature_materialization_reports_oversized_parameters_before_expansion() {
         let declaration = crate::ast::SignatureDecl {
             vars: vec![crate::ast::SignatureVar::plain("$value"); MAX_NODES + 1],
+            group_shape: None,
             is_state: false,
             is_our: false,
             type_constraint: None,

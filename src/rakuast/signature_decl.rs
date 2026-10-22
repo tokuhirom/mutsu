@@ -26,7 +26,7 @@
 use super::convert::{convert_expr, leaf_field, node_field, unsupported};
 use super::lower::{list_field, lower_expr, named_child, named_child_or_positional};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{ParamTrait, SignatureDecl, SignatureInit, SignatureVar, Stmt};
+use crate::ast::{ParamTrait, SignatureDecl, SignatureGroup, SignatureInit, SignatureVar, Stmt};
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// Construct the same declaring signature shape produced by the parser.
@@ -76,16 +76,18 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
 
 /// The `VarDeclaration::Signature` an expansion's source-form record describes.
 pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError> {
-    if decl.has_nested_group {
-        return Err(unsupported("signature declaration with a nested group"));
-    }
-    let mut parameters = Vec::with_capacity(decl.vars.len());
-    for var in &decl.vars {
-        parameters.push(Value::rakuast(Box::new(parameter(
-            var,
-            decl.init.as_ref().is_some_and(|init| init.is_binding),
-        )?)));
-    }
+    let is_binding = decl.init.as_ref().is_some_and(|init| init.is_binding);
+    let parameters = if let Some(shape) = &decl.group_shape {
+        shape
+            .iter()
+            .map(|item| convert_group(item, &decl.vars, is_binding, 0))
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        decl.vars
+            .iter()
+            .map(|var| parameter(var, is_binding).map(|node| Value::rakuast(Box::new(node))))
+            .collect::<Result<Vec<_>, _>>()?
+    };
     let mut signature_fields = vec![RakuAstField {
         name: Some("parameters"),
         value: RakuAstFieldValue::List(parameters),
@@ -134,6 +136,51 @@ pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError>
         class: RakuAstClass::VarDeclarationSignature,
         fields,
     })
+}
+
+/// A source group into a parameter with a nested sub-signature.
+// Cost: O(n), n = leaves in the group, with nesting bounded at 128.
+fn convert_group(
+    item: &SignatureGroup,
+    vars: &[SignatureVar],
+    is_binding: bool,
+    depth: usize,
+) -> Result<Value, RuntimeError> {
+    if depth > 128 {
+        return Err(unsupported(
+            "signature declaration group exceeds 128 levels",
+        ));
+    }
+    let node = match item {
+        SignatureGroup::Var(index) => parameter(
+            vars.get(*index)
+                .ok_or_else(|| unsupported("signature declaration group index"))?,
+            is_binding,
+        )?,
+        SignatureGroup::Group(members) => {
+            let parameters = members
+                .iter()
+                .map(|member| convert_group(member, vars, is_binding, depth + 1))
+                .collect::<Result<Vec<_>, _>>()?;
+            RakuAstNode {
+                class: RakuAstClass::Parameter,
+                fields: vec![
+                    leaf_field(Some("optional"), Value::truth(false)),
+                    node_field(
+                        Some("sub-signature"),
+                        RakuAstNode {
+                            class: RakuAstClass::Signature,
+                            fields: vec![RakuAstField {
+                                name: Some("parameters"),
+                                value: RakuAstFieldValue::List(parameters),
+                            }],
+                        },
+                    ),
+                ],
+            }
+        }
+    };
+    Ok(Value::rakuast(Box::new(node)))
 }
 
 /// `Parameter([type,] [names,] [default-rw => True,] target => …[, optional =>
@@ -237,13 +284,17 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             _ => return Err(super::lower::unsupported(node)),
         },
     };
-    let vars = list_field(signature, "parameters")?
+    let mut vars = Vec::new();
+    let mut shape = Vec::new();
+    for param in list_field(signature, "parameters")? {
+        let ValueView::RakuAst(param) = param.view() else {
+            return Err(super::lower::unsupported(node));
+        };
+        shape.push(lower_group_parameter(param, &mut vars, 0)?);
+    }
+    let has_nested_group = shape
         .iter()
-        .map(|param| match param.view() {
-            ValueView::RakuAst(param) => lower_parameter(param),
-            _ => Err(super::lower::unsupported(node)),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+        .any(|item| matches!(item, SignatureGroup::Group(_)));
     let scope = node
         .fields
         .iter()
@@ -275,6 +326,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     };
     crate::parser::signature_decl_expansion(SignatureDecl {
         vars,
+        group_shape: has_nested_group.then_some(shape),
         is_state,
         is_our,
         type_constraint,
@@ -284,9 +336,38 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             .any(|f| f.name == Some("group-default"))
             .then(|| lower_expr(named_child(node, "group-default")?))
             .transpose()?,
-        has_nested_group: false,
+        has_nested_group,
         init,
     })
+}
+
+/// Collect flattened declaration leaves while retaining sub-signature groups.
+// Cost: O(n), n = parameter nodes, with nesting bounded at 128.
+fn lower_group_parameter(
+    param: &RakuAstNode,
+    vars: &mut Vec<SignatureVar>,
+    depth: usize,
+) -> Result<SignatureGroup, RuntimeError> {
+    if depth > 128 {
+        return Err(super::lower::unsupported(param));
+    }
+    if let Ok(sub_signature) = named_child(param, "sub-signature") {
+        if param.class != RakuAstClass::Parameter || sub_signature.class != RakuAstClass::Signature
+        {
+            return Err(super::lower::unsupported(param));
+        }
+        let mut members = Vec::new();
+        for value in list_field(sub_signature, "parameters")? {
+            let ValueView::RakuAst(member) = value.view() else {
+                return Err(super::lower::unsupported(param));
+            };
+            members.push(lower_group_parameter(member, vars, depth + 1)?);
+        }
+        return Ok(SignatureGroup::Group(members));
+    }
+    let index = vars.len();
+    vars.push(lower_parameter(param)?);
+    Ok(SignatureGroup::Var(index))
 }
 
 /// A declarator-list element, back from its `Parameter`.

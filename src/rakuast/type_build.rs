@@ -89,6 +89,9 @@ pub(super) fn build_type_node_at(t: &str, depth: usize) -> Result<RakuAstNode, R
             fields,
         });
     }
+    if let Some(name) = crate::qualified::type_capture_name(t) {
+        return super::convert::type_capture_node(name);
+    }
     if is_simple_type(t) {
         return Ok(simple_type_node(t));
     }

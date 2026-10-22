@@ -33,6 +33,9 @@ pub(crate) enum SourceForm {
     /// Traits written on a routine, in source order; opens its body.
     RoutineTraits(Vec<super::routine_trait::RoutineTrait>),
     SignatureDecl(SignatureDecl),
+    /// `my $x = 1, my $y = 2`: the declarations before their comma-list
+    /// execution expansion is flattened into one synthetic block.
+    CommaDeclarations(Vec<Stmt>),
     /// `:(...) := RHS`: the parser expands the signature bind into temporary
     /// declarations and assignments; the model layer keeps the written bind.
     SignatureBind {
@@ -147,6 +150,9 @@ pub(crate) enum ControlPointyKind {
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SignatureDecl {
     pub(crate) vars: Vec<SignatureVar>,
+    /// Source order and nesting of the flattened `vars` when a declaration
+    /// contains a nested group. Absent for a flat declarator list.
+    pub(crate) group_shape: Option<Vec<SignatureGroup>>,
     pub(crate) is_state: bool,
     pub(crate) is_our: bool,
     /// The declaration's type (`my Int ($a, $b)`), applying to every element
@@ -159,6 +165,12 @@ pub(crate) struct SignatureDecl {
     pub(crate) has_nested_group: bool,
     /// The initializer, absent for a bare declaration.
     pub(crate) init: Option<SignatureInit>,
+}
+
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum SignatureGroup {
+    Var(usize),
+    Group(Vec<SignatureGroup>),
 }
 
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
