@@ -28,6 +28,7 @@ mod core_term_names;
 use crate::core_type_names;
 mod decl_compound_assign;
 mod decl_tail;
+mod nesting;
 mod decl_traits;
 mod declarator_docs;
 mod declare_how;
