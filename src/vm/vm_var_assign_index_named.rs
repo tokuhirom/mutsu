@@ -949,7 +949,8 @@ impl Interpreter {
         // indices expanded to an explicit index list so the slice-assign path
         // distributes each value to a single element (rather than checking the
         // whole RHS list against the scalar element type).
-        let vtc_native = self.decl_type_constraint(decl, &var_name)
+        let vtc_native = self
+            .decl_type_constraint(decl, &var_name)
             .as_deref()
             .is_some_and(crate::runtime::native_types::is_native_array_element_type);
         // Read through a container cell: passing `@b` to a *scalar* parameter
@@ -2284,8 +2285,7 @@ impl Interpreter {
                         .insert(var_name.clone(), Value::hash(ValueMap::default()));
                 }
                 let mut celled_inner = celled_hash.as_ref().map(|cell| cell.load());
-                let slice_is_object_hash =
-                    self.decl_hash_key_constraint(decl, &var_name).is_some();
+                let slice_is_object_hash = self.decl_hash_key_constraint(decl, &var_name).is_some();
                 // Phase 2 Stage 2 (hash slice bind): pre-read each bind source
                 // before the mutable container borrow, reusing an existing
                 // `ContainerRef` cell binding or creating a fresh cell to
@@ -2455,7 +2455,8 @@ impl Interpreter {
                             sym.resolve().as_str(),
                             "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
                         )
-                ) || self.decl_type_constraint(decl, &var_name)
+                ) || self
+                    .decl_type_constraint(decl, &var_name)
                     .as_deref()
                     .is_some_and(|c| {
                         matches!(c, "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash")
@@ -3571,15 +3572,13 @@ impl Interpreter {
         // string key was settled when the two containers were declared. It
         // touches nothing unless it commits, so a decline leaves the body
         // running exactly as it did before.
-        if let Some(result) =
-            self.try_fast_nested_element_assign(
-                code,
-                name_idx,
-                outer_positional,
-                inner_positional,
-                target_slot,
-            )
-        {
+        if let Some(result) = self.try_fast_nested_element_assign(
+            code,
+            name_idx,
+            outer_positional,
+            inner_positional,
+            target_slot,
+        ) {
             return result;
         }
         let result = self.exec_index_assign_expr_nested_op_body(
