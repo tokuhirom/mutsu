@@ -930,6 +930,17 @@ impl Interpreter {
         if let Some(ValueView::Package(pkg)) = self.env.get(lookup).map(Value::view) {
             return format!("{}{}", pkg.resolve(), suffix);
         }
+        // A bare binding this frame hides (a block-scoped `use`'s import of
+        // the name, ADR-8751) is no binding of its own: the program's own
+        // `my role`/`my class` answers through its type-only key.
+        if !crate::qualified::is_qualified_str(lookup)
+            && let Some(sym) = Symbol::lookup(lookup)
+            && self.env.frame_hides_unit_name(sym)
+            && let Some(ValueView::Package(pkg)) =
+                self.lexical_type_binding_sym(sym).as_ref().map(Value::view)
+        {
+            return format!("{}{}", pkg.resolve(), suffix);
+        }
         // A short name a module imported for its OWN scope (`package_type_alias`)
         // is not necessarily in `env`: a re-`use` of an already-loaded module (the
         // module's exports were first imported into a *different* importer, e.g. a
