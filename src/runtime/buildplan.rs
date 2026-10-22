@@ -22,8 +22,10 @@
 //! | code | task | payload |
 //! | --- | --- | --- |
 //! | 0 / 1 / 2 / 3 | set an object / `int` / `num` / `str` attribute from the named argument | the argument name |
+//! | 1300 | bind an object attribute to the named argument (`is built(:bind)`) | the argument name |
 //! | 800 | die unless the attribute was set (`is required`) | `1`, or the reason |
 //! | 400 / 401 / 402 / 403 | set the default unless the attribute was set | the value, or a `Code` |
+//! | 1400 | bind an object attribute to its default (`is built(:bind)`) | the value, or a `Code` |
 //! | 1000 | nothing (the attribute keeps its container) | |
 
 use super::*;
@@ -32,8 +34,10 @@ use super::*;
 pub(crate) mod task_code {
     pub(crate) const INIT_OBJ: i64 = 0;
     pub(crate) const INIT_STR: i64 = 3;
+    pub(crate) const BIND_OBJ: i64 = 1300;
     pub(crate) const DEFAULT_OBJ: i64 = 400;
     pub(crate) const DEFAULT_STR: i64 = 403;
+    pub(crate) const BIND_DEFAULT_OBJ: i64 = 1400;
     pub(crate) const REQUIRED: i64 = 800;
     pub(crate) const NOOP: i64 = 1000;
 }
@@ -76,6 +80,23 @@ impl Interpreter {
             .get(class)
             .map(|def| def.attributes.clone())
             .unwrap_or_default();
+        let bound: HashSet<String> = self
+            .registry()
+            .classes
+            .get(class)
+            .map(|def| {
+                def.attribute_built
+                    .iter()
+                    .filter(|(_, built)| **built == crate::ast::BuiltTrait::Bind)
+                    .map(|(name, _)| name.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        // `is built(:bind)` changes the task of an object attribute only; a
+        // native attribute keeps its ordinary init and default tasks.
+        let bind_of = |attr: &ClassAttributeDef| {
+            bound.contains(&attr.name) && native_kind(attr.type_constraint.as_deref()) == 0
+        };
         let class_obj = Value::package(Symbol::intern(class));
         let build = self.own_phase_submethod(class, "BUILD");
         let tweak = self.own_phase_submethod(class, "TWEAK");
@@ -88,8 +109,9 @@ impl Interpreter {
                     continue;
                 }
                 let kind = native_kind(attr.type_constraint.as_deref());
+                let code = if bind_of(attr) { BIND_OBJ } else { INIT_OBJ + kind };
                 plan.push(task(vec![
-                    Value::int(INIT_OBJ + kind),
+                    Value::int(code),
                     class_obj.clone(),
                     attr_name(attr),
                     Value::str(attr.name.clone()),
@@ -117,8 +139,13 @@ impl Interpreter {
             }
             let kind = native_kind(attr.type_constraint.as_deref());
             let payload = self.attribute_default_payload(attr, class);
+            let code = if bind_of(attr) {
+                BIND_DEFAULT_OBJ
+            } else {
+                DEFAULT_OBJ + kind
+            };
             plan.push(task(vec![
-                Value::int(DEFAULT_OBJ + kind),
+                Value::int(code),
                 class_obj.clone(),
                 attr_name(attr),
                 payload,

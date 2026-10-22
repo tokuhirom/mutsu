@@ -56,7 +56,7 @@ pub(super) struct AttributeTraits {
     /// `is default(EXPR)`.
     pub(super) is_default: Option<Expr>,
     /// `is built` (`true`) or `is built(False)`.
-    pub(super) is_built: Option<bool>,
+    pub(super) is_built: Option<crate::ast::BuiltTrait>,
     /// `is DEPRECATED` / `is DEPRECATED("message")`.
     pub(super) deprecated_message: Option<String>,
     /// `is TYPE` on an `@` / `%` attribute.
@@ -120,7 +120,7 @@ impl AttributeTraits {
                     trait_is("default", Some(trait_argument(value)?))
                 }
                 AttrTrait::Built => match self.is_built {
-                    Some(false) => trait_is(
+                    Some(crate::ast::BuiltTrait::No) => trait_is(
                         "built",
                         Some(paren_argument(&Expr::Literal(Value::truth(false)))?),
                     ),
@@ -403,11 +403,15 @@ fn lower_trait_is(
             traits.order.push(AttrTrait::Default);
         }
         ("built", None) => {
-            traits.is_built = Some(true);
+            traits.is_built = Some(crate::ast::BuiltTrait::Yes);
             traits.order.push(AttrTrait::Built);
         }
         ("built", Some(Expr::Literal(value))) if matches!(value.view(), ValueView::Bool(_)) => {
-            traits.is_built = Some(value.truthy());
+            traits.is_built = Some(if value.truthy() {
+                crate::ast::BuiltTrait::Yes
+            } else {
+                crate::ast::BuiltTrait::No
+            });
             traits.order.push(AttrTrait::Built);
         }
         ("DEPRECATED", None) => {

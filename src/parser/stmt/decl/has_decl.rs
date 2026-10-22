@@ -542,7 +542,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let mut is_default_trait: Option<Expr> = None;
     let mut is_type: Option<String> = None;
     let mut deprecated_message: Option<String> = None;
-    let mut is_built: Option<bool> = None;
+    let mut is_built: Option<crate::ast::BuiltTrait> = None;
     let mut unknown_traits: Vec<(String, String, Option<Expr>)> = Vec::new();
     // The kinds of the traits in the order they were written (`ast::attr_trait`).
     let mut trait_order: Vec<AttrTrait> = Vec::new();
@@ -704,7 +704,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                         let after = after
                             .strip_prefix(')')
                             .ok_or_else(|| PError::expected("closing paren in is built"))?;
-                        is_built = Some(false);
+                        is_built = Some(crate::ast::BuiltTrait::No);
                         let (r2, _) = ws(after)?;
                         rest = r2;
                         continue;
@@ -713,11 +713,14 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                         let after = after
                             .strip_prefix(')')
                             .ok_or_else(|| PError::expected("closing paren in is built"))?;
-                        is_built = Some(true);
+                        is_built = Some(crate::ast::BuiltTrait::Yes);
                         let (r2, _) = ws(after)?;
                         rest = r2;
                         continue;
                     }
+                    // `is built(:bind)` binds the named argument to the
+                    // attribute instead of assigning it; `:!bind` is plain.
+                    let bind = bind_adverb(inner);
                     // Skip unknown content in parens
                     let mut depth = 1u32;
                     let mut idx = 0;
@@ -735,12 +738,16 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                         }
                     }
                     let after = &inner[idx + 1..];
-                    is_built = Some(true);
+                    is_built = Some(if bind == Some(true) {
+                        crate::ast::BuiltTrait::Bind
+                    } else {
+                        crate::ast::BuiltTrait::Yes
+                    });
                     let (r2, _) = ws(after)?;
                     rest = r2;
                     continue;
                 }
-                is_built = Some(true);
+                is_built = Some(crate::ast::BuiltTrait::Yes);
             } else if is_container_type {
                 // Uppercase-starting trait name: `is Buf`, `is BagHash`,
                 // `is Array[Int]`, `is G::A`, etc. This is a container type trait
@@ -1437,4 +1444,28 @@ fn has_type_method_decl<'a>(input: &'a str, has_type: &str) -> PResult<'a, Stmt>
         }
     }
     Ok((rest, stmt))
+}
+
+/// The `:bind` adverb at the start of an `is built(...)` argument list:
+/// `Some(true)` for `:bind` / `:bind(True)`, `Some(false)` for `:!bind` /
+/// `:bind(False)`, `None` when the list does not start with it.
+// Cost: O(1).
+fn bind_adverb(inner: &str) -> Option<bool> {
+    let word_end = |rest: &str| {
+        !rest
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '-')
+    };
+    if let Some(rest) = inner.strip_prefix(":!bind") {
+        return word_end(rest).then_some(false);
+    }
+    let rest = inner.strip_prefix(":bind")?;
+    if let Some(value) = rest.strip_prefix("(False)") {
+        return word_end(value).then_some(false);
+    }
+    if let Some(value) = rest.strip_prefix("(True)") {
+        return word_end(value).then_some(true);
+    }
+    word_end(rest).then_some(true)
 }
