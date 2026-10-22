@@ -113,7 +113,12 @@ impl Interpreter {
         track_len: bool,
     ) -> Value {
         let len_cell = Value::int(len as i64).into_container_ref();
-        let mut env = self.env.clone();
+        // Only the window's length cell is captured. The source variable is
+        // read and written BY NAME from the caller's live scope when the
+        // Proxy is used (`target`), so a snapshot of the whole scope must not
+        // ride along: a closure's own capture wins over its caller's binding
+        // (ADR-0055), and a stale `$s` would hide the source's later writes.
+        let mut env = crate::env::Env::new();
         env.insert(LEN_VAR.to_string(), len_cell);
         let window = || {
             vec![
