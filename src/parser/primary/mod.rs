@@ -380,8 +380,10 @@ pub(in crate::parser) fn statement_span(start: &str, end: &str) -> crate::ast::S
                 origin.len,
             ))
         };
-        full.get(from..to)
-            .map(|t| t.trim_end_matches(|c: char| c.is_whitespace() || c == ';').len())
+        full.get(from..to).map(|t| {
+            t.trim_end_matches(|c: char| c.is_whitespace() || c == ';')
+                .len()
+        })
     });
     match text {
         Some(len) => SrcSpan::new(from, from + len),

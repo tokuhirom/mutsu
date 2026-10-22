@@ -89,7 +89,11 @@ fn line_in(value: &Value) -> Option<i64> {
     match value.view() {
         ValueView::Int(line) => Some(line),
         ValueView::Instance { attributes, .. } => {
-            match attributes.as_map().get(super::unit_source::LINE_ATTR)?.view() {
+            match attributes
+                .as_map()
+                .get(super::unit_source::LINE_ATTR)?
+                .view()
+            {
                 ValueView::Int(line) => Some(line),
                 _ => None,
             }
