@@ -97,6 +97,9 @@ pub(crate) struct FastMethodCacheEntry {
     compiled_code: Arc<CompiledCode>,
     can_skip_merge: bool,
     positional_count: usize,
+    /// The positional parameters a call must supply (no default, not `?`).
+    /// A call short of them takes the full path, which raises the arity error.
+    required_positional_count: usize,
     has_defaults: bool,
 }
 

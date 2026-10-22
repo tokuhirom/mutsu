@@ -1022,6 +1022,19 @@ impl Interpreter {
                     && !pd.named
             })
             .count();
+        let required_positional_count = method_def
+            .param_defs
+            .iter()
+            .filter(|pd| {
+                !pd.is_invocant
+                    && !pd.traits.iter().any(|t| t == "invocant")
+                    && !pd.slurpy
+                    && !pd.double_slurpy
+                    && !pd.named
+                    && !pd.optional_marker
+                    && pd.default.is_none()
+            })
+            .count();
         // Also gate on `cc.has_calls`: a body that invokes a CLOSURE
         // (`$f()` — `CallOnValue`/`CallOnCodeVar`) or a CallDefined can
         // write a dynamic var / captured-outer lexical / global into this frame's
@@ -1039,6 +1052,7 @@ impl Interpreter {
                 compiled_code: cc.clone(),
                 can_skip_merge,
                 positional_count,
+                required_positional_count,
                 has_defaults,
             },
         );
