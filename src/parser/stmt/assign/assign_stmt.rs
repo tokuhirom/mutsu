@@ -147,7 +147,6 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Meta-op assignment: @a [X+]= @b → @a = @a X+ @b
-    // Meta-op assignment: @a [X+]= @b → @a = @a X+ @b
     // Also handles reduction assignment: $x [+]= 6 → $x += 6
     if let Some((after_eq, meta, op)) = parse_bracket_meta_assign_op(rest) {
         let bracket_depth = rest.chars().take_while(|ch| *ch == '[').count();
@@ -172,12 +171,17 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             };
             return parse_statement_modifier(rest, stmt);
         }
-        let expr = Expr::MetaOp {
-            meta,
-            op,
-            left: Box::new(var_expr),
-            right: Box::new(rhs),
-        };
+        let expr = Expr::spelled(
+            Expr::MetaOp {
+                meta,
+                op,
+                left: Box::new(var_expr),
+                right: Box::new(rhs),
+            },
+            || crate::ast::spelled::Spelling::BracketedAssignment {
+                depth: bracket_depth,
+            },
+        );
         let stmt = match rewrite_scalar_assignment_stmt_as_sink(name.clone(), expr.clone()) {
             Some(stmt) => stmt,
             None => Stmt::Assign {

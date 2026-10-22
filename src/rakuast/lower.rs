@@ -2710,7 +2710,9 @@ pub(super) fn infix_is_compound_assignment(node: &RakuAstNode) -> bool {
     // `X+=` / `Z+=` hold a metaoperator, not a plain infix: `meta_infix` lowers them.
     named_child(node, "infix")
         .map(|child| {
-            (child.class == RakuAstClass::MetaInfixAssign && compound_assign_base(child).is_some())
+            (child.class == RakuAstClass::MetaInfixAssign
+                && (compound_assign_base(child).is_some()
+                    || bracketed_meta_assign(child).is_some()))
                 || reverse_assign_base(child).is_some()
         })
         .unwrap_or(false)
@@ -2736,6 +2738,40 @@ fn compound_assign_base(assign: &RakuAstNode) -> Option<(String, usize)> {
     }
     match positional_leaf(inner).ok()?.view() {
         ValueView::Str(op) => Some((op.to_string(), depth)),
+        _ => None,
+    }
+}
+
+/// The metaoperator and base infix nested inside a bracketed assignment.
+// Cost: O(d), d = bracket depth, bounded at 128.
+fn bracketed_meta_assign(assign: &RakuAstNode) -> Option<(&'static str, String)> {
+    if assign.class != RakuAstClass::MetaInfixAssign {
+        return None;
+    }
+    let mut inner = named_child_or_positional(assign).ok()?;
+    let mut depth = 0;
+    while inner.class == RakuAstClass::BracketedInfix {
+        depth += 1;
+        if depth > 128 {
+            return None;
+        }
+        inner = named_child_or_positional(inner).ok()?;
+    }
+    if depth == 0 {
+        return None;
+    }
+    let meta = match inner.class {
+        RakuAstClass::MetaInfixReverse => "R",
+        RakuAstClass::MetaInfixCross => "X",
+        RakuAstClass::MetaInfixZip => "Z",
+        _ => return None,
+    };
+    let base = named_child_or_positional(inner).ok()?;
+    if base.class != RakuAstClass::Infix {
+        return None;
+    }
+    match positional_leaf(base).ok()?.view() {
+        ValueView::Str(op) => Some((meta, op.to_string())),
         _ => None,
     }
 }
@@ -2780,6 +2816,29 @@ pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, Run
             op: format!("R{base}="),
             rhs: Box::new(rhs),
             expanded: Box::new(expanded),
+        });
+    }
+    if let Some((operator, base)) = bracketed_meta_assign(meta) {
+        let rhs = lower_expr(named_child(node, "right")?)?;
+        let expression = Expr::MetaOp {
+            meta: operator.to_string(),
+            op: base,
+            left: Box::new(target),
+            right: Box::new(rhs),
+        };
+        if node
+            .fields
+            .iter()
+            .any(super::compound_stmt::is_source_field)
+        {
+            return Ok(expression);
+        }
+        let raw = variable_spelling(named_child(node, "left")?)?;
+        let name = raw.strip_prefix('$').unwrap_or(&raw).to_string();
+        return Ok(Expr::AssignExpr {
+            name,
+            expr: Box::new(expression),
+            is_bind: false,
         });
     }
     let (op, _) = compound_assign_base(meta).ok_or_else(|| unsupported(node))?;

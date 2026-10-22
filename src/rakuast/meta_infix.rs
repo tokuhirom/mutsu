@@ -222,14 +222,14 @@ pub(super) fn convert_bracketed_assignment(
             "a bracketed infix nested beyond 128 levels",
         ));
     }
-    let (target, op, rhs) = match expr {
+    let (target, meta, op, rhs) = match expr {
         Expr::CompoundAssign {
             target, op, rhs, ..
         } => {
             let base = op
                 .strip_suffix('=')
                 .ok_or_else(|| unsupported_expr("bracketed assignment without an operator"))?;
-            (target.as_ref(), base, rhs.as_ref())
+            (target.as_ref(), "reduce", base, rhs.as_ref())
         }
         Expr::AssignExpr { expr, .. } => match expr.as_ref() {
             Expr::MetaOp {
@@ -237,9 +237,19 @@ pub(super) fn convert_bracketed_assignment(
                 op,
                 left,
                 right,
-            } if meta == "reduce" => (left.as_ref(), op.as_str(), right.as_ref()),
-            _ => return Err(unsupported_expr("bracketed assignment without a reduction")),
+            } => (left.as_ref(), meta.as_str(), op.as_str(), right.as_ref()),
+            _ => {
+                return Err(unsupported_expr(
+                    "bracketed assignment without a metaoperator",
+                ));
+            }
         },
+        Expr::MetaOp {
+            meta,
+            op,
+            left,
+            right,
+        } => (left.as_ref(), meta.as_str(), op.as_str(), right.as_ref()),
         _ => {
             return Err(unsupported_expr(
                 "bracketed assignment without its source form",
@@ -247,6 +257,13 @@ pub(super) fn convert_bracketed_assignment(
         }
     };
     let mut inner = plain_infix(op);
+    if meta != "reduce" {
+        inner = RakuAstNode {
+            class: meta_class(meta)
+                .ok_or_else(|| unsupported_expr("unknown bracketed metaoperator"))?,
+            fields: vec![node_field(None, inner)],
+        };
+    }
     for _ in 0..depth {
         inner = RakuAstNode {
             class: RakuAstClass::BracketedInfix,

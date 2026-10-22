@@ -3,7 +3,7 @@ use MONKEY-SEE-NO-EVAL;
 use experimental :rakuast;
 use Test;
 
-plan 16;
+plan 24;
 
 my $negated = Q[4 !< 5].AST.statements[0].expression;
 is $negated.^name, 'RakuAST::ApplyInfix', 'a negated infix is an application';
@@ -44,3 +44,22 @@ is $immutable.statements[1].expression.args.args[0].left.^name,
     'RakuAST::Term::Name', 'a read-only setting term retains its assignment shape';
 throws-like { EVAL($immutable) }, X::Assignment::RO,
     'a read-only setting term throws before the surrounding call';
+
+my $reverse = Q[my $a = 12; $a [R-]= 42; $a].AST;
+is $reverse.statements[1].expression.infix.infix.^name,
+    'RakuAST::BracketedInfix', 'a bracketed reverse assignment keeps its brackets';
+is $reverse.statements[1].expression.infix.infix.infix.^name,
+    'RakuAST::MetaInfix::Reverse', 'the reverse metaoperator remains inside the brackets';
+is EVAL($reverse), 30, 'a bracketed reverse assignment round-trips';
+is EVAL(Q[my $a = 12; ((10 R+= ($a [R-]= 42)) //= 100) += 1000; $a].AST),
+    1040, 'nested reverse meta assignments retain their lvalue semantics';
+
+my $cross = Q[my @a = 1, 2; @a [X+]= (3, 4); @a.join(',')].AST;
+is $cross.statements[1].expression.infix.infix.infix.^name,
+    'RakuAST::MetaInfix::Cross', 'a bracketed cross assignment retains its metaoperator';
+is EVAL($cross), '4,5,5,6', 'a bracketed cross assignment round-trips';
+
+my $zip = Q[my @a = 1, 2; @a [Z+]= (3, 4); @a.join(',')].AST;
+is $zip.statements[1].expression.infix.infix.infix.^name,
+    'RakuAST::MetaInfix::Zip', 'a bracketed zip assignment retains its metaoperator';
+is EVAL($zip), '4,6', 'a bracketed zip assignment round-trips';
