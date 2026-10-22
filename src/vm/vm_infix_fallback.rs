@@ -25,6 +25,24 @@ impl Interpreter {
         } else {
             call_args
         };
+        // A named argument (a trailing adverb, `1 + 2 :adverb`) reaches a core
+        // operator no candidate of which declares a named parameter: rakudo
+        // rejects the call instead of ignoring the adverb.
+        if let Some(op_name) = infix_name
+            && call_args
+                .iter()
+                .skip(1)
+                .any(|arg| matches!(arg.view(), ValueView::Pair(..)))
+            && !matches!(
+                crate::runtime::native_infix_dispatch::core_infix_candidates(op_name),
+                crate::runtime::native_infix_dispatch::CoreInfixCandidates::Shadowing
+            )
+            && !self.user_infix_override(op_name)
+        {
+            return Err(crate::runtime::incdec_rw_sub::core_infix_named_argument_error(
+                op_name, &call_args,
+            ));
+        }
         if call_args.len() == 2
             && infix_name.is_none_or(|op| !self.is_candidate_less_proto(op))
             && let Some(value) = self.core_infix_values(name, &call_args[0], &call_args[1], code)?
