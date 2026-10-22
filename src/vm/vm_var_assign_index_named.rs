@@ -5415,10 +5415,8 @@ impl Interpreter {
             // "autovivify the root itself" arm and replaced the instance
             // (`$obj<a><b> = 1` on an `is Hash` object, #12907).
             if level < depth - 1
-                && let Some(storage) = Self::storage_backed_step_target(
-                    unsafe { &*current },
-                    is_positional,
-                )
+                && let Some(storage) =
+                    Self::storage_backed_step_target(unsafe { &*current }, is_positional)
             {
                 object_step_containers.push(Box::new(storage));
                 current = &mut **object_step_containers.last_mut().unwrap() as *mut Value;
