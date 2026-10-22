@@ -5176,6 +5176,7 @@ t/rakuast/rakuast-dotty-term-method.t
 t/rakuast/rakuast-dynamic-match-adverbs.t
 t/rakuast/rakuast-elsif.t
 t/rakuast/rakuast-empty-deprecated-message.t
+t/rakuast/rakuast-empty-role-application.t
 t/rakuast/rakuast-enum-term.t
 t/rakuast/rakuast-enum.t
 t/rakuast/rakuast-eval-andthen.t

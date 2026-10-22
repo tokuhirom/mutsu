@@ -313,6 +313,11 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("initializer", Absent::TypeObject("RakuAST::Initializer")),
         ],
         TypeSimple | TypeSetting | TypeCapture => &[("name", Absent::Required)],
+        // `R[]` has no `args` field in rakudo (the renderer elides the empty list).
+        TypeParameterized => &[
+            ("base-type", Absent::Required),
+            ("args", Absent::EmptyNode(RakuAstClass::ArgList)),
+        ],
         TypeEnum => &[
             ("name", Absent::Required),
             ("of", Absent::TypeObject("RakuAST::Type")),

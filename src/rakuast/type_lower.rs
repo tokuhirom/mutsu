@@ -135,7 +135,10 @@ fn type_constraint_at(
         // spells them.
         RakuAstClass::TypeParameterized => {
             let base = composed_base(owner, type_node, depth + 1)?;
-            let args = named_child(type_node, "args")?;
+            // No `args` field is an empty application (`R[]`).
+            let Ok(args) = named_child(type_node, "args") else {
+                return Ok(format!("{base}[]"));
+            };
             if args.class != RakuAstClass::ArgList || args.fields.is_empty() {
                 return Err(unsupported(owner));
             }
@@ -176,7 +179,9 @@ pub(super) fn type_application_args(
     if type_node.class != RakuAstClass::TypeParameterized {
         return Ok(None);
     }
-    let args = named_child(type_node, "args")?;
+    let Ok(args) = named_child(type_node, "args") else {
+        return Ok(Some(Vec::new()));
+    };
     if args.class != RakuAstClass::ArgList {
         return Err(unsupported(owner));
     }
