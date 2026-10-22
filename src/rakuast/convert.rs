@@ -2716,11 +2716,17 @@ pub(super) fn var_declaration(
         fields.push(leaf_field(Some("scope"), Value::str(s.to_string())));
     }
     if let Some(t) = type_name.filter(|_| !is_anonymous) {
-        fields.push(node_field(Some("type"), build_type_node(t)?));
+        fields.push(node_field(
+            Some("type"),
+            super::type_build::declaration_type_node(t)?,
+        ));
     }
     fields.push(leaf_field(Some("sigil"), Value::str(sigil.to_string())));
     if let Some(t) = type_name.filter(|_| is_anonymous) {
-        fields.push(node_field(Some("type"), build_type_node(t)?));
+        fields.push(node_field(
+            Some("type"),
+            super::type_build::declaration_type_node(t)?,
+        ));
     }
     if let Some(tw) = twigil {
         fields.push(leaf_field(Some("twigil"), Value::str(tw.to_string())));

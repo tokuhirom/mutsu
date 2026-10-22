@@ -20,6 +20,20 @@ pub(super) fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
     build_type_node_at(t, 0)
 }
 
+/// A declaration's capture type is a `Type::Capture`; other type positions
+/// retain their existing interpretation of a leading `::`.
+pub(super) fn declaration_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
+    if let Some(name) = crate::qualified::type_capture_name(t)
+        && !name.is_empty()
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        return super::convert::type_capture_node(name);
+    }
+    build_type_node(t)
+}
+
 /// A return constraint may pin a numeric value instead of naming a type.
 // Cost: O(n), n = constraint spelling length.
 pub(super) fn return_constraint_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
@@ -88,9 +102,6 @@ pub(super) fn build_type_node_at(t: &str, depth: usize) -> Result<RakuAstNode, R
             class: RakuAstClass::TypeCoercion,
             fields,
         });
-    }
-    if let Some(name) = crate::qualified::type_capture_name(t) {
-        return super::convert::type_capture_node(name);
     }
     if is_simple_type(t) {
         return Ok(simple_type_node(t));

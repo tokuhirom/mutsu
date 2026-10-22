@@ -211,7 +211,7 @@ fn parameter(var: &SignatureVar, is_binding: bool) -> Result<RakuAstNode, Runtim
     if let Some(type_name) = &var.per_var_type_constraint {
         fields.push(node_field(
             Some("type"),
-            super::convert::build_type_node(type_name)?,
+            super::type_build::declaration_type_node(type_name)?,
         ));
     }
     if var.is_named {
