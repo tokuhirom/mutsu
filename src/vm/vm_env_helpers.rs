@@ -208,7 +208,7 @@ impl Interpreter {
     /// the frame whose state those entries were meant to write into no
     /// longer exists by the time this runs. See
     /// `todo/deep/panic-unwind-leaks-side-channel-call-state.md`.
-    pub(super) fn recover_call_frames_after_panic(
+    pub(crate) fn recover_call_frames_after_panic(
         &mut self,
         entry_depth: usize,
         entry_stack_depth: usize,
