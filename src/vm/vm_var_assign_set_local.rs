@@ -2308,7 +2308,12 @@ impl Interpreter {
             // parameter default as Nil — so the stored value itself must carry
             // the type object. Binds keep the Nil (`:=` stores the value as
             // is), and an `is default(...)` value takes over the Nil read.
-            if val.is_nil() && !is_bind && constraint != "Nil" && self.var_default(name).is_none() {
+            if val.is_nil()
+                && !is_bind
+                && !scalar_bind
+                && constraint != "Nil"
+                && self.var_default(name).is_none()
+            {
                 val = self.typed_scalar_nil_seed_value(name, constraint);
             } else {
                 // A `:=` bind stores a `ContainerRef` cell (e.g. `my Offset $o := @a[$i]`
@@ -2351,7 +2356,7 @@ impl Interpreter {
                     && self.registry().subsets.is_empty();
                 if !native_identity
                     && !decl_typechecked
-                    && (!check_val.is_nil() || binding && val.is_proxy_value())
+                    && (!check_val.is_nil() || binding)
                     && !self.type_matches_value(constraint, check_val)
                 {
                     return Err(if binding {
