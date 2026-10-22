@@ -88,6 +88,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
         let ValueView::Str(text) = text.view() else {
             return Err(super::lower::unsupported(node));
         };
-        crate::parser::normalized_quote(adverb, &text.to_string()).ok_or_else(|| super::lower::unsupported(node))
+        crate::parser::normalized_quote(adverb, &text.to_string())
+            .ok_or_else(|| super::lower::unsupported(node))
     })())
 }
