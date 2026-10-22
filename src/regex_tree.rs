@@ -2213,16 +2213,17 @@ impl Parser {
                     assertion: Box::new(call),
                 }));
             }
-            // `<rx=$r>` / `<foo=[bao]>` / `<rx={$r}>`: an alias over an
-            // assertion that is no subrule call.
+            // `<rx=$r>` / `<foo=[bao]>` / `<wc=&wc>`: an alias over an
+            // assertion that is no named subrule call.
             if is_simple_subrule_name(alias)
                 && capturing
-                && target.starts_with(['$', '@', '%', '[', '-', '+', ':', '{'])
+                && target.starts_with(['$', '@', '%', '&', '[', '-', '+', ':', '{'])
                 && let Some(tree) =
                     RegexTree::parse_lookaround_body(&format!("<{target}>"), self.in_unit_parse)
                 && matches!(
                     tree.body,
                     RegexNode::RegexValueInterpolation { .. }
+                        | RegexNode::Callable { .. }
                         | RegexNode::CharClassAssertion(_)
                         | RegexNode::InterpolatedBlock { .. }
                 )

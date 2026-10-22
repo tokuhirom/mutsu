@@ -90,6 +90,8 @@ pub(crate) enum RegexExtension {
     },
     /// `$^a`: a placeholder parameter of the enclosing block, interpolated.
     Placeholder { name: String, sequential: bool },
+    /// `$'x'` / `$"x"`: an anonymous scalar interpolation before a quote.
+    AnonymousInterpolation { sequential: bool },
     /// `@$ref`: a variable interpolated in the context its sigil names.
     ContextualizedVariable {
         sigil: char,
@@ -123,7 +125,8 @@ impl RegexExtension {
             | Self::InterpolatedQuote { .. }
             | Self::ContextualizedInterpolation { .. }
             | Self::ContextualizedVariable { .. }
-            | Self::Placeholder { .. } => Vec::new(),
+            | Self::Placeholder { .. }
+            | Self::AnonymousInterpolation { .. } => Vec::new(),
         }
     }
 
@@ -145,7 +148,8 @@ impl RegexExtension {
             | Self::InterpolatedQuote { .. }
             | Self::ContextualizedInterpolation { .. }
             | Self::ContextualizedVariable { .. }
-            | Self::Placeholder { .. } => Vec::new(),
+            | Self::Placeholder { .. }
+            | Self::AnonymousInterpolation { .. } => Vec::new(),
         }
     }
 
@@ -240,6 +244,7 @@ impl RegexExtension {
             }
             Self::ContextualizedVariable { sigil, name, .. } => format!("{sigil}${name}"),
             Self::Placeholder { name, .. } => format!("$^{name}"),
+            Self::AnonymousInterpolation { .. } => "$".to_string(),
             Self::Alias { alias, assertion } => {
                 let inner = assertion.to_source();
                 format!("<{alias}={}", inner.strip_prefix('<').unwrap_or(&inner))

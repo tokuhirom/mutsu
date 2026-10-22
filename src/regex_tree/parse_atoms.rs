@@ -84,6 +84,14 @@ impl Parser {
                 self.pos += 2;
                 Some(RegexNode::AnchorEndOfLine)
             }
+            '$' if matches!(self.chars.get(self.pos + 1), Some('\'' | '"')) => {
+                self.pos += 1;
+                Some(RegexNode::Extension(
+                    RegexExtension::AnonymousInterpolation {
+                        sequential: sequential_interpolation,
+                    },
+                ))
+            }
             '$' if self.chars.get(self.pos + 1).is_none_or(|next| {
                 next.is_whitespace() || stops.contains(next) || *next == '|'
             }) =>
