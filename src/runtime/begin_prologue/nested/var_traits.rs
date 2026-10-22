@@ -107,6 +107,21 @@ fn trait_body(name: &str, applied: &[(String, Option<Expr>)], site: &str) -> Vec
     body
 }
 
+/// The declaration `decl` of the lifted variable `name`, keeping the value
+/// the block's ENTER queue may already have seeded through `Variable.var`, as
+/// Rakudo's pre-allocated lexical does.
+pub(super) fn seeded_decl(name: &str, decl: Stmt) -> Stmt {
+    let step = |op| Stmt::VarTrait {
+        name: name.to_string(),
+        op,
+    };
+    Stmt::SyntheticBlock(vec![
+        step(VarTraitOp::SeedStash),
+        decl,
+        step(VarTraitOp::SeedRestore),
+    ])
+}
+
 /// The step that replays the `replay`-kind phasers filed under `site` for
 /// the variable `name`.
 fn replay_call(name: &str, site: &str, replay: &str) -> Stmt {
@@ -258,18 +273,7 @@ impl Walker<'_> {
         }
         if self.lift(&body, None, &PhaserKind::Begin) {
             self.current_frame().entry.extend(entry_phasers(&name, &site));
-            // The block's ENTER queue may already have seeded the variable
-            // through `Variable.var`; the declaration keeps that value, as
-            // Rakudo's pre-allocated lexical does.
-            let step = |op| Stmt::VarTrait {
-                name: name.clone(),
-                op,
-            };
-            *stmt = Stmt::SyntheticBlock(vec![
-                step(VarTraitOp::SeedStash),
-                stripped,
-                step(VarTraitOp::SeedRestore),
-            ]);
+            *stmt = seeded_decl(&name, stripped);
             return true;
         }
         self.current_frame().bindings.pop();

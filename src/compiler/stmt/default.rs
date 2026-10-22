@@ -141,8 +141,7 @@ impl Compiler {
         use crate::opcode::VarTraitCtl;
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
         let slot = self.local_map.get(name).copied();
-        let constant =
-            |s: &mut Self, text: &str| s.code.add_constant(Value::str(text.to_string()));
+        let constant = |s: &mut Self, text: &str| s.code.add_constant(Value::str(text.to_string()));
         let ctl = match op {
             VarTraitOp::Apply { trait_name, arg } => {
                 if let Some(arg) = arg {

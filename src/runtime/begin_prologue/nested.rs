@@ -443,7 +443,7 @@ impl Walker<'_> {
             static_decl,
             assign,
             cell,
-            lifted_traits: _,
+            lifted_traits,
         } = &mut self.frames[frame].bindings[binding].kind
         else {
             unreachable!("only a Local binding gets a cell")
@@ -457,7 +457,10 @@ impl Walker<'_> {
                     cell_decl = untyped_cell_decl(cell_decl);
                 }
                 self.lifted.decls.push(cell_decl);
-                let head = decl_from_cell(static_decl, &cell_name, bind);
+                let mut head = decl_from_cell(static_decl, &cell_name, bind);
+                if *lifted_traits {
+                    head = var_traits::seeded_decl(&name, head);
+                }
                 let edit = if untyped {
                     // The declaration names a type of an inner scope, which
                     // the scope's head precedes, so it stays in place.
