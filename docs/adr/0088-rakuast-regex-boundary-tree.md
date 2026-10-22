@@ -1756,3 +1756,14 @@ matcher consumes that form.
 nodes and EVAL behavior. The frontend now passes
 `roast/S05-modifier/counted.t`, `roast/S05-modifier/counted-match.t`, and
 `roast/S05-metasyntax/unicode-property-pair.t` (160 assertions).
+
+## 77. Hash composers in flattened regex arguments (2026-10-22)
+
+Regex subrule arguments retain an execution expression and a source spelling.
+The RakuAST lowerer can represent a flattened hash composer as a prefix
+application over a block, but rebuilding the regex source previously stopped
+at the hash expression. The shared expression renderer now emits hash
+composers, allowing `<.flatnamed(|{ c => 6, d => 7 })>` to cross the boundary
+without a second regex-specific representation. The mutsu RakuAST test pins
+the round trip; Rakudo's current hand-built AST EVAL behavior differs for this
+case, so only its AST shape assertions run there.

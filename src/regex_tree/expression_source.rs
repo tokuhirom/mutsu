@@ -14,6 +14,7 @@ pub(crate) fn expression_argument_source(expr: &crate::ast::Expr) -> Option<Stri
     }
 }
 
+// Cost: O(n), n = size of the expression tree.
 pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
     fn quote_string(value: &str) -> String {
         let mut out = String::with_capacity(value.len() + 2);
@@ -309,6 +310,23 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
         }
         crate::ast::Expr::ArrayLiteral(items) => Some(format!("[{}]", join_args(items)?)),
         crate::ast::Expr::BracketArray(items, _) => Some(format!("[{}]", join_args(items)?)),
+        crate::ast::Expr::Hash(pairs, crate::ast::HashSpelling::Composer) => {
+            let entries = pairs
+                .iter()
+                .map(|(key, value)| {
+                    let pair = crate::ast::Expr::Binary {
+                        left: Box::new(crate::ast::Expr::Literal(
+                            crate::value::Value::str(key.clone()),
+                        )),
+                        op: crate::token_kind::TokenKind::FatArrow,
+                        right: Box::new(value.clone()?),
+                        form: Default::default(),
+                    };
+                    expression_source(&pair)
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(format!("{{ {} }}", entries.join(", ")))
+        }
         crate::ast::Expr::PositionalPair(inner) => Some(format!("({})", expression_source(inner)?)),
         _ => None,
     }
