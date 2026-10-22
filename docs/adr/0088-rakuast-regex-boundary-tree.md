@@ -1727,3 +1727,18 @@ still treating `#` inside an enumeration as a possible member.
 round-tripping, and hand-built lowering. The RakuAST frontend now passes
 `roast/S05-metasyntax/regex.t` and `roast/S05-metasyntax/charset.t` (158
 assertions together).
+
+## 75. Spaced named regex arguments (2026-10-22)
+
+A named assertion with a spaced regex argument, such as `<lit 'a'>`, now has
+a source-tree extension carrying the target name and a child regex tree. The
+read direction emits `Regex::Assertion::Named::RegexArg`, while the write
+direction accepts that node for names other than the existing `before` and
+`after` lookarounds. Parenthesized and colon argument lists remain
+`Assertion::Named::Args`; execution continues through the original regex
+matcher and source spelling.
+
+`t/rakuast/rakuast-regex-spaced-argument.t` checks quote, literal, group and
+character-class arguments, EVAL of parsed and constructed nodes, and a
+grammar declaration round-trip. The RakuAST frontend now passes all 17
+assertions in `roast/6.c/S05-grammar/parse_and_parsefile-6c.t`.

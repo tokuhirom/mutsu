@@ -2243,6 +2243,23 @@ impl Parser {
         if let Some(node) = symbolic::parse(name, capturing) {
             return Some(node);
         }
+        if let Some(split) = name.find(char::is_whitespace) {
+            let target = name[..split].trim();
+            let arg = name[split..].trim();
+            if capturing && is_subrule_name(target) && !arg.is_empty() {
+                let regex_arg = RegexTree::parse_static_with_options(
+                    arg,
+                    false,
+                    true,
+                    None,
+                    self.in_unit_parse,
+                )?;
+                return Some(RegexNode::Extension(RegexExtension::NamedRegexArg {
+                    name: target.to_string(),
+                    regex_arg: Box::new(regex_arg.body),
+                }));
+            }
+        }
         let (name, args) = parse_subrule_target(name)?;
         is_subrule_name(&name).then(|| RegexNode::Subrule {
             name,

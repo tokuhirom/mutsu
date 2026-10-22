@@ -3424,7 +3424,7 @@ fn call_name_stash(node: &RakuAstNode) -> Option<String> {
 
 /// Lower a regex assertion name, preserving qualified name-part boundaries in
 /// the execution spelling used by the existing matcher.
-fn lower_regex_subrule_name(node: &RakuAstNode) -> Result<String, RuntimeError> {
+pub(super) fn lower_regex_subrule_name(node: &RakuAstNode) -> Result<String, RuntimeError> {
     if node.class != RakuAstClass::Name {
         return Err(unsupported(node));
     }
