@@ -69,11 +69,8 @@ impl Compiler {
     /// `do with $x { %h<k> }`).
     // Cost: O(1).
     pub(super) fn is_bind_container_block(arg: &Expr) -> bool {
-        matches!(
-            arg.peel_parens(),
-            Expr::DoBlock { .. }
-                | Expr::DoStmt(_)
-        ) || matches!(arg, Expr::Grouped(_))
+        matches!(arg.peel_parens(), Expr::DoBlock { .. } | Expr::DoStmt(_))
+            || matches!(arg, Expr::Grouped(_))
     }
 
     /// Compile `arg` (see [`Self::is_bind_container_block`]) as the source of
