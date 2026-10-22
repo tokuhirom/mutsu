@@ -67,9 +67,14 @@ impl Interpreter {
     /// Register the code value `code` as a candidate row of `proto_key`.
     // Cost: O(a + b), a = parameters of `code`, b = its body (one fingerprint hash).
     fn add_value_dispatchee(&mut self, proto_key: &str, proto_name: &str, code: &Value) {
-        let Some(def) = Self::dispatchee_function_def(code, proto_name) else {
+        let Some(mut def) = Self::dispatchee_function_def(code, proto_name) else {
             return;
         };
+        // The row extends the family from the unit that adds it. Left unset it
+        // would read as the main program's, which a module's private family
+        // hides from its own `sub EXPORT` and shows to every importer without
+        // the family's other candidates.
+        def.source_file = self.executing_source_file_for_module_load();
         let key = Self::dispatchee_row_key(proto_key, &def);
         self.insert_multi_overload(&key, def);
     }
