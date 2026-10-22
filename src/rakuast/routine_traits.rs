@@ -474,23 +474,26 @@ pub(super) fn lower_custom(
 /// metadata cannot carry, so it is refused rather than silently reinterpreted.
 // Cost: O(a), a = size of the argument.
 fn fold_constant_message(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Literal(v) => v.as_str().map(str::to_string),
-        Expr::Grouped(inner) => fold_constant_message(inner),
-        Expr::CallOn { target, args } if args.is_empty() => {
-            let Expr::Grouped(callee) = target.as_ref() else {
-                return None;
-            };
-            let Expr::AnonSub { body, .. } = callee.as_ref() else {
-                return None;
-            };
-            let mut stmts = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
-            match (stmts.next(), stmts.next()) {
-                (Some(Stmt::Expr(inner)), None) => fold_constant_message(inner),
-                _ => None,
+    let mut current = expr;
+    loop {
+        match current {
+            Expr::Literal(v) => return v.as_str().map(str::to_string),
+            Expr::Grouped(inner) => current = inner,
+            Expr::CallOn { target, args } if args.is_empty() => {
+                let Expr::Grouped(callee) = target.as_ref() else {
+                    return None;
+                };
+                let Expr::AnonSub { body, .. } = callee.as_ref() else {
+                    return None;
+                };
+                let mut stmts = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+                match (stmts.next(), stmts.next()) {
+                    (Some(Stmt::Expr(inner)), None) => current = inner,
+                    _ => return None,
+                }
             }
+            _ => return None,
         }
-        _ => None,
     }
 }
 
