@@ -298,7 +298,26 @@ impl Interpreter {
         ));
         self.push_samewith_callable_context(dispatcher);
         self.pending_skip_constraint_recheck = trust_constraints;
+        // A module routine's own `my` statics are its whole scope for those
+        // names: a same-named lexical of the calling frame (a class static its
+        // method injected) must not answer for them. The named-call entry
+        // injects the declaring package's statics the same way.
+        let mut shadowed_by_statics: Vec<(String, Option<Value>)> = Vec::new();
+        if let ValueView::Sub(data) = candidate.view()
+            && !crate::qualified::is_global_package(data.package)
+        {
+            let package = data.package.resolve();
+            if self.class_has_package_lexicals(&package) {
+                self.inject_class_body_statics_saving(&package, &mut shadowed_by_statics);
+            }
+        }
         let result = self.call_sub_value(candidate, args);
+        for (name, previous) in shadowed_by_statics.into_iter().rev() {
+            match previous {
+                Some(v) => self.env_mut().insert(name, v),
+                None => self.env_mut().remove(&name),
+            };
+        }
         // Not consumed (the call took a path with no general bind): never let
         // it reach an unrelated later bind.
         self.pending_skip_constraint_recheck = false;
