@@ -35,7 +35,7 @@ impl Interpreter {
 
     /// [`Self::declared_type_alias_target`], also taking the declaring frame's
     /// own `(alias, type)` pairs, which a pad term the env does not hold is
-    /// read from (`Interpreter::frame_type_aliases`).
+    /// read from (`Interpreter::frame_signature_type_aliases`).
     // Cost: as `declared_type_alias_target`, plus O(f) per spelling, f = `frame`.
     pub(crate) fn declared_type_alias_target_with(
         &self,
@@ -71,19 +71,17 @@ impl Interpreter {
             let head = new_head.unwrap_or(head);
             return Some(format!("{head}[{args}]{}", smiley.unwrap_or("")));
         }
-        if let Some((_, target)) = frame.iter().find(|(alias, _)| alias == base) {
-            return Some(match smiley {
-                Some(smiley) => format!("{target}{smiley}"),
-                None => target.clone(),
-            });
-        }
-        // An alias is declared under a plain identifier, and a spelling nobody
-        // interned cannot be bound to anything.
-        let sym = crate::symbol::Symbol::lookup(base)?;
-        if crate::qualified::is_qualified(sym) {
-            return None;
-        }
-        let target = self.resolve_type_alias_chain(base)?;
+        let target = if let Some((_, target)) = frame.iter().find(|(alias, _)| alias == base) {
+            target.clone()
+        } else {
+            // An alias is declared under a plain identifier, and a spelling
+            // nobody interned cannot be bound to anything.
+            let sym = crate::symbol::Symbol::lookup(base)?;
+            if crate::qualified::is_qualified(sym) {
+                return None;
+            }
+            self.resolve_type_alias_chain(base)?
+        };
         // A lexical type's mangled storage name (ADR-0047) is resolved where
         // the type is asked for, by its source spelling; keep that.
         if target.contains('\u{0}')

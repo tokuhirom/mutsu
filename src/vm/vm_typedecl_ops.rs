@@ -184,39 +184,6 @@ impl Interpreter {
         aliases
     }
 
-    /// The `(alias, aliased type)` pairs for the identifiers `spellings` name
-    /// that are `constant`/imported type terms of the frame `code` runs: the
-    /// registry resolves a name through the env, which does not hold a pad
-    /// term, so a declaration reads them here, where its frame is live.
-    // Cost: O(n + t), n = bytes of `spellings`, t = identifiers in them.
-    pub(super) fn frame_type_aliases<'a>(
-        &self,
-        code: &CompiledCode,
-        spellings: impl IntoIterator<Item = &'a str>,
-    ) -> Vec<(String, String)> {
-        let mut aliases: Vec<(String, String)> = Vec::new();
-        for spelling in spellings {
-            for ident in spelling
-                .split(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | ':')))
-                .filter(|ident| {
-                    ident.starts_with(|c: char| c.is_alphabetic() || c == '_')
-                        && !ident.contains(':')
-                })
-            {
-                if aliases.iter().any(|(alias, _)| alias == ident) {
-                    continue;
-                }
-                if let Some(value) =
-                    self.locals_get_by_name(code, &crate::runtime::term_names::term_key(ident))
-                    && let ValueView::Package(target) = value.deref_container().view()
-                {
-                    aliases.push((ident.to_string(), target.resolve()));
-                }
-            }
-        }
-        aliases
-    }
-
     pub(super) fn exec_register_class_op(
         &mut self,
         code: &CompiledCode,

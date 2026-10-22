@@ -238,10 +238,7 @@ impl Interpreter {
             let frame_aliases = if hoisting {
                 Vec::new()
             } else {
-                let mut spellings: Vec<&str> = Vec::new();
-                signature_type_spellings(param_defs, &mut spellings);
-                spellings.extend(return_type.as_deref());
-                self.frame_type_aliases(code, spellings)
+                self.frame_signature_type_aliases(code, param_defs, return_type.as_deref())
             };
             let canon_defs = (!hoisting)
                 .then(|| self.canonical_signature_param_types_with(param_defs, &frame_aliases))
@@ -1139,21 +1136,5 @@ impl Interpreter {
             self.register_exported_sub(pkg, name.to_string(), tags);
         }
         Ok(())
-    }
-}
-
-/// Every type spelling a signature names: its parameters' types and those of
-/// their nested signatures, `&callback (...)` signatures and `--> T`.
-// Cost: O(p), p = parameters including nested signatures.
-fn signature_type_spellings<'a>(defs: &'a [crate::ast::ParamDef], out: &mut Vec<&'a str>) {
-    for pd in defs {
-        out.extend(pd.type_constraint.as_deref());
-        if let Some(sig) = pd.sub_signature.as_deref() {
-            signature_type_spellings(sig, out);
-        }
-        if let Some((sig, ret)) = &pd.code_signature {
-            signature_type_spellings(sig, out);
-            out.extend(ret.as_deref());
-        }
     }
 }
