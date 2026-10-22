@@ -1489,6 +1489,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Escape),
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::FormFeed),
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::CarriageReturn),
+    RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::BackSpace),
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Nul),
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Any),
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Specified),

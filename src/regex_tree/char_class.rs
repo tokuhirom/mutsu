@@ -32,11 +32,12 @@ pub(crate) enum BackslashClass {
     Escape,
     FormFeed,
     CarriageReturn,
+    BackSpace,
     Nul,
 }
 
 impl BackslashClass {
-    const ALL: [(Self, char); 11] = [
+    const ALL: [(Self, char); 12] = [
         (Self::Digit, 'd'),
         (Self::Word, 'w'),
         (Self::Space, 's'),
@@ -47,6 +48,7 @@ impl BackslashClass {
         (Self::Escape, 'e'),
         (Self::FormFeed, 'f'),
         (Self::CarriageReturn, 'r'),
+        (Self::BackSpace, 'b'),
         (Self::Nul, '0'),
     ];
 
@@ -79,6 +81,7 @@ impl BackslashClass {
             Self::Escape => 'e',
             Self::FormFeed => 'f',
             Self::CarriageReturn => 'r',
+            Self::BackSpace => 'b',
             Self::Nul => '0',
         };
         if negated {
@@ -108,6 +111,16 @@ impl CharClassAtom {
     // Cost: O(n), n = number of specified characters.
     pub(crate) fn to_source(&self) -> String {
         match self {
+            Self::Backslash {
+                class: BackslashClass::BackSpace,
+                negated,
+            } => {
+                if *negated {
+                    "<-[\\b]>".to_string()
+                } else {
+                    "<[\\b]>".to_string()
+                }
+            }
             Self::Backslash { class, negated } => format!("\\{}", class.letter(*negated)),
             Self::Any => ".".to_string(),
             Self::Specified {
@@ -127,8 +140,8 @@ impl CharClassAtom {
 impl Parser {
     /// Parse a backslash escape. A backslash class or a codepoint escape is a
     /// [`CharClassAtom`]; an escaped non-word character is that literal
-    /// character. Any other escape (`\b`, `\q`, ...) stays on the runtime
-    /// parser, which owns its diagnostics.
+    /// character. Backspace is recognized only inside an enumeration; other
+    /// escapes stay on the runtime parser, which owns their diagnostics.
     // Cost: O(k), k = length of the escape.
     pub(super) fn parse_escape(&mut self) -> Option<RegexNode> {
         let start = self.pos;
@@ -151,6 +164,7 @@ impl Parser {
                 }
             }
             c => match BackslashClass::from_letter(c) {
+                Some((BackslashClass::BackSpace, _)) => None,
                 Some((class, negated)) => Some(RegexNode::CharClass(CharClassAtom::Backslash {
                     class,
                     negated,
