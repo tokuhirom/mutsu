@@ -18,7 +18,7 @@ pub(super) fn parsed_block<'a>(
     let scope_params: &[ParamDef] = match &params {
         BlockParams::None => &[],
         BlockParams::List(defs) => defs,
-        BlockParams::Topic { def, .. } => def.as_slice(),
+        BlockParams::Topic { def, .. } => def.as_deref().map_or(&[], std::slice::from_ref),
     };
     let (rest, body) = block_with_pointy_params(input, scope_params)?;
     let blockoid = crate::parser::primary::source_span(input, rest);
@@ -45,7 +45,7 @@ fn statement_list_span(body: &[Stmt], blockoid: SrcSpan) -> SrcSpan {
     });
     match spans.next() {
         Some(first) => {
-            let last = spans.last().unwrap_or(first);
+            let last = spans.next_back().unwrap_or(first);
             crate::parser::primary::extend_over_semicolons(SrcSpan::new(
                 first.from as usize,
                 last.to as usize,

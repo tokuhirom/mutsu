@@ -162,7 +162,7 @@ fn block_parts(block: ParsedBlock) -> Result<(Option<Vec<ParamDef>>, Vec<Stmt>),
     let params = match block.params {
         BlockParams::None => None,
         BlockParams::List(defs) => Some(defs),
-        BlockParams::Topic { def, .. } => Some(def.into_iter().collect()),
+        BlockParams::Topic { def, .. } => Some(def.into_iter().map(|def| *def).collect()),
     };
     Ok((params, block.body))
 }
@@ -173,7 +173,7 @@ fn block_parts(block: ParsedBlock) -> Result<(Option<Vec<ParamDef>>, Vec<Stmt>),
 fn topic_param(params: &BlockParams) -> Result<(Option<String>, Option<ParamDef>), RuntimeError> {
     match params {
         BlockParams::None => Ok((None, None)),
-        BlockParams::Topic { name, def } => Ok((name.clone(), def.clone())),
+        BlockParams::Topic { name, def } => Ok((name.clone(), def.as_deref().cloned())),
         BlockParams::List(defs) => match defs.as_slice() {
             [] => Ok((None, None)),
             [def] => Ok((Some(def.name.clone()), Some(def.clone()))),

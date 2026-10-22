@@ -66,7 +66,11 @@ fn block_node(block: &ParsedBlock, topical: bool) -> Result<RakuAstNode, Runtime
         BlockParams::None if topical => topic_block_node(&block.body)?,
         BlockParams::None => signature_block_node(&block.body)?,
         BlockParams::List(defs) => pointy_block(defs, &block.body, None)?,
-        BlockParams::Topic { def, .. } => pointy_block(def.as_slice(), &block.body, None)?,
+        BlockParams::Topic { def, .. } => pointy_block(
+            def.as_deref().map_or(&[], std::slice::from_ref),
+            &block.body,
+            None,
+        )?,
     };
     Ok(with_block_origins(node, block))
 }

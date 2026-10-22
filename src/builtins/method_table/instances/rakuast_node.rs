@@ -163,9 +163,8 @@ pub(super) fn children(node: &RakuAstNode) -> Vec<Value> {
             // condition and block directly, never the clause node itself.
             RakuAstFieldValue::List(items) if field.name == Some("elsifs") => {
                 for item in items {
-                    match item.view() {
-                        ValueView::RakuAst(clause) => out.extend(children(clause)),
-                        _ => {}
+                    if let ValueView::RakuAst(clause) = item.view() {
+                        out.extend(children(clause));
                     }
                 }
             }

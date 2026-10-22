@@ -74,7 +74,7 @@ pub(crate) enum BlockParams {
     /// `None` for `-> { }`).
     Topic {
         name: Option<String>,
-        def: Option<ParamDef>,
+        def: Option<Box<ParamDef>>,
     },
 }
 

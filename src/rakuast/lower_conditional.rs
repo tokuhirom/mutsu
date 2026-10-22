@@ -96,7 +96,7 @@ fn read_block(block: &RakuAstNode, topic: bool) -> Result<ParsedBlock, RuntimeEr
         let def = defs.pop();
         BlockParams::Topic {
             name: def.as_ref().map(|def| def.name.clone()),
-            def,
+            def: def.map(Box::new),
         }
     } else {
         BlockParams::List(control_signature::params(block)?)

@@ -167,7 +167,13 @@ pub(crate) fn topic_clause_block<'a>(
         {
             return Err(PError::expected_at(several, r));
         }
-        (r, BlockParams::Topic { name, def })
+        (
+            r,
+            BlockParams::Topic {
+                name,
+                def: def.map(Box::new),
+            },
+        )
     } else {
         (input, BlockParams::None)
     };
