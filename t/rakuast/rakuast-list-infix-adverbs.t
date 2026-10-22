@@ -8,7 +8,7 @@ use Test;
 # by `add-colonpair`: the constructor form, the accessors and `visit-children`
 # do not show them, but EVAL passes them to the operator.
 
-plan 14;
+plan 18;
 
 my $source = Q[sub infix:<&>($a, $b, :$adverb) { $adverb ?? 'adverb' !! 'plain' }; my ($z, $y); $z & $y :adverb];
 my $ast = $source.AST;
@@ -54,6 +54,17 @@ is EVAL($list), '1&2', 'a hand-built ApplyListInfix without adverbs';
 is-deeply $list.add-colonpair(RakuAST::ColonPair::True.new('adverb')), Nil, 'add-colonpair answers Nil';
 is $list.gist, $before, 'the added adverb does not render';
 is EVAL($list), '1&2:adverb', 'the added adverb reaches the operator';
+
+# The calling scope's operator is the one an EVAL'd unit calls.
+is EVAL('1 & 2'), '1&2', 'an EVAL string calls the caller\'s operator';
+is EVAL('1 & 2 :adverb'), '1&2:adverb', 'and passes it the adverb';
+
+# `:key«$var»`: an interpolating word quote as a colonpair value.
+my $user = 'u v';
+is-deeply EVAL(Q[sub f(*%h) { %h }; f(:person«$user »)].AST), EVAL(Q[sub f(*%h) { %h }; f(:person«$user »)]),
+    'an interpolating word-quote colonpair round-trips';
+my $one = 'u';
+is-deeply EVAL(Q[(:p«$one »)].AST), EVAL(Q[(:p«$one »)]), 'also with a single word';
 
 my $binary = RakuAST::ApplyInfix.new(
     left  => RakuAST::IntLiteral.new(1),

@@ -5293,6 +5293,7 @@ t/rakuast/rakuast-labelled-callable-cohort.t
 t/rakuast/rakuast-labelled-repeat.t
 t/rakuast/rakuast-leaf-accessors.t
 t/rakuast/rakuast-lexical-package.t
+t/rakuast/rakuast-list-infix-adverbs.t
 t/rakuast/rakuast-list-infix.t
 t/rakuast/rakuast-listinfix-bind.t
 t/rakuast/rakuast-long-infix-chain.t

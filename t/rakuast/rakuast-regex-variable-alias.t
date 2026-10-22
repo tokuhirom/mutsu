@@ -8,7 +8,7 @@ use Test;
 # atom; mutsu renders the same public node and keeps the atom in a hidden
 # field, so the round trip matches what the written regex matches.
 
-plan 12;
+plan 13;
 
 is Q[my $foo; m/a  $foo=[<two>]  d/].AST.gist, q:to/END/.chomp, 'the alias renders as rakudo renders it';
 RakuAST::StatementList.new(
@@ -60,6 +60,9 @@ my $interpolation = Q[my $foo; m/$foo=x/].AST.statements[1].expression.body;
 isa-ok $interpolation, RakuAST::Regex::Interpolation, 'the read node is an interpolation';
 is $interpolation.var.name, '$foo', 'its variable is the aliased one';
 nok $interpolation.raku.contains('source'), 'the aliased atom is not part of the constructor form';
+my @children;
+$interpolation.visit-children({ @children.push: .^name });
+is-deeply @children, ['RakuAST::Var::Lexical'], 'visit-children visits only the variable';
 
 my $foo = 'bc';
 my regex two { .. }

@@ -17,6 +17,14 @@ The nodes also gained rakudo's mutator: `ApplyInfix.add-colonpair($pair)`
 adds a rendered colonpair, and `ApplyListInfix.add-colonpair($pair)` adds a
 hidden adverb.
 
+Getting the file through also fixed two other gaps under the RakuAST
+frontend. An `EVAL` string now calls the operator its calling scope
+declares: `sub infix:<&> { … }; EVAL '1 & 2'` used to build a junction
+there, and now calls the user operator, as the ordinary frontend does. The
+same holds for `EVAL` of a hand-built node. A colonpair whose value is an
+interpolating word quote, such as `:person«$user»`, no longer refuses.
+
 One related wrong answer is left as #14630. With a trailing adverb, mutsu
 calls an overloaded `&` pairwise over three operands; rakudo makes one call
-with all of them.
+with all of them. And an adverb on a core infix (`1 + 2 :adverb`) is
+silently dropped where rakudo rejects it (#14644).

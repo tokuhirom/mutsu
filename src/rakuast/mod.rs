@@ -46,7 +46,7 @@ mod hyper_prefix;
 mod hyper_subscript;
 mod immediate_call;
 mod infix_func;
-pub(crate) use infix_func::add_colonpair;
+pub(crate) use infix_func::{add_colonpair, with_caller_operators};
 mod inherited_fields;
 mod keyed_hash;
 mod label_context;
@@ -3426,10 +3426,12 @@ fn routine_default_scope(node: &RakuAstNode) -> Option<&'static str> {
 // Cost: O(f), f = fields of the node.
 /// Whether `field` is private state of `node` that rakudo keeps in an
 /// attribute with no accessor and leaves out of `visit-children` (an
-/// `ApplyListInfix`'s adverbs).
+/// `ApplyListInfix`'s adverbs), or that rakudo does not keep at all but mutsu
+/// needs for the round trip (the atom of a regex alias to a variable).
 // Cost: O(1).
 pub(crate) fn is_unvisited_field(node: &RakuAstNode, field: &RakuAstField) -> bool {
     infix_func::is_hidden_adverbs(node, field)
+        || regex_variable_alias::is_source_field(node, field)
 }
 
 pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
@@ -3595,6 +3597,9 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     }
     if class == RakuAstClass::ArgList {
         names.push("push");
+    }
+    if matches!(class, RakuAstClass::ApplyInfix | RakuAstClass::ApplyListInfix) {
+        names.push("add-colonpair");
     }
     if class == RakuAstClass::StatementList {
         names.push("add-statement");

@@ -242,6 +242,29 @@ fn keeps_native_dispatch(name: &str) -> bool {
 thread_local! {
     /// The operators declared in each enclosing statement list, innermost last.
     static SCOPES: RefCell<Vec<HashSet<String>>> = const { RefCell::new(Vec::new()) };
+    /// The operators the scope that runs an `EVAL` makes visible to it: the
+    /// EVAL'd unit calls them as the parser does for an EVAL string.
+    static CALLER: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+}
+
+/// Run `lower` with `operators` (routine names, `infix:<…>` among them)
+/// visible as declared by the calling scope, restoring the previous set after.
+// Cost: O(n) to install, n = number of operator names, plus `lower`.
+pub(crate) fn with_caller_operators<T>(operators: &[String], lower: impl FnOnce() -> T) -> T {
+    struct Restore(HashSet<String>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = std::mem::take(&mut self.0);
+            CALLER.with(|c| *c.borrow_mut() = previous);
+        }
+    }
+    let installed: HashSet<String> = operators
+        .iter()
+        .filter(|name| name.starts_with("infix:<") && name.ends_with('>'))
+        .cloned()
+        .collect();
+    let _restore = Restore(CALLER.with(|c| std::mem::replace(&mut *c.borrow_mut(), installed)));
+    lower()
 }
 
 /// Pops the scope [`enter_scope`] pushed.
@@ -292,11 +315,13 @@ pub(super) fn note_declaration(stmt: &RakuAstNode) {
     }
 }
 
-/// Whether an enclosing scope declares the operator `name` (`infix:<name>`).
+/// Whether an enclosing scope, or the scope that runs the `EVAL`, declares
+/// the operator `name` (`infix:<name>`).
 // Cost: O(s), s = open scopes.
 fn is_declared(name: &str) -> bool {
     let routine = format!("infix:<{name}>");
     SCOPES.with(|s| s.borrow().iter().any(|scope| scope.contains(&routine)))
+        || CALLER.with(|c| c.borrow().contains(&routine))
 }
 
 /// An infix application the parser makes an [`Expr::InfixFunc`] of, or `None`

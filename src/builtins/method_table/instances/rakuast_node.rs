@@ -70,9 +70,9 @@ pub(super) static ROWS: &[MethodRow] = &[
         "set-expression",
         |t, a| t.rakuast_set_field("set-expression", a[0].clone())
     ),
+    // One row serves both classes (a name is declared once); the handler
+    // refuses any other node.
     node_row!("RakuAST::ApplyInfix", "add-colonpair", |t, a| t
-        .rakuast_add_colonpair(a[0].clone())),
-    node_row!("RakuAST::ApplyListInfix", "add-colonpair", |t, a| t
         .rakuast_add_colonpair(a[0].clone())),
     origin_row!("RakuAST::Origin", "from", 0, origin_position),
     origin_row!("RakuAST::Origin", "to", 0, origin_end),

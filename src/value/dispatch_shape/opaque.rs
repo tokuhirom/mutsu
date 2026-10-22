@@ -106,6 +106,7 @@ pub(super) const fn opaque(
                 "RakuAST::CompUnit",
                 "RakuAST::Statement::Expression",
                 "RakuAST::ArgList",
+                "RakuAST::ApplyInfix",
             ],
         ),
         S::RakuAstOrigin => ("RakuAST::Origin", &["RakuAST::Origin"]),
