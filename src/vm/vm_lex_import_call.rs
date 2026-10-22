@@ -236,6 +236,6 @@ impl Interpreter {
                 }
             }
         }
-        self.compile_and_call_qualified_def(def, args, compiled_fns)
+        self.compile_and_call_unmatched_qualified_def(def, args, compiled_fns)
     }
 }
