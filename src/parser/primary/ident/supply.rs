@@ -279,7 +279,7 @@ fn hoist_close_registrations(stmts: Vec<Stmt>) -> Vec<Stmt> {
     let mut rest: Vec<Stmt> = Vec::with_capacity(stmts.len());
     // (number of `rest` statements the registration goes after, registration)
     let mut closes: Vec<(usize, Stmt)> = Vec::new();
-    for stmt in stmts {
+    for stmt in stmts.into_iter().flat_map(split_loop_decl) {
         if !is_close_registration(&stmt) {
             rest.push(stmt);
             continue;
@@ -305,6 +305,21 @@ fn hoist_close_registrations(stmts: Vec<Stmt>) -> Vec<Stmt> {
     out
 }
 
+/// `until my $done { ... }` parses to a non-lexical `[VarDecl, While]` pair
+/// (the variable lives in the enclosing block). Hoisting a CLOSE registration
+/// must be able to land *between* the two -- after the declaration it reads but
+/// before the loop that may never end -- so split the pair into two statements.
+fn split_loop_decl(stmt: Stmt) -> Vec<Stmt> {
+    match stmt {
+        Stmt::SyntheticBlock(inner)
+            if matches!(inner.as_slice(), [Stmt::VarDecl { .. }, Stmt::While { .. }]) =>
+        {
+            inner
+        }
+        other => vec![other],
+    }
+}
+
 /// The variables a statement declares at its own level, spelled the way
 /// [`VarReads`] records a read (a scalar without its sigil).
 fn declared_names(stmt: &Stmt) -> Vec<&str> {
@@ -321,7 +336,7 @@ fn declared_names(stmt: &Stmt) -> Vec<&str> {
     }
 }
 
-/// Every variable a subtree reads, in `VarDecl` spelling: `$x` as `x`, `@a`
+/// Every variable a subtree reads or assigns, in `VarDecl` spelling: `$x` as `x`, `@a`
 /// as `@a`, `%h` as `%h`.
 #[derive(Default)]
 struct VarReads {
@@ -332,7 +347,9 @@ impl<'ast> crate::ast_visit::Visit<'ast> for VarReads {
     fn visit_name(&mut self, name: &str, kind: crate::ast_visit::NameKind) {
         use crate::ast_visit::NameKind;
         let spelled = match kind {
-            NameKind::Var => name.to_string(),
+            // A write names the variable as much as a read does: a phaser
+            // that only assigns (`CLOSE { $done = True }`) still closes over it.
+            NameKind::Var | NameKind::AssignTarget => name.to_string(),
             NameKind::ArrayVar => format!("@{name}"),
             NameKind::HashVar => format!("%{name}"),
             _ => return,

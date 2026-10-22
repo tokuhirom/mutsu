@@ -152,7 +152,7 @@ fn expand_loop(
         is_bare_term: false,
     };
     if let Some(decl) = hoisted_decl {
-        return Stmt::Block(vec![decl, stmt]);
+        return Stmt::SyntheticBlock(vec![decl, stmt]);
     }
     let Some(param) = param_binding else {
         return stmt;
