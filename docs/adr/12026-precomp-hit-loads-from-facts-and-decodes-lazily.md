@@ -1,6 +1,7 @@
 # ADR-12026: A precompilation hit loads a module from recorded facts, decodes routine bodies on first use, and keeps registration as executed code
 
-- **Status**: Proposed (2026-10-06)
+- **Status**: Accepted (user decision 2026-10-22; proposed 2026-10-06). A body that fails to
+  decode is a cache miss, not a panic: #14516.
 - Date: 2026-10-06
 - Deciders: tokuhirom, Claude
 - Addresses: [#12026](https://github.com/tokuhirom/mutsu/issues/12026) (phase 2 of

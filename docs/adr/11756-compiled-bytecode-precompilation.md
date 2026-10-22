@@ -1,6 +1,7 @@
 # ADR-11756: The precompilation cache stores a module's compiled bytecode, validated by recorded compile inputs
 
-- **Status**: Proposed (2026-10-04)
+- **Status**: Accepted (user decision 2026-10-22; proposed 2026-10-04). The cache's privacy
+  invariant (docs/security.md) is #14516.
 - Date: 2026-10-04
 - Deciders: tokuhirom, Claude
 - Addresses: [#11756](https://github.com/tokuhirom/mutsu/issues/11756)
