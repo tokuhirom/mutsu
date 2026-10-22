@@ -1,6 +1,6 @@
 # ADR-0079: Container itemization is a property of the *holder*, tagged on the `ContainerRef` word
 
-- **Status**: Proposed — implemented (slices 0–4 complete, 2026-10-03)
+- **Status**: Accepted (user decision 2026-10-22); implemented (slices 0–4 complete, 2026-10-03)
 - **Date**: 2026-09-09
 - **Deciders**: tokuhirom, Claude
 - **Related**: [#7542](https://github.com/tokuhirom/mutsu/issues/7542) (the originating finding, whose
