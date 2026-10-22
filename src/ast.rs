@@ -1723,6 +1723,8 @@ pub(crate) enum Expr {
     IndirectCodeLookup {
         package: Box<Expr>,
         name: String,
+        /// Whether the source selected its package through `CALLER::(...)`.
+        caller: bool,
     },
     /// Symbolic variable dereference: $::("name"), @::("name"), %::("name")
     /// Resolves a variable by name at runtime. The sigil is "$", "@", or "%".

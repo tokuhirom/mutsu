@@ -699,6 +699,7 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
                 Expr::IndirectCodeLookup {
                     package: Box::new(key_expr),
                     name: normalize_raku_identifier(name),
+                    caller: true,
                 },
             ));
         }
@@ -731,6 +732,7 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
                 Expr::IndirectCodeLookup {
                     package: Box::new(expr),
                     name: normalize_raku_identifier(name),
+                    caller: true,
                 },
             ));
         }
@@ -749,6 +751,7 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
                 Expr::IndirectCodeLookup {
                     package: Box::new(expr),
                     name: normalize_raku_identifier(name),
+                    caller: false,
                 },
             ));
         }

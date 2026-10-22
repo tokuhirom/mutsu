@@ -1,0 +1,1 @@
+RakuAST now round-trips indirect code-variable lookups such as `&::($package)::uc` and `&CALLER::($package)::uc`. The parser preserves the `CALLER::` spelling, the model exposes both as `RakuAST::Var::Package` with an expression name part, and EVAL lowers them to the existing bytecode lookup. This brings the 6.c and 6.e SETTING namespace roast files through the RakuAST frontend.
