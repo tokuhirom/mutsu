@@ -53,7 +53,7 @@ impl Interpreter {
     /// element per iteration (`for`) is served a batch that grows with the
     /// elements already consumed (the first pull runs exactly `needed`, so
     /// `.head(1)` of a long map costs one callback call). Anything else, and
-    /// a pull whose elements are not all Ints, returns `needed` unchanged.
+    /// a pull whose elements are not all plain Ints, returns `needed` unchanged.
     // Cost: O(w), w = the batch window (at most `PURE_BATCH_MAX` elements).
     pub(super) fn pure_int_prefix_batch(
         &self,
@@ -66,6 +66,12 @@ impl Interpreter {
         // The first pull of a Seq runs exactly what was asked; later pulls
         // run ahead by as many elements as were consumed so far.
         let want = pos.min(PURE_BATCH_MAX);
+        // Only an immutable snapshot of plain Ints: a live Array (or a
+        // container cell) can be written by the consumer between two pulls,
+        // and the element it holds then must be the one mapped.
+        let MapGrepItems::Snapshot(values) = items else {
+            return needed;
+        };
         if want <= needed
             || !matches!(mode, MapGrepMode::Map)
             || !self.dispatch.user_declared_infix_ops.is_empty()
@@ -73,17 +79,13 @@ impl Interpreter {
         {
             return needed;
         }
-        let ints = items.with_items(|values| {
-            values
-                .get(pos..)
-                .unwrap_or(&[])
-                .iter()
-                .take(want)
-                .take_while(|value| {
-                    value.with_deref(|inner| matches!(inner.view(), ValueView::Int(_)))
-                })
-                .count()
-        });
+        let ints = values
+            .get(pos..)
+            .unwrap_or(&[])
+            .iter()
+            .take(want)
+            .take_while(|value| matches!(value.view(), ValueView::Int(_)))
+            .count();
         needed.max(ints)
     }
 }
