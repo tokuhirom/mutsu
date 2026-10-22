@@ -1997,3 +1997,19 @@ Known gaps, both rakudo-visible: a comment between a statement and its `;`
 (`Sub`, `Block`, `VarDeclaration`, `Call::*`, ...) have no origin; those arrive
 with their construct families, as the parser starts building them. Code::Coverable
 (#11413) waits on those families.
+
+### 6.106 S10: adverbs on a list-associative infix (2026-10-22)
+
+`$z & $y :adverb` on a user `infix:<&>` is an `ApplyListInfix`. Rakudo 2026.09
+keeps its adverbs in the private `$!adverbs`, filled by `add-colonpair`; the
+constructor form, the accessors and `visit-children` leave them out, and EVAL
+passes them to the operator. The converter keeps them in the same hidden
+`adverbs` field (`rakuast::is_unvisited_field` keeps it out of accessors and
+`visit-children`, the renderer omits it), and lowering appends them to the
+outermost call, where the parser attaches them. This lifts §6.46's
+two-operand restriction. `ApplyInfix.add-colonpair` and
+`ApplyListInfix.add-colonpair` are the rakudo mutators, answering `Nil`.
+That the parser calls an overloaded junction operator pairwise when it carries
+adverbs is #14630. The executable contract is
+`t/rakuast/rakuast-list-infix-adverbs.t`; `roast/integration/advent2013-day10.t`
+passes in frontend mode.

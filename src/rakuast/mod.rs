@@ -46,6 +46,7 @@ mod hyper_prefix;
 mod hyper_subscript;
 mod immediate_call;
 mod infix_func;
+pub(crate) use infix_func::add_colonpair;
 mod inherited_fields;
 mod keyed_hash;
 mod label_context;
@@ -3423,6 +3424,14 @@ fn routine_default_scope(node: &RakuAstNode) -> Option<&'static str> {
 /// this node (so ordinary methods like `.gist` fall through). `.statements`
 /// returns the positional children of a `StatementList`/`SemiList` as a `List`.
 // Cost: O(f), f = fields of the node.
+/// Whether `field` is private state of `node` that rakudo keeps in an
+/// attribute with no accessor and leaves out of `visit-children` (an
+/// `ApplyListInfix`'s adverbs).
+// Cost: O(1).
+pub(crate) fn is_unvisited_field(node: &RakuAstNode, field: &RakuAstField) -> bool {
+    infix_func::is_hidden_adverbs(node, field)
+}
+
 pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     if let Some(child) = regex_extension::nested_accessor(node, method) {
         return Some(child);
@@ -3433,7 +3442,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         return Some(origin::origin_of(node).unwrap_or(Value::NIL));
     }
     for f in &node.fields {
-        if f.name == Some(method) {
+        if f.name == Some(method) && !is_unvisited_field(node, f) {
             return Some(field_to_value(&f.value));
         }
     }
