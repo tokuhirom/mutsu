@@ -80,11 +80,11 @@ fn declared_var_name(name: &str) -> &str {
 // Cost: O(a), a = arguments.
 fn require_imported_vars(args: &[Expr]) -> impl Iterator<Item = String> + '_ {
     args.iter()
-        .filter_map(|arg| match arg {
-            Expr::ArrayLiteral(items) => Some(items.as_slice()),
-            _ => None,
+        .flat_map(|arg| match arg {
+            Expr::ArrayLiteral(items) => items.as_slice(),
+            // `<$x>` with one item is a bare string literal, not a list.
+            _ => std::slice::from_ref(arg),
         })
-        .flatten()
         .filter_map(|item| match item {
             Expr::Literal(value) => match value.view() {
                 crate::value::ValueView::Str(s) if s.starts_with(['$', '@', '%']) => {
