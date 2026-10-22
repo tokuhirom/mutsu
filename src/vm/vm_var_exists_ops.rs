@@ -33,11 +33,7 @@ impl Interpreter {
         };
 
         // A user `postcircumfix` candidate takes `:exists` itself (#14538).
-        if !is_zen
-            && adverb_bits == 0
-            && kind != SubscriptKind::Unknown
-            && self.stack.len() >= 2
-        {
+        if !is_zen && adverb_bits == 0 && kind != SubscriptKind::Unknown && self.stack.len() >= 2 {
             let n = self.stack.len();
             let (target, index) = (self.stack[n - 2].clone(), self.stack[n - 1].clone());
             if let Some(answer) = self.user_postcircumfix_for_exists_delete(

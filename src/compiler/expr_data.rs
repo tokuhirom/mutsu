@@ -1,6 +1,6 @@
 use super::*;
-use crate::opcode::SubscriptKind;
 use crate::compiler::helpers_dynamic::OuterStash;
+use crate::opcode::SubscriptKind;
 use crate::value::ValueView;
 
 impl Compiler {
@@ -382,7 +382,9 @@ impl Compiler {
         if delete && let Some((delete_target, delete_index)) = delete_parts {
             // A zen slice has no recorded bracket: the kind stays unknown.
             let delete_kind = match target {
-                Expr::Index { is_positional, .. } => SubscriptKind::from_is_positional(*is_positional),
+                Expr::Index { is_positional, .. } => {
+                    SubscriptKind::from_is_positional(*is_positional)
+                }
                 _ => SubscriptKind::Unknown,
             };
             let delete_positional = delete_kind == SubscriptKind::Positional;
@@ -395,11 +397,8 @@ impl Compiler {
                 let slot = self.local_map.get(&var_name).copied();
                 let name_idx = self.code.add_constant(Value::str(var_name));
                 self.emit_lex_import_subscript(delete_positional);
-                self.code.emit(OpCode::DeleteIndexNamed(
-                    name_idx,
-                    slot,
-                    delete_kind,
-                ));
+                self.code
+                    .emit(OpCode::DeleteIndexNamed(name_idx, slot, delete_kind));
             } else {
                 self.compile_expr(delete_target);
                 self.compile_expr(delete_index);
