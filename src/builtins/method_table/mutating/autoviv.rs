@@ -188,13 +188,12 @@ fn grow(
         let mut array = place.rebound(&vivified)?;
         return array_row(interp, &mut array, args, named);
     }
-    // A receiver with no binding and no location (`f().push(1)`, a read-only
-    // accessor's value) has nowhere to keep the container it would vivify.
-    let type_name = match value.view() {
-        ValueView::Package(name) => name.resolve().to_string(),
-        _ => "Any".to_string(),
-    };
-    Some(Err(RuntimeError::assignment_ro_type_object(&type_name)))
+    let mut fresh = Value::real_array(Vec::new());
+    let mut array = ReceiverPlace::detached(&mut fresh);
+    match array_row(interp, &mut array, args, named)? {
+        Ok(_) => Some(Ok(fresh)),
+        Err(err) => Some(Err(err)),
+    }
 }
 
 /// Store `fresh` into the element location a [`ReceiverPlace::Cell`] names, the
