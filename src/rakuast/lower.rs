@@ -2533,13 +2533,19 @@ fn lower_while(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         );
     }
     let body = lower_block(block)?;
-    Ok(Stmt::While {
+    // `while my $x { }`: declared once before the loop, as the parser does.
+    let (hoisted_decl, cond) = crate::ast::loop_cond_decl::split_loop_cond_decl(cond);
+    let looped = Stmt::While {
         cond: negate_if(cond, is_until),
         body,
         label: node_label(node)?,
         is_statement_modifier: false,
         is_until,
         is_bare_term: false,
+    };
+    Ok(match hoisted_decl {
+        Some(decl) => crate::ast::loop_cond_decl::expand(decl, looped),
+        None => looped,
     })
 }
 

@@ -2963,6 +2963,7 @@ pub(crate) mod dotty_assign;
 pub(crate) mod immediate_call;
 pub(crate) mod inline_subset_term;
 pub(crate) mod keyed_hash;
+pub(crate) mod loop_cond_decl;
 mod lvalue;
 pub(crate) mod method_assign_decl;
 pub(crate) mod package_header;
