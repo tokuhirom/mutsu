@@ -668,27 +668,6 @@ impl Interpreter {
                 self.env_mut().insert_sym(*sym, val);
             }
         }
-        // The whole plain-lexical capture beats a same-named binding of the
-        // caller (ADR-0055 slice 2): the closure's free variable resolves to
-        // its own captured binding, not to whatever its caller happens to
-        // hold. A capture the creator mutates later is a shared cell
-        // (`ContainerRef`, installed above), so this snapshot is current for
-        // every other name. Not for a closure whose lexical outer is the live
-        // program scope (it reads names through the static link, and the
-        // capture is no snapshot of it).
-        if !(cc.static_name_lookup && data.env.is_program_scope_capture()) {
-            let keys: Vec<(Symbol, Value)> = capture_tier
-                .iter()
-                .filter(|(k, _)| k.with_str(crate::env::is_plain_user_lexical))
-                .map(|(k, v)| (*k, v.clone()))
-                .collect();
-            for (k, v) in keys {
-                if cc.is_routine && k.is_routine_owned() {
-                    continue;
-                }
-                self.env_mut().insert_sym(k, v);
-            }
-        }
         // An enum key this closure read is lexical to the scope that declared it,
         // so the captured binding beats a same-named key the caller sees (a
         // routine's `enum M2 <Normal>` against the caller's `Volume::Normal`).

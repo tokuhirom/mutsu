@@ -1,8 +1,8 @@
 use Test;
 
-# A compiled closure's free variable resolves to its own captured binding, not
-# to a same-named lexical of whoever calls it (ADR-0055 slice 2). The closure
-# keeps seeing a later write of its owner through the shared cell.
+# A closure keeps seeing its own captured binding and its owner's later writes,
+# whoever calls it, however the closure was made (ADR-0055). The shapes below are
+# the ones a closure-wins merge flip has to keep working.
 plan 7;
 
 sub noop($v) { 1 }
