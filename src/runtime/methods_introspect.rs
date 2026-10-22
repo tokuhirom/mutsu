@@ -1162,6 +1162,12 @@ impl Interpreter {
                     base.to_string()
                 }
             }
+            // A Proxy subclass is named like an ordinary instance of the class:
+            // its storage name (a lexical class's mangled name) is not shown.
+            ValueView::Proxy {
+                subclass: Some((name, _)),
+                ..
+            } => crate::value::user_facing_type_name(&name.resolve()).to_string(),
             _ => {
                 // Check container type metadata for typed Hash/Array
                 if let Some(info) = self.container_type_metadata(target) {
