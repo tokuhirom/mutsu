@@ -78,7 +78,7 @@ pub(crate) fn declaration(stmt: &Stmt) -> Option<SigillessDecl<'_>> {
                     quoted: false,
                     sugar: false,
                 },
-            type_constraint: None,
+            type_constraint,
             is_state: false,
             is_our: false,
             is_dynamic: false,
@@ -92,8 +92,10 @@ pub(crate) fn declaration(stmt: &Stmt) -> Option<SigillessDecl<'_>> {
     else {
         return None;
     };
+    // The invocant is the declared type, or `Mu` for an untyped declaration.
+    let invocant = type_constraint.as_deref().unwrap_or("Mu");
     if name != marked
-        || !matches!(&**target, Expr::BareWord(value) if value == "Mu")
+        || !matches!(&**target, Expr::BareWord(value) if value == invocant)
         || !export_tags.is_empty()
         || !custom_traits.is_empty()
     {
@@ -102,7 +104,7 @@ pub(crate) fn declaration(stmt: &Stmt) -> Option<SigillessDecl<'_>> {
     Some(SigillessDecl {
         name,
         expr,
-        type_constraint: None,
+        type_constraint: type_constraint.as_deref(),
         is_state: false,
         is_our: false,
         assigned: true,

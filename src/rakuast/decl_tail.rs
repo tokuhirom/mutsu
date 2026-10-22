@@ -13,7 +13,8 @@
 //! that re-read, and lowering takes it out again.
 
 use super::convert::{
-    convert_expr, convert_stmt, expression_of, node_field, plain_infix, split_sigil, var_lexical,
+    anonymous_declaration, convert_expr, convert_stmt, expression_of, node_field, plain_infix,
+    split_sigil, var_lexical,
 };
 use super::lower::{lower_expr, lower_stmt, named_child, rakuast_node_of};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -125,7 +126,12 @@ pub(super) fn convert(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> 
         if let Some((sigil, name)) = declared_variable(head) {
             let (bottom, depth) = leftmost(&converted, true);
             // The tail must start with a re-read of the variable the head declares.
-            if depth == 0 || *bottom != var_lexical(sigil, name) {
+            let reread = if name == "__ANON_STATE#" {
+                anonymous_declaration(None, "$", None)
+            } else {
+                var_lexical(sigil, name)
+            };
+            if depth == 0 || *bottom != reread {
                 return Err(unsupported_statement());
             }
             let operand = if let Some(expr) = compound_assignment_expr(head) {
