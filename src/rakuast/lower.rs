@@ -98,7 +98,7 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
                 let child = child_node(&f.value)?;
                 super::infix_func::note_declaration(child);
                 if let Some(line) = super::origin::line_of(child) {
-                    stmts.push(Stmt::SetLine(line));
+                    stmts.push(Stmt::SetLine(line, crate::ast::SrcSpan::NONE));
                 }
                 if let Some(trace) = super::origin::trace_of(child)? {
                     stmts.push(trace);
@@ -3905,7 +3905,7 @@ fn block_value_source(body: &[crate::ast::Stmt]) -> Option<String> {
     let mut expressions = Vec::new();
     for stmt in body {
         match stmt {
-            crate::ast::Stmt::SetLine(_) => {}
+            crate::ast::Stmt::SetLine(..) => {}
             crate::ast::Stmt::Expr(Expr::ArrayLiteral(items)) => {
                 if !items.iter().all(|item| {
                     matches!(

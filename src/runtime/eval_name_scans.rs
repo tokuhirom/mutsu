@@ -291,7 +291,7 @@ impl<'ast> Visit<'ast> for UndeclaredName<'_> {
         if self.found.is_some() {
             return;
         }
-        if let Stmt::SetLine(n) = stmt {
+        if let Stmt::SetLine(n, _) = stmt {
             self.line = *n;
         }
         walk_stmt(self, stmt);

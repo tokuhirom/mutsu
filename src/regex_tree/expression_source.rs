@@ -339,7 +339,7 @@ fn closure_body_source(body: &[crate::ast::Stmt]) -> Option<String> {
     let mut expressions = Vec::new();
     for stmt in body {
         match stmt {
-            crate::ast::Stmt::SetLine(_) => {}
+            crate::ast::Stmt::SetLine(..) => {}
             crate::ast::Stmt::Expr(expr) => expressions.push(expression_source(expr)?),
             crate::ast::Stmt::Assign {
                 name,

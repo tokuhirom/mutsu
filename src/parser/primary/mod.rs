@@ -355,6 +355,40 @@ pub(in crate::parser) fn current_line_number(input: &str) -> i64 {
     })
 }
 
+/// The span a statement parsed from `start` up to `end` occupies in the original
+/// source (ADR-10723 §4): from its first character to its last, the
+/// terminating `;` and the whitespace around it left out, as Rakudo's
+/// `RakuAST::Origin` ranges are. `SrcSpan::NONE` when either position is
+/// outside the source (text only a leaked buffer holds).
+// Cost: O(h + w), h = leaked heredoc regions, w = trailing whitespace and `;`.
+pub(in crate::parser) fn statement_span(start: &str, end: &str) -> crate::ast::SrcSpan {
+    use crate::ast::SrcSpan;
+    let (Some(from), Some(to)) = (source_offset(start), source_offset(end)) else {
+        return SrcSpan::NONE;
+    };
+    if to < from {
+        return SrcSpan::NONE;
+    }
+    let text = ORIGINAL_SOURCE.with(|s| {
+        let origin = s.borrow();
+        // SAFETY: (ptr, len) was recorded from a live `&str` by
+        // `set_original_source`, and `from <= to <= len` was checked by
+        // `source_offset` (both positions lie in the source buffer).
+        let full = unsafe {
+            std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                origin.ptr as *const u8,
+                origin.len,
+            ))
+        };
+        full.get(from..to)
+            .map(|t| t.trim_end_matches(|c: char| c.is_whitespace() || c == ';').len())
+    });
+    match text {
+        Some(len) => SrcSpan::new(from, from + len),
+        None => SrcSpan::NONE,
+    }
+}
+
 /// Reconstruct the `pre`/`post` source spans around an eject point, for the
 /// `pre`/`post` attributes of compile-time errors such as `X::Syntax::Confused`.
 /// `eject` must be a sub-slice of the original source positioned at the point

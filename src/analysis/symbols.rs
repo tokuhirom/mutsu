@@ -172,7 +172,7 @@ impl OutlineScan {
 impl<'ast> Visit<'ast> for OutlineScan {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
-            Stmt::SetLine(n) => {
+            Stmt::SetLine(n, _) => {
                 if *n > 0 {
                     self.line = *n as u32;
                 }

@@ -2365,7 +2365,7 @@ impl Parser {
         };
         let statements = body
             .iter()
-            .filter(|stmt| !matches!(stmt, crate::ast::Stmt::SetLine(_)))
+            .filter(|stmt| !matches!(stmt, crate::ast::Stmt::SetLine(..)))
             .count();
         if statements == 0 {
             return None;
@@ -2516,7 +2516,7 @@ impl Parser {
         };
         let statements = body
             .iter()
-            .filter(|stmt| !matches!(stmt, crate::ast::Stmt::SetLine(_)))
+            .filter(|stmt| !matches!(stmt, crate::ast::Stmt::SetLine(..)))
             .count();
         if statements != 1 {
             return None;

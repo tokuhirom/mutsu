@@ -1309,7 +1309,7 @@ impl Compiler {
                 // `builtin_cas_var` (src/runtime/builtins_atomic_cas.rs).
                 let effective_body: Vec<&Stmt> = body
                     .iter()
-                    .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                    .filter(|s| !matches!(s, Stmt::SetLine(..)))
                     .collect();
                 if effective_body.len() == 1
                     && let Stmt::Expr(Expr::Binary {

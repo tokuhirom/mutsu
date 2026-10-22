@@ -29,7 +29,7 @@ impl TailSkip {
     // Cost: O(1).
     fn skips(self, stmt: &Stmt) -> bool {
         match stmt {
-            Stmt::SetLine(_)
+            Stmt::SetLine(..)
             | Stmt::Trace { .. }
             | Stmt::MarkBind
             | Stmt::MarkReadonly(..)
@@ -79,7 +79,7 @@ pub(crate) fn last_value_stmt(stmts: &[Stmt], skip: TailSkip) -> Option<&Stmt> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::Expr;
+    use crate::ast::{Expr, SrcSpan};
 
     fn phaser() -> Stmt {
         Stmt::Phaser {
@@ -94,13 +94,13 @@ mod tests {
     fn markers_are_never_the_value() {
         let decl = Stmt::Expr(Expr::Var("x".into()));
         let stmts = vec![
-            Stmt::SetLine(1),
+            Stmt::SetLine(1, SrcSpan::NONE),
             decl.clone(),
             Stmt::MarkSigillessReadonly("x".into()),
-            Stmt::SetLine(2),
+            Stmt::SetLine(2, SrcSpan::NONE),
         ];
         assert_eq!(last_value_stmt_index(&stmts, TailSkip::Markers), Some(1));
-        assert!(last_value_stmt(&[Stmt::SetLine(1)], TailSkip::Markers).is_none());
+        assert!(last_value_stmt(&[Stmt::SetLine(1, SrcSpan::NONE)], TailSkip::Markers).is_none());
     }
 
     #[test]

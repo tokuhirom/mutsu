@@ -47,7 +47,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
         | Stmt::Succeed
         | Stmt::ReactDone
         | Stmt::SupplyBodyDone
-        | Stmt::SetLine(_)
+        | Stmt::SetLine(..)
         | Stmt::BeginPrologueEnd
         | Stmt::Trace { .. } => {}
         // A copy of declarations that stay in the tree, where they are walked.

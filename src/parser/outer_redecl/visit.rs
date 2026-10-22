@@ -59,7 +59,7 @@ impl VisitMut for Ctx {
 
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
         match stmt {
-            Stmt::SetLine(n) => self.line = *n,
+            Stmt::SetLine(n, _) => self.line = *n,
             Stmt::VarDecl { .. } => walk_var_decl(stmt, true, self),
             // Writes read the binding they write to: `temp $y`, `$y = ...`.
             Stmt::Assign { name, .. }

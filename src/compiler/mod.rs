@@ -931,7 +931,7 @@ mod declaration_plan_tests {
                 matches!(
                     op,
                     RoleBodyOp::Deferred { raw, .. }
-                        if !matches!(raw.as_ref(), Stmt::SetLine(_))
+                        if !matches!(raw.as_ref(), Stmt::SetLine(..))
                 )
             })
             .count();

@@ -69,7 +69,7 @@ impl Interpreter {
         let mut root = None;
         for stmt in stmts.iter() {
             match stmt {
-                Stmt::SetLine(_) => {}
+                Stmt::SetLine(..) => {}
                 Stmt::Expr(expr) if root.is_none() => root = Some(expr),
                 _ => return false,
             }

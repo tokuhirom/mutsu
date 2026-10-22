@@ -486,7 +486,7 @@ impl Interpreter {
         let effective: Vec<_> = def
             .body
             .iter()
-            .filter(|s| !matches!(s, Stmt::SetLine(_)))
+            .filter(|s| !matches!(s, Stmt::SetLine(..)))
             .collect();
         if effective.len() == 1
             && let Stmt::Expr(Expr::Literal(lit)) = effective[0]

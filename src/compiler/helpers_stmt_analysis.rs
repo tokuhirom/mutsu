@@ -245,7 +245,7 @@ impl Compiler {
             self.module_unit_own_names = Some(Self::unit_declared_names(stmts));
         }
         for stmt in stmts {
-            if let Stmt::SetLine(n) = stmt {
+            if let Stmt::SetLine(n, _) = stmt {
                 line = Some(*n);
             }
             if let Some(id) = Self::lexical_use_set_id(stmt) {

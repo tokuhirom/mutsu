@@ -170,7 +170,7 @@ impl Compiler {
         let (stmts, _) = crate::parse_dispatch::parse_fragment(content).ok()?;
         let expr = match stmts.as_slice() {
             [Stmt::Expr(e)] => e,
-            [Stmt::SetLine(_), Stmt::Expr(e)] => e,
+            [Stmt::SetLine(..), Stmt::Expr(e)] => e,
             _ => return None,
         };
         let items: Vec<&Expr> = match expr {

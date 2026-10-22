@@ -104,7 +104,7 @@ impl<'ast> Visit<'ast> for NestedTypeDecls {
             Stmt::Package { is_my: true, .. } => {}
             Stmt::Package { name, .. } => self.walk_package(&name.resolve(), stmt),
             // Transparent groupings: they open no scope that runs later.
-            Stmt::SetLine(_) | Stmt::SyntheticBlock(_) => walk_stmt(self, stmt),
+            Stmt::SetLine(..) | Stmt::SyntheticBlock(_) => walk_stmt(self, stmt),
             _ => {
                 let saved = std::mem::replace(&mut self.in_code, true);
                 walk_stmt(self, stmt);

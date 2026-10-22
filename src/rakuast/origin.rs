@@ -72,13 +72,40 @@ pub(super) fn trace_of(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
     }))
 }
 
-/// The `origin` field for a statement that began on `line`.
-// Cost: O(1).
-pub(super) fn field(line: i64) -> RakuAstField {
+/// The `origin` field for a statement that began on `line` and occupies
+/// `span` of the unit's source.
+// Cost: O(1) for ASCII text, O(log n) otherwise, n = characters of the unit.
+pub(super) fn field(line: i64, span: crate::ast::SrcSpan) -> RakuAstField {
     RakuAstField {
         name: Some(FIELD),
-        value: RakuAstFieldValue::Node(Value::int(line)),
+        value: RakuAstFieldValue::Node(super::unit_source::origin_value(line, span)),
     }
+}
+
+/// The line an `origin` field value records: the `line` an `Origin` carries, or
+/// the plain number an `END` phaser's hidden index is.
+// Cost: O(1).
+fn line_in(value: &Value) -> Option<i64> {
+    match value.view() {
+        ValueView::Int(line) => Some(line),
+        ValueView::Instance { attributes, .. } => {
+            match attributes.as_map().get(super::unit_source::LINE_ATTR)?.view() {
+                ValueView::Int(line) => Some(line),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// The `RakuAST::Origin` a statement node carries, if it has one.
+// Cost: O(f), f = fields of `node`.
+pub(super) fn origin_of(node: &RakuAstNode) -> Option<Value> {
+    let field = node.fields.iter().find(|f| f.name == Some(FIELD))?;
+    let RakuAstFieldValue::Node(value) = &field.value else {
+        return None;
+    };
+    Some(value.clone())
 }
 
 /// The hidden field a main-compunit `END` phaser carries: the source-order
@@ -114,19 +141,6 @@ pub(super) fn is_origin(field: &RakuAstField) -> bool {
     field.name == Some(FIELD) || field.name == Some(END_INDEX) || field.name == Some(TRACE_FIELD)
 }
 
-/// The line recorded in `node`'s `origin` field, ignoring the `END` number.
-// Cost: O(f), f = fields of `node`.
-pub(super) fn statement_line_of(node: &RakuAstNode) -> Option<i64> {
-    let field = node.fields.iter().find(|f| f.name == Some(FIELD))?;
-    let RakuAstFieldValue::Node(value) = &field.value else {
-        return None;
-    };
-    match value.view() {
-        ValueView::Int(line) => Some(line),
-        _ => None,
-    }
-}
-
 /// The line `node`'s statement began on, when the node carries one.
 // Cost: O(f), f = fields of `node`.
 pub(super) fn line_of(node: &RakuAstNode) -> Option<i64> {
@@ -137,10 +151,7 @@ pub(super) fn line_of(node: &RakuAstNode) -> Option<i64> {
     let RakuAstFieldValue::Node(value) = &field.value else {
         return None;
     };
-    match value.view() {
-        ValueView::Int(line) => Some(line),
-        _ => None,
-    }
+    line_in(value)
 }
 
 /// Run `f` with `line` as the line of the statement being lowered. A node

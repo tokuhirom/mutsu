@@ -571,7 +571,7 @@ impl Interpreter {
         body.iter().all(|stmt| {
             matches!(
                 stmt,
-                crate::ast::Stmt::SetLine(_) | crate::ast::Stmt::Expr(crate::ast::Expr::Literal(_))
+                crate::ast::Stmt::SetLine(..) | crate::ast::Stmt::Expr(crate::ast::Expr::Literal(_))
             )
         })
     }

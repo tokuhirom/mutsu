@@ -54,7 +54,7 @@ fn structurally_identical_declarations_agree() {
         (
             vec!["$a".to_string()],
             vec![param("$a")],
-            vec![Stmt::SetLine(7), say("hi")],
+            vec![Stmt::SetLine(7, SrcSpan::NONE), say("hi")],
         )
     };
     let (p1, d1, b1) = build();
@@ -77,8 +77,8 @@ fn structurally_identical_declarations_agree() {
 fn only_the_registration_identity_is_line_insensitive() {
     let params: Vec<String> = Vec::new();
     let defs: Vec<ParamDef> = Vec::new();
-    let at_line_3 = vec![Stmt::SetLine(3), say("body")];
-    let at_line_9 = vec![Stmt::SetLine(9), say("body")];
+    let at_line_3 = vec![Stmt::SetLine(3, SrcSpan::NONE), say("body")];
+    let at_line_9 = vec![Stmt::SetLine(9, SrcSpan::NONE), say("body")];
 
     assert_ne!(
         function_body_fingerprint(&params, &defs, &at_line_3),

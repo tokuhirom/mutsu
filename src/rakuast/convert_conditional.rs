@@ -82,7 +82,7 @@ pub(super) fn with_block_node(
 /// leaves at the head of the then-branch.
 // Cost: O(n), n = size of the body.
 pub(super) fn with_pointy_block(then_branch: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
-    let Some(Stmt::SourceForm(form)) = then_branch.iter().find(|s| !matches!(s, Stmt::SetLine(_)))
+    let Some(Stmt::SourceForm(form)) = then_branch.iter().find(|s| !matches!(s, Stmt::SetLine(..)))
     else {
         return Err(unsupported("with/without block with an explicit signature"));
     };
@@ -155,7 +155,7 @@ pub(super) fn with_block_condition(
 /// else, including the untagged `given` a pointy body produces and a
 /// hand-written `given` that happens to sit in the same position.
 pub(super) fn topic_given_body(stmts: &[Stmt]) -> Option<&[Stmt]> {
-    let mut real = stmts.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+    let mut real = stmts.iter().filter(|s| !matches!(s, Stmt::SetLine(..)));
     let (Some(first), None) = (real.next(), real.next()) else {
         return None;
     };
@@ -214,7 +214,7 @@ pub(super) fn conditional_chain_fields(
             value: RakuAstFieldValue::List(elsifs),
         });
     }
-    if tail.iter().any(|s| !matches!(s, Stmt::SetLine(_))) {
+    if tail.iter().any(|s| !matches!(s, Stmt::SetLine(..))) {
         // An `else` continuing a `with`/`orwith` topicalizes on the last tested
         // value, which raku records on the block itself.
         let block = match topic_given_body(tail) {
