@@ -220,6 +220,7 @@ impl Interpreter {
                         *name_idx,
                         *arity,
                         *target_name_idx,
+                        *target_slot,
                         *modifier_idx,
                         *quoted,
                         *arg_sources_idx,

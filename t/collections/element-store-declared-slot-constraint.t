@@ -4,7 +4,7 @@ use Test;
 # declares takes its constraint from that declaration, never from a
 # same-named variable of a calling frame (ADR-13757).
 
-plan 10;
+plan 12;
 
 sub elem-store()   { my @a; @a[0] = 's'; @a[2] = 't'; @a.elems }
 sub hash-store()   { my %h; %h<k> = 's'; %h.elems }
@@ -33,4 +33,16 @@ is typed-caller-int-array(&compound),     7, 'compound store ignores a caller\'s
     my Int @c;
     throws-like { @c[0][1] = 's' }, X::TypeCheck::Assignment,
         'nested store into a typed array is refused';
+}
+
+# `push` routed through the generic method-call path wraps native ints by the
+# declaring slot's element type, not a caller's.
+sub native-push() { my uint8 @e; @e.push(1, 300, 2); @e.join(',') }
+sub native-caller(&f) { my str @e; f() }
+is native-caller(&native-push), '1,44,2', 'native int push wraps by its own declaration';
+{
+    my uint8 @e;
+    my $m = 'push';
+    @e."$m"(1, 300);
+    is @e.join(','), '1,44', 'dynamic-name push wraps by its own declaration';
 }
