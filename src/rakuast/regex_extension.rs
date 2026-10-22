@@ -6,8 +6,8 @@
 //! deparser to turn the statement back into the text the matcher reads.
 
 use super::convert::{
-    block_statements, convert_expr, leaf_field, node_field, quoted_string, regex_node, unsupported,
-    var_lexical,
+    block_statements, convert_expr, leaf_field, name_from_identifier, node_field, quoted_string,
+    regex_node, unsupported, var_lexical,
 };
 use super::lower::{lower_regex_node, lower_stmt, positional_leaf, rakuast_node_of};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -173,6 +173,13 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
                 node_field(Some("assertion"), regex_node(assertion)?),
             ],
         },
+        RegexExtension::NamedRegexArg { name, regex_arg } => RakuAstNode {
+            class: RakuAstClass::RegexAssertionNamedRegexArg,
+            fields: vec![
+                node_field(Some("name"), name_from_identifier(name)),
+                node_field(Some("regex-arg"), regex_node(regex_arg)?),
+            ],
+        },
         RegexExtension::InterpolatedQuote { source, expr } => RakuAstNode {
             class: RakuAstClass::RegexQuote,
             fields: vec![
@@ -240,6 +247,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError
                 .or_else(|| lower_anonymous(node));
         }
         RakuAstClass::RegexAssertionAlias => return lower_alias(node),
+        RakuAstClass::RegexAssertionNamedRegexArg => return lower_named_regex_arg(node),
         RakuAstClass::RegexBacktrackModifiedAtom => lower_backtrack_modified(node),
         _ => return None,
     };
@@ -463,6 +471,24 @@ fn lower_alias(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
         Ok(RegexNode::Extension(RegexExtension::Alias {
             alias: super::lower::leaf_str(node, "name")?,
             assertion: Box::new(lower_regex_node(assertion)?),
+        }))
+    })())
+}
+
+/// `<name regex>` is a named assertion with a regex argument. The `before`
+/// and `after` names remain the lookaround forms handled by the core lowerer.
+fn lower_named_regex_arg(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
+    let name = super::lower::named_child(node, "name")
+        .and_then(super::lower::lower_regex_subrule_name)
+        .ok()?;
+    if matches!(name.as_str(), "before" | "after") {
+        return None;
+    }
+    Some((|| {
+        let regex_arg = super::lower::named_child(node, "regex-arg")?;
+        Ok(RegexNode::Extension(RegexExtension::NamedRegexArg {
+            name,
+            regex_arg: Box::new(lower_regex_node(regex_arg)?),
         }))
     })())
 }
