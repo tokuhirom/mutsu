@@ -85,7 +85,15 @@ impl Interpreter {
             return None;
         }
         for (idx, (pd, raw)) in param_defs.iter().zip(args).enumerate() {
-            let arg = unwrap_varref_value_for_dispatch(raw);
+            let mut arg = unwrap_varref_value_for_dispatch(raw);
+            // A `Proxy` argument is checked by what its FETCH answers, as the
+            // binder does; `Mu` keeps the Proxy itself.
+            if arg.is_proxy_value()
+                && pd.type_constraint.as_deref().is_some_and(|tc| tc != "Mu")
+                && let Ok(fetched) = self.auto_fetch_proxy(&arg)
+            {
+                arg = fetched;
+            }
             match pd.type_constraint.as_deref() {
                 Some(tc) => {
                     if multi_dispatch
