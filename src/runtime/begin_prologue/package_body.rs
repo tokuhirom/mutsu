@@ -299,10 +299,7 @@ fn is_block_phaser(stmt: &Stmt) -> bool {
 /// A variable-trait application or replay
 /// ([`super::nested::var_traits::lift_package_var_traits`]).
 fn is_var_trait_stmt(stmt: &Stmt) -> bool {
-    let Stmt::Expr(Expr::Call { name, .. }) = stmt else {
-        return false;
-    };
-    name.resolve() == crate::runtime::phasers::APPLY_VAR_TRAIT_CALL
+    matches!(stmt, Stmt::VarTrait { .. })
 }
 
 /// A call the parser synthesizes as a marker (`__MUTSU_EXPORT_TYPE__`,

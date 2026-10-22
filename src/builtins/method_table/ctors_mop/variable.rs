@@ -34,12 +34,12 @@ pub(super) static ROWS: &[MethodRow] = &[
 /// (`runtime::attach_target`), to which the handler may add phasers.
 // Cost: O(1).
 fn block(
-    _interp: &mut Interpreter,
+    interp: &mut Interpreter,
     _target: &Value,
     _args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
-    Some(Ok(Interpreter::variable_block_handle()))
+    Some(Ok(interp.variable_block_handle()))
 }
 
 /// `Variable.var`: the variable's container (`Interpreter::variable_var`).

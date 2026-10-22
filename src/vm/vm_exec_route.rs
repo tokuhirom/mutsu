@@ -420,6 +420,7 @@ impl Interpreter {
             | OpCode::SetLocalDecl { .. }
             | OpCode::SetVarDynamic { .. }
             | OpCode::SigillessAggregateStore { .. }
+            | OpCode::VarTraitCtl { .. }
             | OpCode::WheneverScope { .. }
             | OpCode::WrapPackageVarRef { .. } => self.exec_ops_group_15(code, ip, compiled_fns),
             OpCode::LetBlock { .. }

@@ -11,24 +11,8 @@
 //! only the static half, starting from the cell on each entry.
 
 use super::cell_ast::read_var;
-use super::Walker;
-use crate::ast::{Expr, PhaserKind, Stmt};
-use crate::runtime::phasers::APPLY_VAR_TRAIT_CALL;
-
-/// The synthetic trait that sets (or, given Nil, clears) the declaration site
-/// the lifted traits that follow file their `Variable.block` phasers under.
-pub(crate) const VAR_TRAIT_SITE: &str = "__site";
-
-/// The prefix of the synthetic trait that replays one kind of phaser (the
-/// suffix) filed under the site given as its argument.
-pub(crate) const VAR_TRAIT_REPLAY: &str = "__replay_phasers:";
-
-/// The marker of a lifted declaration whose block's ENTER queue may seed the
-/// variable: the declaration stashes the slot's value before it runs and puts
-/// a defined one back after (`VAR_TRAIT_SEED_STASH` / `_RESTORE`).
-pub(crate) const VAR_TRAIT_SEEDED: &str = "__seeded_decl";
-pub(crate) const VAR_TRAIT_SEED_STASH: &str = "__seed_stash";
-pub(crate) const VAR_TRAIT_SEED_RESTORE: &str = "__seed_restore";
+use super::{Binding, BindingKind, Walker};
+use crate::ast::{Expr, PhaserKind, Stmt, VarTraitOp, VarTraitSite};
 
 /// The block phasers a lifted declaration's scope gets, with the kind name
 /// `Variable.block.add_phaser` files each under.
@@ -56,6 +40,13 @@ fn is_user_trait(name: &str) -> bool {
     !name.starts_with("__")
         && name.starts_with(|c: char| c.is_ascii_lowercase())
         && !BUILTIN_VARIABLE_TRAITS.contains(&name)
+}
+
+/// Whether a declaration with these traits applies a user trait, which the
+/// BEGIN prologue may lift.
+// Cost: O(t), t = traits of the declaration.
+pub(super) fn applies_user_trait(custom_traits: &[(String, Option<Expr>)]) -> bool {
+    custom_traits.iter().any(|(t, _)| is_user_trait(t))
 }
 
 /// The scalar declaration `stmt` and the user traits it applies, when the
@@ -104,43 +95,58 @@ fn liftable_traits(stmt: &Stmt, allow_init: bool) -> Option<(String, AppliedTrai
 
 /// The prologue statements that apply `applied` to the variable `name`, with
 /// `Variable.block.add_phaser` filing under `site`.
-fn trait_body(name: &str, applied: &[(String, Option<Expr>)], site: &str) -> Vec<Stmt> {
-    let call = |args: Vec<Expr>| {
-        Stmt::Expr(Expr::Call {
-            name: crate::symbol::Symbol::intern(APPLY_VAR_TRAIT_CALL),
-            args,
-            listop: false,
-        })
+fn trait_body(
+    name: &str,
+    applied: &[(String, Option<Expr>)],
+    site: &str,
+    owner: &str,
+) -> Vec<Stmt> {
+    let step = |op| Stmt::VarTrait {
+        name: name.to_string(),
+        op,
     };
-    let lit = |s: &str| Expr::Literal(crate::value::Value::str(s.to_string()));
-    let mut body = vec![Stmt::Expr(read_var(name))];
-    body.push(call(vec![lit(name), lit(VAR_TRAIT_SITE), lit(site)]));
+    let mut body = vec![
+        Stmt::Expr(read_var(name)),
+        step(VarTraitOp::Site(Some(VarTraitSite {
+            site: site.to_string(),
+            owner: owner.to_string(),
+        }))),
+    ];
     for (trait_name, arg) in applied {
-        let mut args = vec![lit(name), lit(trait_name)];
-        args.extend(arg.clone());
-        body.push(call(args));
+        body.push(step(VarTraitOp::Apply {
+            trait_name: trait_name.clone(),
+            arg: arg.clone(),
+        }));
     }
-    body.push(call(vec![
-        lit(name),
-        lit(VAR_TRAIT_SITE),
-        Expr::Literal(crate::value::Value::NIL),
-    ]));
+    body.push(step(VarTraitOp::Site(None)));
     body
 }
 
-/// The call that replays the `replay`-kind phasers filed under `site` for
+/// The declaration `decl` of the lifted variable `name`, keeping the value
+/// the block's ENTER queue may already have seeded through `Variable.var`, as
+/// Rakudo's pre-allocated lexical does.
+pub(super) fn seeded_decl(name: &str, decl: Stmt) -> Stmt {
+    let step = |op| Stmt::VarTrait {
+        name: name.to_string(),
+        op,
+    };
+    Stmt::SyntheticBlock(vec![
+        step(VarTraitOp::SeedStash),
+        decl,
+        step(VarTraitOp::SeedRestore),
+    ])
+}
+
+/// The step that replays the `replay`-kind phasers filed under `site` for
 /// the variable `name`.
 fn replay_call(name: &str, site: &str, replay: &str) -> Stmt {
-    let lit = |s: String| Expr::Literal(crate::value::Value::str(s));
-    Stmt::Expr(Expr::Call {
-        name: crate::symbol::Symbol::intern(APPLY_VAR_TRAIT_CALL),
-        args: vec![
-            lit(name.to_string()),
-            lit(format!("{VAR_TRAIT_REPLAY}{replay}")),
-            lit(site.to_string()),
-        ],
-        listop: false,
-    })
+    Stmt::VarTrait {
+        name: name.to_string(),
+        op: VarTraitOp::Replay {
+            site: site.to_string(),
+            kind: replay.to_string(),
+        },
+    }
 }
 
 /// The `ENTER`/`LEAVE`/`KEEP`/`UNDO` phasers a scope with a lifted declaration
@@ -190,7 +196,7 @@ fn hoist_package_var_traits(body: &mut Vec<Stmt>) {
             custom_traits.retain(|(t, _)| t.starts_with("__"));
         }
         head.push(decl);
-        head.extend(trait_body(&name, &applied, &site));
+        head.extend(trait_body(&name, &applied, &site, "Block"));
         head.push(replay_call(&name, &site, "ENTER"));
         exit.extend(entry_phasers(&name, &site).into_iter().skip(1));
     }
@@ -243,7 +249,7 @@ pub(crate) fn lift_unit_var_traits(stmts: &mut Vec<Stmt>) {
         out.push(decl);
         out.push(Stmt::Phaser {
             kind: PhaserKind::Begin,
-            body: trait_body(&name, &applied, &site),
+            body: trait_body(&name, &applied, &site, "Block"),
             condition: None,
             end_index: None,
         });
@@ -258,7 +264,9 @@ impl Walker<'_> {
     /// statement at `index` of its scope. Returns whether it was lifted; when
     /// it was, `stmt` is left as the declaration's static half and bound.
     pub(super) fn lift_var_traits(&mut self, stmt: &mut Stmt, index: usize) -> bool {
-        if self.frames.is_empty() || self.in_detached_type() {
+        // A role body's own variable has no scope to replay the phasers
+        // into; the routines of a role do.
+        if self.frames.is_empty() || self.current_frame().role.is_some() {
             return false;
         }
         let Some((name, applied)) = liftable_traits(stmt, true) else {
@@ -267,16 +275,26 @@ impl Walker<'_> {
         // `Variable.block.add_phaser` files its phaser under this site; the
         // scope's own phaser queues replay them.
         let site = super::next_slot("__var_trait_site_");
-        let body = trait_body(&name, &applied, &site);
+        let owner = match self.current_frame().owner {
+            "" => "Block",
+            owner => owner,
+        };
+        let body = trait_body(&name, &applied, &site, owner);
         let mut stripped = stmt.clone();
         if let Stmt::VarDecl { custom_traits, .. } = &mut stripped {
             custom_traits.retain(|(t, _)| t.starts_with("__"));
-            custom_traits.push((VAR_TRAIT_SEEDED.to_string(), None));
         }
         self.bind_decl(&stripped, Some(index));
+        if let Some(Binding {
+            kind: BindingKind::Local { lifted_traits, .. },
+            ..
+        }) = self.current_frame().bindings.last_mut()
+        {
+            *lifted_traits = true;
+        }
         if self.lift(&body, None, &PhaserKind::Begin) {
             self.current_frame().entry.extend(entry_phasers(&name, &site));
-            *stmt = stripped;
+            *stmt = seeded_decl(&name, stripped);
             return true;
         }
         self.current_frame().bindings.pop();

@@ -317,7 +317,8 @@ fn declared_bindings(body: &[Stmt], shared: &[String]) -> Vec<Binding> {
     bindings
 }
 
-/// Whether a declaration holds a `BEGIN`, `INIT` or `CHECK` phaser anywhere.
+/// Whether a declaration holds a `BEGIN`, `INIT` or `CHECK` phaser, or a
+/// variable with a user trait, anywhere.
 // Cost: O(n), n = size of the declaration.
 fn has_phaser(stmt: &Stmt) -> bool {
     let mut found = HasPhaser(false);
@@ -334,6 +335,12 @@ impl<'ast> Visit<'ast> for HasPhaser {
                 kind: PhaserKind::Begin | PhaserKind::Init | PhaserKind::Check,
                 ..
             } => self.0 = true,
+            // A variable trait is applied at BEGIN time too (ADR-12131).
+            Stmt::VarDecl { custom_traits, .. }
+                if super::var_traits::applies_user_trait(custom_traits) =>
+            {
+                self.0 = true
+            }
             _ => walk_stmt(self, stmt),
         }
     }
