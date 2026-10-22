@@ -34,7 +34,7 @@ fn codepoint(digits: &str, radix: u32, kind: char) -> Result<char, String> {
 /// (#14416), a value past Unicode is out of bounds like `chr`'s.
 // Cost: O(1).
 pub(super) fn scalar(value: i64) -> Result<char, String> {
-    use crate::builtins::str_prim::codepoint;
+    use crate::codepoint;
     if codepoint::is_surrogate(value) {
         return Err(format!(
             "X::InvalidCodepoint: {}",

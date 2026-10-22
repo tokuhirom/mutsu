@@ -6,22 +6,11 @@
 //! error. `chr`, `.chr`, `chrs`, `nqp::chr`, `Uni.new` and the `\x`/`\o`/`\c`
 //! escape decoders all validate through here, so the paths cannot disagree.
 
+pub(crate) use crate::codepoint::{is_surrogate, surrogate_message};
 use crate::value::RuntimeError;
 
 /// The largest Unicode scalar value.
 const MAX_CODEPOINT: i64 = 0x10FFFF;
-
-/// Whether `code` is a UTF-16 surrogate codepoint.
-// Cost: O(1).
-pub(crate) fn is_surrogate(code: i64) -> bool {
-    (0xD800..=0xDFFF).contains(&code)
-}
-
-/// Rakudo's `X::InvalidCodepoint` message for a surrogate.
-// Cost: O(1).
-pub(crate) fn surrogate_message(code: i64) -> String {
-    format!("Invalid surrogate codepoint {code}")
-}
 
 /// The `X::InvalidCodepoint` error for a surrogate, in the typed-message
 /// convention (`code` is derived from the text).
