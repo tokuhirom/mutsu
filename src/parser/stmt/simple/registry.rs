@@ -358,7 +358,9 @@ pub(crate) fn register_supersede_keyword(keyword: &str) {
     DECLARE_KEYWORDS.with(|m| {
         m.borrow_mut().insert(
             format!("{SUPERSEDE_PREFIX}{keyword}"),
-            DeclareKeyword { is_role: keyword == "role" },
+            DeclareKeyword {
+                is_role: keyword == "role",
+            },
         );
     });
 }
@@ -367,7 +369,10 @@ pub(crate) fn register_supersede_keyword(keyword: &str) {
 /// declarator `keyword` carries when `EXPORTHOW::SUPERSEDE` replaced its HOW.
 pub(crate) fn supersede_marker(keyword: &str) -> Option<(String, Option<crate::ast::Expr>)> {
     DECLARE_KEYWORDS
-        .with(|m| m.borrow().contains_key(&format!("{SUPERSEDE_PREFIX}{keyword}")))
+        .with(|m| {
+            m.borrow()
+                .contains_key(&format!("{SUPERSEDE_PREFIX}{keyword}"))
+        })
         .then(|| crate::parser::declare_how_marker(keyword.to_string()))
 }
 

@@ -1140,15 +1140,17 @@ impl Interpreter {
     // Cost: O(1), a bounded number of env and registry probes.
     fn declarator_how_type(&mut self, keyword: &str) -> Option<Value> {
         let probe = |this: &mut Self, package: &str| {
-            let name = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(keyword));
+            let name =
+                crate::qualified::qualified(Symbol::intern(package), Symbol::intern(keyword));
             // The HOW can be either a constant in the env or a class
             // registered at this name in the type registry.
-            this.get_env_with_main_alias_sym(name.as_str(), name).or_else(|| {
-                this.registry()
-                    .classes
-                    .contains_key(name.as_str())
-                    .then(|| Value::package(name))
-            })
+            this.get_env_with_main_alias_sym(name.as_str(), name)
+                .or_else(|| {
+                    this.registry()
+                        .classes
+                        .contains_key(name.as_str())
+                        .then(|| Value::package(name))
+                })
         };
         probe(self, "EXPORTHOW::DECLARE")
             .or_else(|| probe(self, "EXPORTHOW::SUPERSEDE"))
@@ -1661,8 +1663,16 @@ impl Interpreter {
                 // The declaration expression (`(role { })`) evaluates to the
                 // candidate-keyed type object, whose `.HOW` is keyed apart from
                 // the group's.
-                let role_id = self.registry().roles.get(&qualified_name).map(|r| r.role_id);
-                let how = self.registry().class_how_values.get(&qualified_name).cloned();
+                let role_id = self
+                    .registry()
+                    .roles
+                    .get(&qualified_name)
+                    .map(|r| r.role_id);
+                let how = self
+                    .registry()
+                    .class_how_values
+                    .get(&qualified_name)
+                    .cloned();
                 if let (Some(role_id), Some(how)) = (role_id, how)
                     && role_id != 0
                 {

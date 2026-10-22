@@ -24,7 +24,9 @@ impl DeclScan {
                 Stmt::Package { name, body, .. } if name.resolve() == "SUPERSEDE" => {
                     for decl in body {
                         if let Stmt::VarDecl {
-                            name, custom_traits, ..
+                            name,
+                            custom_traits,
+                            ..
                         } = decl
                             && custom_traits.iter().any(|(t, _)| t == "__constant")
                         {
