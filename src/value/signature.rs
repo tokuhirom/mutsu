@@ -170,8 +170,56 @@ pub(crate) fn synthesize_native_signature(owner: &str) -> SigInfo {
 // Global registry mapping Signature instance IDs to their SigInfo.
 static SIG_REGISTRY: Mutex<Option<HashMap<u64, SigInfo>>> = Mutex::new(None);
 
+// The number of live `InstanceAttrs` of class `Signature` per instance id
+// (#13009). A `.clone` copy and a reblessed alias keep the id of the value
+// they came from, so an entry of `SIG_REGISTRY` may only go when the last of
+// them dies; without this every `Signature` value ever built kept its
+// `SigInfo` for the life of the process.
+static SIG_REFS: Mutex<Option<HashMap<u64, usize>>> = Mutex::new(None);
+
+/// A `Signature` instance node with `id` was built (a new value, a deep copy
+/// or an alias).
+// Cost: O(1) expected.
+pub(crate) fn sig_instance_born(id: u64) {
+    let mut guard = SIG_REFS.lock().unwrap_or_else(|e| e.into_inner());
+    *guard
+        .get_or_insert_with(HashMap::new)
+        .entry(id)
+        .or_insert(0) += 1;
+}
+
+/// A `Signature` instance node with `id` died; the last one frees the
+/// registered `SigInfo`.
+// Cost: O(1) expected, plus dropping the SigInfo.
+pub(crate) fn sig_instance_died(id: u64) {
+    let freed = {
+        let mut guard = SIG_REFS.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(refs) = guard.as_mut() else { return };
+        match refs.get_mut(&id) {
+            Some(count) if *count > 1 => {
+                *count -= 1;
+                false
+            }
+            Some(_) => {
+                refs.remove(&id);
+                true
+            }
+            None => false,
+        }
+    };
+    if freed {
+        let info = SIG_REGISTRY
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_mut()
+            .and_then(|map| map.remove(&id));
+        // Dropped outside both locks: a SigInfo holds Values.
+        drop(info);
+    }
+}
+
 fn register_sig_info(id: u64, info: SigInfo) {
-    let mut guard = SIG_REGISTRY.lock().unwrap();
+    let mut guard = SIG_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
     let map = guard.get_or_insert_with(HashMap::new);
     map.insert(id, info);
 }
@@ -1657,5 +1705,38 @@ fn where_expr_to_value(expr: &Expr) -> Value {
                 crate::env::Env::new(),
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod registry_lifetime_tests {
+    use super::*;
+
+    fn registered(id: u64) -> bool {
+        lookup_sig_info(id).is_some()
+    }
+
+    #[test]
+    fn a_dropped_signature_frees_its_sig_info() {
+        let value = make_signature_value_with_owner(SigInfo::default(), None, None);
+        let ValueView::Instance { id, .. } = value.view() else {
+            panic!("a Signature is an instance");
+        };
+        assert!(registered(id));
+        drop(value);
+        assert!(!registered(id), "the last holder's death frees the SigInfo");
+    }
+
+    #[test]
+    fn a_deep_copy_keeps_the_sig_info_until_it_dies_too() {
+        let value = make_signature_value_with_owner(SigInfo::default(), None, None);
+        let ValueView::Instance { id, attributes, .. } = value.view() else {
+            panic!("a Signature is an instance");
+        };
+        let copy = (*attributes).clone();
+        drop(value);
+        assert!(registered(id), "the copy still reads the SigInfo");
+        drop(copy);
+        assert!(!registered(id));
     }
 }
