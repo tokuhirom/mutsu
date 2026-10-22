@@ -319,11 +319,5 @@ fn fold(node: &RakuAstNode, name: String) -> Result<Expr, RuntimeError> {
     if rest.is_empty() {
         return Err(unsupported(node));
     }
-    // The junction operators the parser nests to the left (the compiler
-    // flattens them); any other list-associative operator holds its operands
-    // in one node.
-    if matches!(name.as_str(), "|" | "&" | "^") {
-        return Ok(rest.into_iter().fold(first, |acc, r| call(acc, vec![r])));
-    }
     Ok(call(first, rest))
 }
