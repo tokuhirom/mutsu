@@ -1,4 +1,5 @@
 use super::*;
+use crate::opcode::SubscriptKind;
 use crate::compiler::helpers_dynamic::OuterStash;
 use crate::value::ValueView;
 
@@ -349,6 +350,9 @@ impl Compiler {
             }
             _ => None,
         };
+        if let Expr::Index { is_positional, .. } = target {
+            self.emit_lex_import_subscript(*is_positional);
+        }
         if let Some(name) = array_var_name {
             let name_idx = self.code.add_constant(Value::str(name));
             self.code
@@ -376,6 +380,12 @@ impl Compiler {
             _ => None,
         };
         if delete && let Some((delete_target, delete_index)) = delete_parts {
+            // A zen slice has no recorded bracket: the kind stays unknown.
+            let delete_kind = match target {
+                Expr::Index { is_positional, .. } => SubscriptKind::from_is_positional(*is_positional),
+                _ => SubscriptKind::Unknown,
+            };
+            let delete_positional = delete_kind == SubscriptKind::Positional;
             if let Some(var_name) = self.postfix_index_name(delete_target) {
                 if Self::index_assign_target_requires_eval(delete_target) {
                     self.compile_expr(delete_target);
@@ -384,11 +394,17 @@ impl Compiler {
                 self.compile_expr(delete_index);
                 let slot = self.local_map.get(&var_name).copied();
                 let name_idx = self.code.add_constant(Value::str(var_name));
-                self.code.emit(OpCode::DeleteIndexNamed(name_idx, slot));
+                self.emit_lex_import_subscript(delete_positional);
+                self.code.emit(OpCode::DeleteIndexNamed(
+                    name_idx,
+                    slot,
+                    delete_kind,
+                ));
             } else {
                 self.compile_expr(delete_target);
                 self.compile_expr(delete_index);
-                self.code.emit(OpCode::DeleteIndexExpr);
+                self.emit_lex_import_subscript(delete_positional);
+                self.code.emit(OpCode::DeleteIndexExpr(delete_kind));
             }
             // Keep the :exists result on the stack.
             self.code.emit(OpCode::Pop);

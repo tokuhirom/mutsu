@@ -198,7 +198,31 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         slot: Option<u32>,
+        kind: SubscriptKind,
     ) -> Result<(), RuntimeError> {
+        // A user `postcircumfix` candidate takes `:delete` itself (#14538).
+        if kind != SubscriptKind::Unknown
+            && let Some(index) = self.stack.last().cloned()
+        {
+            let var_name = Self::const_str(code, name_idx);
+            let target = slot
+                .and_then(|s| self.locals.get(s as usize).cloned())
+                .or_else(|| self.env().get_sym(code.const_sym(name_idx)).cloned());
+            let _ = var_name;
+            if let Some(target) = target
+                && let Some(answer) = self.user_postcircumfix_for_exists_delete(
+                    &target,
+                    &index,
+                    "delete",
+                    true,
+                    kind == SubscriptKind::Positional,
+                )?
+            {
+                self.stack.pop();
+                self.stack.push(answer);
+                return Ok(());
+            }
+        }
         // A whole-container `:=` bound variable (`my %g := %h`) holds a shared
         // `ContainerRef` cell. The delete logic operates on plain Hash/Array
         // values read from env, so temporarily unwrap the cell's inner container
@@ -947,10 +971,26 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(super) fn exec_delete_index_expr_op(&mut self) -> Result<(), RuntimeError> {
+    pub(super) fn exec_delete_index_expr_op(
+        &mut self,
+        kind: SubscriptKind,
+    ) -> Result<(), RuntimeError> {
         let idx = self.stack.pop().unwrap_or(Value::NIL);
         Self::throw_if_failure(&idx)?;
         let mut target = self.stack.pop().unwrap_or(Value::NIL);
+        // A user `postcircumfix` candidate takes `:delete` itself (#14538).
+        if kind != SubscriptKind::Unknown
+            && let Some(answer) = self.user_postcircumfix_for_exists_delete(
+                &target,
+                &idx,
+                "delete",
+                true,
+                kind == SubscriptKind::Positional,
+            )?
+        {
+            self.stack.push(answer);
+            return Ok(());
+        }
         if matches!(target.view(), ValueView::Array(..)) && Self::is_type_object_index(&idx) {
             return Err(Self::type_object_index_error());
         }

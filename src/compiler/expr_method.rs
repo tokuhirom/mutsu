@@ -1,4 +1,5 @@
 use super::*;
+use crate::opcode::SubscriptKind;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
@@ -736,7 +737,12 @@ impl Compiler {
                 self.compile_expr(delete_index);
                 let slot = self.local_map.get(&var_name).copied();
                 let name_idx = self.code.add_constant(Value::str(var_name));
-                self.code.emit(OpCode::DeleteIndexNamed(name_idx, slot));
+                self.emit_lex_import_subscript(*delete_positional);
+                self.code.emit(OpCode::DeleteIndexNamed(
+                    name_idx,
+                    slot,
+                    SubscriptKind::from_is_positional(*delete_positional),
+                ));
             } else if let Expr::MethodCall {
                 target: method_target,
                 name: method_name,
