@@ -483,7 +483,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if let Some(info) = self.container_type_metadata(target) {
             let constraint = &info.value_type;
-            if constraint != "Mu" && constraint != "Any" {
+            if !constraint.is_empty() && constraint != "Mu" && constraint != "Any" {
                 for val in values {
                     if !val.is_nil() && !self.type_matches_value(constraint, val) {
                         return Err(self.type_check_element_failure("@_", constraint, val));
