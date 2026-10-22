@@ -5631,8 +5631,11 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1) (element cell for a single index), otherwise as Index.
-            OpCode::IndexInvocantRef { is_positional } => {
-                self.exec_index_invocant_ref_op(*is_positional)?;
+            OpCode::IndexInvocantRef {
+                is_positional,
+                vivify,
+            } => {
+                self.exec_index_invocant_ref_op(*is_positional, *vivify)?;
                 *ip += 1;
             }
             // Cost: O(1) (element cell for a single index), otherwise as Index.

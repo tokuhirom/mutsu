@@ -2978,7 +2978,13 @@ pub(crate) enum OpCode {
     /// process-global mirror slice 3b uses: a program that declares no
     /// raw-invocant method anywhere pays one relaxed atomic load and then runs
     /// `Index` verbatim.
-    IndexInvocantRef { is_positional: bool },
+    ///
+    /// `vivify` is set when the method name is statically one that
+    /// autovivifies an undefined receiver (`push`, `ASSIGN-KEY`, ...; or the name
+    /// is only known at run time): the producer then also hands out a missing
+    /// element's deferred location, with no raw-invocant callee needed, and
+    /// `CallMethod` stores the fresh container into it (ADR-13823).
+    IndexInvocantRef { is_positional: bool, vivify: bool },
     /// ADR-0067's subscript-ARGUMENT producer: the twin of
     /// [`Self::IndexInvocantRef`] one position over. `$b(@a[0])`,
     /// `$obj.m(@a[0])` and `&g(@a[0])` must hand the element's own container to

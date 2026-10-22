@@ -375,6 +375,12 @@ impl Interpreter {
             .iter()
             .filter(|p| !p.named && p.literal_value.is_some() && p.type_constraint.is_none())
             .count();
+        // A parameter whose type and the core one's are unrelated (a mixed-in
+        // role against `Rational`) cannot be ranked by counts and distances:
+        // rakudo compares the declared types parameter by parameter.
+        if let Some(verdict) = self.core_infix_unrelated_verdict(def, &core) {
+            return verdict;
+        }
         let user_key = (typed + literal_positionals, literal, constrained, subsig);
         let core_key = (core.typed, 0usize, 0usize, 0usize);
         if user_key != core_key {
@@ -397,6 +403,87 @@ impl Interpreter {
             std::cmp::Ordering::Equal => CoreInfixVerdict::Tie(core.sig),
             std::cmp::Ordering::Greater => CoreInfixVerdict::User,
         }
+    }
+
+    /// Rakudo's parameter-wise comparison of a user candidate against the
+    /// narrowest core one, for the case the count-and-distance key cannot
+    /// rank: some positional parameter's declared type is *unrelated* to the
+    /// core candidate's (`multi infix:<*>(U $v, Numeric $n)` against the core
+    /// `(Rational:D, Int:D)`, for `1.5 but U[...]`). Measured against
+    /// rakudo 2026.07: the core candidate wins when the user's type is wider
+    /// than the core's in any parameter; otherwise the user's wins when it is
+    /// narrower in some parameter; otherwise the pair is a tie (ambiguous,
+    /// unless the user candidate is `is default`). Smileys are ignored.
+    /// `None` when every pair of types is related: the count-and-distance
+    /// key answers then.
+    // Cost: O(1) conformance walks (two positional parameters).
+    fn core_infix_unrelated_verdict(
+        &self,
+        def: &FunctionDef,
+        core: &CoreRank,
+    ) -> Option<CoreInfixVerdict> {
+        let params: Vec<&ParamDef> = Self::dispatch_visible_params(def)
+            .into_iter()
+            .filter(|p| !p.named && !p.slurpy)
+            .collect();
+        if params.len() != 2 {
+            return None;
+        }
+        let nominal = |constraint: &str| -> Symbol {
+            let base = constraint
+                .strip_suffix(":D")
+                .or_else(|| constraint.strip_suffix(":U"))
+                .or_else(|| constraint.strip_suffix(":_"))
+                .unwrap_or(constraint);
+            Symbol::intern(base)
+        };
+        let (mut unrelated, mut user_wider, mut user_narrower) = (false, false, false);
+        for (param, core_type) in params.iter().zip([core.sig.0, core.sig.1]) {
+            // Only a plain nominal type takes part; a literal, coercion or
+            // sub-signature parameter leaves the question to the key.
+            if param.literal_value.is_some()
+                || param.where_constraint.is_some()
+                || param.sub_signature.is_some()
+                || param.code_signature.is_some()
+                || param.type_constraint.as_deref().is_some_and(|t| t.contains(['(', '[']))
+            {
+                return None;
+            }
+            let user = param
+                .type_constraint
+                .as_deref()
+                .map_or_else(|| Symbol::intern("Any"), nominal);
+            // An enum value or other non-type name used as a parameter
+            // constraint is a value match, not a nominal type.
+            if let Some(t) = param.type_constraint.as_deref() {
+                let base = nominal(t).with_str(str::to_owned);
+                if self.is_subset_type_name(&base)
+                    || !self.has_type(&base)
+                    && !crate::runtime::utils::is_known_type_constraint(&base)
+                {
+                    return None;
+                }
+            }
+            let core_sym = nominal(core_type);
+            let (down, up) = (
+                self.nominal_type_conforms(user, core_sym),
+                self.nominal_type_conforms(core_sym, user),
+            );
+            match (down, up) {
+                (true, true) => {}
+                (true, false) => user_narrower = true,
+                (false, true) => user_wider = true,
+                (false, false) => unrelated = true,
+            }
+        }
+        let _ = unrelated;
+        Some(if user_wider {
+            CoreInfixVerdict::Core
+        } else if user_narrower || def.is_default {
+            CoreInfixVerdict::User
+        } else {
+            CoreInfixVerdict::Tie(core.sig)
+        })
     }
 
     /// The `X::Multi::Ambiguous` for a user infix candidate that ties the

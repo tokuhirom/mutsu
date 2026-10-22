@@ -144,7 +144,7 @@ impl Interpreter {
     /// (Flattening now also covers `Range`s — `Uni.new(65..67)` -> "ABC" — which
     /// the old interpreter arm missed, leaving it to stringify the whole Range;
     /// the shared helper fixes that to match raku and the sibling `utf8` arm.)
-    pub(crate) fn build_native_uni_value(args: &[Value]) -> Value {
+    pub(crate) fn build_native_uni_value(args: &[Value]) -> Result<Value, RuntimeError> {
         let mut flat_args: Vec<Value> = Vec::new();
         for a in args {
             match a.view() {
@@ -164,18 +164,16 @@ impl Interpreter {
                 _ => flat_args.push(a.clone()),
             }
         }
-        let text: String = flat_args
-            .iter()
-            .filter_map(|a| {
-                let cp = match a.view() {
-                    ValueView::Int(i) => i as u32,
-                    ValueView::Num(f) => f as u32,
-                    _ => a.to_string_value().parse::<u32>().unwrap_or(0),
-                };
-                char::from_u32(cp)
-            })
-            .collect();
-        Value::uni(String::new(), text)
+        let mut text = String::new();
+        for a in &flat_args {
+            let cp = match a.view() {
+                ValueView::Int(i) => i,
+                ValueView::Num(f) => f as i64,
+                _ => a.to_string_value().parse::<i64>().unwrap_or(0),
+            };
+            text.push(crate::builtins::str_prim::codepoint::uni_char(cp)?);
+        }
+        Ok(Value::uni(String::new(), text))
     }
 
     /// Coerce one `Complex.new` positional argument to its `f64` component

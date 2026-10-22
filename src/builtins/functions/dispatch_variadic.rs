@@ -97,23 +97,22 @@ pub(crate) fn native_function_variadic(
         // Cost: O(e), e = codepoints passed.
         "chrs" => {
             let mut result = String::new();
-            let push_chr = |result: &mut String, v: &Value| {
+            let push_chr = |result: &mut String, v: &Value| -> Result<(), RuntimeError> {
                 let code = match v.view() {
                     ValueView::Int(i) => i,
                     ValueView::Num(f) => f as i64,
                     _ => v.to_string_value().parse::<i64>().unwrap_or(-1),
                 };
-                if code >= 0
-                    && let Some(ch) = std::char::from_u32(code as u32)
-                {
-                    result.push(ch);
-                }
+                result.push(crate::builtins::str_prim::codepoint::chr_char(code)?);
+                Ok(())
             };
             for arg in args {
                 // Flatten Array/Range/Seq/Slip just like the slurpy `*@codes`
                 // signature so chrs(72..74) / chrs((72,73,74)) work.
                 for item in crate::runtime::utils::value_to_list(arg) {
-                    push_chr(&mut result, &item);
+                    if let Err(e) = push_chr(&mut result, &item) {
+                        return Some(Err(e));
+                    }
                 }
             }
             Some(Ok(Value::str(result)))

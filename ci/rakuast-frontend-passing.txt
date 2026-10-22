@@ -5329,6 +5329,7 @@ t/rakuast/rakuast-named-type-arguments.t
 t/rakuast/rakuast-names-and-literals.t
 t/rakuast/rakuast-native-declarations.t
 t/rakuast/rakuast-nested-declaration-groups.t
+t/rakuast/rakuast-nf-quote-literals.t
 t/rakuast/rakuast-nonlvalue-assignment.t
 t/rakuast/rakuast-nonplain-word-quotes.t
 t/rakuast/rakuast-nqp-terms.t

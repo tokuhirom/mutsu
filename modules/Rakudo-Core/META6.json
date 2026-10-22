@@ -2,7 +2,7 @@
   "name": "Rakudo-Core",
   "description": "Modules that Rakudo ships as part of its own core library, vendored verbatim so mutsu runs the real implementation instead of a native reimplementation.",
   "version": "2026.06",
-  "auth": "github:rakudo",
+  "auth": "Yet Another Society",
   "license": "Artistic-2.0",
   "perl": "6.d",
   "provides": {

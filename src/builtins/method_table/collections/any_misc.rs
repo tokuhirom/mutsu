@@ -173,10 +173,10 @@ pub(crate) fn chrs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeErro
         ValueView::RangeExcl(a, b) => (a..b).collect(),
         _ => vec![val_to_i64(target)],
     };
-    let s: String = items
-        .iter()
-        .filter_map(|&code| char::from_u32(code as u32))
-        .collect();
+    let mut s = String::with_capacity(items.len());
+    for &code in &items {
+        s.push(crate::builtins::str_prim::codepoint::chr_char(code)?);
+    }
     Ok(Value::str(s))
 }
 

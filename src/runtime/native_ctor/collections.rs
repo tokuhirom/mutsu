@@ -53,7 +53,7 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
             // Shared with the VM's native fast path (pure codepoint build).
-            Ok(Self::build_native_uni_value(&args))
+            Self::build_native_uni_value(&args)
     }
 
     /// `Seq`.

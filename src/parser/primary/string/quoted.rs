@@ -161,8 +161,10 @@ pub(crate) fn corner_bracket_string(input: &str) -> PResult<'_, Expr> {
 /// Parse `\c[NAME, NAME, ...]` Unicode character name escape.
 /// Returns the resulting string and the remaining input after the `]`.
 /// `rest` should point right after `\c[`.
-pub(crate) fn parse_backslash_c_bracket(rest: &str) -> Option<(String, &str)> {
-    let end = rest.find(']')?;
+pub(crate) fn parse_backslash_c_bracket(rest: &str) -> Result<Option<(String, &str)>, String> {
+    let Some(end) = rest.find(']') else {
+        return Ok(None);
+    };
     let names_str = &rest[..end];
     let full_name = names_str.trim();
 
@@ -170,7 +172,7 @@ pub(crate) fn parse_backslash_c_bracket(rest: &str) -> Option<(String, &str)> {
     if !full_name.contains(',')
         && let Some(s) = lookup_unicode_name_string(full_name)
     {
-        return Some((s, &rest[end + 1..]));
+        return Ok(Some((s, &rest[end + 1..])));
     }
 
     let mut result = String::new();
@@ -187,23 +189,20 @@ pub(crate) fn parse_backslash_c_bracket(rest: &str) -> Option<(String, &str)> {
             let hex = name.strip_prefix("0x").or_else(|| name.strip_prefix("0X"));
             if let Some(hex) = hex
                 && let Ok(n) = u32::from_str_radix(hex, 16)
-                && let Some(c) = char::from_u32(n)
             {
-                result.push(c);
+                result.push(super::escape_codepoint::scalar(i64::from(n))?);
                 continue;
             }
             // Try as decimal codepoint
-            if let Ok(n) = name.parse::<u32>()
-                && let Some(c) = char::from_u32(n)
-            {
-                result.push(c);
+            if let Ok(n) = name.parse::<u32>() {
+                result.push(super::escape_codepoint::scalar(i64::from(n))?);
                 continue;
             }
             // Unknown name - skip
-            return None;
+            return Ok(None);
         }
     }
-    Some((result, &rest[end + 1..]))
+    Ok(Some((result, &rest[end + 1..])))
 }
 
 /// Parse a double-quoted string with interpolation support.
