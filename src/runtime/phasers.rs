@@ -465,7 +465,7 @@ fn stmt_is_hoist_safe(stmt: &Stmt) -> bool {
         // A bare routine call (including test-function listops like `is`/`ok`)
         // is a runtime read the BEGIN may run before.
         Stmt::Call { .. } => true,
-        Stmt::SetLine(_) => true,
+        Stmt::SetLine(..) => true,
         Stmt::Use { .. } => true,
         // A bare declaration (no initializer) creates a container but performs
         // no runtime work, so a BEGIN may safely run before it.

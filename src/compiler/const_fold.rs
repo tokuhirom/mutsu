@@ -333,7 +333,7 @@ impl Compiler {
     /// the runtime branch stays.
     pub(super) fn branch_is_droppable(stmts: &[Stmt]) -> bool {
         stmts.iter().all(|s| match s {
-            Stmt::SetLine(_) => true,
+            Stmt::SetLine(..) => true,
             Stmt::Expr(e) => expr_is_droppable(e),
             Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
                 es.iter().all(expr_is_droppable)

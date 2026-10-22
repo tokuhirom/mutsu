@@ -5887,7 +5887,7 @@ pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
     flattened
         .iter()
         .map(|stmt| {
-            if let Stmt::SetLine(line) = stmt {
+            if let Stmt::SetLine(line, _) = stmt {
                 decl_line = Some(*line);
             }
             classify_class_body_stmt(stmt, decl_line)

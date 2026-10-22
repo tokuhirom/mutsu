@@ -195,7 +195,7 @@ fn has_user_trait(traits: &[(String, Option<Expr>)]) -> bool {
 fn is_pure_member(stmt: &Stmt) -> bool {
     match stmt {
         // A `use trace` hook prints; it declares nothing and runs no user code.
-        Stmt::SetLine(_)
+        Stmt::SetLine(..)
         | Stmt::Trace { .. }
         | Stmt::DoesDecl { .. }
         | Stmt::TrustsDecl { .. }

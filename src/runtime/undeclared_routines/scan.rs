@@ -205,7 +205,7 @@ impl<'ast> Visit<'ast> for Scan {
             return;
         }
         match stmt {
-            Stmt::SetLine(n) => self.line = *n,
+            Stmt::SetLine(n, _) => self.line = *n,
             Stmt::Use { module, .. } if !self.eval => {
                 if !conditional::imports_no_routines(module) {
                     self.bail = true;

@@ -874,7 +874,7 @@ impl Interpreter {
             let effective_body: Vec<&Stmt> = sub
                 .body
                 .iter()
-                .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                .filter(|s| !matches!(s, Stmt::SetLine(..)))
                 .collect();
             if sub.params.is_empty()
                 && effective_body.len() == 1

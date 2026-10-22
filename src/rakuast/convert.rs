@@ -84,8 +84,8 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     let mut line = None;
     let mut trace = None;
     for (at, stmt) in stmts.iter().enumerate() {
-        if let Stmt::SetLine(n) = stmt {
-            line = Some(*n);
+        if let Stmt::SetLine(n, span) = stmt {
+            line = Some((*n, *span));
             continue;
         }
         if matches!(stmt, Stmt::Trace { .. }) {
@@ -99,8 +99,8 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
                 if let Some(field) = trace.take().and_then(origin::trace_field) {
                     node.fields.push(field);
                 }
-                if let Some(n) = line.take() {
-                    node.fields.push(origin::field(n));
+                if let Some((n, span)) = line.take() {
+                    node.fields.push(origin::field(n, span));
                 }
                 fields.push(node_field(None, node));
             }
@@ -117,8 +117,8 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
                     if let Some(field) = trace.take().and_then(origin::trace_field) {
                         node.fields.push(field);
                     }
-                    if let Some(n) = line.take() {
-                        node.fields.push(origin::field(n));
+                    if let Some((n, span)) = line.take() {
+                        node.fields.push(origin::field(n, span));
                     }
                     fields.push(node_field(None, node));
                 }
@@ -129,8 +129,8 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
             if let Some(field) = trace.take().and_then(origin::trace_field) {
                 node.fields.push(field);
             }
-            if let Some(n) = line.take() {
-                node.fields.push(origin::field(n));
+            if let Some((n, span)) = line.take() {
+                node.fields.push(origin::field(n, span));
             }
             fields.push(node_field(None, node));
         }
@@ -225,7 +225,7 @@ fn when_modifier_parts<'a>(topic: &Expr, body: &'a [Stmt]) -> Option<(&'a Expr, 
     if !matches!(topic, Expr::Var(name) if name == "_") {
         return None;
     }
-    let mut real = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+    let mut real = body.iter().filter(|s| !matches!(s, Stmt::SetLine(..)));
     let (
         Some(Stmt::When {
             cond,
@@ -237,7 +237,7 @@ fn when_modifier_parts<'a>(topic: &Expr, body: &'a [Stmt]) -> Option<(&'a Expr, 
     else {
         return None;
     };
-    let mut inner = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+    let mut inner = body.iter().filter(|s| !matches!(s, Stmt::SetLine(..)));
     let (Some(modified), None) = (inner.next(), inner.next()) else {
         return None;
     };
@@ -285,7 +285,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         }
         // The `use trace` hook is bookkeeping too: rakudo models the trace as a
         // flag on the traced statement, not as a statement of its own.
-        Stmt::SetLine(_) | Stmt::Trace { .. } => Ok(None),
+        Stmt::SetLine(..) | Stmt::Trace { .. } => Ok(None),
         Stmt::SourceForm(form)
             if matches!(form.as_ref(), crate::ast::SourceForm::RoutineTraits(_)) =>
         {
@@ -807,7 +807,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             if *is_statement_modifier {
                 let mut body = then_branch
                     .iter()
-                    .filter(|s| !matches!(s, Stmt::SetLine(_)));
+                    .filter(|s| !matches!(s, Stmt::SetLine(..)));
                 let (Some(modified), None) = (body.next(), body.next()) else {
                     return Err(unsupported("multi-statement if/unless modifier body"));
                 };
@@ -870,7 +870,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             // and renders the *undecorated* condition, so the `!` the parser
             // added is stripped back off.
             if *is_statement_modifier && label.is_none() {
-                let mut real = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+                let mut real = body.iter().filter(|s| !matches!(s, Stmt::SetLine(..)));
                 if let (Some(modified), None) = (real.next(), real.next()) {
                     let mut statement = convert_stmt(modified)?
                         .ok_or_else(|| unsupported("empty while/until modifier body"))?;
@@ -1015,7 +1015,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 && !*explicit_zero_params
                 && matches!(mode, ForMode::Normal)
             {
-                let mut real = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+                let mut real = body.iter().filter(|s| !matches!(s, Stmt::SetLine(..)));
                 if let (Some(modified), None) = (real.next(), real.next())
                     // The loop has no signature of its own beyond a bare
                     // block's placeholders (`parser::for_modifier_loop_params`).
@@ -4966,7 +4966,7 @@ pub(super) fn interp_segment(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
 /// return it — this is how mutsu nests an `elsif`. Anything else (a real
 /// `else` block, multiple statements, empty) returns `None`.
 fn single_if_stmt(stmts: &[Stmt]) -> Option<&Stmt> {
-    let mut real = stmts.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+    let mut real = stmts.iter().filter(|s| !matches!(s, Stmt::SetLine(..)));
     let first = real.next()?;
     if real.next().is_some() {
         return None;
@@ -5011,7 +5011,7 @@ fn with_modifier_node(
     }
     let mut real = then_branch
         .iter()
-        .filter(|s| !matches!(s, Stmt::SetLine(_)));
+        .filter(|s| !matches!(s, Stmt::SetLine(..)));
     let (Some(modified), None) = (real.next(), real.next()) else {
         return Err(unsupported("multi-statement with/without modifier body"));
     };

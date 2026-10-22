@@ -1129,7 +1129,7 @@ impl Compiler {
                 phaser_is_last_in_body = true;
             } else {
                 main_stmts.push(stmt.clone());
-                if !matches!(stmt, Stmt::SetLine(_)) {
+                if !matches!(stmt, Stmt::SetLine(..)) {
                     phaser_is_last_in_body = false;
                 }
             }
@@ -1479,7 +1479,7 @@ impl Compiler {
     /// conservative (`false`), keeping `take`'s direct fast path.
     fn control_block_handles_take(stmts: &[Stmt]) -> bool {
         stmts.iter().any(|s| match s {
-            Stmt::SetLine(_) => false,
+            Stmt::SetLine(..) => false,
             Stmt::Default(_) => true,
             Stmt::When { cond, .. } => matches!(cond, Expr::BareWord(n) if n == "CX::Take"),
             _ => false,

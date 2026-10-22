@@ -552,7 +552,7 @@ fn literal_marked_name(name: &str) -> String {
             .and_then(|content| crate::parser::parse_fragment(content).ok())
             .and_then(|(stmts, _)| match stmts.as_slice() {
                 [Stmt::Expr(Expr::Literal(v))]
-                | [Stmt::SetLine(_), Stmt::Expr(Expr::Literal(v))] => Some(v.to_string_value()),
+                | [Stmt::SetLine(..), Stmt::Expr(Expr::Literal(v))] => Some(v.to_string_value()),
                 _ => None,
             });
         let Some(text) = literal else {

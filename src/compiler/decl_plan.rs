@@ -571,7 +571,7 @@ impl Compiler {
         // line has to be tracked here, walking the body in source order.
         let mut decl_line = self.last_source_line;
         for stmt in flattened {
-            if let Stmt::SetLine(line) = stmt {
+            if let Stmt::SetLine(line, _) = stmt {
                 decl_line = Some(*line);
                 continue;
             }
@@ -670,7 +670,7 @@ impl Compiler {
         let mut decl_line = self.last_source_line;
         let mut out: Vec<(Symbol, crate::opcode::CompiledAttrDecl)> = Vec::new();
         for stmt in flattened {
-            if let Stmt::SetLine(line) = stmt {
+            if let Stmt::SetLine(line, _) = stmt {
                 decl_line = Some(*line);
                 continue;
             }
@@ -959,7 +959,7 @@ impl Compiler {
             let crate::opcode::RoleBodyOp::Deferred { raw, .. } = op else {
                 continue;
             };
-            if let Stmt::SetLine(line) = raw.as_ref() {
+            if let Stmt::SetLine(line, _) = raw.as_ref() {
                 decl_line = Some(*line);
                 continue;
             }

@@ -165,7 +165,7 @@ fn split_body(body: Vec<Stmt>) -> Result<(Vec<Stmt>, Vec<Stmt>), Vec<Stmt>> {
 fn split_body_stmt(stmt: Stmt, decls: &mut Vec<Stmt>, runtime: &mut Vec<Stmt>) {
     match stmt {
         // The line marker goes to both halves, so each statement keeps its line.
-        Stmt::SetLine(_) => {
+        Stmt::SetLine(..) => {
             runtime.push(stmt.clone());
             decls.push(stmt);
         }

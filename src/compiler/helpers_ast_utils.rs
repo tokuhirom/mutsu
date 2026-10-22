@@ -953,7 +953,7 @@ impl Compiler {
     pub(crate) fn runs_no_user_code(stmt: &Stmt) -> bool {
         matches!(
             stmt,
-            Stmt::SetLine(_)
+            Stmt::SetLine(..)
                 | Stmt::Trace { .. }
                 | Stmt::Use { .. }
                 | Stmt::No { .. }
@@ -1028,7 +1028,7 @@ impl Compiler {
         let mut shell = Vec::new();
         for s in body {
             match s {
-                Stmt::SetLine(_) => shell.push(s.clone()),
+                Stmt::SetLine(..) => shell.push(s.clone()),
                 Stmt::HasDecl {
                     is_our,
                     is_my,

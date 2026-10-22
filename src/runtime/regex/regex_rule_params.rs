@@ -187,7 +187,7 @@ fn def_runtime_param_names(def: &FunctionDef) -> Option<Vec<String>> {
     let constant_body = def.body.iter().all(|stmt| {
         matches!(
             stmt,
-            crate::ast::Stmt::SetLine(_) | crate::ast::Stmt::Expr(crate::ast::Expr::Literal(_))
+            crate::ast::Stmt::SetLine(..) | crate::ast::Stmt::Expr(crate::ast::Expr::Literal(_))
         )
     });
     if !constant_body

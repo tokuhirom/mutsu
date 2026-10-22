@@ -486,7 +486,7 @@ fn fold_constant_message(expr: &Expr) -> Option<String> {
                 let Expr::AnonSub { body, .. } = callee.as_ref() else {
                     return None;
                 };
-                let mut stmts = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+                let mut stmts = body.iter().filter(|s| !matches!(s, Stmt::SetLine(..)));
                 match (stmts.next(), stmts.next()) {
                     (Some(Stmt::Expr(inner)), None) => current = inner,
                     _ => return None,

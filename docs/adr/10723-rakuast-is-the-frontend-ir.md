@@ -1968,3 +1968,32 @@ normalized text; lowering normalizes it again through the parser's
 `normalized_quote`, which leaves it unchanged. No `.AST` consumer can meet the
 shape on rakudo, which cannot parse the source. The executable contract is
 `t/rakuast/rakuast-nf-quote-literals.t`.
+
+### 6.105 S2: statement origins are source ranges (2026-10-22, [#11413](https://github.com/tokuhirom/mutsu/issues/11413))
+
+First Stage 2 slice, taken from the §4 decision on source positions. The parser
+records, on the line marker it already emits in front of every statement
+(`Stmt::SetLine(line, SrcSpan)`), the byte range the statement occupies in the
+unit's source: from its first character to its last, the leading whitespace and
+the terminating `;` left out (`parser::primary::statement_span`, which follows
+heredoc buffers back to the original text like `$?LINE`). `SrcSpan` does not
+take part in a statement's `Hash`, so redeclaration identity is unchanged.
+
+`convert` turns that into Rakudo's shape. A statement node's hidden `origin` is
+a `RakuAST::Origin` whose `from` / `to` are *grapheme* offsets (Rakudo counts
+`\r\n` and a letter with its combining marks as one position) and whose
+`.source` is the one `RakuAST::Origin::Source` of the unit (`rakuast/unit_source.rs`),
+holding the text (`.orig`) and a line-start index, so `.original-line($pos)` is a
+binary search, O(log n). `Str.AST` installs its text as the unit source; a
+frontend round trip (`MUTSU_RAKUAST`) has none and keeps only the line, which is
+all lowering reads. A statement the parser could not place (`SrcSpan::NONE`: a
+lambda's synthesized marker) collapses to the start of its line. The measured
+ranges (`Statement::If 11..46`, `Statement::Expression 21..26`, graphemes,
+CRLF, heredocs, pragmas) are those of rakudo 2026.09 and are pinned by
+`t/rakuast/rakuast-origin-ranges.t`, which passes on both.
+
+Known gaps, both rakudo-visible: a comment between a statement and its `;`
+(`say 3 # c\n;`) is still inside the range, and nodes below the statement
+(`Sub`, `Block`, `VarDeclaration`, `Call::*`, ...) have no origin; those arrive
+with their construct families, as the parser starts building them. Code::Coverable
+(#11413) waits on those families.

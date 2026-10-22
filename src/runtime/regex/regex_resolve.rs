@@ -821,7 +821,7 @@ impl Interpreter {
         let mut found: Option<&Value> = None;
         for stmt in stmts {
             match stmt {
-                crate::ast::Stmt::SetLine(_) => {}
+                crate::ast::Stmt::SetLine(..) => {}
                 crate::ast::Stmt::Expr(expr) if found.is_none() => {
                     let mut inner = expr;
                     while let crate::ast::Expr::Grouped(g) = inner {

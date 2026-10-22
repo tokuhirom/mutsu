@@ -116,8 +116,8 @@ pub(crate) fn stmt_list_pub(input: &str) -> PResult<'_, Vec<Stmt>> {
     let stmts = stmts
         .into_iter()
         .filter(|stmt| match stmt {
-            Stmt::SetLine(next) if line == Some(*next) => false,
-            Stmt::SetLine(next) => {
+            Stmt::SetLine(next, _) if line == Some(*next) => false,
+            Stmt::SetLine(next, _) => {
                 line = Some(*next);
                 true
             }
@@ -166,7 +166,10 @@ pub(crate) fn stmt_list_partial(input: &str) -> (Vec<Stmt>, Vec<PError>) {
                 let hook = attempt.hook(start, r, &stmt);
                 trace::apply_pragma(&stmt);
                 if line_valid {
-                    stmts.push(Stmt::SetLine(line));
+                    stmts.push(Stmt::SetLine(
+                        line,
+                        crate::parser::primary::statement_span(start, r),
+                    ));
                 }
                 stmts.extend(hook);
                 stmts.push(stmt);
@@ -567,7 +570,10 @@ pub(crate) fn stmt_list_with_mode(
                 trace::apply_pragma(&stmt);
                 open_terminator = !consumed.ends_with(';');
                 if emit_setline && line_valid {
-                    stmts.push(Stmt::SetLine(line));
+                    stmts.push(Stmt::SetLine(
+                        line,
+                        crate::parser::primary::statement_span(input_before_stmt, r),
+                    ));
                 }
                 stmts.extend(hook);
                 stmts.push(stmt);

@@ -110,6 +110,7 @@ mod type_capture_indirect;
 mod type_ctor;
 mod type_lower;
 mod underscore_bindings;
+pub(crate) mod unit_source;
 mod use_stmt;
 mod var_decl_constructor;
 mod var_does;
@@ -1724,6 +1725,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
 pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
     let (stmts, _finish) = crate::parse_dispatch::parse_source_spelled(source)?;
+    // The origins of the tree index this text (ADR-10723 §4).
+    let _source = unit_source::Scope::enter(source);
     let node = convert::statement_list(&stmts)?;
     Ok(Value::rakuast(Box::new(node)))
 }
@@ -3427,10 +3430,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     // Only a statement node records where it began; every other node (and a
     // hand-built one) has no origin, which reads as `Nil` so `with` skips it.
     if method == "origin" {
-        return Some(match origin::statement_line_of(node) {
-            Some(line) => crate::builtins::method_table::origin_value(line),
-            None => Value::NIL,
-        });
+        return Some(origin::origin_of(node).unwrap_or(Value::NIL));
     }
     for f in &node.fields {
         if f.name == Some(method) {

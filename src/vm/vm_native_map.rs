@@ -326,7 +326,7 @@ impl<'ast> Visit<'ast> for MapBodyClassifier {
             // mutates. Pointy/`Lambda` block bodies carry these (placeholder
             // blocks don't), so accepting them lets `-> $a { ... }` map
             // natively too.
-            | Stmt::SetLine(_)
+            | Stmt::SetLine(..)
             // Self-contained nested control structures: safe as long as their
             // bodies are simple (a `last`/`next` inside them is
             // over-conservatively rejected by the leaf rules).

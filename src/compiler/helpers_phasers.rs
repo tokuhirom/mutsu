@@ -621,7 +621,7 @@ impl Compiler {
         let mut extracted = super::enter_phaser_exprs::extract_enter_exprs(&mut rest, embedded);
         // A block body carries line markers; they are no statements here.
         for (_, body) in &mut extracted {
-            body.retain(|s| !matches!(s, Stmt::SetLine(_)));
+            body.retain(|s| !matches!(s, Stmt::SetLine(..)));
         }
         // A block-bodied `ENTER { ...; value }` keeps its in-place evaluation:
         // only single-expression phasers have a value we can store at entry.
@@ -676,7 +676,7 @@ impl Compiler {
             super::enter_phaser_exprs::extract_enter_exprs(&mut rewritten, |_| true);
         // A block body carries line markers; they are no statements here.
         for (_, body) in &mut extracted {
-            body.retain(|s| !matches!(s, Stmt::SetLine(_)));
+            body.retain(|s| !matches!(s, Stmt::SetLine(..)));
         }
         (rewritten, extracted)
     }

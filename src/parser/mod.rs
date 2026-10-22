@@ -1244,7 +1244,7 @@ mod tests {
     fn filter_setline(stmts: Vec<Stmt>) -> Vec<Stmt> {
         stmts
             .into_iter()
-            .filter(|s| !matches!(s, Stmt::SetLine(_)))
+            .filter(|s| !matches!(s, Stmt::SetLine(..)))
             .collect()
     }
 

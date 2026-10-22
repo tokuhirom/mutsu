@@ -7,10 +7,9 @@
 //!
 //! The same file holds the rows of `RakuAST::Origin` (a node's `.origin`) and
 //! `RakuAST::Origin::Source` (its `.source`). A statement node records only
-//! the line it began on, so an origin's position is that line: `from` and `to`
-//! answer it and `Source.original-line` maps a position back to it unchanged.
-//! TODO: carry character offsets and the source text so `from`/`to` are the
-//! statement's real span, as rakudo's are.
+//! the range it occupies: `from` and `to` are character offsets into the
+//! unit's source, which `.source` answers, and `Source.original-line` finds the
+//! line of an offset by binary search (ADR-10723 §4; `rakuast::unit_source`).
 
 use super::super::{Handler, MethodRow, Named, RowFlags};
 use crate::rakuast::{RakuAstFieldValue, RakuAstNode};
@@ -72,44 +71,80 @@ pub(super) static ROWS: &[MethodRow] = &[
         |t, a| t.rakuast_set_field("set-expression", a[0].clone())
     ),
     origin_row!("RakuAST::Origin", "from", 0, origin_position),
-    origin_row!("RakuAST::Origin", "to", 0, origin_position),
+    origin_row!("RakuAST::Origin", "to", 0, origin_end),
     origin_row!("RakuAST::Origin", "source", 0, origin_source),
     origin_row!("RakuAST::Origin::Source", "original-line", 1, original_line),
+    origin_row!("RakuAST::Origin::Source", "orig", 0, source_orig),
 ];
 
-/// The `RakuAST::Origin` of a node that began on `line`.
+/// `Origin.from` / `Origin.to`: the character range the node occupies.
 // Cost: O(1).
-pub(crate) fn origin_value(line: i64) -> Value {
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("position".to_string(), Value::int(line));
-    Value::make_instance(Symbol::intern("RakuAST::Origin"), attrs)
-}
-
-/// `Origin.from` / `Origin.to`: the position the node was found at.
-// Cost: O(1).
-fn origin_position(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+fn origin_position(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let _ = args;
     let ValueView::Instance { attributes, .. } = target.view() else {
         return None;
     };
-    attributes.as_map().get("position").cloned().map(Ok)
+    attributes.as_map().get("from").cloned().map(Ok)
 }
 
-/// `Origin.source`: the source an origin's positions index.
+/// `Origin.to`.
 // Cost: O(1).
-fn origin_source(_target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+fn origin_end(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return None;
+    };
+    attributes.as_map().get("to").cloned().map(Ok)
+}
+
+/// `Origin.source`: the unit source an origin's positions index.
+// Cost: O(1).
+fn origin_source(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if let ValueView::Instance { attributes, .. } = target.view()
+        && let Some(source) = attributes.as_map().get("source")
+    {
+        return Some(Ok(source.clone()));
+    }
     Some(Ok(Value::make_instance(
         Symbol::intern("RakuAST::Origin::Source"),
         std::collections::HashMap::new(),
     )))
 }
 
-/// `Origin::Source.original-line($position)`: the line a position is on.
+/// `Origin::Source.orig`: the text of the unit.
 // Cost: O(1).
-fn original_line(_target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    match args.first()?.view() {
-        ValueView::Int(_) => Some(Ok(args[0].clone())),
-        _ => None,
-    }
+fn source_orig(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return None;
+    };
+    attributes
+        .as_map()
+        .get(crate::rakuast::unit_source::ORIG_ATTR)
+        .cloned()
+        .map(Ok)
+}
+
+/// `Origin::Source.original-line($position)`: the 1-based line the character
+/// offset `$position` is on, by binary search over the unit's line starts.
+/// A source without an index (one built by hand) answers the position itself.
+// Cost: O(log n), n = lines of the unit.
+fn original_line(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Int(pos) = args.first()?.view() else {
+        return None;
+    };
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return None;
+    };
+    let map = attributes.as_map();
+    let Some(starts) = map.get(crate::rakuast::unit_source::LINE_STARTS_ATTR) else {
+        return Some(Ok(args[0].clone()));
+    };
+    let ValueView::Array(starts, _) = starts.view() else {
+        return Some(Ok(args[0].clone()));
+    };
+    let line = starts
+        .as_slice()
+        .partition_point(|start| matches!(start.view(), ValueView::Int(s) if s <= pos));
+    Some(Ok(Value::int(line.max(1) as i64)))
 }
 
 /// The child nodes of `node`, in field order: every field value that is itself

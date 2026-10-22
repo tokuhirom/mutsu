@@ -123,7 +123,7 @@ impl Interpreter {
             let effective_body: Vec<&Stmt> = if let Some(sub) = &sub_data {
                 sub.body
                     .iter()
-                    .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                    .filter(|s| !matches!(s, Stmt::SetLine(..)))
                     .collect()
             } else {
                 Vec::new()

@@ -862,7 +862,7 @@ pub(crate) fn registration_identity_fingerprint(
 ) -> u64 {
     let mut hasher = DefaultHasher::new();
     stable_hash::stable_hash_into(&(params, param_defs), &mut hasher);
-    let kept = || body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+    let kept = || body.iter().filter(|s| !matches!(s, Stmt::SetLine(..)));
     // Stand in for the length prefix a slice hash would have written, so a
     // body cannot collide with a longer one whose extra statements hash empty.
     kept().count().hash(&mut hasher);
@@ -2951,7 +2951,9 @@ pub(crate) enum Stmt {
     /// expansion, and the compiler emits nothing for it.
     SourceForm(Box<SourceForm>),
     /// Set the current source line number (for deprecation tracking, etc.).
-    SetLine(i64),
+    /// The span is the byte range of the statement that follows in the unit's
+    /// source, which is what its RakuAST `origin` answers (ADR-10723 §4).
+    SetLine(i64, SrcSpan),
     /// The `use trace` pragma's per-statement hook: write
     /// `"<id> (<file> line <line>)\n<source>\n"` to the process's stderr just
     /// before the statement that follows it runs. A *sibling* of the traced
@@ -2969,6 +2971,50 @@ pub(crate) enum Stmt {
     Expr(Expr),
 }
 
+/// Where a statement sits in its compilation unit's source: the half-open
+/// *byte* range `from..to` the parser consumed for it, leading whitespace and
+/// the terminating `;` excluded (ADR-10723 §4, "Source positions"). The RakuAST
+/// layer turns it into the character range Rakudo's `RakuAST::Origin` answers.
+///
+/// `NONE` marks a statement the parser could not place in the unit's source (a
+/// marker synthesized for a lambda, text copied out of a heredoc): its origin
+/// falls back to the start of its line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SrcSpan {
+    pub from: u32,
+    pub to: u32,
+}
+
+impl SrcSpan {
+    /// No span recorded.
+    pub const NONE: SrcSpan = SrcSpan {
+        from: u32::MAX,
+        to: u32::MAX,
+    };
+
+    /// The span of `from..to`, or `NONE` when an offset does not fit.
+    // Cost: O(1).
+    pub fn new(from: usize, to: usize) -> SrcSpan {
+        match (u32::try_from(from), u32::try_from(to)) {
+            (Ok(from), Ok(to)) if from != u32::MAX && to != u32::MAX => SrcSpan { from, to },
+            _ => SrcSpan::NONE,
+        }
+    }
+
+    /// Whether a range was recorded.
+    // Cost: O(1).
+    pub fn is_some(self) -> bool {
+        self != SrcSpan::NONE
+    }
+}
+
+/// A span never takes part in a statement's identity: two bodies that differ
+/// only in where they were written are the same routine body (see
+/// [`function_body_fingerprint`]), exactly as before spans existed.
+impl Hash for SrcSpan {
+    fn hash<H: Hasher>(&self, _state: &mut H) {}
+}
+
 impl Stmt {
     /// A statement that exists for the program's diagnostics, not for what it
     /// computes: a source-line marker or a `use trace` hook. Code that
@@ -2976,7 +3022,7 @@ impl Stmt {
     /// looks past these, which is what lets a pragma add them without changing
     /// what the body means.
     pub(crate) fn is_marker(&self) -> bool {
-        matches!(self, Stmt::SetLine(_) | Stmt::Trace { .. })
+        matches!(self, Stmt::SetLine(..) | Stmt::Trace { .. })
             || matches!(self, Stmt::SourceForm(form) if matches!(form.as_ref(), SourceForm::RoutineTraits(_)))
     }
 }

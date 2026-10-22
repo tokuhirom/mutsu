@@ -88,7 +88,10 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
     if r.starts_with('{') {
         let (r, mut body) = parse_block_body(r)?;
         if arrow_is_original {
-            body.insert(0, crate::ast::Stmt::SetLine(arrow_line));
+            body.insert(
+                0,
+                crate::ast::Stmt::SetLine(arrow_line, crate::ast::SrcSpan::NONE),
+            );
         }
         return Ok((
             r,
@@ -110,7 +113,10 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
         let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, mut body) = parse_block_body(r)?;
         if arrow_is_original {
-            body.insert(0, crate::ast::Stmt::SetLine(arrow_line));
+            body.insert(
+                0,
+                crate::ast::Stmt::SetLine(arrow_line, crate::ast::SrcSpan::NONE),
+            );
         }
         return Ok((
             r,
@@ -144,7 +150,10 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
         let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, mut body) = parse_block_body_with_sigilless(&sub_params, r)?;
         if arrow_is_original {
-            body.insert(0, crate::ast::Stmt::SetLine(arrow_line));
+            body.insert(
+                0,
+                crate::ast::Stmt::SetLine(arrow_line, crate::ast::SrcSpan::NONE),
+            );
         }
         if is_rw_block {
             inject_rw_trait(&mut sub_params);
@@ -211,7 +220,10 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
         let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, mut body) = parse_block_body_with_sigilless(&param_defs, r)?;
         if arrow_is_original {
-            body.insert(0, crate::ast::Stmt::SetLine(arrow_line));
+            body.insert(
+                0,
+                crate::ast::Stmt::SetLine(arrow_line, crate::ast::SrcSpan::NONE),
+            );
         }
         if is_rw_block {
             inject_rw_trait(&mut param_defs);
@@ -240,7 +252,10 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
         let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, mut body) = parse_block_body_with_sigilless(std::slice::from_ref(&first), r)?;
         if arrow_is_original {
-            body.insert(0, crate::ast::Stmt::SetLine(arrow_line));
+            body.insert(
+                0,
+                crate::ast::Stmt::SetLine(arrow_line, crate::ast::SrcSpan::NONE),
+            );
         }
         let simple_single = first.traits.is_empty()
             // `Expr::Lambda` has nowhere to keep a `--> T` return type, so the
@@ -384,7 +399,7 @@ pub(crate) fn double_closure_error(stmts: &[crate::ast::Stmt]) -> Option<PError>
 }
 
 fn is_line_marker(stmt: &crate::ast::Stmt) -> bool {
-    matches!(stmt, crate::ast::Stmt::SetLine(_))
+    matches!(stmt, crate::ast::Stmt::SetLine(..))
 }
 
 pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {

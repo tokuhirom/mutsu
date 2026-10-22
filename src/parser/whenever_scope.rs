@@ -63,7 +63,7 @@ impl<'ast> Visit<'ast> for WheneverScope {
             return;
         }
         match stmt {
-            Stmt::SetLine(n) => self.line = *n,
+            Stmt::SetLine(n, _) => self.line = *n,
             Stmt::React { body, .. } => self.scoped(true, |v| walk_stmts(v, body)),
             // Nested `whenever` blocks inside an in-scope one stay in scope.
             Stmt::Whenever { .. } if !self.in_scope => self.found = Some(self.line),

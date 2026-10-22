@@ -261,13 +261,13 @@ impl<'a> TrirCompiler<'a> {
         let value_stmts: Vec<usize> = body
             .iter()
             .enumerate()
-            .filter(|(_, s)| !matches!(s, Stmt::SetLine(_)))
+            .filter(|(_, s)| !matches!(s, Stmt::SetLine(..)))
             .map(|(i, _)| i)
             .collect();
         let final_idx = value_stmts.last().copied();
         for (i, stmt) in body.iter().enumerate() {
             match stmt {
-                Stmt::SetLine(_) => continue,
+                Stmt::SetLine(..) => continue,
                 Stmt::Expr(e) => {
                     if !sink_all && Some(i) == final_idx {
                         last = Some(self.compile_expr_tail(e)?);

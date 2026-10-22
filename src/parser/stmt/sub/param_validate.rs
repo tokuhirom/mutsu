@@ -618,7 +618,7 @@ pub(crate) fn placeholder_overrides_signature_error(
         param_defs.iter().map(|p| p.name.as_str()).collect();
     let mut line: i64 = 0;
     for stmt in body {
-        if let Stmt::SetLine(l) = stmt {
+        if let Stmt::SetLine(l, _) = stmt {
             line = *l;
             continue;
         }

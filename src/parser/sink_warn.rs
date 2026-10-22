@@ -70,7 +70,7 @@ struct SourceDoScan {
 
 impl<'ast> Visit<'ast> for SourceDoScan {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
-        if let Stmt::SetLine(line) = stmt {
+        if let Stmt::SetLine(line, _) = stmt {
             self.line.set(*line);
         }
         walk_ast_stmt(self, stmt);
@@ -147,7 +147,7 @@ fn walk_stmts(stmts: &[Stmt], nil_hint: bool, line: &std::cell::Cell<i64>) {
 
 fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
     match stmt {
-        Stmt::SetLine(n) => line.set(*n),
+        Stmt::SetLine(n, _) => line.set(*n),
         Stmt::Expr(e) => warn_expr_sink(e, nil_hint, line.get()),
         // A `my (...) = RHS` destructuring block ends in its result value -- the
         // list of the declared targets (or, for `:=`, the internal staging temp)
@@ -237,7 +237,7 @@ fn sunk_prefix(body: &[Stmt]) -> &[Stmt] {
 /// A loop/topicalizer body produced by a statement modifier (`1 while 0`) is a
 /// single statement with no leading `SetLine` marker, unlike a brace block.
 fn is_modifier_body(body: &[Stmt]) -> bool {
-    !matches!(body.first(), Some(Stmt::SetLine(_)))
+    !matches!(body.first(), Some(Stmt::SetLine(..)))
 }
 
 /// Warn for an expression evaluated in sink context. Comma lists distribute the
@@ -255,7 +255,7 @@ fn warn_expr_sink(expr: &Expr, nil_hint: bool, line: i64) {
             {
                 let current_line = std::cell::Cell::new(line);
                 for stmt in &body[..last] {
-                    if let Stmt::SetLine(n) = stmt {
+                    if let Stmt::SetLine(n, _) = stmt {
                         current_line.set(*n);
                     }
                 }

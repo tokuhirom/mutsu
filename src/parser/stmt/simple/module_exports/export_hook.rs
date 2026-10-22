@@ -126,7 +126,7 @@ fn export_body_members(body: &[Stmt]) -> Vec<&Stmt> {
         let tail = out[start..]
             .iter()
             .rev()
-            .find(|s| !matches!(s, Stmt::SetLine(_)));
+            .find(|s| !matches!(s, Stmt::SetLine(..)));
         match tail {
             Some(Stmt::Block(inner)) => scope = inner,
             _ => return out,

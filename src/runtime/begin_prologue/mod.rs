@@ -163,7 +163,7 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
         // A moved INIT or CHECK is a run-time statement of the unit, which the
         // unit's phaser reordering puts in place. It goes ahead of the
         // statement's line marker, which `partition_stmt` carries along.
-        let at = rest.len() - usize::from(matches!(rest.last(), Some(Stmt::SetLine(_))));
+        let at = rest.len() - usize::from(matches!(rest.last(), Some(Stmt::SetLine(..))));
         rest.splice(at..at, phasers);
         prologue.extend(stmt_effects);
         partition_stmt(stmt, &mut prologue, &mut rest);
@@ -338,7 +338,7 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
         };
         // Carry the line marker with the statement, so an error raised in the
         // prologue still names the statement's own line.
-        if let Some(line @ Stmt::SetLine(_)) = rest.last() {
+        if let Some(line @ Stmt::SetLine(..)) = rest.last() {
             prologue.push(line.clone());
         }
         // A class or package body keeps its run-time statements in place.
