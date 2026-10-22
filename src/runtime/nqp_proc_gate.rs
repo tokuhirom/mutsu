@@ -61,6 +61,15 @@ impl StreamGate {
         self.changed.notify_all();
     }
 
+    /// Whether the reader reached the end of the stream.
+    // Cost: O(1).
+    pub(crate) fn is_finished(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .finished
+    }
+
     /// Wait until the reader has nothing more to push for now: it reached
     /// the end of the stream, or it waits for a permit.
     // Cost: O(1), plus the wait.
