@@ -53,6 +53,7 @@ pub(crate) use registry::{
     DeclareKeyword, declare_keyword_is_role, declare_keyword_names, register_declare_keyword,
     register_supersede_keyword, supersede_marker,
 };
+pub(crate) use registry::{ExportHowError, take_exporthow_error};
 pub(crate) use registry::{
     current_language_version, current_language_version_starts_with, set_current_language_version,
 };
