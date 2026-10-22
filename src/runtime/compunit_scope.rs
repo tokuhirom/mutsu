@@ -303,9 +303,17 @@ impl Interpreter {
         // ever `use`ing the package itself. A module's own bare package name
         // is in the env wherever the module loaded; it counts only where the
         // bare name itself is visible (ADR-11136).
-        if self.env.get(top).is_some_and(|value| {
-            matches!(value.view(), crate::value::ValueView::Package(pkg) if pkg.as_str() == top)
-        }) && !self.module_name_hidden_here(top)
+        // The binding is a term when the `use` declared it (ADR-8751).
+        if self
+            .env
+            .get(top)
+            .cloned()
+            .or_else(|| self.term_binding(top))
+            .is_some_and(|value| {
+                matches!(value.deref_container().view(),
+                    crate::value::ValueView::Package(pkg) if pkg.as_str() == top)
+            })
+            && !self.module_name_hidden_here(top)
         {
             return true;
         }

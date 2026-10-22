@@ -137,8 +137,8 @@ impl<'ast> Visit<'ast> for ModuleNames {
     }
 }
 
-/// The constants and value terms the `use`s of a subtree import, by the
-/// parse-time scan of each module: what a `use` declares as lexicals of the
+/// The constants, value terms and types the `use`s of a subtree import, by
+/// the parse-time scan of each module: what a `use` declares as lexicals of the
 /// scope holding it (`Compiler::bind_block_imported_vars`).
 #[derive(Default)]
 struct ImportedTerms {
@@ -161,6 +161,13 @@ impl<'ast> Visit<'ast> for ImportedTerms {
                     .flat_map(|vars| vars.iter())
                     .filter(|var| var.term && var.imported_by(tags))
                     .map(|var| var.name.clone()),
+            );
+            self.names.extend(
+                crate::parser::scanned_exported_types(module)
+                    .iter()
+                    .flat_map(|types| types.iter())
+                    .filter(|ty| ty.imported_by(tags))
+                    .map(|ty| ty.name.clone()),
             );
         }
         walk_stmt(self, stmt);

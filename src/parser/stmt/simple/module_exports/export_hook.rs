@@ -91,6 +91,26 @@ fn find_export_sub_body(stmts: &[Stmt]) -> Option<&[Stmt]> {
     })
 }
 
+/// The body of the `sub EXPORT` rakudo really calls: one in the compunit's
+/// outer scope. A `sub EXPORT` below a `unit module` line is a routine of the
+/// package (`find_export_sub_body` takes it too, for its superset of parse
+/// names), so the literal keys a `use` declares as bindings come from this one
+/// only.
+// Cost: O(s), s = statements of the outer scope.
+fn find_export_hook_body(stmts: &[Stmt]) -> Option<&[Stmt]> {
+    crate::ast::scope_members(stmts)
+        .take_while(|stmt| {
+            !matches!(
+                stmt,
+                Stmt::Package { is_unit: true, .. } | Stmt::ClassDecl { is_unit: true, .. }
+            )
+        })
+        .find_map(|stmt| match stmt {
+            Stmt::SubDecl { name, body, .. } if name.resolve() == "EXPORT" => Some(body.as_slice()),
+            _ => None,
+        })
+}
+
 /// The declarations whose values an `EXPORT` hook's body can hand out: the
 /// members of the body's own scope and, when the scope ends in a bare block —
 /// whose value is the hook's return value — that block's members too, and so
@@ -296,7 +316,7 @@ impl<'ast> crate::ast_visit::Visit<'ast> for LiteralPairKeys {
 /// so it keeps the run-time import.
 // Cost: O(n), n = AST nodes of the hook's body.
 pub(super) fn collect_export_hook_value_keys(stmts: &[Stmt]) -> Vec<String> {
-    let Some(body) = find_export_sub_body(stmts) else {
+    let Some(body) = find_export_hook_body(stmts) else {
         return Vec::new();
     };
     let mut keys = LiteralValueKeys::default();
@@ -350,7 +370,7 @@ fn is_value_export_key(key: &str) -> bool {
 /// the hook hands out, which the importer's parse must know as type names.
 // Cost: O(n), n = AST nodes of the hook's body.
 pub(super) fn collect_export_hook_type_keys(stmts: &[Stmt]) -> Vec<String> {
-    let Some(body) = find_export_sub_body(stmts) else {
+    let Some(body) = find_export_hook_body(stmts) else {
         return Vec::new();
     };
     let mut keys = LiteralTypeKeys::default();
