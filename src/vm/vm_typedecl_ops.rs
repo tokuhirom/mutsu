@@ -1668,6 +1668,9 @@ impl Interpreter {
                 {
                     let candidate =
                         crate::runtime::types::role_candidate_type_name(&qualified_name, role_id);
+                    // Rakudo builds the role's own (candidate) metaobject with
+                    // the superseding HOW; the role group keeps its default.
+                    self.registry_mut().class_how_values.remove(&qualified_name);
                     self.registry_mut().class_how_values.insert(candidate, how);
                 }
             }
