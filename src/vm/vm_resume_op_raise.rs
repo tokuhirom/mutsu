@@ -11,8 +11,9 @@
 //! the raise point is known take part: `SetLocal`/`SetLocalDecl` have popped
 //! the value and push nothing, and a scalar declaration's `TypeCheck` still
 //! holds the rejected value, which becomes the type object its store will
-//! write. Element stores, `@`/`%` stores and binds keep unwinding to the
-//! region (#11691 follow-up).
+//! write. A single-element store resumes by storing the type object in the
+//! slot, and an `@` declaration's check resumes per element (#14153). `%`
+//! stores, slice stores and binds keep unwinding to the region.
 
 use crate::opcode::{CompiledCode, OpCode};
 use crate::runtime::Interpreter;
@@ -25,7 +26,10 @@ impl Interpreter {
     pub(crate) fn op_raise_resumes_in_place(op: &OpCode) -> bool {
         matches!(
             op,
-            OpCode::SetLocal(_) | OpCode::SetLocalDecl { .. } | OpCode::TypeCheck(..)
+            OpCode::SetLocal(_)
+                | OpCode::SetLocalDecl { .. }
+                | OpCode::TypeCheck(..)
+                | OpCode::IndexAssignExprNamed { .. }
         )
     }
 
@@ -49,14 +53,62 @@ impl Interpreter {
         {
             return Err(err);
         }
+        // A refused single-element store resumes by storing the constraint's
+        // type object in the slot, which is what Rakudo leaves there; the
+        // store's own result is that type object.
+        if let OpCode::IndexAssignExprNamed {
+            name_idx,
+            is_positional,
+            target_slot,
+            element_share,
+            ..
+        } = &code.ops[*ip]
+        {
+            let Some((index, constraint)) = err.element_store_resume().cloned() else {
+                return Err(err);
+            };
+            self.try_catch_inline(err)?;
+            // A refused assignment keeps the slot's old value; only a slot
+            // that did not exist yet is created, holding the type object.
+            let target = target_slot
+                .and_then(|slot| self.locals.get(slot as usize).cloned())
+                .or_else(|| self.env().get_sym(code.const_sym(*name_idx)).cloned());
+            if let Some(existing) = target
+                .and_then(|t| Self::existing_element_container(&t, &index, *is_positional))
+            {
+                self.stack.push(existing.into_deref());
+                *ip += 1;
+                return Ok(());
+            }
+            let type_object = Value::package(Symbol::intern(
+                &self.nominal_type_object_name_for_constraint(&constraint),
+            ));
+            // The dispatch arm's operand order after its swap: value, index.
+            self.stack.push(type_object);
+            self.stack.push(index);
+            self.exec_index_assign_expr_named_op(
+                code,
+                *name_idx,
+                *is_positional,
+                *target_slot,
+                *element_share,
+            )?;
+            *ip += 1;
+            return Ok(());
+        }
         let declared_type = match &code.ops[*ip] {
             OpCode::TypeCheck(tc_idx, var_name_idx, ..) => {
-                // An `@`/`%` declaration's check runs per element; resuming it
-                // would leave a half-built aggregate.
-                let scalar = var_name_idx
-                    .is_none_or(|idx| !Self::const_str(code, idx).starts_with(['@', '%']));
-                if !scalar {
-                    return Err(err);
+                let aggregate = var_name_idx
+                    .map(|idx| Self::const_str(code, idx))
+                    .filter(|name| name.starts_with(['@', '%']));
+                if let Some(name) = aggregate {
+                    // An `@` declaration resumes per element: the failing one
+                    // becomes the type object and the check runs again for the
+                    // next. A `%` store keeps unwinding.
+                    if !name.starts_with('@') {
+                        return Err(err);
+                    }
+                    return self.resume_array_element_check(code, *tc_idx, err);
                 }
                 let constraint = Self::const_str(code, *tc_idx);
                 Some(Value::package(Symbol::intern(
@@ -83,6 +135,40 @@ impl Interpreter {
             *top = type_object;
         }
         *ip += 1;
+        Ok(())
+    }
+
+    /// Resume an `@` declaration's element check (#14153): the first element
+    /// the constraint refuses is replaced by the constraint's type object, as
+    /// Rakudo leaves it, and the op runs again so the next refused element
+    /// raises (and is offered to the handlers) in turn.
+    // Cost: O(n) for the n elements of the list being declared.
+    fn resume_array_element_check(
+        &mut self,
+        code: &CompiledCode,
+        tc_idx: u32,
+        err: RuntimeError,
+    ) -> Result<(), RuntimeError> {
+        let constraint = Self::const_str(code, tc_idx);
+        let Some(top) = self.stack.last().cloned() else {
+            return Err(err);
+        };
+        if !matches!(top.view(), ValueView::Array(..)) {
+            return Err(err);
+        }
+        let mut items = crate::runtime::value_to_list(&top);
+        let Some(bad) = items.iter().position(|item| {
+            !self.array_elements_match_constraint(constraint, &Value::real_array(vec![item.clone()]))
+        }) else {
+            return Err(err);
+        };
+        self.try_catch_inline(err)?;
+        items[bad] = Value::package(Symbol::intern(
+            &self.nominal_type_object_name_for_constraint(constraint),
+        ));
+        if let Some(slot) = self.stack.last_mut() {
+            *slot = Value::real_array(items);
+        }
         Ok(())
     }
 }

@@ -6061,13 +6061,21 @@ impl Interpreter {
                         self.stack.swap(top, top - 1);
                     }
                     let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                    self.exec_index_assign_expr_named_op(
+                    let depth = self.stack.len();
+                    if let Err(err) = self.exec_index_assign_expr_named_op(
                         code,
                         *name_idx,
                         *is_positional,
                         *target_slot,
                         *element_share,
-                    )?;
+                    ) {
+                        // A refused store a handler may resume (#14153) leaves
+                        // the stack as before the op's two operands.
+                        if err.element_store_resume().is_some() {
+                            self.stack.truncate(depth.saturating_sub(2));
+                        }
+                        return Err(err);
+                    }
                     self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 }
                 *ip += 1;
