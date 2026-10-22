@@ -399,6 +399,7 @@ impl Interpreter {
     /// already falls back to for a body-less def, just eagerly rather than
     /// at first call; the throwaway `FunctionDef` below only carries the
     /// fields that compile step reads.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn compile_forward_declared_sub(
         &mut self,
         name: Symbol,
@@ -407,6 +408,7 @@ impl Interpreter {
         body: &[Stmt],
         is_rw: bool,
         is_raw: bool,
+        import_sets: &[Symbol],
     ) -> std::sync::Arc<crate::opcode::CompiledFunction> {
         let tmp_def = crate::ast::FunctionDef {
             is_cached: false,
@@ -437,7 +439,7 @@ impl Interpreter {
             body_facts_cache: std::sync::OnceLock::new(),
             routine_cell: Default::default(),
         };
-        self.otf_compile_function_def(&tmp_def)
+        self.otf_compile_function_def_in_sets(&tmp_def, import_sets)
     }
 
     /// Register top-level, non-empty sub bodies before execution so calls that appear
@@ -498,7 +500,7 @@ impl Interpreter {
                     *is_raw,
                 );
                 let compiled = self
-                    .compile_forward_declared_sub(*name, params, param_defs, body, *is_rw, *is_raw);
+                    .compile_forward_declared_sub(*name, params, param_defs, body, *is_rw, *is_raw, &[]);
                 self.register_compiled_sub_decl(
                     &name_str,
                     params,
