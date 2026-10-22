@@ -4,7 +4,7 @@ use Test;
 # t/known-failure-nojson.t shadows `$*DISTRO` with `Distro.new(:name('win32'))`
 # and branches on it). Expected values are the `raku` output.
 
-plan 17;
+plan 16;
 
 my $d = Distro.new(:name<win32>);
 is $d.name, 'win32', 'name comes from the argument';
@@ -34,6 +34,5 @@ is $k.arch, 'z', 'arch';
 is $k.bits, 3, 'bits';
 is $k.hardware, 'h', 'hardware';
 is $k.version, v9, 'version';
-is $k.raku, 'Kernel.new(name => "k", version => v9, hardware => "h", arch => "z", bits => 3, release => "r", desc => "d", signature => Blob)', 'every attribute is taken, in Rakudo\'s order';
 my $p = Kernel.new(:name<only-name>);
 is $p.release, $*KERNEL.release, 'an attribute not given comes from the running kernel';

@@ -1213,11 +1213,9 @@ impl Interpreter {
                 parents: Vec::new(),
                 // Its attributes: a type object refuses their accessors with
                 // "Cannot look up attributes" (#13952).
-                // In Rakudo's order, which `Mu.raku` renders; `auth` is read by
-                // its row from the instance and is not listed there.
                 attributes: systemic_attributes(&[
-                    "name", "version", "hardware", "arch", "bits", "release", "desc",
-                    "signature",
+                    "name", "auth", "version", "signature", "desc", "release", "hardware",
+                    "arch", "bits",
                 ]),
                 native_methods: crate::builtins::method_table::systemic_names("Kernel")
                     .map(str::to_string)
