@@ -3916,6 +3916,11 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 })
                 .ok_or_else(|| unsupported("declaration term"))
         }
+        // `is my $k.defined, ...`: a declaration with a postfix (or any loose
+        // tail) in expression position is the same split as at statement level.
+        Expr::DoStmt(stmt) if crate::ast::decl_tail::recognize(stmt).is_some() => {
+            super::decl_tail::convert(stmt).expect("just checked")
+        }
         // A parenthesized comma list of declarations is grouped by the parser
         // into one synthetic block. Rakudo keeps each declaration as an
         // operand of the comma ApplyListInfix.
