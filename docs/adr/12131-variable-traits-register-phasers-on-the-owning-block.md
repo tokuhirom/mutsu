@@ -147,3 +147,14 @@ Accepted with §4's representation questions answered as follows:
   first slice used are an implementation detail to be replaced (#14463).
 - **The declaration's value:** a value an ENTER phaser assigned before the declaration ran
   survives the declaration, as with Rakudo's pre-allocated lexical.
+
+## 7. Implementation status (2026-10-22)
+
+- The `__site` / `__replay_phasers:` / `__seed_*` names are gone (#14463): the lift emits
+  `Stmt::VarTrait { name, op: VarTraitOp }` (`Apply`, `Site`, `Replay`, `SeedStash`,
+  `SeedRestore`), compiled to `ApplyVarTrait` or the typed `VarTraitCtl` opcode. A seeded
+  declaration is a `SyntheticBlock` of stash, declaration, restore (`seeded_decl`), which the
+  scope's cell edits keep.
+- Methods, submethods and the routines of a role are lifted like subs; the `Site` step
+  carries the owner type that `Variable.block.^name` reports (#14462).
+- Open: a variable directly in a role body, and user traits starting with `__` (#14532).
