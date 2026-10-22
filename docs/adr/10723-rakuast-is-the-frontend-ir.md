@@ -2,7 +2,7 @@
 
 - **Status**: Accepted (user decision 2026-10-22; proposed 2026-10-02). Supersedes the pipeline
   decision of [ADR-0011](0011-rakuast-model-layer-and-phasing.md). The §4 questions stay gates
-  before Stage 2.
+  before Stage 2; the source-position question is decided (2026-10-22).
 - **Date**: 2026-10-02
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#10723](https://github.com/tokuhirom/mutsu/issues/10723). Roadmap:
@@ -209,6 +209,29 @@ before the flip, not after.
   information as `Stmt::SetLine` markers. Error messages and `$?LINE` must not regress, so the
   tree needs positions (Rakudo keeps an `origin`) before Stage 2. Decide the representation
   before the first parser-emits-RakuAST slice.
+
+  **Decided (user decision 2026-10-22): Rakudo-compatible character ranges.**
+  - Every node may carry an origin `{ from, to }`: character offsets into the compilation
+    unit's source, with the meaning Rakudo gives `RakuAST::Origin.from` / `.to`. It is a
+    member of the node struct, not a `RakuAstField`, so it does not depend on the
+    typed-vs-uniform node question above and never shows in a node's constructor form.
+  - The source is held once per compilation unit (shared, with a line-start index) and is
+    what `.origin.source` answers. `RakuAST::Origin::Source.original-line(pos)` is a binary
+    search over the line starts, O(log n), n = lines in the unit.
+  - Lines are derived, never stored: `lower` emits `Stmt::SetLine` and the call-site line
+    markers from a node's `from`, and `$?LINE`, error positions and backtraces read the same
+    value. Columns come for free.
+  - The parser records the range when it builds a node (Stage 2). A node built by `convert`
+    from the internal AST, or by hand, has no origin below the statement level; there is no
+    second, `.AST`-only position-recording mode in the parser. Origins on nested nodes
+    therefore arrive construct family by construct family as Stage 2 migrates them.
+  - The line-valued statement `origin` field of Stage 1 is a transitional form: the
+    statement nodes switch to the range representation with the first parser-emits-RakuAST
+    slice, and `.from` / `.to` stop answering line numbers.
+
+  Rejected: extending the line-valued field to every node (`.from` / `.to` would keep a
+  meaning Rakudo does not give them, and no columns); a per-unit side table from node identity
+  to range (hand-built nodes, `EVAL($ast)` and tree rewrites lose the mapping).
 - **Where compile-time knowledge lives.** The parser currently resolves some names while parsing
   (declared types, imported operators, slang modes). In Rakudo that is RakuAST's resolver and
   BEGIN-time logic. Whether mutsu keeps it in the parser or moves it into `lower` is decided per
