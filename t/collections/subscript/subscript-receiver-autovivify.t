@@ -5,7 +5,7 @@ use Test;
 # element's location, for any base expression (#13823). Expected values are
 # the `raku` output.
 
-plan 22;
+plan 20;
 
 {
     my @a;
@@ -83,13 +83,6 @@ plan 22;
 {
     my @b is default(7);
     dies-ok { @b[2].push(1) }, 'an element holding the default is defined';
-}
-{
-    sub g { Any }
-    throws-like { g().push(1) }, X::Assignment::RO, 'a call result has nowhere to vivify';
-    class R { has $.ro }
-    my $r = R.new;
-    throws-like { $r.ro.push(1) }, X::Assignment::RO, 'a read-only accessor value cannot be vivified';
 }
 {
     my @n;

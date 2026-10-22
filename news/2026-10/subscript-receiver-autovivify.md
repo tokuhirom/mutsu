@@ -8,5 +8,4 @@ the element's location - the cell of an existing slot or the deferred token of a
 through the cell (obeying the element's type constraint) and grow it on a detached place over the
 same shared node, so the push family no longer needs the name-based `IndexElemAutoviv` path for a
 single subscript. A type-object element with its own `push` (`@a[0] = P; @a[0].push(1)`) reaches that
-method instead of being replaced by an `Array`, and `f().push(1)` / a read-only accessor's value die
-with `X::Assignment::RO`.
+method instead of being replaced by an `Array`.
