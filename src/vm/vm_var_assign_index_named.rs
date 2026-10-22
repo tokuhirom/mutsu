@@ -324,7 +324,7 @@ impl Interpreter {
     /// and so does a type object, so this asks about a defined value only.
     ///
     /// This is section E of #7556, and it is deliberately NOT
-    /// [`Interpreter::subscript_descent_refusal`]: that one answers "may a
+    /// [`Interpreter::subscript_descent_refusal_at`]: that one answers "may a
     /// chained store DESCEND through this slot", where an `Array` of any kind
     /// is a legitimate target. Here the subscript is the LAST one, so the
     /// question is whether the value does `Positional`/`Associative` at all --
@@ -4435,13 +4435,6 @@ impl Interpreter {
     ///
     /// TODO: compile to bytecode — see the two paragraphs above for the rows
     /// this predicate cannot decide.
-    pub(crate) fn subscript_descent_refusal(
-        slot: &Value,
-        outer_positional: bool,
-    ) -> Option<RuntimeError> {
-        Self::subscript_descent_refusal_at(slot, outer_positional, None)
-    }
-
     /// The `Pair` rule, shared by the chained-store walk above and by the
     /// COMPUTED-target store (`f(){key} = v`, `OpCode::IndexAssignGeneric`).
     ///
@@ -4558,9 +4551,9 @@ impl Interpreter {
         aggregate.replace_container_contents(&coerced)
     }
 
-    /// [`Interpreter::subscript_descent_refusal`] told which key the next
-    /// subscript addresses, so a `Pair` slot can name the value the store would
-    /// have had to modify (see the `Pair` arm below).
+    /// [`Interpreter::subscript_descent_refusal_at`] with the key the next
+    /// subscript addresses known, so a `Pair` slot can name the value the store
+    /// would have had to modify (see the `Pair` arm below).
     pub(crate) fn subscript_descent_refusal_at(
         slot: &Value,
         outer_positional: bool,
