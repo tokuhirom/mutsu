@@ -28,12 +28,16 @@ use crate::ast::subscript_adverb::{self, Adverb};
 use crate::value::{RuntimeError, Value, ValueView};
 use std::borrow::Cow;
 
+mod dynamic_multidim;
 mod hyperslice;
 
 /// The postcircumfix node for `expr` when it is a subscript with adverbs;
 /// `None` when it is not one.
 // Cost: O(n), n = AST nodes under `expr`.
 pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> {
+    if let Some(node) = dynamic_multidim::convert_dynamic(expr) {
+        return Some(node);
+    }
     if let Expr::HyperSlice { target, adverb } = expr {
         let pair = colonpair(&(
             hyperslice::name(*adverb).to_string(),
