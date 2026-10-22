@@ -1053,6 +1053,9 @@ impl RegexNode {
             }
             Self::NamedCapture { regex, .. } => regex.collect_interpolation_names(names),
             Self::Extension(extension) => {
+                if let RegexExtension::VariableAlias { name, .. } = extension {
+                    names.push(name.clone());
+                }
                 for child in extension.children() {
                     child.collect_interpolation_names(names);
                 }
@@ -2085,16 +2088,15 @@ impl Parser {
                 sequential,
             }));
         }
-        let name = if self.consume_if('{') {
+        if self.consume_if('{') {
             let name = self.parse_twigil_variable_name()?;
             if !self.consume_if('}') {
                 return None;
             }
-            name
-        } else {
-            self.parse_twigil_variable_name()?
-        };
-        Some(RegexNode::Interpolation { name, sequential })
+            return Some(RegexNode::Interpolation { name, sequential });
+        }
+        let name = self.parse_twigil_variable_name()?;
+        self.parse_variable_alias(name, sequential)
     }
 
     fn parse_array_interpolation(&mut self, sequential: bool) -> Option<RegexNode> {

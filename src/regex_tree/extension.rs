@@ -104,6 +104,13 @@ pub(crate) enum RegexExtension {
         alias: String,
         assertion: Box<RegexNode>,
     },
+    /// `$name=ATOM`: an alias to a variable rather than to a capture. Rakudo
+    /// 2026.09 parses it and keeps only the interpolation of `$name`.
+    VariableAlias {
+        name: String,
+        sequential: bool,
+        regex: Box<RegexNode>,
+    },
     /// `<name regex>`: a named assertion with a regex argument rather than
     /// an ordinary parenthesized or colon argument list.
     NamedRegexArg {
@@ -119,6 +126,7 @@ impl RegexExtension {
         match self {
             Self::Lookahead { assertion, .. } | Self::Alias { assertion, .. } => vec![assertion],
             Self::NamedRegexArg { regex_arg, .. } => vec![regex_arg],
+            Self::VariableAlias { regex, .. } => vec![regex],
             Self::BacktrackModified { atom, .. } => vec![atom],
             Self::Tilde { goal, expr } => vec![goal, expr],
             Self::Conjunction(operands) | Self::SequentialConjunction(operands) => {
@@ -143,6 +151,7 @@ impl RegexExtension {
         match self {
             Self::Lookahead { assertion, .. } | Self::Alias { assertion, .. } => vec![assertion],
             Self::NamedRegexArg { regex_arg, .. } => vec![regex_arg],
+            Self::VariableAlias { regex, .. } => vec![regex],
             Self::BacktrackModified { atom, .. } => vec![atom],
             Self::Tilde { goal, expr } => vec![goal, expr],
             Self::Conjunction(operands) | Self::SequentialConjunction(operands) => {
@@ -260,6 +269,7 @@ impl RegexExtension {
             Self::NamedRegexArg { name, regex_arg } => {
                 format!("<{name} {}>", regex_arg.to_source())
             }
+            Self::VariableAlias { name, regex, .. } => format!("${name}={}", regex.to_source()),
         }
     }
 }
