@@ -144,7 +144,10 @@ pub(super) fn lower(node: &RakuAstNode, kind: ContextKind) -> Result<Expr, Runti
             });
         }
         // `$@` / `$%`: the item contextualizer over an anonymous `@` / `%`.
-        RakuAstClass::VarLexical | RakuAstClass::VarDeclarationAnonymous
+        RakuAstClass::VarLexical
+        | RakuAstClass::VarDynamic
+        | RakuAstClass::VarPackage
+        | RakuAstClass::VarDeclarationAnonymous
             if kind == ContextKind::Item =>
         {
             let term = lower_expr(target)?;
