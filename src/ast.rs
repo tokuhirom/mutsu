@@ -3578,3 +3578,31 @@ mod expr_size_guard {
         assert!(sz <= 120, "size_of::<Expr>() = {sz}, expected <= 120");
     }
 }
+
+/// The prefix a user variable trait named like a parser marker (`my $x is __x`)
+/// carries in [`Stmt::VarDecl`]'s `custom_traits`.
+///
+/// The parser files its own markers (`__has_initializer`, `__scalar_bind`, ...)
+/// in the same list under a `__` prefix and every consumer filters on it, so a
+/// user trait that happens to start with `__` would be dropped as one. A
+/// character no identifier holds keeps the two namespaces apart, as
+/// `term_names::TERM_PREFIX` does for sigilless names (#14532).
+pub(crate) const USER_TRAIT_ESCAPE: char = '\u{1}';
+
+/// `name` as it is recorded in `custom_traits`: a user trait that starts with
+/// `__` is escaped so it is not taken for a parser marker.
+// Cost: O(len) for an escaped name, O(1) otherwise.
+pub(crate) fn escape_user_trait(name: &str) -> std::borrow::Cow<'_, str> {
+    if name.starts_with("__") {
+        std::borrow::Cow::Owned(format!("{USER_TRAIT_ESCAPE}{name}"))
+    } else {
+        std::borrow::Cow::Borrowed(name)
+    }
+}
+
+/// The source spelling of a recorded user trait: the inverse of
+/// [`escape_user_trait`].
+// Cost: O(1).
+pub(crate) fn unescape_user_trait(name: &str) -> &str {
+    name.strip_prefix(USER_TRAIT_ESCAPE).unwrap_or(name)
+}

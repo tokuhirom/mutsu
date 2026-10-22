@@ -613,7 +613,10 @@ fn parse_variable_traits<'a>(
                 || is_uppercase_start;
             if let Some(arg) = bracket_arg {
                 if include_in_traits {
-                    custom_traits.push((trait_name.clone(), Some(arg)));
+                    custom_traits.push((
+                        crate::ast::escape_user_trait(&trait_name).into_owned(),
+                        Some(arg),
+                    ));
                 }
                 r = r2;
             } else if let Some(r3) = r2.strip_prefix('(') {
@@ -624,19 +627,28 @@ fn parse_variable_traits<'a>(
                 let (r3, _) = parse_char(r3, ')')?;
                 let (r3, _) = ws(r3)?;
                 if include_in_traits {
-                    custom_traits.push((trait_name.clone(), Some(trait_arg)));
+                    custom_traits.push((
+                        crate::ast::escape_user_trait(&trait_name).into_owned(),
+                        Some(trait_arg),
+                    ));
                 }
                 r = r3;
             } else if r2_immediate.starts_with('<') {
                 let (r3, trait_arg) = crate::parser::primary::angle_list(r2_immediate)?;
                 let (r3, _) = ws(r3)?;
                 if include_in_traits {
-                    custom_traits.push((trait_name.clone(), Some(trait_arg)));
+                    custom_traits.push((
+                        crate::ast::escape_user_trait(&trait_name).into_owned(),
+                        Some(trait_arg),
+                    ));
                 }
                 r = r3;
             } else {
                 if include_in_traits {
-                    custom_traits.push((trait_name.clone(), None));
+                    custom_traits.push((
+                        crate::ast::escape_user_trait(&trait_name).into_owned(),
+                        None,
+                    ));
                 }
                 r = r2;
             }
@@ -726,19 +738,28 @@ fn parse_variable_traits<'a>(
                 let (r3, _) = parse_char(r3, ')')?;
                 let (r3, _) = ws(r3)?;
                 if include_in_traits {
-                    custom_traits.push((trait_name.clone(), Some(trait_arg)));
+                    custom_traits.push((
+                        crate::ast::escape_user_trait(&trait_name).into_owned(),
+                        Some(trait_arg),
+                    ));
                 }
                 rest = r3;
             } else if r2_immediate.starts_with('<') {
                 let (r3, trait_arg) = crate::parser::primary::angle_list(r2_immediate)?;
                 let (r3, _) = ws(r3)?;
                 if include_in_traits {
-                    custom_traits.push((trait_name.clone(), Some(trait_arg)));
+                    custom_traits.push((
+                        crate::ast::escape_user_trait(&trait_name).into_owned(),
+                        Some(trait_arg),
+                    ));
                 }
                 rest = r3;
             } else {
                 if include_in_traits {
-                    custom_traits.push((trait_name.clone(), None));
+                    custom_traits.push((
+                        crate::ast::escape_user_trait(&trait_name).into_owned(),
+                        None,
+                    ));
                 }
                 rest = r2;
             }
