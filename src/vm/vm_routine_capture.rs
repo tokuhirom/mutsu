@@ -44,6 +44,11 @@ impl Interpreter {
             cc.capture_probe_keys(),
         );
         self.carry_bare_callee_bindings(cc, &mut env);
+        // A routine's `$_` is its own (fresh at each call), never the topic of
+        // the frame that took the code object: a nested closure reading `$_`
+        // makes `_` a free name of the routine, and capturing the declaring
+        // frame's topic pinned it for every later call.
+        env.remove("_");
         env
     }
 
