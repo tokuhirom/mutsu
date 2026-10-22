@@ -1954,7 +1954,7 @@ matcher reads its `=` as a literal. The executable contract is
 `t/rakuast/rakuast-regex-variable-alias.t`; `roast/S05-capture/alias.t` passes
 in frontend mode.
 
-### 6.105 S10: normalization-form quotes (2026-10-22)
+### 6.104 S10: normalization-form quotes (2026-10-22)
 
 `q:nfc'…'`, `q:nfd'…'`, `q:nfkc'…'` and `q:nfkd'…'` produce the `Uni` subtype
 they name (S02; `roast/S15-string-types/NF-types.t`, `NFK-types.t`). Rakudo
