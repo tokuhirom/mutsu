@@ -731,6 +731,10 @@ pub(crate) mod wk {
         made => "made";
         /// The `Any` type object, the value a routine's fresh topic is seeded with.
         any => "Any";
+        /// The class of a `Signature` value, whose `SigInfo` lives in a
+        /// registry keyed by instance id until its last holder dies
+        /// (`value::signature::sig_instance_born`).
+        signature => "Signature";
         /// The program's `MAIN` registry key, checked on every import scope's
         /// exit (`drop_foreign_global_main_candidates`).
         global_main => "GLOBAL::MAIN";
