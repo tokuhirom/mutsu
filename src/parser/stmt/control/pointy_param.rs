@@ -480,96 +480,15 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         ));
     }
 
-    // Literal value parameter in pointy signatures, e.g. `-> 42 { ... }`
-    if rest.starts_with(|c: char| c.is_ascii_digit()) {
-        let mut end = 0usize;
-        for (idx, ch) in rest.char_indices() {
-            if ch.is_ascii_digit() || ch == '_' {
-                end = idx + ch.len_utf8();
-            } else {
-                break;
-            }
-        }
-        let token = &rest[..end];
-        let parsed = token.replace('_', "").parse::<i64>().unwrap_or(0);
-        let rest = &rest[end..];
-        return Ok((
-            rest,
-            ParamDef {
-                trait_meta: Default::default(),
-                type_capture: None,
-                name: "__literal__".to_string(),
-                default: None,
-                multi_invocant: true,
-                required: false,
-                named: false,
-                named_alias: false,
-                slurpy,
-                double_slurpy,
-                onearg: false,
-                sigilless: false,
-                type_constraint,
-                literal_value: Some(crate::value::Value::int(parsed)),
-                sub_signature: None,
-                outer_sub_signature: None,
-                code_signature: None,
-                where_constraint: None,
-                traits: Vec::new(),
-                optional_marker: false,
-                is_invocant: false,
-                shape_constraints: None,
-                block_param: true,
-                code: Default::default(),
-                trait_args: Vec::new(),
-            },
-        ));
-    }
-
-    // String literal value parameter: `-> 'home.html' { ... }` / `-> "x" { }`.
-    // Cro routes literal path segments this way (`get -> 'home.html' { ... }`);
-    // the argument is matched against the literal string, exactly like the
-    // numeric `-> 42 { }` form above. Only a plain (non-interpolating) string
-    // literal is a literal parameter; an interpolating `"$foo"` is not.
-    if rest.starts_with('\'') || rest.starts_with('"') {
-        let parsed = if rest.starts_with('\'') {
-            crate::parser::primary::string::single_quoted_string(rest)
-        } else {
-            crate::parser::primary::string::double_quoted_string(rest)
-        };
-        if let Ok((r, Expr::Literal(val))) = parsed
-            && matches!(val.view(), crate::value::ValueView::Str(_))
-        {
-            return Ok((
-                r,
-                ParamDef {
-                    trait_meta: Default::default(),
-                    type_capture: None,
-                    name: "__literal__".to_string(),
-                    default: None,
-                    multi_invocant: true,
-                    required: false,
-                    named: false,
-                    named_alias: false,
-                    slurpy,
-                    double_slurpy,
-                    onearg: false,
-                    sigilless: false,
-                    type_constraint,
-                    literal_value: Some(val),
-                    sub_signature: None,
-                    outer_sub_signature: None,
-                    code_signature: None,
-                    where_constraint: None,
-                    traits: Vec::new(),
-                    optional_marker: false,
-                    is_invocant: false,
-                    shape_constraints: None,
-                    block_param: true,
-                    code: Default::default(),
-                    trait_args: Vec::new(),
-                },
-            ));
-        }
+    // Literal parameters use the same grammar in sub and pointy signatures.
+    if let Some((rest, value)) = crate::parser::stmt::sub_param::parse_literal_param_value(rest) {
+        let mut param = crate::parser::stmt::sub_param::make_param("__literal__".to_string());
+        param.literal_value = Some(value);
+        param.slurpy = slurpy;
+        param.double_slurpy = double_slurpy;
+        param.type_constraint = type_constraint;
+        param.block_param = true;
+        return Ok((rest, param));
     }
 
     // Named parameter prefix: :$x, :@l, :%h

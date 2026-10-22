@@ -2180,7 +2180,7 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         }
     } else if parameter.fields.iter().any(|f| f.name == Some("value")) {
         // `sub f(1)`: a literal-value parameter, which the parser names so.
-        super::convert::LITERAL_PARAM.to_string()
+        super::literal_parameter::NAME.to_string()
     } else if invocant {
         // `Foo:D:` / `::?CLASS:U:`: the parser names a synthesized invocant
         // `self`.

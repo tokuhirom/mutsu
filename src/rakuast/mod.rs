@@ -49,6 +49,7 @@ mod infix_func;
 mod inherited_fields;
 mod keyed_hash;
 mod label_context;
+mod literal_parameter;
 mod lower;
 mod match_vars;
 mod meta_infix;
