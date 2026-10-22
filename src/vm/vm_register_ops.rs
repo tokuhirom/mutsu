@@ -131,7 +131,14 @@ impl Interpreter {
                 })
                 .or_else(|| self.package_scope_lexical(name.as_str()))
                 .or_else(|| self.unit_scope_lexical(name.as_str(), None))
-                .or_else(|| (!store_only).then(|| self.env().get(name.as_str()).cloned())?)
+                // A kebab-case name this chunk captured from an enclosing frame
+                // (it is one of the closure's free variables) is read from the
+                // closure's env like a short name: the creating frame holds the
+                // enclosing binding, which nothing rebinds under the match.
+                .or_else(|| {
+                    (!store_only || code.free_var_syms.contains(sym))
+                        .then(|| self.env().get(name.as_str()).cloned())?
+                })
             else {
                 continue;
             };
