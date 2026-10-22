@@ -204,6 +204,17 @@ pub(super) fn lower_with_header(
     use crate::ast::Stmt;
     let (stripped, mut header) = strip(node, node.class != RakuAstClass::Role)?;
     let mut stmt = lower(&stripped)?;
+    if super::routine_source::has_supersede(node) {
+        match &mut stmt {
+            Stmt::ClassDecl { custom_traits, .. } => {
+                custom_traits.push(crate::parser::declare_how_marker("class".to_string()));
+            }
+            Stmt::RoleDecl { custom_traits, .. } => {
+                custom_traits.push(crate::parser::declare_how_marker("role".to_string()));
+            }
+            _ => return Err(super::lower::unsupported(node)),
+        }
+    }
     if let Stmt::Package { body, .. } = &mut stmt {
         super::routine_source::retain(node, body)?;
     }

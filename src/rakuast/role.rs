@@ -170,7 +170,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     };
     let mut fields = package_header_fields(role.name, scope, is_colons_package(role.custom_traits));
     super::role_header::retain_name(&mut fields, role.name);
-    super::declare_how::add_field(&mut fields, role.custom_traits);
+    super::declare_how::add_field(&mut fields, role.custom_traits, "role");
     if !traits.is_empty() {
         fields.push(RakuAstField {
             name: Some("traits"),

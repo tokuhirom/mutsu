@@ -1485,7 +1485,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             } else if has_leading_colons(custom_traits) {
                 name_parts::with_leading_empty(&mut fields);
             }
-            super::declare_how::add_field(&mut fields, custom_traits);
+            super::declare_how::add_field(&mut fields, custom_traits, "class");
             // Field order matches raku: scope, parsed-declarator, name, repr,
             // traits, body.
             if let Some(r) = repr {

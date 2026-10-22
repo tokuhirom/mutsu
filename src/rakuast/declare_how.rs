@@ -33,10 +33,20 @@ fn default_declarator(class: RakuAstClass) -> &'static str {
 /// `fields` with the declaration's `parsed-declarator`, when the parser's
 /// `custom_traits` name a registered declarator, placed after `scope`.
 // Cost: O(f + t), f = number of fields, t = number of custom traits.
-pub(super) fn add_field(fields: &mut Vec<RakuAstField>, custom_traits: &[(String, Option<Expr>)]) {
+pub(super) fn add_field(
+    fields: &mut Vec<RakuAstField>,
+    custom_traits: &[(String, Option<Expr>)],
+    default_declarator: &str,
+) {
     let Some(keyword) = crate::parser::declare_how_keyword(custom_traits) else {
         return;
     };
+    if keyword == default_declarator {
+        if crate::parser::supersede_marker(default_declarator).is_some() {
+            fields.push(super::routine_source::package_supersede_field());
+        }
+        return;
+    }
     let at = usize::from(fields.first().is_some_and(|f| f.name == Some("scope")));
     fields.insert(
         at,
