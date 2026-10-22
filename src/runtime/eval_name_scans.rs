@@ -444,11 +444,21 @@ impl Interpreter {
         // The constants the snippet's `use`s declare (`ImportedTerms`).
         let mut terms = ImportedTerms::default();
         walk_stmts(&mut terms, stmts);
+        // The routines the pre-run of its top-level `use`s bound in the
+        // unit's own lexical import sets (`run_eval_hook_uses`).
+        let unit_sets: Vec<Symbol> = crate::compiler::Compiler::eval_unit_use_set_ids(stmts)
+            .into_iter()
+            .flatten()
+            .collect();
         self.check_eval_unit_routines(stmts, |name| {
             imported.types.contains(name)
                 || (hook && name.starts_with(|c: char| c.is_lowercase()))
                 || hook_terms.iter().any(|term| term == name)
                 || terms.names.contains(name)
+                || (!unit_sets.is_empty()
+                    && self
+                        .lexical_import_operator_binding(&unit_sets, Symbol::intern(name))
+                        .is_some())
         })
     }
 
