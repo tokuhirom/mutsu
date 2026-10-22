@@ -42,6 +42,14 @@ pub(crate) const BLOCK_VARS_MARK: &str = "\u{1}vars:";
 /// (`lexical_import_replay`): its module's `sub EXPORT` runs every time.
 pub(crate) const EVAL_UNIT_MARK: &str = "\u{1}eval";
 
+/// Marks the id of a lexical import set a module unit's top-level `use`
+/// fills (`Compiler::defer_unit_lexical_use_sets`). The variables, constants
+/// and types it lists are pad bindings of the module's mainline: the load
+/// moves them into the module's compunit lexicals
+/// (`ModuleState::module_unit_bound_imports`). A module's mainline runs
+/// once, so such a set is never replayed either.
+pub(crate) const MODULE_UNIT_MARK: &str = "\u{1}module";
+
 /// The names listed after `mark` in the set id `id`, up to the next mark.
 // Cost: O(n), n = length of `id`.
 pub(super) fn id_section(id: &str, mark: &str) -> HashSet<Symbol> {
@@ -97,6 +105,10 @@ pub(crate) struct LexicalImportCapture {
     /// The plain routines a `sub EXPORT` hook returned, by name: bound in
     /// the set as they are, with no env alias.
     pub(super) hook_routines: HashMap<Symbol, Value>,
+    /// Whether the set is a module unit's own top-level one
+    /// (`MODULE_UNIT_MARK`): its pad bindings belong to the module's
+    /// mainline, not to an open block of the loading scope.
+    module_unit: bool,
 }
 
 /// Whether `name` is one of the seven core array listops (ADR-0044 D1).
@@ -122,6 +134,13 @@ impl Interpreter {
         let block_multis = id_section(&text, BLOCK_MULTIS_MARK);
         let block_vars = id_section(&text, BLOCK_VARS_MARK);
         let importer = self.executing_unit_sym_for_module_load();
+        // A module unit's own top-level `use`: its mainline declares these.
+        let module_unit = text.contains(MODULE_UNIT_MARK);
+        if module_unit && !block_vars.is_empty() {
+            self.module
+                .module_unit_bound_imports
+                .extend(block_vars.iter().copied());
+        }
         let capture = LexicalImportCapture {
             block_multis,
             core_extending: HashSet::new(),
@@ -134,6 +153,7 @@ impl Interpreter {
             protos: HashMap::new(),
             hook_values: HashMap::new(),
             hook_routines: HashMap::new(),
+            module_unit,
         };
         self.module.lexical_import_capture.replace(capture)
     }
@@ -172,7 +192,11 @@ impl Interpreter {
         };
         !capture.block_vars.is_empty()
             && capture.unit == self.executing_unit_sym_for_module_load()
-            && capture.block_vars.contains(&Symbol::intern(name))
+            && (capture.block_vars.contains(&Symbol::intern(name))
+                // A type is bound as a term (`my \T := ...`).
+                || capture
+                    .block_vars
+                    .contains(&Symbol::intern(&crate::runtime::term_names::term_key(name))))
     }
 
     /// Whether the running import binds the multi family `name` (its
@@ -488,7 +512,22 @@ impl Interpreter {
     /// a routine written outside the block hides it like an imported env key.
     // Cost: O(|name|).
     pub(crate) fn note_block_bound_import(&mut self, name: &str) {
+        let name = crate::runtime::term_names::term_spelling(name).unwrap_or(name);
         let term = crate::runtime::term_names::term_key(name);
+        // A module unit's own top-level `use` binds in the module's
+        // mainline: the import is the module unit's, recorded as its
+        // provenance, which the module's own routines consult
+        // (`bare_name_visible_here`).
+        if self
+            .module
+            .lexical_import_capture
+            .as_ref()
+            .is_some_and(|capture| capture.module_unit)
+        {
+            self.note_unit_env_import(Symbol::intern(name));
+            self.note_unit_env_import(Symbol::intern(&term));
+            return;
+        }
         if let Some(top) = self.module.import_scope_stack.last_mut() {
             top.block_bound_keys.insert(Symbol::intern(name));
             top.block_bound_keys.insert(Symbol::intern(&term));

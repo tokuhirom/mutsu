@@ -59,6 +59,24 @@ pub(super) fn record(module: &str, types: Option<Rc<[ExportedType]>>) {
     });
 }
 
+/// The recorded scan entry of `module`: `None` when none was recorded.
+// Cost: O(n), n = length of `module`.
+pub(super) fn entry(module: &str) -> Option<Option<Rc<[ExportedType]>>> {
+    SCANNED_EXPORTED_TYPES.with(|m| m.borrow().get(module).cloned())
+}
+
+/// Put back an [`entry`] of `module`.
+// Cost: O(n), n = length of `module`.
+pub(super) fn restore_entry(module: &str, entry: Option<Option<Rc<[ExportedType]>>>) {
+    SCANNED_EXPORTED_TYPES.with(|m| {
+        let mut m = m.borrow_mut();
+        match entry {
+            Some(types) => m.insert(module.to_string(), types),
+            None => m.remove(module),
+        };
+    });
+}
+
 /// The exported types of `module`, when a `use` of it was parsed and its
 /// export set is known from its `is export` traits.
 // Cost: O(n), n = length of `module`.

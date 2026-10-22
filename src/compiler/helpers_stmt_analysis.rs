@@ -182,13 +182,13 @@ impl Compiler {
         // The unit's own top-level `use` opens its set where it stands
         // (`defer_unit_lexical_use_sets`).
         let base_text = full.resolve();
-        // A module unit's sets leave the variables out, like an `EVAL`'s.
-        let eval_text = Self::eval_unit_set_id(full).resolve();
+        // A module unit's sets are marked as the module's own.
+        let module_text = self.module_unit_set_id(full).resolve();
         // A block's `use` of the same import list (already in the chain) is
         // that block's own, not the unit's.
         if let Some(i) = self.deferred_unit_sets.iter().position(|id| {
             (Self::set_id_matches(*id, base_text.as_str())
-                || Self::set_id_matches(*id, eval_text.as_str()))
+                || Self::set_id_matches(*id, module_text.as_str()))
                 && !self.lexical_import_chain.contains(id)
         }) {
             let id = self.deferred_unit_sets.remove(i);
@@ -198,16 +198,20 @@ impl Compiler {
         }
         // An `EVAL` unit's sets leave the variables out
         // (`enter_eval_unit_lexical_uses`).
-        [full, Self::eval_unit_set_id(full)]
-            .into_iter()
-            .find_map(|base| {
-                let base_text = base.resolve();
-                self.lexical_import_chain
-                    .iter()
-                    .rev()
-                    .copied()
-                    .find(|id| Self::set_id_matches(*id, base_text.as_str()))
-            })
+        [
+            full,
+            self.module_unit_set_id(full),
+            Self::eval_unit_set_id(full),
+        ]
+        .into_iter()
+        .find_map(|base| {
+            let base_text = base.resolve();
+            self.lexical_import_chain
+                .iter()
+                .rev()
+                .copied()
+                .find(|id| Self::set_id_matches(*id, base_text.as_str()))
+        })
     }
 
     /// Whether the set `id` is the one for the import list `base_text`: the
@@ -229,20 +233,24 @@ impl Compiler {
     /// every set, since a routine body is late-bound.
     // Cost: O(s), s = statements of the unit.
     ///
-    /// A module unit's sets (`module_unit`) bind routines, multis and
-    /// operators only, as an `EVAL` unit's do: the variables, constants and
-    /// types such a `use` imports keep their env aliases, which the module's
-    /// own import scope removes again.
+    /// A module unit's sets (`module_unit`) carry `MODULE_UNIT_MARK`: the
+    /// variables, constants and types such a `use` imports are pad bindings
+    /// of the module's mainline, which the load moves into the module's
+    /// compunit lexicals once the mainline has run, so the module's routines
+    /// keep them (`ModuleState::module_unit_bound_imports`).
     pub(crate) fn defer_unit_lexical_use_sets(&mut self, stmts: &[Stmt], module_unit: bool) {
         let mut local_multis: Option<Vec<String>> = None;
         let mut line = None;
+        if module_unit {
+            self.module_unit_own_names = Some(Self::unit_declared_names(stmts));
+        }
         for stmt in stmts {
             if let Stmt::SetLine(n) = stmt {
                 line = Some(*n);
             }
             if let Some(id) = Self::lexical_use_set_id(stmt) {
                 let id = if module_unit {
-                    Self::eval_unit_set_id(id)
+                    self.module_unit_set_id(id)
                 } else {
                     id
                 };

@@ -29,10 +29,30 @@ impl Compiler {
     /// right after the `UseModule` of a `use` below the unit's top level, so
     /// the package variable exists when the binding reads it.
     // Cost: O(v), v = the module's exported variables.
-    pub(super) fn bind_block_imported_vars(&mut self, module: &str, tags: &[String], set_idx: u32) {
+    pub(super) fn bind_block_imported_vars(
+        &mut self,
+        module: &str,
+        tags: &[String],
+        set_id: Symbol,
+        set_idx: u32,
+    ) {
         let module_idx = self.code.add_constant(Value::str(module.to_string()));
-        for (key, hook, stmt) in Self::block_imported_var_bindings(module, tags) {
-            let name_idx = self.code.add_constant(Value::str(key));
+        // The set id lists what the block declares (a module unit leaves its
+        // own names out, `module_unit_sets`).
+        let text = set_id.resolve();
+        let listed: Vec<&str> = text
+            .split_once(crate::runtime::lexical_imports::BLOCK_VARS_MARK)
+            .map(|(_, rest)| rest.split('\u{1}').next().unwrap_or_default())
+            .unwrap_or_default()
+            .split(',')
+            .collect();
+        for (key, source, hook, stmt) in Self::block_imported_var_bindings(module, tags) {
+            if !listed.contains(&key.as_str()) {
+                continue;
+            }
+            let name_idx = self
+                .code
+                .add_constant(Value::str(if hook { key } else { source }));
             self.imported_var_source = Some(if hook {
                 ImportedVarSource::Hook { set_idx, name_idx }
             } else {
@@ -66,17 +86,47 @@ impl Compiler {
         )
     }
 
-    /// The export key, whether a `sub EXPORT` hook returns it, and the binding
+    /// The key the binding is stored under, the name the module exports it
+    /// by, whether a `sub EXPORT` hook returns it, and the binding
     /// declaration of each variable the `use` of `module` with `tags`
     /// imports, by the parse-time scan of the module.
     // Cost: O(v), v = the module's exported variables.
-    fn block_imported_var_bindings(module: &str, tags: &[String]) -> Vec<(String, bool, Stmt)> {
-        let mut bindings: Vec<(String, bool, Stmt)> = crate::parser::scanned_exported_vars(module)
+    #[allow(clippy::type_complexity)]
+    fn block_imported_var_bindings(
+        module: &str,
+        tags: &[String],
+    ) -> Vec<(String, String, bool, Stmt)> {
+        super::compile_inputs::note_block_imported_vars(module, tags);
+        Self::scanned_block_imported_var_bindings(module, tags)
+    }
+
+    /// What [`Self::block_imported_var_bindings`] answers, as one string a
+    /// cached compile is validated against (`compile_inputs`).
+    // Cost: O(v), v = the module's exported variables.
+    pub(crate) fn block_imported_vars_fingerprint(module: &str, tags: &[String]) -> String {
+        Self::scanned_block_imported_var_bindings(module, tags)
             .iter()
-            .flat_map(|vars| vars.iter())
-            .filter(|var| var.imported_by(tags))
-            .filter_map(|var| Some((var.export_key(), var.hook, Self::imported_var_binding(var)?)))
-            .collect();
+            .map(|(key, source, hook, _)| format!("{key}={source}{}", if *hook { "!" } else { "" }))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    // Cost: O(v), v = the module's exported variables.
+    #[allow(clippy::type_complexity)]
+    fn scanned_block_imported_var_bindings(
+        module: &str,
+        tags: &[String],
+    ) -> Vec<(String, String, bool, Stmt)> {
+        let mut bindings: Vec<(String, String, bool, Stmt)> =
+            crate::parser::scanned_exported_vars(module)
+                .iter()
+                .flat_map(|vars| vars.iter())
+                .filter(|var| var.imported_by(tags))
+                .filter_map(|var| {
+                    let key = var.export_key();
+                    Some((key.clone(), key, var.hook, Self::imported_var_binding(var)?))
+                })
+                .collect();
         // An exported type is a term of the block too (`my \Foo := M::Foo`),
         // whose value is the module's type object; its type positions in the
         // block were qualified at parse time (`parser::type_qualify`).
@@ -99,11 +149,13 @@ impl Compiler {
                 term: true,
                 hook: false,
             };
-            if bindings.iter().any(|(key, ..)| *key == ty.name) {
+            // Keyed by the term key the binding is stored under.
+            let key = crate::term_names::term_key(&ty.name);
+            if bindings.iter().any(|(k, ..)| *k == ty.name) {
                 continue;
             }
             if let Some(stmt) = Self::imported_var_binding(&term) {
-                bindings.push((ty.name.clone(), false, stmt));
+                bindings.push((key, ty.name.clone(), false, stmt));
             }
         }
         bindings

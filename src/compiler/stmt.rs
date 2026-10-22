@@ -4735,13 +4735,13 @@ impl Compiler {
                     // The variables it imports are the block's own bindings
                     // (ADR-8751).
                     if let Some(set_idx) = lexical_set_idx
+                        && let Some(set_id) = lexical_set_id
                         && arg.is_none()
-                        && lexical_set_id.is_some_and(|id| {
-                            id.resolve()
-                                .contains(crate::runtime::lexical_imports::BLOCK_VARS_MARK)
-                        })
+                        && set_id
+                            .resolve()
+                            .contains(crate::runtime::lexical_imports::BLOCK_VARS_MARK)
                     {
-                        self.bind_block_imported_vars(module, tags, set_idx);
+                        self.bind_block_imported_vars(module, tags, set_id, set_idx);
                     }
                 }
             }

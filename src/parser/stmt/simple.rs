@@ -86,6 +86,7 @@ pub(crate) use module_exports::exported_types::{scanned_exported_types, scanned_
 pub(crate) use module_exports::exported_vars::{
     ExportedVar, scanned_exported_vars, scanned_exported_vars_complete,
 };
+pub(crate) use module_exports::{CanonicalScans, canonical_export_scans};
 pub(in crate::parser) use module_exports::{
     import_inline_module_exports, note_type_index_incomplete, register_import_tags,
     register_inline_module_exports, register_module_exports, register_module_exports_with_tags,

@@ -22,6 +22,7 @@ mod run_main;
 mod run_modules;
 mod run_modules_bound_repo;
 mod run_modules_bundled_repo;
+mod run_modules_unit_bound;
 mod run_modules_scans;
 mod run_pod_declarants;
 mod run_prelude;

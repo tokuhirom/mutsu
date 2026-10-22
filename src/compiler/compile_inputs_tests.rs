@@ -13,7 +13,7 @@ fn a_recording_logs_questions_and_revalidates_them() {
         panic!("nothing marked the compile uncacheable");
     };
     assert_eq!(inputs.len(), 2);
-    assert!(inputs.still_hold());
+    assert!(inputs.first_changed().is_none());
 }
 
 #[test]

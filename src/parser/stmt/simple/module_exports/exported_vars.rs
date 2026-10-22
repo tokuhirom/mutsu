@@ -114,6 +114,24 @@ pub(super) fn record(module: &str, vars: Option<Rc<[ExportedVar]>>) {
     });
 }
 
+/// The recorded scan entry of `module`: `None` when none was recorded.
+// Cost: O(n), n = length of `module`.
+pub(super) fn entry(module: &str) -> Option<Option<Rc<[ExportedVar]>>> {
+    SCANNED_EXPORTED_VARS.with(|m| m.borrow().get(module).cloned())
+}
+
+/// Put back an [`entry`] of `module`.
+// Cost: O(n), n = length of `module`.
+pub(super) fn restore_entry(module: &str, entry: Option<Option<Rc<[ExportedVar]>>>) {
+    SCANNED_EXPORTED_VARS.with(|m| {
+        let mut m = m.borrow_mut();
+        match entry {
+            Some(vars) => m.insert(module.to_string(), vars),
+            None => m.remove(module),
+        };
+    });
+}
+
 /// The entries of a `sub EXPORT` hook's literal keys `keys` (`'$x'`, `'@x'`,
 /// `'vrai'`) for `module`, in the spelling a declaration of each holds.
 // Cost: O(k), k = keys.

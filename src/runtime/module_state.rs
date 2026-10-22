@@ -274,6 +274,12 @@ pub(crate) struct ModuleState {
     /// `module_imported_lexical_names`, whose entries beat a same-keyed
     /// `$scalar`. Saved/restored around each nested load (#9389).
     pub(crate) module_export_terms: Vec<(String, Value)>,
+    /// The env keys of the variables, constants and types the module being
+    /// loaded binds in its mainline's pad for its own top-level `use`s
+    /// (`lexical_imports::MODULE_UNIT_MARK`). When the load finishes they
+    /// move into the module's compunit lexicals, as its own file-scope `my`s
+    /// do. Saved/restored around each nested load.
+    pub(crate) module_unit_bound_imports: Vec<crate::symbol::Symbol>,
     /// Imported bare names recorded for each module owner. This is narrower
     /// than `module_scope_lexicals`: the latter also contains a module's own
     /// `our`/class-body names, while the VM's env fallback must only redirect
@@ -657,6 +663,7 @@ impl ModuleState {
             module_scope_lexicals: std::sync::Arc::new(PackageLexicals::default()),
             module_imported_names: Vec::new(),
             module_export_terms: Vec::new(),
+            module_unit_bound_imports: Vec::new(),
             module_imported_lexical_names: std::sync::Arc::new(PackageKeyed::default()),
             module_source_packages: Default::default(),
             unit_module_packages: Default::default(),
@@ -756,6 +763,7 @@ impl ModuleState {
             module_scope_lexicals: self.module_scope_lexicals.clone(),
             module_imported_names: Vec::new(),
             module_export_terms: Vec::new(),
+            module_unit_bound_imports: Vec::new(),
             module_imported_lexical_names: self.module_imported_lexical_names.clone(),
             module_source_packages: self.module_source_packages.clone(),
             unit_module_packages: self.unit_module_packages.clone(),
