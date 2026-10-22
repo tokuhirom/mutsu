@@ -67,6 +67,54 @@ impl Parser {
             return None;
         }
         self.skip_whitespace();
+        self.parse_alias_target(|regex| RegexNode::NamedCapture {
+            name,
+            array,
+            hash,
+            regex,
+        })
+    }
+
+    /// `$name=ATOM` right after the interpolated `$name`: an alias to a
+    /// variable rather than to a capture. Only the unspaced spelling is
+    /// modelled, so the rebuilt text is the text that was written (whitespace
+    /// around `=` is significant under `:sigspace`); any other spelling keeps
+    /// the plain interpolation and leaves the `=` to the caller.
+    // Cost: O(n), n = source consumed by the alias and its atom.
+    pub(super) fn parse_variable_alias(
+        &mut self,
+        name: String,
+        sequential: bool,
+    ) -> Option<RegexNode> {
+        let start = self.pos;
+        if self.chars.get(self.pos) != Some(&'=')
+            || self
+                .chars
+                .get(self.pos + 1)
+                .is_none_or(|next| next.is_whitespace() || *next == '=')
+        {
+            return Some(RegexNode::Interpolation { name, sequential });
+        }
+        self.pos += 1;
+        let alias = self.parse_alias_target(|regex| {
+            RegexNode::Extension(RegexExtension::VariableAlias {
+                name: name.clone(),
+                sequential,
+                regex,
+            })
+        });
+        if alias.is_none() {
+            self.pos = start;
+        }
+        alias
+    }
+
+    /// The aliased atom after `=` (with its quantifier), wrapped by `wrap`.
+    // Cost: O(n), n = source consumed by the atom.
+    fn parse_alias_target(
+        &mut self,
+        wrap: impl FnOnce(Box<RegexNode>) -> RegexNode,
+    ) -> Option<RegexNode> {
         let mut regex = self.parse_atom(&[], false)?;
         // An alias on a `<?before …>` / `<?after …>` assertion drops its zero
         // width marker: Rakudo's `subrule_alias` resets the aliased subrule's
@@ -115,12 +163,7 @@ impl Parser {
             let mut chars = text.chars();
             let first = chars.next()?;
             let rest: String = chars.collect();
-            let mut nodes = vec![RegexNode::NamedCapture {
-                name,
-                array,
-                hash,
-                regex: Box::new(RegexNode::Literal(first.to_string())),
-            }];
+            let mut nodes = vec![wrap(Box::new(RegexNode::Literal(first.to_string())))];
             if let Some(quantifier) = quantifier {
                 let mut rest_chars = rest.chars();
                 let last = rest_chars.next_back()?;
@@ -146,12 +189,7 @@ impl Parser {
             // wrap the alias's quantified body for space before its separator.
             regex = quantified(regex, quantifier, spaced_quantifier);
         }
-        Some(RegexNode::NamedCapture {
-            name,
-            array,
-            hash,
-            regex: Box::new(regex),
-        })
+        Some(wrap(Box::new(regex)))
     }
 }
 

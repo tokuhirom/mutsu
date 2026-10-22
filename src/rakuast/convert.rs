@@ -29,7 +29,7 @@ use crate::ast::{
     AssignOp, Expr, ForMode, GivenWithKind, IMPLICIT_INVOCANT_TRAIT, ParamDef, Stmt, WithBlockKind,
 };
 use crate::compiler::helpers_ops::token_kind_to_op_name;
-use crate::regex_tree::{RegexModifierKind, RegexNode, RegexTree};
+use crate::regex_tree::{RegexExtension, RegexModifierKind, RegexNode, RegexTree};
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) fn unsupported(what: &str) -> RuntimeError {
@@ -5408,6 +5408,14 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
                 fields.push(leaf_field(Some("negated"), Value::truth(true)));
             }
             (class, fields)
+        }
+        RegexNode::WithWhitespace(child)
+            if matches!(
+                **child,
+                RegexNode::Extension(RegexExtension::VariableAlias { .. })
+            ) =>
+        {
+            return super::regex_variable_alias::convert_spaced(child);
         }
         RegexNode::WithWhitespace(child) => (
             RakuAstClass::RegexWithWhitespace,

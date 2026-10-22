@@ -1937,3 +1937,19 @@ parser's effective built-in HOW in hidden `source-supersede` metadata, which
 the RakuAST renderer omits. Lowering restores the parser marker so subsequent
 class and role registration uses the superseding HOW without leaking it to a
 different compilation unit.
+
+### 6.103 S10: regex aliases to a variable (2026-10-22)
+
+`$foo=ATOM` in a regex parses into the source tree as
+`RegexExtension::VariableAlias`; only the unspaced spelling is modelled, so the
+rebuilt text is the text that was written. Rakudo 2026.09 parses the alias and
+keeps only `Regex::Interpolation($foo)`: the atom is dropped from its tree and
+its match. The converter renders that same public node and carries the aliased
+atom in a hidden `source-alias` field, which the renderer omits; whitespace
+written after the alias moves onto the hidden atom, as it does in rakudo's
+grammar. Lowering restores the alias, so the matcher reads the same text as
+on the ordinary frontend. A hand-built interpolation has no hidden field and
+stays a plain interpolation. What the alias should *match* is #14628: mutsu's
+matcher reads its `=` as a literal. The executable contract is
+`t/rakuast/rakuast-regex-variable-alias.t`; `roast/S05-capture/alias.t` passes
+in frontend mode.

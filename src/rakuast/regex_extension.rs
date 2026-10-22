@@ -173,6 +173,11 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
                 node_field(Some("assertion"), regex_node(assertion)?),
             ],
         },
+        RegexExtension::VariableAlias {
+            name,
+            sequential,
+            regex,
+        } => super::regex_variable_alias::convert(name, *sequential, regex)?,
         RegexExtension::NamedRegexArg { name, regex_arg } => RakuAstNode {
             class: RakuAstClass::RegexAssertionNamedRegexArg,
             fields: vec![
@@ -242,7 +247,8 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError
             lower_branches(node).map(RegexExtension::SequentialConjunction)
         }
         RakuAstClass::RegexInterpolation => {
-            return lower_contextualized(node)
+            return super::regex_variable_alias::lower(node)
+                .or_else(|| lower_contextualized(node))
                 .or_else(|| lower_placeholder(node))
                 .or_else(|| lower_anonymous(node));
         }

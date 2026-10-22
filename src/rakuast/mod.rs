@@ -79,6 +79,7 @@ mod regex_enumeration;
 mod regex_extension;
 mod regex_quantifier;
 mod regex_sym;
+mod regex_variable_alias;
 mod render;
 mod role;
 mod role_header;

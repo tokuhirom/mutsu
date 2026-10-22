@@ -280,6 +280,7 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
                 || node.class == RakuAstClass::RegexNamedCapture && field.name == Some("array")
                 || node.class == RakuAstClass::Parameter && field.name == Some("array-shape")
                 || super::regex_code::is_source(node, field)
+                || super::regex_variable_alias::is_source_field(node, field)
                 || super::phaser_condition::is_source(node, field)
                 || node.class == RakuAstClass::PointyBlock
                     && field.name == Some("signature")
