@@ -598,6 +598,18 @@ impl Value {
                 if a_class != b_class {
                     return false;
                 }
+                // An `is Hash` / `is Array` subclass instance is an
+                // Associative / Positional: Rakudo's `eqv` for those compares
+                // the contents of the two (and their type), never the extra
+                // attributes the subclass declares (`H.new(:x(5))` even builds
+                // the Hash contents from its arguments).
+                for storage in ["__mutsu_hash_storage", "__mutsu_array_storage"] {
+                    let sa = a_attrs.as_map().get(storage).cloned();
+                    let sb = b_attrs.as_map().get(storage).cloned();
+                    if let (Some(sa), Some(sb)) = (sa, sb) {
+                        return sa.eqv_inner(&sb, seen);
+                    }
+                }
                 let private = match seen.hook.instance_eqv(self, other) {
                     InstanceEqv::Decided(answer) | InstanceEqv::Rendered(answer) => return answer,
                     InstanceEqv::Public(private) => Some(private),

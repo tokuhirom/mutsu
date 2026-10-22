@@ -3177,7 +3177,7 @@ impl Interpreter {
                             // specifies. Element-indexed sources (`f(@a[0])`)
                             // keep the exit copy-back: their storage is an array
                             // slot, not an env entry a cell can replace.
-                            let param_is_plain_scalar = pd.name != "_"
+                            let param_is_plain_scalar = (pd.name != "_" || pd.traits.iter().any(|t| t == "rw"))
                                 && pd
                                     .name
                                     .as_bytes()

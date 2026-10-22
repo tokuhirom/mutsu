@@ -140,6 +140,9 @@ impl Interpreter {
             .param_defs
             .iter()
             .any(|pd| pd.binds_caller_container() || pd.is_does_target());
+        if has_rw_params {
+            self.publish_rw_arg_cells_by_source();
+        }
         // A plain (non-`is copy`) `@`/`%` positional param binds the caller's
         // container by alias (Raku readonly-container semantics): `.push`,
         // element assign, and whole-container `=` all propagate to the caller.

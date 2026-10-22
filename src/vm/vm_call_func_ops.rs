@@ -2099,6 +2099,7 @@ impl Interpreter {
             let cf_auto_fetch = !cf.returns_container();
             let pkg_sym = self.current_package_sym();
             self.set_pending_call_arg_sources_shared(arg_sources);
+            self.publish_rw_arg_cells(&cf.param_defs, &args);
             let result =
                 self.call_compiled_function_named(cf, args, compiled_fns, pkg_sym, name_sym);
             self.set_pending_call_arg_sources(None);
@@ -2512,6 +2513,7 @@ impl Interpreter {
                             .iter()
                             .any(|pd| self.param_runs_constraint_predicate(pd))
                     }) && self.has_multi_candidates_cached_sym(name_sym);
+                self.publish_rw_arg_cells(&cf.param_defs, &args);
                 let result =
                     self.call_compiled_function_named(cf, args, compiled_fns, pkg_sym, name_sym);
                 self.set_pending_call_arg_sources(None);
