@@ -5408,6 +5408,7 @@ t/rakuast/rakuast-regex-stored-interpolation.t
 t/rakuast/rakuast-regex-sym-adverb.t
 t/rakuast/rakuast-regex-symbolic-subrule.t
 t/rakuast/rakuast-regex-tree-gaps.t
+t/rakuast/rakuast-regex-word-list-escapes.t
 t/rakuast/rakuast-regex.t
 t/rakuast/rakuast-repeat-pointy-param.t
 t/rakuast/rakuast-require-import-list.t

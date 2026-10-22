@@ -30,7 +30,7 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
             }
         }
         RegexExtension::Words(text) => {
-            let mut quoted = quoted_string(Value::str(text.clone()));
+            let mut quoted = quoted_string(Value::str(unescape_words(text)));
             quoted.fields.insert(
                 0,
                 RakuAstField {
@@ -310,7 +310,7 @@ fn lower_words(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
                 rakuast_node_of(segment).ok_or_else(|| super::lower::unsupported(node))?;
             match positional_leaf(segment)?.view() {
                 ValueView::Str(text) => Ok(RegexNode::Extension(RegexExtension::Words(
-                    text.to_string(),
+                    escape_words(&text),
                 ))),
                 _ => Err(super::lower::unsupported(node)),
             }
@@ -542,4 +542,36 @@ pub(super) fn nested_accessor(node: &RakuAstNode, method: &str) -> Option<Value>
         RakuAstFieldValue::Node(value) => Some(value.clone()),
         _ => None,
     }
+}
+
+/// The text of a `< a \< \> >` word list as the quote holds it: `\\`, `\<`
+/// and `\>` stand for the character after the backslash; any other backslash
+/// stays (rakudo 2026.09: `< a \\ \< \> \x >` is `" a \ < > \x "`).
+// Cost: O(n), n = length of the list.
+fn unescape_words(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match (c, chars.peek()) {
+            ('\\', Some(&next @ ('\\' | '<' | '>'))) => {
+                out.push(next);
+                chars.next();
+            }
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// The inverse of [`unescape_words`]: the spelling that reads back as `text`.
+// Cost: O(n), n = length of the list.
+fn escape_words(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if matches!(c, '\\' | '<' | '>') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
