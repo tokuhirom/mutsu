@@ -2027,6 +2027,16 @@ pub(crate) struct NestedTypeShell {
     pub(crate) decl: Stmt,
 }
 
+/// The declaration a lifted variable trait runs for.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct VarTraitSite {
+    /// The key `Variable.block.add_phaser` files its phasers under.
+    pub(crate) site: String,
+    /// The type of the code object that owns the declaration (`Sub`,
+    /// `Method`, `Submethod`, `Block`), as `Variable.block.^name` reports it.
+    pub(crate) owner: String,
+}
+
 /// One step of a lifted variable-trait application (ADR-12131, #14463): what
 /// the BEGIN prologue and the declaring scope's phaser queues do around a
 /// `my $x is foo` declaration, as a typed node instead of a synthetic trait
@@ -2040,7 +2050,7 @@ pub(crate) enum VarTraitOp {
     },
     /// Sets, or with `None` clears, the declaration site the traits applied
     /// after it file their `Variable.block` phasers under.
-    Site(Option<String>),
+    Site(Option<VarTraitSite>),
     /// Replays the phasers of `kind` (`ENTER`, `LEAVE`, ...) filed under
     /// `site`.
     Replay { site: String, kind: String },

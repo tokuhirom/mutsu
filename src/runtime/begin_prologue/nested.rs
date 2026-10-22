@@ -188,6 +188,9 @@ struct Frame {
     package: Option<Enclosing>,
     /// The scope is the body of a role, with the names of its type parameters.
     role: Option<Vec<String>>,
+    /// The type of the code object whose body the scope is (`Sub`, `Method`,
+    /// ...), as `Variable.block.^name` reports it; empty for a plain block.
+    owner: &'static str,
 }
 
 struct Binding {

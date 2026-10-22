@@ -12,7 +12,7 @@
 
 use super::cell_ast::read_var;
 use super::{Binding, BindingKind, Walker};
-use crate::ast::{Expr, PhaserKind, Stmt, VarTraitOp};
+use crate::ast::{Expr, PhaserKind, Stmt, VarTraitOp, VarTraitSite};
 
 /// The block phasers a lifted declaration's scope gets, with the kind name
 /// `Variable.block.add_phaser` files each under.
@@ -40,6 +40,13 @@ fn is_user_trait(name: &str) -> bool {
     !name.starts_with("__")
         && name.starts_with(|c: char| c.is_ascii_lowercase())
         && !BUILTIN_VARIABLE_TRAITS.contains(&name)
+}
+
+/// Whether a declaration with these traits applies a user trait, which the
+/// BEGIN prologue may lift.
+// Cost: O(t), t = traits of the declaration.
+pub(super) fn applies_user_trait(custom_traits: &[(String, Option<Expr>)]) -> bool {
+    custom_traits.iter().any(|(t, _)| is_user_trait(t))
 }
 
 /// The scalar declaration `stmt` and the user traits it applies, when the
@@ -88,14 +95,22 @@ fn liftable_traits(stmt: &Stmt, allow_init: bool) -> Option<(String, AppliedTrai
 
 /// The prologue statements that apply `applied` to the variable `name`, with
 /// `Variable.block.add_phaser` filing under `site`.
-fn trait_body(name: &str, applied: &[(String, Option<Expr>)], site: &str) -> Vec<Stmt> {
+fn trait_body(
+    name: &str,
+    applied: &[(String, Option<Expr>)],
+    site: &str,
+    owner: &str,
+) -> Vec<Stmt> {
     let step = |op| Stmt::VarTrait {
         name: name.to_string(),
         op,
     };
     let mut body = vec![
         Stmt::Expr(read_var(name)),
-        step(VarTraitOp::Site(Some(site.to_string()))),
+        step(VarTraitOp::Site(Some(VarTraitSite {
+            site: site.to_string(),
+            owner: owner.to_string(),
+        }))),
     ];
     for (trait_name, arg) in applied {
         body.push(step(VarTraitOp::Apply {
@@ -181,7 +196,7 @@ fn hoist_package_var_traits(body: &mut Vec<Stmt>) {
             custom_traits.retain(|(t, _)| t.starts_with("__"));
         }
         head.push(decl);
-        head.extend(trait_body(&name, &applied, &site));
+        head.extend(trait_body(&name, &applied, &site, "Block"));
         head.push(replay_call(&name, &site, "ENTER"));
         exit.extend(entry_phasers(&name, &site).into_iter().skip(1));
     }
@@ -234,7 +249,7 @@ pub(crate) fn lift_unit_var_traits(stmts: &mut Vec<Stmt>) {
         out.push(decl);
         out.push(Stmt::Phaser {
             kind: PhaserKind::Begin,
-            body: trait_body(&name, &applied, &site),
+            body: trait_body(&name, &applied, &site, "Block"),
             condition: None,
             end_index: None,
         });
@@ -258,7 +273,11 @@ impl Walker<'_> {
         // `Variable.block.add_phaser` files its phaser under this site; the
         // scope's own phaser queues replay them.
         let site = super::next_slot("__var_trait_site_");
-        let body = trait_body(&name, &applied, &site);
+        let owner = match self.current_frame().owner {
+            "" => "Block",
+            owner => owner,
+        };
+        let body = trait_body(&name, &applied, &site, owner);
         let mut stripped = stmt.clone();
         if let Stmt::VarDecl { custom_traits, .. } = &mut stripped {
             custom_traits.retain(|(t, _)| t.starts_with("__"));

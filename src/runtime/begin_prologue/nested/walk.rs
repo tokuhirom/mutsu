@@ -219,7 +219,8 @@ impl Walker<'_> {
                 body,
                 ..
             } => {
-                let frame = Self::params_frame(params.iter().cloned());
+                let mut frame = Self::params_frame(params.iter().cloned());
+                frame.owner = "Sub";
                 self.walk_list(body, frame, |w| {
                     if let Some(e) = name_expr {
                         w.visit_expr_mut(e);
@@ -248,9 +249,11 @@ impl Walker<'_> {
                 param_defs,
                 custom_traits,
                 body,
+                is_submethod,
                 ..
             } if self.directly_in_package() => {
-                let frame = Self::params_frame(params.iter().cloned());
+                let mut frame = Self::params_frame(params.iter().cloned());
+                frame.owner = if *is_submethod { "Submethod" } else { "Method" };
                 self.walk_list(body, frame, |w| {
                     if let Some(e) = name_expr {
                         w.visit_expr_mut(e);

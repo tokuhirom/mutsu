@@ -336,10 +336,18 @@ impl Interpreter {
         ))
     }
 
-    pub(crate) fn variable_block_handle() -> Value {
+    /// The handle `Variable.block` answers: an object of the type of the code
+    /// that owns the declaration being applied (`Sub`, `Method`, ...), `Block`
+    /// when the trait runs at the declaration itself.
+    pub(crate) fn variable_block_handle(&self) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert(VARIABLE_BLOCK_MARK.to_string(), Value::TRUE);
-        Value::make_instance(crate::symbol::Symbol::intern("Block"), attrs)
+        let owner = self
+            .control
+            .var_trait_site
+            .as_ref()
+            .map_or("Block", |site| site.owner.as_str());
+        Value::make_instance(crate::symbol::Symbol::intern(owner), attrs)
     }
 
     /// `Variable.block.add_phaser(NAME, code)` from a variable trait handler.
@@ -376,7 +384,7 @@ impl Interpreter {
         if let Some(site) = self.control.var_trait_site.clone() {
             self.control
                 .var_trait_phasers
-                .entry(site)
+                .entry(site.site)
                 .or_default()
                 .push((kind, code));
             return Some(Ok(Value::NIL));

@@ -103,7 +103,10 @@ impl Interpreter {
         let name = Self::const_str(code, name_idx).to_string();
         match ctl {
             VarTraitCtl::Site(site) => {
-                self.control.var_trait_site = site.map(|i| Self::const_str(code, i).to_string());
+                self.control.var_trait_site = site.map(|(site, owner)| crate::ast::VarTraitSite {
+                    site: Self::const_str(code, site).to_string(),
+                    owner: Self::const_str(code, owner).to_string(),
+                });
             }
             VarTraitCtl::SeedStash => {
                 let seeded = self

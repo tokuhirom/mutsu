@@ -157,7 +157,10 @@ impl Compiler {
                 });
                 return;
             }
-            VarTraitOp::Site(site) => VarTraitCtl::Site(site.as_deref().map(|t| constant(self, t))),
+            VarTraitOp::Site(site) => VarTraitCtl::Site(
+                site.as_ref()
+                    .map(|t| (constant(self, &t.site), constant(self, &t.owner))),
+            ),
             VarTraitOp::Replay { site, kind } => VarTraitCtl::Replay {
                 site_idx: constant(self, site),
                 kind_idx: constant(self, kind),

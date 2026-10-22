@@ -804,8 +804,9 @@ pub(crate) struct WheneverPhaser {
 /// [`crate::ast::VarTraitOp`] with its strings in the constant pool.
 #[derive(Debug, Clone, Copy, bincode::Encode, bincode::Decode)]
 pub(crate) enum VarTraitCtl {
-    /// Sets the declaration site (constant index), or clears it.
-    Site(Option<u32>),
+    /// Sets the declaration site and its owner type (constant indices), or
+    /// clears it.
+    Site(Option<(u32, u32)>),
     /// Replays the phasers of one kind filed under a site (both constant
     /// indices).
     Replay { site_idx: u32, kind_idx: u32 },
