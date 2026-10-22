@@ -58,7 +58,7 @@ fn visit_tree(
     named: Named<'_>,
     depth_first: bool,
 ) -> Option<Result<Value, RuntimeError>> {
-    if !matches!(target.view(), ValueView::RakuAst(_)) {
+    if !crate::rakuast::is_node_value(target) {
         return None;
     }
     let callable = args.first()?;
@@ -87,7 +87,8 @@ fn visit_tree(
         if !descend {
             continue;
         }
-        let ValueView::RakuAst(node) = value.view() else {
+        let base = native_node(&value)?;
+        let ValueView::RakuAst(node) = base.view() else {
             return None;
         };
         let direct = children(node);
@@ -103,4 +104,19 @@ fn visit_tree(
         }
     }
     Some(Ok(Value::package(Symbol::intern("Any"))))
+}
+
+/// Resolve a subclass or mixin to the native node it carries, while callers
+/// retain the original object for the callback.
+// Cost: O(d), d = wrapper depth.
+fn native_node(value: &Value) -> Option<Value> {
+    let mut current = value.clone();
+    loop {
+        match current.view() {
+            ValueView::RakuAst(_) => return Some(current),
+            ValueView::Instance { attributes, .. } => current = attributes.rakuast_base()?,
+            ValueView::Mixin(inner, _) => current = (**inner).clone(),
+            _ => return None,
+        }
+    }
 }

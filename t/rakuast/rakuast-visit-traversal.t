@@ -1,6 +1,7 @@
 use Test;
+use experimental :rakuast;
 
-plan 9;
+plan 11;
 
 my $tree = 'say 1, 2; say 3'.AST;
 my @breadth;
@@ -50,3 +51,17 @@ is-deeply @strict-pruned,
 
 ok $tree.^can('visit'), 'visit is an introspectable method';
 ok $tree.^can('visit-dfs'), 'visit-dfs is an introspectable method';
+
+my class NumberNode is RakuAST::IntLiteral {
+    method new() { callwith(42) }
+}
+my $number = NumberNode.new;
+my @from-subclass;
+$number.visit(-> $node { @from-subclass.push($node.^name); True });
+is-deeply @from-subclass, ['NumberNode'], 'visit accepts a subclass root';
+my $expression = RakuAST::Statement::Expression.new(expression => $number);
+my @nested-subclass;
+$expression.visit-dfs(-> $node { @nested-subclass.push($node.^name); True });
+is-deeply @nested-subclass,
+    ['RakuAST::Statement::Expression', 'NumberNode'],
+    'visit-dfs preserves a subclass child';
