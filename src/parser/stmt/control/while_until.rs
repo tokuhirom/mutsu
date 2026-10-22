@@ -119,7 +119,7 @@ fn expand_loop(
         &mut body,
     );
     let (hoisted_decl, cond) = if param_binding.is_none() {
-        split_loop_cond_decl(cond)
+        crate::ast::loop_cond_decl::split_loop_cond_decl(cond)
     } else {
         (None, cond)
     };
@@ -152,7 +152,7 @@ fn expand_loop(
         is_bare_term: false,
     };
     if let Some(decl) = hoisted_decl {
-        return Stmt::Block(vec![decl, stmt]);
+        return crate::ast::loop_cond_decl::expand(decl, stmt);
     }
     let Some(param) = param_binding else {
         return stmt;
