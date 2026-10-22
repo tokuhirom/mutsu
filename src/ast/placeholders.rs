@@ -69,6 +69,7 @@ fn has_block_body(stmt: &Stmt) -> bool {
     matches!(
         stmt,
         Stmt::If { .. }
+            | Stmt::Ast(_)
             | Stmt::While { .. }
             | Stmt::For { .. }
             | Stmt::Loop { .. }

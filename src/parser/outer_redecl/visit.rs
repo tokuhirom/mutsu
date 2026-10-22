@@ -126,6 +126,20 @@ impl VisitMut for Ctx {
                 self.visit_expr_mut(cond);
                 self.scoped(Vec::new(), |c| c.visit_stmts_mut(body));
             }
+            // A conditional kept in its RakuAST shape (ADR-10723 Stage 2):
+            // each clause's block is a scope of its own.
+            Stmt::Ast(node) => {
+                let crate::ast::parsed::ParsedStmt::Conditional(c) = node.as_mut();
+                self.visit_expr_mut(&mut c.condition);
+                self.scoped(Vec::new(), |v| v.visit_stmts_mut(&mut c.then.body));
+                for clause in &mut c.clauses {
+                    self.visit_expr_mut(&mut clause.condition);
+                    self.scoped(Vec::new(), |v| v.visit_stmts_mut(&mut clause.then.body));
+                }
+                if let Some(block) = &mut c.else_block {
+                    self.scoped(Vec::new(), |v| v.visit_stmts_mut(&mut block.body));
+                }
+            }
             Stmt::If {
                 cond,
                 then_branch,

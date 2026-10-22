@@ -137,7 +137,7 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
             is_statement_modifier: true,
             ..
         } => PlaceholderBodyKind::Transparent,
-        Stmt::If { .. } => PlaceholderBodyKind::Signature(ArgSupply::Condition),
+        Stmt::If { .. } | Stmt::Ast(_) => PlaceholderBodyKind::Signature(ArgSupply::Condition),
         // ADR-0048 D4/Phase 4: a `while`/`until` BLOCK is a real Block that
         // the loop invokes with the *raw* (un-boolified) condition value on
         // every pass — `while 42 { $^c }` prints 42, `until False { $^c }`

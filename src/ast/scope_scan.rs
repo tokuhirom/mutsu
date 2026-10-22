@@ -70,6 +70,15 @@ pub(crate) fn walk_control_header<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, stmt
         | Stmt::When { cond, .. } => v.visit_expr(cond),
         Stmt::For { iterable, .. } => v.visit_expr(iterable),
         Stmt::Whenever { supply, .. } => v.visit_expr(supply),
+        // A conditional kept in its RakuAST shape (ADR-10723 Stage 2): every
+        // clause's condition runs in the enclosing scope.
+        Stmt::Ast(node) => {
+            let crate::ast::parsed::ParsedStmt::Conditional(c) = node.as_ref();
+            v.visit_expr(&c.condition);
+            for clause in &c.clauses {
+                v.visit_expr(&clause.condition);
+            }
+        }
         Stmt::Loop {
             init, cond, step, ..
         } => {
@@ -97,6 +106,7 @@ pub(crate) fn walk_control_header<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, stmt
 // Cost: O(n), n = size of the part of `stmt` that runs in the enclosing scope.
 pub(crate) fn walk_stmt_own_scope<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, stmt: &'ast Stmt) {
     match stmt {
+        Stmt::Ast(_) => walk_control_header(v, stmt),
         Stmt::If {
             then_branch,
             else_branch,
