@@ -368,11 +368,14 @@ impl Compiler {
         // free-var scan recognizes) is misclassified as free and rewritten to
         // `GetUpvalue`, which resolves against whatever same-named OUTER lexical
         // this closure happened to capture -- bypassing the loop's per-iteration
-        // binding entirely. `@`/`%`-sigil and sigilless (`\v`) params are
-        // excluded: they don't hit this GetUpvalue path the same way and giving
-        // them blanket free-var immunity is unproven for this fix's scope.
+        // binding entirely. A sigilless (`\v`) param hits the same path: a
+        // later multi-param loop declaring the same `\v` gives the name a slot
+        // the closure's name search then finds (#14594). `@`/`%`-sigil params
+        // are excluded: they don't hit this GetUpvalue path the same way and
+        // giving them blanket free-var immunity is unproven for this fix's
+        // scope.
         if let Some(p) = param.as_ref()
-            && !p.starts_with(['@', '%', '\\'])
+            && !p.starts_with(['@', '%'])
         {
             self.code
                 .for_loop_param_syms
