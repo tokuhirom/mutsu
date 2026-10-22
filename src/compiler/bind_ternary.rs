@@ -69,8 +69,13 @@ impl Compiler {
     /// `do with $x { %h<k> }`).
     // Cost: O(1).
     pub(super) fn is_bind_container_block(arg: &Expr) -> bool {
-        matches!(arg.peel_parens(), Expr::DoBlock { .. } | Expr::DoStmt(_))
-            || matches!(arg, Expr::Grouped(_))
+        match arg {
+            Expr::Grouped(_) | Expr::DoBlock { .. } => true,
+            // `my $a := my $b` is an inline declaration bound as a whole
+            // (the `VarDecl` arm of the bind path), not a block's tail.
+            Expr::DoStmt(stmt) => !matches!(stmt.as_ref(), Stmt::VarDecl { .. }),
+            _ => false,
+        }
     }
 
     /// Compile `arg` (see [`Self::is_bind_container_block`]) as the source of
