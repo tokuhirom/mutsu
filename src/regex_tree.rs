@@ -1336,7 +1336,7 @@ impl RegexNode {
                 if !array && !hash && !name.is_empty() && name.bytes().all(|c| c.is_ascii_digit()) {
                     format!("${name} = {}", regex.to_source())
                 } else {
-                    format!("{sigil}<{name}> = {}", regex.to_source())
+                    format!("{sigil}<{name}>={}", regex.to_source())
                 }
             }
             Self::Subrule {
