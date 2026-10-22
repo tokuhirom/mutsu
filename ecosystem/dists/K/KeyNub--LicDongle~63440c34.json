@@ -9,23 +9,22 @@
   "dist": "KeyNub::LicDongle",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Could not find symbol '&Device' in 'GLOBAL::KeyNub::LicDongle::Scope'",
         "nok": 0,
-        "ok": 2,
+        "ok": 7,
         "plan": 7,
-        "secs": 0.82,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 6.08,
+        "secs": 4.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,10 +38,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-21",
+    "date": "2026-10-22",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7238f90c",
+    "mutsu_commit": "9746fdb1",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -53,13 +52,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/K/EY/KEYNUB_LICDONGLE/bf1e467d949203b69747e3154e610aa7f8498c46.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 7,
     "baseline_files": 1,
-    "mutsu_assertions": 2,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 7,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "1.1.1"
 }

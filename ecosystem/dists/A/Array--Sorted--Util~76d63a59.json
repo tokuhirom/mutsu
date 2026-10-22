@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.31,
+        "secs": 1.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,76 +24,73 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 4.31,
+        "secs": 3.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Too few positionals passed; expected 4 arguments but got 2",
         "nok": 0,
-        "ok": 3,
+        "ok": 4,
         "plan": 4,
-        "secs": 0.37,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-str-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.01,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Too few positionals passed; expected 4 arguments but got 2",
         "nok": 0,
-        "ok": 3,
+        "ok": 4,
         "plan": 4,
-        "secs": 0.23,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-int-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.09,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Too few positionals passed; expected 4 arguments but got 2",
         "nok": 0,
-        "ok": 3,
+        "ok": 4,
         "plan": 4,
-        "secs": 0.25,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/04-num-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.9,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,7 +102,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.25,
+        "secs": 1.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -115,7 +112,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.61,
+        "secs": 1.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -127,10 +124,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-21",
+    "date": "2026-10-22",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7238f90c",
+    "mutsu_commit": "9746fdb1",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -141,13 +138,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/RR/ARRAY_SORTED_UTIL/b6881d4a13c561bf8a33d7dcb9daf72cab32a73c.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 18,
     "baseline_files": 5,
-    "mutsu_assertions": 15,
-    "parity_files": 2,
-    "regressed_files": 3
+    "mutsu_assertions": 18,
+    "parity_files": 5,
+    "regressed_files": 0
   },
   "version": "0.0.11"
 }

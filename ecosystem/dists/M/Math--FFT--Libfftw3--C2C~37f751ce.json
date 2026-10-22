@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.32,
+        "secs": 1.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.72,
+        "secs": 5.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.31,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.93,
+        "secs": 0.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.71,
+        "secs": 1.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.49,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.24,
+        "secs": 1.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,7 +102,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.18,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +112,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.29,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -121,11 +121,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller plan(Math::FFT::Libfftw3::C2C:D: Int:D, Bool:D); none of these signatures matches:",
-        "nok": 0,
-        "ok": 2,
+        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'direction'; expected Int, got Nil",
+        "nok": 1,
+        "ok": 1,
         "plan": null,
-        "secs": 1.53,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -135,7 +135,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 6.56,
+        "secs": 7.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -144,11 +144,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller plan(Math::FFT::Libfftw3::R2C:D: Int:D, Bool:D); none of these signatures matches:",
-        "nok": 0,
-        "ok": 2,
+        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'direction'; expected Int, got Nil",
+        "nok": 1,
+        "ok": 1,
         "plan": null,
-        "secs": 1.4,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -158,7 +158,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 5.28,
+        "secs": 4.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -167,11 +167,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in assignment to $fftr; expected Math::FFT::Libfftw3::R2R but got Failure (Failure.new(\"X::Libf...)",
-        "nok": 0,
-        "ok": 4,
+        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'direction'; expected Int, got Nil",
+        "nok": 3,
+        "ok": 1,
         "plan": null,
-        "secs": 1.53,
+        "secs": 1.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -181,7 +181,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 5.09,
+        "secs": 4.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -193,7 +193,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.03,
+        "secs": 1.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -203,7 +203,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.15,
+        "secs": 2.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -212,11 +212,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Error 1: Wrong type. Try Int, Rat, Num or Complex",
+        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'direction'; expected Int, got Nil",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.57,
+        "secs": 1.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -226,7 +226,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.92,
+        "secs": 1.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -238,7 +238,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.24,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -248,7 +248,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.95,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -260,7 +260,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.32,
+        "secs": 1.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -270,7 +270,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.11,
+        "secs": 1.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -279,11 +279,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in assignment to $fftr; expected Math::FFT::Libfftw3::C2C but got Failure (Failure.new(\"X::Libf...)",
+        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'direction'; expected Int, got Nil",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.39,
+        "secs": 1.58,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -293,7 +293,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.24,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -302,16 +302,39 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in assignment to $fftr; expected Math::FFT::Libfftw3::R2C but got Failure (Failure.new(\"X::Libf...)",
+        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'direction'; expected Int, got Nil",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.49,
+        "secs": 1.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       },
       "path": "t/13-r2c-thread.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'direction'; expected Int, got Nil",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/14.r2r-thread.t",
       "raku": {
         "nok": 0,
         "ok": 2,
@@ -323,35 +346,12 @@
       }
     },
     {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed in assignment to $fftr; expected Math::FFT::Libfftw3::R2R but got Failure (Failure.new(\"X::Libf...)",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/14.r2r-thread.t",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.14,
+        "secs": 0.12,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -361,7 +361,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.83,
+        "secs": 0.65,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -379,10 +379,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-21",
+    "date": "2026-10-22",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7238f90c",
+    "mutsu_commit": "9746fdb1",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -397,7 +397,7 @@
   "totals": {
     "baseline_assertions": 65,
     "baseline_files": 16,
-    "mutsu_assertions": 34,
+    "mutsu_assertions": 29,
     "parity_files": 9,
     "regressed_files": 7
   },

@@ -19,7 +19,7 @@
         "nok": 1,
         "ok": 8,
         "plan": 9,
-        "secs": 0.85,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 7.16,
+        "secs": 11.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +42,7 @@
         "nok": 2,
         "ok": 0,
         "plan": 2,
-        "secs": 0.61,
+        "secs": 1.24,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.78,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -65,7 +65,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 2,
-        "secs": 0.49,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -75,29 +75,30 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.7,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Unable to call postcircumfix:<[ ]> with a type object",
         "nok": 0,
-        "ok": 1,
-        "plan": 2,
-        "secs": 0.81,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.09,
         "skip": 0,
-        "todo": 1,
-        "verdict": "pass"
+        "todo": 0,
+        "verdict": "die"
       },
       "path": "t/040-gd-file.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 2,
-        "secs": 0.82,
+        "secs": 1.34,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
@@ -109,10 +110,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-21",
+    "date": "2026-10-22",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7238f90c",
+    "mutsu_commit": "9746fdb1",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -123,13 +124,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/GD/8cd4621b7f0576b268e5e7556c79565832b9e8c1.tar.gz"
   },
-  "status": "partial",
+  "status": "red",
   "totals": {
     "baseline_assertions": 15,
     "baseline_files": 4,
-    "mutsu_assertions": 10,
-    "parity_files": 1,
-    "regressed_files": 3
+    "mutsu_assertions": 9,
+    "parity_files": 0,
+    "regressed_files": 4
   },
   "version": "0.0.5"
 }
