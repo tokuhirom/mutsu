@@ -235,13 +235,21 @@ impl Interpreter {
             // not yet assigned (it reads `Any`), so only the in-sequence
             // registration can tell what the alias names.
             let hoisting = custom_traits.iter().any(|(t, _)| t == "__hoisted");
+            let frame_aliases = if hoisting {
+                Vec::new()
+            } else {
+                let mut spellings: Vec<&str> = Vec::new();
+                signature_type_spellings(param_defs, &mut spellings);
+                spellings.extend(return_type.as_deref());
+                self.frame_type_aliases(code, spellings)
+            };
             let canon_defs = (!hoisting)
-                .then(|| self.canonical_signature_param_types(param_defs))
+                .then(|| self.canonical_signature_param_types_with(param_defs, &frame_aliases))
                 .flatten();
             let canon_return = return_type
                 .as_deref()
                 .filter(|_| !hoisting)
-                .and_then(|rt| self.declared_type_alias_target(rt));
+                .and_then(|rt| self.declared_type_alias_target_with(rt, &frame_aliases));
             // The rewritten declaration is a different one from what a
             // registration that saw no alias (the hoist pass, before the
             // `use` that binds it ran) installed, so it must not take the
@@ -1131,5 +1139,21 @@ impl Interpreter {
             self.register_exported_sub(pkg, name.to_string(), tags);
         }
         Ok(())
+    }
+}
+
+/// Every type spelling a signature names: its parameters' types and those of
+/// their nested signatures, `&callback (...)` signatures and `--> T`.
+// Cost: O(p), p = parameters including nested signatures.
+fn signature_type_spellings<'a>(defs: &'a [crate::ast::ParamDef], out: &mut Vec<&'a str>) {
+    for pd in defs {
+        out.extend(pd.type_constraint.as_deref());
+        if let Some(sig) = pd.sub_signature.as_deref() {
+            signature_type_spellings(sig, out);
+        }
+        if let Some((sig, ret)) = &pd.code_signature {
+            signature_type_spellings(sig, out);
+            out.extend(ret.as_deref());
+        }
     }
 }

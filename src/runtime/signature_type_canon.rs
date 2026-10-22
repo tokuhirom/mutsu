@@ -30,6 +30,18 @@ impl Interpreter {
     // Cost: O(a), a = alias-chain links followed (at most 16), each one or two
     // env probes.
     pub(crate) fn declared_type_alias_target(&self, spelling: &str) -> Option<String> {
+        self.declared_type_alias_target_with(spelling, &[])
+    }
+
+    /// [`Self::declared_type_alias_target`], also taking the declaring frame's
+    /// own `(alias, type)` pairs, which a pad term the env does not hold is
+    /// read from (`Interpreter::frame_type_aliases`).
+    // Cost: as `declared_type_alias_target`, plus O(f) per spelling, f = `frame`.
+    pub(crate) fn declared_type_alias_target_with(
+        &self,
+        spelling: &str,
+        frame: &[(String, String)],
+    ) -> Option<String> {
         let (base, smiley) = crate::runtime::types::strip_type_smiley(spelling);
         // `CArray[int32]` / `Pointer[void]`: the base and each type argument
         // are looked up where the routine is declared, like any other type.
@@ -42,10 +54,10 @@ impl Interpreter {
             {
                 return None;
             }
-            let new_head = self.declared_type_alias_target(&head);
+            let new_head = self.declared_type_alias_target_with(&head, frame);
             let new_args: Vec<Option<String>> = args
                 .iter()
-                .map(|a| self.declared_type_alias_target(a))
+                .map(|a| self.declared_type_alias_target_with(a, frame))
                 .collect();
             if new_head.is_none() && new_args.iter().all(Option::is_none) {
                 return None;
@@ -58,6 +70,12 @@ impl Interpreter {
                 .join(",");
             let head = new_head.unwrap_or(head);
             return Some(format!("{head}[{args}]{}", smiley.unwrap_or("")));
+        }
+        if let Some((_, target)) = frame.iter().find(|(alias, _)| alias == base) {
+            return Some(match smiley {
+                Some(smiley) => format!("{target}{smiley}"),
+                None => target.clone(),
+            });
         }
         // An alias is declared under a plain identifier, and a spelling nobody
         // interned cannot be bound to anything.
@@ -95,21 +113,32 @@ impl Interpreter {
         &self,
         defs: &[ParamDef],
     ) -> Option<Vec<ParamDef>> {
+        self.canonical_signature_param_types_with(defs, &[])
+    }
+
+    /// [`Self::canonical_signature_param_types`] with the declaring frame's
+    /// own aliases ([`Self::declared_type_alias_target_with`]).
+    // Cost: as `canonical_signature_param_types`, plus O(f) per spelling.
+    pub(crate) fn canonical_signature_param_types_with(
+        &self,
+        defs: &[ParamDef],
+        frame: &[(String, String)],
+    ) -> Option<Vec<ParamDef>> {
         let mut out: Option<Vec<ParamDef>> = None;
         for (i, pd) in defs.iter().enumerate() {
             let type_constraint = pd
                 .type_constraint
                 .as_deref()
-                .and_then(|tc| self.declared_type_alias_target(tc));
+                .and_then(|tc| self.declared_type_alias_target_with(tc, frame));
             let sub_signature = pd
                 .sub_signature
                 .as_deref()
-                .and_then(|sig| self.canonical_signature_param_types(sig));
+                .and_then(|sig| self.canonical_signature_param_types_with(sig, frame));
             let code_signature = pd.code_signature.as_ref().and_then(|(sig, ret)| {
-                let params = self.canonical_signature_param_types(sig);
+                let params = self.canonical_signature_param_types_with(sig, frame);
                 let ret_target = ret
                     .as_deref()
-                    .and_then(|r| self.declared_type_alias_target(r));
+                    .and_then(|r| self.declared_type_alias_target_with(r, frame));
                 (params.is_some() || ret_target.is_some()).then(|| {
                     (
                         params.unwrap_or_else(|| sig.clone()),

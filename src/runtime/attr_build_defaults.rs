@@ -169,6 +169,15 @@ impl Interpreter {
                 // owns its elements, so pull them now (ADR-0058).
                 self.reify_map_grep_seq(&val)?;
                 Self::coerce_attr_value_by_sigil(val, d.sigil)
+            } else if d.default_is_seed
+                && attr_type_constraints
+                    .get(&d.name)
+                    .is_some_and(|tc| tc.contains('[') && !tc.contains('('))
+            {
+                // The seed of a parameterized type is already in the slot, and
+                // is its type object: evaluating the spelling as a bare word
+                // (`CA2[uint16]`) cannot see a `constant` alias.
+                continue;
             } else if let Some(arg) = &d.default {
                 // A literal needs no evaluation context at all — the same fast
                 // path the pre-BUILD pass takes for parser-generated zeroes.
