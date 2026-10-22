@@ -147,6 +147,8 @@ pub(super) fn lower(node: &RakuAstNode, kind: ContextKind) -> Result<Expr, Runti
         RakuAstClass::VarLexical
         | RakuAstClass::VarDynamic
         | RakuAstClass::VarPackage
+        | RakuAstClass::VarAttribute
+        | RakuAstClass::VarAttributePublic
         | RakuAstClass::VarDeclarationAnonymous
             if kind == ContextKind::Item =>
         {

@@ -7,7 +7,7 @@ use Test;
 # a `.item` / `.list` / `.hash` method call, and a user-written call of the same
 # name stays a call.
 
-plan 19;
+plan 23;
 
 sub node-of(Str $src) { $src.AST.statements[0].expression }
 
@@ -59,6 +59,25 @@ is-deeply EVAL(Q|@(1, 2)|.AST), (1, 2), 'EVAL of @(...) round-trips';
 is-deeply EVAL(Q|%(1, 2)|.AST), {"1" => 2}, 'EVAL of %(non-pairs) round-trips';
 is EVAL(Q|$@(1, 2)|.AST).raku, '$(1, 2)', 'EVAL of $@(...) itemizes the list';
 is-deeply EVAL(Q|@(1, 2).map(* + 1)|.AST).List, (2, 3), 'a contextualizer composes with a method call';
+
+my $attribute-ast = Q[class RakuASTItemizedAttribute {
+    has @!items;
+    has %!lookup;
+    method items { @!items = <a b>; return $@!items }
+    method lookup { %!lookup = :answer(42); return $%!lookup }
+}].AST;
+ok $attribute-ast.gist.contains('RakuAST::Contextualizer::Item.new('),
+    'an itemized array attribute is a Contextualizer::Item';
+ok $attribute-ast.gist.contains('RakuAST::Var::Attribute.new(')
+        && $attribute-ast.gist.contains('"\@!items"')
+        && $attribute-ast.gist.contains('"\%!lookup"'),
+    'the item contextualizers hold private array and hash attributes';
+my $attribute-type = EVAL($attribute-ast);
+my $attribute-object = $attribute-type.new;
+is-deeply $attribute-object.items.List, <a b>,
+    'the itemized array attribute round-trips through EVAL';
+is-deeply $attribute-object.lookup.Hash, { answer => 42 },
+    'the itemized hash attribute round-trips through EVAL';
 
 # --- semantics: the compiled node still behaves like the call ----------------
 my @a = 1, 2;

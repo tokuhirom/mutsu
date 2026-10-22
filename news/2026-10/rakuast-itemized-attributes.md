@@ -1,0 +1,1 @@
+The RakuAST frontend now round-trips itemized private array and hash attributes, such as `$@!items` and `$%!lookup`. `Contextualizer::Item` lowers these attribute nodes through the parser's existing itemization path, and `roast/S32-exceptions/misc2.t` now passes in RakuAST mode.
