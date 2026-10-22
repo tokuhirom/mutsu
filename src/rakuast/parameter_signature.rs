@@ -59,6 +59,9 @@ pub(super) fn lower_pointy(node: &RakuAstNode) -> Result<crate::ast::Expr, Runti
         // (`-> [$a, $b]`) one keeps its `ParamDef`, as the parser does.
         1 if param_defs.first().is_some_and(|param| {
             return_type.is_none()
+                // A sigilless pointy parameter needs its `ParamDef` so the
+                // closure binder preserves the argument's container.
+                && !param.sigilless
                 && !param.name.starts_with(['@', '%', '&'])
                 && !param.named
                 && param.type_constraint.is_none()
