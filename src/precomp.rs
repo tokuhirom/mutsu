@@ -65,6 +65,7 @@
 //! only the subset of variants that can appear in AST literals.
 
 pub(crate) mod bytecode;
+pub(crate) mod private_files;
 
 use crate::ast::Stmt;
 use std::collections::hash_map::DefaultHasher;
@@ -213,7 +214,7 @@ pub(crate) fn path_hash_hex(path: &str) -> String {
 pub(super) fn cache_dir() -> io::Result<PathBuf> {
     #[cfg(test)]
     if let Some(dir) = TEST_CACHE_DIR.with(|cell| cell.borrow().clone()) {
-        fs::create_dir_all(&dir)?;
+        private_files::ensure_private_dir(&dir)?;
         return Ok(dir);
     }
 
@@ -227,8 +228,13 @@ pub(super) fn cache_dir() -> io::Result<PathBuf> {
             "neither XDG_CACHE_HOME nor HOME is set",
         ));
     };
-    let dir = base.join("mutsu").join("precomp");
-    fs::create_dir_all(&dir)?;
+    // `<cache>/mutsu` and everything below it are mutsu's, so each is checked
+    // to be the current user's private directory (#14516); the user's cache
+    // root itself is not.
+    let root = base.join("mutsu");
+    private_files::ensure_private_dir(&root)?;
+    let dir = root.join("precomp");
+    private_files::ensure_private_dir(&dir)?;
     Ok(dir)
 }
 
@@ -242,7 +248,7 @@ pub(crate) fn sibling_cache_dir(name: &str) -> io::Result<PathBuf> {
         .map(Path::to_path_buf)
         .unwrap_or(precomp_dir);
     let dir = root.join(name);
-    fs::create_dir_all(&dir)?;
+    private_files::ensure_private_dir(&dir)?;
     Ok(dir)
 }
 
@@ -336,18 +342,6 @@ struct CacheMetadata {
     effects: ParseEffects,
 }
 
-/// Scratch path a cache entry is written to before being renamed into place.
-///
-/// The name must be unique per *writer*, not per entry. Two mutsu processes
-/// loading the same module concurrently — `prove -j`, or a `Test::Util` parent
-/// and the child it spawns — would otherwise interleave their non-atomic
-/// `fs::write`s into one shared `<hash>.tmp` and rename the mixture into place.
-/// The rename is atomic; the write into the shared buffer is not, so sharing the
-/// buffer defeats the point of renaming.
-pub(super) fn temp_cache_path(cache_file: &Path) -> PathBuf {
-    cache_file.with_extension(format!("{}.tmp", std::process::id()))
-}
-
 /// Upper bound on any single allocation a cache decode may request.
 ///
 /// Decoding is fallible but *allocation* is not: `bincode` reads a length prefix
@@ -382,7 +376,7 @@ pub(crate) fn load_cached_unit(source_path: &Path, source: Option<&str>) -> Opti
         return None;
     }
 
-    let data = fs::read(&cache_file).ok()?;
+    let data = private_files::read_private(&cache_file).ok()?;
     if data.len() < 4 {
         return None;
     }
@@ -511,19 +505,9 @@ pub(crate) fn save_cached_unit(source_path: &Path, stmts: &[Stmt], effects: &Par
     data.extend_from_slice(&meta_bytes);
     data.extend_from_slice(&ast_bytes);
 
-    // Write atomically via temp file + rename.
-    let tmp_file = temp_cache_path(&cache_file);
-    match fs::write(&tmp_file, &data) {
-        Ok(()) => {
-            if let Err(err) = fs::rename(&tmp_file, &cache_file) {
-                warn_cache_unavailable(&err);
-                let _ = fs::remove_file(&tmp_file);
-            }
-        }
-        Err(err) => {
-            warn_cache_unavailable(&err);
-            let _ = fs::remove_file(&tmp_file);
-        }
+    // Write atomically and privately via a scratch file + rename.
+    if let Err(err) = private_files::write_private(&cache_file, &data) {
+        warn_cache_unavailable(&err);
     }
 }
 
@@ -543,7 +527,7 @@ const MAX_CACHE_ENTRIES: usize = 4096;
 /// The same sweep also removes abandoned scratch files. `save_cached_unit`
 /// cleans up its own on any failure it can observe, but a process killed between
 /// the write and the rename leaves one behind, and since the name is now
-/// per-pid (see `temp_cache_path`) it will never be reused. They are only
+/// per-writer (see `private_files::scratch_path`) it will never be reused. They are only
 /// dropped once they are old enough that no live writer could still own them.
 ///
 /// Runs at most once per process, and only from the save path, so a warm run
@@ -961,7 +945,8 @@ mod tests {
             .unwrap()
             .join(format!("{}.bin", path_hash(&canonical)));
 
-        let tmp = temp_cache_path(&cache_file);
+        let tmp = private_files::scratch_path(&cache_file);
+        assert_ne!(tmp, private_files::scratch_path(&cache_file));
         assert_ne!(
             tmp,
             cache_file.with_extension("tmp"),

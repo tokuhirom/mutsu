@@ -23,7 +23,7 @@
 
 use super::{
     ParseEffects, cache_dir, content_hash, decode_config, interpreter_version, path_hash,
-    source_mtime_nanos, temp_cache_path, warn_cache_unavailable,
+    private_files, source_mtime_nanos, warn_cache_unavailable,
 };
 use crate::compiler::compile_inputs::CompileInputs;
 use crate::runtime::module_load_facts::ModuleLoadFacts;
@@ -108,7 +108,7 @@ fn code_file(source_path: &Path) -> Option<(PathBuf, String)> {
 // Cost: O(n), n = size of the entry (read; nothing is decoded but the metadata).
 pub(crate) fn load_code_entry(source_path: &Path, source: &str) -> Option<CodeEntry> {
     let (file, canonical) = code_file(source_path)?;
-    let data = fs::read(&file).ok()?;
+    let data = private_files::read_private(&file).ok()?;
     let rest = data.strip_prefix(CODE_MAGIC.as_slice())?;
     let (meta_bytes, rest) = split_section(rest)?;
     let (meta, _): (CodeMetadata, usize) =
@@ -173,10 +173,7 @@ pub(crate) fn save_code_entry(source_path: &Path, source: &str, entry: NewCodeEn
     data.extend_from_slice(&(entry.ast.len() as u32).to_le_bytes());
     data.extend_from_slice(entry.ast);
     data.extend_from_slice(entry.payload);
-    let tmp = temp_cache_path(&file);
-    let written = fs::write(&tmp, &data).and_then(|()| fs::rename(&tmp, &file));
-    if let Err(err) = written {
+    if let Err(err) = private_files::write_private(&file, &data) {
         warn_cache_unavailable(&err);
-        let _ = fs::remove_file(&tmp);
     }
 }
