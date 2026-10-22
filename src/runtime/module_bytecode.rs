@@ -293,6 +293,10 @@ impl Interpreter {
         slot: &ModuleCodeSlot,
     ) -> Result<(CompiledCode, CompiledFns), RuntimeError> {
         let (mut compiler, compile_unit) = self.block_compiler();
+        // A module's lexical scope starts empty: the import sets around the
+        // `use` that loaded it belong to the importer, and the module's
+        // compiled code (cached by module, not by importer) must not see them.
+        compiler.seed_lexical_import_chain(Vec::new());
         let context = CompileContext {
             environment: compile_inputs::environment_fingerprint(),
             is_routine: compiler.is_routine,
