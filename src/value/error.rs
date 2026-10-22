@@ -184,6 +184,10 @@ pub struct RuntimeErrorCold {
     pub catch_inline_verdict: Option<(u64, CatchInlineVerdict)>,
     /// See [`CatchInlinePayload`]; only ever set alongside `catch_inline_verdict`.
     pub catch_inline_payload: Option<Box<CatchInlinePayload>>,
+    /// The subscript and element constraint of a single-element store the type
+    /// check refused. `.resume` re-runs that store with the constraint's type
+    /// object, as Rakudo leaves the failing slot (#14153).
+    pub element_store_resume: Option<Box<(Value, String)>>,
     /// The source position the CLI's `------>` snippet should point at, when
     /// it differs from `line`/`column` (the position reported in `at
     /// FILE:LINE`). Only "Two terms in a row across lines" sets this: rakudo
@@ -463,6 +467,17 @@ impl RuntimeError {
     pub(crate) fn set_catch_inline_payload(&mut self, v: Option<CatchInlinePayload>) {
         self.cold_mut().catch_inline_payload = v.map(Box::new);
     }
+    /// See `RuntimeErrorCold::element_store_resume`.
+    pub(crate) fn with_element_store_resume(mut self, index: Value, constraint: &str) -> Self {
+        self.cold_mut().element_store_resume = Some(Box::new((index, constraint.to_string())));
+        self
+    }
+    pub(crate) fn element_store_resume(&self) -> Option<&(Value, String)> {
+        self.cold
+            .as_ref()
+            .and_then(|c| c.element_store_resume.as_deref())
+    }
+
     /// Move the inline-CATCH payload out of the error, leaving it `None`.
     pub(crate) fn take_catch_inline_payload(&mut self) -> Option<CatchInlinePayload> {
         self.cold

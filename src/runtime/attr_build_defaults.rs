@@ -344,6 +344,17 @@ impl Interpreter {
                 Some("num" | "num32" | "num64") => Value::num(0.0),
                 Some("str") => Value::str("".to_string()),
                 Some(tc) => {
+                    // `has CArray[uint16] $.k`: a class with its own
+                    // `^parameterize` denotes the type object that meta-method
+                    // builds, the one `my CArray[uint16] $x` holds and
+                    // `~~ CArray[uint16]` compares against.
+                    let (base, _) = super::types::strip_type_smiley(tc);
+                    if base.contains('[')
+                        && !base.contains('(')
+                        && let Some(ty) = self.meta_parameterized_type(base)
+                    {
+                        return ty;
+                    }
                     let nominal = self.nominal_type_object_name_for_constraint(tc);
                     Value::package(Symbol::intern(&nominal))
                 }

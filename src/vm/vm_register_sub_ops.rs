@@ -235,13 +235,18 @@ impl Interpreter {
             // not yet assigned (it reads `Any`), so only the in-sequence
             // registration can tell what the alias names.
             let hoisting = custom_traits.iter().any(|(t, _)| t == "__hoisted");
+            let frame_aliases = if hoisting {
+                Vec::new()
+            } else {
+                self.frame_signature_type_aliases(code, param_defs, return_type.as_deref())
+            };
             let canon_defs = (!hoisting)
-                .then(|| self.canonical_signature_param_types(param_defs))
+                .then(|| self.canonical_signature_param_types_with(param_defs, &frame_aliases))
                 .flatten();
             let canon_return = return_type
                 .as_deref()
                 .filter(|_| !hoisting)
-                .and_then(|rt| self.declared_type_alias_target(rt));
+                .and_then(|rt| self.declared_type_alias_target_with(rt, &frame_aliases));
             // The rewritten declaration is a different one from what a
             // registration that saw no alias (the hoist pass, before the
             // `use` that binds it ran) installed, so it must not take the

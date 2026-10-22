@@ -85,6 +85,48 @@ impl Interpreter {
             .map(|scope| &scope.dispatcher)
     }
 
+    /// [`Self::try_lexical_operator_candidates`] for a call site that is not
+    /// an operator opcode but applies the built-in operator `name` for the
+    /// import sets of chain `chain_idx` of the running code: the subscript
+    /// adverb builtin (`%m{...}:k`) applies `postcircumfix:<{ }>` this way.
+    /// `None` when no set binds `name`'s candidates.
+    // Cost: O(c) probe, c = enclosing `use`-blocks; on a hit the ranking and the
+    // winner's call (`try_captured_candidates`).
+    pub(crate) fn try_lexical_import_operator_at(
+        &mut self,
+        chain_idx: u32,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Option<Result<Option<Value>, RuntimeError>> {
+        if self.module.lexical_operator_import_sets.is_empty() {
+            return None;
+        }
+        let chain = self
+            .running_code()?
+            .lexical_import_chains
+            .get(chain_idx as usize)?
+            .clone();
+        let name_sym = Symbol::intern(name);
+        let dispatcher = match self.lexical_import_operator_binding(&chain, name_sym)? {
+            crate::runtime::lexical_imports::LexicalImport::Code(value)
+                if Self::is_builtin_operator_dispatcher(&value) =>
+            {
+                value
+            }
+            _ => return None,
+        };
+        self.dispatch
+            .lexical_operator_scopes
+            .push(LexicalOperatorScope {
+                name: name_sym,
+                dispatcher,
+                depth: self.routine_stack().len(),
+            });
+        let result = self.try_lexical_operator_candidates(name, args);
+        self.dispatch.lexical_operator_scopes.pop();
+        result
+    }
+
     /// Whether [`Self::lexical_operator_dispatcher`] has an answer for `name`.
     // Cost: O(s), as there; O(1) with no operator scope open.
     #[inline]

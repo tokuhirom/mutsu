@@ -63,7 +63,9 @@ impl Interpreter {
                     "X::Comp::AdHoc",
                     format!(
                         "Method '{}' must be implemented by {} because it is required by roles: {}.",
-                        method_name, type_name, role_name
+                        method_name,
+                        crate::value::user_facing_type_name(type_name),
+                        crate::value::user_facing_type_name(role_name)
                     ),
                 ));
             }

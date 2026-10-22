@@ -1735,6 +1735,10 @@ impl Interpreter {
                         self.get_env_with_main_alias(&current)
                     }
                 })
+                // A term a mainline routine captures is boxed into a shared
+                // cell (`exec_register_sub_op_in_registry`); the alias is the
+                // value inside it.
+                .map(|value| value.deref_container())
                 .and_then(|value| match value.view() {
                     crate::value::ValueView::Package(target) => Some(target.resolve()),
                     // `constant OidArray = CArray[Oid]`: a parameterization is

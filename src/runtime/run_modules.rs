@@ -1051,6 +1051,10 @@ impl Interpreter {
         // that depends on a conditional `use` runs right after the prologue.
         let guards = self.guards_for_recorded_calls(facts.recorded_calls.as_ref())?;
         self.preregister_routine_enums(&facts.routine_enums);
+        if !facts.exporthow_declares.is_empty() {
+            crate::runtime::cow_table_mut(&mut self.module.exporthow_declares)
+                .insert(module.to_string(), facts.exporthow_declares.clone());
+        }
         let code_slot =
             super::module_bytecode::ModuleCodeSlot::new(super::module_bytecode::MainlineParts {
                 unit: module_unit,
