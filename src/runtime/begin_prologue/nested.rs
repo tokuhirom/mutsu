@@ -159,7 +159,7 @@ struct Walker<'a> {
     unit: UnitContext,
     frames: Vec<Frame>,
     lifted: &'a mut Lifted,
-    /// The owner type of the next scope [`VisitMut::visit_stmts_mut`] opens.
+    /// The owner type of the next scope `visit_stmts_mut` opens.
     next_owner: &'static str,
 }
 
