@@ -23,6 +23,10 @@ pub(crate) struct ModuleState {
     /// `unit module Enums` publishes `Gender` = `Enums::Gender`, #13940).
     /// Copied into every importer's `package_type_aliases`.
     pub(crate) published_outer_packages: std::sync::Arc<HashMap<String, Vec<(String, String)>>>,
+    /// Per loaded module, the `EXPORTHOW` entries its source declares as
+    /// `(directive, declarator)` (`DECLARE`, `pokemon`), which
+    /// `CompUnit::Handle.export-how-package` publishes (#14173).
+    pub(crate) exporthow_declares: std::sync::Arc<HashMap<String, Vec<(String, String)>>>,
     /// The compilation units that imported an operator candidate family,
     /// keyed by operator name and then by the candidates' declaring unit. An
     /// operator candidate that a `use` imported is visible only to its
@@ -623,6 +627,7 @@ impl ModuleState {
         Self {
             imported_operator_names: Default::default(),
             published_outer_packages: Default::default(),
+            exporthow_declares: Default::default(),
             operator_import_units: Default::default(),
             unscoped_import_units: Default::default(),
             operator_import_gen: 0,
@@ -723,6 +728,7 @@ impl ModuleState {
         Self {
             imported_operator_names: self.imported_operator_names.clone(),
             published_outer_packages: self.published_outer_packages.clone(),
+            exporthow_declares: self.exporthow_declares.clone(),
             operator_import_units: self.operator_import_units.clone(),
             unscoped_import_units: self.unscoped_import_units.clone(),
             operator_import_gen: self.operator_import_gen,

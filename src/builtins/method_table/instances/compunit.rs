@@ -36,6 +36,11 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
     row!(
         "CompUnit::Handle",
+        "export-how-package",
+        Handler::Interp(export_how_package)
+    ),
+    row!(
+        "CompUnit::Handle",
         "globalish-package",
         Handler::Interp(globalish_package)
     ),
@@ -168,6 +173,19 @@ fn export_package(
 ) -> Answer {
     let unit = attr(target, "unit-name")?.map(|v| v.to_string_value())?;
     Some(Ok(interp.package_stash_value(&format!("{unit}::EXPORT"))))
+}
+
+/// `CompUnit::Handle.export-how-package`: the unit's `EXPORTHOW` stash (its
+/// `DECLARE` / `SUPERSEDE` packages), or `Nil` when the unit declares none.
+// Cost: O(s), s = symbols in the unit's `EXPORTHOW` package.
+fn export_how_package(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Answer {
+    let unit = attr(target, "unit-name")?.map(|v| v.to_string_value())?;
+    Some(Ok(interp.exporthow_stash_of_unit(&unit).unwrap_or(Value::NIL)))
 }
 
 /// `CompUnit::Handle.globalish-package`: the package the unit's symbols were

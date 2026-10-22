@@ -60,6 +60,7 @@ mod cool_type_object_gate;
 pub(crate) mod json;
 mod module_bytecode;
 pub(crate) mod module_load_facts;
+pub(crate) mod exporthow_facts;
 pub(crate) mod routine_scoped_enums;
 mod module_reinstate;
 mod module_trait_routine_bindings;
