@@ -9083,11 +9083,19 @@ impl CompiledCode {
     // Cost: O(l), l = locals; once per compiled chunk.
     fn compute_fresh_locals(&mut self) {
         for (desc, sym) in self.binding_descs.iter_mut().zip(self.locals_sym.iter()) {
-            desc.fresh_local = desc.declared_here
-                && self.my_declared_sym.contains(sym)
-                && !self.param_locals.contains(sym)
-                && !self.free_var_syms.contains(sym)
-                && !self.free_var_writes.contains(sym);
+            // The "initialize once per declaration site" marker of an
+            // expression-position container declaration (`==> my @v`,
+            // `(my @a)`, see `compile_expr_var_decl`) belongs to one
+            // activation: seeded from the env by name it would carry a
+            // recursive caller's marker into the callee, which then skips its
+            // own declaration and reads the caller's container (#14498).
+            let is_decl_marker = sym.with_str(|n| n.starts_with("__do_decl_init_"));
+            desc.fresh_local = is_decl_marker
+                || (desc.declared_here
+                    && self.my_declared_sym.contains(sym)
+                    && !self.param_locals.contains(sym)
+                    && !self.free_var_syms.contains(sym)
+                    && !self.free_var_writes.contains(sym));
         }
     }
 
