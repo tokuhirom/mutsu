@@ -3305,7 +3305,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 val,
                 text,
                 delimiter,
-            } => super::word_quote::convert(*val, text, *delimiter),
+                interpolates,
+            } => super::word_quote::convert(*val, text, *delimiter, *interpolates),
             Spelling::BareStatement => super::bare_prefix::bare_statement_node(&spelled.expr),
             Spelling::PackageIndirect { package, key } => {
                 super::symbolic_deref::convert_package_indirect(package, key)
@@ -3426,6 +3427,17 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             if let Some(words) = super::word_quote::convert_words_atom(name.as_str(), args) {
                 return words;
+            }
+            if name.as_str() == "__mutsu_unknown_backslash_escape"
+                && let [Expr::Literal(escape)] = args.as_slice()
+            {
+                return Err(RuntimeError::typed_msg(
+                    "X::Backslash::UnrecognizedSequence",
+                    format!(
+                        "Unrecognized backslash sequence: \\{}",
+                        escape.to_string_value()
+                    ),
+                ));
             }
             if is_desugar_marker(name.as_str()) {
                 if name.as_str() == "__mutsu_assign_callable_lvalue"

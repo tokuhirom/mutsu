@@ -51,15 +51,17 @@ pub(crate) enum Spelling {
         val: bool,
         text: Box<str>,
     },
-    /// `«a $b "c d"»`, `qqww/a $b/`: a `quotewords` quote whose text
-    /// interpolates or quotes a word. RakuAST keeps its segments, which the
-    /// conversion re-derives from the raw text.
+    /// `«a $b "c d"»`, `qqww/a $b/`, `Qww/"c d"/`: a `quotewords` quote
+    /// whose text is nonplain. RakuAST keeps its segments, which conversion
+    /// re-derives from the raw text.
     InterpolatingWords {
         /// Words become allomorphs (`val`).
         val: bool,
         text: Box<str>,
         /// The source delimiter for nested `<< >>` or `« »` word quotes.
         delimiter: Option<char>,
+        /// Whether unquoted text interpolates (`qqww`/angle quotes, unlike `Qww`).
+        interpolates: bool,
     },
     /// `gather say 1`, `try say 1`, `start say 1`, `once say 1`, `BEGIN say 1`:
     /// a statement prefix written over a bare statement. The wrapped

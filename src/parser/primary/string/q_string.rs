@@ -135,11 +135,19 @@ fn spell_word_quote_contents(
     expr: Expr,
 ) -> Expr {
     if !super::word_quote_text_is_plain_mode(text, flags.has_interpolation()) {
-        if flags.quotewords && flags.has_interpolation() {
+        if flags.quotewords {
             return Expr::spelled(expr, || Spelling::InterpolatingWords {
                 val: flags.val,
                 text: text.into(),
                 delimiter: None,
+                interpolates: flags.has_interpolation(),
+            });
+        }
+        if flags.words && !flags.has_interpolation() {
+            return Expr::spelled(expr, || Spelling::WordQuote {
+                quotewords: false,
+                val: flags.val,
+                text: text.into(),
             });
         }
         return expr;
