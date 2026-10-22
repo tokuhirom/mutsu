@@ -147,7 +147,9 @@ fn stored_hash_values(to_store: &Value) -> Vec<Value> {
     let mut iter = items.iter();
     while let Some(item) = iter.next() {
         match item.view() {
-            ValueView::Pair(_, value) | ValueView::ValuePair(_, value) => values.push(value.clone()),
+            ValueView::Pair(_, value) | ValueView::ValuePair(_, value) => {
+                values.push(value.clone())
+            }
             ValueView::Hash(map) => values.extend(map.values().cloned()),
             // A bare key: its value is the next item.
             _ => {
