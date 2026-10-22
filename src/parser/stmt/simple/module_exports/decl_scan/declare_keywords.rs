@@ -13,6 +13,9 @@ impl DeclScan {
             match inner {
                 Stmt::ClassDecl { name, .. } => {
                     let name = name.resolve();
+                    if let Some(keyword) = name.strip_prefix("SUPERSEDE::") {
+                        self.out.supersede_keywords.push(keyword.to_string());
+                    }
                     if let Some(keyword) = name.strip_prefix("DECLARE::") {
                         self.out
                             .declare_keywords
