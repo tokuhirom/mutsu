@@ -274,6 +274,8 @@ pub enum RakuAstClass {
     Postfix,
     Assignment,
     MetaInfixAssign,
+    MetaInfixNegate,
+    BracketedInfix,
     RegexSequentialConjunction,
     RegexConjunction,
     RegexBacktrackModifiedAtom,
@@ -645,6 +647,8 @@ impl RakuAstClass {
             Postfix => "RakuAST::Postfix",
             Assignment => "RakuAST::Assignment",
             MetaInfixAssign => "RakuAST::MetaInfix::Assign",
+            MetaInfixNegate => "RakuAST::MetaInfix::Negate",
+            BracketedInfix => "RakuAST::BracketedInfix",
             RegexSequentialConjunction => "RakuAST::Regex::SequentialConjunction",
             RegexConjunction => "RakuAST::Regex::Conjunction",
             RegexBacktrackModifiedAtom => "RakuAST::Regex::BacktrackModifiedAtom",
@@ -1538,6 +1542,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Postfix,
     RakuAstClass::Assignment,
     RakuAstClass::MetaInfixAssign,
+    RakuAstClass::MetaInfixNegate,
+    RakuAstClass::BracketedInfix,
     RakuAstClass::RegexSequentialConjunction,
     RakuAstClass::RegexConjunction,
     RakuAstClass::RegexBacktrackModifiedAtom,
@@ -3672,6 +3678,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::FunctionInfix
             | RakuAstClass::Postfix
             | RakuAstClass::MetaInfixAssign
+            | RakuAstClass::MetaInfixNegate
+            | RakuAstClass::BracketedInfix
             | RakuAstClass::RegexSequentialConjunction
             | RakuAstClass::RegexConjunction
             | RakuAstClass::RegexBacktrackModifiedAtom

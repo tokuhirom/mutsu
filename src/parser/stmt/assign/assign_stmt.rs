@@ -147,9 +147,9 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Meta-op assignment: @a [X+]= @b → @a = @a X+ @b
-    // Meta-op assignment: @a [X+]= @b → @a = @a X+ @b
     // Also handles reduction assignment: $x [+]= 6 → $x += 6
     if let Some((after_eq, meta, op)) = parse_bracket_meta_assign_op(rest) {
+        let bracket_depth = rest.chars().take_while(|ch| *ch == '[').count();
         let (after_eq, _) = ws(after_eq)?;
         let (rest, rhs) = parse_assign_expr_or_comma(after_eq)?;
         // For "reduce" meta (plain [op]=), reduce on two values is just the base op.
@@ -157,7 +157,12 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             && let Some(compound_op) = CompoundAssignOp::from_op_name(&op)
         {
             // The same marker as the spelled `+=`: `$x [+]= 6` is `$x += 6`.
-            let expr = preserve_compound_assign(var_expr, compound_op, rhs)?;
+            let expr = Expr::spelled(
+                preserve_compound_assign(var_expr, compound_op, rhs)?,
+                || crate::ast::spelled::Spelling::BracketedAssignment {
+                    depth: bracket_depth,
+                },
+            );
             let stmt = Stmt::Assign {
                 name,
                 expr,
@@ -166,12 +171,17 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             };
             return parse_statement_modifier(rest, stmt);
         }
-        let expr = Expr::MetaOp {
-            meta,
-            op,
-            left: Box::new(var_expr),
-            right: Box::new(rhs),
-        };
+        let expr = Expr::spelled(
+            Expr::MetaOp {
+                meta,
+                op,
+                left: Box::new(var_expr),
+                right: Box::new(rhs),
+            },
+            || crate::ast::spelled::Spelling::BracketedAssignment {
+                depth: bracket_depth,
+            },
+        );
         let stmt = match rewrite_scalar_assignment_stmt_as_sink(name.clone(), expr.clone()) {
             Some(stmt) => stmt,
             None => Stmt::Assign {

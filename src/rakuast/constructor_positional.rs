@@ -33,6 +33,8 @@ pub(super) fn single_positional_class(class_name: &str, method: &str) -> Option<
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
         ("RakuAST::MetaInfix::Assign", "new") => RakuAstClass::MetaInfixAssign,
+        ("RakuAST::MetaInfix::Negate", "new") => RakuAstClass::MetaInfixNegate,
+        ("RakuAST::BracketedInfix", "new") => RakuAstClass::BracketedInfix,
         ("RakuAST::Regex::SequentialConjunction", "new") => {
             RakuAstClass::RegexSequentialConjunction
         }

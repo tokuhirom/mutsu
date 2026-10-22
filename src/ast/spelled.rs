@@ -63,6 +63,12 @@ pub(crate) enum Spelling {
         /// Whether unquoted text interpolates (`qqww`/angle quotes, unlike `Qww`).
         interpolates: bool,
     },
+    /// `a !< b` / `a !eq b`: the parser evaluates this as `!(a < b)` but
+    /// RakuAST keeps the `MetaInfix::Negate` at the infix application.
+    NegatedInfix,
+    /// `$x [[+]]= 6`: bracket depth of an assignment whose executable form
+    /// folds the bracketed infix into an ordinary compound assignment.
+    BracketedAssignment { depth: usize },
     /// `gather say 1`, `try say 1`, `start say 1`, `once say 1`, `BEGIN say 1`:
     /// a statement prefix written over a bare statement. The wrapped
     /// expression is the same prefix over the one-statement block

@@ -12,6 +12,28 @@ pub(crate) fn assignment_ro_expr(lhs: Expr, rhs: Expr) -> Expr {
     ])
 }
 
+/// The `(lhs, rhs)` of an immutable-lvalue assignment expansion.
+// Cost: O(1).
+pub(crate) fn assignment_ro_parts(expr: &Expr) -> Option<(&Expr, &Expr)> {
+    let Expr::DoBlock {
+        body,
+        label: None,
+        origin: crate::ast::DoBlockOrigin::Desugar,
+    } = expr
+    else {
+        return None;
+    };
+    let [
+        Stmt::Expr(lhs),
+        Stmt::Expr(rhs),
+        Stmt::Expr(Expr::Call { name, args, .. }),
+    ] = body.as_slice()
+    else {
+        return None;
+    };
+    (args.is_empty() && name.with_str(|n| n == "__mutsu_assignment_ro")).then_some((lhs, rhs))
+}
+
 /// `LITERAL = RHS`: assigning to an immutable literal throws
 /// `X::Assignment::RO` once the right-hand side has been evaluated.
 ///

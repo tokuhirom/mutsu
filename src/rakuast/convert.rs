@@ -1843,6 +1843,17 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 node_field(Some("right"), convert_expr(expr)?),
             ],
         }))),
+        Stmt::Assign {
+            name,
+            expr: Expr::Spelled(spelled),
+            op: AssignOp::Assign,
+            ..
+        } if let Spelling::BracketedAssignment { depth } = &spelled.spelling => {
+            Ok(Some(statement_expression(super::compound_stmt::mark(
+                super::meta_infix::convert_bracketed_assignment(&spelled.expr, *depth)?,
+                name,
+            ))))
+        }
         Stmt::Assign { name, expr, op, .. } => match op {
             // `$x = EXPR` — the special `Assignment` infix (slice 2). A compound
             // assignment keeps its source-level metaop marker inside the ordinary
@@ -3307,6 +3318,36 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 delimiter,
                 interpolates,
             } => super::word_quote::convert(*val, text, *delimiter, *interpolates),
+            Spelling::NegatedInfix => {
+                let Expr::Unary {
+                    op: crate::token_kind::TokenKind::Bang,
+                    expr,
+                    word: false,
+                } = &spelled.expr
+                else {
+                    return Err(unsupported(
+                        "negated infix spelling without a negated operator",
+                    ));
+                };
+                let Expr::Binary {
+                    left, op, right, ..
+                } = expr.as_ref()
+                else {
+                    return Err(unsupported(
+                        "negated infix spelling without a binary operator",
+                    ));
+                };
+                super::meta_infix::convert(
+                    "!",
+                    &token_kind_to_op_name(op),
+                    left,
+                    right,
+                    &spelled.expr,
+                )
+            }
+            Spelling::BracketedAssignment { depth } => {
+                super::meta_infix::convert_bracketed_assignment(&spelled.expr, *depth)
+            }
             Spelling::BareStatement => super::bare_prefix::bare_statement_node(&spelled.expr),
             Spelling::PackageIndirect { package, key } => {
                 super::symbolic_deref::convert_package_indirect(package, key)
@@ -3662,6 +3703,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 // `120 = 3`: the written assignment to an immutable literal.
                 if let Some((literal, rhs)) = crate::parser::literal_assign_ro_parts(expr) {
                     return assignment_around(convert_expr(literal)?, false, rhs);
+                }
+                if let Some((lhs, rhs)) = crate::parser::assignment_ro_parts(expr) {
+                    return assignment_around(convert_expr(lhs)?, false, rhs);
                 }
                 return Err(unsupported("desugared do-block"));
             }

@@ -8,11 +8,14 @@ pub(crate) fn make_chain_cmp(left: Expr, op: TokenKind, right: Expr, negated: bo
         form: Default::default(),
     };
     if negated {
-        Expr::Unary {
-            op: TokenKind::Bang,
-            expr: Box::new(cmp),
-            word: false,
-        }
+        Expr::spelled(
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(cmp),
+                word: false,
+            },
+            || crate::ast::spelled::Spelling::NegatedInfix,
+        )
     } else {
         cmp
     }
