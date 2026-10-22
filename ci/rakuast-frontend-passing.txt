@@ -197,10 +197,12 @@ t/collections/hash/hash-raku-itemization.t
 t/collections/hash/hash-set-membership-truthy.t
 t/collections/hash/hash-set-numeric-equality.t
 t/collections/hash/hash-spread-slip.t
+t/collections/hash/hash-store-checks-value-type.t
 t/collections/hash/hash-subclass-bind-key.t
 t/collections/hash/hash-subclass-computed-target-assign.t
 t/collections/hash/hash-subclass-element-bind-nested-store.t
 t/collections/hash/hash-subclass-mutator-return-self.t
+t/collections/hash/hash-subclass-nested-store-and-array-bind.t
 t/collections/hash/hash-subclass-new-declared-attr-pair.t
 t/collections/hash/hash-subclass-new-default-ctor.t
 t/collections/hash/hash-subclass-vector.t
@@ -739,6 +741,7 @@ t/collections/subscript/interp-dynamic-twigil-subscript.t
 t/collections/subscript/itemized-hash-subscript.t
 t/collections/subscript/itemized-list-subscript.t
 t/collections/subscript/lazy-array-nested-index-slice.t
+t/collections/subscript/lazy-index-slice-array-subclass.t
 t/collections/subscript/list-slice-returns-list.t
 t/collections/subscript/lvalue-subscript-chain-through-object.t
 t/collections/subscript/modifier-subscript-brace-newline.t
@@ -913,6 +916,7 @@ t/collections/transform/map-grep-itemized-arg.t
 t/collections/transform/map-grep-loop-phasers.t
 t/collections/transform/map-grep-prefix-pull.t
 t/collections/transform/map-grep-pure-bulk.t
+t/collections/transform/map-grep-pure-int-prefix-batching.t
 t/collections/transform/map-imported-named-tail-call.t
 t/collections/transform/map-last-phaser-writeback-coherence.t
 t/collections/transform/map-list-writeback.t
@@ -1015,6 +1019,7 @@ t/concurrency/concurrent-hash-assign.t
 t/concurrency/concurrent-lane-decline-routes.t
 t/concurrency/concurrent-map-grep-rw-writes-reach-live-container.t
 t/concurrency/concurrent-nested-subscript-store.t
+t/concurrency/concurrent-param-array-reader-families.t
 t/concurrency/concurrent-param-container-mutation.t
 t/concurrency/concurrent-param-hash-reader-families.t
 t/concurrency/concurrent-role-mixin-visibility.t
@@ -1039,6 +1044,7 @@ t/concurrency/nqp-async-signal.t
 t/concurrency/nqp-async-socket-ops.t
 t/concurrency/nqp-async-timer-queue.t
 t/concurrency/nqp-async-watchfile.t
+t/concurrency/nqp-spawnprocasync-permit-after-done.t
 t/concurrency/nqp-spawnprocasync.t
 t/concurrency/proc-async-divergences.t
 t/concurrency/proc-async-method-rows.t
@@ -1478,6 +1484,7 @@ t/control/block-use-runtime-lib-type-scoped.t
 t/control/block-value-while-until-modifiers.t
 t/control/block-valued-sigilless-declaration-boundary.t
 t/control/block-vs-sub-what.t
+t/control/cas-block-topic-binds-current-value.t
 t/control/check-phaser-sees-earlier-constants.t
 t/control/decl-time-value-block-keeps-the-topic.t
 t/control/do-block-let-resolution.t
@@ -2116,6 +2123,7 @@ t/io/chdir-adverbs.t
 t/io/chdir-path-check.t
 t/io/chmod-allomorph.t
 t/io/chmod-mode-listop-postfix.t
+t/io/close-phaser-sees-until-condition-declaration.t
 t/io/code-block-io-handle-table.t
 t/io/copy-param-shadows-caller-readonly.t
 t/io/core-io-path-candidate-outranks-user-multi.t
@@ -2814,6 +2822,7 @@ t/modules/import-export/adverbed-block-module-exports.t
 t/modules/import-export/augment-in-export-hook-runs-once.t
 t/modules/import-export/augment-method-export-operator.t
 t/modules/import-export/begin-lift-beside-multi-our-export-routines.t
+t/modules/import-export/block-use-global-our-export-shadows-caller-lexical.t
 t/modules/import-export/class-body-nested-block-is-export.t
 t/modules/import-export/class-is-export-tag.t
 t/modules/import-export/custom-export-builtin-shadow.t
@@ -2917,9 +2926,11 @@ t/modules/import-export/imported-constant-visible-via-code-ref.t
 t/modules/import-export/imported-exception-when.t
 t/modules/import-export/imported-exported-proto-local-multi.t
 t/modules/import-export/imported-listop-angle-arg.t
+t/modules/import-export/imported-multi-where-candidates-keep-declaration-order.t
 t/modules/import-export/imported-my-type-does-not-shadow.t
 t/modules/import-export/imported-proto-builtin-name-code-value.t
 t/modules/import-export/imported-proto-shadows-outer-sub.t
+t/modules/import-export/imported-routine-where-clause-is-checked.t
 t/modules/import-export/imported-statement-call-leaves-no-value.t
 t/modules/import-export/imported-sub-can-be-shadowed.t
 t/modules/import-export/imported-sub-shadows-builtin-in-sink-position.t
@@ -3015,6 +3026,7 @@ t/modules/import-export/trait-mod-is-export-symbol.t
 t/modules/import-export/unit-class-also-is.t
 t/modules/import-export/unit-class-code-static-assignment.t
 t/modules/import-export/unit-class-constant-isolation.t
+t/modules/import-export/unit-class-hash-imports-exported-code-var.t
 t/modules/import-export/unit-class-is-export.t
 t/modules/import-export/unit-class-parent-use-import-scope.t
 t/modules/import-export/unit-class-role-and-composition.t
@@ -3119,11 +3131,13 @@ t/modules/inline-module-check-import.t
 t/modules/inline-module-constant-import-with-user-operator.t
 t/modules/language-version-not-leaked-by-nested-parse.t
 t/modules/leading-colon-package-symbolic-scalar.t
+t/modules/lexsub-routine-frame-def-file-is-declaring-module.t
 t/modules/lowercase-module-use-at-begin.t
 t/modules/lvalue-accessor-assign-module-lexical-vs-caller-closure.t
 t/modules/method-lexical-package-type-collision.t
 t/modules/module-bare-call-after-qualified-call.t
 t/modules/module-block-bind-markers-off-frame-env.t
+t/modules/module-block-sub-calls-file-level-import.t
 t/modules/module-block-use-local-sub-shadows-import.t
 t/modules/module-capture-param-otf.t
 t/modules/module-class-shadows-loaded-module-name.t
@@ -3247,8 +3261,10 @@ t/modules/package-block-aggregate-mutated-by-routine.t
 t/modules/package-block-exit-writes.t
 t/modules/package-block-lexical-capture.t
 t/modules/package-block-locals-restore.t
+t/modules/package-block-meta-lanes-closure-path.t
 t/modules/package-block-my-keeps-outer-lexical.t
 t/modules/package-block-my-sub-hoist.t
+t/modules/package-block-typed-hash-lanes.t
 t/modules/package-body-routine-family-is-lexical.t
 t/modules/package-constant-alias-qualified-sub.t
 t/modules/package-hash-subscript-vivify.t
@@ -3306,6 +3322,7 @@ t/modules/role-group-module-candidate-mixin.t
 t/modules/role-method-closure-module-names.t
 t/modules/role-method-trait-package-how.t
 t/modules/role-type-object-package-scope.t
+t/modules/routine-capture-keeps-live-module-aggregate.t
 t/modules/routine-do-bind-same-name-module.t
 t/modules/routine-package-switch-restore.t
 t/modules/rw-arg-from-packageless-module-sub.t
@@ -3360,6 +3377,7 @@ t/nativecall/coercion-native-method-param.t
 t/nativecall/collection-function-native-dispatch.t
 t/nativecall/comb-native-layer.t
 t/nativecall/contains-options-native.t
+t/nativecall/cstruct-attr-constant-alias-type.t
 t/nativecall/cstruct-bodyless-struct-argument-refused.t
 t/nativecall/cstruct-carray-expr-index-write.t
 t/nativecall/cstruct-create-set-value-body.t
@@ -3768,6 +3786,7 @@ t/oo/attribute/hash-attribute-map-assign-coerces-to-hash.t
 t/oo/attribute/hash-attribute-rw-assignment.t
 t/oo/attribute/hash-attribute-seq-construction.t
 t/oo/attribute/hash-literal-bang-attribute.t
+t/oo/attribute/hash-subclass-eqv-ignores-attributes.t
 t/oo/attribute/instance-eqv-private-attribute-and-user-raku.t
 t/oo/attribute/instance-eqv-qualified-attributes.t
 t/oo/attribute/interp-attribute-array-hash-method.t
@@ -3796,6 +3815,7 @@ t/oo/attribute/proxy-subclass-attributes-methods.t
 t/oo/attribute/quanthash-attribute-assign-in-place.t
 t/oo/attribute/quanthash-attribute-element-assign.t
 t/oo/attribute/quoted-method-name-reaches-accessor.t
+t/oo/attribute/range-endpoint-rw-accessor-container.t
 t/oo/attribute/rw-accessor-container-through-rw-routine-and-wrap.t
 t/oo/attribute/rw-accessor-element-vivify.t
 t/oo/attribute/rw-arg-attribute-source-writeback.t
@@ -5048,6 +5068,7 @@ t/rakuast/rakuast-anon-declarator-docs.t
 t/rakuast/rakuast-anon-regex-declarator.t
 t/rakuast/rakuast-anon-sub-signature.t
 t/rakuast/rakuast-anon-sub.t
+t/rakuast/rakuast-anonymous-callable-typed-slurpy.t
 t/rakuast/rakuast-anonymous-declaration-provenance.t
 t/rakuast/rakuast-anonymous-packages.t
 t/rakuast/rakuast-anonymous-subsig-modifiers.t
@@ -5086,6 +5107,7 @@ t/rakuast/rakuast-class-traits-multi-constant.t
 t/rakuast/rakuast-class.t
 t/rakuast/rakuast-colonpair-allomorph.t
 t/rakuast/rakuast-colonpair-literal.t
+t/rakuast/rakuast-complex-literal-parameters.t
 t/rakuast/rakuast-compound-assign.t
 t/rakuast/rakuast-compunit.t
 t/rakuast/rakuast-computed-package-adverbs.t
@@ -5223,6 +5245,7 @@ t/rakuast/rakuast-imported-bareword-call.t
 t/rakuast/rakuast-imported-value-binding.t
 t/rakuast/rakuast-index-assign.t
 t/rakuast/rakuast-index-bind.t
+t/rakuast/rakuast-indirect-code-lookup.t
 t/rakuast/rakuast-indirect-declarator-name.t
 t/rakuast/rakuast-indirect-name.t
 t/rakuast/rakuast-indirect-type-capture.t
@@ -5234,6 +5257,7 @@ t/rakuast/rakuast-interpolating-angle-subscript.t
 t/rakuast/rakuast-interpolating-word-quotes.t
 t/rakuast/rakuast-invocant-parameters.t
 t/rakuast/rakuast-itemize-anonymous.t
+t/rakuast/rakuast-itemize-variable-kinds.t
 t/rakuast/rakuast-keyed-hash-declaration.t
 t/rakuast/rakuast-l10n-constructs.t
 t/rakuast/rakuast-labelled-callable-cohort.t
@@ -5242,6 +5266,7 @@ t/rakuast/rakuast-leaf-accessors.t
 t/rakuast/rakuast-lexical-package.t
 t/rakuast/rakuast-list-infix.t
 t/rakuast/rakuast-listinfix-bind.t
+t/rakuast/rakuast-loop-condition-declaration.t
 t/rakuast/rakuast-loop-control-value.t
 t/rakuast/rakuast-loop-label.t
 t/rakuast/rakuast-loop.t
@@ -5261,6 +5286,7 @@ t/rakuast/rakuast-method-modifier.t
 t/rakuast/rakuast-method-return-type.t
 t/rakuast/rakuast-module-names.t
 t/rakuast/rakuast-multidim-delete.t
+t/rakuast/rakuast-multidim-dynamic-adverbs.t
 t/rakuast/rakuast-multidim-splat.t
 t/rakuast/rakuast-multiple-inline-list-declarations.t
 t/rakuast/rakuast-name-part-empty.t
@@ -5272,7 +5298,9 @@ t/rakuast/rakuast-named-subscript-adverbs.t
 t/rakuast/rakuast-named-type-arguments.t
 t/rakuast/rakuast-names-and-literals.t
 t/rakuast/rakuast-native-declarations.t
+t/rakuast/rakuast-nested-declaration-groups.t
 t/rakuast/rakuast-nonlvalue-assignment.t
+t/rakuast/rakuast-nonplain-word-quotes.t
 t/rakuast/rakuast-nqp-terms.t
 t/rakuast/rakuast-object-hash.t
 t/rakuast/rakuast-obsolete-interpolation.t
@@ -5323,6 +5351,8 @@ t/rakuast/rakuast-regex-decl-trivia-and-modifiers.t
 t/rakuast/rakuast-regex-declaration-code-blocks.t
 t/rakuast/rakuast-regex-declaration-export-traits.t
 t/rakuast/rakuast-regex-dynamic-arguments.t
+t/rakuast/rakuast-regex-enumeration-escapes.t
+t/rakuast/rakuast-regex-expression-arguments.t
 t/rakuast/rakuast-regex-hash-capture-alias.t
 t/rakuast/rakuast-regex-internal-modifier.t
 t/rakuast/rakuast-regex-literal-hash-index.t
@@ -5330,6 +5360,7 @@ t/rakuast/rakuast-regex-match-markers.t
 t/rakuast/rakuast-regex-mid-pattern-anchor.t
 t/rakuast/rakuast-regex-modifiers-anchors.t
 t/rakuast/rakuast-regex-named-default-pointy.t
+t/rakuast/rakuast-regex-named-separator-capture.t
 t/rakuast/rakuast-regex-nul-followed-by-digit.t
 t/rakuast/rakuast-regex-outer-adverbs.t
 t/rakuast/rakuast-regex-placeholders-and-callees.t
@@ -5337,9 +5368,12 @@ t/rakuast/rakuast-regex-proto-multi.t
 t/rakuast/rakuast-regex-qualified-subrules.t
 t/rakuast/rakuast-regex-quantifiers.t
 t/rakuast/rakuast-regex-quote-escapes.t
+t/rakuast/rakuast-regex-slurpy-hash-arguments.t
 t/rakuast/rakuast-regex-source-cohort.t
 t/rakuast/rakuast-regex-source-form.t
 t/rakuast/rakuast-regex-source-provenance.t
+t/rakuast/rakuast-regex-source-roast-cohort.t
+t/rakuast/rakuast-regex-spaced-argument.t
 t/rakuast/rakuast-regex-stored-interpolation.t
 t/rakuast/rakuast-regex-sym-adverb.t
 t/rakuast/rakuast-regex-symbolic-subrule.t
@@ -5348,6 +5382,7 @@ t/rakuast/rakuast-regex.t
 t/rakuast/rakuast-repeat-pointy-param.t
 t/rakuast/rakuast-require-import-list.t
 t/rakuast/rakuast-require-statement.t
+t/rakuast/rakuast-residual-source-terms.t
 t/rakuast/rakuast-return-type.t
 t/rakuast/rakuast-role-arg-blocks.t
 t/rakuast/rakuast-role-composition-boundaries.t
@@ -5357,6 +5392,7 @@ t/rakuast/rakuast-role.t
 t/rakuast/rakuast-routine-custom-traits.t
 t/rakuast/rakuast-routine-scope.t
 t/rakuast/rakuast-routine-trait-order.t
+t/rakuast/rakuast-s03-infix-forms.t
 t/rakuast/rakuast-semantic-hierarchy.t
 t/rakuast/rakuast-sequential-interpolation.t
 t/rakuast/rakuast-set-operator-spelling.t
@@ -5387,6 +5423,7 @@ t/rakuast/rakuast-sub.t
 t/rakuast/rakuast-subclass-node-class.t
 t/rakuast/rakuast-subscript-adverb-conflicts.t
 t/rakuast/rakuast-subscript-adverbs.t
+t/rakuast/rakuast-subscript-exists-hyperslice.t
 t/rakuast/rakuast-subscript.t
 t/rakuast/rakuast-subscripts-and-dynamic-calls.t
 t/rakuast/rakuast-subsig.t
@@ -5920,12 +5957,14 @@ t/regex/subst/subst-x-adverb.t
 t/regex/subst/subst-x-range.t
 t/regex/subst/substr-rw-assignment-value.t
 t/regex/subst/substr-rw-bound-proxy.t
+t/regex/subst/substr-rw-chained-subscript-target.t
 t/regex/subst/substr-rw-computed-args.t
 t/regex/subst/substr-rw-immutable-target.t
 t/regex/subst/substr-rw-lvalue-writeback-coherence.t
 t/regex/subst/substr-rw-rw-container-invocant.t
 t/regex/subst/substr-rw-sub-form-target.t
 t/regex/subst/substr-rw-subbuf-rw-proxy-window.t
+t/regex/subst/trans-closure-reads-callers-match-vars.t
 t/regex/subst/trans-long-subject.t
 t/regex/subst/trans-regex-closure-match-var.t
 t/regex/subst/trans-replacement-cycle.t
@@ -6071,6 +6110,7 @@ t/routines/call/nqp-capture-ops.t
 t/routines/call/nqp-getattr-on-capture.t
 t/routines/call/numbered-capture-array-literal.t
 t/routines/call/proxy-at-pos-store-and-shadowed-capture.t
+t/routines/call/proxy-callback-captured-lexical-beats-caller.t
 t/routines/call/proxy-fetch-capture-vs-caller-lexical.t
 t/routines/call/qualified-sub-captured-var-writeback-coherence.t
 t/routines/call/quantified-capture-slots.t
@@ -6163,6 +6203,7 @@ t/routines/closure/closure-capture-not-hijacked-by-later-my.t
 t/routines/closure/closure-capture-probes-plain-lexicals.t
 t/routines/closure/closure-capture-reflective-scope.t
 t/routines/closure/closure-capture-sub-valued-cell.t
+t/routines/closure/closure-capture-survives-caller-and-source-writes.t
 t/routines/closure/closure-capture-symbol-sets.t
 t/routines/closure/closure-capture-system-names.t
 t/routines/closure/closure-capture-tier-key-memo.t
@@ -6180,9 +6221,11 @@ t/routines/closure/closure-dynamic-var-restored-writeback.t
 t/routines/closure/closure-escaping-grandchild-owner-cell.t
 t/routines/closure/closure-exit-buf-reassigned-by-nested-sub.t
 t/routines/closure/closure-free-var-scope.t
+t/routines/closure/closure-keeps-shadowing-sigilless-term.t
 t/routines/closure/closure-light-value-call.t
 t/routines/closure/closure-literal-ends-statement.t
 t/routines/closure/closure-literal-forms-share-capture.t
+t/routines/closure/closure-made-in-sub-nested-in-closure-keeps-outer-lexicals.t
 t/routines/closure/closure-map-block-free-var-capture.t
 t/routines/closure/closure-meta-writeback-gate.t
 t/routines/closure/closure-named-sub-block-activation.t
@@ -6219,11 +6262,13 @@ t/routines/closure/loop-body-local-closure-capture.t
 t/routines/closure/loop-var-closure-capture.t
 t/routines/closure/loop-var-nested-closure-freeze.t
 t/routines/closure/map-closure-local-sub-scope.t
+t/routines/closure/map-grep-pure-chain-closure-lines.t
 t/routines/closure/nested-closure-resources-file-attribution.t
 t/routines/closure/pointy-block-arity-for-statement-modifier.t
 t/routines/closure/pointy-block-light-bind.t
 t/routines/closure/pointy-block-placeholder.t
 t/routines/closure/pointy-block-return-type.t
+t/routines/closure/protect-block-nested-closure-sees-later-write.t
 t/routines/closure/proxy-fetch-closure-scope.t
 t/routines/closure/qqx-closure-interpolation.t
 t/routines/closure/quanthash-values-loop-in-closure-writes-back.t
@@ -6896,6 +6941,7 @@ t/routines/signature/routine-signature-rows.t
 t/routines/signature/rw-dynamic-param-callee-write-with-eval.t
 t/routines/signature/rw-param-buf-element-assign.t
 t/routines/signature/rw-param-forwarded-through-capture.t
+t/routines/signature/rw-param-forwarded-to-raw-callee.t
 t/routines/signature/rw-param-in-sigilless-block.t
 t/routines/signature/rw-param-incdec-arg-container.t
 t/routines/signature/rw-param-rebind-detaches-from-caller.t
@@ -7721,6 +7767,7 @@ t/vm/binding/bound-hash-elem-push-autoviv.t
 t/vm/binding/bound-hash-for-values-rw.t
 t/vm/binding/bound-hash-name-stays-writable.t
 t/vm/binding/bound-hash-whole-reassign.t
+t/vm/binding/bound-name-identity-with-returned-aggregate.t
 t/vm/binding/bound-nested-list-is-not-shaped.t
 t/vm/binding/const-fold-infix-override.t
 t/vm/binding/const-fold.t
