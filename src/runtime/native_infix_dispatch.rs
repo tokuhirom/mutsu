@@ -442,6 +442,7 @@ impl Interpreter {
             // Only a plain nominal type takes part; a literal, coercion or
             // sub-signature parameter leaves the question to the key.
             if param.literal_value.is_some()
+                || param.where_constraint.is_some()
                 || param.sub_signature.is_some()
                 || param.code_signature.is_some()
                 || param.type_constraint.as_deref().is_some_and(|t| t.contains(['(', '[']))
@@ -456,7 +457,8 @@ impl Interpreter {
             // constraint is a value match, not a nominal type.
             if let Some(t) = param.type_constraint.as_deref() {
                 let base = nominal(t).with_str(str::to_owned);
-                if !self.has_type(&base)
+                if self.is_subset_type_name(&base)
+                    || !self.has_type(&base)
                     && !crate::runtime::utils::is_known_type_constraint(&base)
                 {
                     return None;
