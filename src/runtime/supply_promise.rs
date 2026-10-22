@@ -650,6 +650,10 @@ impl Interpreter {
         // body parks for arming (`normalize_promise_whenever_markers`): only
         // the drive loop that registers their sinks may arm them.
         let promise_arms_base = self.async_state.pending_promise_whenever_arms.len();
+        // `whenever`s a static source's callback registers (a `whenever` nested
+        // in a `whenever` body) queue here during the replay below; the drive
+        // loop adopts them.
+        let nested_subs_base = self.async_state.pending_react_subscriptions.len();
         for sub_val in &subscriptions {
             if let ValueView::Array(items, ..) = sub_val.view()
                 && items.len() >= 2
@@ -825,7 +829,9 @@ impl Interpreter {
             }
         }
 
-        if react_subs.is_empty() {
+        if react_subs.is_empty()
+            && self.async_state.pending_react_subscriptions.len() == nested_subs_base
+        {
             // No live channels: resolve with the last value emitted by the
             // static sources (or any plain synchronously-emitted value).
             self.async_state
@@ -904,6 +910,13 @@ impl Interpreter {
             crate::runtime::native_methods::supplier_sinks_register_batch(&regs, &waker)
         };
         let mut thread_interp = self.clone_for_thread_for_block(&on_demand_cb);
+        // Nested `whenever`s the static replay registered belong to the drive
+        // loop, which adopts them on its first round.
+        thread_interp.async_state.pending_react_subscriptions.extend(
+            self.async_state
+                .pending_react_subscriptions
+                .split_off(nested_subs_base),
+        );
         // Hand any stream consumer(s) `register_nested_on_demand_source`
         // registered above (on `self`, the calling thread) over to the
         // interpreter that will actually observe the async events —
@@ -1174,8 +1187,15 @@ impl Interpreter {
                 .pop()
                 .unwrap_or_default()
                 .values;
-            if let Some(last) = emitted.last() {
-                *last_value = last.clone();
+            for item in emitted {
+                // A `whenever` nested in this body registered its subscription
+                // marker into the same frame. It is not a value the supply
+                // emitted: hand it to the adoption queue for the drive loop.
+                if Interpreter::is_whenever_subscription_marker(&item) {
+                    this.async_state.pending_react_subscriptions.push(item);
+                } else {
+                    *last_value = item;
+                }
             }
             res.map(|_| ())
         }

@@ -397,7 +397,7 @@ impl Interpreter {
 
     /// Is this value one of the 5-element `[source, body, [LAST…], [QUIT…], id]`
     /// arrays `whenever` registers, rather than a value a supply body emitted?
-    pub(super) fn is_whenever_subscription_marker(value: &Value) -> bool {
+    pub(crate) fn is_whenever_subscription_marker(value: &Value) -> bool {
         let ValueView::Array(items, ..) = value.view() else {
             return false;
         };
