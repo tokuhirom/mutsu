@@ -136,31 +136,26 @@ fn associative_store(
     Some(Ok(target.deitemize_for_sigil_bind()))
 }
 
-/// The values `Hash.STORE` is about to file under keys: a `Pair`'s value, the
-/// odd-position items of a flat key/value list, or a hash's values.
+/// The values `Hash.STORE` is about to file under keys. Like Rakudo's
+/// `Hash.STORE`, each item is taken on its own: a `Pair` stores its value, a
+/// `Hash` its values, and any other item is a key whose value is the item that
+/// follows it.
 // Cost: O(n), n = items in `to_store`.
 fn stored_hash_values(to_store: &Value) -> Vec<Value> {
     let items = crate::runtime::utils::value_to_list(to_store);
     let mut values = Vec::with_capacity(items.len());
-    let mut flat = false;
-    for item in &items {
+    let mut iter = items.iter();
+    while let Some(item) = iter.next() {
         match item.view() {
-            ValueView::Pair(_, value) => values.push(value.clone()),
-            ValueView::Hash(map) if !flat => values.extend(map.values().cloned()),
+            ValueView::Pair(_, value) | ValueView::ValuePair(_, value) => values.push(value.clone()),
+            ValueView::Hash(map) => values.extend(map.values().cloned()),
+            // A bare key: its value is the next item.
             _ => {
-                // A bare (non-pair) item is a key; its value is the next one.
-                flat = true;
-                values.push(item.clone());
+                if let Some(value) = iter.next() {
+                    values.push(value.clone());
+                }
             }
         }
-    }
-    if flat {
-        // Keys sit at even positions: keep the odd ones only.
-        values = items
-            .iter()
-            .enumerate()
-            .filter_map(|(i, v)| (i % 2 == 1).then(|| v.clone()))
-            .collect();
     }
     values
 }
