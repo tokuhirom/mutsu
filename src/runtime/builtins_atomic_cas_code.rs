@@ -87,9 +87,7 @@ impl Interpreter {
             let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
             let new_val = {
                 let call_args = if let ValueView::Sub(sub) = code.view() {
-                    if sub.params.is_empty() {
-                        self.env.insert("_".to_string(), current.clone());
-                        self.env.insert("$_".to_string(), current.clone());
+                    if sub.params.is_empty() && sub.empty_sig {
                         Vec::new()
                     } else {
                         vec![current.clone()]

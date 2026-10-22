@@ -222,8 +222,12 @@ impl Interpreter {
                     if bind_dollar_topic {
                         self.env.insert("$_".to_string(), current.clone());
                     }
+                    // A parameter-less block takes the current value as its
+                    // implicit `$_` (the compiled-closure path binds `$_` from
+                    // the argument, not from the env); a block with an explicit
+                    // empty signature takes nothing.
                     let call_args = if let ValueView::Sub(sub) = code.view() {
-                        if sub.params.is_empty() {
+                        if sub.params.is_empty() && sub.empty_sig {
                             Vec::new()
                         } else {
                             vec![current.clone()]
