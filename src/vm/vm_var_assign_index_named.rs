@@ -2823,6 +2823,9 @@ impl Interpreter {
                         return Ok(());
                     }
                 }
+                // The container an undefined scalar was vivified into, when the
+                // root found above is not the env entry itself (#14637).
+                let mut vivified_root: Option<Value> = None;
                 let mut root_cell_addr: Option<usize> = None;
                 if let Some(container) =
                     self.env_root_descended_mut_tracked(&var_name, &mut root_cell_addr)
@@ -3177,7 +3180,14 @@ impl Interpreter {
                             let mut arr = vec![Value::package(crate::symbol::wk::any()); i + 1];
                             // ADR-0040 slice 1: itemize the stored value.
                             arr[i] = Self::itemize_value_for_element_store(val.clone());
-                            *container = Value::real_array_initialized_at(arr, i);
+                            let fresh = Value::real_array_initialized_at(arr, i);
+                            // A `$` variable holds the container in its Scalar.
+                            *container = if var_name.starts_with(['@', '%']) {
+                                fresh
+                            } else {
+                                fresh.item()
+                            };
+                            vivified_root = Some(container.clone());
                         } else {
                             let mut hash = ValueMap::default();
                             hash.insert(
@@ -3190,7 +3200,12 @@ impl Interpreter {
                                 orig.insert(key.clone(), Self::object_hash_key_value(&idx));
                                 hash_val = runtime::utils::set_hash_original_keys(hash_val, orig);
                             }
-                            *container = hash_val;
+                            *container = if var_name.starts_with(['@', '%']) {
+                                hash_val
+                            } else {
+                                hash_val.item()
+                            };
+                            vivified_root = Some(container.clone());
                         }
                     }
                 } else {
@@ -3217,6 +3232,19 @@ impl Interpreter {
                         }
                         self.env_mut().insert(var_name.clone(), hash_val);
                     }
+                }
+                // The root was a file-scope lexical's slot (`unit_lexical_slot_mut`)
+                // or another store the running frame's env does not hold: replacing
+                // an undefined scalar there leaves the env entry (what the frame
+                // reads) undefined. Rebind it to the vivified container.
+                if let Some(root) = vivified_root
+                    && self.env().get(&var_name).is_none_or(|v| {
+                        let v = v.deref_container().descalarize().clone();
+                        matches!(v.view(), ValueView::Nil | ValueView::Package(_))
+                    })
+                {
+                    self.set_env_with_main_alias(&var_name, root.clone());
+                    self.env_mut().insert(var_name.clone(), root);
                 }
                 if let Some((source_name, source_index, source_value)) = pending_varref_update {
                     self.assign_varref_target(&source_name, source_index, source_value)?;
