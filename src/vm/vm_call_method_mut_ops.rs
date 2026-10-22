@@ -212,6 +212,7 @@ impl Interpreter {
     /// The `CallMethodMut` body for an already-resolved method name (see
     /// `exec_call_method_named_op`; `CallMethodDynamicMut` owns only the name
     /// resolution). Stack: `[.., target, args...]`.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_call_method_mut_named_op(
         &mut self,
         code: &CompiledCode,
@@ -510,29 +511,26 @@ impl Interpreter {
         // does (`my uint8 @e; @e.push(1, 300, 2)` stores 1, 44, 2). Done here,
         // before the several push/append dispatch branches below, so every one
         // of them sees already-wrapped values.
-        let args =
-            if matches!(method, "push" | "unshift" | "append" | "prepend") && !args.is_empty() {
-                // Dual store: a scalar-held container (`my $a := array[uint8].new`)
-                // keeps its live value — including the `array[uint8]` element-type
-                // metadata `wrap_native_int_items` below reads via
-                // `element_constraint_for` — in the local slot only, leaving the env
-                // mirror at the `my`-declaration seed until some later sync point
-                // (an I/O op, a frame boundary, ...) republishes it. Without this,
-                // `native_int_element_constraint`'s `self.env().get(target_name)`
-                // read the STALE, untagged env copy and silently skipped the wrap
-                // (`$a.push(-1)` stored `-1` instead of wrapping to `255`), even
-                // though `$a[0]`/`.of` — which read the authoritative slot — already
-                // reported the array as `uint8`. Same fix as the sibling
-                // element-assignment/`:delete` handlers (`seed_env_from_scalar_slot`).
-                self.seed_env_from_scalar_slot(code, None, target_name);
-                self.wrap_native_int_items(
-                    self.store_decl(code, target_slot, false),
-                    target_name,
-                    args,
-                )
-            } else {
-                args
-            };
+        let args = if matches!(method, "push" | "unshift" | "append" | "prepend")
+            && !args.is_empty()
+        {
+            // Dual store: a scalar-held container (`my $a := array[uint8].new`)
+            // keeps its live value — including the `array[uint8]` element-type
+            // metadata `wrap_native_int_items` below reads via
+            // `element_constraint_for` — in the local slot only, leaving the env
+            // mirror at the `my`-declaration seed until some later sync point
+            // (an I/O op, a frame boundary, ...) republishes it. Without this,
+            // `native_int_element_constraint`'s `self.env().get(target_name)`
+            // read the STALE, untagged env copy and silently skipped the wrap
+            // (`$a.push(-1)` stored `-1` instead of wrapping to `255`), even
+            // though `$a[0]`/`.of` — which read the authoritative slot — already
+            // reported the array as `uint8`. Same fix as the sibling
+            // element-assignment/`:delete` handlers (`seed_env_from_scalar_slot`).
+            self.seed_env_from_scalar_slot(code, None, target_name);
+            self.wrap_native_int_items(self.store_decl(code, target_slot, false), target_name, args)
+        } else {
+            args
+        };
         // ADR-0040's store boundary, Proxy half — see
         // `Interpreter::fetch_proxy_mutator_args`.
         let args = self.fetch_proxy_mutator_args(method, args)?;
