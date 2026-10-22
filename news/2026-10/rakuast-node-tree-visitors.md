@@ -1,0 +1,1 @@
+RakuAST nodes now expose `visit` and `visit-dfs` with Rakudo's breadth-first and depth-first traversal order. Both accept `:strict` to skip the root callback and prune descendants when a callback returns a false value. The methods are also visible through method introspection. Source positions on non-statement nodes remain part of #11033.

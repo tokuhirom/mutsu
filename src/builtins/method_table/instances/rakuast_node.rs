@@ -116,7 +116,7 @@ fn original_line(_target: &Value, args: &[Value]) -> Option<Result<Value, Runtim
 /// a RakuAST node, and every such element of a list field. Leaf payloads (a
 /// name, a number) and the hidden `origin` are not nodes.
 // Cost: O(f + c), f = fields of `node`, c = child nodes listed in them.
-fn children(node: &RakuAstNode) -> Vec<Value> {
+pub(super) fn children(node: &RakuAstNode) -> Vec<Value> {
     let mut out = Vec::new();
     for field in &node.fields {
         match &field.value {
