@@ -1538,6 +1538,28 @@ impl Interpreter {
         // predicate (user code re-entry), which would deadlock under a held read lock.
         let subset = self.registry().subsets.get(constraint).cloned();
         if let Some(subset) = subset {
+            // The subset's own type object satisfies it, whichever spelling the
+            // parameter and the value use (`Pos` and `Cat::Pos` for a `my
+            // subset` declared in a class body): checking it by running the
+            // `where` against a type object would reject it.
+            if let ValueView::Package(name) = value.view() {
+                // Lexical-site suffixes (`Cat::Pos\0<id>`) are part of the
+                // key, not the name.
+                let raw = name.resolve();
+                let name = raw.split('\0').next().unwrap_or("");
+                let own = constraint.split('\0').next().unwrap_or("");
+                let same_subset = |a: &str, b: &str| {
+                    a == b
+                        || crate::qualified::unqualified_part(Symbol::intern(a))
+                            == crate::qualified::unqualified_part(Symbol::intern(b))
+                };
+                if same_subset(name, own)
+                    && (self.registry().subsets.contains_key(raw.as_str())
+                        || self.registry().subsets.contains_key(name))
+                {
+                    return true;
+                }
+            }
             if !self.type_matches_value_why(&subset.base, value, why) {
                 return false;
             }

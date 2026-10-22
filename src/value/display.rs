@@ -130,14 +130,15 @@ pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
 /// curried lexical role (`R\u{0}<id>[Int]` displays as `R[Int]`), the rest
 /// of a mixin type naming a lexical role (`C+{R\u{0}<id>}` displays as
 /// `C+{R}`, `C+{R\u{0}<id>,S}` as `C+{R,S}`, and `C\u{0}<id>+{R}` as `C+{R}`
-/// for a lexical class) and a definiteness smiley
-/// (`Foo\u{0}<id>:D` displays as `Foo:D`).
+/// for a lexical class), a lexical type closing a parameter list
+/// (`Associative[Dest\u{0}<id>]` displays as `Associative[Dest]`) and a
+/// definiteness smiley (`Foo\u{0}<id>:D` displays as `Foo:D`).
 fn strip_site_keys(segment: &str) -> String {
     let Some((short, rest)) = segment.split_once('\u{0}') else {
         return segment.to_string();
     };
     let rest = rest.trim_start_matches(|c: char| c.is_ascii_digit());
-    if rest.starts_with(['[', '}', ',', '+']) {
+    if rest.starts_with(['[', ']', '}', ',', '+']) {
         format!("{short}{}", strip_site_keys(rest))
     } else if matches!(rest, ":D" | ":U") {
         format!("{short}{rest}")
