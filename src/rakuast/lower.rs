@@ -2710,13 +2710,34 @@ pub(super) fn infix_is_compound_assignment(node: &RakuAstNode) -> bool {
     // `X+=` / `Z+=` hold a metaoperator, not a plain infix: `meta_infix` lowers them.
     named_child(node, "infix")
         .map(|child| {
-            (child.class == RakuAstClass::MetaInfixAssign
-                && named_child_or_positional(child)
-                    .map(|inner| inner.class == RakuAstClass::Infix)
-                    .unwrap_or(true))
+            (child.class == RakuAstClass::MetaInfixAssign && compound_assign_base(child).is_some())
                 || reverse_assign_base(child).is_some()
         })
         .unwrap_or(false)
+}
+
+/// Peel bracketed infix pairs inside a compound assignment and read its base.
+// Cost: O(d), d = bracket depth, bounded at 128.
+fn compound_assign_base(assign: &RakuAstNode) -> Option<(String, usize)> {
+    if assign.class != RakuAstClass::MetaInfixAssign {
+        return None;
+    }
+    let mut inner = named_child_or_positional(assign).ok()?;
+    let mut depth = 0;
+    while inner.class == RakuAstClass::BracketedInfix {
+        depth += 1;
+        if depth > 128 {
+            return None;
+        }
+        inner = named_child_or_positional(inner).ok()?;
+    }
+    if inner.class != RakuAstClass::Infix {
+        return None;
+    }
+    match positional_leaf(inner).ok()?.view() {
+        ValueView::Str(op) => Some((op.to_string(), depth)),
+        _ => None,
+    }
 }
 
 /// The base operator of `Reverse(MetaInfix::Assign(Infix(OP)))` (`R-=`) or `=`
@@ -2761,10 +2782,7 @@ pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, Run
             expanded: Box::new(expanded),
         });
     }
-    let op = match positional_leaf(named_child_or_positional(meta)?)?.view() {
-        ValueView::Str(value) => value.to_string(),
-        _ => return Err(unsupported(node)),
-    };
+    let (op, _) = compound_assign_base(meta).ok_or_else(|| unsupported(node))?;
     let rhs = lower_expr(named_child(node, "right")?)?;
     // `* *= 2` curries to `{ $_ *= 2 }`; the parser expands a bare `*` target
     // so, and a read-back tree spells that `*` as a priming argument.
@@ -2909,6 +2927,7 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
             | RakuAstClass::RatLiteral
             | RakuAstClass::StrLiteral
             | RakuAstClass::QuotedString
+            | RakuAstClass::TermName
     ) {
         let literal = match lower_expr(left)? {
             Expr::LiteralSrc(value, _) => Expr::Literal(value),
