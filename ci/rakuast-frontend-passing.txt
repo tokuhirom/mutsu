@@ -2771,6 +2771,7 @@ t/modules/compunit/module-precomp-type-effects.t
 t/modules/compunit/module-scan-precomp-cache.t
 t/modules/compunit/operator-import-is-compunit-scoped.t
 t/modules/compunit/precomp-bytecode-cache-verify.t
+t/modules/compunit/precomp-cache-private.t
 t/modules/compunit/precomp-load-facts-ast-on-demand.t
 t/modules/compunit/precomp-module-use-scan-revalidated.t
 t/modules/compunit/precomp-pod-ranges.t
@@ -2803,6 +2804,7 @@ t/modules/declarator-doc-why-module-declarations.t
 t/modules/does-role-init-module-lexical-role.t
 t/modules/dynamic-var-not-package-qualified.t
 t/modules/end-phaser-module-order.t
+t/modules/enum-alias-qualified-member-cross-module.t
 t/modules/enum-attr-default-cross-module.t
 t/modules/enum-member-nested-module-load.t
 t/modules/enum-param-in-package.t
@@ -2894,6 +2896,7 @@ t/modules/import-export/exported-multi-lexical-role-param.t
 t/modules/import-export/exported-my-class-remains-visible.t
 t/modules/import-export/exported-nested-module-wrapped-sub.t
 t/modules/import-export/exported-our-proto-alias-dispatch.t
+t/modules/import-export/exported-proto-add-dispatchee-keeps-own-multis.t
 t/modules/import-export/exported-proto-method-import.t
 t/modules/import-export/exported-proto-multi-family.t
 t/modules/import-export/exported-qualified-enum-shadows-builtin-endian.t
@@ -3002,6 +3005,7 @@ t/modules/import-export/require-in-sub-module-curried-lexical-role.t
 t/modules/import-export/require-missing-module-stub.t
 t/modules/import-export/require-path-package-less-types-global.t
 t/modules/import-export/require-quote-keyword-module-name.t
+t/modules/import-export/require-single-var-import.t
 t/modules/import-export/require-top-level-binds-lexically.t
 t/modules/import-export/require-top-level-class-file.t
 t/modules/import-export/require-toplevel-multi-candidate-not-leaked.t
@@ -6693,6 +6697,7 @@ t/routines/signature/captured-param-cell-not-in-shared-vars-lane.t
 t/routines/signature/closure-calls-captured-code-param.t
 t/routines/signature/closure-captured-amp-param-in-map-gather.t
 t/routines/signature/closure-captured-bang-var-through-code-param.t
+t/routines/signature/closure-captured-readonly-param-rw-arg.t
 t/routines/signature/closure-captured-var-ignores-callers-readonly-param.t
 t/routines/signature/closure-captures-param-var-source-name.t
 t/routines/signature/closure-parameter-signature.t
@@ -8084,6 +8089,7 @@ t/vm/scope/dynamic-var-written-by-callee-through-cell.t
 t/vm/scope/dynamic-var.t
 t/vm/scope/dynamic-vars-base-tier.t
 t/vm/scope/escaped-our-sub-lexical-write.t
+t/vm/scope/eval-block-hook-import-my-stash.t
 t/vm/scope/eval-dot-form-caller-lexicals.t
 t/vm/scope/eval-my-shadows-caller-lexical.t
 t/vm/scope/eval-prerun-use-scope.t
