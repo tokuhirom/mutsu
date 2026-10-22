@@ -442,6 +442,9 @@ impl Interpreter {
             // Cost: O(1).
             "chr" => {
                 let cp = iarg(args, 0);
+                if crate::builtins::str_prim::codepoint::is_surrogate(cp) {
+                    return Some(Err(crate::builtins::str_prim::codepoint::surrogate_error(cp)));
+                }
                 match u32::try_from(cp).ok().and_then(char::from_u32) {
                     Some(c) => Ok(Value::str(c.to_string())),
                     None => Err(RuntimeError::new(format!(

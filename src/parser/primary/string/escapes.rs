@@ -51,7 +51,7 @@ pub(crate) fn process_escape_sequence<'a>(
         'c' => {
             let r = after_escape;
             if let Some(r_inner) = r.strip_prefix('[') {
-                if let Some((s, after)) = parse_backslash_c_bracket(r_inner) {
+                if let Some((s, after)) = parse_backslash_c_bracket(r_inner)? {
                     current.push_str(&s);
                     // NFC-normalize: combining characters from \c[...] should
                     // compose with the preceding character (e.g. "a\c[COMBINING DIAERESIS]" → "ä")
@@ -73,10 +73,8 @@ pub(crate) fn process_escape_sequence<'a>(
             let digits: String = r.chars().take_while(|ch| ch.is_ascii_digit()).collect();
             if !digits.is_empty() {
                 let len = digits.len();
-                if let Ok(n) = digits.parse::<u32>()
-                    && let Some(ch) = char::from_u32(n)
-                {
-                    current.push(ch);
+                if let Ok(n) = digits.parse::<u32>() {
+                    current.push(super::escape_codepoint::scalar(i64::from(n))?);
                 }
                 return Ok(Some((&r[len..], true)));
             }

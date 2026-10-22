@@ -329,6 +329,9 @@ fn chr(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
             .and_then(|v| v.as_int())
             .unwrap_or_default(),
     };
+    if crate::builtins::str_prim::codepoint::is_surrogate(code) {
+        return Err(crate::builtins::str_prim::codepoint::surrogate_error(code));
+    }
     match u32::try_from(code).ok().and_then(char::from_u32) {
         Some(ch) if code <= 0x10FFFF => {
             use unicode_normalization::UnicodeNormalization;
