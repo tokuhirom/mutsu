@@ -722,6 +722,12 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             let decl = crate::ast::bind_decl::declaration(stmt).expect("just checked");
             var_decl_statement(var_decl_parts(decl)?, true)
         }
+        // `while my $x { }` / `until my $x { }`: the declaration is the loop's
+        // condition (the parser hoists it out so it is declared once).
+        Stmt::SyntheticBlock(_) if crate::ast::loop_cond_decl::recognize(stmt).is_some() => {
+            let looped = crate::ast::loop_cond_decl::recognize(stmt).expect("just checked");
+            convert_stmt(&looped)
+        }
         Stmt::VarDecl { .. } => var_decl_statement(var_decl_parts(stmt)?, false),
         Stmt::DocPhaser(inner) => Ok(Some(super::doc_phaser::convert(inner)?)),
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).

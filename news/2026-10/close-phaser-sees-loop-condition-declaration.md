@@ -14,3 +14,10 @@ end. The phaser closure therefore captures the variable as a shared cell like
 any escaping closure, and the compiled-closure fork in `call_sub_value` no
 longer keeps closures that write an uncelled free variable on the carrier
 (ADR-0055 slice 4 follow-up).
+
+The RakuAST boundary follows the parser: `ast::loop_cond_decl` is the one
+definition of the `[declaration, loop]` pair (`expand` / `recognize` /
+`split_loop_cond_decl`). `.AST` of `until my $done { }` is a `Loop::Until`
+whose `condition` is the `VarDeclaration::Simple` (as Rakudo prints it), and
+lowering a hand-built `Loop::While`/`Loop::Until` over a declaration declares
+it once before the loop, so `EVAL` of the round-tripped program terminates.
