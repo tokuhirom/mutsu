@@ -79,7 +79,7 @@ fn visit_tree(
         let descend = if strict && visited == 1 {
             true
         } else {
-            match interp.call_sub_value(callable.clone(), vec![value.clone()], false) {
+            match interp.call_sub_value(callable.clone(), vec![value.clone()]) {
                 Ok(result) => result.truthy(),
                 Err(error) => return Some(Err(error)),
             }

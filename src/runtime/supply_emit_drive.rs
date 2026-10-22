@@ -59,7 +59,7 @@ impl Interpreter {
             match action {
                 SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
                     Self::sleep_for_supply_delay(delay_seconds);
-                    self.call_supply_tap(tap, vec![emitted], true)?;
+                    self.call_supply_tap(tap, vec![emitted])?;
                 }
                 SupplierEmitAction::UniqueCheck {
                     downstream_supplier_id,
@@ -69,7 +69,7 @@ impl Interpreter {
                     tap_index,
                 } => {
                     let key = if let Some(f) = as_fn {
-                        self.call_supply_callback(f, vec![value.clone()], true)?
+                        self.call_supply_callback(f, vec![value.clone()])?
                     } else {
                         value.clone()
                     };
@@ -103,7 +103,7 @@ impl Interpreter {
                     downstream_supplier_id,
                 } => {
                     let new_acc = if let Some(acc) = accumulator {
-                        self.call_supply_callback(callable, vec![acc, value], false)?
+                        self.call_supply_callback(callable, vec![acc, value])?
                     } else {
                         value
                     };
@@ -115,7 +115,7 @@ impl Interpreter {
                         self.handle_supply_forward(dsid, new_acc)?;
                     } else if !callback.is_nil() {
                         Self::sleep_for_supply_delay(delay_seconds);
-                        self.call_supply_callback(callback, vec![new_acc], true)?;
+                        self.call_supply_callback(callback, vec![new_acc])?;
                     }
                 }
                 SupplierEmitAction::StartCall {
@@ -218,7 +218,7 @@ impl Interpreter {
         match tuple_val.view() {
             ValueView::Array(items, ..) => {
                 let items = items.to_vec();
-                self.call_supply_callback(f, items, false)
+                self.call_supply_callback(f, items)
                     .unwrap_or(tuple_val)
             }
             _ => tuple_val,

@@ -686,7 +686,7 @@ impl Interpreter {
                     {
                         self.vm_call_on_value(callable, chunk, None)?
                     } else {
-                        self.call_sub_value(callable, chunk, false)?
+                        self.call_sub_value(callable, chunk)?
                     };
                     let value = self.reify_finite_pipe_value(value)?;
                     push_map_value(&mut out.produced, value);
@@ -722,7 +722,7 @@ impl Interpreter {
                     };
                     out.consumed = consumed_base + i + arity;
                     let value =
-                        self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
+                        self.call_sub_value(Value::sub_value(data.clone()), chunk)?;
                     let value = self.reify_finite_pipe_value(value)?;
                     push_map_value(&mut out.produced, value);
                     i += arity;
@@ -989,7 +989,7 @@ impl Interpreter {
                 {
                     self.vm_call_on_value(func.clone(), vec![item], None)?
                 } else {
-                    self.call_sub_value(func.clone(), vec![item], false)?
+                    self.call_sub_value(func.clone(), vec![item])?
                 };
                 let value = self.reify_finite_pipe_value(value)?;
                 push_map_value(&mut out.produced, value);
@@ -1315,7 +1315,7 @@ impl FirstMatcher for InterpFirstMatcher<'_> {
             let call_item = crate::runtime::utils::pair_as_positional(item);
             let pred = self
                 .0
-                .call_sub_value(pattern.clone(), vec![call_item], true)?;
+                .call_sub_value(pattern.clone(), vec![call_item])?;
             if pred.is_match_instance() {
                 self.0
                     .env_mut()

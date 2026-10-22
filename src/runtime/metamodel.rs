@@ -223,7 +223,7 @@ impl Interpreter {
                 "parameterize_type: no parameterizer was set for this type",
             ));
         };
-        let result = self.call_sub_value(parameterizer, vec![root.clone(), list.clone()], false)?;
+        let result = self.call_sub_value(parameterizer, vec![root.clone(), list.clone()])?;
         if let Some(data) = self.types.custom_type_data.get_mut(&id) {
             data.parameterizations.push((key, result.clone()));
         }

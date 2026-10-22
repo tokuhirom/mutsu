@@ -100,7 +100,7 @@ fn whatever_code(
 ) -> Answer {
     Some(
         interp
-            .call_sub_value(target.clone(), vec![args[0].clone()], false)
+            .call_sub_value(target.clone(), vec![args[0].clone()])
             .map(|value| Value::truth(value.truthy())),
     )
 }
@@ -114,7 +114,7 @@ fn code(interp: &mut Interpreter, target: &Value, args: &[Value], _named: Named<
         ValueView::Sub(data) if data.empty_sig => Vec::new(),
         _ => vec![args[0].clone()],
     };
-    Some(interp.call_sub_value(target.clone(), call_args, false))
+    Some(interp.call_sub_value(target.clone(), call_args))
 }
 
 /// `Signature.ACCEPTS($capture)`: whether the capture binds (Cro's route

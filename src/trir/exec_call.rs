@@ -304,7 +304,7 @@ impl Interpreter {
             })
             .and_then(|target| self.bind_lvalue_unit_redirect(&target));
         let result = match self.trir_declared_amp_callable(chunk, call.name) {
-            Some(callable) => self.vm_call_sub_value(callable, args, false),
+            Some(callable) => self.vm_call_sub_value(callable, args),
             None => self.call_function(&name, args),
         };
         self.end_lvalue_unit_redirect(unit_redirect);

@@ -51,7 +51,7 @@ impl Interpreter {
         // a file literally named after the type object.
         let lib_value = match library.view() {
             ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => {
-                self.call_sub_value(library.clone(), Vec::new(), true)?
+                self.call_sub_value(library.clone(), Vec::new())?
             }
             _ => library.clone(),
         };

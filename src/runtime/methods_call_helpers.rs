@@ -218,7 +218,7 @@ impl Interpreter {
                 return Ok(Some(Value::int(0)));
             };
             prev_key = if let Some(func) = as_func.clone() {
-                self.call_sub_value(func, vec![first], true)?
+                self.call_sub_value(func, vec![first])?
             } else {
                 first
             };
@@ -229,12 +229,12 @@ impl Interpreter {
         while scan_index < source.len() {
             let item = source[scan_index].clone();
             let key = if let Some(func) = as_func.clone() {
-                self.call_sub_value(func, vec![item.clone()], true)?
+                self.call_sub_value(func, vec![item.clone()])?
             } else {
                 item
             };
             let duplicate = if let Some(func) = with_func.clone() {
-                self.call_sub_value(func, vec![prev_key.clone(), key.clone()], true)?
+                self.call_sub_value(func, vec![prev_key.clone(), key.clone()])?
                     .truthy()
             } else {
                 crate::runtime::values_identical(&prev_key, &key)
@@ -274,7 +274,7 @@ impl Interpreter {
         let mut resolved = args.to_vec();
         if let Some(arg) = args.first().filter(|a| is_callable(a))
             && let Ok(result) =
-                self.call_sub_value(arg.clone(), vec![Value::int(arr_len as i64)], true)
+                self.call_sub_value(arg.clone(), vec![Value::int(arr_len as i64)])
         {
             resolved[0] = result;
         }
@@ -289,7 +289,7 @@ impl Interpreter {
                 .unwrap_or(0)
                 .min(arr_len);
             let remaining = arr_len.saturating_sub(resolved_start) as i64;
-            if let Ok(result) = self.call_sub_value(arg.clone(), vec![Value::int(remaining)], true)
+            if let Ok(result) = self.call_sub_value(arg.clone(), vec![Value::int(remaining)])
             {
                 resolved[1] = result;
             }

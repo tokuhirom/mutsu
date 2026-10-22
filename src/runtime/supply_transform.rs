@@ -114,9 +114,7 @@ impl Interpreter {
                                 }
                                 if let Ok(result) = winterp.call_supply_callback(
                                     blk.clone(),
-                                    vec![vals[idx].clone()],
-                                    false,
-                                ) {
+                                    vec![vals[idx].clone()]) {
                                     let promise = SharedPromise::new_kept(result);
                                     let pval = Value::promise(promise);
                                     let _guard = emit_lock.lock().unwrap();
@@ -151,7 +149,7 @@ impl Interpreter {
                     }
                     supplier_done(out_supplier_id);
                     for done_cb in take_supplier_done_callbacks(out_supplier_id) {
-                        let _ = thread_interp.call_sub_value(done_cb, Vec::new(), true);
+                        let _ = thread_interp.call_sub_value(done_cb, Vec::new());
                     }
                 });
                 let mut new_attrs = HashMap::new();
@@ -167,7 +165,7 @@ impl Interpreter {
                 let mut promises = Vec::with_capacity(source_values.len());
                 for val in &source_values {
                     let result =
-                        self.call_supply_callback(block.clone(), vec![val.clone()], false)?;
+                        self.call_supply_callback(block.clone(), vec![val.clone()])?;
                     let promise = SharedPromise::new_kept(result);
                     promises.push(Value::promise(promise));
                 }
@@ -210,7 +208,7 @@ impl Interpreter {
                 }
                 supplier_done(out_supplier_id);
                 for done_cb in take_supplier_done_callbacks(out_supplier_id) {
-                    let _ = thread_interp.call_sub_value(done_cb, Vec::new(), true);
+                    let _ = thread_interp.call_sub_value(done_cb, Vec::new());
                 }
             });
             let mut new_attrs = HashMap::new();
@@ -304,7 +302,7 @@ impl Interpreter {
         let seen_keys = supplier_unique_get_seen(supplier_id, tap_index);
         for seen in &seen_keys {
             let is_same = if let Some(func) = with_fn {
-                self.call_supply_callback(func.clone(), vec![seen.clone(), key.clone()], true)?
+                self.call_supply_callback(func.clone(), vec![seen.clone(), key.clone()])?
                     .truthy()
             } else {
                 values_identical(seen, key)
@@ -348,7 +346,7 @@ impl Interpreter {
         let mut thread_interp = self.clone_for_thread();
         crate::runtime::worker_pool::submit(move || {
             let result_val = thread_interp
-                .call_supply_callback(callable, vec![value], true)
+                .call_supply_callback(callable, vec![value])
                 .unwrap_or(Value::NIL);
             // Emit the result into the inner Supply
             supplier_emit(inner_supplier_id, result_val.clone());

@@ -317,9 +317,9 @@ impl ActLoop {
         // understands.
         let result = crate::vm::guard_worker_panic(|| match end_cb {
             Some((end, _)) if is_done_marker => interp.invoke_done_callback(end).map(|_| ()),
-            Some((end, args)) => interp.call_sub_value(end, args, true).map(|_| ()),
+            Some((end, args)) => interp.call_sub_value(end, args).map(|_| ()),
             None => interp
-                .call_sub_value(cb.clone(), vec![value], true)
+                .call_sub_value(cb.clone(), vec![value])
                 .map(|_| ()),
         });
         drop(react_done_handler);

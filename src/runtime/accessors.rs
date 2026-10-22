@@ -870,7 +870,7 @@ impl Interpreter {
             Err(_) => return false,
         };
         // Call the predicate with the value
-        match self.call_sub_value(pred_val, vec![value.clone()], false) {
+        match self.call_sub_value(pred_val, vec![value.clone()]) {
             Ok(result) => result.truthy(),
             Err(_) => false,
         }

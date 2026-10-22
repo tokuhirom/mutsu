@@ -269,7 +269,7 @@ impl Interpreter {
                         if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
                             self.vm_call_on_value(callable, vec![item.clone()], None)?
                         } else {
-                            self.call_sub_value(callable, vec![item.clone()], false)?
+                            self.call_sub_value(callable, vec![item.clone()])?
                         };
                     if self.eval_predicate_truthy(&pred) {
                         result.push(item.clone());
@@ -308,7 +308,7 @@ impl Interpreter {
                     };
                     *consumed = consumed_base + i + arity;
                     let pred =
-                        self.call_sub_value(Value::sub_value(data.clone()), chunk.clone(), false)?;
+                        self.call_sub_value(Value::sub_value(data.clone()), chunk.clone())?;
                     if self.eval_predicate_truthy(&pred) {
                         if arity == 1 {
                             result.push(chunk[0].clone());
@@ -587,7 +587,7 @@ impl Interpreter {
             let mut matched = Vec::new();
             for (i, item) in list_items.iter().enumerate() {
                 *consumed = consumed_base + i + 1;
-                let pred = self.call_sub_value(func.clone(), vec![item.clone()], false)?;
+                let pred = self.call_sub_value(func.clone(), vec![item.clone()])?;
                 if self.eval_predicate_truthy(&pred) {
                     result.push(item.clone());
                     matched.push(i);

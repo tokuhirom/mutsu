@@ -303,7 +303,7 @@ impl Interpreter {
                     }
                     // When RHS is a Sub, invoke it (thunking behavior)
                     acc = if let ValueView::Sub(_) = rhs.view() {
-                        self.call_sub_value(rhs.clone(), vec![], false)?
+                        self.call_sub_value(rhs.clone(), vec![])?
                     } else {
                         rhs.clone()
                     };
@@ -316,7 +316,7 @@ impl Interpreter {
                 for arg in &args {
                     // Invoke Sub operands (thunking behavior)
                     let val = if let ValueView::Sub(_) = arg.view() {
-                        self.call_sub_value(arg.clone(), vec![], false)?
+                        self.call_sub_value(arg.clone(), vec![])?
                     } else {
                         arg.clone()
                     };

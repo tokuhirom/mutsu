@@ -3761,7 +3761,7 @@ impl Interpreter {
                     if storer.is_nil() {
                         return Err(RuntimeError::assignment_ro(None));
                     }
-                    self.call_sub_value(storer.clone(), vec![elem.clone(), val.clone()], true)?;
+                    self.call_sub_value(storer.clone(), vec![elem.clone(), val.clone()])?;
                     self.stack.push(val);
                     return Ok(());
                 }

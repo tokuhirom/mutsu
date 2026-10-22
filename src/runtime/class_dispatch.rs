@@ -436,7 +436,7 @@ impl Interpreter {
                 None
             };
             self.shift_arg_sources_for_wrap_invocant();
-            let result = self.call_sub_value(outermost, call_args, false);
+            let result = self.call_sub_value(outermost, call_args);
             // Propagate closure variable mutations from the wrapper back to
             // the current env so captured variables are visible to the caller.
             if let Some(wid) = wrapper_id

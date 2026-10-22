@@ -290,7 +290,7 @@ fn invoke(data: &CallbackData, args: *const *const std::ffi::c_void) -> Option<V
         // interpreter again until that call returns — so this re-borrow is the
         // only live access for the duration of the callback.
         let interp = unsafe { &mut *interp };
-        interp.call_sub_value(callable, raku_args, false)
+        interp.call_sub_value(callable, raku_args)
     }));
     match result {
         Ok(Ok(v)) => Some(v),

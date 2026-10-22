@@ -99,7 +99,7 @@ pub(crate) fn callable_count(
     };
     Some(
         interp
-            .call_sub_value(arg.clone(), vec![size], false)
+            .call_sub_value(arg.clone(), vec![size])
             .map(crate::builtins::method_table::mutating::quanthash::callable_count_to_int),
     )
 }

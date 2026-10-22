@@ -150,7 +150,7 @@ impl Interpreter {
                 self.env = module_env;
                 self.bind_compile_time_lang();
                 self.bind_compile_time_resolver();
-                let result = self.call_sub_value(export_sub.clone(), export_args, false)?;
+                let result = self.call_sub_value(export_sub.clone(), export_args)?;
                 self.restore_caller_env_keeping_dynamics(caller_env);
                 self.install_export_map(&result, importer.as_deref());
                 if let Some(m) = self.module.module_load_stack.last().cloned() {
@@ -259,7 +259,7 @@ impl Interpreter {
             ModuleExportDef::Value(v) => {
                 self.bind_compile_time_lang();
                 self.bind_compile_time_resolver();
-                self.call_sub_value(v, export_args, false)?
+                self.call_sub_value(v, export_args)?
             }
         };
         // Same discipline as the first-load path: EXPORT's own lexicals go,

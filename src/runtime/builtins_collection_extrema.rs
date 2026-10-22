@@ -73,7 +73,7 @@ impl Interpreter {
         // before borrowing self mutably for the block-call closure.
         let by_arity = by.map(|b| self.extrema_callable_arity(b));
         Self::extrema_from_values_generic(args, want_max, by, by_arity, |c, a| {
-            self.call_sub_value(c.clone(), a, true)
+            self.call_sub_value(c.clone(), a)
         })
     }
 
@@ -191,7 +191,7 @@ impl Interpreter {
             // typed key both in the resulting Pair and in the default ordering.
             let pair = map.typed_pair(k, v.clone());
             let key = if let Some(by_callable) = &by {
-                match self.call_sub_value(by_callable.clone(), vec![pair.clone()], true) {
+                match self.call_sub_value(by_callable.clone(), vec![pair.clone()]) {
                     Ok(value) => value,
                     Err(_) => v.clone(),
                 }

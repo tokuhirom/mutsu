@@ -811,7 +811,7 @@ impl Interpreter {
                     );
                 }
             }
-            return self.call_sub_value(target, args, false);
+            return self.call_sub_value(target, args);
         }
 
         // A WalkList is invoked (`$x.WALK(...)()`) by calling each candidate on
@@ -831,7 +831,7 @@ impl Interpreter {
         if let ValueView::Sub(data) = target.view()
             && self.has_wrap_chain(data.id)
         {
-            return self.call_sub_value(target, args, false);
+            return self.call_sub_value(target, args);
         }
 
         // Multi-method dispatcher Sub (`^find_method`/`.can` on a multi):
@@ -1152,7 +1152,7 @@ impl Interpreter {
         // call_sub_value, avoiding the eval_call_on_value indirection since we
         // already know the target is a Sub.
         if matches!(target.view(), ValueView::Sub(_)) {
-            return self.vm_call_sub_value(target, args, true);
+            return self.vm_call_sub_value(target, args);
         }
 
         // Any remaining value (Int, Str, Num, ...) is not Callable. Invoking it
@@ -1175,7 +1175,7 @@ impl Interpreter {
             }
         }
         // Evaluate the thunk (call the sub with no args)
-        let result = self.call_sub_value(thunk_data.thunk.clone(), vec![], true)?;
+        let result = self.call_sub_value(thunk_data.thunk.clone(), vec![])?;
         // Cache the result
         {
             let mut cache = thunk_data.cache.lock().unwrap();

@@ -34,7 +34,7 @@ impl Interpreter {
             // dynamic var in the caller's scope from the block's result — the
             // assignment's value — keyed by the supplied name. `$*name`
             // (env key `*name`) then resolves.
-            let result = self.call_sub_value(block, Vec::new(), false)?;
+            let result = self.call_sub_value(block, Vec::new())?;
             if let Some(name) = name {
                 let env_key = match name.strip_prefix("$*").or_else(|| name.strip_prefix('$')) {
                     Some(bare) => format!("*{bare}"),

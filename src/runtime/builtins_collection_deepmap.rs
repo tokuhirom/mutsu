@@ -132,7 +132,7 @@ impl Interpreter {
         if let Some(func) = with_func {
             let mut final_result = Vec::new();
             for combo in result {
-                let val = self.call_sub_value(func.clone(), combo, false)?;
+                let val = self.call_sub_value(func.clone(), combo)?;
                 final_result.push(val);
             }
             Ok(Value::seq(final_result))
@@ -506,9 +506,7 @@ impl Interpreter {
         let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(leaf.deref_container()));
         let res = self.call_sub_value(
             block.clone(),
-            vec![Value::container_ref(cell.clone())],
-            false,
-        )?;
+            vec![Value::container_ref(cell.clone())])?;
         let new_val = cell.load();
         Ok((res.deref_container(), new_val))
     }
@@ -733,7 +731,7 @@ impl Interpreter {
             ValueView::Array(items, _kind) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
-                    match self.call_sub_value(block.clone(), vec![item.clone()], false) {
+                    match self.call_sub_value(block.clone(), vec![item.clone()]) {
                         Ok(v) => result.push(v),
                         Err(e) if e.is_next() => continue,
                         Err(e) => return Err(e),
@@ -744,7 +742,7 @@ impl Interpreter {
             ValueView::Seq(items) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
-                    match self.call_sub_value(block.clone(), vec![item.clone()], false) {
+                    match self.call_sub_value(block.clone(), vec![item.clone()]) {
                         Ok(v) => result.push(v),
                         Err(e) if e.is_next() => continue,
                         Err(e) => return Err(e),
@@ -757,7 +755,7 @@ impl Interpreter {
             ValueView::Hash(map) => {
                 let mut result = ValueMap::default();
                 for (k, v) in map.iter() {
-                    match self.call_sub_value(block.clone(), vec![v.clone()], false) {
+                    match self.call_sub_value(block.clone(), vec![v.clone()]) {
                         Ok(mapped) => {
                             // A real Hash element store (see `duckmap`'s Hash arm).
                             result.insert(k.clone(), mapped.itemize_for_hash_element());
@@ -769,7 +767,7 @@ impl Interpreter {
                 Ok(Value::hash_with_data(mapped_hash(&map, result)))
             }
             // Single value: apply the block directly
-            _ => self.call_sub_value(block.clone(), vec![target.clone()], false),
+            _ => self.call_sub_value(block.clone(), vec![target.clone()]),
         }
     }
 
@@ -805,7 +803,7 @@ impl Interpreter {
             )
         };
         // Try to call the block with this value
-        match self.call_sub_value(block.clone(), vec![value.clone()], false) {
+        match self.call_sub_value(block.clone(), vec![value.clone()]) {
             Ok(result) => Ok(result),
             Err(e) if e.is_next() || e.is_last() || e.is_redo() => {
                 // Propagate loop control signals (next, last, redo)

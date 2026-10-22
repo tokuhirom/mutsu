@@ -520,7 +520,7 @@ impl Interpreter {
         let saved_dollar_topic = self.env.get("$_").cloned();
         self.env.insert("_".to_string(), arg.clone());
         self.env.insert("$_".to_string(), arg.clone());
-        let result = self.call_sub_value(func, vec![arg], true);
+        let result = self.call_sub_value(func, vec![arg]);
         match saved_topic {
             Some(v) => self.env.insert("_".to_string(), v),
             None => self.env.remove("_"),

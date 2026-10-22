@@ -57,7 +57,7 @@ impl Interpreter {
                 return self.call_routine_def(&def, args.to_vec());
             }
             if let Some(callable) = self.env.get(&format!("&{}", name)).cloned() {
-                return self.call_sub_value(callable, args.to_vec(), false);
+                return self.call_sub_value(callable, args.to_vec());
             }
             if args.is_empty() {
                 return Ok(Value::NIL);
@@ -158,7 +158,7 @@ impl Interpreter {
                 return self.call_routine_def(&def, args.to_vec());
             }
             if let Some(callable) = self.env.get(&format!("&{}", name)).cloned() {
-                return self.call_sub_value(callable, args.to_vec(), false);
+                return self.call_sub_value(callable, args.to_vec());
             }
             if !args.is_empty() {
                 let arg = &args[0];
@@ -395,7 +395,7 @@ impl Interpreter {
                 && !self.is_wrap_dispatching(sub_id)
                 && let Some(sub_val) = self.get_wrapped_sub(name)
             {
-                return self.call_sub_value(sub_val, args.to_vec(), false);
+                return self.call_sub_value(sub_val, args.to_vec());
             }
             // ADR-0044 D1: `push`/`pop`/`shift`/`unshift`/`append`/`prepend`/
             // `splice` as native function-form routines, reached here
@@ -542,7 +542,7 @@ impl Interpreter {
             && !self.is_wrap_dispatching(sub_id)
             && let Some(sub_val) = self.get_wrapped_sub(name)
         {
-            return self.call_sub_value(sub_val, args.to_vec(), false);
+            return self.call_sub_value(sub_val, args.to_vec());
         }
         if let Some(def) = self.resolve_function_with_alias(name, args)? {
             // Collect remaining candidates for callsame/nextcallee/callwith.

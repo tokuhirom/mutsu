@@ -522,7 +522,7 @@ impl Interpreter {
             };
             for idx in indices.iter_mut() {
                 if matches!(idx.view(), ValueView::Sub(..)) {
-                    *idx = self.call_sub_value(idx.clone(), vec![Value::int(target_len)], false)?;
+                    *idx = self.call_sub_value(idx.clone(), vec![Value::int(target_len)])?;
                 }
             }
         }

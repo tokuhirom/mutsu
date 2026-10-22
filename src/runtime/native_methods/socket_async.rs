@@ -101,7 +101,7 @@ impl Interpreter {
                             Value::str(format!("Failed to resolve '{}'", host)),
                         );
                         let ex = Value::make_instance(Symbol::intern("Exception"), attrs);
-                        let _ = self.call_sub_value(q, vec![ex], true);
+                        let _ = self.call_sub_value(q, vec![ex]);
                     }
                     return Ok(failed_listen_socket(format!("Failed to resolve '{}'", host)));
                 }
@@ -123,7 +123,7 @@ impl Interpreter {
                             let mut attrs = HashMap::new();
                             attrs.insert("message".to_string(), Value::str(message.clone()));
                             let ex = Value::make_instance(Symbol::intern("Exception"), attrs);
-                            let _ = self.call_sub_value(q, vec![ex], true);
+                            let _ = self.call_sub_value(q, vec![ex]);
                         }
                         return Ok(failed_listen_socket(message));
                     }
@@ -214,7 +214,7 @@ impl Interpreter {
                     let mut attrs = HashMap::new();
                     attrs.insert("message".to_string(), Value::str(err.message.to_string()));
                     let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
-                    let _ = self.call_sub_value(q, vec![ex], true);
+                    let _ = self.call_sub_value(q, vec![ex]);
                     return Ok(failed_listen_socket(err.message.to_string()));
                 }
 
