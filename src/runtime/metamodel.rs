@@ -622,6 +622,52 @@ impl Interpreter {
         })
     }
 
+    /// Rakudo builds the `has` attributes of a package declared with the
+    /// `EXPORTHOW::DECLARE` declarator `kw` as instances of the declarator's
+    /// `kw-attr` entry and composes them with the class. Here the class's
+    /// attributes are re-blessed into `attr_class` and each runs its own
+    /// `compose` (ValueClass::Attribute dies there for an `is rw` attribute).
+    // TODO: `.^attributes` still answers plain `Attribute` objects, and the
+    // metaclass's `container_initializer` is not consulted (#14588).
+    // Cost: O(a), a = attributes of the class.
+    pub(crate) fn compose_declare_attribute_metaclass(
+        &mut self,
+        class_name: &str,
+        attr_class: &Value,
+    ) -> Result<(), RuntimeError> {
+        let ValueView::Package(attr_class_name) = attr_class.view() else {
+            return Ok(());
+        };
+        let attr_class_name = attr_class_name.resolve();
+        let has_compose = self.class_mro(&attr_class_name).iter().any(|c| {
+            self.registry()
+                .user_method_overloads(c.as_str(), "compose")
+                .is_some()
+        });
+        if !has_compose {
+            return Ok(());
+        }
+        let type_obj = Value::package(Symbol::intern(class_name));
+        let attrs: Vec<super::ClassAttributeDef> = self
+            .registry()
+            .classes
+            .get(class_name)
+            .map(|class_def| class_def.attributes.clone())
+            .unwrap_or_default();
+        for attr in &attrs {
+            let object = self.make_attribute_object(attr, class_name);
+            let ValueView::Instance { attributes, .. } = object.view() else {
+                continue;
+            };
+            let object = Value::make_instance(
+                Symbol::intern(&attr_class_name),
+                attributes.as_map().clone(),
+            );
+            self.call_method_with_values(object, "compose", vec![type_obj.clone()])?;
+        }
+        Ok(())
+    }
+
     /// Drive the user HOW protocol for a DECLARE'd class right after its
     /// native registration (Rakudo's World does the same calls during
     /// compilation): the HOW's `new_type` override runs with `callsame`

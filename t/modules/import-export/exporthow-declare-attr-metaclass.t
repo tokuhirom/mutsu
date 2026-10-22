@@ -1,0 +1,18 @@
+use Test;
+
+# #14588 (ValueClass 0.0.10): the `<declarator>-attr` entry of EXPORTHOW::DECLARE
+# is the metaclass of the `has` attributes of a class declared with
+# `<declarator>`; its `compose` runs when the class is composed.
+use lib 't/lib';
+use DeclareAttrMetaHow;
+
+plan 4;
+
+lives-ok { EVAL 'use DeclareAttrMetaHow; my frozenattr Plain { has $.a; has $!b }' },
+    'attributes that pass the metaclass compose';
+
+my $worked = try { EVAL 'use DeclareAttrMetaHow; my frozenattr Loose { has $.a is rw }'; True };
+nok $worked, 'an `is rw` attribute dies in the attribute metaclass compose';
+ok $!.message.contains("can't be rw on a frozenattr class"), 'with the metaclass message';
+
+lives-ok { EVAL 'my class Plainer { has $.a is rw }' }, 'an ordinary class is unaffected';
