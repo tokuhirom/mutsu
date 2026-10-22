@@ -2,6 +2,15 @@ use super::vm_control_ops::ForLoopSpec;
 use super::*;
 use crate::opcode::{CompiledCode, CompiledFns};
 
+/// What one hyper/race worker batch hands back: its interpreter, the batch
+/// result, and the stdout / stderr it produced.
+type HyperBatchOut = (
+    crate::runtime::Interpreter,
+    Result<Vec<Value>, RuntimeError>,
+    String,
+    String,
+);
+
 impl Interpreter {
     /// Worker count for a hyper/race op over `n` iterations: one worker per
     /// item for tiny lists (so inter-item `await` still sees a peer thread),
@@ -456,18 +465,8 @@ impl Interpreter {
     // Cost: O(1) plus the wait for the batch.
     fn join_hyper_batch(
         &mut self,
-        handle: crate::runtime::worker_pool::TaskHandle<(
-            crate::runtime::Interpreter,
-            Result<Vec<Value>, RuntimeError>,
-            String,
-            String,
-        )>,
-    ) -> (
-        crate::runtime::Interpreter,
-        Result<Vec<Value>, RuntimeError>,
-        String,
-        String,
-    ) {
+        handle: crate::runtime::worker_pool::TaskHandle<HyperBatchOut>,
+    ) -> HyperBatchOut {
         crate::gc::block_quiescent(|| handle.join()).unwrap_or_else(|_| {
             (
                 self.clone_for_thread(),
