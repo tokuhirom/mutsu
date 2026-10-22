@@ -473,6 +473,10 @@ pub(crate) struct ModuleState {
     /// by-name lookup in the unit reads them instead of the sets of the
     /// `use`-blocks open around the call, which the EVAL cannot see.
     pub(crate) eval_import_chain: Option<Vec<Symbol>>,
+    /// The compunit that called the running `EVAL` (`eval_import_chain`'s
+    /// owner): code of any other compunit it calls reads its own top-level
+    /// `use`s, not the chain (#14481).
+    pub(crate) eval_import_unit: Option<Symbol>,
     /// The modules an `EVAL` unit's pre-run already `use`d while its CHECK-time
     /// validation runs, whose names the checks read from the interpreter, not
     /// from the module's source (`run_eval_hook_uses`, #13441).
@@ -703,6 +707,7 @@ impl ModuleState {
             lexical_import_hook_values: HashMap::new(),
             lexical_operator_import_sets: HashSet::new(),
             eval_import_chain: None,
+            eval_import_unit: None,
             eval_prerun_modules: HashSet::new(),
             eval_hook_results: HashMap::new(),
             eval_hook_recording: false,
@@ -805,6 +810,7 @@ impl ModuleState {
             lexical_import_hook_values: self.lexical_import_hook_values.clone(),
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
             eval_import_chain: self.eval_import_chain.clone(),
+            eval_import_unit: self.eval_import_unit,
             eval_prerun_modules: self.eval_prerun_modules.clone(),
             eval_hook_results: self.eval_hook_results.clone(),
             eval_hook_recording: false,
