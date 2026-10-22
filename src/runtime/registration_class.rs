@@ -243,6 +243,11 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// with no compiled plan available (role bodies, `augment class`) —
     /// those keep building a descriptor from the raw AST statement.
     pub(crate) attr_decls: &'a [(Symbol, crate::opcode::CompiledAttrDecl)],
+    /// `(alias, aliased type)` for each `constant` alias that heads a
+    /// parameterized attribute type (`has CA2[uint16] $.k` under `constant CA2
+    /// = CArray`), resolved by the declaring frame, whose pad the registry
+    /// cannot read by name. Empty where the declaration has no such frame.
+    pub(crate) attr_type_aliases: &'a [(String, String)],
     /// Precompiled runtime-resolved-name chunk for each top-level `method`/
     /// `submethod` declaration in the body (ADR-0019 D3-1), read by position
     /// in `class_body_method_decl` via `ClassBodyCx`. Empty for registration
