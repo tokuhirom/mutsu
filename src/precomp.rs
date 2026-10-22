@@ -779,7 +779,7 @@ mod tests {
         data.extend_from_slice(&(meta_bytes.len() as u32).to_le_bytes());
         data.extend_from_slice(&meta_bytes);
         data.extend_from_slice(&ast_bytes);
-        fs::write(&cache_file, &data).unwrap();
+        private_files::write_private(&cache_file, &data).unwrap();
 
         // Stale version → cache must be rejected (and removed).
         assert!(load_cached_unit(&source, None).is_none());
