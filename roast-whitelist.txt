@@ -693,6 +693,7 @@ roast/S12-introspection/parents.t
 roast/S12-introspection/roles.t
 roast/S12-introspection/walk.t
 roast/S12-meta/classhow.t
+roast/S12-meta/exporthow.t
 roast/S12-meta/grammarhow.t
 roast/S12-meta/primitives.t
 roast/S12-methods/accessors.t
