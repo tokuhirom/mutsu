@@ -23,6 +23,10 @@ pub(crate) struct ModuleState {
     /// `unit module Enums` publishes `Gender` = `Enums::Gender`, #13940).
     /// Copied into every importer's `package_type_aliases`.
     pub(crate) published_outer_packages: std::sync::Arc<HashMap<String, Vec<(String, String)>>>,
+    /// Per loaded module, the `EXPORTHOW` entries its source declares as
+    /// `(directive, declarator)` (`DECLARE`, `pokemon`), which
+    /// `CompUnit::Handle.export-how-package` publishes (#14173).
+    pub(crate) exporthow_declares: std::sync::Arc<HashMap<String, Vec<(String, String)>>>,
     /// The compilation units that imported an operator candidate family,
     /// keyed by operator name and then by the candidates' declaring unit. An
     /// operator candidate that a `use` imported is visible only to its
@@ -477,6 +481,13 @@ pub(crate) struct ModuleState {
     /// validation runs, whose names the checks read from the interpreter, not
     /// from the module's source (`run_eval_hook_uses`, #13441).
     pub(crate) eval_prerun_modules: HashSet<String>,
+    /// What each `sub EXPORT` hook returned while an `EVAL` unit's pre-run
+    /// ran it, by module and `use` arguments (`hook_replay_key`). The same
+    /// `use` left in its block replays the map instead of running the hook a
+    /// second time (`run_eval_hook_uses`).
+    pub(crate) eval_hook_results: HashMap<String, Value>,
+    /// Whether a hook run now records its map in `eval_hook_results`.
+    pub(crate) eval_hook_recording: bool,
     /// The routine-table version an import scope's exit last found free of
     /// a module-declared `GLOBAL::MAIN` candidate
     /// (`drop_foreign_global_main_candidates`), so a later exit over the same
@@ -623,6 +634,7 @@ impl ModuleState {
         Self {
             imported_operator_names: Default::default(),
             published_outer_packages: Default::default(),
+            exporthow_declares: Default::default(),
             operator_import_units: Default::default(),
             unscoped_import_units: Default::default(),
             operator_import_gen: 0,
@@ -697,6 +709,8 @@ impl ModuleState {
             lexical_operator_import_sets: HashSet::new(),
             eval_import_chain: None,
             eval_prerun_modules: HashSet::new(),
+            eval_hook_results: HashMap::new(),
+            eval_hook_recording: false,
             foreign_main_clean_version: None,
             lexical_import_replays: Default::default(),
             lexical_operator_candidate_defs: Default::default(),
@@ -723,6 +737,7 @@ impl ModuleState {
         Self {
             imported_operator_names: self.imported_operator_names.clone(),
             published_outer_packages: self.published_outer_packages.clone(),
+            exporthow_declares: self.exporthow_declares.clone(),
             operator_import_units: self.operator_import_units.clone(),
             unscoped_import_units: self.unscoped_import_units.clone(),
             operator_import_gen: self.operator_import_gen,
@@ -797,6 +812,8 @@ impl ModuleState {
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
             eval_import_chain: self.eval_import_chain.clone(),
             eval_prerun_modules: self.eval_prerun_modules.clone(),
+            eval_hook_results: self.eval_hook_results.clone(),
+            eval_hook_recording: false,
             foreign_main_clean_version: self.foreign_main_clean_version,
             lexical_import_replays: self.lexical_import_replays.clone(),
             lexical_operator_candidate_defs: self.lexical_operator_candidate_defs.clone(),

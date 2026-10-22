@@ -544,13 +544,21 @@ impl Interpreter {
                                 .unwrap_or_default();
                             role_names.sort();
                             role_names.dedup();
+                            // Names as the program sees them, without the
+                            // declaration-site key of a lexical class or role.
+                            let class_display =
+                                crate::value::user_facing_type_name(class_name).into_owned();
+                            let role_names: Vec<String> = role_names
+                                .iter()
+                                .map(|r| crate::value::user_facing_type_name(r).into_owned())
+                                .collect();
                             if required.is_multi {
                                 return Err(RuntimeError::typed_msg(
                                     "X::Role::Unimplemented::Multi",
                                     format!(
                                         "Multi method '{}' must be implemented by {} because it is required by roles: {}.",
                                         method_name,
-                                        class_name,
+                                        class_display,
                                         role_names.join(", ")
                                     ),
                                 ));
@@ -560,7 +568,7 @@ impl Interpreter {
                                 format!(
                                     "Method '{}' must be implemented by {} because it is required by roles: {}.",
                                     method_name,
-                                    class_name,
+                                    class_display,
                                     role_names.join(", ")
                                 ),
                             ));

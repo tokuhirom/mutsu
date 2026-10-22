@@ -1074,7 +1074,17 @@ impl Interpreter {
         }
         // Auto-detect @_ / %_ usage for subs without explicit signatures
         let (mut effective_param_defs, empty_sig) = if let Some(metadata) = metadata {
-            (metadata.effective_param_defs.clone(), metadata.empty_sig)
+            // The plan records the declaration as written; a declared
+            // signature is `param_defs` itself, which the caller may have
+            // rewritten (type aliases its declaring frame resolved, see
+            // `exec_register_sub_op_in_registry`). Only a signature-less
+            // routine's implicit `*@_`/`*%_` comes from the plan.
+            let defs = if param_defs.is_empty() {
+                metadata.effective_param_defs.clone()
+            } else {
+                param_defs.to_vec()
+            };
+            (defs, metadata.empty_sig)
         } else if param_defs.is_empty() && params.is_empty() {
             let (use_positional, use_named) =
                 crate::method_signature_shared::auto_signature_uses(body);

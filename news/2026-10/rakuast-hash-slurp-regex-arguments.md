@@ -1,0 +1,1 @@
+The RakuAST frontend now round-trips flattened hash composers in regex subrule arguments, including `<.flatnamed(|{ c => 6, d => 7 })>`. A shared expression-source renderer preserves the hash composer under the prefix slip, and `roast/S05-grammar/signatures.t` now passes in RakuAST mode.

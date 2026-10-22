@@ -153,6 +153,19 @@ impl Interpreter {
             })
             .map(|t| self.resolve_type_name_for_owner(owner, t))
             .map(|t| self.lexical_type_storage_name(t));
+        // `has Int:D %.h`: the element type keeps its smiley (`Associative[Int:D]`).
+        let raw_type_name = match raw_type_name {
+            Some(t) if matches!(sigil, '@' | '%') => {
+                let smiley = self
+                    .registry()
+                    .classes
+                    .get(owner)
+                    .and_then(|cd| cd.attribute_smileys.get(attr_name).cloned())
+                    .unwrap_or_else(|| "_".to_string());
+                Some(Self::join_constraint_smiley(&t, &smiley))
+            }
+            other => other,
+        };
         // For @ sigil, the exposed type is Positional[T]; for % it is Associative[T]
         let type_name = match sigil {
             '@' => {

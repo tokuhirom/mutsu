@@ -6,7 +6,8 @@
   parameter exclusion, was itself retired later the same day — §7.7; §7.9
   closes the `@a.push({ ... })` escape-verdict gap; §7.10 counts a nested
   closure's call arguments as possible writes; slices 2-5 not started.
-  §7.6 records what the 2026-09-06 re-measurement corrected.)
+  §7.6 records what the 2026-09-06 re-measurement corrected. §8 amends
+  slice 5 for `Sub` values without bytecode, 2026-10-22.)
 - Date: 2026-08-20 (renumbered 0054 → 0055 on 2026-08-20: two ADRs were
   authored concurrently as 0054 and this one lost the tie; the index row for
   0054 belongs to the argument-list-interpolation ADR)
@@ -706,3 +707,68 @@ does not classify the argument as an unconditional write or add it to runtime
 writeback. It ensures all aliases use the same cell, just as for a nested
 escaping closure in §7.10. Pinned by
 `t/concurrency/thread-lock/atomicint-rw-named-sub-prior-same-name.t`.
+
+## 8. Amendment: slice 5 for `Sub` values without bytecode (2026-10-22, #14521)
+
+### 8.1 Context
+
+Slice 5 assumed that once slice 4 forks every `compiled_code` closure onto
+`call_compiled_closure`, no closure instance straddles both paths and both
+stores are vestigial. A second population still reaches the tree-walk carrier:
+`Sub` values that Rust code synthesizes with an AST body and no
+`compiled_code` (the `substr-rw`/`subbuf-rw` Proxy FETCH/STORE pair, method
+object carriers, `redirect`, `<constraints>`, map-phaser wrappers). Their only
+runner is the carrier, which compiles the body through `eval_block_value`. The
+open question (#14521) was whether these need real bytecode before the stores
+can go:
+
+1. give each synthesizer a real `compiled_code`, then delete the carrier and
+   both stores; or
+2. keep a thin carrier for the `compiled_code == None` shape, require any
+   state shared across calls (or between sibling synthesized subs) to live in
+   `ContainerRef` cells the synthesizer installs, and delete both stores.
+
+### 8.2 Decision
+
+**Option 2.** The carrier stays as the runner for `compiled_code == None`
+`Sub` values, but it carries no per-instance state: every call starts from the
+closure's own captured `data.env`. The same rule holds on the compiled path. A
+closure's state across calls lives only in the `ContainerRef` cells it
+captured — a write to a capture that is not a cell does not outlive the call.
+
+Consequences that follow directly:
+
+- `closure_env_overrides` (the carrier's per-instance env) and
+  `closure_captured_state` (the compiled path's per-instance replay of unboxed
+  free-var writes) are both deleted, with every reader: the wrap-chain
+  writebacks, the `cas` write-back, the Proxy FETCH/STORE env sync, the react
+  drive loop's per-callback clear and its nested-callback exemption, the GC
+  root visits, the thread-clone copies and the two `.clear()` sites.
+- A synthesizer that needs state shared between calls or between two `Sub`
+  values it builds installs one `ContainerRef` in each value's `env` (the
+  `substr-rw` window length is the model). Giving the carrier a store back is
+  the `merge_all`-shaped escape hatch §4 forbids, one level down.
+- A capture the compiler leaves unboxed but that a closure mutates across
+  calls is a slice 1 cell-coverage defect, fixed at the binding by boxing it —
+  never by a per-instance store.
+
+### 8.3 Why not option 1
+
+Option 1 is the end state for the *carrier*, not for the stores: the stores are
+independent of whether a synthesized `Sub` has bytecode, because neither the
+carrier nor the compiled path needs a per-instance copy once shared state is a
+cell. Building bytecode for each synthesizer is a separate refactor (it retires
+the carrier and `eval_block_value`'s recompile of synthesized bodies) and is
+not a prerequisite here. Coupling the two would hold a pure deletion behind a
+per-synthesizer compile pipeline.
+
+### 8.4 Acceptance
+
+- `git grep closure_env_overrides closure_captured_state` finds no reader.
+- `roast/S04-declarations/state.t` wall-clock does not regress against the
+  bench CI series (§6).
+- Two instances from one closure factory keep independent state for typed and
+  untyped captures; a nested `whenever` keeps accumulating into a lexical of
+  its exited enclosing `whenever` body; the `substr-rw` window follows each
+  STORE; a wrapper's and a `cas` block's captured-lexical writes reach the
+  caller.

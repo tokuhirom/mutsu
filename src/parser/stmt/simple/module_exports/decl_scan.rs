@@ -53,6 +53,8 @@ pub(super) struct ModuleDecls {
     pub(super) exports: HashMap<String, InlineModuleExport>,
     /// `(keyword, HOW type name)` pairs from `EXPORTHOW::DECLARE` packages.
     pub(super) declare_keywords: Vec<(String, String)>,
+    /// Built-in declarator keywords whose HOW `EXPORTHOW::SUPERSEDE` replaces.
+    pub(super) supersede_keywords: Vec<String>,
     /// Whether the module calls `.define_slang` (an L10N distribution's
     /// generated EXPORT hook).
     pub(super) defines_slang: bool,

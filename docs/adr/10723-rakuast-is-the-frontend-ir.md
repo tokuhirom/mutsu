@@ -1884,3 +1884,12 @@ VALUE)`. Lowering that shape restores the same `undefine_first` save/restore
 node. The focused `t/rakuast/rakuast-residual-source-terms.t` records Rakudo's
 read shapes and signed-zero EVAL behavior. The enum basic, negative-zero and
 scalar undefine roast files now pass in frontend mode.
+
+### 6.100 S4: itemized private attributes (2026-10-22)
+
+`$@!items` and `$%!lookup` are `Contextualizer::Item` nodes over private
+attribute variables. Lowering now accepts attribute nodes alongside lexical,
+dynamic, package and anonymous variables, restoring the parser's existing
+`Expr::Itemize` path for arrays and hashes. The contextualizer test checks both
+attribute kinds through EVAL, and `roast/S32-exceptions/misc2.t` passes in
+RakuAST frontend mode.

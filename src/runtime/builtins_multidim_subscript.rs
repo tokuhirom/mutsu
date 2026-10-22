@@ -207,6 +207,21 @@ impl Interpreter {
             args[1].clone(),
             Value::pair(name.to_string(), Value::truth(truthy)),
         ];
+        // The candidates a `use` of the enclosing blocks (or the unit) imported
+        // come first, as for the plain subscript (ADR-8751 stage 2).
+        let chain_idx = args.iter().skip(4).find_map(|a| match a.view() {
+            ValueView::Str(s) => s
+                .strip_prefix(crate::ast::SUBSCRIPT_LEXICAL_CHAIN_MARKER)?
+                .parse::<u32>()
+                .ok(),
+            _ => None,
+        });
+        if let Some(chain_idx) = chain_idx
+            && let Some(result) = self.try_lexical_import_operator_at(chain_idx, op_name, call_args.clone())
+            && let Some(value) = result?
+        {
+            return Ok(Some(value));
+        }
         match self.resolve_function_with_types(op_name, &call_args)? {
             Some(def) => self.call_routine_def(&def, call_args).map(Some),
             None => Ok(None),

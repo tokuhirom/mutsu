@@ -228,7 +228,8 @@ pub(super) fn try_keyword_dispatch(
     // my class Name is Parent { ... }
     if let Some(r) = keyword("class", rest) {
         let (r, _) = ws1(r)?;
-        let (r, stmt) = class_decl_body(r, !is_our)?;
+        let (r, mut stmt) = class_decl_body(r, !is_our)?;
+        super::super::class::apply_supersede(&mut stmt, "class");
         // `my class T { ... }.new(...)` is a postfix on the type object, as
         // for the unscoped `class` (see `reject_trailing_postfix`).
         super::super::class::reject_trailing_postfix(r)?;

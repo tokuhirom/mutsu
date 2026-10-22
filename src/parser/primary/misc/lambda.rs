@@ -289,7 +289,12 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
             // declared no `&t` lexical the compiler could see, so a `&t()` /
             // `t()` in the body was compiled as if no `&t` were in scope and
             // resolved to an outer `sub t` instead of the argument (#10997).
-            && !first.name.starts_with(['@', '%', '&']);
+            && !first.name.starts_with(['@', '%', '&'])
+            // A sigilless parameter (`-> \t { }`) likewise needs its `ParamDef`:
+            // without one nothing says it binds the argument's container, so
+            // `t = 5` died with "Cannot modify an immutable Int" where a
+            // `sub (\t)` writes through (#14210).
+            && !first.sigilless;
         if simple_single {
             // Strip sigil prefix for Lambda (it handles sigils internally)
             let lambda_name = first

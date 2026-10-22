@@ -26,6 +26,12 @@ pub const SUBSCRIPT_POSITIONAL_MARKER: &str = "__subscript_positional__";
 /// [`SUBSCRIPT_POSITIONAL_MARKER`].
 pub const SUBSCRIPT_ASSOCIATIVE_MARKER: &str = "__subscript_associative__";
 
+/// Prefix of the marker argument the compiler appends to a
+/// `__mutsu_subscript_adverb` call, followed by the index of the import-set
+/// chain (`CompiledCode::lexical_import_chains`) the call site sees, so the
+/// builtin can find the `postcircumfix` candidates a `use` imported.
+pub const SUBSCRIPT_LEXICAL_CHAIN_MARKER: &str = "__subscript_lexchain__";
+
 /// A process-global counter assigning each `my class`/lexical `ClassDecl`
 /// declaration site a stable id at parse time. Two distinct source
 /// declarations get distinct ids; a single declaration inside a loop keeps one

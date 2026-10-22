@@ -288,11 +288,52 @@ impl Compiler {
 
     pub(super) fn compile_expr_call(&mut self, name: &Symbol, args: &[Expr]) {
         self.fold_lexical_sub_free_vars(name);
+        if *name == crate::ast::subscript_adverb::SUBSCRIPT_ADVERB_FN
+            && let Some(with_chain) = self.subscript_adverb_args_with_chain(args)
+        {
+            self.compile_expr_call_inner(name, &with_chain, false);
+            return;
+        }
         if let Some(named) = Self::named_sub_lvalue_with_target_var(name, args) {
             self.compile_expr_call_inner(name, &named, false);
             return;
         }
         self.compile_expr_call_inner(name, args, false);
+    }
+
+    /// The arguments of a `__mutsu_subscript_adverb` call plus the marker that
+    /// names the import-set chain of the call site, when a `use` around it may
+    /// have imported the subscript's `postcircumfix` candidates. `None` when
+    /// none can have (nothing to add).
+    // Cost: O(a + c), a = arguments, c = enclosing `use`-blocks.
+    fn subscript_adverb_args_with_chain(&mut self, args: &[Expr]) -> Option<Vec<Expr>> {
+        if self.lexical_import_chain.is_empty() {
+            return None;
+        }
+        let is_positional = args.iter().skip(4).find_map(|a| match a {
+            Expr::Literal(v) => match v.view() {
+                crate::value::ValueView::Str(s)
+                    if s.as_ref() == crate::ast::SUBSCRIPT_POSITIONAL_MARKER =>
+                {
+                    Some(true)
+                }
+                crate::value::ValueView::Str(s)
+                    if s.as_ref() == crate::ast::SUBSCRIPT_ASSOCIATIVE_MARKER =>
+                {
+                    Some(false)
+                }
+                _ => None,
+            },
+            _ => None,
+        })?;
+        let op = crate::lexical_builtin_op::postcircumfix_of_subscript(is_positional);
+        let chain_idx = self.lexical_import_chain_idx(Symbol::intern(op))?;
+        let mut with_chain = args.to_vec();
+        with_chain.push(Expr::Literal(Value::str(format!(
+            "{}{chain_idx}",
+            crate::ast::SUBSCRIPT_LEXICAL_CHAIN_MARKER
+        ))));
+        Some(with_chain)
     }
 
     /// `substr-rw($t, ...) = v` / `subbuf-rw($b, ...) = v` reach the runtime as

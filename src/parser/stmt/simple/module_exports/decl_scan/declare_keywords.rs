@@ -13,10 +13,28 @@ impl DeclScan {
             match inner {
                 Stmt::ClassDecl { name, .. } => {
                     let name = name.resolve();
+                    if let Some(keyword) = name.strip_prefix("SUPERSEDE::") {
+                        self.out.supersede_keywords.push(keyword.to_string());
+                    }
                     if let Some(keyword) = name.strip_prefix("DECLARE::") {
                         self.out
                             .declare_keywords
                             .push((keyword.to_string(), package_type_name("EXPORTHOW", &name)));
+                    }
+                }
+                // `package SUPERSEDE { constant class = SomeHOW }` replaces the
+                // HOW of a built-in declarator for the importing unit.
+                Stmt::Package { name, body, .. } if name.resolve() == "SUPERSEDE" => {
+                    for decl in body {
+                        if let Stmt::VarDecl {
+                            name,
+                            custom_traits,
+                            ..
+                        } = decl
+                            && custom_traits.iter().any(|(t, _)| t == "__constant")
+                        {
+                            self.out.supersede_keywords.push(name.clone());
+                        }
                     }
                 }
                 Stmt::Package { name, body, .. } if name.resolve() == "DECLARE" => {

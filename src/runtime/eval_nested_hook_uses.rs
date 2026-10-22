@@ -5,30 +5,26 @@
 //! [`Interpreter::run_eval_hook_uses`](super::Interpreter) already runs the
 //! top-level ones ahead of the validation; this lifts the ones nested in a
 //! block, branch or routine body to the top of the unit so the same pre-run
-//! covers them. A hook module's `use` moves (its `sub EXPORT` must not run
-//! twice); any other module's stays in its block, where the in-position run
-//! records the block's lexical import set, and a copy is pre-run.
+//! covers them. Every such `use` stays in its block, where the in-position
+//! run records the block's lexical import set, and a copy is pre-run. A hook
+//! module's copy records what its `sub EXPORT` returned, and the in-position
+//! run replays that map instead of running the hook twice
+//! (`ModuleState::eval_hook_results`).
 
 use crate::ast::{Expr, Stmt};
 use crate::ast_visit::VisitMut;
 
-/// Collects every nested `use` whose arguments are literals, in source order:
-/// a hook module's (per `is_hook`) is removed from its block, any other
-/// module's is copied and stays.
+/// Collects a copy of every nested `use` whose arguments are literals, in
+/// source order; the statement stays in its block.
 ///
 /// The import is then wider than the block that wrote it: a name the hook
 /// returned is visible after the block too. Nothing narrower is available to
 /// the pre-run, which has no import-set id for the block (ADR-8751); the
 /// validation was equally lenient about such a unit before (it did not judge
 /// the names of a hook module at all).
-// Cost: O(n), n = size of the unit's AST, plus one `is_hook` call per nested
-// `use`.
-pub(super) fn take_nested_hook_uses(
-    stmts: &mut Vec<Stmt>,
-    is_hook: &dyn Fn(&str) -> bool,
-) -> Vec<Stmt> {
+// Cost: O(n), n = size of the unit's AST.
+pub(super) fn take_nested_hook_uses(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
     let mut lifter = Lifter {
-        is_hook,
         lifted: Vec::new(),
         depth: 0,
     };
@@ -36,8 +32,7 @@ pub(super) fn take_nested_hook_uses(
     lifter.lifted
 }
 
-struct Lifter<'a> {
-    is_hook: &'a dyn Fn(&str) -> bool,
+struct Lifter {
     lifted: Vec<Stmt>,
     /// Nesting of statement lists: the unit's own top level is depth 1 and is
     /// left to the pre-run.
@@ -53,7 +48,7 @@ fn is_literal_arg(expr: &Expr) -> bool {
     }
 }
 
-impl VisitMut for Lifter<'_> {
+impl VisitMut for Lifter {
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
         self.depth += 1;
         if self.depth > 1 {
@@ -67,18 +62,10 @@ impl VisitMut for Lifter<'_> {
                             && crate::compiler::begin_use::loads_module_in_position(&stmt)
                                 .is_some_and(|m| m == module)
                 );
-                let Stmt::Use { module, .. } = &stmt else {
-                    kept.push(stmt);
-                    continue;
-                };
-                if !preruns {
-                    kept.push(stmt);
-                } else if (self.is_hook)(module) {
-                    self.lifted.push(stmt);
-                } else {
+                if preruns {
                     self.lifted.push(stmt.clone());
-                    kept.push(stmt);
                 }
+                kept.push(stmt);
             }
             *body = kept;
         }

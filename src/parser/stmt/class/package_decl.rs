@@ -177,6 +177,8 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = opt_char(r, ';');
         if let Some(kw) = declare_how {
             custom_traits.push(crate::parser::declare_how_marker(kw));
+        } else if let Some(marker) = super::super::simple::supersede_marker("class") {
+            custom_traits.push(marker);
         }
         // `stmt_list` parses the rest of a `unit class` as this declaration's
         // body. Register the type before returning so body methods can use the
@@ -337,6 +339,8 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         }
         if role_kw != "role" {
             custom_traits.push(crate::parser::declare_how_marker(role_kw));
+        } else if let Some(marker) = super::super::simple::supersede_marker("role") {
+            custom_traits.push(marker);
         }
         return Ok((
             r,

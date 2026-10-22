@@ -273,6 +273,14 @@ impl Interpreter {
             .and_then(|attr| {
                 super::attribute_type_constraint(&class_attrs, attr, attr_type_constraints)
             });
+        // `has Int:D %.h`: the container's element type keeps its smiley
+        // (`Hash[Int:D]`), the way the constructor path builds it.
+        let declared_type = match declared_type {
+            Some(tc) if matches!(sigil, '@' | '%') => {
+                Some(self.attribute_reported_constraint(class_key, attr_name, &tc))
+            }
+            other => other,
+        };
         match sigil {
             '@' => {
                 // Check for `is Type` trait (e.g. `has @.a is Buf`)
@@ -336,6 +344,17 @@ impl Interpreter {
                 Some("num" | "num32" | "num64") => Value::num(0.0),
                 Some("str") => Value::str("".to_string()),
                 Some(tc) => {
+                    // `has CArray[uint16] $.k`: a class with its own
+                    // `^parameterize` denotes the type object that meta-method
+                    // builds, the one `my CArray[uint16] $x` holds and
+                    // `~~ CArray[uint16]` compares against.
+                    let (base, _) = super::types::strip_type_smiley(tc);
+                    if base.contains('[')
+                        && !base.contains('(')
+                        && let Some(ty) = self.meta_parameterized_type(base)
+                    {
+                        return ty;
+                    }
                     let nominal = self.nominal_type_object_name_for_constraint(tc);
                     Value::package(Symbol::intern(&nominal))
                 }

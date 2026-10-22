@@ -44,7 +44,7 @@ pub(crate) use package_decl::{check_pseudo_package_in_decl, export_name_clash_er
 
 // Public entry points — preserve each function's original visibility.
 pub(crate) use class_decl::declare_term_decl;
-pub(super) use class_decl::{also_trait_stmt, class_decl_body};
+pub(super) use class_decl::{also_trait_stmt, apply_supersede, class_decl_body};
 pub(crate) use class_decl::{
     anon_class_decl, augment_class_decl, class_decl, declare_decl, native_decl,
 };

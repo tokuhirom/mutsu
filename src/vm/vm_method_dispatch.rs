@@ -125,6 +125,16 @@ impl Interpreter {
                 )
             }
         };
+        // A CStruct/CUnion handle keeps its fields in native memory, not in the
+        // attribute cell, so `$!field` inside the class's own method would read
+        // nothing. (`$obj.field` works: the generated accessor goes through
+        // `cstruct_field_value`.) Materialise the declared fields for the
+        // duration of the call — re-read on every entry, so a value C changed
+        // in between is picked up. `MoarVM::Guts::REPRs`' `MVMArrayB.realstart`
+        // is exactly this shape: `+$!start ?? … !! $!any`.
+        // This runs before the fast-path decision below: the fast binder reads
+        // the attributes off `self`'s cell and must see the re-read fields too.
+        self.seed_cstruct_fields_for_method(receiver_class_name, Some(&base));
         // Pre-compute whether we can skip the expensive env merge on exit.
         // `is raw` is included alongside `is rw`: an `is raw` param bound to an
         // lvalue argument also writes back to the caller (`bind_function_args_values`
@@ -804,15 +814,6 @@ impl Interpreter {
                 bind_param_defs.push(pd.clone());
             }
         }
-
-        // A CStruct/CUnion handle keeps its fields in native memory, not in the
-        // attribute cell, so `$!field` inside the class's own method would read
-        // nothing. (`$obj.field` works: the generated accessor goes through
-        // `cstruct_field_value`.) Materialise the declared fields for the
-        // duration of the call — re-read on every entry, so a value C changed
-        // in between is picked up. `MoarVM::Guts::REPRs`' `MVMArrayB.realstart`
-        // is exactly this shape: `+$!start ?? … !! $!any`.
-        self.seed_cstruct_fields_for_method(receiver_class_name, Some(&base));
 
         // Bind attributes
         for (attr_name, attr_val) in attributes {

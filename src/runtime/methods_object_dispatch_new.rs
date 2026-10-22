@@ -424,7 +424,7 @@ impl Interpreter {
         // The `Systemic` classes (`Compiler`, `VM`, `Distro`, `Kernel`) default
         // every attribute from the running process, so `Compiler.new.name` is
         // what `$*RAKU.compiler.name` is (META::constants relies on it). Like
-        // Rakudo, constructor arguments do not override them.
+        // Rakudo, `Compiler`/`VM` constructor arguments do not override them.
         // Cost: O(a), a = attribute count of the process instance.
         if let ValueView::Package(name) = target.view()
             && let Some(base) = match name.resolve().as_str() {
@@ -440,10 +440,32 @@ impl Interpreter {
                 ..
             } = base.view()
         {
-            return Ok(Value::make_instance(
-                class_name,
-                attributes.as_map().clone(),
-            ));
+            let mut attrs = attributes.as_map().clone();
+            // `Distro` takes its attributes from the arguments
+            // (`Distro.new(:name<win32>).name`); `Compiler` and `VM` ignore
+            // them. A `Distro` built from arguments leaves the rest unset
+            // (type objects, `name`/`auth` "unknown"), as in Rakudo; only the
+            // argument-less `Distro.new` mirrors the process.
+            // TODO: `Kernel.new(:name<k>)` honours its arguments in Rakudo too.
+            let named: Vec<(String, Value)> = args
+                .iter()
+                .filter_map(|arg| match arg.view() {
+                    ValueView::Pair(key, value) => Some((key.to_string(), value.clone())),
+                    _ => None,
+                })
+                .collect();
+            let class = class_name.resolve();
+            if !named.is_empty() && class == "Distro" {
+                attrs = Self::blank_distro_attributes().into();
+                for (key, value) in named {
+                    attrs.insert(key, value);
+                }
+                let is_win = attrs
+                    .get("name")
+                    .is_some_and(|n| n.to_string_value() == "mswin32");
+                attrs.insert("is-win".to_string(), Value::truth(is_win));
+            }
+            return Ok(Value::make_instance(class_name, attrs));
         }
         // Calling .new() on an instance delegates to the class constructor
         if let ValueView::Instance { class_name, .. } = target.view() {
@@ -1720,10 +1742,13 @@ impl Interpreter {
                 }
                 self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 self.enforce_attribute_smiley_constraints(class_key, &attrs, None)?;
+                // A type object cannot seed a numeric base's payload; an
+                // `is Array` / `is List` element can be any value (`Any`).
                 if matches!(
                     positional_ctor_args.first().map(Value::view),
                     Some(ValueView::Package(_))
-                ) {
+                ) && !class_mro.iter().any(|n| *n == "Array" || *n == "List")
+                {
                     return Err(RuntimeError::new("Cannot convert type object to Int"));
                 }
                 if class_mro.iter().any(|n| *n == "Array" || *n == "List")

@@ -14,9 +14,16 @@ pub(super) fn record_scanned_exports(module: &str, scan: &ModuleScanResult) {
         if scan.dynamic_export_stash {
             None
         } else if scan.declares_export_hook {
-            // The hook's literal keys only (ADR-8751): what else the
-            // module exports keeps the run-time import.
-            Some(exported_vars::hook_vars(module, &scan.hook_value_keys))
+            // The hook's literal keys and the module's own `is export`
+            // variables (ADR-8751): what else the module exports keeps the
+            // run-time import.
+            Some(
+                exported_vars::hook_vars(module, &scan.hook_value_keys)
+                    .iter()
+                    .chain(scan.exported_vars.iter())
+                    .cloned()
+                    .collect(),
+            )
         } else {
             Some(scan.exported_vars.as_slice().into())
         },

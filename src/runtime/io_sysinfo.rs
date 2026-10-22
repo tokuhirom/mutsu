@@ -111,6 +111,27 @@ impl Interpreter {
         Value::package(Symbol::intern(class_name))
     }
 
+    /// The attributes of a `Distro` constructed with arguments and nothing
+    /// else: Rakudo declares them unset, except `name` and `auth`, which are
+    /// "unknown".
+    // Cost: O(1).
+    pub(super) fn blank_distro_attributes() -> ValueMap {
+        let mut attrs = ValueMap::default();
+        for (key, type_name) in [
+            ("release", "Str"),
+            ("path-sep", "Str"),
+            ("version", "Version"),
+            ("signature", "Blob"),
+            ("desc", "Str"),
+        ] {
+            attrs.insert(key.to_string(), Value::package(Symbol::intern(type_name)));
+        }
+        attrs.insert("name".to_string(), Value::str_from("unknown"));
+        attrs.insert("auth".to_string(), Value::str_from("unknown"));
+        attrs.insert("is-win".to_string(), Value::FALSE);
+        attrs
+    }
+
     pub(super) fn make_distro_instance() -> Value {
         let os = std::env::consts::OS;
         let (name, auth, version_str, desc, release) = match os {

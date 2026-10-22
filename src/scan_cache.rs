@@ -150,7 +150,7 @@ pub(crate) fn load<T: serde::de::DeserializeOwned>(
         "{}.bin",
         precomp::path_hash_hex(&canonical.to_string_lossy())
     ));
-    let data = std::fs::read(&cache_file).ok()?;
+    let data = precomp::private_files::read_private(&cache_file).ok()?;
     if data.len() < 8 || &data[0..4] != CACHE_MAGIC {
         return None;
     }
@@ -231,18 +231,10 @@ pub(crate) fn save<T: serde::Serialize>(
         "{}.bin",
         precomp::path_hash_hex(&canonical.to_string_lossy())
     ));
-    // Same atomicity rule as the precompilation cache: the scratch name is
-    // per-writer, because two `prove -j` processes scanning the same module
-    // would otherwise interleave their non-atomic writes into one buffer and
-    // rename the mixture into place.
-    let tmp_file = cache_file.with_extension(format!("{}.tmp", std::process::id()));
-    if std::fs::write(&tmp_file, &data).is_ok() {
-        if std::fs::rename(&tmp_file, &cache_file).is_err() {
-            let _ = std::fs::remove_file(&tmp_file);
-        }
-    } else {
-        let _ = std::fs::remove_file(&tmp_file);
-    }
+    // Same atomicity and privacy rules as the precompilation cache: a
+    // per-writer scratch file, created `0600` and exclusively, renamed into
+    // place (#14516).
+    let _ = precomp::private_files::write_private(&cache_file, &data);
 }
 
 #[cfg(test)]

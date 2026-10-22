@@ -56,6 +56,9 @@ pub(crate) struct ModuleLoadFacts {
     /// (#13010).
     #[serde(default)]
     pub(crate) routine_enums: Vec<super::routine_scoped_enums::RoutineEnum>,
+    /// The unit's `package EXPORTHOW` entries as `(directive, declarator)`.
+    #[serde(default)]
+    pub(crate) exporthow_declares: Vec<(String, String)>,
 }
 
 impl ModuleLoadFacts {
@@ -89,6 +92,7 @@ impl ModuleLoadFacts {
             our_routine_names: Interpreter::module_our_routine_names(stmts),
             pod_ranges: Interpreter::pod_ranges_of(pod_source),
             routine_enums: super::routine_scoped_enums::RoutineEnumCollector::collect(stmts),
+            exporthow_declares: Interpreter::collect_exporthow_declares(stmts),
         }
     }
 }
