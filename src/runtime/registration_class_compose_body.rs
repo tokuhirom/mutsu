@@ -579,6 +579,13 @@ impl Interpreter {
             "?CLASS".to_string(),
             Value::package(Symbol::intern(cx.name)),
         );
+        // The `my` variables the body declares: a statement naming one reaches
+        // the declared variable, not a package variable of the role.
+        let body_lexicals: std::collections::HashSet<String> = role
+            .deferred_body
+            .iter()
+            .flat_map(|op| op.declared_vars.iter().map(|name| name.resolve().to_string()))
+            .collect();
         for op in &role.deferred_body {
             // A sub-level `proto` declares one routine per role: registered
             // by the first composition (or, exported, at declaration), never
@@ -693,7 +700,10 @@ impl Interpreter {
                         op.source_line,
                         &op.qq_thunk_chunks,
                     ),
-                    None => this.run_block_raw(std::slice::from_ref(&op.raw)),
+                    None => this.run_block_raw_with_body_lexicals(
+                        std::slice::from_ref(&op.raw),
+                        &body_lexicals,
+                    ),
                 };
                 this.leave_role_body_bind_cells(bind_cells);
                 result

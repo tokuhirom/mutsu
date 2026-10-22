@@ -1110,6 +1110,32 @@ impl Interpreter {
         self.run_compiled_block_raw(&code, &compiled_fns)
     }
 
+    /// [`Self::run_block_raw`] for a statement of a package body that names the
+    /// body's own `my` variables (`lexicals`): the package the statement runs
+    /// under must not qualify them, or `$b = 6` after `my $b = 1` in a role
+    /// body writes a stray `R::b` and never the variable the role's methods
+    /// closed over (#14616).
+    // Cost: O(n + l), n = size of the statement, l = number of lexicals.
+    pub(crate) fn run_block_raw_with_body_lexicals(
+        &mut self,
+        stmts: &[Stmt],
+        lexicals: &std::collections::HashSet<String>,
+    ) -> Result<(), RuntimeError> {
+        if stmts.is_empty() {
+            return Ok(());
+        }
+        if lexicals.is_empty() {
+            return self.run_block_raw(stmts);
+        }
+        let (mut compiler, compile_unit) = self.block_compiler();
+        compiler.static_class_hidden = self.current_class_is_hidden();
+        compiler.package_body_lexicals = lexicals.clone();
+        let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(compile_unit);
+        let (mut code, mut fns) = compiler.compile(stmts);
+        self.inherit_frame_lexical_for_body(stmts, &mut code, &mut fns);
+        self.run_compiled_block_raw(&code, &fns)
+    }
+
     /// [`Self::run_block_raw`]'s precompiled-chunk twin (ADR-0019 D6-3d):
     /// same execution/writeback semantics, but takes an already-compiled
     /// `CompiledCode`/`CompiledFns` pair (e.g. a `ClassBodyOp` arm's
