@@ -551,6 +551,11 @@ impl Compiler {
         {
             return None;
         }
+        // A `my &name` / `state &name` binding visible here is what the name
+        // means: it shadows an imported routine or code variable of the name.
+        if self.amp_binding_in_active_scope(&name.resolve()) {
+            return None;
+        }
         let chain: Vec<Symbol> = self
             .lexical_import_chain
             .iter()
