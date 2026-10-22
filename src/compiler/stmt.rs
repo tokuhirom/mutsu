@@ -1735,6 +1735,12 @@ impl Compiler {
                 } else if scalar_bind_decont
                     && (matches!(expr, Expr::ArrayVar(_) | Expr::HashVar(_))
                         || matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
+                        // A parenthesized or block-valued source (`(%h<k>)`,
+                        // `do { ...; %h<k> }`) denotes the container of its
+                        // tail: bind through it like the bare element (#14618).
+                        || (!name.starts_with('@')
+                            && !name.starts_with('%')
+                            && Self::is_bind_container_block(expr))
                         // A bind whose source is a SIGILLESS variable (`my $x := p`,
                         // where `p` is a `\p` parameter or a `my \p` alias) parses as
                         // a bare `BareWord` RHS, so it never reached the
