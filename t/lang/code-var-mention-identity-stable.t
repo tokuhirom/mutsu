@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 11;
+plan 15;
 
 # Repeated bareword mentions of a top-level sub must resolve to the SAME
 # object identity, matching raku (todo/tickets/code-var-mention-remakes-the-sub.md).
@@ -15,9 +15,7 @@ is &f.WHERE, &f.WHERE, 'repeated &f mentions share a stable .WHERE';
 # invoked directly as a value) bypassed an active wrap chain even though
 # `f()` (a named call) saw it, because the wrap chain was keyed on the
 # mention's own (unstable) SubData id. `g` itself must write no free
-# variable (identity stabilization is gated on that -- see below), so the
-# wrapper closure (an anonymous sub, unaffected by that gate) records the
-# observation instead.
+# variable, so the wrapper closure records the observation instead.
 sub g() { 'original' }
 my &h = &g;
 my @seen;
@@ -61,13 +59,11 @@ k();
 my $id2 = &k.WHICH;
 is $id1, $id2, 'calling a sub does not perturb its own &-mention identity';
 
-# Identity stabilization must NOT apply to a routine whose body writes a
-# captured free variable (roast/S03-metaops/hyper.t's "sub elems is nodal"
-# pattern, hit via hyper dispatch on `&elems`): stabilizing such a routine's
-# id let `Interpreter::closure_captured_state` (keyed by id) replay a stale
-# persisted value on the NEXT `».&`-dispatched call instead of the live
-# value, so resetting the captured var externally between two mentions was
-# silently ignored -- a real regression this test pins.
+# A routine whose body writes a captured free variable (roast/S03-metaops/hyper.t's
+# "sub elems is nodal" pattern, hit via hyper dispatch on `&elems`) keeps a
+# stable identity too. The per-id replay of a persisted free variable that once
+# made that unsafe is gone, so resetting the captured var externally between
+# two mentions is still observed by the next call -- this test pins both.
 {
     my atomicint $runs = 0;
     sub counter is nodal { $runs⚛++; $^ignored }
@@ -76,4 +72,18 @@ is $id1, $id2, 'calling a sub does not perturb its own &-mention identity';
     $runs = 0;
     (1, 2)».&counter;
     is $runs, 2, 'resetting the captured var between dispatches is observed by the next mention';
+}
+
+# The stable identity of a sub that writes a free variable (#14573).
+{
+    my $n = 0;
+    sub writes-free { $n++ }
+    is &writes-free.WHICH, &writes-free.WHICH, 'a sub writing a free variable keeps one identity';
+    is &writes-free.WHERE, &writes-free.WHERE, '... and one .WHERE';
+    my $before = &writes-free.WHICH;
+    writes-free(); writes-free();
+    is &writes-free.WHICH, $before, 'calling it does not change its identity';
+    $n = 10;
+    &writes-free();
+    is $n, 11, 'a reassignment of the captured variable is seen by the next call';
 }
