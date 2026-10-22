@@ -1046,10 +1046,7 @@ impl Interpreter {
             }
             // A `supply` block body keeps the carrier below, which hands it its
             // emitter and the panic->quit boundary (see `call_supply_callback`).
-            if let Some(cc) = data.compiled_code.clone().filter(|cc| {
-                !cc.is_supply_block_body
-                    && cc.supply_emitter_sym.is_none()
-            }) {
+            if let Some(cc) = data.compiled_code.clone() {
                 let empty_fns = CompiledFns::default();
                 let fns = data.compiled_fns.as_deref().unwrap_or(&empty_fns);
                 return self.call_compiled_closure(&data, &cc, call_args, fns);

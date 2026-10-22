@@ -1,6 +1,6 @@
 # ADR-9761: User subclasses of RakuAST nodes retain the native parent node
 
-- **Status**: Proposed (2026-10-22).
+- **Status**: Accepted (user decision 2026-10-22); implemented in #14426.
 - **Context**: [#9761](https://github.com/tokuhirom/mutsu/issues/9761),
   [ADR-0011](0011-rakuast-model-layer-and-phasing.md), and
   [ADR-10723](10723-rakuast-is-the-frontend-ir.md).
