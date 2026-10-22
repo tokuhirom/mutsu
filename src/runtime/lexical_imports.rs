@@ -242,10 +242,14 @@ impl Interpreter {
         if capture.unit != importer {
             return false;
         }
-        capture.multi_defs.insert(
-            Symbol::intern(name),
-            entries.iter().map(|(_, def)| std::sync::Arc::clone(def)).collect(),
-        );
+        // `entries` come from a registry key walk (hash order), but the family
+        // later ranks equally narrow candidates by the order they are listed
+        // here (`pick_captured_multi_candidate` stamps them in turn): keep the
+        // declaration order Rakudo breaks such ties by.
+        let mut defs: Vec<std::sync::Arc<crate::ast::FunctionDef>> =
+            entries.iter().map(|(_, def)| std::sync::Arc::clone(def)).collect();
+        defs.sort_by_key(|def| def.decl_order);
+        capture.multi_defs.insert(Symbol::intern(name), defs);
         if let Some(proto) = proto.filter(|proto| !proto_body_only_dispatches(&proto.body)) {
             capture
                 .protos
