@@ -452,6 +452,16 @@ impl Interpreter {
                 .type_constraint
                 .as_deref()
                 .map_or_else(|| Symbol::intern("Any"), nominal);
+            // An enum value or other non-type name used as a parameter
+            // constraint is a value match, not a nominal type.
+            if let Some(t) = param.type_constraint.as_deref() {
+                let base = nominal(t).with_str(str::to_owned);
+                if !self.has_type(&base)
+                    && !crate::runtime::utils::is_known_type_constraint(&base)
+                {
+                    return None;
+                }
+            }
             let core_sym = nominal(core_type);
             let (down, up) = (
                 self.nominal_type_conforms(user, core_sym),
