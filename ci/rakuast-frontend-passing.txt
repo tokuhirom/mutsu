@@ -3614,6 +3614,7 @@ t/oo/anon-value-mixin-order-and-stacking.t
 t/oo/assoc-mixin-slice-adverbs.t
 t/oo/attribute/accessor-element-write-keeps-bound-alias.t
 t/oo/attribute/accessor-fast-path.t
+t/oo/attribute/accessor-fetches-bound-proxy.t
 t/oo/attribute/accessor-lane.t
 t/oo/attribute/accessor-list-element-assign-ro.t
 t/oo/attribute/accessor-lvalue-writeback-positionality.t
@@ -5439,6 +5440,7 @@ t/rakuast/rakuast-variable-container-traits.t
 t/rakuast/rakuast-variable-does-trait.t
 t/rakuast/rakuast-variable-handles-terms.t
 t/rakuast/rakuast-visit-children-origin.t
+t/rakuast/rakuast-visit-traversal.t
 t/rakuast/rakuast-whatever-code.t
 t/rakuast/rakuast-whatever-compound-assign.t
 t/rakuast/rakuast-when-modifier.t
@@ -7096,6 +7098,7 @@ t/types/any-type-object-sampling.t
 t/types/any-type-word-refuses-grow.t
 t/types/any-unique-scalar.t
 t/types/base64-battery.t
+t/types/bind-nil-to-typed-scalar.t
 t/types/blob-buf-concat-result-type.t
 t/types/blob-bytes-type-object.t
 t/types/blob-comparison-across-types.t
