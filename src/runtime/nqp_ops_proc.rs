@@ -46,6 +46,8 @@ struct ProcStream {
 
 /// A child spawned by `nqp::spawnprocasync`.
 struct ProcTask {
+    /// The registry key (the handle's `proc` attribute).
+    id: u64,
     pid: u32,
     queue: SharedChannel,
     buf_class: Symbol,
@@ -80,25 +82,28 @@ static UNREAD: LazyLock<Mutex<std::collections::VecDeque<u64>>> =
     LazyLock::new(|| Mutex::new(std::collections::VecDeque::new()));
 
 impl ProcTask {
-    /// Whether some output stream still has its pipe: configured, never read.
+    /// Whether some output stream can still be read by a later `permit`: its
+    /// pipe was never taken, or its reader waits for another permit (it has not
+    /// reached the end of the stream).
     // Cost: O(1).
-    fn has_unread_pipe(&self) -> bool {
+    fn has_open_stream(&self) -> bool {
         self.streams.iter().flatten().any(|stream| {
             stream
                 .pipe
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .is_some()
+                || !stream.gate.is_finished()
         })
     }
 }
 
 /// Drop task `id` from the registry once its child is reaped, unless an output
-/// pipe is unread: that task is kept (bounded by [`UNREAD_TASKS_KEPT`]).
+/// stream can still be read: that task is kept (bounded by [`UNREAD_TASKS_KEPT`]).
 // Cost: O(1) amortized.
 fn retire_task(id: u64, task: &ProcTask) {
     task.reaped.store(true, Ordering::Release);
-    if !task.has_unread_pipe() {
+    if !task.has_open_stream() {
         TASKS.lock().unwrap_or_else(PoisonError::into_inner).remove(&id);
         return;
     }
@@ -224,6 +229,11 @@ impl ProcTask {
                 vec![Interpreter::boot_int(seq), boot_str_type(), last],
             );
             stream.gate.finish();
+            // The last stream of a reaped child was read to its end: the
+            // registry has nothing left to keep.
+            if task.reaped.load(Ordering::Acquire) && !task.has_open_stream() {
+                forget_task_id(task.id);
+            }
         })
         .map(drop)
         .map_err(crate::runtime::builtins_system::refused_thread_error)
@@ -350,6 +360,7 @@ impl Interpreter {
             })
         };
         let task = Arc::new(ProcTask {
+            id,
             pid: child.id(),
             queue: queue.clone(),
             buf_class,
@@ -452,23 +463,15 @@ fn nqp_permit(args: &[Value]) -> Result<Value, RuntimeError> {
     }
     // The last unread pipe of a reaped child now has its reader: the registry
     // has nothing left to keep.
-    if task.reaped.load(Ordering::Acquire) && !task.has_unread_pipe() {
-        forget_task(&handle);
+    if task.reaped.load(Ordering::Acquire) && !task.has_open_stream() {
+        forget_task_id(task.id);
     }
     Ok(handle)
 }
 
-/// Remove the task of `handle` from the registry (and the unread queue).
+/// Remove task `id` from the registry (and the unread queue).
 // Cost: O(u), u = tasks kept for unread pipes (at most [`UNREAD_TASKS_KEPT`]).
-fn forget_task(handle: &Value) {
-    let handle = operand(handle);
-    let ValueView::Instance { attributes, .. } = handle.view() else {
-        return;
-    };
-    let Some(id) = attributes.as_map().get(PROC_ATTR).and_then(Value::as_int) else {
-        return;
-    };
-    let id = id as u64;
+fn forget_task_id(id: u64) {
     TASKS.lock().unwrap_or_else(PoisonError::into_inner).remove(&id);
     UNREAD
         .lock()
