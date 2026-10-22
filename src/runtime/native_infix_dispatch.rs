@@ -464,9 +464,7 @@ impl Interpreter {
                 (false, false) => unrelated = true,
             }
         }
-        if !unrelated {
-            return None;
-        }
+        let _ = unrelated;
         Some(if user_wider {
             CoreInfixVerdict::Core
         } else if user_narrower || def.is_default {
