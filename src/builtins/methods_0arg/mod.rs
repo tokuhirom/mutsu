@@ -1,4 +1,4 @@
-use crate::builtins::method_table::receiver_step::{MixinStep, Step};
+use crate::builtins::method_table::receiver_step::MixinStep;
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
@@ -151,28 +151,6 @@ pub(crate) fn native_method_0arg_cascade(
     // zero-argument native method in the interpreter.
     let method: &str = method_sym.as_str();
 
-    // The receiver step every entry runs (ADR-11276 §2.4,
-    // `method_table::receiver_step`): a `Scalar` or an itemized `Array`/`Hash`
-    // is transparent but for the methods that observe the container, a
-    // hash-like receiver and a `Match` answer `Any`'s `self.list.METHOD`
-    // methods on their list, an enum member its base's.
-    // Cost: O(1) tag probes for a receiver in no such state.
-    match crate::builtins::method_table::receiver_step::step(target, method, 0) {
-        Some(Step::Redirect(receiver, _)) => return native_method_0arg(&receiver, method_sym),
-        Some(Step::Answer(answer)) => return Some(answer),
-        Some(Step::Itself) => {
-            if let ValueView::Scalar(inner) = target.view() {
-                // An itemized lazy sequence renders the prefix it pulls,
-                // which only the interpreter can.
-                if matches!(inner.view(), ValueView::LazyList(_)) {
-                    return None;
-                }
-                return Some(Ok(Value::str(raku_repr::raku_value(target))));
-            }
-        }
-        None => {}
-    }
-
     // Seq consumed/cached state checks.
     // Only handle operations that are fully dispatched here in native_method_0arg.
     // Do NOT pre-check methods that fall through to the runtime (like "iterator"),
@@ -220,18 +198,6 @@ pub(crate) fn native_method_0arg_cascade(
             MixinStep::Answer(answer) => Some(answer),
             MixinStep::Delegate(inner) => native_method_0arg(&inner, method_sym),
         };
-    }
-    // A call the method table answers has no arm below this point: the row is
-    // the method's only implementation (ADR-11276 §9.88). `native_method_0arg`
-    // asked the table before the cascade, so this declines only for the two
-    // callers that run the cascade without it: the debug cross-check, which
-    // takes a decline as agreement, and the VM entry whose user-override veto
-    // refused the row, where the interpreter must answer instead. The probes
-    // above stay in front of the rows, so the cross-check still verifies them.
-    // Cost: O(1) when no row has the name (a bit test); otherwise a tag probe,
-    // one hash lookup and, for a row found, its handler.
-    if crate::builtins::method_table::answer(target, method_sym, &[]).is_some() {
-        return None;
     }
     // Native int coercer methods (.byte(), .int8(), .uint16(), etc.). Rakudo
     // declares these on `Cool`, so a `Pair` — which is not Cool — has no such

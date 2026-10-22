@@ -49,32 +49,6 @@ fn native_method_1arg_cascade(
     let method = method_sym.resolve();
     let method = method.as_str();
 
-    // The receiver step every entry runs (ADR-11276 §2.4,
-    // `method_table::receiver_step`): the held value of a container, a
-    // hash-like receiver's pairs, ... is a call of its own, which asks the
-    // table first, so the decline step below sees the receiver the table was
-    // asked about.
-    // Cost: O(1) tag probes for a receiver in no such state.
-    match crate::builtins::method_table::receiver_step::step(target, method, 1) {
-        Some(crate::builtins::method_table::receiver_step::Step::Redirect(receiver, _)) => {
-            return native_method_1arg(&receiver, method_sym, arg);
-        }
-        Some(crate::builtins::method_table::receiver_step::Step::Answer(answer)) => {
-            return Some(answer);
-        }
-        Some(crate::builtins::method_table::receiver_step::Step::Itself) | None => {}
-    }
-    // A call the method table answers has no arm below this point: the row is
-    // the method's only implementation (ADR-11276 §9.88). `native_method_1arg`
-    // asked the table first, so this declines only for the callers that run
-    // the cascade without it (`native_method_1arg_without_table`).
-    // Cost: O(1) when no row has the name (a bit test); otherwise a tag probe,
-    // one hash lookup and, for a row found, its handler.
-    if crate::builtins::method_table::answer(target, method_sym, std::slice::from_ref(arg))
-        .is_some()
-    {
-        return None;
-    }
     // A positional index of a receiver whose row binds it (`Int:D`, and every
     // other index as Rakudo's candidates do) is the row's alone, through
     // `method_table::index_arg` (ADR-11276 §9.105).
