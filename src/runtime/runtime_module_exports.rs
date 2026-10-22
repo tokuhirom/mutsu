@@ -1416,6 +1416,20 @@ impl Interpreter {
                 })
                 .flatten()
                 .filter(|short| !short.is_empty());
+                // An exported code variable (`our &unpack is export = ...`)
+                // is a plain routine to the importer's call sites: a unit
+                // whose `use` has a lexical import set reads it from there, as
+                // it reads a `sub EXPORT` hook's routine. The by-name reader
+                // hides the env alias from the unit's own imports (#12907).
+                if let Some(routine) = target.strip_prefix('&')
+                    && !crate::qualified::is_qualified_str(&target)
+                {
+                    let routine_value = value.deref_container();
+                    if self.bind_hook_routine_lexically(routine, &routine_value) {
+                        self.note_lexical_import_routine(&current_pkg, routine);
+                    }
+                    self.note_unit_hook_routine(routine, &routine_value);
+                }
                 self.record_import_env_key(&env_target);
                 self.env.insert(env_target, value.clone());
                 // The loading module's own routines run in their CALLER's env
