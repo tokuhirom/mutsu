@@ -81,7 +81,11 @@ impl Parser {
     /// around `=` is significant under `:sigspace`); any other spelling keeps
     /// the plain interpolation and leaves the `=` to the caller.
     // Cost: O(n), n = source consumed by the alias and its atom.
-    pub(super) fn parse_variable_alias(&mut self, name: String, sequential: bool) -> Option<RegexNode> {
+    pub(super) fn parse_variable_alias(
+        &mut self,
+        name: String,
+        sequential: bool,
+    ) -> Option<RegexNode> {
         let start = self.pos;
         if self.chars.get(self.pos) != Some(&'=')
             || self

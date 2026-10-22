@@ -5410,7 +5410,10 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
             (class, fields)
         }
         RegexNode::WithWhitespace(child)
-            if matches!(**child, RegexNode::Extension(RegexExtension::VariableAlias { .. })) =>
+            if matches!(
+                **child,
+                RegexNode::Extension(RegexExtension::VariableAlias { .. })
+            ) =>
         {
             return super::regex_variable_alias::convert_spaced(child);
         }

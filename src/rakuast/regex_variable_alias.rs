@@ -34,7 +34,8 @@ pub(super) fn convert(
         name: name.to_string(),
         sequential,
     })?;
-    node.fields.push(node_field(Some(FIELD), regex_node(regex)?));
+    node.fields
+        .push(node_field(Some(FIELD), regex_node(regex)?));
     Ok(node)
 }
 
@@ -49,11 +50,7 @@ pub(super) fn convert_spaced(alias: &RegexNode) -> Result<RakuAstNode, RuntimeEr
     else {
         return Err(super::convert::unsupported("spaced regex variable alias"));
     };
-    convert(
-        name,
-        *sequential,
-        &RegexNode::WithWhitespace(regex.clone()),
-    )
+    convert(name, *sequential, &RegexNode::WithWhitespace(regex.clone()))
 }
 
 /// Whether `field` is the hidden aliased atom of a regex interpolation.
