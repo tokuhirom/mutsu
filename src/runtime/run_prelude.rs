@@ -399,6 +399,7 @@ impl Interpreter {
     /// already falls back to for a body-less def, just eagerly rather than
     /// at first call; the throwaway `FunctionDef` below only carries the
     /// fields that compile step reads.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn compile_forward_declared_sub(
         &mut self,
         name: Symbol,
