@@ -357,7 +357,8 @@ impl Walker<'_> {
                 body,
                 ..
             } => {
-                let frame = Self::params_frame(params.iter().cloned());
+                let mut frame = Self::params_frame(params.iter().cloned());
+                frame.owner = "Sub";
                 self.walk_list(body, frame, |w| {
                     w.visit_params(param_defs);
                     for e in custom_traits

@@ -264,7 +264,9 @@ impl Walker<'_> {
     /// statement at `index` of its scope. Returns whether it was lifted; when
     /// it was, `stmt` is left as the declaration's static half and bound.
     pub(super) fn lift_var_traits(&mut self, stmt: &mut Stmt, index: usize) -> bool {
-        if self.frames.is_empty() || self.in_detached_type() {
+        // A role body's own variable has no scope to replay the phasers
+        // into; the routines of a role do.
+        if self.frames.is_empty() || self.current_frame().role.is_some() {
             return false;
         }
         let Some((name, applied)) = liftable_traits(stmt, true) else {
