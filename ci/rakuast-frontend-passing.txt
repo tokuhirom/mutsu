@@ -348,6 +348,7 @@ t/collections/lazy-seq/lazy-gather-grep-map-laziness.t
 t/collections/lazy-seq/lazy-generator-scan-strict-force.t
 t/collections/lazy-seq/lazy-grep-feed-prefix-pull.t
 t/collections/lazy-seq/lazy-grep-infinite-exclusive-range.t
+t/collections/lazy-seq/lazy-hyper-configuration.t
 t/collections/lazy-seq/lazy-hyper-seq.t
 t/collections/lazy-seq/lazy-if-iterable-any.t
 t/collections/lazy-seq/lazy-infinite-sequence-strict-force.t
@@ -2763,8 +2764,10 @@ t/modules/compunit/module-scan-precomp-cache.t
 t/modules/compunit/operator-import-is-compunit-scoped.t
 t/modules/compunit/precomp-bytecode-cache-verify.t
 t/modules/compunit/precomp-load-facts-ast-on-demand.t
+t/modules/compunit/precomp-module-use-scan-revalidated.t
 t/modules/compunit/precomp-pod-ranges.t
 t/modules/compunit/precomp-upvalue-order-deterministic.t
+t/modules/compunit/precomp-verify-importer-chain.t
 t/modules/compunit/precomp-warm-cache-parity.t
 t/modules/compunit/precompilation.t
 t/modules/compunit/repo-chain-bundled-links.t
@@ -3190,6 +3193,7 @@ t/modules/module-toplevel-qualified-names-off-frame-env.t
 t/modules/module-toplevel-routine-state-outlives-loader.t
 t/modules/module-transitive-use-does-not-leak-types.t
 t/modules/module-type-beats-importer-constant.t
+t/modules/module-unit-use-binds-in-pad.t
 t/modules/module-use-hook-adds-family-candidates.t
 t/modules/module-warning-location-misattributed.t
 t/modules/multi-method-where-module-scope.t
@@ -3318,6 +3322,7 @@ t/modules/symbolic-package-var-lookup.t
 t/modules/test-assertion-module-otf.t
 t/modules/trait-mixin-routine-module-scope.t
 t/modules/typed-decl-package-qualified-constraint.t
+t/modules/uncached-module-mainline-binds-like-cached.t
 t/modules/variable-trailing-package-separator.t
 t/modules/vendored-telemetry-module.t
 t/modules/x-pseudo-package-in-declaration.t
@@ -3609,6 +3614,7 @@ t/oo/anon-value-mixin-order-and-stacking.t
 t/oo/assoc-mixin-slice-adverbs.t
 t/oo/attribute/accessor-element-write-keeps-bound-alias.t
 t/oo/attribute/accessor-fast-path.t
+t/oo/attribute/accessor-fetches-bound-proxy.t
 t/oo/attribute/accessor-lane.t
 t/oo/attribute/accessor-list-element-assign-ro.t
 t/oo/attribute/accessor-lvalue-writeback-positionality.t
@@ -4597,6 +4603,7 @@ t/oo/role/augment-does-role.t
 t/oo/role/augment-role-anon.t
 t/oo/role/bless-defaulted-parametric-role.t
 t/oo/role/blob-role-vmarray-user-class.t
+t/oo/role/block-import-same-name-role-program-callee.t
 t/oo/role/builtin-role-composes-its-own-roles.t
 t/oo/role/builtin-role-mro-includes-any.t
 t/oo/role/but-instance-attr-trait-role.t
@@ -5433,6 +5440,7 @@ t/rakuast/rakuast-variable-container-traits.t
 t/rakuast/rakuast-variable-does-trait.t
 t/rakuast/rakuast-variable-handles-terms.t
 t/rakuast/rakuast-visit-children-origin.t
+t/rakuast/rakuast-visit-traversal.t
 t/rakuast/rakuast-whatever-code.t
 t/rakuast/rakuast-whatever-compound-assign.t
 t/rakuast/rakuast-when-modifier.t
@@ -7090,6 +7098,7 @@ t/types/any-type-object-sampling.t
 t/types/any-type-word-refuses-grow.t
 t/types/any-unique-scalar.t
 t/types/base64-battery.t
+t/types/bind-nil-to-typed-scalar.t
 t/types/blob-buf-concat-result-type.t
 t/types/blob-bytes-type-object.t
 t/types/blob-comparison-across-types.t
