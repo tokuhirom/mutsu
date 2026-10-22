@@ -185,7 +185,9 @@ fn export_how_package(
     _named: Named<'_>,
 ) -> Answer {
     let unit = attr(target, "unit-name")?.map(|v| v.to_string_value())?;
-    Some(Ok(interp.exporthow_stash_of_unit(&unit).unwrap_or(Value::NIL)))
+    Some(Ok(interp
+        .exporthow_stash_of_unit(&unit)
+        .unwrap_or(Value::NIL)))
 }
 
 /// `CompUnit::Handle.globalish-package`: the package the unit's symbols were
