@@ -2901,7 +2901,7 @@ impl Interpreter {
                 } else if !found && pd.required {
                     // Rakudo checks the positional arity before it looks for a
                     // required named parameter, so a surplus positional wins.
-                    if let Some(err) = surplus_positional_error(param_defs, &plain_args) {
+                    if let Some(err) = surplus_positional_error(param_defs, &plain_args, bind_self_lexical) {
                         return Err(err);
                     }
                     // A missing required named parameter is a runtime X::AdHoc in
@@ -4021,11 +4021,13 @@ impl Interpreter {
                             )
                         })
                         .count();
+                    // A method's count includes its invocant (#14565).
+                    let invocant = usize::from(bind_self_lexical);
                     return Err(RuntimeError::new(format!(
                         "Too few positionals passed; expected {} argument{} but got {}",
-                        total_positional,
-                        if total_positional == 1 { "" } else { "s" },
-                        positional_arg_count
+                        total_positional + invocant,
+                        if total_positional + invocant == 1 { "" } else { "s" },
+                        positional_arg_count + invocant
                     )));
                 } else if pd.optional_marker || !pd.name.is_empty() {
                     // Optional parameters use typed empties/type objects when omitted.
@@ -4113,7 +4115,7 @@ impl Interpreter {
             }
         }
         // Check for extra positional arguments when no array/capture slurpy is present
-        if let Some(err) = surplus_positional_error(param_defs, &plain_args) {
+        if let Some(err) = surplus_positional_error(param_defs, &plain_args, bind_self_lexical) {
             return Err(err);
         }
         // Mark parameters as readonly unless they have `is rw`, `is copy`, or `is raw` traits.
@@ -4221,7 +4223,11 @@ impl Interpreter {
 /// arguments than the signature takes, when no slurpy or positional
 /// sub-signature can absorb them.
 // Cost: O(p + a), p = parameters, a = arguments.
-fn surplus_positional_error(param_defs: &[ParamDef], plain_args: &[Value]) -> Option<RuntimeError> {
+fn surplus_positional_error(
+    param_defs: &[ParamDef],
+    plain_args: &[Value],
+    is_method: bool,
+) -> Option<RuntimeError> {
     let has_array_slurpy = param_defs
         .iter()
         .any(|pd| pd.onearg || (pd.slurpy && (!pd.name.starts_with('%') || pd.sigilless)));
@@ -4240,10 +4246,14 @@ fn surplus_positional_error(param_defs: &[ParamDef], plain_args: &[Value]) -> Op
         .filter(|a| !matches!(unwrap_varref_value((*a).clone()).view(), ValueView::Pair(..)))
         .count();
     (positional_arg_count > positional_param_count).then(|| {
+        // A method's count includes its invocant (#14565).
+        let invocant = usize::from(is_method);
+        let expected = positional_param_count + invocant;
         RuntimeError::new(format!(
             // Rakudo says "1 argument", not "1 arguments".
-            "Too many positionals passed; expected {positional_param_count} argument{} but got {positional_arg_count}",
-            if positional_param_count == 1 { "" } else { "s" },
+            "Too many positionals passed; expected {expected} argument{} but got {}",
+            if expected == 1 { "" } else { "s" },
+            positional_arg_count + invocant,
         ))
     })
 }
