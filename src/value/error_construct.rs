@@ -286,6 +286,19 @@ impl RuntimeError {
         {
             attrs.insert("what".to_string(), Value::str_from(what));
         }
+        // `X::InvalidCodepoint`'s message IS `Invalid surrogate codepoint {code}`
+        // / `Invalid codepoint {code}; ...` in rakudo (same rule as above).
+        if class_name == "X::InvalidCodepoint"
+            && let Some(rest) = text
+                .strip_prefix("Invalid surrogate codepoint ")
+                .or_else(|| text.strip_prefix("Invalid codepoint "))
+            && let Some(code) = rest
+                .split(|c: char| !c.is_ascii_digit())
+                .next()
+                .and_then(|d| d.parse::<i64>().ok())
+        {
+            attrs.insert("code".to_string(), Value::int(code));
+        }
         // `X::InvalidType`'s message IS `Invalid typename '{typename}'` in
         // rakudo (same derive-don't-duplicate rule as `X::Syntax::Missing`
         // above). Without it, `throws-like …, X::InvalidType, typename => …`

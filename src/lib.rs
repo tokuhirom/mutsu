@@ -9,6 +9,7 @@ pub(crate) mod binding_desc;
 mod builtin_types;
 mod builtins;
 pub(crate) mod chain_compare;
+pub(crate) mod codepoint;
 mod compiled_lazy;
 mod compiled_operator;
 mod compiler;

@@ -22,6 +22,7 @@
 //! `scripts/check-prims.sh` keeps new copies from growing back.
 
 mod build;
+pub(crate) mod codepoint;
 mod fold;
 mod strands;
 

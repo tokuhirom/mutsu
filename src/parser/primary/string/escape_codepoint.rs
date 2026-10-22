@@ -27,7 +27,24 @@ fn codepoint(digits: &str, radix: u32, kind: char) -> Result<char, String> {
     if !previous_digit {
         return Err(invalid(kind));
     }
-    char::from_u32(value).ok_or_else(|| invalid(kind))
+    scalar(i64::from(value))
+}
+
+/// The scalar value of a decoded escape: a surrogate is `X::InvalidCodepoint`
+/// (#14416), a value past Unicode is out of bounds like `chr`'s.
+// Cost: O(1).
+pub(super) fn scalar(value: i64) -> Result<char, String> {
+    use crate::codepoint;
+    if codepoint::is_surrogate(value) {
+        return Err(format!(
+            "X::InvalidCodepoint: {}",
+            codepoint::surrogate_message(value)
+        ));
+    }
+    u32::try_from(value)
+        .ok()
+        .and_then(char::from_u32)
+        .ok_or_else(|| format!("chr codepoint {value} (0x{value:X}) is out of bounds"))
 }
 
 /// Parse the tail of `\x` or `\o`, rejecting an entire malformed escape
