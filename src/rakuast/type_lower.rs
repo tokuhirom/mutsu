@@ -85,6 +85,13 @@ fn type_constraint_at(
         ));
     }
     match type_node.class {
+        RakuAstClass::TypeCapture => {
+            let name_node = named_child_or_positional(type_node)?;
+            match name_parts::name_shape(name_node) {
+                Some(NameShape::Identifier(name)) => Ok(format!("::{name}")),
+                _ => Err(unsupported(owner)),
+            }
+        }
         RakuAstClass::TypeSimple => {
             let name_node = named_child_or_positional(type_node)?;
             match name_parts::name_shape(name_node) {
