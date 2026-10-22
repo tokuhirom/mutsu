@@ -43,8 +43,10 @@ the user (see the AGENTS.md hard rule on weakening protections), not a judgment 
   directories is banned; roast's `packages/` helpers belong behind roast-only configuration.
 - **Caches are keyed and private.** A cache entry is keyed by canonical path, content hash and the
   binary's identity, lives under the user's own cache directory, and is created `0700`/`0600`.
-  Never deserialize a cache into something executed without those keys matching. bincode decoding
-  keeps its allocation limit (`decode_config`).
+  Every cache file goes through `src/precomp/private_files.rs`: directories are checked to be the
+  user's own, entries are written `O_EXCL|O_NOFOLLOW` and read only if the user owns them and
+  nobody else can write them. Never deserialize a cache into something executed without those
+  keys matching. bincode decoding keeps its allocation limit (`decode_config`).
 
 ### Memory safety
 
