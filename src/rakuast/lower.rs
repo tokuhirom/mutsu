@@ -29,6 +29,8 @@ pub(super) fn unsupported(node: &RakuAstNode) -> RuntimeError {
 /// (e.g. `EVAL(RakuAST::IntLiteral.new(42))`) becomes a single expression
 /// statement.
 pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+    let normalized = super::subclass::normalize_for_lower(node, 0)?;
+    let node = normalized.as_ref().unwrap_or(node);
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
     super::shadowed_terms::scan(node);
     super::declared_routines::scan(node);

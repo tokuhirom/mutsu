@@ -92,6 +92,7 @@ mod source_identifier;
 #[cfg(test)]
 mod source_identifier_tests;
 mod star_lvalue;
+mod subclass;
 mod subscript_adverb;
 mod substitution;
 mod symbolic_deref;
@@ -115,6 +116,8 @@ mod zip_assign;
 pub use formatter::formatter_ast;
 pub use lower::lower;
 pub(crate) use name_parts::{is_name_part, is_name_part_class};
+pub use subclass::gist as subclass_gist;
+pub(crate) use subclass::is_node_value;
 
 use crate::value::{RuntimeError, Value, ValueView};
 

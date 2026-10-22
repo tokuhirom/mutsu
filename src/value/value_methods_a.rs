@@ -331,6 +331,11 @@ impl Value {
         method: &str,
         child: Value,
     ) -> Option<Result<Value, RuntimeError>> {
+        if let ValueView::Instance { attributes, .. } = self.view()
+            && let Some(base) = attributes.rakuast_base()
+        {
+            return base.rakuast_add_child(method, child);
+        }
         use crate::rakuast::RakuAstClass;
         let (class, owner, front) = match method {
             "add-statement" => (RakuAstClass::StatementList, "RakuAST::StatementList", false),
@@ -377,6 +382,11 @@ impl Value {
         method: &str,
         value: Value,
     ) -> Option<Result<Value, RuntimeError>> {
+        if let ValueView::Instance { attributes, .. } = self.view()
+            && let Some(base) = attributes.rakuast_base()
+        {
+            return base.rakuast_set_field(method, value);
+        }
         use crate::rakuast::RakuAstClass;
         let (class, field, owner) = match method {
             "replace-statement-list" => (

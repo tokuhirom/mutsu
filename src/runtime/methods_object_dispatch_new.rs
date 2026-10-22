@@ -1785,6 +1785,16 @@ impl Interpreter {
                 let inv = Value::make_instance(*class_name, attrs.clone());
                 let inv_cell = Self::self_instance_attrs(&inv)
                     .expect("a freshly built instance has an attribute cell");
+                // The inherited native node must exist before attribute
+                // initializers and BUILD/TWEAK observe this instance.
+                if let Some(native_parent) = class_mro
+                    .iter()
+                    .map(Symbol::resolve)
+                    .find(|name| name.starts_with("RakuAST::"))
+                    && let Some(node) = crate::rakuast::construct(&native_parent, "new", &args)?
+                {
+                    inv_cell.set_rakuast_base(node);
+                }
                 for attr in class_attrs_info.clone() {
                     let attr_type_constraint = super::attribute_type_constraint(
                         &class_attrs_info,

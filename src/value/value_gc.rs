@@ -421,6 +421,9 @@ impl Trace for InstanceAttrs {
         for v in self.as_map_raw().values() {
             v.gc_trace(visit);
         }
+        if let Some(node) = self.rakuast_base() {
+            node.gc_trace(visit);
+        }
     }
     fn drop_gc_edges(&mut self) {
         self.clear_gc_edges();
@@ -699,6 +702,9 @@ impl InstanceAttrs {
         // `AttrReadGuard` already encodes (see the type's doc comment).
         for v in self.as_map().values() {
             visitor.visit_value(v);
+        }
+        if let Some(node) = self.rakuast_base() {
+            visitor.visit_value(&node);
         }
     }
 }

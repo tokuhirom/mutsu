@@ -396,6 +396,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     {
         return Some(Ok(v));
     }
+    if let ValueView::Instance { attributes, .. } = target.view()
+        && let Some(base) = attributes.rakuast_base()
+        && let ValueView::RakuAst(node) = base.view()
+        && let Some(value) = crate::rakuast::node_accessor(node, method)
+    {
+        return Some(Ok(value));
+    }
 
     // `Instant` and `Duration` (`do Real`) answer from the rows of the method
     // table (`method_table::instances::instant`): `Instant.Instant`, `succ`/`pred`,

@@ -120,13 +120,13 @@ fn children(node: &RakuAstNode) -> Vec<Value> {
     let mut out = Vec::new();
     for field in &node.fields {
         match &field.value {
-            RakuAstFieldValue::Node(v) if matches!(v.view(), ValueView::RakuAst(_)) => {
+            RakuAstFieldValue::Node(v) if crate::rakuast::is_node_value(v) => {
                 out.push(v.clone());
             }
             RakuAstFieldValue::List(items) => out.extend(
                 items
                     .iter()
-                    .filter(|v| matches!(v.view(), ValueView::RakuAst(_)))
+                    .filter(|v| crate::rakuast::is_node_value(v))
                     .cloned(),
             ),
             _ => {}
@@ -144,7 +144,12 @@ fn visit_children(
     args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
-    let ValueView::RakuAst(node) = target.view() else {
+    let base = match target.view() {
+        ValueView::RakuAst(_) => target.clone(),
+        ValueView::Instance { attributes, .. } => attributes.rakuast_base()?,
+        _ => return None,
+    };
+    let ValueView::RakuAst(node) = base.view() else {
         return None;
     };
     let callable = args.first()?;

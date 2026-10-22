@@ -30,6 +30,9 @@ pub(crate) trait LazyAttrSource: Send + Sync + std::fmt::Debug {
 pub(crate) struct InstanceSide {
     /// See `InstanceAttrs::which_memo`.
     pub(crate) which: Option<Arc<str>>,
+    /// A native model node inherited by a user class, shared by all aliases
+    /// of that instance. The collector traces it through `InstanceAttrs`.
+    pub(crate) rakuast_base: Option<Value>,
     /// The not-yet-materialized attributes, if any.
     pub(crate) lazy: Option<Arc<dyn LazyAttrSource>>,
     /// Attribute reads that observed an absent slot, keyed by the thread that
