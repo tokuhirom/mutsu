@@ -91,9 +91,7 @@ impl<'ast> Visit<'ast> for EvalLexicalKeys {
                 condition: None,
                 ..
             } => {
-                for decl in crate::compiler::Compiler::imported_var_decls(module, tags) {
-                    self.visit_stmt(&decl);
-                }
+                walk_stmts(self, &crate::compiler::Compiler::imported_var_decls(module, tags));
             }
             // A lexically scoped type is bound in the snippet's pad like a `my`
             // variable: its bare name shadows (and, once the snippet returns,
