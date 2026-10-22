@@ -7,7 +7,7 @@ use Test;
 # 2. a method that is eligible for the compiled fast path read a stale cell
 #    instead of the C memory, so `$obj.field = v` was invisible to `$!field`.
 
-plan 8;
+plan 9;
 
 class Flags is repr('CStruct') {
     has bool $.box;
@@ -20,6 +20,9 @@ is Flags.new(:box).box, 1, 'named True reaches the bool field';
 is Flags.new(:box(False)).box, 0, 'named False';
 is Flags.new(:box, :n(7)).boxed, True, 'a method reading $!box sees True';
 is Flags.new(:n(7)).boxed, False, 'default is false';
+
+my %m = :box(True), :n(4);
+is Flags.new(|%m).box, 1, 'True taken from a hash slip';
 
 class Rect is rw is repr('CStruct') {
     has num32 $.top;

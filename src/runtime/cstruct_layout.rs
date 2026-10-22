@@ -302,7 +302,7 @@ fn interned_c_string(s: &str) -> *const std::ffi::c_char {
 pub(crate) unsafe fn write_field(base: usize, field: &FieldLayout, value: &crate::value::Value) {
     // `to_int` numifies a `Bool` to 0, so `has bool $.b` given `True` (a named
     // argument `:b`, an attributive `:$!b` bind) stored a zero byte.
-    let to_int = |v: &crate::value::Value| match v.deref_container().view() {
+    let to_int = |v: &crate::value::Value| match v.deref_container().descalarize().view() {
         crate::value::ValueView::Bool(b) => i64::from(b),
         _ => crate::runtime::to_int(v),
     };
