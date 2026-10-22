@@ -266,14 +266,23 @@ impl Walker<'_> {
     /// statement at `index` of its scope. Returns whether it was lifted; when
     /// it was, `stmt` is left as the declaration's static half and bound.
     pub(super) fn lift_var_traits(&mut self, stmt: &mut Stmt, index: usize) -> bool {
-        // A role body's own variable has no scope to replay the phasers
-        // into; the routines of a role do.
-        if self.frames.is_empty() || self.current_frame().role.is_some() {
+        if self.frames.is_empty() {
             return false;
         }
+        let in_role_body = self.current_frame().role.is_some();
         let Some((name, applied)) = liftable_traits(stmt, true) else {
             return false;
         };
+        // A role body's variable with an initializer stays where it is: the
+        // lifted form splits the declaration from its assignment, and a method
+        // of the role captures the variable's value at the declaration, so it
+        // would never see the assigned one (#14616).
+        if in_role_body
+            && matches!(stmt, Stmt::VarDecl { custom_traits, .. }
+                if custom_traits.iter().any(|(t, _)| t == "__has_initializer"))
+        {
+            return false;
+        }
         // `Variable.block.add_phaser` files its phaser under this site; the
         // scope's own phaser queues replay them.
         let site = super::next_slot("__var_trait_site_");
@@ -295,8 +304,16 @@ impl Walker<'_> {
             *lifted_traits = true;
         }
         if self.lift(&body, None, &PhaserKind::Begin) {
-            self.current_frame().entry.extend(entry_phasers(&name, &site));
-            *stmt = seeded_decl(&name, stripped);
+            if !in_role_body {
+                self.current_frame().entry.extend(entry_phasers(&name, &site));
+            }
+            // A role body keeps its declaration where the composition looks
+            // for it: there is no replayed ENTER queue to seed the value from.
+            *stmt = if in_role_body {
+                stripped
+            } else {
+                seeded_decl(&name, stripped)
+            };
             return true;
         }
         self.current_frame().bindings.pop();
