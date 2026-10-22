@@ -828,6 +828,11 @@ impl Interpreter {
         // other read of it, propagating the exception it wraps instead of
         // silently subscripting with it.
         Self::throw_if_failure(&index)?;
+        // An object used as a QuantHash / object-hash key is keyed by its
+        // `.WHICH` (a user `WHICH`, also one a HOW added): resolve it first.
+        if matches!(index.view(), ValueView::Instance { .. }) {
+            self.warm_which_identity(&index);
+        }
         // A role-mixed Array used as a positional slice keeps its Mixin
         // wrapper for method dispatch, but the wrapper is transparent when it
         // supplies the slice indices (`self[@subgrid.flip: ...]`).  Expose the

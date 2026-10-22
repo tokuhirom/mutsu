@@ -6,7 +6,7 @@ use Test;
 use lib 't/lib';
 use DeclareAttrMetaHow;
 
-plan 4;
+plan 6;
 
 lives-ok { EVAL 'use DeclareAttrMetaHow; my frozenattr Plain { has $.a; has $!b }' },
     'attributes that pass the metaclass compose';
@@ -16,3 +16,7 @@ nok $worked, 'an `is rw` attribute dies in the attribute metaclass compose';
 ok $!.message.contains("can't be rw on a frozenattr class"), 'with the metaclass message';
 
 lives-ok { EVAL 'my class Plainer { has $.a is rw }' }, 'an ordinary class is unaffected';
+
+my \Holder = EVAL 'use DeclareAttrMetaHow; my frozenattr :: { has @.items; has $.single }';
+is Holder.new.items.^name, 'List', '`container_initializer` supplies the container of an @ attribute';
+is Holder.new.single.^name, 'Any', 'a scalar attribute keeps its default';

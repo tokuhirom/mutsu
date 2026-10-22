@@ -177,6 +177,20 @@ impl Interpreter {
                 return Ok(mop_absent_method());
             };
             let method_name = name_arg.to_string_value();
+            // Until a class is composed its MRO holds only the class itself
+            // (Rakudo computes it in `compose`), so a HOW's `compose` hook asking
+            // `find_method` sees only what the class declares: ValueClass's
+            // `unless ValueClass.^find_method("WHICH", :local)` then adds its own
+            // `WHICH` instead of finding `Mu`'s.
+            let owner = self.mop_receiver_owner(&args[0]);
+            if self.types.classes_composing_accessors.contains(&owner)
+                && self
+                    .registry()
+                    .user_method_overloads(&owner, &method_name)
+                    .is_none()
+            {
+                return Ok(mop_absent_method());
+            }
             Ok(self
                 .classhow_find_method(invocant, &method_name)
                 .unwrap_or_else(mop_absent_method))

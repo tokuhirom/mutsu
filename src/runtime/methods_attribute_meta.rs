@@ -204,7 +204,16 @@ impl Interpreter {
         } = obj.view()
         {
             let key = attribute_meta_storage_key(meta, &obj_attrs, &attr_name);
-            let stored = obj_attrs.set_attribute_value(key, new_val.clone());
+            // `set_value` BINDS the value into the slot: a scalar attribute
+            // given a container-less value holds exactly that value, so a later
+            // `$!a = ...` dies "Cannot assign to an immutable value" (as after
+            // `$!a := 5`); ValueClass's TWEAK freezes attributes this way.
+            let bound = if meta_str(meta, "sigil") == "$" {
+                Self::readonly_value_binding(new_val.clone(), crate::ast::ReadonlyKind::Immutable)
+            } else {
+                new_val.clone()
+            };
+            let stored = obj_attrs.set_attribute_value(key, bound);
             // An `is repr('CStruct')` object that owns a native body keeps the
             // field in C memory too (ADR-11209).
             self.cstruct_store_through(&obj_attrs, key, new_val);
