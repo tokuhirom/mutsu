@@ -930,7 +930,10 @@ impl Interpreter {
                         // family's dispatcher called after its block exited
                         // must not reach the importing unit's own `multi`.
                         if self.captured_candidates_are_live(&name, &candidates) {
-                            let result = self.call_function(&name, call_args);
+                            // By name, as the dispatch above does: a family
+                            // spelled like a core routine (`unlink`) must not
+                            // reach the built-in arm of `call_function`.
+                            let result = self.call_user_family_by_name(&name, call_args);
                             self.current_unit = saved_unit;
                             return result;
                         }
