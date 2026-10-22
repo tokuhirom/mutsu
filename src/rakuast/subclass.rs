@@ -37,7 +37,7 @@ pub(super) fn normalize_for_lower(
     node: &RakuAstNode,
     depth: usize,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
-    if depth >= 512 {
+    if super::nesting::exceeded(depth, 512) {
         return Err(RuntimeError::new(
             crate::native_stack::DEEP_RECURSION_MESSAGE,
         ));
@@ -69,7 +69,7 @@ pub(super) fn normalize_for_lower(
 }
 
 fn normalize_child_value(value: &Value, depth: usize) -> Result<Option<Value>, RuntimeError> {
-    if depth >= 512 {
+    if super::nesting::exceeded(depth, 512) {
         return Err(RuntimeError::new(
             crate::native_stack::DEEP_RECURSION_MESSAGE,
         ));

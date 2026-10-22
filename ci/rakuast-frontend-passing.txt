@@ -5292,6 +5292,7 @@ t/rakuast/rakuast-leaf-accessors.t
 t/rakuast/rakuast-lexical-package.t
 t/rakuast/rakuast-list-infix.t
 t/rakuast/rakuast-listinfix-bind.t
+t/rakuast/rakuast-long-infix-chain.t
 t/rakuast/rakuast-loop-condition-declaration.t
 t/rakuast/rakuast-loop-control-value.t
 t/rakuast/rakuast-loop-label.t

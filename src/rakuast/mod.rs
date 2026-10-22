@@ -57,6 +57,7 @@ mod method_assign_decl;
 mod multidim_splat;
 mod name_parts;
 mod named_param;
+mod nesting;
 mod origin;
 mod package_header;
 mod package_traits;
