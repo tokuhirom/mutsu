@@ -1602,10 +1602,16 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             roles,
             ..
         } => {
-            if variants.is_empty() {
+            if variants.is_empty()
+                && !matches!(
+                    variant_form,
+                    crate::ast::EnumVariantForm::EmptyWords(_)
+                        | crate::ast::EnumVariantForm::PairList
+                )
+            {
                 return Err(unsupported("enum without a body"));
             }
-            let term = super::enum_term::enum_term_node(variants, *variant_form)?;
+            let term = super::enum_term::enum_term_node(variants, variant_form)?;
             // Field order matches raku: scope, name, of, traits, term.
             let mut fields: Vec<RakuAstField> = super::package_header::my_scope_field(*is_my)
                 .into_iter()
@@ -6821,7 +6827,15 @@ pub(super) fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
         }),
         // `2i` / `3.5i`: the parser folds the imaginary literal to the
         // Complex value; rakudo keeps the number under a `Postfix("i")`.
-        ValueView::Complex(re, im) if re == 0.0 && !re.is_sign_negative() => imaginary_literal(im),
+        ValueView::Complex(re, im)
+            if re == 0.0
+                && !re.is_sign_negative()
+                && im.is_finite()
+                && im >= 0.0
+                && !im.is_sign_negative() =>
+        {
+            imaginary_literal(im)
+        }
         // `<1+2i>`: a complex number written whole.
         ValueView::Complex(..) => Ok(RakuAstNode {
             class: RakuAstClass::ComplexLiteral,
