@@ -49,6 +49,7 @@ impl Clone for LazyList {
             array_context: self.array_context,
             list_context: self.list_context,
             hyper_kind: self.hyper_kind,
+            hyper_config: self.hyper_config,
             cached_no_sink: self.cached_no_sink,
             deleted_indices: Default::default(),
             descriptor: self.descriptor.clone(),
@@ -544,10 +545,20 @@ impl LazyList {
         self.hyper_kind
     }
 
+    /// The `:batch` / `:degree` the hyperization was given, if any.
+    pub(crate) fn hyper_config(&self) -> Option<(Option<i64>, Option<i64>)> {
+        self.hyper_config
+    }
+
     /// A clone that reports `HyperSeq` / `RaceSeq` and stays lazy.
-    pub(crate) fn with_hyper_kind(&self, kind: super::HyperKind) -> Self {
+    pub(crate) fn with_hyper_kind(
+        &self,
+        kind: super::HyperKind,
+        config: Option<(Option<i64>, Option<i64>)>,
+    ) -> Self {
         let mut cloned = self.clone();
         cloned.hyper_kind = kind;
+        cloned.hyper_config = config;
         cloned.itemized = false;
         cloned
     }

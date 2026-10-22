@@ -521,6 +521,7 @@ pub(crate) fn permutations(target: &Value, args: &[Value]) -> Option<Result<Valu
             array_context: false,
             list_context: false,
             hyper_kind: Default::default(),
+            hyper_config: None,
             cached_no_sink: false,
             deleted_indices: Default::default(),
             descriptor: None,
