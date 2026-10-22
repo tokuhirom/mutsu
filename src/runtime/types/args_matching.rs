@@ -1344,6 +1344,19 @@ impl Interpreter {
             {
                 return false;
             }
+            // An aggregate constant (`my constant Open = %( :op<(> )`,
+            // `constant L = (1, 2)`) is no single object whose identity an
+            // argument could share: the parameter smartmatches, which
+            // `Map`/`List`.ACCEPTS answers by value (#14158).
+            if matches!(
+                expected_val.view(),
+                ValueView::Hash(_) | ValueView::Array(..)
+            ) {
+                if !self.smart_match_values(arg, &expected_val) {
+                    return false;
+                }
+                return true;
+            }
             self.warm_which_identity_for_identity(arg);
             self.warm_which_identity_for_identity(&expected_val);
             if !crate::runtime::values_identical(arg, &expected_val) {
