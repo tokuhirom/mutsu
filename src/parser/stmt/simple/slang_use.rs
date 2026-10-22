@@ -102,7 +102,7 @@ pub(in crate::parser) fn maybe_activate_slang_use(
     // like `class`/`role` for the rest of this unit, with the declarator's
     // metaclass attached at registration time.
     for decl in &activation.declarators {
-        register_declare_keyword(&decl.keyword, decl.is_role());
+        register_declare_keyword(module, &decl.keyword, decl.is_role());
     }
     if !activation.declarators.is_empty() {
         // A memoized parse from before the keyword existed must not be
