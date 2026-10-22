@@ -2427,7 +2427,15 @@ impl Parser {
     // Cost: O(n), n = length of the list.
     fn parse_word_list(&mut self) -> Option<RegexNode> {
         let start = self.pos + 1;
-        let end = (start..self.chars.len()).find(|&i| self.chars[i] == '>')?;
+        // A backslash escapes the next character (`< + \< \> >`), so an
+        // escaped `>` does not close the list.
+        let mut end = start;
+        while end < self.chars.len() && self.chars[end] != '>' {
+            end += if self.chars[end] == '\\' { 2 } else { 1 };
+        }
+        if end >= self.chars.len() {
+            return None;
+        }
         let text: String = self.chars[start..end].iter().collect();
         self.pos = end + 1;
         Some(RegexNode::Extension(RegexExtension::Words(text)))
