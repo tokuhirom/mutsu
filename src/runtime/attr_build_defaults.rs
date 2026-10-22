@@ -273,6 +273,14 @@ impl Interpreter {
             .and_then(|attr| {
                 super::attribute_type_constraint(&class_attrs, attr, attr_type_constraints)
             });
+        // `has Int:D %.h`: the container's element type keeps its smiley
+        // (`Hash[Int:D]`), the way the constructor path builds it.
+        let declared_type = match declared_type {
+            Some(tc) if matches!(sigil, '@' | '%') => {
+                Some(self.attribute_reported_constraint(class_key, attr_name, &tc))
+            }
+            other => other,
+        };
         match sigil {
             '@' => {
                 // Check for `is Type` trait (e.g. `has @.a is Buf`)
