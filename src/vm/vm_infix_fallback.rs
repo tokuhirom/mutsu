@@ -39,9 +39,9 @@ impl Interpreter {
             )
             && !self.user_infix_override(op_name)
         {
-            return Err(crate::runtime::incdec_rw_sub::core_infix_named_argument_error(
-                op_name, &call_args,
-            ));
+            return Err(
+                crate::runtime::incdec_rw_sub::core_infix_named_argument_error(op_name, &call_args),
+            );
         }
         if call_args.len() == 2
             && infix_name.is_none_or(|op| !self.is_candidate_less_proto(op))
