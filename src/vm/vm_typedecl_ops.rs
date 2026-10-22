@@ -151,6 +151,39 @@ impl Interpreter {
         }
     }
 
+    /// The `constant` aliases heading a parameterized attribute type of a class
+    /// declared in `code` (`has CA2[uint16] $.k` with `constant CA2 = CArray`),
+    /// read from the declaring frame's own locals: the registry resolves names
+    /// through the env, which does not hold a pad term.
+    // Cost: O(a), a = attributes of the class.
+    fn attr_type_aliases_of(
+        &self,
+        code: &CompiledCode,
+        attr_decls: &[(Symbol, crate::opcode::CompiledAttrDecl)],
+    ) -> Vec<(String, String)> {
+        let mut aliases: Vec<(String, String)> = Vec::new();
+        for (_, decl) in attr_decls {
+            let Some((base, rest)) = decl
+                .type_constraint
+                .as_deref()
+                .and_then(|tc| tc.split_once('['))
+            else {
+                continue;
+            };
+            if !rest.ends_with(']') || aliases.iter().any(|(alias, _)| alias == base) {
+                continue;
+            }
+            if let Some(value) = self
+                .locals_get_by_name(code, &crate::runtime::term_names::term_key(base))
+                .or_else(|| self.locals_get_by_name(code, base))
+                && let ValueView::Package(target) = value.deref_container().view()
+            {
+                aliases.push((base.to_string(), target.resolve()));
+            }
+        }
+        aliases
+    }
+
     pub(super) fn exec_register_class_op(
         &mut self,
         code: &CompiledCode,
@@ -611,6 +644,7 @@ impl Interpreter {
             // ran: a method trait in the body (`is also<x>`) can mix one in,
             // and that hook runs when the class composes, below.
             let how_hook_before = self.class_how_compose_hook(&storage_name);
+            let attr_type_aliases = self.attr_type_aliases_of(code, attr_decls);
             let deferred_traits = loan_env!(
                 self,
                 register_class_decl(
@@ -628,6 +662,7 @@ impl Interpreter {
                         trusts,
                         own_attribute_names,
                         attr_decls,
+                        attr_type_aliases: &attr_type_aliases,
                         method_name_chunks,
                         method_decls,
                         declared_static_names,

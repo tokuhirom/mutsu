@@ -101,7 +101,8 @@ impl Interpreter {
             default_is_trait: decl.default_is_trait,
         });
         if let Some(tc) = &decl.type_constraint {
-            let resolved_tc = tc.replace("::?CLASS", class_name);
+            let resolved_tc =
+                self.resolve_parameterized_alias_base(&tc.replace("::?CLASS", class_name), &[]);
             class_def
                 .attribute_types
                 .insert(attr_name.clone(), resolved_tc);
@@ -318,6 +319,7 @@ impl Interpreter {
                 .type_constraint
                 .as_ref()
                 .map(|tc| tc.replace("::?CLASS", cx.name))
+                .map(|tc| self.resolve_parameterized_alias_base(&tc, cx.attr_type_aliases))
                 .map(|tc| self.lexical_type_storage_name(tc)),
             where_constraint: decl.where_constraint.clone(),
             declared_shape,
@@ -404,7 +406,10 @@ impl Interpreter {
         }
         if let Some(tc) = &decl.type_constraint {
             // Resolve ::?CLASS to the current class name
-            let resolved_tc = tc.replace("::?CLASS", cx.name);
+            let resolved_tc = self.resolve_parameterized_alias_base(
+                &tc.replace("::?CLASS", cx.name),
+                cx.attr_type_aliases,
+            );
             cx.class_def
                 .attribute_types
                 .insert(attr_name_str.clone(), resolved_tc);

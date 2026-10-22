@@ -40,6 +40,8 @@ pub(super) struct ClassBodyCx<'a> {
     /// attributes (ADR-0019 D2b remainder), keyed by attribute name; see
     /// `class_body_has_decl`.
     pub(super) attr_decls: &'a [(Symbol, crate::opcode::CompiledAttrDecl)],
+    /// See `ClassDeclModifiers::attr_type_aliases`.
+    pub(super) attr_type_aliases: &'a [(String, String)],
     /// Precompiled runtime-resolved-name chunk for each top-level `method`/
     /// `submethod` declaration in the body (ADR-0019 D3-1), read by position
     /// via `method_name_chunk_idx`; see `class_body_method_decl`.
@@ -138,6 +140,7 @@ impl Interpreter {
         class_lang_rev: &str,
         own_attribute_names: &[Symbol],
         attr_decls: &[(Symbol, crate::opcode::CompiledAttrDecl)],
+        attr_type_aliases: &[(String, String)],
         method_name_chunks: &[Option<crate::opcode::CompiledDeclExpr>],
         method_decls: &[crate::opcode::CompiledMethodDecl],
         declared_static_names: &[Symbol],
@@ -188,6 +191,7 @@ impl Interpreter {
             class_def,
             class_own_attrs,
             attr_decls,
+            attr_type_aliases,
             method_name_chunks,
             method_decls,
             method_name_chunk_idx: 0,
