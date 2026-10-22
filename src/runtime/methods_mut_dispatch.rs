@@ -180,6 +180,19 @@ impl Interpreter {
             if self.scalar_name_has_no_container(target_var) {
                 return Ok(target);
             }
+            // A scalar attribute (`$!v` / `$.v`, local name `!v` / `.v`) bound
+            // to an aggregate (`$!v := Array.new`) holds the aggregate itself,
+            // not a `Scalar` around it; an assignment stores it itemized. The
+            // slot keeps that difference across methods, so reflect it here.
+            if target_var.starts_with(['!', '.'])
+                && (matches!(
+                    target.view(),
+                    ValueView::Array(_, kind) if kind == ArrayKind::Array
+                ) || matches!(target.view(), ValueView::Hash(_))
+                    && !target.hash_is_itemized())
+            {
+                return Ok(target);
+            }
             // A sigil-less constant — a term, reached here by its spelling when
             // the compiler could not see it (a `require`d import) — has no
             // container either (#9962).
