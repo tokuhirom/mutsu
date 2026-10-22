@@ -304,7 +304,10 @@ impl Interpreter {
         policy: SupplyDrivePolicy,
         prewired: Option<(ReactWaker, Vec<(u64, u64)>)>,
     ) -> Result<(), RuntimeError> {
-        if react_subs.is_empty() {
+        // An empty list with nested `whenever`s queued for adoption is not
+        // empty: a static source's replay registered them and the loop's first
+        // round adopts them.
+        if react_subs.is_empty() && self.async_state.pending_react_subscriptions.is_empty() {
             // Defensive: a prewired caller never passes an empty subscription
             // list, but if one did, its sinks must not leak.
             if let Some((_, sink_regs)) = prewired {
