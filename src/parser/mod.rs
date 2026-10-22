@@ -716,7 +716,8 @@ pub(crate) fn angle_word_value(word: &str) -> Value {
 
 pub(crate) use primary::{
     QuoteWordsPart, angle_word_is_numeric_literal, angle_words_expr, item_statements_expr,
-    item_statements_parts, quotewords_from_words, quotewords_spelled_parts, word_quote_expr,
+    item_statements_parts, normalized_quote, quotewords_from_words, quotewords_spelled_parts,
+    word_quote_expr,
 };
 
 fn line_col_at_offset(source: &str, offset: usize) -> (usize, usize) {

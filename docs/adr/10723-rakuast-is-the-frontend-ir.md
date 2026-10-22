@@ -1953,3 +1953,18 @@ stays a plain interpolation. What the alias should *match* is #14628: mutsu's
 matcher reads its `=` as a literal. The executable contract is
 `t/rakuast/rakuast-regex-variable-alias.t`; `roast/S05-capture/alias.t` passes
 in frontend mode.
+
+### 6.105 S10: normalization-form quotes (2026-10-22)
+
+`q:nfc'…'`, `q:nfd'…'`, `q:nfkc'…'` and `q:nfkd'…'` produce the `Uni` subtype
+they name (S02; `roast/S15-string-types/NF-types.t`, `NFK-types.t`). Rakudo
+2026.09 has no shape to measure: its grammar rejects the adverbs and its
+`QuotedString` refuses an unknown processor. A quote adverb that post-processes
+the quoted text is what `QuotedString.processors` models (`words`, `val`,
+`exec`, `format`), so mutsu reads the quote as
+`QuotedString(processors => <nfc>, segments => (StrLiteral(TEXT),))`. The
+parser folds the quote into its `Uni` value while parsing, so `TEXT` is the
+normalized text; lowering normalizes it again through the parser's
+`normalized_quote`, which leaves it unchanged. No `.AST` consumer can meet the
+shape on rakudo, which cannot parse the source. The executable contract is
+`t/rakuast/rakuast-nf-quote-literals.t`.

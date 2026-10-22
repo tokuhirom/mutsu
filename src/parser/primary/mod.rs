@@ -313,7 +313,8 @@ pub(crate) use container::{
     angle_word_is_numeric_literal, angle_words_expr, item_statements_expr, item_statements_parts,
 };
 pub(crate) use string::{
-    QuoteWordsPart, quotewords_from_words, quotewords_spelled_parts, word_quote_expr,
+    QuoteWordsPart, normalized_quote, quotewords_from_words, quotewords_spelled_parts,
+    word_quote_expr,
 };
 
 /// Compute the 1-based line number of `input` within the original source.

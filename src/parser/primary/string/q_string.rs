@@ -401,16 +401,26 @@ pub(crate) fn parse_nf_form<'a>(rest_after_nf: &'a str, nf_name: &str) -> PResul
     if rest_after_nf.starts_with('(') {
         return Err(PError::expected("q string"));
     }
-    let form_upper = nf_name.to_uppercase();
     let (rest, content) = read_delimited_content(rest_after_nf, false)?;
+    let literal = normalized_quote(nf_name, &content).ok_or_else(|| PError::expected("q string"))?;
+    Ok((rest, literal))
+}
+
+/// The literal a `q:nfc` / `q:nfd` / `q:nfkc` / `q:nfkd` quote of `content`
+/// denotes: the `Uni` subtype `adverb` names, holding `content` normalized to
+/// that form. `None` when `adverb` is no normalization form. The RakuAST
+/// lowering of the same quote calls this too.
+// Cost: O(n), n = length of `content`.
+pub(crate) fn normalized_quote(adverb: &str, content: &str) -> Option<Expr> {
     use unicode_normalization::UnicodeNormalization;
-    let normalized: String = match form_upper.as_str() {
-        "NFC" => content.nfc().collect(),
-        "NFD" => content.nfd().collect(),
-        "NFKC" => content.nfkc().collect(),
-        _ => content.nfkd().collect(),
+    let normalized: String = match adverb {
+        "nfc" => content.nfc().collect(),
+        "nfd" => content.nfd().collect(),
+        "nfkc" => content.nfkc().collect(),
+        "nfkd" => content.nfkd().collect(),
+        _ => return None,
     };
-    Ok((rest, Expr::Literal(Value::uni(form_upper, normalized))))
+    Some(Expr::Literal(Value::uni(adverb.to_uppercase(), normalized)))
 }
 
 /// Helper to build the final expression from quoted content.
