@@ -3515,6 +3515,10 @@ pub(crate) enum OpCode {
         name_idx: u32,
         outer_positional: bool,
         inner_positional: bool,
+        /// The compiler-resolved local slot of the target variable
+        /// (`local_map[name]` at emit time), `None` for a non-local. A slot the
+        /// code declares supplies the store's type constraint (ADR-13757).
+        target_slot: Option<u32>,
     },
     /// Deep nested index assignment (3+ levels): `@a[i][j][k]... = val`
     /// Stack: [value, idx_n (outermost), idx_n-1, ..., idx_1 (innermost)]
@@ -3525,6 +3529,8 @@ pub(crate) enum OpCode {
         name_idx: u32,
         depth: u32,
         positional_flags_idx: u32,
+        /// As [`Self::IndexAssignExprNested::target_slot`].
+        target_slot: Option<u32>,
     },
     /// Generic index assignment on a stack-computed target.
     /// Stack: `[target, index, value]` → assigns value to `target[index]`.

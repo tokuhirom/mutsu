@@ -275,7 +275,10 @@ impl Interpreter {
                 };
                 // Reject if there's container type metadata
                 if hash_arc.has_type_meta()
-                    || loan_env!(self, var_type_constraint(var_name)).is_some()
+                    || self.decl_has_type_constraint(
+                        self.store_decl(code, target_slot, false),
+                        var_sym,
+                    )
                 {
                     return None;
                 }

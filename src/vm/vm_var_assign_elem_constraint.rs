@@ -20,8 +20,12 @@ impl Interpreter {
     /// type themselves.
     // Cost: O(1) amortized (one env probe and one metadata read; the
     // returned name is cloned, O(t), t = type-name length).
-    pub(crate) fn element_store_constraint(&self, var_name: &str) -> Option<String> {
-        if let Some(constraint) = self.var_type_constraint(var_name) {
+    pub(crate) fn element_store_constraint(
+        &self,
+        decl: StoreDecl<'_>,
+        var_name: &str,
+    ) -> Option<String> {
+        if let Some(constraint) = self.decl_type_constraint(decl, var_name) {
             return Some(constraint);
         }
         if !var_name.starts_with(['@', '%']) {

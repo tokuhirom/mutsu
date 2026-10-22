@@ -33,6 +33,7 @@ impl Compiler {
         for dimension in dimensions.iter().rev() {
             self.compile_expr(dimension);
         }
+        let target_slot = self.local_map.get(&name).copied();
         let name_idx = self.code.add_constant(Value::str(name));
         let flags = vec![Value::truth(is_positional); dimensions.len()];
         let positional_flags_idx = self.code.add_constant(Value::array_with_kind(
@@ -43,6 +44,7 @@ impl Compiler {
             name_idx,
             depth: dimensions.len() as u32,
             positional_flags_idx,
+            target_slot,
         });
     }
 }

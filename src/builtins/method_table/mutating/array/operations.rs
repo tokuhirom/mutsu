@@ -91,7 +91,7 @@ pub(super) fn grow(
     // `is default(...)` first, then the native element zero, then the declared
     // element type object, else `Any` (ADR-0049).
     let values = if values.iter().any(Value::is_nil) {
-        let default = interp.assign_store_nil_default(key, &target);
+        let default = interp.assign_store_nil_default(None, key, &target);
         values
             .into_iter()
             .map(|v| if v.is_nil() { default.clone() } else { v })

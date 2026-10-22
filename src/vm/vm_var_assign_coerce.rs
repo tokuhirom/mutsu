@@ -792,8 +792,8 @@ impl Interpreter {
     /// filled BOTH keys) and pad with `Nil` on the positional side, which is
     /// not even the hole value its own arrays render (`my @a; @a[2] = 1` is
     /// `[Any, Any, 1]`).
-    pub(crate) fn slice_pad_value(&mut self, var_name: &str) -> Value {
-        match loan_env!(self, var_type_constraint(var_name)) {
+    pub(crate) fn slice_pad_value(&mut self, decl: StoreDecl<'_>, var_name: &str) -> Value {
+        match self.decl_type_constraint(decl, var_name) {
             Some(constraint) => self.typed_scalar_nil_seed_value(var_name, &constraint),
             None => Value::package(crate::symbol::wk::any()),
         }
