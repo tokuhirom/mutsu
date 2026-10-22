@@ -128,7 +128,10 @@ impl Interpreter {
             let ValueView::VarRef { name, .. } = arg.view() else {
                 continue;
             };
-            let Some(cell) = self.locals.get(slot as usize).filter(|v| v.is_container_ref())
+            let Some(cell) = self
+                .locals
+                .get(slot as usize)
+                .filter(|v| v.is_container_ref())
             else {
                 continue;
             };
