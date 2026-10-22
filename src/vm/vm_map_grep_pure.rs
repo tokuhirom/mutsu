@@ -58,7 +58,9 @@ fn pure_int_topic_expression(func: Option<&Value>) -> bool {
         || !data.param_defs.is_empty()
         || !data.assumed_positional.is_empty()
         || !data.assumed_named.is_empty()
-        || data.body.len() != 1
+        // Line markers (`Stmt::SetLine`, which a closure body carries since
+        // #14164) emit no op; only the statements count.
+        || data.body.iter().filter(|s| !s.is_marker()).count() != 1
     {
         return false;
     }
