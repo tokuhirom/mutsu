@@ -106,7 +106,17 @@ impl Compiler {
             target: idx_target, ..
         } = target
         {
-            self.postfix_index_name(idx_target).is_some()
+            // The push family on an `@array` / `%hash` element takes the
+            // subscript receiver producer (`IndexInvocantRef { vivify }`), which
+            // vivifies an undefined element through its location (ADR-13823).
+            // A scalar base (`$lookup{$k}.push(..)` over an undefined `$lookup`)
+            // has no container to hold a location until it is itself vivified,
+            // so it keeps the name-based path.
+            // TODO: vivify an undefined scalar base through its binding too.
+            let vivifies_via_location =
+                matches!(method.as_str(), "push" | "unshift" | "append" | "prepend")
+                    && matches!(idx_target.as_ref(), Expr::ArrayVar(_) | Expr::HashVar(_));
+            !vivifies_via_location && self.postfix_index_name(idx_target).is_some()
         } else {
             false
         }

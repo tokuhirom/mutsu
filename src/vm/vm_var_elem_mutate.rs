@@ -135,7 +135,7 @@ impl Interpreter {
     /// in-place mutating methods' metadata checks enforce it. Only fills a
     /// node with no embedded value type yet; a declared type already on the
     /// node wins.
-    fn tag_element_value_type_in_place(elem: &Value, constraint: &str) {
+    pub(crate) fn tag_element_value_type_in_place(elem: &Value, constraint: &str) {
         let (inner, is_array) = if let Some(rest) = constraint.strip_prefix("Array[") {
             (rest.strip_suffix(']'), true)
         } else if let Some(rest) = constraint.strip_prefix("Hash[") {
