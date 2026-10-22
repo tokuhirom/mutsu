@@ -1,12 +1,14 @@
 use super::*;
 
 /// Whether the compound-assignment read of the current element is a true
-/// positional subscript. Only a subscript applied directly to an `@`-variable
-/// qualifies: a Hash/Array intermediate (`@a[0][1] += 1`) must keep the lenient
-/// associative read, but `@f[1] += 5` on an `is Array` subclass instance would
-/// otherwise dispatch to `AT-KEY` and read the element as `Any`.
+/// positional subscript. Only a subscript whose target is not itself a
+/// subscript qualifies: a Hash/Array intermediate (`@a[0][1] += 1`) must keep
+/// the lenient associative read, but `@f[1] += 5` on an `is Array` subclass
+/// instance, `$obj[1] //= 5` or `$obj.entries[1] ||= 5` on an object with its
+/// own `AT-POS` would otherwise dispatch to `AT-KEY` and read the element as
+/// `Any`.
 fn compound_read_is_positional(target: &Expr, is_positional: bool) -> bool {
-    is_positional && matches!(target, Expr::ArrayVar(_))
+    is_positional && !matches!(target, Expr::Index { .. })
 }
 
 fn compound_index_assign_expr<F>(
