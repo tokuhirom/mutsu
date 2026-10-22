@@ -1,6 +1,6 @@
 # ADR-12523: `Code`'s methods need a dispatch shape
 
-- **Status**: Accepted (2026-10-11; the shape decision withdrawn, see section 7)
+- **Status**: Superseded by [ADR-14477](14477-code-values-dispatch-through-their-class-mro.md) (2026-10-22; its section 7 outcome, "No `DispatchShape::Code`")
 - **Date**: 2026-10-10
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#12523](https://github.com/tokuhirom/mutsu/issues/12523)
