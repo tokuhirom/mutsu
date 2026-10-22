@@ -938,7 +938,15 @@ pub(crate) fn next_end_phaser_index() -> u32 {
 
 /// What an attribute's `is built` trait says (`has $.x is built(...)`).
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, bincode::Encode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    bincode::Encode,
     bincode::Decode,
 )]
 pub(crate) enum BuiltTrait {
