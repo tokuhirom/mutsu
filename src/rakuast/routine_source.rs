@@ -42,6 +42,12 @@ pub(super) fn mark_legacy_sub_forms(
     Ok(())
 }
 
+/// The hidden source field for a package's superseded built-in HOW.
+// Cost: O(1).
+pub(super) fn package_supersede_field() -> RakuAstField {
+    leaf_field(Some(SOURCE_SUPERSEDE), Value::TRUE)
+}
+
 // Cost: O(p), p = parameters in alternate signatures.
 pub(super) fn lower_alternates(node: &RakuAstNode) -> Result<SignatureAlternates, RuntimeError> {
     let Some(field) = node

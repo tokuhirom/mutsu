@@ -462,6 +462,7 @@ t/collections/list-assign-shadow-slot.t
 t/collections/list-bind-modifier.t
 t/collections/list-bind-trailing-array.t
 t/collections/list-cache-no-args.t
+t/collections/list-cmp-container-elements.t
 t/collections/list-container-aliasing.t
 t/collections/list-decl-statement-modifier.t
 t/collections/list-destructure-result.t
@@ -1243,6 +1244,7 @@ t/concurrency/supply/supply-on-demand-producer-async-emit.t
 t/concurrency/supply/supply-on-demand-quit-order.t
 t/concurrency/supply/supply-ondemand-interval-done.t
 t/concurrency/supply/supply-promise-channel-source.t
+t/concurrency/supply/supply-promise-nested-whenever-static-source.t
 t/concurrency/supply/supply-promise-ondemand-whenever-deep-stack.t
 t/concurrency/supply/supply-promise-ondemand-whenever.t
 t/concurrency/supply/supply-promise.t
@@ -2916,6 +2918,7 @@ t/modules/import-export/exporthow-declare-monitor-protocol.t
 t/modules/import-export/exporthow-declare-private-method.t
 t/modules/import-export/exporthow-declare-unit-form.t
 t/modules/import-export/exporthow-invalid-directive.t
+t/modules/import-export/exporthow-supersede-builtin.t
 t/modules/import-export/import-constant-writeback-coherence.t
 t/modules/import-export/import-only-sub-hides-outer-family.t
 t/modules/import-export/import-operator-method.t
@@ -3171,6 +3174,7 @@ t/modules/module-loaded-in-a-call-keeps-its-prelude.t
 t/modules/module-loaded-in-eval-keeps-imports.t
 t/modules/module-loaded-in-eval-keeps-my-roles.t
 t/modules/module-local-class-shadows-builtin-ns.t
+t/modules/module-local-code-var-shadows-imported-code-var.t
 t/modules/module-local-type-shadows-builtin.t
 t/modules/module-method-lexical-sub.t
 t/modules/module-method-resolves-in-its-own-unit.t
@@ -3390,6 +3394,7 @@ t/nativecall/comb-native-layer.t
 t/nativecall/contains-options-native.t
 t/nativecall/cstruct-attr-constant-alias-type.t
 t/nativecall/cstruct-bodyless-struct-argument-refused.t
+t/nativecall/cstruct-bool-field-true-and-method-reads.t
 t/nativecall/cstruct-carray-expr-index-write.t
 t/nativecall/cstruct-create-set-value-body.t
 t/nativecall/cstruct-field-constant-type-alias.t
@@ -4676,6 +4681,7 @@ t/oo/role/enum-does-anonymous-role-literal.t
 t/oo/role/enum-does-role.t
 t/oo/role/enum-role-and-enumhow.t
 t/oo/role/eval-declared-lexical-role-does-not-leak.t
+t/oo/role/eval-use-role-body-import-visibility.t
 t/oo/role/forward-declared-role-stub-upgrade.t
 t/oo/role/hash-role-store-at-key.t
 t/oo/role/imperative-does-parameterized-role.t
@@ -5061,6 +5067,7 @@ t/oo/trait/variable-trait-begin-time-containers.t
 t/oo/trait/variable-trait-begin-time.t
 t/oo/trait/variable-trait-block-add-phaser.t
 t/oo/trait/variable-trait-object-mixin.t
+t/oo/trait/variable-trait-owning-code-object.t
 t/oo/trait/variable-trait-rows.t
 t/oo/trait/variable-trait-var-assign.t
 t/oo/trait/variable-traits.t
@@ -5216,6 +5223,7 @@ t/rakuast/rakuast-eval-whatever.t
 t/rakuast/rakuast-eval.t
 t/rakuast/rakuast-export-namespace-eval-context.t
 t/rakuast/rakuast-exported-declarations.t
+t/rakuast/rakuast-exporthow-supersede-builtin.t
 t/rakuast/rakuast-expr-dot-assign-decl.t
 t/rakuast/rakuast-expr.t
 t/rakuast/rakuast-expression-context-cohort.t
