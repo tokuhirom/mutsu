@@ -56,6 +56,9 @@ struct ProcTask {
     /// The child's stdin pipe (`write`): `nqp::asyncwritebytes` writes it,
     /// `nqp::closefh` closes it.
     stdin: Mutex<Option<std::process::ChildStdin>>,
+    /// The child was waited for; the registry keeps the task only for output
+    /// pipes nobody read yet.
+    reaped: AtomicBool,
 }
 
 static NEXT_TASK: AtomicU64 = AtomicU64::new(1);
@@ -65,6 +68,50 @@ static TASKS: LazyLock<Mutex<HashMap<u64, Arc<ProcTask>>>> =
 /// An operand with any argument wrapper and container stripped.
 fn operand(v: &Value) -> Value {
     crate::runtime::types::unwrap_varref_value(v.clone()).deref_container()
+}
+
+/// The most reaped children whose output pipes are still unread that the
+/// registry keeps; the oldest are dropped first, so an output stream nobody
+/// ever permits cannot grow the registry without bound.
+const UNREAD_TASKS_KEPT: usize = 256;
+
+/// Ids of reaped tasks still holding an unread output pipe, oldest first.
+static UNREAD: LazyLock<Mutex<std::collections::VecDeque<u64>>> =
+    LazyLock::new(|| Mutex::new(std::collections::VecDeque::new()));
+
+impl ProcTask {
+    /// Whether some output stream still has its pipe: configured, never read.
+    // Cost: O(1).
+    fn has_unread_pipe(&self) -> bool {
+        self.streams.iter().flatten().any(|stream| {
+            stream
+                .pipe
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .is_some()
+        })
+    }
+}
+
+/// Drop task `id` from the registry once its child is reaped, unless an output
+/// pipe is unread: that task is kept (bounded by [`UNREAD_TASKS_KEPT`]).
+// Cost: O(1) amortized.
+fn retire_task(id: u64, task: &ProcTask) {
+    task.reaped.store(true, Ordering::Release);
+    if !task.has_unread_pipe() {
+        TASKS.lock().unwrap_or_else(PoisonError::into_inner).remove(&id);
+        return;
+    }
+    let mut unread = UNREAD.lock().unwrap_or_else(PoisonError::into_inner);
+    unread.push_back(id);
+    if unread.len() > UNREAD_TASKS_KEPT
+        && let Some(oldest) = unread.pop_front()
+    {
+        TASKS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&oldest);
+    }
 }
 
 /// The task of a `BOOTIO` handle; `None` once its child is reaped. Any
@@ -318,6 +365,7 @@ impl Interpreter {
             ],
             started: [AtomicBool::new(false), AtomicBool::new(false)],
             stdin: Mutex::new(child.stdin.take()),
+            reaped: AtomicBool::new(false),
         });
         TASKS
             .lock()
@@ -349,10 +397,11 @@ impl Interpreter {
                         stream.gate.settle();
                     }
                 }
-                TASKS
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .remove(&id);
+                // A stream nobody permitted yet still holds the child's buffered
+                // output: a `permit` after `done` reads it (MoarVM keeps the
+                // pipe until its handle goes), so the task stays reachable
+                // until every output pipe has a reader.
+                retire_task(id, &waiter_task);
                 if let Some(done) = done {
                     let status = status.as_ref().map_or(-1, wait_status);
                     waiter_task.push(&done, vec![Interpreter::boot_int(status)]);
@@ -401,7 +450,30 @@ fn nqp_permit(args: &[Value]) -> Result<Value, RuntimeError> {
             task.start_reader(idx)?;
         }
     }
+    // The last unread pipe of a reaped child now has its reader: the registry
+    // has nothing left to keep.
+    if task.reaped.load(Ordering::Acquire) && !task.has_unread_pipe() {
+        forget_task(&handle);
+    }
     Ok(handle)
+}
+
+/// Remove the task of `handle` from the registry (and the unread queue).
+// Cost: O(u), u = tasks kept for unread pipes (at most [`UNREAD_TASKS_KEPT`]).
+fn forget_task(handle: &Value) {
+    let handle = operand(handle);
+    let ValueView::Instance { attributes, .. } = handle.view() else {
+        return;
+    };
+    let Some(id) = attributes.as_map().get(PROC_ATTR).and_then(Value::as_int) else {
+        return;
+    };
+    let id = id as u64;
+    TASKS.lock().unwrap_or_else(PoisonError::into_inner).remove(&id);
+    UNREAD
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .retain(|kept| *kept != id);
 }
 
 fn nqp_killprocasync(args: &[Value]) -> Result<Value, RuntimeError> {
