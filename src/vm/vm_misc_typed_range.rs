@@ -184,6 +184,11 @@ impl Interpreter {
             ValueView::Scalar(inner) => {
                 return Self::scalarize_range_endpoint(inner.clone());
             }
+            // A container an `is rw` accessor handed back (`W[1]` of a tied
+            // array): the endpoint is what it holds.
+            ValueView::ContainerRef(_) => {
+                return Self::scalarize_range_endpoint(value.deref_container());
+            }
             ValueView::Instance { .. } if value.is_match_instance() => {
                 return runtime::coerce_to_numeric(Value::str(value.to_string_value()));
             }
