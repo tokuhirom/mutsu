@@ -1658,6 +1658,18 @@ impl Interpreter {
                 && let Some(how_type) = self.declarator_how_type(&keyword)
             {
                 self.install_custom_class_how(&qualified_name, how_type)?;
+                // The declaration expression (`(role { })`) evaluates to the
+                // candidate-keyed type object, whose `.HOW` is keyed apart from
+                // the group's.
+                let role_id = self.registry().roles.get(&qualified_name).map(|r| r.role_id);
+                let how = self.registry().class_how_values.get(&qualified_name).cloned();
+                if let (Some(role_id), Some(how)) = (role_id, how)
+                    && role_id != 0
+                {
+                    let candidate =
+                        crate::runtime::types::role_candidate_type_name(&qualified_name, role_id);
+                    self.registry_mut().class_how_values.insert(candidate, how);
+                }
             }
 
             self.record_module_owned_type(&qualified_name);
