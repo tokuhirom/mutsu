@@ -186,6 +186,16 @@ pub(crate) fn is_plain_user_lexical(name: &str) -> bool {
     matches!(decider, Some(c) if c.is_ascii_lowercase())
 }
 
+/// [`is_plain_user_lexical`], also accepting an uppercase-initial term key
+/// (`\U`, a sigilless binding or constant): the term namespace holds no type
+/// names, so the case check that keeps a type `U` apart from a scalar `$U` has
+/// nothing to separate there.
+#[inline]
+pub(crate) fn is_user_lexical_or_term_key(name: &str) -> bool {
+    is_plain_user_lexical(name)
+        || (name.starts_with(crate::term_names::TERM_PREFIX) && is_user_variable_key(name))
+}
+
 /// True if `name` has the shape of a user variable's env key -- an identifier
 /// of either case (`$F` -> `"F"`, `@Items` -> `"@Items"`), not `self`, a
 /// special/dynamic/capture key or `__mutsu_*` metadata.
