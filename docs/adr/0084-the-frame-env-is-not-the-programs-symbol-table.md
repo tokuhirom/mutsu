@@ -1,6 +1,6 @@
 # ADR-0084: The per-frame `Env` is not the program's symbol table
 
-- Status: Proposed
+- Status: Accepted (user decision 2026-10-22). ADR-12529 phase 1 completes it; tracked by #7817.
 - Date: 2026-09-09
 - Related: [ADR-0018](0018-slot-addressed-lexical-capture-and-env-sync.md)
   (slot-addressed lexical capture and env synchronization),
