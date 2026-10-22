@@ -2541,11 +2541,13 @@ impl Interpreter {
                     let err = self.type_check_element_failure(&var_name, &constraint, &val);
                     // A single-element store can resume (#14153); a slice
                     // fails part way and keeps unwinding.
-                    return Err(if matches!(idx.view(), ValueView::Int(_) | ValueView::Str(_)) {
-                        err.with_element_store_resume(idx.clone(), &constraint)
-                    } else {
-                        err
-                    });
+                    return Err(
+                        if matches!(idx.view(), ValueView::Int(_) | ValueView::Str(_)) {
+                            err.with_element_store_resume(idx.clone(), &constraint)
+                        } else {
+                            err
+                        },
+                    );
                 }
                 // Native integer arrays store the wrapped value (`-1` -> `255` in a
                 // uint8 array); the assignment expression still yields the original.

@@ -73,8 +73,8 @@ impl Interpreter {
             let target = target_slot
                 .and_then(|slot| self.locals.get(slot as usize).cloned())
                 .or_else(|| self.env().get_sym(code.const_sym(*name_idx)).cloned());
-            if let Some(existing) = target
-                .and_then(|t| Self::existing_element_container(&t, &index, *is_positional))
+            if let Some(existing) =
+                target.and_then(|t| Self::existing_element_container(&t, &index, *is_positional))
             {
                 self.stack.push(existing.into_deref());
                 *ip += 1;
@@ -158,7 +158,8 @@ impl Interpreter {
         }
         let mut items = crate::runtime::value_to_list(&top);
         let Some(bad) = items.iter().position(|item| {
-            !self.array_elements_match_constraint(constraint, &Value::real_array(vec![item.clone()]))
+            !self
+                .array_elements_match_constraint(constraint, &Value::real_array(vec![item.clone()]))
         }) else {
             return Err(err);
         };
