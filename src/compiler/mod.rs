@@ -1469,6 +1469,11 @@ pub(crate) struct Compiler {
     /// One-shot: the next `push_dynamic_scope_lexical` enters a scope that
     /// does not own its declarations (see [`Self::decl_scope_depth`]).
     pub(crate) next_scope_decl_transparent: bool,
+    /// True while compiling the body of a real (non statement-modifier) loop:
+    /// each iteration is a fresh block entry, so a bare expression-position
+    /// `my @a` / `my %h` there must not reuse the previous iteration's
+    /// container (see the `__do_decl_init` marker in `expr_block.rs`).
+    pub(crate) in_real_loop_body: bool,
     /// Expression declarations inside a synthesized WhateverCode belong to the
     /// surrounding source block and therefore store through its captured slot.
     promoted_expr_decl_names: HashSet<String>,
@@ -2131,6 +2136,7 @@ impl Compiler {
             outer_type_aliases: HashMap::new(),
             block_decl_tracker: Vec::new(),
             decl_scope_depth: 0,
+            in_real_loop_body: false,
             next_scope_decl_transparent: false,
             promoted_expr_decl_names: HashSet::new(),
             call_arg_decl_slots: HashSet::new(),

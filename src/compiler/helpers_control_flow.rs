@@ -732,9 +732,11 @@ impl Compiler {
         let mark = self.loop_body_decl_reset_mark();
         // Each iteration is its own block entry, so a `use` in the body opens
         // (and closes) its import scope once per iteration.
+        let saved = std::mem::replace(&mut self.in_real_loop_body, !is_statement_modifier);
         self.with_import_scope_region(stmts, |c| {
             c.compile_scope_restored_loop_body_inner(stmts, is_statement_modifier)
         });
+        self.in_real_loop_body = saved;
         self.relax_loop_body_decl_resets(mark, source_body, stmts);
     }
 
@@ -822,6 +824,7 @@ impl Compiler {
                     value_on_stack: true,
                 })
             });
+        let saved = std::mem::replace(&mut self.in_real_loop_body, !is_statement_modifier);
         self.with_import_scope_region(stmts, |c| {
             c.in_scope_restored_body(|c| {
                 // Same block-start declaration visibility as the statement-position
@@ -831,6 +834,7 @@ impl Compiler {
                 c.compile_stmts_value(stmts)
             })
         });
+        self.in_real_loop_body = saved;
         if let Some(idx) = let_frame {
             self.code.patch_let_block_end(idx);
         }

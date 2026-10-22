@@ -421,7 +421,7 @@ impl Compiler {
                         custom_traits.iter().any(|(t, _)| t == "__has_initializer");
                     let marker_name = format!("__do_decl_init_{}", super::compile_session::mint());
                     let marker_slot = self.alloc_local(&marker_name);
-                    let jump_have_value = if has_initializer {
+                    let jump_have_value = if has_initializer || self.in_real_loop_body {
                         None
                     } else {
                         self.code.emit(OpCode::GetLocal(marker_slot));
