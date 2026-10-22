@@ -5444,11 +5444,20 @@ impl Interpreter {
                                 // A defined non-container value in the slot is
                                 // refused rather than clobbered, the same rule
                                 // the two-level chain applies.
-                                if let Some(err) =
-                                    Self::subscript_descent_refusal(&arr[i], next_positional)
-                                {
+                                let next_key = indices.get(level + 1).map(String::as_str);
+                                if let Some(err) = Self::subscript_descent_refusal_at(
+                                    &arr[i],
+                                    next_positional,
+                                    next_key,
+                                ) {
                                     return Err(err);
                                 }
+                                // A `Pair` whose value is the container the next
+                                // subscript addresses (`@a[1]<s><e> = v` with
+                                // `@a[1] = s => {...}`) is stepped through at
+                                // the next level, not replaced here.
+                                let pair_holds_next = !next_positional
+                                    && Self::pair_subscript_aggregate(&arr[i], next_key).is_some();
                                 // Autovivify if needed. A `ContainerRef` is a
                                 // `:=`-bound cell that holds (and is descended to)
                                 // a container on the next iteration; treating it
@@ -5461,7 +5470,8 @@ impl Interpreter {
                                     ValueView::Array(..)
                                         | ValueView::Hash(..)
                                         | ValueView::ContainerRef(..)
-                                ) && !Self::is_storage_backed_instance(&arr[i]);
+                                ) && !Self::is_storage_backed_instance(&arr[i])
+                                    && !pair_holds_next;
                                 if needs_viv {
                                     binding_creates_path = true;
                                     arr[i] = Self::fresh_autoviv_container(next_positional);
