@@ -182,16 +182,17 @@ impl Interpreter {
                 .or_else(|| self.unit_import_routine(unit, name))
         };
         // The innermost routine frame is the one reading `CALLERS::`.
+        // Only the nearest calling routine's scope counts: a routine two calls
+        // up is not the caller's lexical scope (a module routine that imported
+        // nothing does not see what the program that called it imported). With
+        // no calling routine the caller is the program's mainline.
         let callers = self.routine_stack.len().saturating_sub(1);
-        self.routine_stack[..callers]
-            .iter()
-            .rev()
-            .find_map(|frame| in_scope(frame.package, self.unit_of_source_sym(frame.def_file)))
-            .or_else(|| {
-                (!outers_only)
-                    .then(|| in_scope(Symbol::intern("GLOBAL"), crate::runtime::main_unit()))
-                    .flatten()
-            })
+        match self.routine_stack[..callers].last() {
+            Some(frame) => in_scope(frame.package, self.unit_of_source_sym(frame.def_file)),
+            None => (!outers_only)
+                .then(|| in_scope(Symbol::intern("GLOBAL"), crate::runtime::main_unit()))
+                .flatten(),
+        }
     }
 
     /// Look up a variable through the $CALLER:: chain.
@@ -278,7 +279,16 @@ impl Interpreter {
         // caller's compilation unit (not bound in its env) resolves by name.
         let is_routine = name.starts_with('&');
         for env in self.caller_env_stack[..=stack_len - depth].iter().rev() {
-            if let Some(val) = env.get_through_callers(name)
+            // A routine is a lexical: it is found where the caller's own scope
+            // binds it, following that frame's static link, not through the
+            // frames that called it (an import bound in the importer's env is
+            // not in the scope of a module routine that imported nothing).
+            let found = if is_routine {
+                env.get(name)
+            } else {
+                env.get_through_callers(name)
+            };
+            if let Some(val) = found
                 && (is_routine || self.is_var_dynamic(name))
             {
                 return Ok(val.clone());
