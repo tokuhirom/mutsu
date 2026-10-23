@@ -1,6 +1,6 @@
 use Test;
 
-plan 4;
+plan 6;
 
 # A scalar bound to the implicit topic of `for @a` keeps the element's own
 # container, so later writes to the element are visible through it (#14758).
@@ -29,3 +29,23 @@ plan 4;
     @g[2] = 30;
     is $b, 30, 'bind inside an if block aliases the element';
 }
+
+# Only a bind takes the element's container; passing `$_` on stays a value.
+{
+    my @list = 1, 2, 2, 3;
+    my @uniq = gather for @list {
+        state $previous = take $_;
+        next if $_ === $previous;
+        $previous = take $_;
+    }
+    is @uniq.join(" "), "1 2 3", 'take $_ hands out the value, not the element container';
+}
+
+{
+    my @e = 1, 2, 3;
+    my $z;
+    for @e { my $y := $_; $z = $y if $_ == 2 }
+    @e[1] = 20;
+    is $z, 2, 'a plain copy of a bound topic is still a copy';
+}
+
