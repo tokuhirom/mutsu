@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 9;
 
 # A scalar bound to the implicit topic of `for @a` keeps the element's own
 # container, so later writes to the element are visible through it (#14758).
@@ -64,4 +64,13 @@ plan 8;
     for @f <-> $p { $b := $p if $p == 2 }
     @f[1] = 20;
     is $b, 20, 'bind of a `<->` parameter aliases the element';
+}
+
+# The sigilless parameter form (#14789).
+{
+    my @g = 1, 2, 3;
+    my $b;
+    for @g -> \p { $b := p if p == 2 }
+    @g[1] = 20;
+    is $b, 20, 'bind of a sigilless parameter aliases the element';
 }
