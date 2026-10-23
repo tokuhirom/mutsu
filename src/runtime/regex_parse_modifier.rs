@@ -490,7 +490,12 @@ impl Interpreter {
                         if !is_const {
                             out.push(Self::NON_DECLARATIVE_INTERP_MARK);
                         }
-                        i = j + 1;
+                        i = if inside_qq {
+                            j + 1
+                        } else {
+                            super::regex_variable_alias::variable_alias_end(&chars, j + 1)
+                                .unwrap_or(j + 1)
+                        };
                         continue;
                     }
                 } else if j < chars.len()
@@ -593,7 +598,13 @@ impl Interpreter {
                     if !is_const {
                         out.push(Self::NON_DECLARATIVE_INTERP_MARK);
                     }
-                    i = j;
+                    // `$foo=ATOM` is an alias to the variable: the atom is dropped
+                    // (#14628).
+                    i = if inside_qq {
+                        j
+                    } else {
+                        super::regex_variable_alias::variable_alias_end(&chars, j).unwrap_or(j)
+                    };
                     continue;
                 } else if j < chars.len() && chars[j] == '(' {
                     // $( expr ) — scalar contextualizer. Left in the text for
@@ -758,7 +769,11 @@ impl Interpreter {
                     // no `constant` exemption for `@` (probe J: `constant
                     // @copts` terminates exactly like `my @opts`).
                     Self::push_regex_interpolated_alternation_marked(&mut out, &alts);
-                    i = j;
+                    i = if quotes.inside_double(&chars, i) {
+                        j
+                    } else {
+                        super::regex_variable_alias::variable_alias_end(&chars, j).unwrap_or(j)
+                    };
                     continue;
                 } else if j < chars.len()
                     && chars[j] == '('
