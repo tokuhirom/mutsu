@@ -113,7 +113,16 @@ impl Interpreter {
         // for the stepped value: `my int $i` keeps an in-range `Int` as it is
         // (a step that leaves the i64 range was declined above, since a native
         // `int` wraps where an untyped scalar promotes).
+        // The slot's own declaration (`DeclaredConstraint`, baked at compile
+        // time) answers for `int`/`int64` without the program-wide subset gate
+        // of `native_typed_store_is_identity`: a `subset` cannot redirect the
+        // native name `int`, and any subset at all (JSON::Fast has some) would
+        // otherwise send every `++$i` of a `my int $i` down the full path.
         if Self::slot_type_constraint_possible(code, slot)
+            && !matches!(
+                code.declared_constraint(slot),
+                crate::binding_desc::DeclaredConstraint::NativeInt
+            )
             && !self.native_typed_store_is_identity(code, slot, &Value::int(new))
         {
             return Ok(false);
