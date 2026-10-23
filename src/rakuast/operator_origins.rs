@@ -136,7 +136,9 @@ fn contextualizer(node: &mut RakuAstNode) {
         return;
     }
     if let Some(inside) = super::list_origins::bracketed(from + 1, to, ('(', ')')) {
-        with_child_at(node, 0, |list| super::list_origins::statement_list(list, inside));
+        with_child_at(node, 0, |list| {
+            super::list_origins::statement_list(list, inside)
+        });
     }
 }
 
