@@ -207,4 +207,89 @@ impl Interpreter {
     pub(super) fn place_root_mut(&mut self, place: StorePlace, name: &str) -> Option<&mut Value> {
         self.place_root_mut_tracked(place, name, &mut None)
     }
+
+    // The dual store's reconciliation (ADR-14632 §1.2). The body keeps the
+    // container in the env and copies it to and from the slot around a store;
+    // for a `Slot` place these become no-ops at the flip, where the slot is
+    // the home and the env only a write-only mirror.
+
+    /// Before the store: when the env holds no live container for `name`
+    /// (unbound, or a hoisted `Nil` / type-object placeholder), mirror the
+    /// slot's value into it, so the store does not autovivify over a container
+    /// that lives only in the slot (`my %s is SetHash = <a>`).
+    // Cost: O(d), d = the env tiers walked, plus the slot search when the
+    // store holds no slot (O(1) expected).
+    pub(super) fn place_pull_slot(
+        &mut self,
+        place: StorePlace,
+        code: &CompiledCode,
+        slot_hint: Option<u32>,
+        name: &str,
+    ) {
+        let env_needs_slot_pull = match self.place_env_get(place, name).map(Value::view) {
+            None => true,
+            Some(ValueView::Nil) | Some(ValueView::Package(_)) => true,
+            Some(_) => false,
+        };
+        if env_needs_slot_pull && let Some(slot) = self.resolve_local_slot(code, slot_hint, name) {
+            let slot_val = self.locals[slot].clone();
+            // Only override an existing env placeholder with a real container;
+            // when env lacks the key entirely, mirror the slot as before.
+            if !self.place_env_bound(place, name)
+                || !matches!(slot_val.view(), ValueView::Nil | ValueView::Package(_))
+            {
+                self.place_set(place, name, slot_val);
+            }
+        }
+    }
+
+    /// After the store: copy the env's container for `name` into its slot.
+    // Cost: O(d), d = the env tiers walked, plus the slot search when the
+    // store holds no slot (O(1) expected).
+    pub(super) fn place_sync_slot(
+        &mut self,
+        place: StorePlace,
+        code: &CompiledCode,
+        slot_hint: Option<u32>,
+        name: &str,
+    ) {
+        if let Some(slot) = self.resolve_local_slot(code, slot_hint, name)
+            && let Some(updated) = self.place_env_get(place, name).cloned()
+        {
+            self.locals[slot] = updated;
+        }
+    }
+
+    /// After the store: write `value` into `name`'s slot
+    /// (`write_local_slot_or_name`).
+    // Cost: O(1) with a slot hint; else the slot search, O(1) expected.
+    pub(super) fn place_write_slot(
+        &mut self,
+        _place: StorePlace,
+        code: &CompiledCode,
+        slot_hint: Option<u32>,
+        name: &str,
+        value: Value,
+    ) {
+        self.write_local_slot_or_name(code, slot_hint, name, value);
+    }
+
+    /// Before a chained store mutates the env's container: drop the slot's
+    /// copy of it when `release` says so, so the container's node is held
+    /// once and `Gc::make_mut` mutates it in place instead of cloning it.
+    /// The store's closing [`Self::place_sync_slot`] puts it back.
+    // Cost: O(1) expected (the slot search).
+    pub(super) fn place_release_slot_copy(
+        &mut self,
+        _place: StorePlace,
+        code: &CompiledCode,
+        name: &str,
+        release: impl Fn(&Value) -> bool,
+    ) {
+        if let Some(slot) = self.find_local_slot(code, name)
+            && release(&self.locals[slot])
+        {
+            self.locals[slot] = Value::NIL;
+        }
+    }
 }

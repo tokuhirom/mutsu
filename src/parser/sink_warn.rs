@@ -12,6 +12,7 @@
 //! Anything that may have a side effect (calls, method calls, assignments,
 //! declarations, `say`/`print`, regex matches, ...) is never flagged.
 
+use crate::ast::parsed::ParsedStmt;
 use crate::ast::{DoBlockOrigin, Expr, Stmt};
 use crate::ast_visit::{
     Visit, walk_expr, walk_stmt as walk_ast_stmt, walk_stmts as walk_ast_stmts,
@@ -177,16 +178,21 @@ fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
         }
         // The same, for a conditional a `.AST` parse keeps in its RakuAST
         // shape (ADR-10723 Stage 2).
-        Stmt::Ast(node) => {
-            let crate::ast::parsed::ParsedStmt::Conditional(c) = node.as_ref();
-            walk_stmts(&c.then.body, false, line);
-            for clause in &c.clauses {
-                walk_stmts(&clause.then.body, false, line);
+        Stmt::Ast(node) => match node.as_ref() {
+            ParsedStmt::When { block, .. } | ParsedStmt::Default(block) => {
+                walk_stmts(sunk_prefix(&block.body), false, line)
             }
-            if let Some(block) = &c.else_block {
-                walk_stmts(&block.body, false, line);
+            other if other.inner_stmt().is_some() => {
+                if let Some(stmt) = other.inner_stmt() {
+                    walk_stmt(stmt, nil_hint, line);
+                }
             }
-        }
+            other => {
+                for block in other.blocks() {
+                    walk_stmts(&block.body, false, line);
+                }
+            }
+        },
         // A `when`/`default` block's final statement is the block's *value* —
         // `when` succeeds out of the enclosing topicalizer with it — so it is not
         // sunk. Rakudo warns for `if True { 1 }` but not for `when 'a' { 1 }`,

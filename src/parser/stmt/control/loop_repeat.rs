@@ -1,4 +1,5 @@
 use super::*;
+use crate::ast::parsed::{BlockParams, LoopKind, LoopStmt};
 
 /// Parse a single init/step item for a C-style loop header.
 /// In loop headers, commas separate statements, so `my $a = 1, my $b = 2`
@@ -273,24 +274,13 @@ pub(crate) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
         let (rest, _) = ws(rest)?;
-        let (rest, body) = block(rest)?;
-        return Ok((
-            rest,
-            Stmt::Loop {
-                init,
-                cond,
-                step,
-                body,
-                repeat: false,
-                label: None,
-                is_until: false,
-                is_bare_term: false,
-            },
-        ));
+        let (rest, block) = super::parsed_block::parsed_block(rest, rest, BlockParams::None)?;
+        let stmt = finish_loop(LoopKind::Loop, init, cond, step, block)?;
+        return Ok((rest, stmt));
     }
     // Infinite loop
     let (rest, _) = ws(rest)?;
-    let (rest, body) = block(rest)?;
+    let (rest, block) = super::parsed_block::parsed_block(rest, rest, BlockParams::None)?;
     // `loop {} while COND` on the SAME line is a syntax error — a block-ending
     // statement takes no `while`/`until` modifier (use `repeat while` instead).
     // But a `while`/`until` on a NEW line begins a separate `while`-loop
@@ -306,19 +296,71 @@ pub(crate) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 .to_string(),
         ));
     }
-    Ok((
-        rest,
-        Stmt::Loop {
-            init: None,
-            cond: None,
-            step: None,
-            body,
-            repeat: false,
-            label: None,
-            is_until: false,
-            is_bare_term: false,
-        },
-    ))
+    let stmt = finish_loop(LoopKind::Loop, None, None, None, block)?;
+    Ok((rest, stmt))
+}
+
+/// The statement a `loop` / `repeat` the parser built becomes (see
+/// `parsed_block::finish`).
+// Cost: O(n), n = size of the loop.
+fn finish_loop(
+    kind: LoopKind,
+    init: Option<Box<Stmt>>,
+    condition: Option<Expr>,
+    step: Option<Expr>,
+    block: crate::ast::parsed::ParsedBlock,
+) -> Result<Stmt, PError> {
+    super::parsed_block::finish(crate::ast::parsed::ParsedStmt::Loop(LoopStmt {
+        kind,
+        init,
+        condition,
+        step,
+        block,
+        label: None,
+        bare_term: false,
+    }))
+    .map_err(PError::from_typed)
+}
+
+/// `repeat while COND -> $p { }` / `repeat until COND { }`: the loop with its
+/// condition first.
+// Cost: O(n), n = length of the loop's source.
+fn repeat_condition_first(r: &str, until: bool) -> PResult<'_, Stmt> {
+    let (r, _) = ws1(r)?;
+    let (r, cond) = condition_expr(r)?;
+    let (r, _) = ws(r)?;
+    let start = r;
+    let (r, (param, _param_def, params, _params_def, _rw_block, _explicit_zero)) =
+        parse_for_params(r)?;
+    let (r, _) = ws(r)?;
+    let (r, mut block) = super::parsed_block::parsed_block(start, r, BlockParams::None)?;
+    let (r, _) = ws(r)?;
+    let (r, _) = opt_char(r, ';');
+    let repeat_param = param.or_else(|| params.into_iter().next());
+    // ADR-0048 D5: an explicit signature wins over a placeholder — see the
+    // matching guard in `while_until.rs`.
+    if repeat_param.is_some()
+        && let Some(err) =
+            crate::parser::stmt::sub::placeholder_overrides_signature_error(&block.body, &[])
+    {
+        return Err(err);
+    }
+    if let Some(name) = repeat_param {
+        block.params = BlockParams::Topic {
+            def: Some(Box::new(ParamDef::plain_positional(&name))),
+            name: Some(name),
+        };
+    } else {
+        // The block starts at its brace when no `->` was written.
+        block.span = block.blockoid;
+    }
+    let kind = if until {
+        LoopKind::RepeatUntil
+    } else {
+        LoopKind::RepeatWhile
+    };
+    let stmt = finish_loop(kind, None, Some(cond), None, block)?;
+    Ok((r, stmt))
 }
 
 /// The `init`/`step` pair a `repeat while/until COND -> $param { }` loop keeps
@@ -352,122 +394,27 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
 
     // repeat while/until COND { BODY }
     if let Some(r) = keyword("while", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, cond) = condition_expr(r)?;
-        let (r, _) = ws(r)?;
-        let (r, (param, _param_def, params, _params_def, _rw_block, _explicit_zero)) =
-            parse_for_params(r)?;
-        let (r, _) = ws(r)?;
-        let (r, body) = block(r)?;
-        let (r, _) = ws(r)?;
-        let (r, _) = opt_char(r, ';');
-        let repeat_param = param.or_else(|| params.into_iter().next());
-        // ADR-0048 D5: an explicit signature wins over a placeholder — see the
-        // matching guard in `while_until.rs`.
-        if repeat_param.is_some()
-            && let Some(err) =
-                crate::parser::stmt::sub::placeholder_overrides_signature_error(&body, &[])
-        {
-            return Err(err);
-        }
-        let (init, step) = repeat_param_clause(repeat_param);
-        return Ok((
-            r,
-            Stmt::Loop {
-                init,
-                cond: Some(cond),
-                step,
-                body,
-                repeat: true,
-                label: None,
-                is_until: false,
-                is_bare_term: false,
-            },
-        ));
+        return repeat_condition_first(r, false);
     }
     if let Some(r) = keyword("until", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, cond) = condition_expr(r)?;
-        let (r, _) = ws(r)?;
-        let (r, (param, _param_def, params, _params_def, _rw_block, _explicit_zero)) =
-            parse_for_params(r)?;
-        let (r, _) = ws(r)?;
-        let (r, body) = block(r)?;
-        let (r, _) = ws(r)?;
-        let (r, _) = opt_char(r, ';');
-        let repeat_param = param.or_else(|| params.into_iter().next());
-        // ADR-0048 D5: an explicit signature wins over a placeholder — see the
-        // matching guard in `while_until.rs`.
-        if repeat_param.is_some()
-            && let Some(err) =
-                crate::parser::stmt::sub::placeholder_overrides_signature_error(&body, &[])
-        {
-            return Err(err);
-        }
-        let (init, step) = repeat_param_clause(repeat_param);
-        return Ok((
-            r,
-            Stmt::Loop {
-                init,
-                cond: Some(Expr::Unary {
-                    op: TokenKind::Bang,
-                    expr: Box::new(cond),
-                    word: false,
-                }),
-                step,
-                body,
-                repeat: true,
-                label: None,
-                is_until: true,
-                is_bare_term: false,
-            },
-        ));
+        return repeat_condition_first(r, true);
     }
 
     // repeat { BODY } while/until COND
-    let (rest, body) = block(rest)?;
+    let (rest, block) = super::parsed_block::parsed_block(rest, rest, BlockParams::None)?;
     let (rest, _) = ws(rest)?;
-    if let Some(r) = keyword("while", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, cond) = condition_expr(r)?;
-        let (r, _) = ws(r)?;
-        let (r, _) = opt_char(r, ';');
-        return Ok((
-            r,
-            Stmt::Loop {
-                init: None,
-                cond: Some(cond),
-                step: None,
-                body,
-                repeat: true,
-                label: None,
-                is_until: false,
-                is_bare_term: false,
-            },
-        ));
-    }
-    if let Some(r) = keyword("until", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, cond) = condition_expr(r)?;
-        let (r, _) = ws(r)?;
-        let (r, _) = opt_char(r, ';');
-        return Ok((
-            r,
-            Stmt::Loop {
-                init: None,
-                cond: Some(Expr::Unary {
-                    op: TokenKind::Bang,
-                    expr: Box::new(cond),
-                    word: false,
-                }),
-                step: None,
-                body,
-                repeat: true,
-                label: None,
-                is_until: true,
-                is_bare_term: false,
-            },
-        ));
+    for (word, kind) in [
+        ("while", LoopKind::RepeatWhile),
+        ("until", LoopKind::RepeatUntil),
+    ] {
+        if let Some(r) = keyword(word, rest) {
+            let (r, _) = ws1(r)?;
+            let (r, cond) = condition_expr(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = opt_char(r, ';');
+            let stmt = finish_loop(kind, None, Some(cond), None, block)?;
+            return Ok((r, stmt));
+        }
     }
     // rakudo's own wording, `Missing "while" or "until"` — which is also what
     // makes the exception's `.what` attribute derivable (see

@@ -16,27 +16,39 @@ pub(super) fn parse_loop(input: &str, is_until: bool, label: Option<String>) -> 
     let (rest, _) = ws1(rest)?;
     let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, defs) = if rest.starts_with("->") || rest.starts_with("<->") {
-        let (rest, (_, def, params, _, _, _)) = parse_for_params(rest)?;
+    let start = rest;
+    let (rest, params) = if rest.starts_with("->") || rest.starts_with("<->") {
+        let (rest, (name, def, params, _, _, _)) = parse_for_params(rest)?;
         if !params.is_empty() {
             return Err(PError::expected_at(
                 "single while/until pointy parameter",
                 rest,
             ));
         }
-        (rest, Some(def.into_iter().collect::<Vec<_>>()))
+        let (rest, _) = ws(rest)?;
+        let params = crate::ast::parsed::BlockParams::Topic {
+            name,
+            def: def.map(Box::new),
+        };
+        (rest, params)
     } else {
-        (rest, None)
+        (rest, crate::ast::parsed::BlockParams::None)
     };
-    let (rest, _) = ws(rest)?;
-    let (rest, body) = block_with_pointy_params(rest, defs.as_deref().unwrap_or(&[]))?;
-    if defs.is_some()
+    let (rest, block) = super::parsed_block::parsed_block(start, rest, params)?;
+    if block.is_pointy()
         && let Some(err) =
-            crate::parser::stmt::sub::placeholder_overrides_signature_error(&body, &[])
+            crate::parser::stmt::sub::placeholder_overrides_signature_error(&block.body, &[])
     {
         return Err(err);
     }
-    let clause = loop_pointy_clause(cond, defs, body, is_until, label)
+    let node = crate::ast::parsed::ParsedStmt::WhileLoop(crate::ast::parsed::WhileLoop {
+        until: is_until,
+        condition: cond,
+        block,
+        label,
+        bare_term: false,
+    });
+    let clause = super::parsed_block::finish(node)
         .map_err(|error| PError::fatal(error.message.into_owned()))?;
     Ok((rest, clause))
 }

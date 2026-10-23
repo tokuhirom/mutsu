@@ -1736,27 +1736,7 @@ impl Interpreter {
                 crate::runtime::native_types::native_family_name(&constraint)
             )));
         }
-        let env_needs_slot_pull = match self.place_env_get(place, &var_name).map(Value::view) {
-            None => true,
-            // A hoisted declaration placeholder (type object / Nil) is NOT the
-            // live container — the real value may live only in the local slot
-            // (e.g. `my %s is SetHash = <a>`). Writing against the placeholder
-            // would autovivify a fresh container and clobber the slot value.
-            Some(ValueView::Nil) | Some(ValueView::Package(_)) => true,
-            Some(_) => false,
-        };
-        if env_needs_slot_pull
-            && let Some(slot) = self.resolve_local_slot(code, eff_slot, &var_name)
-        {
-            let slot_val = self.locals[slot].clone();
-            // Only override an existing env placeholder with a real container;
-            // when env lacks the key entirely, mirror the slot as before.
-            if !self.place_env_bound(place, &var_name)
-                || !matches!(slot_val.view(), ValueView::Nil | ValueView::Package(_))
-            {
-                self.place_set(place, &var_name, slot_val);
-            }
-        }
+        self.place_pull_slot(place, code, eff_slot, &var_name);
         // Junction autothreading: when writing back with a junction index,
         // expand the junction and assign each element separately.
         if let ValueView::Junction {
@@ -1864,11 +1844,7 @@ impl Interpreter {
                     }
                     // Early return (like the `Array` slice arm), so repeat
                     // the locals resync the shared tail would otherwise do.
-                    if let Some(slot) = self.resolve_local_slot(code, eff_slot, &var_name)
-                        && let Some(updated) = self.place_env_get(place, &var_name).cloned()
-                    {
-                        self.locals[slot] = updated;
-                    }
+                    self.place_sync_slot(place, code, eff_slot, &var_name);
                     self.stack.push(result);
                     return Ok(());
                 }
@@ -2116,11 +2092,7 @@ impl Interpreter {
                     // assignment mutates only the `env` copy while a variable
                     // that also has a `locals` slot (the common case) keeps
                     // reading its stale pre-assignment value.
-                    if let Some(slot) = self.resolve_local_slot(code, eff_slot, &var_name)
-                        && let Some(updated) = self.place_env_get(place, &var_name).cloned()
-                    {
-                        self.locals[slot] = updated;
-                    }
+                    self.place_sync_slot(place, code, eff_slot, &var_name);
                     self.stack.push(result);
                     return Ok(());
                 }
@@ -2241,11 +2213,7 @@ impl Interpreter {
                                 results.push(Value::truth(present));
                             }
                         }
-                        if let Some(slot) = self.resolve_local_slot(code, eff_slot, &var_name)
-                            && let Some(updated) = self.place_env_get(place, &var_name).cloned()
-                        {
-                            self.locals[slot] = updated;
-                        }
+                        self.place_sync_slot(place, code, eff_slot, &var_name);
                         self.stack.push(Value::array(results));
                         return Ok(());
                     }
@@ -2836,7 +2804,7 @@ impl Interpreter {
                         self.stack.push(result);
                         // Update local slot
                         if let Some(new_val) = self.place_env_get(place, &var_name).cloned() {
-                            self.write_local_slot_or_name(code, eff_slot, &var_name, new_val);
+                            self.place_write_slot(place, code, eff_slot, &var_name, new_val);
                         }
                         return Ok(());
                     }
@@ -3292,7 +3260,7 @@ impl Interpreter {
             }
         }
         if let Some(updated) = self.place_get(place, &var_name) {
-            self.write_local_slot_or_name(code, eff_slot, &var_name, updated.clone());
+            self.place_write_slot(place, code, eff_slot, &var_name, updated.clone());
             // Write the whole topic back to its source variable only when the
             // source is a scalar (e.g. `for $x { $_[1] = ... }`). For array/hash
             // sources (`for @a { $_[1] = ... }`), the for-loop's own per-element
@@ -3320,7 +3288,7 @@ impl Interpreter {
             {
                 let tagged = self.tag_container_default(updated.clone(), def);
                 self.place_set(place, &var_name, tagged.clone());
-                self.write_local_slot_or_name(code, eff_slot, &var_name, tagged);
+                self.place_write_slot(place, code, eff_slot, &var_name, tagged);
             }
         }
         // When operating through a sigilless alias (e.g., `h` → `%a`),
@@ -4138,11 +4106,9 @@ impl Interpreter {
         // `inner_i` based on `outer_positional`.
         // Drop the locals copy first so the Arc refcount is 1 (avoids
         // unnecessary cloning in Arc::make_mut).
-        if let Some(slot) = self.find_local_slot(code, &var_name)
-            && matches!(self.locals[slot].view(), ValueView::Array(..))
-        {
-            self.locals[slot] = Value::NIL;
-        }
+        self.place_release_slot_copy(place, code, &var_name, |v| {
+            matches!(v.view(), ValueView::Array(..))
+        });
         // ADR-0068 §4 step 3: a CHAINED subscript store (`%h<k>[$i] = v`,
         // `@a[$i]<k> = v`) mutates the inner container through
         // `gc_contents_mut` exactly as the single-subscript store below does,
@@ -4157,8 +4123,7 @@ impl Interpreter {
         if !is_bind_value
             && let Some(mut slot) = {
                 let _structure = self.chained_root_guard(place, &var_name);
-                self.env()
-                    .get(&var_name)
+                self.place_env_get(place, &var_name)
                     .and_then(|root| Self::subscript_peek_step(root, &inner_key, inner_positional))
             }
         {
@@ -4330,14 +4295,11 @@ impl Interpreter {
         // Drop the locals copy first so the Arc refcount is 1.
         // This avoids unnecessary cloning in Arc::make_mut which would
         // change the pointer and break .WHICH identity stability.
-        if let Some(slot) = self.find_local_slot(code, &var_name) {
-            self.locals[slot] = Value::NIL;
-        }
+        self.place_release_slot_copy(place, code, &var_name, |_| true);
         if !is_bind_value
             && let Some(mut slot) = {
                 let _structure = self.chained_root_guard(place, &var_name);
-                self.env()
-                    .get(&var_name)
+                self.place_env_get(place, &var_name)
                     .and_then(|root| Self::subscript_peek_step(root, &inner_key, inner_positional))
             }
         {
@@ -5424,14 +5386,9 @@ impl Interpreter {
         };
 
         // Invalidate local cache for the variable
-        if let Some(slot) = self.find_local_slot(code, &var_name)
-            && matches!(
-                self.locals[slot].view(),
-                ValueView::Array(..) | ValueView::Hash(..)
-            )
-        {
-            self.locals[slot] = Value::NIL;
-        }
+        self.place_release_slot_copy(place, code, &var_name, |v| {
+            matches!(v.view(), ValueView::Array(..) | ValueView::Hash(..))
+        });
 
         // Ensure the root variable exists
         if !self.place_env_bound(place, &var_name) {
@@ -5790,11 +5747,7 @@ impl Interpreter {
         // outer `Arc` that no longer reaches the freshly bound cell). Refreshing
         // the local from `env` here makes both stores share the same outer `Arc`
         // spine, so deep `:=` binds and writes stay coherent without a pull.
-        if let Some(slot) = self.find_local_slot(code, &var_name)
-            && let Some(updated) = self.place_env_get(place, &var_name).cloned()
-        {
-            self.locals[slot] = updated;
-        }
+        self.place_sync_slot(place, code, None, &var_name);
 
         self.stack.push(val);
         Ok(())

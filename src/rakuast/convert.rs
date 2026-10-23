@@ -289,11 +289,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         Stmt::SetLine(..) | Stmt::Trace { .. } => Ok(None),
         // A construct the parser built in its RakuAST shape (ADR-10723
         // Stage 2): rendered, not reconstructed.
-        Stmt::Ast(node) => match node.as_ref() {
-            crate::ast::parsed::ParsedStmt::Conditional(c) => {
-                super::conditional_view::conditional_node(c).map(Some)
-            }
-        },
+        Stmt::Ast(node) => super::parsed_view::parsed_node(node).map(Some),
         Stmt::SourceForm(form)
             if matches!(form.as_ref(), crate::ast::SourceForm::RoutineTraits(_)) =>
         {
@@ -3988,8 +3984,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 convert_stmt(stmt)?.ok_or_else(|| unsupported("empty `do` statement"))?;
             // `hyper for` / `race for` / `lazy for` are expressions of their own:
             // the loop, with no `do` prefix.
+            let written = match stmt.as_ref() {
+                Stmt::Ast(node) => node.inner_stmt().unwrap_or(stmt),
+                other => other,
+            };
             if matches!(
-                stmt.as_ref(),
+                written,
                 Stmt::For {
                     mode: ForMode::Hyper | ForMode::Race | ForMode::Lazy,
                     ..
@@ -5508,7 +5508,7 @@ pub(super) fn label_fields(label: &Option<String>) -> Vec<RakuAstField> {
 /// A C-style loop `setup` clause renders its node unwrapped — raku shows the
 /// `VarDeclaration::Simple` / `ApplyInfix` directly, not inside a
 /// `Statement::Expression`. mutsu's init is a full statement.
-fn loop_setup_node(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn loop_setup_node(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
     // Declarations and expression setups share ordinary statement conversion.
     let node = convert_stmt(stmt)?.ok_or_else(|| unsupported("empty loop setup clause"))?;
     if node.class != RakuAstClass::StatementExpression {

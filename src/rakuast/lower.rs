@@ -564,41 +564,14 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::StatementWith => lower_conditional(node, ConditionalKind::With),
         RakuAstClass::StatementWithout => lower_conditional(node, ConditionalKind::Without),
         RakuAstClass::StatementUnless => lower_conditional(node, ConditionalKind::Unless),
-        RakuAstClass::StatementLoopWhile | RakuAstClass::StatementLoopUntil => lower_while(node),
-        RakuAstClass::StatementLoop => lower_cstyle_loop(node),
-        // `repeat { … } while/until C` runs the body once before testing the
-        // condition (`until` desugars to `while !C`, handled by the prefix `!`).
-        // `repeat { … } while/until C`. mutsu stores an `until` as a negated
-        // condition plus the flag, which is what the converter reads back, so
-        // the lowerer has to re-plant both.
-        RakuAstClass::StatementLoopRepeatWhile | RakuAstClass::StatementLoopRepeatUntil => {
-            let is_until = node.class == RakuAstClass::StatementLoopRepeatUntil;
-            let cond = lower_expr(named_child(node, "condition")?)?;
-            let block = named_child(node, "body")?;
-            // `repeat while C -> $p { }`: the pointy parameter goes back to the
-            // `init`/`step` pair the parser keeps it in.
-            let param = if block.class == RakuAstClass::PointyBlock {
-                let defs = super::control_signature::params(block)?;
-                match defs.as_slice() {
-                    [] => None,
-                    [def] => Some(def.name.clone()),
-                    _ => return Err(unsupported(node)),
-                }
-            } else {
-                None
-            };
-            let (init, step) = crate::parser::repeat_param_clause(param);
-            Ok(Stmt::Loop {
-                init,
-                cond: Some(negate_if(cond, is_until)),
-                step,
-                body: lower_block(block)?,
-                repeat: true,
-                label: node_label(node)?,
-                is_until,
-                is_bare_term: false,
-            })
-        }
+        RakuAstClass::StatementLoopWhile
+        | RakuAstClass::StatementLoopUntil
+        | RakuAstClass::StatementLoop
+        | RakuAstClass::StatementLoopRepeatWhile
+        | RakuAstClass::StatementLoopRepeatUntil
+        | RakuAstClass::StatementGiven
+        | RakuAstClass::StatementWhen
+        | RakuAstClass::StatementDefault => lower_block_statement(node),
         RakuAstClass::StatementFor => lower_for(node),
         // `INIT { … }` / `LEAVE { … }` / … -> `Stmt::Phaser`, one class per kind.
         // `BEGIN` is absent deliberately — see `lower_phaser`.
@@ -693,38 +666,6 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             super::proto::lower(node)
         }
         RakuAstClass::Sub if node.fields.iter().any(|f| f.name == Some("name")) => lower_sub(node),
-        // `given`/`when`/`default` — a `when`/`default` sits directly (not
-        // Statement::Expression-wrapped) in the enclosing `given` block, so it
-        // reaches this dispatch unwrapped.
-        RakuAstClass::StatementGiven => {
-            let block = named_child(node, "body")?;
-            let body = if block.class == RakuAstClass::PointyBlock {
-                // `given X -> PARAM { … }`: the parser's own expansion binds
-                // the parameter to the topic.
-                let (mut names, mut defs) = signature_positional_params(block)?;
-                name_for_unpack_params(&mut names, &mut defs);
-                let (1, Some(def)) = (defs.len(), defs.pop()) else {
-                    return Err(unsupported(node));
-                };
-                crate::parser::given_pointy_body(def, lower_block(block)?)
-            } else {
-                lower_block(block)?
-            };
-            Ok(Stmt::Given {
-                topic: lower_expr(named_child(node, "source")?)?,
-                body,
-                is_statement_modifier: false,
-                with_kind: None,
-            })
-        }
-        RakuAstClass::StatementWhen => Ok(Stmt::When {
-            cond: lower_expr(named_child(node, "condition")?)?,
-            body: lower_block(named_child(node, "body")?)?,
-            is_statement_modifier: false,
-        }),
-        RakuAstClass::StatementDefault => {
-            Ok(Stmt::Default(lower_block(named_child(node, "body")?)?))
-        }
         // `$x OP= EXPR` is represented by a `MetaInfix::Assign` child. Keep the
         // source-level marker while reusing the parser's existing execution
         // expansion.
@@ -2517,41 +2458,6 @@ pub(super) fn positional_param(name: &str) -> ParamDef {
     }
 }
 
-/// Lower `while COND { … }` to `Stmt::While`.
-fn lower_while(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let is_until = node.class == RakuAstClass::StatementLoopUntil;
-    let cond = lower_expr(named_child(node, "condition")?)?;
-    let block = named_child(node, "body")?;
-    if block.class == RakuAstClass::PointyBlock {
-        let defs = super::control_signature::params(block)?;
-        if defs.len() > 1 {
-            return Err(unsupported(node));
-        }
-        return crate::parser::loop_pointy_clause(
-            cond,
-            Some(defs),
-            lower_block(block)?,
-            is_until,
-            node_label(node)?,
-        );
-    }
-    let body = lower_block(block)?;
-    // `while my $x { }`: declared once before the loop, as the parser does.
-    let (hoisted_decl, cond) = crate::ast::loop_cond_decl::split_loop_cond_decl(cond);
-    let looped = Stmt::While {
-        cond: negate_if(cond, is_until),
-        body,
-        label: node_label(node)?,
-        is_statement_modifier: false,
-        is_until,
-        is_bare_term: false,
-    };
-    Ok(match hoisted_decl {
-        Some(decl) => crate::ast::loop_cond_decl::expand(decl, looped),
-        None => looped,
-    })
-}
-
 /// mutsu stores an `until` loop as a `while` over a negated condition *plus* an
 /// `is_until` flag; raku keeps the condition undecorated and puts the keyword in
 /// the class name. Re-plant the negation the parser would have added.
@@ -2565,50 +2471,6 @@ fn negate_if(cond: Expr, is_until: bool) -> Expr {
     } else {
         cond
     }
-}
-
-/// Lower a C-style `loop (SETUP; COND; STEP) { … }` to `Stmt::Loop`. Each of the
-/// three controls is optional (a bare `loop { … }` has none).
-fn lower_cstyle_loop(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let init = match node.fields.iter().any(|f| f.name == Some("setup")) {
-        true => Some(Box::new(lower_stmt_inner(named_child(node, "setup")?)?)),
-        false => None,
-    };
-    let cond = match node.fields.iter().any(|f| f.name == Some("condition")) {
-        true => Some(lower_expr(named_child(node, "condition")?)?),
-        false => None,
-    };
-    let step = match node.fields.iter().any(|f| f.name == Some("increment")) {
-        true => {
-            let increment = named_child(node, "increment")?;
-            if increment.class == RakuAstClass::ApplyListInfix
-                && matches!(positional_leaf(named_child(increment, "infix")?)?.view(), ValueView::Str(op) if op.as_str() == ",")
-            {
-                let mut statements = Vec::new();
-                for operand in list_field(increment, "operands")? {
-                    let ValueView::RakuAst(operand) = operand.view() else {
-                        return Err(unsupported(increment));
-                    };
-                    statements.push(Stmt::Expr(lower_expr(operand)?));
-                }
-                Some(Expr::desugar_block(statements))
-            } else {
-                Some(lower_expr(increment)?)
-            }
-        }
-        false => None,
-    };
-    let body = lower_block(named_child(node, "body")?)?;
-    Ok(Stmt::Loop {
-        init,
-        cond,
-        step,
-        body,
-        repeat: false,
-        label: node_label(node)?,
-        is_until: false,
-        is_bare_term: false,
-    })
 }
 
 /// Lower a `Block` (`body => Blockoid` wrapping a positional `StatementList`) to a

@@ -429,6 +429,7 @@ mod given_when;
 mod labeled_loop;
 mod loop_repeat;
 mod parsed_block;
+pub(crate) use parsed_block::{finish, parsed_block};
 mod pointy_param;
 mod react;
 pub(in crate::parser::stmt) mod source_body;

@@ -58,7 +58,8 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         clauses,
         else_block,
     };
-    let stmt = super::parsed_block::finish(node).map_err(PError::from_typed)?;
+    let stmt = super::parsed_block::finish(crate::ast::parsed::ParsedStmt::Conditional(node))
+        .map_err(PError::from_typed)?;
     Ok((rest, stmt))
 }
 

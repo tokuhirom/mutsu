@@ -209,6 +209,7 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
             (r, iterable, false, gobbled(rest, r))
         };
     let (rest, _) = ws(rest)?;
+    let block_start = rest;
     let (rest, (param, param_def, params, params_def, rw_block, explicit_zero_params)) =
         parse_for_params(rest)?;
     let rw_block = rw_block || rw_detected;
@@ -310,23 +311,22 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     } else {
         (param, params)
     };
-    Ok((
-        rest,
-        Stmt::For {
-            iterable,
-            param,
-            param_def: Box::new(param_def),
-            params,
-            params_def,
-            body,
-            label: None,
-            mode,
-            rw_block,
-            explicit_zero_params,
-            is_statement_modifier: false,
-            uses_block_magic,
-        },
-    ))
+    let spans = super::parsed_block::block_spans(block_start, block_input, rest, &body);
+    let stmt = Stmt::For {
+        iterable,
+        param,
+        param_def: Box::new(param_def),
+        params,
+        params_def,
+        body,
+        label: None,
+        mode,
+        rw_block,
+        explicit_zero_params,
+        is_statement_modifier: false,
+        uses_block_magic,
+    };
+    Ok((rest, super::parsed_block::finish_for(stmt, spans)))
 }
 
 /// Collect sigilless terms throughout a destructuring loop signature.
