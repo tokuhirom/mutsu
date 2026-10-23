@@ -197,6 +197,10 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
         } else {
             Expr::spelled(expr, || Spelling::Heredoc {
                 stop: terminator_line(heredoc_start, content_end_pos, terminator_end_pos).into(),
+                body: crate::parser::primary::source_span(
+                    heredoc_start,
+                    &heredoc_start[content_end_pos..],
+                ),
             })
         };
 

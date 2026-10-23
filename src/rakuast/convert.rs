@@ -3449,7 +3449,7 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Spelling::Words(text) => Ok(word_quote(text)),
             Spelling::ParenthesizedDeclaratorAdverb => parenthesized_expression(&spelled.expr),
             Spelling::BracketTraitArgument => convert_expr(&spelled.expr),
-            Spelling::Heredoc { stop } => heredoc_node(&spelled.expr, stop),
+            Spelling::Heredoc { stop, body } => heredoc_node(&spelled.expr, stop, *body),
             Spelling::WordQuote {
                 quotewords,
                 val,
@@ -7412,11 +7412,26 @@ pub(super) fn word_quote_with(quotewords: bool, val: bool, word: &str) -> RakuAs
 }
 
 /// `q:to/END/`: the heredoc's text as the quoted string it evaluates to,
-/// plus the terminator line rakudo keeps as `stop`.
-fn heredoc_node(body: &Expr, stop: &str) -> Result<RakuAstNode, RuntimeError> {
+/// plus the terminator line rakudo keeps as `stop`. A body that is one piece
+/// of text has the origin of the lines it was written on, as in Rakudo.
+fn heredoc_node(
+    body: &Expr,
+    stop: &str,
+    written: crate::ast::SrcSpan,
+) -> Result<RakuAstNode, RuntimeError> {
     let mut node = convert_expr(body)?;
     if node.class != RakuAstClass::QuotedString {
         return Err(unsupported("a heredoc that is not quoted text"));
+    }
+    if let Some(segments) = node.fields.iter_mut().find(|f| f.name == Some("segments"))
+        && let RakuAstFieldValue::List(items) = &mut segments.value
+        && let [only] = items.as_mut_slice()
+        && let ValueView::RakuAst(text) = only.view()
+        && text.class == RakuAstClass::StrLiteral
+    {
+        let mut text = RakuAstNode::clone(text);
+        origin::set_span(&mut text, written);
+        *only = Value::rakuast(Box::new(text));
     }
     node.class = RakuAstClass::Heredoc;
     node.fields
