@@ -940,7 +940,9 @@ impl Interpreter {
             && let Some(cell) = self.outer_store_lexical_cell(code, sym)
         {
             value = cell;
-        } else if code.container_ref_capture_syms.contains(&sym)
+        } else if (sym.as_str() == "_" || code.container_ref_capture_syms.contains(&sym))
+            // The implicit topic of a `for @a` loop is the element's own cell
+            // (ADR-0045); `$x := $_` must bind that cell, not its value (#14758).
             && let Some(captured) = self.env().get_sym(sym)
             && captured.is_container_ref()
         {
