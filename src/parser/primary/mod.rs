@@ -43,6 +43,71 @@ thread_local! {
     /// Used to compute correct line numbers when the parser operates on leaked strings
     /// that are outside the original source buffer.
     static LEAKED_REGIONS: RefCell<Vec<LeakedRegion>> = const { RefCell::new(Vec::new()) };
+    /// The [`SpanBase`] the next `set_original_source` adopts; see
+    /// [`lend_span_base`].
+    static PENDING_SPAN_BASE: std::cell::Cell<Option<SpanBase>> = const { std::cell::Cell::new(None) };
+}
+
+/// What the offsets into the source buffer being parsed are relative to, for
+/// the source positions recorded on the tree (ADR-10723 §4).
+#[derive(Clone, Copy)]
+pub(in crate::parser) enum SpanBase {
+    /// The buffer is the compilation unit's text.
+    Unit,
+    /// The buffer is a copy of the unit's text starting at this unit offset
+    /// (the body of a regex code block).
+    Copy(usize),
+    /// The buffer is a copy of text whose place in the unit is not known: its
+    /// positions are not recorded.
+    Unknown,
+}
+
+/// Make the next parse, which parses a copy of the unit's text starting at
+/// unit offset `base` (`None`: an unknown place), record its positions in
+/// the unit's offsets. Undo it with [`clear_span_base`] once that parse
+/// returns.
+// Cost: O(1).
+pub(in crate::parser) fn lend_span_base(base: Option<usize>) {
+    let lent = match base {
+        Some(base) => SpanBase::Copy(base),
+        None => SpanBase::Unknown,
+    };
+    PENDING_SPAN_BASE.with(|p| p.set(Some(lent)));
+}
+
+/// Drop a span base no parse adopted.
+// Cost: O(1).
+pub(in crate::parser) fn clear_span_base() {
+    PENDING_SPAN_BASE.with(|p| p.set(None));
+}
+
+/// The unit offset that the source offset `offset` stands for, `None` when
+/// the source's place in the unit is not known.
+// Cost: O(1).
+fn unit_position(offset: usize) -> Option<usize> {
+    ORIGINAL_SOURCE.with(|s| match s.borrow().span_base {
+        SpanBase::Unit => Some(offset),
+        SpanBase::Copy(base) => Some(base + offset),
+        SpanBase::Unknown => None,
+    })
+}
+
+/// The source offset of the unit offset `position`, the inverse of
+/// [`unit_position`].
+// Cost: O(1).
+fn source_position(position: usize) -> Option<usize> {
+    ORIGINAL_SOURCE.with(|s| match s.borrow().span_base {
+        SpanBase::Unit => Some(position),
+        SpanBase::Copy(base) => position.checked_sub(base),
+        SpanBase::Unknown => None,
+    })
+}
+
+/// The unit offset of the parser position `input`, when the source being
+/// parsed is the unit's text or a copy of it at a known place.
+// Cost: O(h), h = leaked heredoc regions.
+pub(in crate::parser) fn unit_offset_of(input: &str) -> Option<usize> {
+    unit_position(source_offset(input)?)
 }
 
 static PRIMARY_MEMO: ParseMemo<Expr> = ParseMemo::new(&PRIMARY_MEMO_TLS, &PRIMARY_MEMO_STATS_TLS);
@@ -88,6 +153,8 @@ struct SourceOrigin {
     /// [`fragment_attempts`]): the unit offset of the fragment's first byte,
     /// added to every position the fragment records.
     attempt_base: Option<usize>,
+    /// What the buffer's offsets are relative to in the unit.
+    span_base: SpanBase,
 }
 
 impl SourceOrigin {
@@ -98,6 +165,7 @@ impl SourceOrigin {
         newlines: None,
         attempts: None,
         attempt_base: None,
+        span_base: SpanBase::Unit,
     };
 
     fn newlines(&self) -> &[usize] {
@@ -141,6 +209,9 @@ pub(super) fn set_original_source(source: &str) {
                 }))
             }),
             attempt_base: None,
+            span_base: PENDING_SPAN_BASE
+                .with(|p| p.take())
+                .unwrap_or(SpanBase::Unit),
         };
     });
     fragment_attempts::adopt_lent_attempts();
@@ -423,9 +494,9 @@ fn trimmed_span(start: &str, end: &str, semicolons: bool) -> crate::ast::SrcSpan
         }
         Some(len)
     });
-    match text {
-        Some(len) => SrcSpan::new(from, from + len),
-        None => SrcSpan::NONE,
+    match (text, unit_position(from)) {
+        (Some(len), Some(from)) => SrcSpan::new(from, from + len),
+        _ => SrcSpan::NONE,
     }
 }
 
@@ -435,7 +506,10 @@ fn trimmed_span(start: &str, end: &str, semicolons: bool) -> crate::ast::SrcSpan
 // Cost: O(h), h = leaked heredoc regions.
 pub(in crate::parser) fn source_span(start: &str, end: &str) -> crate::ast::SrcSpan {
     match (source_offset(start), source_offset(end)) {
-        (Some(from), Some(to)) if from <= to => crate::ast::SrcSpan::new(from, to),
+        (Some(from), Some(to)) if from <= to => match (unit_position(from), unit_position(to)) {
+            (Some(from), Some(to)) => crate::ast::SrcSpan::new(from, to),
+            _ => crate::ast::SrcSpan::NONE,
+        },
         _ => crate::ast::SrcSpan::NONE,
     }
 }
@@ -466,8 +540,10 @@ pub(in crate::parser) fn statement_list_range(
                 origin.len,
             ))
         };
+        // `first`, `last` and `inside` are unit offsets; the text is read
+        // from the buffer, whose offsets may be a copy's.
         let base = inside.from as usize;
-        let text = full.get(base..inside.to as usize)?;
+        let text = full.get(source_position(base)?..source_position(inside.to as usize)?)?;
         let end = crate::source_comments::statement_list_end(
             text,
             first.checked_sub(base)?,

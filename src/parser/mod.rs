@@ -449,6 +449,9 @@ pub(crate) fn parse_nested_block_fragment(
     if let Some(offset) = unit_offset {
         primary::fragment_attempts::lend_attempts(offset);
     }
+    // The body is a copy of the unit's text: its positions are the unit's,
+    // or, where the copy's place is not known, not recorded.
+    primary::lend_span_base(unit_offset);
     INHERITED_SCOPES.with(|slot| {
         *slot.borrow_mut() = Some(InheritedScopes {
             scopes: stmt::simple::snapshot_scopes(),
@@ -462,6 +465,7 @@ pub(crate) fn parse_nested_block_fragment(
     if unit_offset.is_some() {
         primary::fragment_attempts::clear_lent_attempts();
     }
+    primary::clear_span_base();
     result
 }
 
