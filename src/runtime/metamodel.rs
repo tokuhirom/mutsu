@@ -570,16 +570,30 @@ impl Interpreter {
             // A lexical role (`my role R`) is stored under a mangled name
             // (`R\0N`); a trait's `$*PACKAGE.HOW does ...` is keyed by the
             // name the program sees.
-            let visible = role_name.split('\u{0}').next().unwrap_or(&role_name);
-            let how = [key.as_str(), role_name.as_str(), visible]
-                .into_iter()
-                .filter_map(|k| self.registry().class_how_values.get(k).cloned())
-                .find(|how| self.mixin_has_hook(how, "specialize"));
-            if let Some(how) = how {
-                let role_obj = Value::package(Symbol::intern(&role_name));
-                let class_obj = Value::package(Symbol::intern(class_name));
-                self.call_method_with_values(how, "specialize", vec![role_obj, class_obj])?;
-            }
+            let class_obj = Value::package(Symbol::intern(class_name));
+            self.call_role_how_specialize(&key, &role_name, class_obj)?;
+        }
+        Ok(())
+    }
+
+    /// Call the user `specialize` of `role_name`'s HOW (looked up by `key`, the
+    /// role's own name, or its program-visible name), if it has one, with the
+    /// type object `target` the role is specialized onto.
+    // Cost: O(1) plus the hook's own cost.
+    pub(crate) fn call_role_how_specialize(
+        &mut self,
+        key: &str,
+        role_name: &str,
+        target: Value,
+    ) -> Result<(), RuntimeError> {
+        let visible = role_name.split('\u{0}').next().unwrap_or(role_name);
+        let how = [key, role_name, visible]
+            .into_iter()
+            .filter_map(|k| self.registry().class_how_values.get(k).cloned())
+            .find(|how| self.mixin_has_hook(how, "specialize"));
+        if let Some(how) = how {
+            let role_obj = Value::package(Symbol::intern(role_name));
+            self.call_method_with_values(how, "specialize", vec![role_obj, target])?;
         }
         Ok(())
     }

@@ -764,7 +764,12 @@ impl Interpreter {
         let target = if !matches!(method, "WHAT" | "^name" | "VAR")
             && let ValueView::ContainerView(cell) = target.view()
         {
-            Value::container_ref(cell.clone())
+            // The metamethods of a `.VAR` view describe the `Scalar`.
+            if method.starts_with('^') || method == "isa" {
+                Value::package(Symbol::intern("Scalar"))
+            } else {
+                Value::container_ref(cell.clone())
+            }
         } else {
             target
         };

@@ -5,6 +5,41 @@ use super::methods_classhow_dispatch::{array_element_type_name, shorten_type_nam
 use super::*;
 
 impl Interpreter {
+    /// `Class.^mixin(R)` / `Class but R` on a class type object: make the
+    /// mixin class `Class+{R}` now, so the roles' attribute traits and a role
+    /// HOW's `specialize` run at the `but` rather than at the first instance.
+    /// A no-op for any other receiver or a role that is not a plain registered
+    /// one.
+    // Cost: O(r) for the role names, plus `ensure_mixin_class`.
+    pub(crate) fn ensure_type_object_mixin_class(
+        &mut self,
+        base: &Value,
+        roles: &[Value],
+    ) -> Result<(), RuntimeError> {
+        if let ValueView::Package(base) = base.view()
+            && self.registry().classes.contains_key(base.as_str())
+        {
+            let mut role_names = Vec::new();
+            for role in roles {
+                match self.extract_role_application(&self.normalize_role_type_object(role)) {
+                    Some((name, role_args, _))
+                        if role_args.is_empty() && self.registry().roles.contains_key(&name) =>
+                    {
+                        role_names.push(name)
+                    }
+                    _ => {
+                        role_names.clear();
+                        break;
+                    }
+                }
+            }
+            if !role_names.is_empty() {
+                self.ensure_mixin_class(&base.resolve(), &role_names)?;
+            }
+        }
+        Ok(())
+    }
+
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_mixin(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
             // `.^mixin(Role)` on a slang-activation handle (ADR-0026):
@@ -60,28 +95,7 @@ impl Interpreter {
             // `Class.^mixin(R)` makes the mixin class, composing the roles
             // (their attribute traits run then, as `class C does R` runs
             // them) rather than leaving that to the first instance.
-            if let ValueView::Package(base) = args[0].view()
-                && self.registry().classes.contains_key(base.as_str())
-            {
-                let mut role_names = Vec::new();
-                for role in &args[1..] {
-                    match self.extract_role_application(&self.normalize_role_type_object(role)) {
-                        Some((name, role_args, _))
-                            if role_args.is_empty()
-                                && self.registry().roles.contains_key(&name) =>
-                        {
-                            role_names.push(name)
-                        }
-                        _ => {
-                            role_names.clear();
-                            break;
-                        }
-                    }
-                }
-                if !role_names.is_empty() {
-                    self.ensure_mixin_class(&base.resolve(), &role_names)?;
-                }
-            }
+            self.ensure_type_object_mixin_class(&args[0], &args[1..])?;
             for role in &args[1..] {
                 // `role { ... }` evaluates to one candidate of its group.
                 let role = &self.normalize_role_type_object(role);

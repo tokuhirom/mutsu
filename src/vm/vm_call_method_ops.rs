@@ -1006,6 +1006,12 @@ impl Interpreter {
                 {
                     target
                 }
+                // The metamethods of a `.VAR` view describe the `Scalar`
+                // container (`$obj.attr.VAR.^mro`, `.VAR.^isa(Scalar)`), as
+                // `.WHAT` does above, not the value it holds.
+                ValueView::ContainerView(_) if method.starts_with('^') || method == "isa" => {
+                    Value::package(Symbol::intern("Scalar"))
+                }
                 ValueView::ContainerView(_) => target.deref_container(),
                 ValueView::ContainerRef(_) => target.deref_container(),
                 // A deferred hash-entry token straight off an lvalue return

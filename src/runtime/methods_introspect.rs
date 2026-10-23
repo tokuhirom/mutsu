@@ -330,6 +330,18 @@ impl Interpreter {
         if let Some(how) = target.custom_how() {
             return Ok(how.clone());
         }
+        // The metaobject classes themselves (`Metamodel::ClassHOW`) are NQP
+        // classes in Rakudo, so their metaobject is an `NQPClassHOW`, not a
+        // Raku `ClassHOW` (`Metamodel::ClassHOW.HOW ~~ Metamodel::ClassHOW` is
+        // False, which AttrX::Mooish relies on to refuse `Metamodel::ClassHOW
+        // but R`).
+        if let ValueView::Package(name) = target.view() {
+            let resolved = name.resolve();
+            let bare = resolved.strip_prefix("Perl6::").unwrap_or(&resolved);
+            if bare.starts_with("Metamodel::") && bare.ends_with("HOW") {
+                return Ok(Self::native_how_instance("NQPClassHOW", &resolved));
+            }
+        }
         // Return CurriedRoleHOW for parameterized roles
         if let ValueView::ParametricRole {
             base_name,

@@ -45,6 +45,24 @@ impl Interpreter {
             self.stack.push(reblessed);
             return Ok(());
         }
+        if matches!(left.view(), ValueView::Package(_))
+            && self.is_role_application(&right)
+            && let Some((role_name, ..)) = self.extract_role_application(&right)
+            && self.role_has_attribute_trait_hooks(&role_name)
+        {
+            if let ValueView::Package(base) = left.view()
+                && !self.registry().classes.contains_key(base.as_str())
+                && !self.is_role_type_name(&base.resolve())
+            {
+                // A native type (`Metamodel::ClassHOW`) has no registered
+                // class to specialize the role onto: the role HOW's
+                // `specialize` still sees the type object.
+                self.apply_pending_role_attribute_traits_standalone(&role_name)?;
+                self.call_role_how_specialize(&role_name, &role_name, left.clone())?;
+            } else {
+                self.ensure_type_object_mixin_class(&left, std::slice::from_ref(&right))?;
+            }
+        }
         let role_composed = self
             .is_role_application(&right)
             .then(|| loan_env!(self, eval_does_values(left.clone(), right.clone())));
