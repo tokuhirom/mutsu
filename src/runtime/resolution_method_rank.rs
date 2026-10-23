@@ -111,10 +111,36 @@ impl Interpreter {
             optional: n.1 == 0 && multi_rank::has_optional_positional(&params),
             decl_order,
             profile,
-            invocant: Some(owner),
+            // An explicit invocant type (`multi method m(RM:D:)`) is the
+            // parameter rakudo ranks, not the class that owns the candidate: a
+            // role-typed invocant is narrower than `Mu:D:` in the same class.
+            invocant: Some(Self::explicit_invocant_type(def).unwrap_or(owner)),
             tier: 0,
             tiered: false,
         }
+    }
+
+    /// The nominal type an explicit invocant constraint (`(RM:D:)`) names, if
+    /// the candidate writes one that is a plain type name (no type capture,
+    /// no parameterization).
+    // Cost: O(p), p = parameters.
+    fn explicit_invocant_type(def: &MethodDef) -> Option<Symbol> {
+        let constraint = def
+            .param_defs
+            .iter()
+            .find(|p| p.is_invocant)?
+            .type_constraint
+            .as_deref()?;
+        let constraint = ["D", "U", "_"]
+            .iter()
+            .find_map(|smiley| constraint.strip_suffix(&format!(":{smiley}")))
+            .unwrap_or(constraint);
+        let plain = !constraint.is_empty()
+            && constraint
+                .chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | ':' | '\''))
+            && !constraint.starts_with(':');
+        plain.then(|| Symbol::intern(constraint))
     }
 
     /// The MRO index of the most-derived level with a built-in method
