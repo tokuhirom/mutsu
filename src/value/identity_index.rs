@@ -144,14 +144,15 @@ fn identity_bucket(value: &Value) -> Option<u64> {
             12u8.hash(&mut hasher);
             (crate::gc::Gc::as_ptr(&items) as usize).hash(&mut hasher);
         }
-        ValueView::Instance {
-            class_name, id, ..
-        } => {
+        ValueView::Instance { class_name, id, .. } => {
             // The classes `values_identical` decides by content or through
             // another rule than the instance id keep no bucket.
             let name = class_name.as_str();
             if is_stash_class_name(name)
-                || matches!(name, "Supply" | "IO::Special" | "ObjAt" | "ValueObjAt" | "IO::Handle")
+                || matches!(
+                    name,
+                    "Supply" | "IO::Special" | "ObjAt" | "ValueObjAt" | "IO::Handle"
+                )
                 || (name.starts_with("Perl6::Metamodel::") && name.ends_with("HOW"))
             {
                 return None;
