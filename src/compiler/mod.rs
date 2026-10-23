@@ -1105,6 +1105,7 @@ mod expr_feed;
 mod expr_helpers;
 mod expr_incdec_nested;
 mod expr_incdec_ternary;
+mod expr_index_assign_emit;
 mod expr_index_concat_assign;
 mod expr_method;
 mod expr_multidim_bind;

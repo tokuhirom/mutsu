@@ -3389,10 +3389,12 @@ pub(crate) enum OpCode {
     /// `[index] → [old value]`. Operands as [`Self::PostIncrementIndex`];
     /// shares `exec_inc_dec_index_op` with the other indexed forms.
     PostDecrementIndex(u32, Option<u32>, bool),
-    /// Named index assignment: `var[idx] = value` where `var` is a known
-    /// variable name. `is_positional` records whether the subscript was
-    /// `[...]` (positional) or `{...}`/`<...>` (associative); used to
-    /// choose Array vs Hash when autovivifying a missing variable.
+    /// Named index assignment: `var[idx] = value` where `var` is a variable
+    /// the compiler did not resolve to a local slot (a free variable, a
+    /// global, a dynamic, an attribute; a slot-resolved target compiles to
+    /// [`Self::IndexAssignLocal`]). `is_positional` records whether the
+    /// subscript was `[...]` (positional) or `{...}`/`<...>` (associative);
+    /// used to choose Array vs Hash when autovivifying a missing variable.
     IndexAssignExprNamed {
         name_idx: u32,
         is_positional: bool,
@@ -3400,13 +3402,6 @@ pub(crate) enum OpCode {
         /// evaluates an lvalue's target and index before its assigned value;
         /// the legacy stack layout remains available for the other emitters.
         index_first: bool,
-        /// §1.4 shadow-slot: the compiler-resolved local slot for the target var
-        /// (`local_map[name]` at emit time), or `None` for a non-local target
-        /// (global/dynamic/undeclared). The exec prefers this baked slot over the
-        /// by-name `find_local_slot` (position = outer) so a shadowing inner-block
-        /// `my $a` writes its own slot. Byte-identical with shadows off (baked ==
-        /// position). See docs/lexical-scope-slot-campaign.md.
-        target_slot: Option<u32>,
         /// `%h{$k} ~= rhs` / `@a[$i] ~= rhs` fused with its `Concat` (#9141).
         /// The stack is `[index, element, rhs]` instead of `[index, value]`,
         /// and the op concatenates before storing. The fusion exists for
@@ -3422,6 +3417,22 @@ pub(crate) enum OpCode {
         /// the element is recorded as a *value* share (not a bind) so a later
         /// non-share reassignment (`@aoa[i] = 42`) REPLACES the slot instead of
         /// writing through the shared cell (raku value semantics).
+        element_share: bool,
+    },
+    /// [`Self::IndexAssignExprNamed`] into a local the compiler resolved to
+    /// `slot` (`local_map[name]` at emit time), so a shadowing inner-block
+    /// `my @a` stores into its own slot. When the running code declares the
+    /// variable, the store operates on the slot itself (ADR-14632); an
+    /// aliased or lane-shared target still stores by `name_idx`.
+    IndexAssignLocal {
+        slot: u32,
+        name_idx: u32,
+        is_positional: bool,
+        /// As [`Self::IndexAssignExprNamed`]'s.
+        index_first: bool,
+        /// As [`Self::IndexAssignExprNamed`]'s.
+        concat_append: bool,
+        /// As [`Self::IndexAssignExprNamed`]'s.
         element_share: bool,
     },
     /// Assign through a pseudo-stash with a literal key: `MY::<$x> = v`,
@@ -10060,6 +10071,7 @@ impl CompiledCode {
             | OpCode::TopicDotAssign(idx)
             | OpCode::AtomicCompoundVar { name_idx: idx, .. }
             | OpCode::IndexAssignExprNamed { name_idx: idx, .. }
+            | OpCode::IndexAssignLocal { name_idx: idx, .. }
             | OpCode::IndexAssignExprNested { name_idx: idx, .. }
             | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
             | OpCode::MultiDimIndexAssignNested { name_idx: idx, .. }
@@ -10183,6 +10195,7 @@ impl CompiledCode {
             // capture analysis. `@`/`%` element stores remain in the separate
             // in-place-container lane below.
             OpCode::IndexAssignExprNamed { name_idx: idx, .. }
+            | OpCode::IndexAssignLocal { name_idx: idx, .. }
             | OpCode::IndexAssignExprNested { name_idx: idx, .. }
             | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
             | OpCode::MultiDimIndexAssignNested { name_idx: idx, .. }
@@ -10213,6 +10226,7 @@ impl CompiledCode {
     pub(crate) fn op_container_mutate_const_idx(&self, op: &OpCode) -> Option<u32> {
         match op {
             OpCode::IndexAssignExprNamed { name_idx, .. }
+            | OpCode::IndexAssignLocal { name_idx, .. }
             | OpCode::IndexAssignExprNested { name_idx, .. }
             | OpCode::IndexAssignDeepNested { name_idx, .. }
             | OpCode::MultiDimIndexAssignNested { name_idx, .. }
@@ -12058,6 +12072,7 @@ impl CompiledCode {
                     | OpCode::AssignExprLocal(_)
                     | OpCode::AtomicCompoundVar { .. }
                     | OpCode::IndexAssignExprNamed { .. }
+                    | OpCode::IndexAssignLocal { .. }
                     | OpCode::IndexAssignExprNested { .. }
                     | OpCode::IndexAssignDeepNested { .. }
                     | OpCode::IndexAssignGeneric { .. }

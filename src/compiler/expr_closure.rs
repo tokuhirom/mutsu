@@ -942,14 +942,16 @@ impl Compiler {
                 self.compile_expr(seeded);
                 self.compile_expr(rhs);
                 let name_idx = self.code.add_constant(Value::str(name));
-                self.code.emit(OpCode::IndexAssignExprNamed {
+                self.emit_index_assign_named(
                     name_idx,
-                    is_positional: outer_positional,
-                    index_first: true,
                     target_slot,
-                    concat_append: true,
-                    element_share: false,
-                });
+                    expr_index_assign_emit::IndexAssignFlags {
+                        is_positional: outer_positional,
+                        index_first: true,
+                        concat_append: true,
+                        element_share: false,
+                    },
+                );
                 return;
             }
             match &share_value {
@@ -957,14 +959,16 @@ impl Compiler {
                 None => self.compile_bind_index_value(value),
             }
             let name_idx = self.code.add_constant(Value::str(name));
-            self.code.emit(OpCode::IndexAssignExprNamed {
+            self.emit_index_assign_named(
                 name_idx,
-                is_positional: outer_positional,
-                index_first: true,
                 target_slot,
-                concat_append: false,
-                element_share: share_value.is_some(),
-            });
+                expr_index_assign_emit::IndexAssignFlags {
+                    is_positional: outer_positional,
+                    index_first: true,
+                    concat_append: false,
+                    element_share: share_value.is_some(),
+                },
+            );
         } else if let Some((name, chain)) = self
             .index_assign_deep_nested_target(target)
             .or_else(|| binding.then(|| self.index_chain_target(target)).flatten())
@@ -1058,14 +1062,16 @@ impl Compiler {
             self.compile_expr(value);
             self.compile_expr(index);
             let name_idx = self.code.add_constant(Value::str(arr_name));
-            self.code.emit(OpCode::IndexAssignExprNamed {
+            self.emit_index_assign_named(
                 name_idx,
-                is_positional: outer_positional,
-                index_first: false,
                 target_slot,
-                concat_append: false,
-                element_share: false,
-            });
+                expr_index_assign_emit::IndexAssignFlags {
+                    is_positional: outer_positional,
+                    index_first: false,
+                    concat_append: false,
+                    element_share: false,
+                },
+            );
         } else if let Expr::ArrayLiteral(elements) = target {
             // List construction container assignment:
             // ($var1, literal, $var2, ...)[idx] = value

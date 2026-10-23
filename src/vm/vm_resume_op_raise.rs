@@ -30,6 +30,7 @@ impl Interpreter {
                 | OpCode::SetLocalDecl { .. }
                 | OpCode::TypeCheck(..)
                 | OpCode::IndexAssignExprNamed { .. }
+                | OpCode::IndexAssignLocal { .. }
         )
     }
 
@@ -56,14 +57,23 @@ impl Interpreter {
         // A refused single-element store resumes by storing the constraint's
         // type object in the slot, which is what Rakudo leaves there; the
         // store's own result is that type object.
-        if let OpCode::IndexAssignExprNamed {
-            name_idx,
-            is_positional,
-            target_slot,
-            element_share,
-            ..
-        } = &code.ops[*ip]
-        {
+        let element_store = match &code.ops[*ip] {
+            OpCode::IndexAssignExprNamed {
+                name_idx,
+                is_positional,
+                element_share,
+                ..
+            } => Some((*name_idx, *is_positional, None, *element_share)),
+            OpCode::IndexAssignLocal {
+                slot,
+                name_idx,
+                is_positional,
+                element_share,
+                ..
+            } => Some((*name_idx, *is_positional, Some(*slot), *element_share)),
+            _ => None,
+        };
+        if let Some((name_idx, is_positional, target_slot, element_share)) = element_store {
             let Some((index, constraint)) = err.element_store_resume().cloned() else {
                 return Err(err);
             };
@@ -72,9 +82,9 @@ impl Interpreter {
             // that did not exist yet is created, holding the type object.
             let target = target_slot
                 .and_then(|slot| self.locals.get(slot as usize).cloned())
-                .or_else(|| self.env().get_sym(code.const_sym(*name_idx)).cloned());
+                .or_else(|| self.env().get_sym(code.const_sym(name_idx)).cloned());
             if let Some(existing) =
-                target.and_then(|t| Self::existing_element_container(&t, &index, *is_positional))
+                target.and_then(|t| Self::existing_element_container(&t, &index, is_positional))
             {
                 self.stack.push(existing.into_deref());
                 *ip += 1;
@@ -88,10 +98,10 @@ impl Interpreter {
             self.stack.push(index);
             self.exec_index_assign_expr_named_op(
                 code,
-                *name_idx,
-                *is_positional,
-                *target_slot,
-                *element_share,
+                name_idx,
+                is_positional,
+                target_slot,
+                element_share,
             )?;
             *ip += 1;
             return Ok(());
