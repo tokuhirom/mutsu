@@ -112,7 +112,13 @@ impl Interpreter {
         // enforces. `Nil` resets the attribute, which a `:D` one cannot hold.
         let type_constraint = self.attribute_reported_constraint(class_name, attr, &type_constraint);
         if value.is_nil() {
-            if self.is_definite_constraint(&type_constraint) {
+            // `is default(...)` is what `Nil` resets to; only without one is the
+            // reset to the (undefined) type object refused.
+            if self.is_definite_constraint(&type_constraint)
+                && self
+                    .class_attribute_default_with_role_fallback(class_name, attr)
+                    .is_none()
+            {
                 let nominal = self.nominal_type_object_name_for_constraint(&type_constraint);
                 return Err(crate::runtime::utils::definite_type_check_assignment_error(
                     &format!("$!{}", attr),
