@@ -78,6 +78,10 @@ pub(super) fn set(node: &mut RakuAstNode, line: i64, span: crate::ast::SrcSpan) 
     if node.class == super::RakuAstClass::StatementExpression {
         super::modifier_origins::statement(node, span);
     }
+    super::use_origins::module_name(node, span);
+    if node.class == super::RakuAstClass::StatementWhenever {
+        super::expr_block_origins::whenever(node, span);
+    }
     // A `Statement::Expression` with no statement modifier was written as just
     // its expression, which therefore has the statement's range (a `Sub`, a
     // `Class`, a `VarDeclaration`, a call) unless the parser placed it itself.
@@ -384,6 +388,37 @@ fn origin_end(node: &RakuAstNode) -> Option<i64> {
     }
 }
 
+/// The end of an operand written inside parentheses: `span` is the
+/// application, `operand_from` where the operand starts and `end` where it
+/// ends. When only `(` and blanks lie between the application's start and
+/// the operand, and as many `)` follow it, the end is after the last of them.
+// Cost: O(n), n = length of the application's source.
+fn past_parens(span: crate::ast::SrcSpan, operand_from: usize, end: u32) -> u32 {
+    let (from, end_at) = (span.from as usize, end as usize);
+    if operand_from <= from || end_at >= span.to as usize {
+        return end;
+    }
+    let opened = super::unit_source::with_text(crate::ast::SrcSpan::new(from, operand_from), |t| {
+        t.chars()
+            .all(|c| c == '(' || c.is_whitespace())
+            .then(|| t.matches('(').count())
+    });
+    let Some(opened) = opened.filter(|k| *k > 0) else {
+        return end;
+    };
+    let closed = super::unit_source::with_text(
+        crate::ast::SrcSpan::new(end_at, span.to as usize),
+        |t| {
+            let mut rest = t;
+            for _ in 0..opened {
+                rest = rest.trim_start().strip_prefix(')')?;
+            }
+            Some(t.len() - rest.len())
+        },
+    );
+    closed.map_or(end, |len| end + len as u32)
+}
+
 /// Give the `Call::Method` of a method-call application written at `span`
 /// (`ApplyPostfix(operand, Call::Method(name, args))`) its origin, its
 /// `Name`'s and its `ArgList`'s, as Rakudo does: from the method name to the
@@ -418,9 +453,14 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         Some(operand) => origin_end(operand).and_then(super::unit_source::byte_of),
         None => None,
     };
-    let Some(operand_end) = operand_end else {
+    let Some(mut operand_end) = operand_end else {
         return;
     };
+    // `(1, 2).map(...)`: the operand's range is inside its parentheses, which
+    // the application's range includes.
+    if let Some((operand_from, _)) = operand.as_ref().and_then(super::infix_origins::byte_range) {
+        operand_end = past_parens(span, operand_from, operand_end);
+    }
     let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("postfix")) else {
         return;
     };
@@ -442,15 +482,29 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
                 .map(|r| r.strip_prefix(['?', '+', '*', '^']).unwrap_or(r))
                 .or_else(|| after_ws.strip_prefix('!'))?;
             let name_at = from + (text.len() - after_op.len());
-            let name_len = after_op
+            let mut name_len = after_op
                 .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '\'' | ':')))
                 .unwrap_or(after_op.len());
+            // `.name: args`: a single trailing colon is the argument list's
+            // introducer, not part of the name.
+            let colon_form = after_op[..name_len].ends_with(':')
+                && !after_op[..name_len].ends_with("::")
+                && after_op[name_len..].starts_with(char::is_whitespace);
+            if colon_form {
+                name_len -= 1;
+            }
             if name_len == 0 {
                 return None;
             }
             let name_end = name_at + name_len;
             let rest = &after_op[name_len..];
-            let args = if rest.is_empty() {
+            let args = if colon_form {
+                let args = rest[1..].trim_start();
+                if args.is_empty() {
+                    return None;
+                }
+                (from + text.len() - args.len(), from + text.len())
+            } else if rest.is_empty() {
                 (name_end, name_end)
             } else if rest.starts_with('(') && rest.ends_with(')') && rest.len() >= 2 {
                 (name_end + 1, from + text.len() - 1)

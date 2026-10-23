@@ -15,7 +15,7 @@ use crate::ast::SrcSpan;
 use crate::value::{Value, ValueView};
 
 /// One parameter as the converted signature spells it.
-struct Written {
+pub(super) struct Written {
     ty: Option<String>,
     var: String,
 }
@@ -49,7 +49,8 @@ pub(super) fn declaration(node: &mut RakuAstNode) {
         }
         let close = text.trim_end().strip_suffix(')')?.len();
         let inner = text.get(open + 1..close)?;
-        scan(inner, &parameters, from + open + 1)
+        let (spans, at) = scan(inner, &parameters, from + open + 1)?;
+        inner[at..].trim().is_empty().then_some(spans)
     });
     let Some(spans) = spans else {
         return;
@@ -65,8 +66,8 @@ pub(super) fn declaration(node: &mut RakuAstNode) {
 }
 
 /// The spans of one parameter.
-struct Spans {
-    param: SrcSpan,
+pub(super) struct Spans {
+    pub(super) param: SrcSpan,
     var: SrcSpan,
     ty: SrcSpan,
 }
@@ -74,7 +75,7 @@ struct Spans {
 /// The parameters of `signature`, as written, when every one is a plain
 /// variable with an optional simple type.
 // Cost: O(p), p = parameters.
-fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
+pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
     let list = signature
         .fields
         .iter()
@@ -133,7 +134,11 @@ fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
 /// Read `parameters` back, in order, from `inner`, which starts at byte
 /// `base` of the unit.
 // Cost: O(n), n = length of `inner`.
-fn scan(inner: &str, parameters: &[Written], base: usize) -> Option<Vec<Spans>> {
+pub(super) fn scan(
+    inner: &str,
+    parameters: &[Written],
+    base: usize,
+) -> Option<(Vec<Spans>, usize)> {
     let mut at = 0;
     let mut out = Vec::with_capacity(parameters.len());
     for (i, written) in parameters.iter().enumerate() {
@@ -164,12 +169,12 @@ fn scan(inner: &str, parameters: &[Written], base: usize) -> Option<Vec<Spans>> 
             at += 1;
         }
     }
-    inner[at..].trim().is_empty().then_some(out)
+    Some((out, at))
 }
 
 /// Give each `Parameter` of `signature` the ranges in `spans`.
 // Cost: O(p), p = parameters.
-fn place(signature: &mut RakuAstNode, spans: &[Spans]) {
+pub(super) fn place(signature: &mut RakuAstNode, spans: &[Spans]) {
     let Some(field) = signature
         .fields
         .iter_mut()
