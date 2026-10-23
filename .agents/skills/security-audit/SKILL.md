@@ -68,7 +68,13 @@ Long or nightly runs (sanitizers, Miri, fuzzing — commands in `docs/security.m
   `SyncUnsafeCell::get`, native-array caches), ask: can two Raku threads reach the same object?
   Parameters (`sub f(@x)`), attributes and nested containers bypass the name-keyed lanes. PoC
   shape: 8 `start` blocks mutating one `%h` or `@a` passed as a parameter; run it 3-5 times on a
-  debug **and** a release build. Exit 139/134 or a nanbox assertion is a confirmed bug.
+  debug **and** a release build. Concurrency follows rakudo (ADR-12814), so classify a crash by
+  rerunning with each shared access inside `Lock.protect`:
+  - exit 139/134 or a nanbox assertion **with** the lock is a confirmed bug;
+  - a crash only **without** it is rakudo's behaviour too (no finding), unless rakudo survives the
+    same unsynchronized script, which makes it a compatibility issue, not a security one.
+  Corrupting mutsu-internal state (caches, registries, lanes, captured cells) that the script
+  cannot lock is always a bug.
 - Raw pointers: `rg -n 'as \*mut|as \*const|from_raw_parts|from_utf8_unchecked|transmute' src`.
   For each, find where the pointee's lifetime ends (guard drop, `Vec` push/reallocation, frame
   pop, thread-local re-pointing).

@@ -110,8 +110,11 @@ These are absolute; if a task seems to require breaking one, stop and ask the us
   - a module search location nobody named (cwd, script directory, ancestor-directory walks,
     `/tmp`) — search is `use lib` → `-I` → `MUTSULIB` → installed → bundled, nothing else;
   - an `unsafe` block without a `// SAFETY:` comment, an `unsafe impl Send`/`Sync`, or a
-    `&self → &mut T` access (`gc_contents_mut` and kin) to a value another Raku thread can reach
-    without a lock — a Raku data race may give a wrong answer, never memory corruption;
+    `&self → &mut T` access (`gc_contents_mut` and kin) without a lock to mutsu-internal state
+    another Raku thread can reach. Concurrency follows rakudo (ADR-12814): a program that
+    synchronizes its shared data, and everything the program cannot see, stay memory-safe; a
+    program racing on one container without synchronization may crash its own process, as on
+    rakudo;
   - recursion or an allocation sized by untrusted input without a bound that raises a catchable
     exception (stack overflow and Rust OOM abort the process; on wasm a panic does too);
   - a file the runtime writes on its own at a cwd-relative or `/tmp` path, or opened without
