@@ -403,6 +403,21 @@ impl Interpreter {
             return;
         }
         let sigil = key.chars().next();
+        // A hook that hands out the candidates of a built-in operator adds to
+        // the operator, as an `is export` import does: a call none of them
+        // accepts (`!` of a Failure, with only `Red::AST` candidates) is the
+        // operator's own.
+        let value = match sigil {
+            Some('&')
+                if crate::runtime::lexical_imports::extends_builtin_operator(&key[1..])
+                    && matches!(value.view(), ValueView::Sub(data)
+                        if data.env.get_sym(crate::symbol::wk::multi_dispatch_candidates()).is_some()
+                            && data.env.get_sym(crate::symbol::wk::multi_dispatch_builtin_fallback()).is_none()) =>
+            {
+                Self::with_builtin_operator_fallback(value)
+            }
+            _ => value,
+        };
         if let Some('&') = sigil {
             let op = &key[1..];
             // A bareword call of this name must keep re-checking `env` for

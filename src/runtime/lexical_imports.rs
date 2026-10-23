@@ -584,6 +584,19 @@ impl Interpreter {
         routines
     }
 
+    /// The routine `name` the top-level `use`s of `unit` imported: what
+    /// `::CALLERS::<&name>` finds in a caller's lexical scope. Reads the unit's
+    /// sets, whichever unit is running.
+    // Cost: O(s), s = import sets the unit filled.
+    pub(crate) fn unit_import_routine(&self, unit: Symbol, name: &str) -> Option<Value> {
+        let sets = self.module.unit_lexical_sets.get(&unit)?;
+        let chain: Vec<Symbol> = sets.iter().rev().copied().collect();
+        match self.lexical_import_binding(&chain, Symbol::intern(name))? {
+            LexicalImport::Code(value) => Some(value),
+            LexicalImport::Routine(def) => Some(self.sub_value_from_function_def((*def).clone())),
+        }
+    }
+
     /// Whether the code running now is a module's own top level (or a role
     /// body composed from it) while a routine of its importer is still on the
     /// stack: the module sees its own `use`s, not the importer's scopes (#14481).
@@ -852,7 +865,7 @@ impl Interpreter {
 /// own `-$a.v` on an Int found no match once the family was bound in the
 /// block's set (ADR-8751 stage 2).
 // Cost: O(m), m = bytes of `name`.
-fn extends_builtin_operator(name: &str) -> bool {
+pub(crate) fn extends_builtin_operator(name: &str) -> bool {
     name.contains(":<")
         && (crate::lexical_builtin_op::binds_lexically(name)
             || !Interpreter::lexically_bindable_operator(name))
