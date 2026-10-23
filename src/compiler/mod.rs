@@ -1333,6 +1333,10 @@ pub(crate) struct Compiler {
     /// `OUTER::` from its mainline lands on nothing, which also means its true
     /// mainline is one frame in — so `UNIT::` must stop there, not at the wrapper.
     unit_root_scope: usize,
+    /// Scopes above `unit_root_scope` that belong to the routine body itself, not
+    /// to an immediate block inside it: the implicit `try` region a routine
+    /// body containing `CATCH` is wrapped in (`in_immediate_block`).
+    routine_body_extra_scopes: usize,
     /// This compilation unit declares an `is export` routine: its root scope
     /// holds the unit's `EXPORT` package (`MY::<EXPORT>`, #13854).
     pub(crate) unit_exports_routine: bool,
@@ -2113,6 +2117,7 @@ impl Compiler {
             in_role_body: false,
             role_type_param_names: Vec::new(),
             unit_root_scope: 0,
+            routine_body_extra_scopes: 0,
             unit_exports_routine: false,
             in_lexical_scope: false,
             lexical_dup_routines: HashSet::new(),
@@ -3352,7 +3357,7 @@ impl Compiler {
     /// runtime call stack. `unit_root_scope` accounts for an `EVAL` wrapper frame
     /// so an EVAL'd mainline (no block of its own) is not mistaken for one.
     fn in_immediate_block(&self) -> bool {
-        self.local_scopes.len() > self.unit_root_scope + 1
+        self.local_scopes.len() > self.unit_root_scope + 1 + self.routine_body_extra_scopes
     }
 
     /// Emit a `CALLER::` read that resolves lexically (immediate-block context):

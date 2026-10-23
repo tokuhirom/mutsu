@@ -398,6 +398,9 @@ impl Compiler {
         // value-producing sub that value is the implicit return, so keep it.
         // Only discard it when the return spec fixes the value (sink_last_expr).
         if Self::has_catch_or_control(body) {
+            // The try region's scope is the routine body itself: a `CALLERS::`
+            // read in it is the routine's, not an immediate block's.
+            sub_compiler.routine_body_extra_scopes = 1;
             sub_compiler.compile_implicit_try(body);
             if sink_last_expr {
                 sub_compiler.code.emit(OpCode::Pop);
@@ -1507,6 +1510,9 @@ impl Compiler {
         // leaves the body's final-expression value on the stack, which is the
         // closure's implicit return value, so keep it (do not Pop).
         if Self::has_catch_or_control(body) {
+            // A routine's try region is the routine body itself (see
+            // `compile_sub_body_with_deprecation`); a closure's is a block.
+            sub_compiler.routine_body_extra_scopes = usize::from(is_routine);
             sub_compiler.compile_implicit_try(body);
         } else if Self::has_block_enter_leave_phasers(body) {
             // Body has ENTER/LEAVE/KEEP/UNDO/PRE/POST — wrap in BlockScope

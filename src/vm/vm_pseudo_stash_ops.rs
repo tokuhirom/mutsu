@@ -243,6 +243,21 @@ impl Interpreter {
             self.push_dynamic_stash_for_key(code, &key_str);
             return Ok(());
         }
+        // `CALLERS::OUTERS::<&name>`: a routine in the lexical scope around a
+        // calling *routine* (declared in its file or imported by its unit).
+        if name == "CALLERS::OUTERS::"
+            && let ValueView::Str(key_str) = key.deref_container().view()
+            && let Some(routine) = key_str.strip_prefix('&')
+        {
+            let found = self.caller_scope_routine(routine, true);
+            let mut entries: ValueMap = ValueMap::default();
+            if let Some(value) = found {
+                entries.insert(key_str.to_string(), value);
+            }
+            let stash = self.pseudo_stash_hash(entries);
+            self.stack.push(stash);
+            return Ok(());
+        }
         let keyed = match key.deref_container().view() {
             ValueView::Str(key_str) => self.named_pseudo_stash_target(name).and_then(|target| {
                 loan_env!(self, package_stash_keyed_value(&target, &key_str))
