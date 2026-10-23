@@ -419,6 +419,13 @@ impl Registry {
         self.bump_method_generation();
     }
 
+    /// `owner`'s user candidates named `name`.
+    // Cost: O(1).
+    pub(crate) fn user_methods(&self, owner: Symbol, name: Symbol) -> Option<&[MethodDef]> {
+        let entry = self.method_entries.get(&MethodEntryKey { owner, name })?;
+        Some(&entry.user_candidates)
+    }
+
     /// `owner`'s user candidates named `name`; the caller bumps the generation.
     pub(crate) fn user_methods_mut(&mut self, owner: Symbol, name: Symbol) -> Option<&mut [MethodDef]> {
         let entry = self.method_entries.get_mut(&MethodEntryKey { owner, name })?;

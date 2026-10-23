@@ -37,6 +37,20 @@ impl Interpreter {
                 _ => None,
             });
         }
+        // An individual role the expression `role { ... }` evaluates to is the
+        // type object of its candidate site key (`R\0<id>`), not of the group
+        // the registry holds it under: the candidate is the declaration whose
+        // id the key carries, `None` when it is the group's own definition.
+        if matches!(receiver.view(), ValueView::Package(_))
+            && let Some((group, role_id)) = self.role_candidate_group(owner)
+        {
+            return Some(
+                self.registry()
+                    .role_candidates
+                    .get(&group)
+                    .and_then(|cands| cands.iter().position(|c| c.role_def.role_id == role_id)),
+            );
+        }
         self.mop_receiver_role(receiver, owner).map(|_| None)
     }
 
@@ -52,6 +66,8 @@ impl Interpreter {
         candidate: Option<usize>,
         include_private: bool,
     ) -> Vec<Value> {
+        let role_name = self.role_group_name(role_name);
+        let role_name = role_name.as_str();
         let mut result = Vec::new();
         let registry = self.registry();
         let role_def = candidate
@@ -100,6 +116,8 @@ impl Interpreter {
         role_name: &str,
         candidate: Option<usize>,
     ) -> Vec<Value> {
+        let role_name = self.role_group_name(role_name);
+        let role_name = role_name.as_str();
         let registry = self.registry();
         let role_def = candidate
             .and_then(|idx| registry.role_candidates.get(role_name)?.get(idx))
@@ -128,7 +146,7 @@ impl Interpreter {
         let ValueView::Mixin(_, mixins) = receiver.view() else {
             return Vec::new();
         };
-        crate::value::types::mixin_roles_applied_last_first(mixins, base)
+        crate::value::types::mixin_role_keys_applied_last_first(mixins, base)
             .iter()
             .flat_map(|role| {
                 let registry = self.registry();

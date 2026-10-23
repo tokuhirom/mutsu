@@ -153,6 +153,10 @@ impl Interpreter {
     /// resolves it to: the env-centric store paths find the container under
     /// the name for the duration, and whatever they leave there is the
     /// store's new value. Anything else runs `store` unchanged.
+    ///
+    /// Still needed for the `Named` shape only: a package-block lexical lives in
+    /// the package store, not in a local slot of the running code, so no
+    /// `StorePlace::Slot` ever reaches it (ADR-14632).
     // Cost: O(1) around `store` (one env probe, one store lookup and, when the
     // store ran against a package lexical, one store write).
     pub(super) fn with_package_lexical_seeded<T>(
