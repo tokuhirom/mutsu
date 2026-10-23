@@ -177,12 +177,11 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
             name,
             sequential,
             array,
-            gap_before,
-            gap_after,
+            gaps,
             regex,
         } => super::regex_variable_alias::convert(
             (name, *sequential, *array),
-            (gap_before, gap_after),
+            gaps.as_deref().map_or(("", ""), |g| (&g.0[..], &g.1[..])),
             regex,
         )?,
         RegexExtension::NamedRegexArg { name, regex_arg } => RakuAstNode {

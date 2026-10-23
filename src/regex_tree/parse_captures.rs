@@ -128,8 +128,8 @@ impl Parser {
                 name: name.clone(),
                 sequential,
                 array,
-                gap_before,
-                gap_after,
+                gaps: (!gap_before.is_empty() || !gap_after.is_empty())
+                    .then(|| Box::new((gap_before, gap_after))),
                 regex,
             })
         });

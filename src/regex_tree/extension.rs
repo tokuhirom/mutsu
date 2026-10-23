@@ -114,9 +114,7 @@ pub(crate) enum RegexExtension {
         array: bool,
         /// Whitespace written before and after the `=` (`$name = ATOM`).
         #[serde(default)]
-        gap_before: String,
-        #[serde(default)]
-        gap_after: String,
+        gaps: Option<Box<(String, String)>>,
         regex: Box<RegexNode>,
     },
     /// `<name regex>`: a named assertion with a regex argument rather than
@@ -281,14 +279,16 @@ impl RegexExtension {
                 name,
                 array,
                 regex,
-                gap_before,
-                gap_after,
+                gaps,
                 ..
-            } => format!(
-                "{}{name}{gap_before}={gap_after}{}",
-                if *array { '@' } else { '$' },
-                regex.to_source()
-            ),
+            } => {
+                let (before, after) = gaps.as_deref().map_or(("", ""), |g| (&g.0[..], &g.1[..]));
+                format!(
+                    "{}{name}{before}={after}{}",
+                    if *array { '@' } else { '$' },
+                    regex.to_source()
+                )
+            }
         }
     }
 }

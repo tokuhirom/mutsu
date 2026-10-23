@@ -57,8 +57,7 @@ pub(super) fn convert_spaced(alias: &RegexNode) -> Result<RakuAstNode, RuntimeEr
         name,
         sequential,
         array,
-        gap_before,
-        gap_after,
+        gaps,
         regex,
     }) = alias
     else {
@@ -66,7 +65,7 @@ pub(super) fn convert_spaced(alias: &RegexNode) -> Result<RakuAstNode, RuntimeEr
     };
     convert(
         (name, *sequential, *array),
-        (gap_before, gap_after),
+        gaps.as_deref().map_or(("", ""), |g| (&g.0[..], &g.1[..])),
         &RegexNode::WithWhitespace(regex.clone()),
     )
 }
@@ -114,8 +113,10 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError
                     name,
                     sequential,
                     array,
-                    gap_before: gap(GAP_BEFORE),
-                    gap_after: gap(GAP_AFTER),
+                    gaps: {
+                        let (before, after) = (gap(GAP_BEFORE), gap(GAP_AFTER));
+                        (!before.is_empty() || !after.is_empty()).then(|| Box::new((before, after)))
+                    },
                     regex,
                 });
                 Ok(if spaced {
