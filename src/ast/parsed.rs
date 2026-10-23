@@ -66,12 +66,23 @@ pub(crate) struct RoutineSpans {
 
 /// Where a parameter was written: all of it (type, traits and default
 /// included) and its target variable.
-#[derive(Debug, Clone, Copy, Default, Hash, serde::Serialize, serde::Deserialize)]
+///
+/// Like `SrcSpan`'s `Hash`, its `Debug` leaves the positions out: the runtime
+/// still tells two signatures apart by their `Debug` text in places (a forward
+/// declaration and its definition, a role's re-registered method), and a
+/// signature is the same wherever it was written.
+#[derive(Clone, Copy, Default, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ParamSpans {
     pub(crate) param: SrcSpan,
     pub(crate) target: SrcSpan,
     /// The nominal type, smiley included (`Int:D`).
     pub(crate) type_: SrcSpan,
+}
+
+impl std::fmt::Debug for ParamSpans {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ParamSpans")
+    }
 }
 
 /// Which loop a [`LoopStmt`] is.
