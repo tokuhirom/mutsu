@@ -1650,8 +1650,13 @@ impl Interpreter {
                     // could only undo a rebind a nested call made meanwhile
                     // (#14663). Aggregates (`@!x`, `%!x`) share their container
                     // with the instance, and the bare sigilless form below has
-                    // no mirror, so those keep this recovery.
-                    if matches!(rank, 1 | 2) {
+                    // no mirror, so those (and a sigilless `has $x`, whose `!x` slot is its
+                    // alias) keep this recovery.
+                    if matches!(rank, 1 | 2)
+                        && !cell_map.contains_key(
+                            format!("{ATTR_ALIAS_META_PREFIX}{bare}").as_str(),
+                        )
+                    {
                         continue;
                     }
                     if rank == 0
