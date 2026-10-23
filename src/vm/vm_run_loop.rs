@@ -866,10 +866,9 @@ impl Interpreter {
         start: usize,
         end: usize,
     ) {
-        for (i, (slot, key)) in code.state_locals.iter().enumerate() {
-            if !code.state_local_init_in_range(i, start, end) {
-                continue;
-            }
+        // Only the state locals initialised in this loop's own range (#11347).
+        code.for_each_state_local_in_range(start, end, |i| {
+            let (slot, key) = &code.state_locals[i];
             let local_name = &code.locals[*slot];
             // Same store-selection rule as the routine-exit sibling in
             // `vm_closure_dispatch` (see its comment): read whichever store is
@@ -897,7 +896,7 @@ impl Interpreter {
             };
             let scoped_key = self.scoped_state_key(*key);
             self.set_state_var(scoped_key, val);
-        }
+        });
     }
 
     /// Reset (drop from the state store) every state variable whose
@@ -909,21 +908,18 @@ impl Interpreter {
     /// share state (the loop re-invokes the same clone), which is why this
     /// runs at statement entry, not per iteration. Callers must skip this when
     /// resuming a suspended gather coroutine into the same loop opcode.
-    // Cost: O(t), t = state locals of the chunk (each init-in-range test is a
-    // lookup in the chunk's `StateVarInit` index -- `crate::op_scan_index`).
+    // Cost: O(log p + m), p = StateVarInit ops of the chunk, m = those in the
+    // range (`crate::op_scan_index`).
     pub(crate) fn reset_state_locals_in_range(
         &mut self,
         code: &CompiledCode,
         start: usize,
         end: usize,
     ) {
-        for (i, (_, key)) in code.state_locals.iter().enumerate() {
-            if !code.state_local_init_in_range(i, start, end) {
-                continue;
-            }
-            let scoped_key = self.scoped_state_key(*key);
+        code.for_each_state_local_in_range(start, end, |i| {
+            let scoped_key = self.scoped_state_key(code.state_locals[i].1);
             self.remove_state_var(scoped_key);
-        }
+        });
     }
 
     /// Execute opcodes in [start..end), used by loop compound opcodes.
