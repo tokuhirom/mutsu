@@ -1653,9 +1653,8 @@ impl Interpreter {
                     // no mirror, so those (and a sigilless `has $x`, whose `!x` slot is its
                     // alias) keep this recovery.
                     if matches!(rank, 1 | 2)
-                        && !cell_map.contains_key(
-                            format!("{ATTR_ALIAS_META_PREFIX}{bare}").as_str(),
-                        )
+                        && !cell_map
+                            .contains_key(format!("{ATTR_ALIAS_META_PREFIX}{bare}").as_str())
                     {
                         continue;
                     }
