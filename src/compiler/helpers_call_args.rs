@@ -457,6 +457,7 @@ impl Compiler {
     }
 
     pub(super) fn compile_method_arg_with_escape(&mut self, arg: &Expr, escaping: bool) {
+        let arg = Self::peel_assign_parens(arg);
         // A method argument is normally passed to the callee, not stored in the
         // caller frame, so a closure argument is conservatively NON-escaping
         // (the #2746 guard). `tap`/`act` override this with `escaping = true`.
@@ -609,6 +610,7 @@ impl Compiler {
     /// Promise and run later on another thread), so the locals it captures and
     /// mutates must be promoted to shared `ContainerRef` cells (escape analysis).
     pub(super) fn compile_call_arg_with_escape(&mut self, arg: &Expr, escaping: bool) {
+        let arg = Self::peel_assign_parens(arg);
         // Read-and-clear at entry, like `bind_target_direct` below.
         let is_call_arg = std::mem::take(&mut self.call_arg_direct);
         // `f(++$p)` where `$p` is one of THIS routine's native `is rw`
@@ -1015,6 +1017,7 @@ impl Compiler {
         positional: u32,
         arg: &Expr,
     ) {
+        let arg = Self::peel_assign_parens(arg);
         if !Self::is_accessor_shaped_arg(arg) {
             return;
         }
@@ -1045,6 +1048,7 @@ impl Compiler {
         stack_offset: u32,
         arg: &Expr,
     ) {
+        let arg = Self::peel_assign_parens(arg);
         let Some(positional) = positional else {
             return;
         };
@@ -1081,6 +1085,7 @@ impl Compiler {
         stack_offset: u32,
         arg: &Expr,
     ) {
+        let arg = Self::peel_assign_parens(arg);
         let Some(positional) = positional else {
             return;
         };
@@ -1154,6 +1159,7 @@ impl Compiler {
         arg: &Expr,
         escaping: bool,
     ) {
+        let arg = Self::peel_assign_parens(arg);
         // `f(@a[1] = v)`: bind the element's container when the callee wants
         // one, else pass the assignment's value (see `compile_gated_assigned_arg`).
         if self.is_readonly_param_operand(arg) {
