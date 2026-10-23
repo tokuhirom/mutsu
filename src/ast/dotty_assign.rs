@@ -23,7 +23,7 @@ pub(crate) struct DottyCall<'a> {
 /// method call.
 // Cost: O(1).
 pub(crate) fn method_call(rhs: &Expr) -> Option<DottyCall<'_>> {
-    match rhs {
+    match rhs.unpositioned() {
         Expr::MethodCall {
             name,
             args,

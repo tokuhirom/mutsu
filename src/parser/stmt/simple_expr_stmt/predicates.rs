@@ -54,7 +54,7 @@ pub(super) fn starts_with_postfix_ambiguous_term(input: &str) -> bool {
 /// Returns `true` if the expression is a literal value (number, string, etc.)
 /// that cannot appear as the left-hand side of a bind operator (`:=`).
 pub(super) fn is_literal_expr(expr: &Expr) -> bool {
-    matches!(expr, Expr::Literal(_) | Expr::LiteralSrc(..))
+    matches!(expr.unpositioned(), Expr::Literal(_) | Expr::LiteralSrc(..))
 }
 
 /// True when the LHS of an indexed `:=` bind targets an immutable container:

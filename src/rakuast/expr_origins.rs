@@ -40,7 +40,9 @@ impl VisitMut for Strip {
             && let Spelling::Origin(at) = spelled.spelling
         {
             span = span.or(Some(at));
-            let Expr::Spelled(spelled) = std::mem::replace(expr, Expr::Literal(crate::value::Value::NIL)) else {
+            let Expr::Spelled(spelled) =
+                std::mem::replace(expr, Expr::Literal(crate::value::Value::NIL))
+            else {
                 unreachable!("matched above");
             };
             *expr = spelled.expr;

@@ -403,7 +403,7 @@ fn build_paren_section(items: Vec<Expr>) -> Expr {
 /// Check if an expression is a colonpair (represented as a FatArrow binary expression).
 fn is_colonpair_expr(expr: &Expr) -> bool {
     matches!(
-        expr,
+        expr.unpositioned(),
         Expr::Binary {
             op: TokenKind::FatArrow,
             ..

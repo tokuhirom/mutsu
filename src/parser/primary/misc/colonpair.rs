@@ -786,7 +786,7 @@ pub(crate) fn wrap_colonpair_sink_source(expr: Expr, source: &str) -> Expr {
 }
 
 fn render_signature_item(expr: &Expr) -> String {
-    match expr {
+    match expr.unpositioned() {
         Expr::BareWord(name) => name.clone(),
         Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => {
             expr.sigiled_var_name().unwrap_or_default()

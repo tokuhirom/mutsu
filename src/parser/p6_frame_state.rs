@@ -123,7 +123,7 @@ fn stmt_code_frame(stmt: &Stmt) -> Option<Expr> {
 // Cost: O(1).
 fn expr_is_code_frame(expr: &Expr) -> bool {
     matches!(
-        expr,
+        expr.unpositioned(),
         Expr::Block(..)
             | Expr::AnonSub { .. }
             | Expr::AnonSubParams { .. }

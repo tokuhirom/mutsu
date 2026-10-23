@@ -705,7 +705,7 @@ pub(crate) const DOTTY_ASSIGN_OP: &str = ".=";
 /// and the `OP=` compound assignments, so it is the one assignment-like
 /// expression that may appear unparenthesized inside a ternary branch.
 pub(crate) fn is_dotty_assign(expr: &Expr) -> bool {
-    matches!(expr, Expr::CompoundAssign { op, .. } if op == DOTTY_ASSIGN_OP)
+    matches!(expr.unpositioned(), Expr::CompoundAssign { op, .. } if op == DOTTY_ASSIGN_OP)
 }
 
 pub(crate) fn build_custom_compound_assign_expr(

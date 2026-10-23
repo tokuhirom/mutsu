@@ -60,7 +60,7 @@ pub(crate) fn signature_declaration(head: &Stmt) -> Option<&super::SignatureDecl
 
 // Cost: O(1).
 fn variable_name(target: &Expr) -> Option<&str> {
-    match target {
+    match target.unpositioned() {
         Expr::Var(name) => Some(name),
         _ => None,
     }

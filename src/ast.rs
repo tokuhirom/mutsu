@@ -3153,7 +3153,7 @@ impl Expr {
     /// Whether this is the onlystar dispatch [`Expr::onlystar_dispatch`] builds.
     // Cost: O(1).
     pub(crate) fn is_onlystar_dispatch(&self) -> bool {
-        matches!(self, Expr::Call { name, args, .. } if args.is_empty() && name.as_str() == ONLYSTAR_DISPATCH)
+        matches!(self.unpositioned(), Expr::Call { name, args, .. } if args.is_empty() && name.as_str() == ONLYSTAR_DISPATCH)
     }
 
     /// Whether this expression is one of the syntactic empty import lists

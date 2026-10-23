@@ -50,7 +50,7 @@ fn mark_stmts(stmts: &mut [Stmt]) {
 /// expression occupying the same syntactic slot (`1..*-1`, `@a[*-1]`) still
 /// gets its inner `*` classified as `Argument`.
 fn mark_value_leaf(expr: &mut Expr) {
-    if matches!(expr, Expr::Whatever) {
+    if matches!(expr.unpositioned(), Expr::Whatever) {
         return;
     }
     expr::mark_expr(expr);

@@ -72,7 +72,7 @@ pub(crate) fn expand(mut decl: Stmt) -> Stmt {
         }
         return Stmt::SyntheticBlock(stmts);
     }
-    if matches!(expr, Expr::Literal(_)) {
+    if matches!(expr.unpositioned(), Expr::Literal(_)) {
         // Note: a declaration resets the bare name's readonly state (see
         // `vm_var_assign_set_local.rs`'s `is_vardecl` block), so this marking is
         // erased again by the declaration that follows it and is re-applied by
@@ -105,7 +105,7 @@ pub(crate) fn expand(mut decl: Stmt) -> Stmt {
 fn binds_a_container(expr: &Expr) -> bool {
     let mut pending = vec![expr];
     while let Some(branch) = pending.pop() {
-        match branch {
+        match branch.unpositioned() {
             Expr::Var(_) | Expr::Index { .. } | Expr::MultiDimIndex { .. } => {}
             Expr::Ternary {
                 then_expr,

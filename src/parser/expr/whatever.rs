@@ -136,7 +136,7 @@ pub(crate) fn fat_arrow_curries(left: &Expr, right: &Expr) -> bool {
 }
 
 fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
-    match expr.peel_parens() {
+    match expr.unpositioned().peel_parens() {
         Expr::Binary {
             left,
             op: TokenKind::Ident(name),
@@ -198,7 +198,7 @@ fn is_wrapped_whatevercode(expr: &Expr) -> bool {
 }
 
 pub(crate) fn contains_whatever(expr: &Expr) -> bool {
-    match expr {
+    match expr.unpositioned() {
         // A frozen `((*))` is a plain value; nothing above it primes.
         e if is_frozen_whatever(e) => false,
         // Parentheses group, they do not hide a `*` from its priming scope.

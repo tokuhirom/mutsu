@@ -48,7 +48,7 @@ pub(crate) fn starts_with_unambiguous_term(input: &str) -> bool {
 /// own argument, so the boundary check must not fire for it.
 pub(crate) fn is_pure_value_expr(expr: &Expr) -> bool {
     matches!(
-        expr,
+        expr.unpositioned(),
         Expr::Literal(_)
             | Expr::LiteralSrc(..)
             | Expr::RegexLiteral { .. }

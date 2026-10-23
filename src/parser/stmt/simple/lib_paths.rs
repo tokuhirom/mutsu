@@ -130,7 +130,7 @@ pub(crate) fn fold_use_lib_path(
 /// Fold a path-method chain rooted at `$?FILE`, `$*PROGRAM` or a string
 /// literal to its path string (see [`extract_lib_path`]).
 fn static_path(expr: &Expr, file: Option<&str>, program: Option<&str>) -> Option<String> {
-    match expr {
+    match expr.unpositioned() {
         // The parser folds `$?FILE` itself to a string literal when it knows
         // the unit's file, so a literal is a chain root too (`'t'.IO.add(..)`).
         Expr::Literal(lit) => lit.as_str().map(|s| s.to_string()),
@@ -199,7 +199,7 @@ fn path_parent(mut path_str: String, levels: usize) -> String {
 /// Try to statically evaluate an expression to a string.
 /// Handles string literals and `$*SPEC.catdir(<word list>)`.
 fn extract_static_string(expr: &Expr) -> Option<String> {
-    match expr {
+    match expr.unpositioned() {
         Expr::Literal(lit) => lit.as_str().map(|s| s.to_string()),
         // $*SPEC.catdir(<packages Test-Helpers lib>) → "packages/Test-Helpers/lib"
         Expr::MethodCall {

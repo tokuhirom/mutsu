@@ -98,7 +98,7 @@ fn xz_metaop_curries(expr: &Expr) -> bool {
 /// X/Z meta-ops recurse (so `1 X+ * X+ 3` curries through the inner op even
 /// though the global `contains_whatever` deliberately ignores X/Z).
 fn operand_curries(e: &Expr) -> bool {
-    match e {
+    match e.unpositioned() {
         Expr::ArrayLiteral(_) => false,
         Expr::MetaOp { meta, .. } if meta == "X" || meta == "Z" => xz_metaop_curries(e),
         _ => contains_whatever(e) || matches!(e, Expr::WhateverCurry(_)),
@@ -735,7 +735,7 @@ fn build_sequence_from_seeds(input: &str, seeds: Vec<Expr>) -> PResult<'_, Expr>
 /// `AnonSubParams` by `make_anon_sub`, so it is told apart from a pointy block
 /// by its parameter list being exactly the placeholders its body declares.
 fn bare_block_body(expr: &Expr) -> Option<Vec<Stmt>> {
-    match expr {
+    match expr.unpositioned() {
         Expr::AnonSub {
             body,
             is_block: true,
