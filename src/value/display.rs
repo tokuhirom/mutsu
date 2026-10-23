@@ -875,7 +875,7 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "ObjAt" || class_name == "ValueObjAt" => attributes
+            } if crate::value::AttrMap::is_objat_class_name(class_name.as_str()) => attributes
                 .as_map()
                 .objat_which()
                 .unwrap_or_else(|| format!("{}()", class_name)),
