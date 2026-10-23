@@ -178,6 +178,28 @@ impl Interpreter {
         }
         // A pure Int callback is served a batch (see `pure_int_prefix_batch`).
         let needed = self.pure_int_prefix_batch(func.as_ref(), mode, items, *pos, needed);
+        // A `$_ OP constant` map over Ints is computed by the operator itself,
+        // one element per step, with no env swap or loop body (#10187). It
+        // reads the source element by element, so a consumer that writes a
+        // live source between pulls is still seen; the first element it
+        // cannot compute (not a plain Int, or an overflow) hands over to the
+        // loop below, which also owns the end-of-source handling.
+        // (A map over a real Array rw-binds `$_`, but `$_ OP constant` never
+        // writes it, so `MapRw` is the same loop here.)
+        if matches!(mode, MapGrepMode::Map | MapGrepMode::MapRw(_))
+            && plan.pending_slip.is_none()
+            && self.dispatch.user_declared_infix_ops.is_empty()
+            && let Some(op) = super::vm_map_grep_pure::pure_int_topic_op(func.as_ref())
+        {
+            while out.produced.len() - produced_base < needed {
+                let Some(value) = items.get(*pos).and_then(|elem| op.apply(&elem)) else {
+                    break;
+                };
+                out.produced.push(value);
+                out.consumed += 1;
+                *pos += 1;
+            }
+        }
         while out.produced.len() - produced_base < needed
             && (*pos < items.len() || plan.pending_slip.is_some())
         {
