@@ -665,8 +665,6 @@ impl Interpreter {
     /// `kw-attr` entry and composes them with the class. Here the class's
     /// attributes are re-blessed into `attr_class` and each runs its own
     /// `compose` (ValueClass::Attribute dies there for an `is rw` attribute).
-    // TODO: `.^attributes` still answers plain `Attribute` objects, and the
-    // metaclass's `container_initializer` is not consulted (#14588).
     // Cost: O(a), a = attributes of the class.
     pub(crate) fn compose_declare_attribute_metaclass(
         &mut self,
@@ -684,6 +682,9 @@ impl Interpreter {
                     .is_some()
             })
         };
+        self.registry_mut()
+            .declare_attribute_classes
+            .insert(class_name.to_string(), attr_class_name.to_string());
         let has_compose = has_method(self, "compose");
         let has_container_init = has_method(self, "container_initializer");
         if !has_compose && !has_container_init {
@@ -698,13 +699,6 @@ impl Interpreter {
             .unwrap_or_default();
         for attr in &attrs {
             let object = self.make_attribute_object(attr, class_name);
-            let ValueView::Instance { attributes, .. } = object.view() else {
-                continue;
-            };
-            let object = Value::make_instance(
-                Symbol::intern(&attr_class_name),
-                attributes.as_map().clone(),
-            );
             if has_compose {
                 self.call_method_with_values(object.clone(), "compose", vec![type_obj.clone()])?;
             }

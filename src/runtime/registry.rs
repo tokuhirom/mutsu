@@ -489,6 +489,10 @@ pub(crate) struct Registry {
     /// construction with the class's role type-param bindings in scope.
     pub(crate) class_attribute_default_exprs:
         super::class_attr_table::ClassAttrTable<crate::opcode::DeclTraitArg>,
+    /// The `EXPORTHOW::DECLARE` `<kw>-attr` metaclass of a class declared with
+    /// `<kw>`: class -> attribute class name. `.^attributes` answers instances
+    /// of it.
+    pub(crate) declare_attribute_classes: HashMap<String, String>,
     /// Per-attribute declared type: (class, attr) -> type name.
     pub(crate) class_attribute_is_types: HashMap<(String, String), String>,
     /// Per-attribute `is Type` container trait declared on a *role* attribute:
