@@ -314,7 +314,7 @@ impl Interpreter {
         {
             return Some(Ok(Value::str_from("BOOTSTRAPATTR.new")));
         }
-        if class_name == Symbol::intern("ObjAt") || class_name == Symbol::intern("ValueObjAt") {
+        if crate::value::AttrMap::is_objat_class_name(&class_name.resolve()) {
             let which = attributes.as_map().objat_which().unwrap_or_default();
             if method == "gist" {
                 return Some(Ok(Value::str(which)));
