@@ -302,8 +302,15 @@ fn interned_c_string(s: &str) -> *const std::ffi::c_char {
 pub(crate) unsafe fn write_field(base: usize, field: &FieldLayout, value: &crate::value::Value) {
     // `to_int` numifies a `Bool` to 0, so `has bool $.b` given `True` (a named
     // argument `:b`, an attributive `:$!b` bind) stored a zero byte.
+    // A value above `i64::MAX` (a `uint64` field's `2**64 - 1`) keeps its low 64
+    // bits, as the native store does; `to_int` would saturate it.
     let to_int = |v: &crate::value::Value| match v.deref_container().descalarize().view() {
         crate::value::ValueView::Bool(b) => i64::from(b),
+        crate::value::ValueView::BigInt(big) => {
+            use num_traits::ToPrimitive;
+            let low = &**big & num_bigint::BigInt::from(u64::MAX);
+            low.to_u64().unwrap_or(0) as i64
+        }
         _ => crate::runtime::to_int(v),
     };
     let to_num = |v: &crate::value::Value| crate::runtime::utils::to_float_value(v).unwrap_or(0.0);
