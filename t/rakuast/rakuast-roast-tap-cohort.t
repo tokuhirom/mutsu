@@ -4,7 +4,7 @@ use Test;
 # (MUTSU_RAKUAST=1) than on the ordinary one, each reduced to its cause. The
 # expectations are rakudo 2026.09's.
 
-plan 21;
+plan 22;
 
 sub flat($node) { $node.raku.lines.map(*.trim).join(' ').subst('RakuAST::', '', :g) }
 
@@ -32,6 +32,7 @@ is EVAL('{ constant True = 42 }; True'.AST), True, 'but not outside the block';
 
 # `Any` is the type object, so a type-constrained call sees a coercion.
 isa-ok EVAL('class A { method CALL-ME(A:U:) { 3 } }; A(Any).HOW'.AST), Metamodel::CoercionHOW, 'A(Any) is a type coercion literal';
+isa-ok EVAL('class A2 { method CALL-ME(A2:U:) { 3 } }; A2(Int).HOW'.AST), Metamodel::CoercionHOW, 'and so is A2(Int)';
 
 # A loop label as a `Seq.from-loop` argument is a Label value.
 lives-ok { EVAL('@ = (L3: Seq.from-loop({ loop { last L3 } }, { True }, :label(L3)))'.AST) }, ':label(L3) with a Label value';

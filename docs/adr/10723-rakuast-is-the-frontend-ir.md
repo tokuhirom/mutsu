@@ -2116,7 +2116,9 @@ this container too; the other 13 came down to these causes, now fixed:
   expressions and a priming `*` is found (`* !< 3`).
 - A `my \term:<x> = INIT` initializer declares no term (`e` was read as shadowed).
 - `True` / `False` are shadowed per statement list (`constant True = 42` in a block).
-- `Any` lowers to the type-object literal the parser folds it to.
+- A core type name in a call argument (`A(Any)`, `A(Int)`) is a type reference, not a
+  variable source, so the call is the coercion literal on both frontends (a `BareWord`
+  was taken for a variable and `CALL-ME` won).
 - `Seq.from-loop(:label(L))` accepts a `Label` value; `Label.new("L")` holds its name
   positionally (the local expectations that had `name => "L"` are corrected).
 - A single-quoted regex atom keeps its single quotes when re-spelled (a double-quoted

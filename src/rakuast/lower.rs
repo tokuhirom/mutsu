@@ -5042,11 +5042,6 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             "Nil" if !super::shadowed_terms::declares_package("Nil") => {
                 Ok(Expr::Literal(Value::NIL))
             }
-            // `Any` is the type-object literal the parser folds it to (a call
-            // argument `A(Any)` is a coercion only for a type object).
-            "Any" if !super::shadowed_terms::declares_package("Any") => {
-                Ok(Expr::Literal(Value::package(crate::symbol::wk::any())))
-            }
             name => Ok(Expr::BareWord(name.to_string())),
         },
         // `Map:D` (a `Type::Definedness`) in expression position, such as a

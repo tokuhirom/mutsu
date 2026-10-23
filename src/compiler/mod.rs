@@ -3693,6 +3693,10 @@ impl Compiler {
             Expr::BareWord(name) if self.names_sigilless_binding(name) => {
                 Some(crate::runtime::term_names::term_key(name))
             }
+            // A core type name is a type reference, not a variable: `A(Any)` /
+            // `A(Int)` is a coercion literal, which the call checks by the
+            // argument having no variable source.
+            Expr::BareWord(name) if crate::runtime::utils::is_known_type_constraint(name) => None,
             Expr::BareWord(name) => Some(name.to_string()),
             // DoStmt wrapping a VarDecl: `my $c = 42` passed as argument
             Expr::DoStmt(stmt) => stmt.declared_var_key(),
