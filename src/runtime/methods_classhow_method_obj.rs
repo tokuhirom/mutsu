@@ -856,6 +856,17 @@ impl Interpreter {
         // wrapped value for the base MRO, then add methods contributed by
         // the mixed-in roles, mirroring the `.can` handling above.
         if let ValueView::Mixin(inner, mixins) = target.view() {
+            // The type object of `Class.^mixin(R)` has a registered class of
+            // its own: the methods installed on it (`^add_method`) count.
+            if let Some(mixin_class) = self.mixin_class_of_type_object(target) {
+                let found = self.collect_can_methods(
+                    &Value::package(Symbol::intern(&mixin_class)),
+                    method_name,
+                );
+                if !found.is_empty() {
+                    return found;
+                }
+            }
             let mut results = self.collect_can_methods(inner.as_ref(), method_name);
             if (mixins.contains_key(method_name)
                 || mixins.contains_key(MetaNs::Attr.str_key_for_str(method_name)))

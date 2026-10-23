@@ -29,6 +29,13 @@ impl Interpreter {
             let class_name = match args[0].view() {
                 ValueView::Package(name) => name.resolve(),
                 ValueView::Str(name) => name.to_string(),
+                // The type object of `Class.^mixin(R)`: its mixin class.
+                ValueView::Mixin(..) => match self.mixin_class_of_type_object(&args[0]) {
+                    Some(class_name) => class_name,
+                    None => {
+                        return Err(RuntimeError::new("add_method target must be a type object"));
+                    }
+                },
                 _ => {
                     return Err(RuntimeError::new("add_method target must be a type object"));
                 }

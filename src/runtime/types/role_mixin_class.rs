@@ -17,6 +17,30 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// The registered mixin class of the type object `Class.^mixin(R)` /
+    /// `(Class but R)` (a `Mixin` over a `Package`), by its `Class+{R}` name.
+    /// The class of a lexical base (`my class C`) is registered under the
+    /// base's mangled name, so the display name is matched, not built.
+    /// `None` for any other value, or while the mixin class was not made.
+    // Cost: O(c), c = registered classes.
+    pub(crate) fn mixin_class_of_type_object(&self, value: &Value) -> Option<String> {
+        let ValueView::Mixin(inner, _) = value.view() else {
+            return None;
+        };
+        if !matches!(inner.as_ref().view(), ValueView::Package(_)) {
+            return None;
+        }
+        let display = crate::value::types::what_type_name(value);
+        let registry = self.registry();
+        registry
+            .classes
+            .keys()
+            .find(|key| {
+                key.contains("+{") && crate::value::user_facing_type_name(key) == display.as_str()
+            })
+            .cloned()
+    }
+
     /// Ensure the mixin type `base+{roles}` is registered and return its name.
     /// `base` may itself already be a mixin type, in which case the new roles are
     /// appended to the ones it already composes (`C+{A}` + `B` -> `C+{A,B}`).

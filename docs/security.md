@@ -12,6 +12,11 @@ Running a Raku program is trusted: a script can `run`, `shell`, `unlink` and `us
 it can already do anything its user can. Security work in mutsu is therefore about the places
 where **something less than "run this program" happens, and must not become it**:
 
+Where the Raku language leaves a behaviour to the program, mutsu promises no more than rakudo does
+(user decision 2026-10-23, ADR-12814). The invariants below protect the interpreter's own
+surfaces: what it loads, writes, decodes and shares.
+
+
 | Surface | What the user agreed to | Must never become |
 | --- | --- | --- |
 | Parsing / analysis: `crates/mutsu-lsp`, `src/analysis/`, `--dump-ast`, `--dump-bytecode` | "look at this file" (ADR-0065 D4: analysis does not execute) | running any code from the file or a module it `use`s |
@@ -20,7 +25,7 @@ where **something less than "run this program" happens, and must not become it**
 | Files the runtime writes on its own (crash reports, profiles, JIT dumps, REPL history) | diagnostics for the user | a write through an attacker's symlink, or a world-readable copy of argv / `-e` source |
 | Child processes | the argv the program asked for | inheriting the interpreter's internal fds (signal pipe, merge pipes), or a shell where argv was given |
 | Data parsers (`from-json`, `val`, grammars, `EVAL` of data a program received) | "decode this value" | aborting the process (stack overflow, OOM abort, wasm trap) instead of raising a catchable exception |
-| Threads (`start`, `hyper`, `race`, `Promise`, `Thread`) | Raku's concurrency semantics, data races included | **memory unsafety**: a Raku data race may give a wrong answer, never a use-after-free or a corrupted `NanBox` |
+| Threads (`start`, `hyper`, `race`, `Promise`, `Thread`) | Raku's concurrency semantics, as rakudo implements them | **memory unsafety in a program that synchronizes its shared data, or in mutsu's own sharing** (ADR-12814). As on rakudo, unsynchronized concurrent mutation of one container is the program's bug and may crash its own process |
 | Browser playground / `<mutsu-code>` (`site/`) | run the shown code in this tab | XSS from program output; running code from a URL without a click |
 | Ecosystem sweep (`scripts/ecosystem_common.py`, bwrap) | run untrusted distribution tests | reading secrets (`.env`, `~/.config/gh`, runner env) or reaching the network |
 | CI / release (`.github/`, `scripts/ci-docs-only.sh`) | build and test a PR | a PR's code reaching a release secret, a ruleset-bypass token, or npm |
@@ -52,11 +57,20 @@ the user (see the AGENTS.md hard rule on weakening protections), not a judgment 
 
 - **Every `unsafe` block has a `// SAFETY:` comment** naming the invariant it relies on and who
   upholds it. `rg -n 'unsafe \{' src` minus the documented ones is a shrinking count.
-- **No new `unsafe impl Send` / `unsafe impl Sync`**, and no new caller of `gc_contents_mut` (or
-  any other `&self → &mut T` primitive) on a value reachable from more than one Raku thread without
-  a lock or an ownership check. Cross-thread container mutation must be sound by construction; the
-  name-keyed shared-variable lanes do not cover parameters, attributes or values inside other
-  containers (`docs/gc-contents-mut-inventory.md`).
+- **No new `unsafe impl Send` / `unsafe impl Sync`.**
+- **Concurrency follows rakudo (ADR-12814).** These must be sound by construction:
+  - every access mutsu makes on behalf of a program that synchronizes its shared data (`Lock`,
+    `Semaphore`, `cas`, hand-off through `Channel`/`Supply`/`Promise`, `react`);
+  - every structure the program cannot see, whatever the program does. That covers registries,
+    caches, lazy materialization, reference counts, the GC, the scheduler, the shared-variable
+    lanes and captured cells. A new caller of `gc_contents_mut` (or any other `&self → &mut T`
+    primitive) on mutsu-internal state that another thread can reach takes a lock or an ownership
+    check. The name-keyed lanes do not cover parameters, attributes or values inside other
+    containers (`docs/gc-contents-mut-inventory.md`).
+
+  A program that mutates one container from two threads without synchronization gets rakudo's
+  guarantee, which is none: its own process may crash. A crash found by a thread-stress script
+  is a mutsu bug only if it persists once the script's shared accesses are synchronized.
 - **A raw pointer never outlives the guard it came from.** Deriving `*mut T` from a `MutexGuard`
   and dropping the guard is a use-after-free waiting to happen.
 - **Raw `current_code`-style pointers** (`usize` addresses of `CompiledCode`) are debt: a new
