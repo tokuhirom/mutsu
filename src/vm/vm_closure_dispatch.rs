@@ -715,12 +715,20 @@ impl Interpreter {
         // authoritative from its creating frame. Same overwrite-install as
         // `authoritative_free_vars` above — a never-written, lexically-authoritative
         // value that a same-named caller lexical must not shadow.
-        // `data.authoritative_captures` needs no install of its own here: every
-        // name it lists is a plain user lexical, so the whole-capture loop above
-        // already overwrote it (#14573 ablation). Only `authoritative_free_vars`
-        // stays a separate install -- removing it fails
-        // `t/routines/closure/closure-free-var-scope.t` and
-        // `roast/integration/99problems-41-to-50.t`.
+        // `data.authoritative_captures` is installed like `authoritative_free_vars`
+        // above. #14573's ablation found the whole-capture loop does NOT subsume
+        // it: removing this install fails
+        // `t/concurrency/supply/supply-block-reinstantiated.t`,
+        // `supply-block-captured-lexical.t`,
+        // `supply-whenever-container-parameter-capture.t` and
+        // `whenever-callback-recompile-semantics.t` -- a `supply`/`whenever`
+        // callback runs in a frame whose `Env` the whole-capture loop does not
+        // reach.
+        for sym in &data.authoritative_captures {
+            if let Some(val) = data.env.get_sym(*sym).cloned() {
+                self.env_mut().insert_sym(*sym, val);
+            }
+        }
         // Per-iteration loop captures (Raku fresh-binding semantics): these free
         // variables were declared in an enclosing loop body when this closure was
         // created, so each iteration's closure froze a distinct value in its
