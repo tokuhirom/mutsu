@@ -594,36 +594,35 @@ pub(in crate::parser) use misc::{colonpair_expr, parse_block_body, wrap_colonpai
 pub(in crate::parser) use number::wrap_divergent_literal;
 pub(in crate::parser) use regex::parse_call_arg_list;
 
-pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
-    let (rest, expr) = primary_term(input)?;
-    // A parse the RakuAST conversion reads keeps where each term was written
-    // (ADR-10723 Stage 2).
-    if crate::ast::spelled::keeping() && origin_family(&expr) {
-        let span = source_span(input, rest);
-        if span.is_some() {
-            return Ok((
-                rest,
-                Expr::Spelled(Box::new(crate::ast::spelled::Spelled {
-                    expr,
-                    spelling: crate::ast::spelled::Spelling::Origin(span),
-                })),
-            ));
-        }
-    }
-    Ok((rest, expr))
-}
-
 /// Whether `expr` is a term of a family that records its origin.
 // Cost: O(1).
 fn origin_family(expr: &Expr) -> bool {
     matches!(std::env::var("MUTSU_ORIGIN_FAMILY").as_deref(), Ok(f) if match f {
         "literal" => matches!(expr, Expr::Literal(_) | Expr::LiteralSrc(..)),
         "var" => matches!(expr, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::CodeVar(_)),
+        "all" => !matches!(expr, Expr::Spelled(_)),
         _ => false,
     })
 }
 
-fn primary_term(input: &str) -> PResult<'_, Expr> {
+/// `expr`, parsed from `input` up to `rest`, with where it was written when
+/// the parse keeps origins for the RakuAST conversion (ADR-10723 Stage 2).
+// Cost: O(h), h = leaked heredoc regions.
+pub(in crate::parser) fn with_origin(input: &str, rest: &str, expr: Expr) -> Expr {
+    if !crate::ast::spelled::keeping() || !origin_family(&expr) {
+        return expr;
+    }
+    let span = source_span(input, rest);
+    if !span.is_some() {
+        return expr;
+    }
+    Expr::Spelled(Box::new(crate::ast::spelled::Spelled {
+        expr,
+        spelling: crate::ast::spelled::Spelling::Origin(span),
+    }))
+}
+
+pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
     let _nesting = crate::parser::NestingGuard::enter(input)?;
     if let Some(cached) = PRIMARY_MEMO.get(input) {
         return cached;
