@@ -5,6 +5,7 @@
 //! existing compiler input. ADR-10723 proposes making this model the frontend
 //! IR; its round-trip mode currently exercises that boundary.
 
+mod adverb_origins;
 mod anon_state;
 mod atomic_op;
 mod attribute;

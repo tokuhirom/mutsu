@@ -125,11 +125,17 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
     if subscript.origin.0.is_some() {
         return;
     }
-    let Some(inside) = bracketed(from, to, brackets) else {
+    // The subscript's adverbs (`@a[0] :v`) are part of its range.
+    let close = brackets.1.to_string();
+    let Some((close_end, adverbs)) = super::adverb_origins::split(from, to, &close) else {
+        return;
+    };
+    let Some(inside) = bracketed(from, close_end, brackets) else {
         return;
     };
     with_child(node, "postfix", |subscript| {
         super::origin::set_span(subscript, SrcSpan::new(from, to));
+        super::adverb_origins::place(subscript, &adverbs);
         with_child(subscript, "index", |list| statement_list(list, inside));
     });
 }
@@ -148,19 +154,21 @@ fn literal_hash_index(node: &mut RakuAstNode, from: usize, to: usize) {
     let inner = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
         let (open, close) = super::origin::word_brackets_open(text)?;
         let end = open + text.get(open..)?.find(close)?;
-        // What follows the closing bracket is the subscript's adverbs.
-        let rest = text.get(end + close.len()..)?;
-        (rest.is_empty() || rest.starts_with(':')).then_some((from + open, from + end, rest.len()))
+        Some((from + open, from + end, close.to_string()))
     });
-    let Some((inner_from, inner_to, adverbs)) = inner else {
+    let Some((inner_from, inner_to, close)) = inner else {
         return;
     };
+    // What follows the closing bracket is the subscript's adverbs.
+    let Some((close_end, adverbs)) = super::adverb_origins::split(from, to, &close) else {
+        return;
+    };
+    if close_end != inner_to + close.len() {
+        return;
+    }
     with_child(node, "postfix", |subscript| {
         super::origin::set_span(subscript, SrcSpan::new(from, to));
-        // A single `:name` adverb is the text after the closing bracket.
-        if adverbs > 0 {
-            super::origin::adverb_true(subscript, SrcSpan::new(to - adverbs, to));
-        }
+        super::adverb_origins::place(subscript, &adverbs);
         with_child(subscript, "index", |quote| {
             super::origin::word_quote_inner(quote, SrcSpan::new(inner_from, inner_to))
         });
