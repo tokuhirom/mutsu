@@ -6092,7 +6092,6 @@ impl Interpreter {
                 name_idx,
                 is_positional,
                 target_slot,
-                autoviv,
                 viv_hash,
             } => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
@@ -6101,7 +6100,6 @@ impl Interpreter {
                     *name_idx,
                     *is_positional,
                     *target_slot,
-                    *autoviv,
                     *viv_hash,
                 )?;
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);

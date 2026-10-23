@@ -74,6 +74,21 @@ impl Interpreter {
         // missing (the deferred token), so `CallMethod` can store a fresh
         // container into it; any other receiver only needs an existing cell,
         // and only when a raw-invocant callee could bind it.
+        // A receiver chain compiled in container mode hands this op a location
+        // rather than a container: a deferred token, an empty scalar cell, or an
+        // undefined value. The deferred-walk subscript extends the path to the
+        // element (creating nothing yet), as a `:=` bind to it would.
+        if vivify
+            && self.stack.len() >= 2
+            && let Some(target) = self.stack.get(self.stack.len() - 2)
+            && Self::vivify_target_is_location(target)
+        {
+            self.exec_index_autovivify_lazy_op(false, is_positional)?;
+            if let Some(location) = self.stack.last().cloned() {
+                self.vivify_typed_hole(&location)?;
+            }
+            return Ok(());
+        }
         if (vivify || crate::runtime::raw_invocant::any_raw_invocant_method_possible())
             && let Some(cell) = self.take_subscript_element_cell(is_positional, vivify)
         {
@@ -93,6 +108,19 @@ impl Interpreter {
         self.exec_index_op_with_positional(is_positional)?;
         self.hllize_vm_collection_on_top();
         Ok(())
+    }
+
+    /// Whether the receiver a vivifying subscript is applied to is a location
+    /// the deferred walk must extend (a token, a scalar cell) or an undefined
+    /// value, rather than a real `Array`/`Hash` the element cell can be read from.
+    // Cost: O(1).
+    fn vivify_target_is_location(target: &Value) -> bool {
+        match target.view() {
+            ValueView::HashEntryRef { .. } | ValueView::ContainerRef(_) => true,
+            ValueView::Nil => true,
+            ValueView::Package(p) => p == "Any" || p == "Mu",
+            _ => false,
+        }
     }
 
     /// An element of a typed container (`my Array of Int @x`, whose cells
