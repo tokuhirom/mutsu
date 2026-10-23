@@ -81,6 +81,9 @@ impl Clone for InstanceAttrs {
             }
             *v = std::mem::replace(v, Value::NIL).detach_shared_container();
         }
+        if self.class_name() == crate::symbol::wk::signature() {
+            super::signature::sig_instance_born(self.id);
+        }
         Self {
             class_name: std::sync::atomic::AtomicU32::new(self.class_name().raw()),
             attributes: Arc::new(RwLock::new(map)),
@@ -118,6 +121,9 @@ impl InstanceAttrs {
     ) -> Self {
         if queue_destroy && let Ok(mut counts) = live_instance_refcounts(id).lock() {
             *counts.entry(id).or_insert(0) += 1;
+        }
+        if class_name == crate::symbol::wk::signature() {
+            super::signature::sig_instance_born(id);
         }
         let cell: AttrCell = Arc::new(RwLock::new(attributes));
         Self {
@@ -200,6 +206,9 @@ impl InstanceAttrs {
     ) -> Self {
         if queue_destroy && let Ok(mut counts) = live_instance_refcounts(id).lock() {
             *counts.entry(id).or_insert(0) += 1;
+        }
+        if class_name == crate::symbol::wk::signature() {
+            super::signature::sig_instance_born(id);
         }
         Self {
             class_name: std::sync::atomic::AtomicU32::new(class_name.raw()),
@@ -736,6 +745,9 @@ impl InstanceAttrs {
 
 impl Drop for InstanceAttrs {
     fn drop(&mut self) {
+        if self.class_name() == crate::symbol::wk::signature() {
+            super::signature::sig_instance_died(self.id);
+        }
         self.finalize_destroy();
     }
 }

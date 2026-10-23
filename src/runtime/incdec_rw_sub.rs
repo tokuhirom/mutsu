@@ -202,3 +202,27 @@ impl Interpreter {
         Ok(if is_prefix { new } else { old })
     }
 }
+
+/// The `X::Multi::NoMatch` a core infix raises for a named argument it has no
+/// parameter for: `1 + 2 :adverb` calls `infix:<+>(1, 2, :adverb)`, and none of
+/// the core candidates declares a named parameter. `op` is the routine
+/// (`infix:<+>`), `args` the whole argument list, named pairs included.
+// Cost: O(c + a), c = core candidates of `op`, a = arguments.
+pub(crate) fn core_infix_named_argument_error(op: &str, args: &[Value]) -> RuntimeError {
+    let labels: Vec<String> = args
+        .iter()
+        .map(|arg| match arg.view() {
+            ValueView::Pair(key, _) => format!(":{key}"),
+            _ => Interpreter::typed_arg_label(arg),
+        })
+        .collect();
+    let mut msg = format!(
+        "Cannot resolve caller {op}({}); none of these signatures matches:",
+        labels.join(", ")
+    );
+    for cand in crate::builtins::rakudo_candidates::core_sub_candidates(op) {
+        msg.push_str("\n    ");
+        msg.push_str(cand.signature.strip_prefix(':').unwrap_or(cand.signature));
+    }
+    crate::runtime::methods_signature_errors::make_no_match_error_with_message(msg)
+}

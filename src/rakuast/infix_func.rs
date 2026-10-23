@@ -13,6 +13,12 @@
 //! $a | $b | $c         ApplyListInfix(Infix("|"), operands)        (flat chain)
 //! ```
 //!
+//! Trailing adverbs (`1 foo 3 :round`) are the `colonpairs` of an
+//! `ApplyInfix`. On an `ApplyListInfix` (`$z & $y :adverb`) rakudo keeps them
+//! in its private `$!adverbs`, filled by `add-colonpair`, which neither its
+//! constructor form nor `visit-children` shows; mutsu keeps them in the same
+//! hidden `adverbs` field ([`ADVERBS`]).
+//!
 //! The lowering cannot see the parser's scope, so it re-derives "this operator
 //! is declared here" from the declarations it passes on the way: each statement
 //! list is a scope, and an `infix:<…>` sub or `&infix:<…>` variable declared in
@@ -30,6 +36,45 @@ use crate::ast::Expr;
 use crate::value::{RuntimeError, Value, ValueView};
 use std::cell::RefCell;
 use std::collections::HashSet;
+
+/// The hidden field holding an `ApplyListInfix`'s adverbs.
+pub(super) const ADVERBS: &str = "adverbs";
+
+/// Whether `field` is the hidden adverb list of an `ApplyListInfix`.
+// Cost: O(1).
+pub(super) fn is_hidden_adverbs(node: &RakuAstNode, field: &RakuAstField) -> bool {
+    node.class == RakuAstClass::ApplyListInfix && field.name == Some(ADVERBS)
+}
+
+/// `$node.add-colonpair($pair)`: append an adverb to an `ApplyInfix` (its
+/// `colonpairs`) or an `ApplyListInfix` (its hidden adverbs).
+// Cost: O(1) amortized.
+pub(crate) fn add_colonpair(node: &mut RakuAstNode, pair: Value) -> Result<(), RuntimeError> {
+    let field = match node.class {
+        RakuAstClass::ApplyInfix => "colonpairs",
+        RakuAstClass::ApplyListInfix => ADVERBS,
+        _ => {
+            return Err(RuntimeError::new(
+                "add-colonpair is only available on RakuAST::ApplyInfix and RakuAST::ApplyListInfix",
+            ));
+        }
+    };
+    if rakuast_node_of(&pair).is_none() {
+        return Err(RuntimeError::new("add-colonpair expects a RakuAST node"));
+    }
+    match node.fields.iter_mut().find(|f| f.name == Some(field)) {
+        Some(RakuAstField {
+            value: RakuAstFieldValue::List(items),
+            ..
+        }) => items.push(pair),
+        Some(_) => return Err(RuntimeError::new("add-colonpair: malformed adverb list")),
+        None => node.fields.push(RakuAstField {
+            name: Some(field),
+            value: RakuAstFieldValue::List(vec![pair]),
+        }),
+    }
+    Ok(())
+}
 
 /// Whether `name` is a real infix: the parser also uses `InfixFunc` as a
 /// vehicle for the class-trait `is`. A `__` prefix is a legal
@@ -114,9 +159,6 @@ pub(super) fn convert(
             fields,
         });
     }
-    if !adverbs.is_empty() {
-        return Err(unsupported_expr(&format!("{whole:?}")));
-    }
     // List-associative: the left spine of the same operator is one operand
     // list, and a multi-operand node (`a op b op c`) already is.
     let mut operands: Vec<&Expr> = Vec::new();
@@ -142,7 +184,7 @@ pub(super) fn convert(
     for operand in operands {
         nodes.push(Value::rakuast(Box::new(convert_expr(operand)?)));
     }
-    Ok(RakuAstNode {
+    let mut node = RakuAstNode {
         class: RakuAstClass::ApplyListInfix,
         fields: vec![
             node_field(Some("infix"), infix),
@@ -151,7 +193,11 @@ pub(super) fn convert(
                 value: RakuAstFieldValue::List(nodes),
             },
         ],
-    })
+    };
+    for adverb in adverbs {
+        add_colonpair(&mut node, Value::rakuast(Box::new(convert_expr(adverb)?)))?;
+    }
+    Ok(node)
 }
 
 /// The spelling of an `Infix` node.
@@ -196,6 +242,29 @@ fn keeps_native_dispatch(name: &str) -> bool {
 thread_local! {
     /// The operators declared in each enclosing statement list, innermost last.
     static SCOPES: RefCell<Vec<HashSet<String>>> = const { RefCell::new(Vec::new()) };
+    /// The operators the scope that runs an `EVAL` makes visible to it: the
+    /// EVAL'd unit calls them as the parser does for an EVAL string.
+    static CALLER: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+}
+
+/// Run `lower` with `operators` (routine names, `infix:<…>` among them)
+/// visible as declared by the calling scope, restoring the previous set after.
+// Cost: O(n) to install, n = number of operator names, plus `lower`.
+pub(crate) fn with_caller_operators<T>(operators: &[String], lower: impl FnOnce() -> T) -> T {
+    struct Restore(HashSet<String>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = std::mem::take(&mut self.0);
+            CALLER.with(|c| *c.borrow_mut() = previous);
+        }
+    }
+    let installed: HashSet<String> = operators
+        .iter()
+        .filter(|name| name.starts_with("infix:<") && name.ends_with('>'))
+        .cloned()
+        .collect();
+    let _restore = Restore(CALLER.with(|c| std::mem::replace(&mut *c.borrow_mut(), installed)));
+    lower()
 }
 
 /// Pops the scope [`enter_scope`] pushed.
@@ -246,11 +315,13 @@ pub(super) fn note_declaration(stmt: &RakuAstNode) {
     }
 }
 
-/// Whether an enclosing scope declares the operator `name` (`infix:<name>`).
+/// Whether an enclosing scope, or the scope that runs the `EVAL`, declares
+/// the operator `name` (`infix:<name>`).
 // Cost: O(s), s = open scopes.
 fn is_declared(name: &str) -> bool {
     let routine = format!("infix:<{name}>");
     SCOPES.with(|s| s.borrow().iter().any(|scope| scope.contains(&routine)))
+        || CALLER.with(|c| c.borrow().contains(&routine))
 }
 
 /// An infix application the parser makes an [`Expr::InfixFunc`] of, or `None`
@@ -272,11 +343,15 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     // operator into an `InfixFunc` call. A flip-flop is syntax, not a routine.
     // An application with adverbs (`1 foo 3 :round`) calls the routine,
     // whatever its operator: the native layers take no named arguments.
-    let adverbs = list_field(node, "colonpairs").unwrap_or_default();
+    let adverbs = if node.class == RakuAstClass::ApplyInfix {
+        list_field(node, "colonpairs").unwrap_or_default()
+    } else {
+        list_field(node, ADVERBS).unwrap_or_default()
+    };
     if !adverbs.is_empty() {
-        if node.class != RakuAstClass::ApplyInfix || !is_declared(&name) {
-            return Some(Err(unsupported(node)));
-        }
+        // The adverbs go to the outermost call, as the parser attaches them. A
+        // core operator is called too: it declares no named parameter, so the
+        // call is rejected at run time exactly as on the ordinary frontend.
         return Some(fold(node, name).and_then(|mut call| {
             if let Expr::InfixFunc { right, .. } = &mut call {
                 for adverb in adverbs {
@@ -318,12 +393,6 @@ fn fold(node: &RakuAstNode, name: String) -> Result<Expr, RuntimeError> {
     let rest: Vec<Expr> = items.collect();
     if rest.is_empty() {
         return Err(unsupported(node));
-    }
-    // The junction operators the parser nests to the left (the compiler
-    // flattens them); any other list-associative operator holds its operands
-    // in one node.
-    if matches!(name.as_str(), "|" | "&" | "^") {
-        return Ok(rest.into_iter().fold(first, |acc, r| call(acc, vec![r])));
     }
     Ok(call(first, rest))
 }

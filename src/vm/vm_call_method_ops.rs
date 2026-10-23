@@ -1992,6 +1992,21 @@ impl Interpreter {
                             let p = p.resolve();
                             p == "Any" || p == "Mu" || p.starts_with("Array[") || p.starts_with("Hash[")
                         });
+                    // A vivifying call on an undefined value that came from no
+                    // variable and no element location (`f().push(1)`, a
+                    // read-only accessor's value) has nowhere to keep the
+                    // container it would create.
+                    if undefined_element
+                        && receiver_cell.is_none()
+                        && modifier.is_none()
+                        && crate::builtins::method_table::vivifies_undefined_receiver(method)
+                    {
+                        let type_name = match detached.view() {
+                            ValueView::Package(p) => p.resolve().to_string(),
+                            _ => "Any".to_string(),
+                        };
+                        return Err(RuntimeError::assignment_ro_type_object(&type_name));
+                    }
                     let mut place = match &receiver_cell {
                         Some(cell) if undefined_element => {
                             crate::builtins::method_table::ReceiverPlace::cell(cell, &detached)

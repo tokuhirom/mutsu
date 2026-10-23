@@ -14,7 +14,12 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn mark_initialized_index(&mut self, var_name: &str, encoded: String) {
+    pub(super) fn mark_initialized_index(
+        &mut self,
+        place: StorePlace,
+        var_name: &str,
+        encoded: String,
+    ) {
         // Record the assigned index in the array's *embedded* `initialized`
         // set so it travels with the value across scopes/closures/method calls
         // (the former env-name-keyed side table was scoped to the assigning
@@ -29,7 +34,7 @@ impl Interpreter {
         // here would clone a shared array and sever the by-ref alias, so a
         // subsequent `.push` on the original would be lost
         // (t/array-push-byref-coherence).
-        if let Some(root) = self.env_root_descended_mut(var_name) {
+        if let Some(root) = self.place_root_mut(place, var_name) {
             root.with_array_mut(|items, _| {
                 let data: &mut crate::value::ArrayData = if crate::gc::Gc::strong_count(items) > 1 {
                     // SAFETY: aliased in-place mutation of a shared array; same

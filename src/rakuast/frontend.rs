@@ -104,13 +104,18 @@ pub(crate) fn round_trip(stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
 }
 
 /// [`round_trip_if_enabled`] for an `EVAL` string, whose bare names may be
-/// declared by the scope that called it: `types` and `terms` are those names.
+/// declared by the scope that called it: `types` and `terms` are those names,
+/// and `operators` the operator routines it makes visible.
 pub(crate) fn round_trip_eval(
     stmts: &[Stmt],
     types: impl FnOnce() -> Vec<String>,
     terms: impl FnOnce() -> Vec<String>,
+    operators: &[String],
 ) -> Result<Vec<Stmt>, RuntimeError> {
-    with_caller_names(types(), terms(), || round_trip(stmts)).map_err(refusal)
+    with_caller_names(types(), terms(), || {
+        super::with_caller_operators(operators, || round_trip(stmts))
+    })
+    .map_err(refusal)
 }
 
 /// Run `convert` with `types` and `terms` installed as the names the calling

@@ -70,7 +70,7 @@ pub(crate) use errors::{
     conditional_second_part_invalid_error, non_associative_error, non_associative_pair_error,
     non_list_associative_error, syntax_exception,
 };
-pub(crate) use list_infix::{sequence_expr, sequence_only_expr};
+pub(crate) use list_infix::{attach_trailing_adverbs, sequence_expr, sequence_only_expr};
 pub(crate) use list_infix_loop::{
     parse_list_infix_loop, parse_list_infix_loop_no_feed, parse_list_infix_loop_with_operand,
 };

@@ -496,7 +496,10 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
 /// (it made Digest::SHA1 return its initial hash constants unchanged).
 pub(in crate::parser) fn listop_arg_expr_list_infix(input: &str) -> PResult<'_, Expr> {
     let (rest, expr) = listop_arg_expr(input)?;
-    let (rest, expr) = extend_listop_arg_list_infix(rest, input, expr)?;
+    let (rest, mut expr) = extend_listop_arg_list_infix(rest, input, expr)?;
+    // `say 1 + 2 :adverb`: a trailing colonpair binds to the operator, not to
+    // the listop it is an argument of.
+    let rest = precedence::attach_trailing_adverbs(rest, &mut expr)?;
     // The list-infix loop can build a NEW Whatever-curried expression around an
     // unwrapped bare `*` (`isa-ok * quack 5, Code` — `quack` is consumed by the
     // infix-func loop, not by `listop_arg_expr`), so the finished-expression

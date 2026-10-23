@@ -852,6 +852,13 @@ impl Interpreter {
             // it is a readonly item binding with no caller container behind it.
             Vec::new()
         } else {
+            // A routine's parameter defaults are written in its own package: a
+            // name there (an enum its module declares, `HashAlg(dflt())`)
+            // resolves from it, whichever package the caller imported the
+            // routine into.
+            let _default_package_guard = (cc.is_routine
+                && !crate::qualified::is_global_package(data.package))
+            .then(|| self.enter_package_guarded_sym(data.package));
             match loan_env!(
                 self,
                 // `param_name_syms.params` is `data.params` interned once per

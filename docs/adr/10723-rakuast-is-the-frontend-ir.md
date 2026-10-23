@@ -2,7 +2,8 @@
 
 - **Status**: Accepted (user decision 2026-10-22; proposed 2026-10-02). Supersedes the pipeline
   decision of [ADR-0011](0011-rakuast-model-layer-and-phasing.md). The §4 questions stay gates
-  before Stage 2; the source-position question is decided (2026-10-22).
+  before Stage 2; the source-position question is decided (2026-10-22); the representation
+  question and the Stage 2 mechanism are Proposed (2026-10-23, §4).
 - **Date**: 2026-10-02
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#10723](https://github.com/tokuhirom/mutsu/issues/10723). Roadmap:
@@ -205,6 +206,60 @@ before the flip, not after.
   `Value` construction at parse time, no typed access in `lower`). Stage 0/1 can run on it.
   Before Stage 2, measure parse-time cost on the compile-heavy cases and decide between keeping
   it, or a typed Rust tree with `Value::RakuAst` as a view over it.
+
+  **Proposed (2026-10-23, [#11413](https://github.com/tokuhirom/mutsu/issues/11413)): typed
+  parser nodes, with the uniform node as their view.** This also fixes the Stage 2 mechanism
+  that §2.2 left open.
+  - **The parser builds a typed node per migrated construct family.** It is a Rust struct in
+    `src/ast/parsed/` shaped like the RakuAST node (`Statement::If` has its condition, its
+    `then` block, its `elsif`/`orwith` clauses and its `else` block). Its children that have
+    not migrated yet are ordinary `Expr`/`Stmt` values; this is §2.2's transitional "RakuAST
+    wraps `Expr`" leaf. Each node that Rakudo gives an origin has a position member, recorded
+    by the parser as it builds the node. Building one allocates no `Value`.
+  - **One lowering, in `rakuast`.** A single function lowers a typed node to the `Expr`/`Stmt`
+    the compiler runs. That function holds the desugaring the parser used to do inline. The
+    uniform node's lowering (`EVAL($ast)`, hand-built trees, the `MUTSU_RAKUAST` round trip)
+    reads the uniform node into the same typed struct and calls the same function. There is
+    never a second lowering of a family.
+  - **The uniform `RakuAstNode` is the view.** `.AST` renders the typed node into the uniform
+    node, positions included. That arm is not a reverse-engineering `convert` arm: it reads a
+    tree the parser built in RakuAST's shape. The `convert` arms that undid the family's
+    desugaring are deleted once the parser no longer emits the desugared shape for that family.
+  - **Where the typed node lives.** Every parse builds it. An executing parse (the main
+    program, modules, `EVAL` strings, the lazily parsed fragments the compiler asks for)
+    lowers it where it is built, so every tree that reaches the compiler, the precompilation
+    cache or an analysis is the tree those passes see today. A parse whose tree only the RakuAST
+    conversion reads (`Str.AST`, a `MUTSU_RAKUAST` unit: ADR-12199's `keep_spelling` parses)
+    keeps it, in one transitional carrier per syntactic category (`Stmt::Ast`, later
+    `Expr::Ast`). The carrier is deleted at Stage 3, together with `convert`. Positions are
+    recorded the same way in both kinds of parse: the node is the same, and only where it is
+    lowered differs. This is not the `.AST`-only position-recording mode that the
+    source-position decision below rules out.
+  - **Order.** Families migrate one PR each. Statement-level families come first: the
+    conditional family, then loops and bare blocks, then routine declarations. Their nodes are
+    few per program, and their blocks carry most of the `Block`/`Blockoid`/`StatementList`
+    origins. Expression families follow. For a family whose `Expr` is already lossless, the
+    typed node is that `Expr` plus its positions.
+  - **Cost.** Building the typed node allocates no `Value`, and lowering it moves its
+    children. The executing path therefore adds one struct per migrated construct over the
+    parser's inline desugaring. Each family PR measures parse time on the `perf-tuning`
+    compile-heavy cases before it lands. §2.4's 10% budget is checked against the sum of those
+    measurements.
+
+  Rejected:
+  - **Building uniform `RakuAstNode`s at parse time.** Each node costs a `Value` allocation
+    per field, and the result would be lowered at once on every executing path. Holding uniform
+    nodes inside the parse tree also leaves the whole-program passes after parsing
+    (`whatever_curry::mark`, `use trace` numbering, scope diagnostics) unable to reach the
+    `Expr`/`Stmt` leaves behind a `Value`.
+  - **A top-down tree returned by the parser** (a RakuAST root with `Stmt` leaves, lowered
+    after parsing). Every block reached from an unmigrated `Expr` (closures, routine bodies)
+    would have to be lowered eagerly, so origins in it would depend on how deep the migration
+    had got. Every parse-time shape check over a statement list would also have to learn the
+    mixed form.
+  - **Span fields on the existing desugared variants** (`Stmt::If` with block spans, read by
+    `convert`). The parser would keep desugaring, and `convert` would read positions off a
+    desugared tree, which the source-position decision below excludes.
 - **Source positions.** `RakuAstNode` carries no position; the internal AST carries line
   information as `Stmt::SetLine` markers. Error messages and `$?LINE` must not regress, so the
   tree needs positions (Rakudo keeps an `origin`) before Stage 2. Decide the representation
@@ -1997,3 +2052,50 @@ Known gaps, both rakudo-visible: a comment between a statement and its `;`
 (`Sub`, `Block`, `VarDeclaration`, `Call::*`, ...) have no origin; those arrive
 with their construct families, as the parser starts building them. Code::Coverable
 (#11413) waits on those families.
+
+### 6.106 S10: adverbs on a list-associative infix (2026-10-22)
+
+`$z & $y :adverb` on a user `infix:<&>` is an `ApplyListInfix`. Rakudo 2026.09
+keeps its adverbs in the private `$!adverbs`, filled by `add-colonpair`; the
+constructor form, the accessors and `visit-children` leave them out, and EVAL
+passes them to the operator. The converter keeps them in the same hidden
+`adverbs` field (`rakuast::is_unvisited_field` keeps it out of accessors and
+`visit-children`, the renderer omits it; §6.103's `source-alias` atom is kept
+out the same way), and lowering appends them to the
+outermost call, where the parser attaches them. This lifts §6.46's
+two-operand restriction. `ApplyInfix.add-colonpair` and
+`ApplyListInfix.add-colonpair` are the rakudo mutators, answering `Nil`.
+(The row is declared once, on `ApplyInfix`, and its handler serves both.)
+Lowering decides "the unit declares this operator" from the statement lists it
+passes; it now also counts the operators the scope that runs the `EVAL`
+makes visible (`rakuast::with_caller_operators`, installed for an `EVAL`
+string's round trip and for `EVAL` of a node), so `sub infix:<&> …;
+EVAL '1 & 2'` calls the user operator under `MUTSU_RAKUAST=1`, as on the
+ordinary frontend, instead of building a junction. A colonpair whose value is
+an interpolating word quote (`:person«$user»`) no longer refuses: only a
+literal single word becomes the allomorph term. That the parser calls an
+overloaded junction operator pairwise when it carries adverbs is #14630; that
+an adverb on a core infix is dropped is #14644. The executable contract is
+`t/rakuast/rakuast-list-infix-adverbs.t`; `roast/integration/advent2013-day10.t`
+passes in frontend mode.
+
+### 6.107 S10: core infix adverbs and dunder variable traits (2026-10-23)
+
+Survey after §6.106 (`scripts/rakuast-frontend.sh causes`, debug build): 49 files
+outside the ratchet, 46 of them already passing, 1 differing, 2 refusing.
+
+- An application with adverbs calls the operator routine whatever the operator
+  (`1 + 2 :adverb`, #14644): the parser now builds the `InfixFunc` call for a core
+  infix too, so `convert` renders it as `ApplyInfix` / `ApplyListInfix` (identical to
+  rakudo's `.raku`), and `lower` no longer refuses an undeclared operator with
+  adverbs; the call is rejected at run time by the core operator, as on the ordinary
+  frontend.
+- A user variable trait spelled like a parser marker (`my $x is __x`) is recorded
+  under `ast::USER_TRAIT_ESCAPE` (#14532). `decl_traits` renders it as the
+  `Trait::Is` of the unescaped name and lowering escapes it again, so the dunder
+  name is a user trait and only an unescaped `__` name is a marker.
+
+The 46 passing files and the three fixed ones are added to
+`ci/rakuast-frontend-passing.txt`. `t/oo/construct/buildplan-built-bind.t` still
+differs; it belongs to #14559.
+

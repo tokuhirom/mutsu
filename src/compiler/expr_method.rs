@@ -468,61 +468,26 @@ impl Compiler {
             let name_resolved = name.resolve();
             let arity = args.len() as u32;
             let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
-            if matches!(name_resolved.as_str(), "pop" | "shift" | "splice") {
-                let tmp_target_name = format!(
-                    "__mutsu_tmp_index_method_target_{}",
-                    self.code.constants.len()
-                );
-                let tmp_target_idx = self.code.add_constant(Value::str(tmp_target_name));
-                let name_idx = self.code.add_constant(Value::str(name_resolved));
-                let var_name_idx = self.code.add_constant(Value::str(var_name));
-
-                self.compile_expr(idx_target);
-                self.compile_expr(idx_key);
-                self.code.emit(OpCode::IndexElemAutoviv {
-                    name_idx: var_name_idx,
-                    is_positional: *is_positional,
-                    target_slot,
-                    autoviv: false,
-                    viv_hash: false,
-                });
-                self.code.emit(OpCode::SetGlobal(tmp_target_idx));
-                self.code.emit(OpCode::GetGlobal(tmp_target_idx));
-                for arg in args {
-                    self.compile_method_arg(arg);
-                }
-                self.code.emit(OpCode::CallMethodMut {
-                    name_idx,
-                    arity,
-                    target_name_idx: tmp_target_idx,
-                    target_slot: None,
-                    modifier_idx,
-                    quoted,
-                    arg_sources_idx: None,
-                });
-            } else {
-                let var_name_idx = self.code.add_constant(Value::str(var_name));
-                self.compile_expr(idx_target);
-                self.compile_expr(idx_key);
-                self.code.emit(OpCode::IndexElemAutoviv {
-                    name_idx: var_name_idx,
-                    is_positional: *is_positional,
-                    target_slot,
-                    autoviv: true,
-                    viv_hash: false,
-                });
-                for arg in args {
-                    self.compile_method_arg(arg);
-                }
-                let name_idx = self.code.add_constant(Value::str(name_resolved));
-                self.code.emit(OpCode::CallMethod {
-                    name_idx,
-                    arity,
-                    modifier_idx,
-                    quoted,
-                    arg_sources_idx: None,
-                });
+            let var_name_idx = self.code.add_constant(Value::str(var_name));
+            self.compile_expr(idx_target);
+            self.compile_expr(idx_key);
+            self.code.emit(OpCode::IndexElemAutoviv {
+                name_idx: var_name_idx,
+                is_positional: *is_positional,
+                target_slot,
+                viv_hash: false,
+            });
+            for arg in args {
+                self.compile_method_arg(arg);
             }
+            let name_idx = self.code.add_constant(Value::str(name_resolved));
+            self.code.emit(OpCode::CallMethod {
+                name_idx,
+                arity,
+                modifier_idx,
+                quoted,
+                arg_sources_idx: None,
+            });
         } else {
             unreachable!()
         }
@@ -563,7 +528,6 @@ impl Compiler {
         }
         chain.reverse();
         debug_assert!(chain.len() >= 2);
-        let autoviv = !matches!(name.resolve().as_str(), "pop" | "shift" | "splice");
 
         // Load the base container and pick the name the first level's
         // autoviv stores through. A non-variable base (`f()<x><y>.push`,
@@ -598,7 +562,6 @@ impl Compiler {
                 name_idx,
                 is_positional,
                 target_slot: cur_slot,
-                autoviv,
                 viv_hash: !next_positional,
             });
             let tmp = format!("__mutsu_tmp_nested_lvl_{}", self.code.constants.len());
@@ -693,6 +656,53 @@ impl Compiler {
             bind_decl,
             Stmt::Expr(delete_through),
         ]));
+    }
+
+    /// Whether the base of a subscript chain can hand a vivifying method a
+    /// location: an aggregate variable, a plain lexical scalar (boxed into a
+    /// cell by the chain), another subscript over such a base, or a value that
+    /// is not a variable at all. Other scalars (attributes, dynamics,
+    /// package-qualified names) are reached by name and stay on the name-based
+    /// `IndexElemAutoviv` path.
+    // Cost: O(d), d = subscript depth of the chain.
+    pub(super) fn vivifying_chain_root_supported(&self, base: &Expr) -> bool {
+        let mut base = base;
+        while let Expr::Index { target, index, .. } = base {
+            if matches!(index.as_ref(), Expr::Whatever | Expr::HyperWhatever) {
+                return false;
+            }
+            base = target;
+        }
+        match base {
+            Expr::ArrayVar(_) | Expr::HashVar(_) => true,
+            Expr::Var(name) => Self::is_plain_lexical_name(name),
+            Expr::BareWord(name) => {
+                self.sigilless_locals.contains(name.as_str())
+                    || self.constant_vars_in_scope.contains(name.as_str())
+            }
+            // A value that is not a variable at all.
+            Expr::MethodCall { .. } | Expr::Call { .. } | Expr::CallOn { .. } => true,
+            _ => false,
+        }
+    }
+
+    /// Compile the base of a vivifying subscript receiver in container mode
+    /// (the mode a `:=` bind to a subscript uses): a plain scalar is read as its
+    /// cell and every intermediate subscript as a deferred location, so the final
+    /// `IndexInvocantRef { vivify }` can walk-create the missing levels.
+    pub(super) fn compile_vivifying_receiver_base(&mut self, base: &Expr) {
+        let saved_av = self.scalar_bind_autovivify;
+        let saved_terminal = self.bind_terminal;
+        let saved_nested = self.compile_nested_index_bind_source;
+        self.scalar_bind_autovivify = true;
+        self.bind_terminal = false;
+        self.compile_nested_index_bind_source = true;
+        if !self.emit_bind_chain_raw_target(base) {
+            self.compile_expr(base);
+        }
+        self.scalar_bind_autovivify = saved_av;
+        self.bind_terminal = saved_terminal;
+        self.compile_nested_index_bind_source = saved_nested;
     }
 
     /// Compile method call on non-variable target (no writeback needed).
@@ -905,6 +915,25 @@ impl Compiler {
                     is_positional: false,
                 });
             }
+            // A vivifying method on a subscript (`@a[1].push`, `%h<a><b>.push`,
+            // `$x{k}.push`): the receiver is compiled as a location chain so an
+            // undefined element, or an undefined intermediate level, is vivified
+            // through the location (ADR-13823).
+            Expr::Index {
+                target: index_target,
+                index,
+                is_positional,
+                ..
+            } if crate::builtins::method_table::vivifies_undefined_receiver(
+                name.resolve().as_str(),
+            ) && self.vivifying_chain_root_supported(index_target) =>
+            {
+                self.compile_vivifying_receiver_base(index_target);
+                self.compile_subscript_index(index);
+                self.code.emit(OpCode::Index {
+                    is_positional: *is_positional,
+                });
+            }
             _ => self.compile_expr(target),
         }
         // A vivifying method on a public `is rw` attribute accessor
@@ -1022,7 +1051,24 @@ impl Compiler {
             Expr::BareWord(n) => Some(self.sigilless_storage_key(n)),
             other => other.container_var_key(),
         };
-        self.compile_expr(target);
+        // A dynamic name may be a vivifying one, so a subscript receiver is
+        // compiled as a location chain (see `compile_expr_method_generic`).
+        if let Expr::Index {
+            target: index_target,
+            index,
+            is_positional,
+            ..
+        } = target
+            && self.vivifying_chain_root_supported(index_target)
+        {
+            self.compile_vivifying_receiver_base(index_target);
+            self.compile_subscript_index(index);
+            self.code.emit(OpCode::Index {
+                is_positional: *is_positional,
+            });
+        } else {
+            self.compile_expr(target);
+        }
         // The subscript-receiver producer applies to the dynamic spelling too:
         // the method name is a runtime value, so rawness is even less knowable
         // here than for a literal name.

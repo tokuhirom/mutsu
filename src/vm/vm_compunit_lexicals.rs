@@ -29,6 +29,17 @@ impl Interpreter {
         if self.lexicals.compunit_lexical_units.is_empty() {
             return None;
         }
+        // A multi candidate being matched has no frame yet: its declaring
+        // unit answers while nothing has been pushed over the caller's frame.
+        if let Some((unit, depth)) = self.lexicals.candidate_scope_unit
+            && depth == self.routine_stack().len()
+        {
+            return self
+                .lexicals
+                .compunit_lexical_units
+                .contains(&unit)
+                .then_some(unit);
+        }
         let def_file = self
             .routine_stack()
             .iter()

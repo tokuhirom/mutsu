@@ -70,6 +70,10 @@ pub(super) static ROWS: &[MethodRow] = &[
         "set-expression",
         |t, a| t.rakuast_set_field("set-expression", a[0].clone())
     ),
+    // One row serves both classes (a name is declared once); the handler
+    // refuses any other node.
+    node_row!("RakuAST::ApplyInfix", "add-colonpair", |t, a| t
+        .rakuast_add_colonpair(a[0].clone())),
     origin_row!("RakuAST::Origin", "from", 0, origin_position),
     origin_row!("RakuAST::Origin", "to", 0, origin_end),
     origin_row!("RakuAST::Origin", "source", 0, origin_source),
@@ -161,14 +165,16 @@ pub(super) fn children(node: &RakuAstNode) -> Vec<Value> {
         crate::rakuast::RakuAstClass::StatementLoopRepeatWhile
             | crate::rakuast::RakuAstClass::StatementLoopRepeatUntil
     );
+    let visited = node
+        .fields
+        .iter()
+        .filter(|field| !crate::rakuast::is_unvisited_field(node, field));
     let fields: Vec<_> = if repeat {
-        let (condition, rest): (Vec<_>, Vec<_>) = node
-            .fields
-            .iter()
-            .partition(|f| f.name == Some("condition"));
+        let (condition, rest): (Vec<_>, Vec<_>) =
+            visited.partition(|f| f.name == Some("condition"));
         condition.into_iter().chain(rest).collect()
     } else {
-        node.fields.iter().collect()
+        visited.collect()
     };
     for field in fields {
         match &field.value {

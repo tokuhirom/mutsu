@@ -352,7 +352,12 @@ impl Interpreter {
             // A lowered tree is an EVAL'd compilation unit: it runs through the
             // string EVAL's unit pipeline (phaser reordering, ADR-0134, and the
             // lexical isolation that keeps its `my` out of the caller, #13274).
-            let stmts = crate::rakuast::lower(node)?;
+            // The tree calls the operators its calling scope declares, as an
+            // EVAL string does.
+            let operators = self.collect_operator_sub_names();
+            let stmts = crate::rakuast::with_caller_operators(&operators, || {
+                crate::rakuast::lower(node)
+            })?;
             return self.eval_lowered_unit(stmts);
         }
         if let Some(first_arg) = Self::positional_value(args, 0)
@@ -360,7 +365,12 @@ impl Interpreter {
             && let Some(base) = attributes.rakuast_base()
             && let ValueView::RakuAst(node) = base.view()
         {
-            let stmts = crate::rakuast::lower(node)?;
+            // The tree calls the operators its calling scope declares, as an
+            // EVAL string does.
+            let operators = self.collect_operator_sub_names();
+            let stmts = crate::rakuast::with_caller_operators(&operators, || {
+                crate::rakuast::lower(node)
+            })?;
             return self.eval_lowered_unit(stmts);
         }
         // EVAL only accepts strings (and Buf), not blocks

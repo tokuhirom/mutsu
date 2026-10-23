@@ -13,6 +13,16 @@ impl Interpreter {
                 .or_else(|| self.term_binding_sym(head));
             let owner = match value.as_ref().map(Value::view) {
                 Some(ValueView::Package(owner)) => Some(owner),
+                // A class the enclosing package declared under the head's
+                // name (`class NE { class X {...}; class X::J {...} }`) owns
+                // the compound name, ahead of a same-named global namespace
+                // such as the core `X::` exceptions.
+                _ if let Some(local) = self
+                    .resolve_type_in_current_package(head.as_str())
+                    .filter(|local| local.as_str() != head.as_str()) =>
+                {
+                    Some(Symbol::intern(&local))
+                }
                 _ if self.is_known_package(head.as_str())
                     || crate::core_type_names::contains(head.as_str()) =>
                 {

@@ -2068,7 +2068,7 @@ impl Interpreter {
                     // Apply quant-hash (SetHash/BagHash/MixHash) coercion first
                     // so that typed container assignment sees a Set/Bag/Mix,
                     // not a Hash with element-level type errors.
-                    self.coerce_hash_var_value(&name, raw_val)?
+                    self.coerce_hash_var_value(None, &name, raw_val)?
                 } else if name.starts_with('@') {
                     if is_bind_ctx || is_rebind {
                         // `:=` bind (e.g. `@!attr := @x.List`, `our @a := ...`)
@@ -2163,7 +2163,7 @@ impl Interpreter {
                         || loan_env!(self, var_hash_key_constraint(&name)).is_some())
                 {
                     val = if is_attr_twigil {
-                        self.coerce_typed_container_assignment(&name, val, false)?
+                        self.coerce_typed_container_assignment(None, &name, val, false)?
                     } else {
                         // `%h = ...` reached by name (a closure writing a
                         // captured typed hash): coerce AND keep the container's
@@ -2171,7 +2171,7 @@ impl Interpreter {
                         // below (Data::Reshapers' `my Hash %r; lives-ok { %r =
                         // f() }`).
                         let old = self.get_env_with_main_alias(&name).unwrap_or(Value::NIL);
-                        self.hash_container_writethrough_value(&name, val, &old)?
+                        self.hash_container_writethrough_value(None, &name, val, &old)?
                     };
                 } else if name.starts_with('@')
                     && name.len() > 1
@@ -2196,7 +2196,7 @@ impl Interpreter {
                     // `@__mutsu_*`) are excluded: they are fresh per use and
                     // must not inherit a stale slot's type.
                     let old = self.get_env_with_main_alias(&name).unwrap_or(Value::NIL);
-                    val = self.array_container_writethrough_value(&name, val, &old)?;
+                    val = self.array_container_writethrough_value(None, &name, val, &old)?;
                 }
                 // `@!a = @e` / `%!h = %e` has copy semantics: the attribute gets
                 // its own container. The name-keyed `@` path above copies through
@@ -6092,7 +6092,6 @@ impl Interpreter {
                 name_idx,
                 is_positional,
                 target_slot,
-                autoviv,
                 viv_hash,
             } => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
@@ -6101,7 +6100,6 @@ impl Interpreter {
                     *name_idx,
                     *is_positional,
                     *target_slot,
-                    *autoviv,
                     *viv_hash,
                 )?;
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);

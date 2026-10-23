@@ -865,7 +865,7 @@ impl Compiler {
     /// an env-based name, an expression — compiles normally, because those have
     /// their own read emitters in `compile_expr_var`. Returns whether it emitted
     /// the read.
-    fn emit_bind_chain_raw_target(&mut self, target: &Expr) -> bool {
+    pub(super) fn emit_bind_chain_raw_target(&mut self, target: &Expr) -> bool {
         // A dynamic (`$*p := $*p<k>`): the deferred token lives in its slot when
         // this code declared it, else in env under the caller's binding (TOML's
         // table walk rebinds the caller's `$*tml` from a callee).
@@ -936,6 +936,16 @@ impl Compiler {
                 } else {
                     self.code.emit(OpCode::GetLocalDeferred(slot));
                 }
+                true
+            }
+            // A scalar captured from an enclosing routine has no slot here; the
+            // container is reached by name (the capture is a shared cell).
+            None if self.compile_nested_index_bind_source && matches!(target, Expr::Var(_)) => {
+                let name_idx = self.code.add_constant(Value::str(storage));
+                self.code.emit(OpCode::GetScalarContainer {
+                    name_idx,
+                    local_idx: None,
+                });
                 true
             }
             None => false,
