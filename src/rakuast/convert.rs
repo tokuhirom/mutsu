@@ -3334,6 +3334,16 @@ fn signature_bind_node(signature: &Expr, rhs: &Expr) -> Result<RakuAstNode, Runt
 }
 
 pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let Some(span) = super::expr_origins::of(expr) else {
+        return convert_expr_at(expr);
+    };
+    // A term the parser placed (ADR-10723 Stage 2).
+    let mut node = convert_expr_at(expr)?;
+    origin::set_span(&mut node, span);
+    Ok(node)
+}
+
+fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     if let Some(node) = super::deferred_name::convert(expr) {
         return node;
     }
@@ -3353,6 +3363,13 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // `<a b  c>`: rakudo keeps the raw text of a word list, whitespace
         // included, as one word-quote (ADR-12199).
         Expr::Spelled(spelled) => match &spelled.spelling {
+            // A term the parser placed (ADR-10723 Stage 2): its node with the
+            // origin the parser recorded.
+            Spelling::Origin(span) => {
+                let mut node = convert_expr(&spelled.expr)?;
+                origin::set_span(&mut node, *span);
+                Ok(node)
+            }
             Spelling::SourceIdentifier => written_identifier(&spelled.expr),
             Spelling::ArraySections(sections) => {
                 let fields = sections

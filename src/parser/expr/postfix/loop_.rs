@@ -650,7 +650,9 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
 /// calls.  Used for operands of tight prefix operators like `^` so that
 /// `^10 .batch(3)` parses as `(^10).batch(3)` rather than `^(10.batch(3))`.
 fn postfix_expr_tight(input: &str) -> PResult<'_, Expr> {
-    postfix_expr_inner(input, false)
+    let (rest, expr) = postfix_expr_inner(input, false)?;
+    crate::parser::primary::note_origin(input, rest, &expr);
+    Ok((rest, expr))
 }
 
 /// Public wrapper for `postfix_expr_tight`, used by `power_expr_tight`.
@@ -681,7 +683,9 @@ pub(in crate::parser) fn postfix_expr_continue_from<'a>(
 
 /// Postfix: method calls (.method), indexing ([]), ++, --
 pub(super) fn postfix_expr(input: &str) -> PResult<'_, Expr> {
-    postfix_expr_inner(input, true)
+    let (rest, expr) = postfix_expr_inner(input, true)?;
+    crate::parser::primary::note_origin(input, rest, &expr);
+    Ok((rest, expr))
 }
 
 fn postfix_expr_inner(input: &str, allow_ws_dot: bool) -> PResult<'_, Expr> {

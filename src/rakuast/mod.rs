@@ -22,6 +22,7 @@ mod conditional_lower;
 mod constructor_positional;
 mod contextualizer;
 mod control_signature;
+mod expr_origins;
 mod parsed_view;
 mod trait_is_constructor;
 use constructor_positional::single_positional_class;
@@ -1754,9 +1755,10 @@ pub(crate) fn lower_parsed_stmt(
 
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
 pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
-    let (stmts, _finish) = crate::parse_dispatch::parse_source_spelled(source)?;
+    let (mut stmts, _finish) = crate::parse_dispatch::parse_source_spelled(source)?;
     // The origins of the tree index this text (ADR-10723 §4).
     let _source = unit_source::Scope::enter(source);
+    let _origins = expr_origins::strip(&mut stmts);
     let mut node = convert::statement_list(&stmts)?;
     origin::set_span(&mut node, origin::unit_list_span(&stmts, source));
     Ok(Value::rakuast(Box::new(node)))
