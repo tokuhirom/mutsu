@@ -137,12 +137,33 @@ impl RoutineStack {
         self.fixtures.last()
     }
 
-    /// Replace the innermost frame in place, keeping its fixture record.
+    /// Push a copy of a frame that is (or was) on the stack. A frame with a
+    /// record gets its own clone of it, so the copy and the original never
+    /// name one entry (a `pop` of either would otherwise cut the record of
+    /// the other).
+    // Cost: O(1) amortized.
+    pub(crate) fn push_copy(&mut self, mut frame: RoutineFrame) {
+        match frame.fixtures {
+            0 => self.push(frame),
+            index => {
+                let record = self.fixtures[index as usize - 1].clone();
+                frame.fixtures = 0;
+                self.push_with_fixtures(frame, record);
+            }
+        }
+    }
+
+    /// Replace the innermost frame in place, keeping its fixture record. The
+    /// replacement names the same record, so it may change any other field.
     // Cost: O(1).
     pub(crate) fn replace_top(&mut self, frame: RoutineFrame) {
         if let Some(top) = self.frames.last_mut() {
             debug_assert_eq!(top.fixtures, frame.fixtures);
-            debug_assert_eq!(top.lexical_package.is_some(), frame.lexical_package.is_some());
+            match (top.lexical_package.is_some(), frame.lexical_package.is_some()) {
+                (true, false) => self.lexical_package_frames -= 1,
+                (false, true) => self.lexical_package_frames += 1,
+                _ => {}
+            }
             *top = frame;
             self.cut_nodes_to(self.frames.len() - 1);
         }
@@ -398,5 +419,33 @@ mod tests {
         assert_eq!(stack.top_fixtures().unwrap().class.as_str(), "A");
         stack.truncate(0);
         assert!(stack.top_fixtures().is_none());
+    }
+
+    #[test]
+    fn a_copied_frame_owns_a_clone_of_the_record() {
+        let mut stack = RoutineStack::default();
+        stack.push_with_fixtures(frame(false), fixtures("A"));
+        stack.push(frame(false));
+        let original = stack.iter().next().copied().unwrap();
+        stack.push_copy(original);
+        assert_eq!(stack.top_fixtures().unwrap().class.as_str(), "A");
+        // Popping the copy leaves the original's record in place.
+        stack.pop();
+        assert_eq!(stack.top_fixtures().unwrap().class.as_str(), "A");
+        stack.pop();
+        stack.pop();
+        assert!(stack.top_fixtures().is_none());
+    }
+
+    #[test]
+    fn replace_top_tracks_the_lexical_package_count() {
+        let mut stack = RoutineStack::default();
+        stack.push(frame(false));
+        stack.replace_top(frame(true));
+        assert_agrees(&stack);
+        assert!(stack.any_lexical_package());
+        stack.replace_top(frame(false));
+        assert_agrees(&stack);
+        assert!(!stack.any_lexical_package());
     }
 }
