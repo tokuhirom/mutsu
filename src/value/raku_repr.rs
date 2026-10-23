@@ -773,6 +773,18 @@ pub(crate) fn hash_cycle_exit(ptr: usize) -> bool {
 
 /// Cost: O(t), t = total output length for the whole structure (elements are
 /// rendered and joined once; the cycle guard is a stack of ancestor depth).
+/// The `.raku` of an `ObjAt` / `ValueObjAt` (or a role mixin over one):
+/// `ValueObjAt.new("Int|42")`. A role-mixed one names its roles inside
+/// `+{...}`, and an anonymous role is `<anon|N>`, not its internal key.
+// Cost: O(n), n = length of the WHICH text and class name.
+pub(crate) fn objat_raku(class_name: &str, which: Option<String>) -> String {
+    format!(
+        "{}.new(\"{}\")",
+        crate::value::user_facing_type_name(class_name),
+        which.unwrap_or_default()
+    )
+}
+
 pub fn raku_value(v: &Value) -> String {
     // `$a = 1 => $a` keeps `$a`'s container as the Pair's value, so a Pair can
     // be its own ancestor: the node the walk loops back to is named
@@ -1315,8 +1327,7 @@ fn raku_value_node(v: &Value) -> String {
             attributes,
             ..
         } if crate::value::AttrMap::is_objat_class_name(class_name.as_str()) => {
-            let which = attributes.as_map().objat_which().unwrap_or_default();
-            format!("{}.new(\"{}\")", class_name.resolve(), which)
+            objat_raku(class_name.as_str(), attributes.as_map().objat_which())
         }
         ValueView::Mixin(inner, mixins) => {
             // An allomorphic value (IntStr/RatStr/NumStr/ComplexStr) renders as
