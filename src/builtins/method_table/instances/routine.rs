@@ -12,7 +12,7 @@
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
 use crate::runtime::Interpreter;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value};
 
 type Answer = Option<Result<Value, RuntimeError>>;
 
@@ -36,44 +36,38 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("package", package),
 ];
 
-/// The owners the rows reachable from `target` are found under: a `Sub`, a
-/// routine handle, or an instance of a code class.
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    match target.view() {
-        ValueView::Sub(_) | ValueView::Routine { .. } => Some(&["Routine", "Code"]),
-        ValueView::Instance { class_name, .. }
-            if matches!(
-                class_name.resolve().as_str(),
-                "Method" | "Submethod" | "Sub" | "Routine" | "Code" | "Block"
-            ) =>
-        {
-            Some(&["Routine"])
-        }
-        _ => None,
-    }
-}
-
 /// `Routine.is_dispatcher`.
 // Cost: O(c), c = multi candidates.
 fn is_dispatcher(i: &mut Interpreter, t: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
+    if super::code_regex::is_regex(t) {
+        return super::code_regex::answer(t, "is_dispatcher");
+    }
     i.routine_is_dispatcher(t).map(Ok)
 }
 
 /// `Routine.dispatcher`.
 // Cost: O(c), c = multi candidates.
 fn dispatcher(i: &mut Interpreter, t: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
+    if super::code_regex::is_regex(t) {
+        return super::code_regex::answer(t, "dispatcher");
+    }
     i.routine_dispatcher(t).map(Ok)
 }
 
 /// `Routine.multi`.
 // Cost: O(1).
 fn multi(i: &mut Interpreter, t: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
+    if super::code_regex::is_regex(t) {
+        return super::code_regex::answer(t, "multi");
+    }
     i.routine_multi(t).map(Ok)
 }
 
 /// `Routine.package`.
 // Cost: O(n), n = the handle's name length.
 fn package(i: &mut Interpreter, t: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
+    if super::code_regex::is_regex(t) {
+        return super::code_regex::answer(t, "package");
+    }
     i.routine_package(t).map(Ok)
 }

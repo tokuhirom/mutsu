@@ -65,17 +65,6 @@ impl Interpreter {
         {
             return Some(answer);
         }
-        if let Some(owners) = crate::builtins::method_table::routine_owners_of(target)
-            && let Some(answer) = crate::builtins::method_table::invoke_owner(
-                self,
-                owners,
-                method,
-                args,
-                || target.clone(),
-            )
-        {
-            return Some(answer);
-        }
         match target.view() {
             ValueView::Routine {
                 name,

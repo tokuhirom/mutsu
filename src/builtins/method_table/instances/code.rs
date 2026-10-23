@@ -95,8 +95,9 @@ pub(super) static BLOCK_ROWS: &[MethodRow] = &[
     },
 ];
 
-/// The answer of the `Code` row for `method`, or `None` when `target` is not a
-/// code object or `Code` declares no such row.
+/// The answer of the row `target`'s class gives `method`, found through the
+/// class's owner chain (`code_class::owners_of`), or `None` when `target` is
+/// not a code object or its class has no such row.
 // Cost: O(1) to find the row, plus the handler's own cost.
 pub(crate) fn answer(
     interp: &mut Interpreter,
@@ -104,55 +105,20 @@ pub(crate) fn answer(
     method: &str,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    // `ACCEPTS` has a row on `Regex`, `WhateverCode` and `Code`
-    // (`code_accepts`, ADR-11276 §9.164).
-    if method == "ACCEPTS" {
-        let owners = super::code_accepts::code_accepts_owners(target)?;
-        return crate::builtins::method_table::invoke_owner(interp, owners, method, args, || {
-            target.clone()
-        });
-    }
-    if !matches!(
-        method,
-        "of" | "returns"
-            | "arity"
-            | "count"
-            | "signature"
-            | "line"
-            | "file"
-            | "name"
-            | "Str"
-            | "set_name"
-    ) || !is_code(target)
-    {
-        return None;
-    }
-    crate::builtins::method_table::invoke_owner(interp, &["Code"], method, args, || target.clone())
+    let owners = super::code_class::owners_of(target)?;
+    crate::builtins::method_table::invoke_owner(interp, owners, method, args, || target.clone())
 }
 
 /// The answer of the pure `Code` row for `method` (`Capture` or `clone`), or
 /// `None` when `target` is not a code object.
 // Cost: O(1).
 pub(crate) fn pure_answer(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
-    if !is_code(target) {
-        return None;
-    }
+    super::code_class::owners_of(target)?;
     match method {
         "Capture" => capture(target, &[]),
         "clone" => clone(target, &[]),
         _ => None,
     }
-}
-
-fn is_code(target: &Value) -> bool {
-    matches!(
-        target.view(),
-        ValueView::Sub(_)
-            | ValueView::WeakSub(_)
-            | ValueView::Routine { .. }
-            | ValueView::Regex(_)
-            | ValueView::RegexWithAdverbs(..)
-    )
 }
 
 /// `Code.of` and `Code.returns`: the return type the routine declares, the type
