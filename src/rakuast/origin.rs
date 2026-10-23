@@ -75,6 +75,9 @@ pub(super) fn trace_of(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
 // Cost: O(1) for ASCII text, O(log n) otherwise, n = characters of the unit.
 pub(super) fn set(node: &mut RakuAstNode, line: i64, span: crate::ast::SrcSpan) {
     node.origin = super::NodeOrigin(Some(super::unit_source::origin_value(line, span)));
+    if node.class == super::RakuAstClass::StatementExpression {
+        super::modifier_origins::statement(node, span);
+    }
     // A `Statement::Expression` with no statement modifier was written as just
     // its expression, which therefore has the statement's range (a `Sub`, a
     // `Class`, a `VarDeclaration`, a call) unless the parser placed it itself.

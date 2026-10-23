@@ -301,7 +301,50 @@ impl VisitMut for Walk {
                 self.statements.push(*span);
             }
         }
-        crate::ast_visit::walk_stmt_mut(self, stmt);
+        // A statement modifier is written after the statement it modifies,
+        // while the tree holds its condition first: visit in source order, so
+        // that equal terms (`say $x if $x`) take their ranges in the order
+        // they were read.
+        match stmt {
+            Stmt::If {
+                cond,
+                then_branch: body,
+                else_branch,
+                is_statement_modifier: true,
+                ..
+            } => {
+                self.visit_stmts_mut(body);
+                self.visit_stmts_mut(else_branch);
+                self.visit_expr_mut(cond);
+            }
+            Stmt::While {
+                cond,
+                body,
+                is_statement_modifier: true,
+                ..
+            }
+            | Stmt::When {
+                cond,
+                body,
+                is_statement_modifier: true,
+            }
+            | Stmt::Given {
+                topic: cond,
+                body,
+                is_statement_modifier: true,
+                ..
+            }
+            | Stmt::For {
+                iterable: cond,
+                body,
+                is_statement_modifier: true,
+                ..
+            } => {
+                self.visit_stmts_mut(body);
+                self.visit_expr_mut(cond);
+            }
+            _ => crate::ast_visit::walk_stmt_mut(self, stmt),
+        }
     }
 
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
