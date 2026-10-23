@@ -56,7 +56,12 @@ pub(crate) fn to_seq_structural(target: &Value) -> Option<Value> {
         {
             Some(target.clone())
         }
-        ValueView::LazyList(_) | ValueView::Channel(_) | ValueView::Instance { .. } => None,
+        // A `but`-mixin may carry a user `Seq` method (Red's `ResultSeq` does:
+        // `$rs but CMModel[...]`); only the interpreter dispatches to it.
+        ValueView::LazyList(_)
+        | ValueView::Channel(_)
+        | ValueView::Instance { .. }
+        | ValueView::Mixin(..) => None,
         // A bare scalar becomes a one-element Seq (matches the interpreter's
         // `other => Seq([other])` tail).
         _ => Some(Value::seq(vec![target.clone()])),
