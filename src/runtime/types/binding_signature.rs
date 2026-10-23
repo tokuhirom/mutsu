@@ -2549,6 +2549,22 @@ impl Interpreter {
                                 None,
                                 skip_constraint_recheck,
                             )?;
+                            // An untyped `:@x` is implicitly `Positional`, as its
+                            // positional counterpart is: `f(:x(Mu))` and `f(:x(5))`
+                            // fail to bind instead of leaving `@x` a scalar.
+                            if pd.type_constraint.is_none()
+                                && pd.name.starts_with('@')
+                                && !pd.slurpy
+                                && !self.type_matches_value("Positional", &bound_value)
+                            {
+                                return Err(self
+                                    .typecheck_binding_parameter_failure(
+                                        &param_display_name(pd),
+                                        "Positional",
+                                        &bound_value,
+                                    )
+                                    .with_parameter_object(pd, Some(&*self)));
+                            }
                             // An untyped routine `:$x` is implicitly `Any`, as
                             // its positional counterpart is (#10878).
                             if crate::opcode::FastParamCheck::implicitly_any(pd)
@@ -2623,6 +2639,23 @@ impl Interpreter {
                             if let Some(entries) = entries {
                                 bound_value = Value::hash_bare_values(entries);
                             }
+                        }
+                        // An untyped `:%x` is implicitly `Associative`; checked
+                        // once a lone Pair has been collected into a Hash above.
+                        if enforce_named_constraints
+                            && pd.type_constraint.is_none()
+                            && pd.name.starts_with('%')
+                            && !pd.slurpy
+                            && !pd.double_slurpy
+                            && !self.type_matches_value("Associative", &bound_value)
+                        {
+                            return Err(self
+                                .typecheck_binding_parameter_failure(
+                                    &param_display_name(pd),
+                                    "Associative",
+                                    &bound_value,
+                                )
+                                .with_parameter_object(pd, Some(&*self)));
                         }
                         // Named `is copy` container param: own a distinct
                         // container, exactly like the positional arm — and give
