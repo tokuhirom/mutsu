@@ -38,7 +38,7 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
     let Some(ranges) = ranges.filter(|r| r.len() >= 2) else {
         return;
     };
-    // Each gap holds exactly the operator, between whitespace.
+    // Each gap holds exactly the operator, between whitespace and comments.
     let mut last_op = None;
     for pair in ranges.windows(2) {
         let ((_, end), (start, _)) = (pair[0], pair[1]);
@@ -46,8 +46,10 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
             return;
         }
         let at = super::unit_source::with_text(SrcSpan::new(end, start), |gap| {
-            let after = gap.trim_start();
-            (after.trim_end() == op).then_some(end + (gap.len() - after.len()))
+            use crate::source_comments::trivia_len;
+            let lead = trivia_len(gap)?;
+            let after = gap[lead..].strip_prefix(op.as_str())?;
+            (trivia_len(after)? == after.len()).then_some(end + lead)
         });
         let Some(at) = at else {
             return;
@@ -56,11 +58,14 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
     }
     let (from, mut to) = (ranges[0].0, ranges[ranges.len() - 1].1);
     // A trailing `,` belongs to the list: no tighter operator ends at a `,`.
-    if op == ","
-        && let Some(comma) = trailing_comma(to)
-    {
-        last_op = Some(comma);
-        to = comma + 1;
+    if op == "," {
+        let Some(comma) = trailing_comma(to) else {
+            return;
+        };
+        if let Some(comma) = comma {
+            last_op = Some(comma);
+            to = comma + 1;
+        }
     }
     let Some(op_at) = last_op else {
         return;
@@ -71,19 +76,15 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
     });
 }
 
-/// The byte offset of a `,` that follows `at` after whitespace.
-// Cost: O(w), w = whitespace skipped.
-fn trailing_comma(at: usize) -> Option<usize> {
-    let mut end = at;
-    loop {
-        let next =
-            super::unit_source::with_text(SrcSpan::new(end, end + 1), |c| Some(c.to_string()))?;
-        match next.as_str() {
-            "," => return Some(end),
-            " " | "\t" | "\n" | "\r" => end += 1,
-            _ => return None,
-        }
-    }
+/// The byte offset of a `,` that follows `at` after whitespace and
+/// comments: `Some(None)` when something else follows, `None` when the text
+/// after `at` cannot be read ([`crate::source_comments::trivia_len`]).
+// Cost: O(w), w = whitespace and comments skipped.
+fn trailing_comma(at: usize) -> Option<Option<usize>> {
+    super::unit_source::with_text_from(at, |text| {
+        let gap = crate::source_comments::trivia_len(text)?;
+        Some(text[gap..].starts_with(',').then_some(at + gap))
+    })
 }
 
 /// `( ... )` / `[ ... ]`: the `SemiList` is the text inside the brackets.
@@ -97,8 +98,8 @@ pub(super) fn circumfix(node: &mut RakuAstNode) {
     } else {
         ('[', ']')
     };
-    if let Some(inside) = inside(from, to, brackets) {
-        with_child_at(node, 0, |list| semilist(list, inside));
+    if let Some(inside) = bracketed(from, to, brackets) {
+        with_child_at(node, 0, |list| statement_list(list, inside));
     }
 }
 
@@ -124,12 +125,12 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
     if subscript.origin.0.is_some() {
         return;
     }
-    let Some(inside) = inside(from, to, brackets) else {
+    let Some(inside) = bracketed(from, to, brackets) else {
         return;
     };
     with_child(node, "postfix", |subscript| {
         super::origin::set_span(subscript, SrcSpan::new(from, to));
-        with_child(subscript, "index", |list| semilist(list, inside));
+        with_child(subscript, "index", |list| statement_list(list, inside));
     });
 }
 
@@ -166,33 +167,66 @@ fn literal_hash_index(node: &mut RakuAstNode, from: usize, to: usize) {
     });
 }
 
-/// The range inside `open ... close` written at `from..to`, without the
-/// whitespace at either end (empty right after `open` when blank).
-// Cost: O(n), n = to - from.
-pub(super) fn inside(
-    from: usize,
-    to: usize,
-    (open, close): (char, char),
-) -> Option<(usize, usize)> {
+/// The text between `open` and `close` of the brackets written at
+/// `from..to`, whitespace included.
+// Cost: O(1) plus the brackets' width.
+pub(super) fn bracketed(from: usize, to: usize, (open, close): (char, char)) -> Option<SrcSpan> {
     super::unit_source::with_text(SrcSpan::new(from, to), |text| {
         let body = text.strip_prefix(open)?.strip_suffix(close)?;
-        let trimmed = body.trim_start();
-        let start = from + 1 + (body.len() - trimmed.len());
-        Some((start, start + trimmed.trim_end().len()))
+        let start = from + open.len_utf8();
+        Some(SrcSpan::new(start, start + body.len()))
     })
 }
 
-/// Give a `SemiList` the range `at`, and each `Statement::Expression` in it
-/// the range of its expression.
-// Cost: O(s), s = statements.
-pub(super) fn semilist(list: &mut RakuAstNode, at: (usize, usize)) {
+/// Give a `StatementList` / `SemiList`, whose statements are written in
+/// `inside` (the text between its brackets), the range from its first
+/// statement to the `;` after its last, as Rakudo does; a list of no
+/// statements sits just after the opening bracket when the brackets hold
+/// only whitespace and comments. A statement without a range of its own takes its
+/// expression's. Anything [`crate::source_comments::statement_list_end`]
+/// cannot account for leaves the list without a range.
+// Cost: O(n + s), n = length of `inside`, s = statements.
+pub(super) fn statement_list(list: &mut RakuAstNode, inside: SrcSpan) {
     if !matches!(
         list.class,
         RakuAstClass::SemiList | RakuAstClass::StatementSequence | RakuAstClass::StatementList
     ) {
         return;
     }
-    super::origin::set_span(list, SrcSpan::new(at.0, at.1));
+    statement_ranges(list);
+    let statements: Vec<Option<(usize, usize)>> = list
+        .fields
+        .iter()
+        .filter_map(|f| match &f.value {
+            RakuAstFieldValue::Node(held) => match held.view() {
+                ValueView::RakuAst(statement) => Some(byte_range(statement)),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    let base = inside.from as usize;
+    let range = super::unit_source::with_text(inside, |text| match statements.as_slice() {
+        [] => (crate::source_comments::trivia_len(text)? == text.len()).then_some((base, base)),
+        [first, .., last] | [first @ last] => {
+            let (first, last) = ((*first)?.0, (*last)?.1);
+            let end = crate::source_comments::statement_list_end(
+                text,
+                first.checked_sub(base)?,
+                last.checked_sub(base)?,
+            )?;
+            Some((first, base + end))
+        }
+    });
+    if let Some((from, to)) = range {
+        super::origin::set_span(list, SrcSpan::new(from, to));
+    }
+}
+
+/// Give each `Statement::Expression` of `list` that has no range the range
+/// of its expression.
+// Cost: O(s), s = statements.
+fn statement_ranges(list: &mut RakuAstNode) {
     for field in list.fields.iter_mut() {
         let RakuAstFieldValue::Node(held) = &mut field.value else {
             continue;
@@ -200,7 +234,10 @@ pub(super) fn semilist(list: &mut RakuAstNode, at: (usize, usize)) {
         let ValueView::RakuAst(statement) = held.view() else {
             continue;
         };
-        if statement.class != RakuAstClass::StatementExpression || statement.fields.len() != 1 {
+        if statement.class != RakuAstClass::StatementExpression
+            || statement.fields.len() != 1
+            || statement.origin.0.is_some()
+        {
             continue;
         }
         let Some(range) = child_at(statement, 0).and_then(byte_range) else {

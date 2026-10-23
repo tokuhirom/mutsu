@@ -2623,6 +2623,34 @@ impl Compiler {
                         // a plain value that the scalar-bind marks immutable.
                         self.compile_expr(expr);
                         self.code.emit(OpCode::ContainerizePair);
+                    } else if let Expr::BareWord(src) = expr
+                        && self
+                            .for_param_names
+                            .iter()
+                            .any(|p| p.strip_prefix('\\') == Some(src.as_str()))
+                        && !self.local_map.contains_key(src.as_str())
+                    {
+                        // A sigilless `for` parameter (`-> \p`) is the element's
+                        // cell under its bare env name. A `VarRef` would make the
+                        // bind re-resolve `p` through the sigilless alias table,
+                        // so hand over the cell itself (#14789).
+                        // The env key keeps the backslash (`\p`).
+                        let src_idx = self.code.add_constant(Value::str(format!("\\{src}")));
+                        self.code.emit(OpCode::GetCallTempRaw(src_idx));
+                    } else if let Expr::Var(src) = expr
+                        && self.for_param_names.contains(src)
+                        && !self.local_map.contains_key(src.as_str())
+                    {
+                        // `$x := $p` of a `for` parameter that lives in env
+                        // (no slot): the parameter aliases the element's own
+                        // cell (ADR-0045), so bind that raw cell, not the value
+                        // `GetGlobal` would read out of it (#14766).
+                        let src_idx = self.code.add_constant(Value::str(src.clone()));
+                        self.code.emit(OpCode::GetCallTempRaw(src_idx));
+                        self.code.emit(OpCode::WrapVarRef {
+                            name_idx: src_idx,
+                            slot: u32::MAX,
+                        });
                     } else {
                         self.compile_call_arg(expr);
                     }

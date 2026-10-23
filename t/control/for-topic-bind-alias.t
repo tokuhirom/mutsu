@@ -1,6 +1,6 @@
 use Test;
 
-plan 6;
+plan 9;
 
 # A scalar bound to the implicit topic of `for @a` keeps the element's own
 # container, so later writes to the element are visible through it (#14758).
@@ -49,3 +49,28 @@ plan 6;
     is $z, 2, 'a plain copy of a bound topic is still a copy';
 }
 
+# The same for the parameter forms that alias the element (#14766).
+{
+    my @e = 1, 2, 3;
+    my $b;
+    for @e -> $p is rw { $b := $p if $p == 2 }
+    @e[1] = 20;
+    is $b, 20, 'bind of an `is rw` parameter aliases the element';
+}
+
+{
+    my @f = 1, 2, 3;
+    my $b;
+    for @f <-> $p { $b := $p if $p == 2 }
+    @f[1] = 20;
+    is $b, 20, 'bind of a `<->` parameter aliases the element';
+}
+
+# The sigilless parameter form (#14789).
+{
+    my @g = 1, 2, 3;
+    my $b;
+    for @g -> \p { $b := p if p == 2 }
+    @g[1] = 20;
+    is $b, 20, 'bind of a sigilless parameter aliases the element';
+}

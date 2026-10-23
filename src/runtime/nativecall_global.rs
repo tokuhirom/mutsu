@@ -182,16 +182,29 @@ impl Interpreter {
     /// and into its attribute cell, so `$!field` inside the class's own methods
     /// resolves.
     ///
-    /// A no-op — and one registry probe — for every ordinary class. Values are
+    /// A no-op — and two emptiness tests of the registry's CStruct/CUnion sets —
+    /// for a program that declares no such class; one more probe of the cell for
+    /// every ordinary class of a program that does. Values are
     /// refreshed on each method entry rather than cached once, because the
     /// authoritative copy is the C struct and only that copy is written by the
     /// callee of a native call.
+    // Cost: O(1) when no CStruct/CUnion class exists; otherwise O(1) for a
+    // class that is not one, O(f) for a CStruct instance, f = fields.
     pub(crate) fn seed_cstruct_fields_for_method(
         &mut self,
         receiver_class_name: &str,
         invocant: Option<&Value>,
     ) {
         let Some(invocant) = invocant else { return };
+        // No `is repr('CStruct'|'CPPStruct'|'CUnion')` class exists in the
+        // program: nothing to seed, and no string-key probe of the cell
+        // (~455 Ir per instance-method call, #14639).
+        {
+            let reg = self.registry();
+            if reg.cstruct_classes.is_empty() && reg.cunion_classes.is_empty() {
+                return;
+            }
+        }
         let ValueView::Instance { attributes, .. } = invocant.view() else {
             return;
         };

@@ -37,6 +37,13 @@ pub(crate) struct OpScanIndex {
     /// Parallel to `CompiledCode::state_locals`: the ips of every
     /// `StateVarInit` op whose `(slot, key)` matches that entry, ascending.
     state_init_ips: Vec<Box<[usize]>>,
+    /// Every `(ip, index into state_locals)` pair of `state_init_ips`, ordered
+    /// by ip, so the state locals initialised in a range are a binary search
+    /// plus the matches rather than a walk over all of `state_locals`.
+    state_inits_by_ip: Box<[(usize, u32)]>,
+    /// `slot` -> the key of the FIRST `state_locals` entry for it, as
+    /// `publish_state_local` looks it up on every write to a local.
+    state_key_by_slot: FxHashMap<usize, Symbol>,
     /// The ip of each `BlockScope` / `BlockLocalScope` op -> the facts of the
     /// range it scopes.
     block_facts: FxHashMap<usize, BlockRangeFacts>,
@@ -144,10 +151,22 @@ impl OpScanIndex {
                 state_init_ips[i] = state_init_ips[first].clone();
             }
         }
+        let mut state_inits_by_ip: Vec<(usize, u32)> = state_init_ips
+            .iter()
+            .enumerate()
+            .flat_map(|(i, ips)| ips.iter().map(move |&ip| (ip, i as u32)))
+            .collect();
+        state_inits_by_ip.sort_unstable();
+        let mut state_key_by_slot: FxHashMap<usize, Symbol> = FxHashMap::default();
+        for (slot, key) in &code.state_locals {
+            state_key_by_slot.entry(*slot).or_insert(*key);
+        }
         Self {
             ops_len: code.ops.len(),
             label_targets,
             duplicate_label,
+            state_key_by_slot,
+            state_inits_by_ip: state_inits_by_ip.into_boxed_slice(),
             state_init_ips: state_init_ips
                 .into_iter()
                 .map(Vec::into_boxed_slice)
@@ -201,6 +220,53 @@ impl CompiledCode {
         {
             Some(facts) => std::borrow::Cow::Borrowed(facts),
             None => std::borrow::Cow::Owned(BlockRangeFacts::scan(self, op_ip + 1, end)),
+        }
+    }
+
+    /// The key of the first `state_locals` entry for `slot`: what a write to a
+    /// local publishes under (`publish_state_local`). A hash probe instead of
+    /// a walk over every state local of the chunk on every local write (#11347).
+    // Cost: O(1) amortized (one O(p) index build per chunk); a stale index
+    // walks `state_locals`, O(t).
+    pub(crate) fn state_key_for_slot(&self, slot: usize) -> Option<Symbol> {
+        match self.op_scan_index() {
+            Some(idx) => idx.state_key_by_slot.get(&slot).copied(),
+            None => self
+                .state_locals
+                .iter()
+                .find(|(s, _)| *s == slot)
+                .map(|(_, k)| *k),
+        }
+    }
+
+    /// Call `f` once with the index into `state_locals` of every entry that has
+    /// a `StateVarInit` op in `[start, end)`, in ascending order of the first
+    /// such op. What a loop's per-iteration state sync and its entry reset
+    /// need, without a test per state local of the whole chunk (#11347).
+    // Cost: O(log p + m), p = StateVarInit ops of the chunk, m = those in the
+    // range (O(m^2) only to drop an entry initialised twice in the range).
+    pub(crate) fn for_each_state_local_in_range(
+        &self,
+        start: usize,
+        end: usize,
+        mut f: impl FnMut(usize),
+    ) {
+        let Some(idx) = self.op_scan_index() else {
+            for i in 0..self.state_locals.len() {
+                if self.state_local_init_in_range(i, start, end) {
+                    f(i);
+                }
+            }
+            return;
+        };
+        let pairs = &idx.state_inits_by_ip;
+        let lo = pairs.partition_point(|&(ip, _)| ip < start);
+        let hi = lo + pairs[lo..].partition_point(|&(ip, _)| ip < end);
+        for p in lo..hi {
+            let i = pairs[p].1;
+            if pairs[lo..p].iter().all(|&(_, earlier)| earlier != i) {
+                f(i as usize);
+            }
         }
     }
 
@@ -260,6 +326,33 @@ mod tests {
         assert!(code.state_local_init_in_range(0, 1, 2));
         assert!(!code.state_local_init_in_range(0, 2, 3));
         assert!(!code.state_local_init_in_range(0, 0, 1));
+    }
+
+    #[test]
+    fn state_locals_in_range_are_listed_once_in_order() {
+        let mut code = CompiledCode::new();
+        let (a, b, c) = (
+            Symbol::intern("$a@1"),
+            Symbol::intern("$b@1"),
+            Symbol::intern("$c@1"),
+        );
+        code.state_locals.push((0, a));
+        code.state_locals.push((1, b));
+        code.state_locals.push((2, c));
+        code.ops.push(OpCode::StateVarInit(0, a)); // 0
+        code.ops.push(OpCode::Pop); // 1
+        code.ops.push(OpCode::StateVarInit(1, b)); // 2
+        code.ops.push(OpCode::StateVarInit(2, c)); // 3
+        code.ops.push(OpCode::StateVarInit(1, b)); // 4: initialised twice
+        let in_range = |start, end| {
+            let mut seen = Vec::new();
+            code.for_each_state_local_in_range(start, end, |i| seen.push(i));
+            seen
+        };
+        assert_eq!(in_range(0, 5), vec![0, 1, 2]);
+        assert_eq!(in_range(2, 5), vec![1, 2]);
+        assert_eq!(in_range(1, 2), Vec::<usize>::new());
+        assert_eq!(in_range(4, 5), vec![1]);
     }
 
     #[test]
