@@ -5088,13 +5088,6 @@ pub(super) fn blockoid(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
 /// ([`Expr::postfix_operand`]).
 // Cost: O(n), n = size of the operand.
 pub(super) fn postfix_operand(operand: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    // A parenthesised positional pair (`(a => 1).List`) carries its parentheses
-    // inside the `PositionalPair` marker; the one level raku drops is that one.
-    if let Expr::PositionalPair(inner) = operand
-        && let Expr::Grouped(pair) = inner.as_ref()
-    {
-        return convert_expr(pair);
-    }
     convert_expr(operand.postfix_operand())
 }
 
