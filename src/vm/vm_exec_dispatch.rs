@@ -2066,6 +2066,15 @@ impl Interpreter {
                     // already (`check_hash_bind_value`); coercing it here would
                     // replace the Proxy with a Hash of its parts.
                     raw_val
+                } else if name.starts_with('%')
+                    && (is_bind_ctx || is_rebind)
+                    && matches!(raw_val.view(), ValueView::Instance { .. })
+                {
+                    // `%!attr := Subclass-of-Map.new(...)`: a bind aliases the
+                    // Associative instance itself, as `SetLocal` does; coercing
+                    // it to a Hash would drop the subclass and its methods.
+                    self.check_associative_bind_value(&name, &raw_val)?;
+                    raw_val
                 } else if name.starts_with('%') {
                     // Apply quant-hash (SetHash/BagHash/MixHash) coercion first
                     // so that typed container assignment sees a Set/Bag/Mix,
