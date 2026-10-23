@@ -862,6 +862,10 @@ impl Interpreter {
         sigil: char,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // The attribute stores its caller's value, not a `Proxy` standing for
+        // it (ADR-0040): a value class's `clone` hands over the `get_value` of
+        // attributes it holds behind a `Proxy`.
+        let value = self.fetch_proxy_for_store(value)?;
         // A parameterized `Array[T]` is handled below even when the provided
         // value leniently matches (an untyped array whose current elements
         // happen to be `T`): it must be rebuilt as a genuinely typed array so
