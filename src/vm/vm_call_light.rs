@@ -488,9 +488,7 @@ impl Interpreter {
         // readonly frame restores it on return, so the unmark (and its journal
         // replay on every call from inside a caller's `for`) is skipped there
         // (#12526).
-        if cf.code.is_routine
-            && (cf.code.reads_topic || cf.code.mirrors_all_locals())
-        {
+        if cf.code.is_routine && (cf.code.reads_topic || cf.code.mirrors_all_locals()) {
             self.unmark_readonly_topic();
         }
         // Bind params to slots. Also write the param into the overlay when a

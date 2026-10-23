@@ -184,8 +184,7 @@ impl Interpreter {
             return Ok(false);
         }
         // A user `infix:<~>` candidate must see the operands (#13791).
-        if code.mirrors_all_locals() || self.user_infix_override("infix:<~>")
-        {
+        if code.mirrors_all_locals() || self.user_infix_override("infix:<~>") {
             return Ok(false);
         }
         let mirrored = code.needs_env_sync.get(idx).copied().unwrap_or(true);
