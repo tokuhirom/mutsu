@@ -17,7 +17,7 @@ use crate::value::Value;
 
 /// The origins of the empty nodes a node's absent fields stand for.
 #[derive(Debug, Clone, Default)]
-pub struct EmptyOrigins(Option<Box<Vec<(&'static str, Value)>>>);
+pub struct EmptyOrigins(Option<Box<[(&'static str, Value)]>>);
 
 impl EmptyOrigins {
     // Cost: O(e), e = empty fields with an origin (at most two).
@@ -69,11 +69,10 @@ pub(super) fn set_span(node: &mut RakuAstNode, field: &'static str, span: SrcSpa
     let Some(origin) = super::unit_source::span_origin_value(span) else {
         return;
     };
-    node.origin
-        .1
-        .0
-        .get_or_insert_with(Default::default)
-        .push((field, origin));
+    let empty = &mut node.origin.1.0;
+    let mut kept = empty.take().map(Vec::from).unwrap_or_default();
+    kept.push((field, origin));
+    *empty = Some(kept.into_boxed_slice());
 }
 
 /// `node` with the empty nodes its absent fields stand for filled in, in
