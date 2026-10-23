@@ -304,7 +304,12 @@ fn constant_twigil_nyi_error(twigil: char) -> PError {
 pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("subset", input).ok_or_else(|| PError::expected("subset declaration"))?;
     let (rest, _) = ws1(rest)?;
+    let name_start = rest;
     let (rest, name) = qualified_ident(rest)?;
+    let mut spans = crate::ast::parsed::TypeDeclSpans {
+        name: crate::parser::primary::source_span(name_start, rest),
+        ..Default::default()
+    };
     // Register the subset as a user-declared type so a later `$x ~~ S` parses `S`
     // as a type term, not the `S///` non-destructive-substitution operator
     // (`~~ S/.../.../` is valid, so the bareword `S` after `~~` is otherwise taken
@@ -323,19 +328,33 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
         if base.is_none()
             && let Some(r) = keyword("of", rest)
         {
+            let of_start = rest;
             let (r, _) = ws1(r)?;
+            let type_start = r;
             let (r, b) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
+            let type_end = &type_start[type_start[..type_start.len() - r.len()].trim_end().len()..];
+            spans.of = crate::ast::parsed::TraitSpans {
+                whole: crate::parser::primary::source_span(of_start, type_end),
+                name: crate::parser::primary::source_span(type_start, type_end),
+            };
             let (r, _) = ws(r)?;
             base = Some(b);
             rest = r;
             continue;
         }
         if let Some(r) = keyword("is", rest) {
+            let is_start = rest;
             let (r, _) = ws1(r)?;
+            let name_start = r;
             let (r, trait_name) = ident(r)?;
             if trait_name == "export" {
                 is_export = true;
                 let (r2, tags) = parse_export_trait_tags(r)?;
+                let end = &is_start[is_start[..is_start.len() - r2.len()].trim_end().len()..];
+                spans.export = crate::ast::parsed::TraitSpans {
+                    whole: crate::parser::primary::source_span(is_start, end),
+                    name: crate::parser::primary::source_span(name_start, r),
+                };
                 if tags.is_empty() {
                     if !export_tags.iter().any(|t| t == "DEFAULT") {
                         export_tags.push("DEFAULT".to_string());
@@ -371,6 +390,7 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
     Ok((
         rest,
         Stmt::SubsetDecl {
+            spans: Some(Box::new(spans)),
             name: Symbol::intern(&name),
             base,
             base_is_explicit,
@@ -436,6 +456,7 @@ pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
         (rest, None)
     };
     let decl = Stmt::SubsetDecl {
+        spans: Default::default(),
         name: Symbol::intern(&name),
         base,
         base_is_explicit,

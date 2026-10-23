@@ -19,3 +19,8 @@ class Seeker is export {
     method ask { Checker.check }
     method ask-with-catch { Checker.check-with-catch }
 }
+
+# This unit imports nothing: a routine the program imported is not in its scope.
+class Prober is export {
+    method ask { probe() }
+}

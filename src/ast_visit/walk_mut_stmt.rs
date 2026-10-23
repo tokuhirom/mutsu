@@ -291,6 +291,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
         Stmt::DocPhaser(inner) => v.visit_stmt_mut(inner),
         Stmt::Label { name: _, stmt } => v.visit_stmt_mut(stmt),
         Stmt::EnumDecl {
+            spans: _,
             name: _,
             variants,
             variant_form: _,
@@ -328,6 +329,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             is_role: _,
         } => v.visit_stmts_mut(body),
         Stmt::SubsetDecl {
+            spans: _,
             name: _,
             base: _,
             base_is_explicit: _,
