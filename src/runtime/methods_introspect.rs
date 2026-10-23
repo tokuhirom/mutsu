@@ -379,6 +379,23 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
             ValueView::Mixin(inner, _) => match inner.as_ref().view() {
                 ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                // `Class.^mixin(R)` is the type object of the mixin class
+                // `Class+{R}`: its metaobject is the one a role's
+                // `specialize` hook mixed into (`obj.HOW does ...`).
+                ValueView::Package(_) => {
+                    // The mixin class of a lexical base (`my class C`) is
+                    // registered under its mangled name (`C\0<id>+{R}`).
+                    let display = crate::value::types::what_type_name(target);
+                    let registry = self.registry();
+                    registry
+                        .class_how_values
+                        .keys()
+                        .find(|key| {
+                            key.contains('+')
+                                && crate::value::user_facing_type_name(key) == display.as_str()
+                        })
+                        .cloned()
+                }
                 _ => None,
             },
             _ => None,
@@ -467,6 +484,16 @@ impl Interpreter {
             // `is_individual_role_type_object` only matches a `Package` or
             // `Instance` target, so `how_cache_key` is always `Some` here.
             if let Some(key) = how_cache_key {
+                // `HOW does R` persists under the HOW's `__mutsu_how_target`;
+                // an anonymous role's display name (`<anon|N>`) is not the key
+                // its `.HOW` is looked up by, so name the cache key.
+                // A named role keeps the group name: its traits mix into the
+                // group's entry (see above).
+                if key.contains("__ANON_ROLE_")
+                    && let ValueView::Instance { attributes, .. } = how.view()
+                {
+                    attributes.insert("__mutsu_how_target", Value::str(key.clone()));
+                }
                 self.registry_mut()
                     .class_how_values
                     .insert(key, how.clone());
