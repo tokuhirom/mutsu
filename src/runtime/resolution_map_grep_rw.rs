@@ -322,6 +322,14 @@ impl Interpreter {
                                 );
                             }
                         } else {
+                            // The topic is the first element; a `$_` parameter among the
+                            // block's own is bound after it and wins.
+                            bind_loop_topic(
+                                vm.env_mut(),
+                                &src.buf[i],
+                                keeps_outer_topic,
+                                &outer_topic,
+                            );
                             for (idx, &p) in plan.param_syms.iter().skip(assumed_count).enumerate()
                             {
                                 if i + idx < src.buf.len() {
@@ -329,12 +337,6 @@ impl Interpreter {
                                         .insert_sym_noting(p, src.buf[i + idx].clone());
                                 }
                             }
-                            bind_loop_topic(
-                                vm.env_mut(),
-                                &src.buf[i],
-                                keeps_outer_topic,
-                                &outer_topic,
-                            );
                         }
                     }
                     let writeback = |list_items: &mut [Value], vm: &Interpreter| {
