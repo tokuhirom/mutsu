@@ -580,8 +580,8 @@ impl Interpreter {
                 // `$*PACKAGE`, bound by `bind_trait_package`) is not published yet, but a sibling `P::U` made the
                 // namespace `P` exist: it is still a class, not an implicit package.
                 && !matches!(
-                    self.env.get("*PACKAGE").map(Value::view),
-                    Some(ValueView::Package(p)) if p.resolve() == type_name
+                    self.get_dynamic_var("*PACKAGE").as_ref().map(Value::view),
+                    Ok(ValueView::Package(p)) if p.resolve() == type_name
                 )
                 && self.package_namespace_exists(&type_name)
             {
