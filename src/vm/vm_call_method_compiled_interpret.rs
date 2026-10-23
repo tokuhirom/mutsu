@@ -553,7 +553,13 @@ impl Interpreter {
                 // (which dispatches with `None` -> `call_compiled_method`).
                 let shares_scalar_container =
                     self.method_shares_container_into_scalar_param(&entry.method_def, &args);
-                if !needs_default_eval && !has_attr_aliases && !shares_scalar_container {
+                let seq_into_array_param =
+                    Self::method_binds_seq_into_array_param(&entry.method_def, &args);
+                if !needs_default_eval
+                    && !has_attr_aliases
+                    && !shares_scalar_container
+                    && !seq_into_array_param
+                {
                     let owner_class = entry.owner_class;
                     let method_def = entry.method_def.clone();
                     let cc = entry.compiled_code.clone();

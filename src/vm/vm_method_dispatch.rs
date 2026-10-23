@@ -406,6 +406,7 @@ impl Interpreter {
                 && !has_complex_params
                 && !needs_default_eval
                 && !has_arg_mismatch
+                && !Self::method_binds_seq_into_array_param(method_def, &args)
                 // The fast path reads attributes off `self`'s own cell; a
                 // `Proxy` subclass's live in the cell passed separately.
                 && !matches!(base.view(), ValueView::Proxy { .. })
