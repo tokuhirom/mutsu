@@ -914,6 +914,7 @@ impl Interpreter {
                     // Constant-pool name: hand over the chunk's memoized
                     // `Symbol` instead of re-interning it on every array read.
                     .or_else(|| self.get_env_with_main_alias_sym(name, code.const_sym(*name_idx)))
+                    .or_else(|| self.global_package_dynamic_fallback(name))
                     // A qualified package array created in another frame
                     // outlives that frame in our_vars, like scalar GetGlobal.
                     .or_else(|| {
@@ -1112,6 +1113,7 @@ impl Interpreter {
                     // Constant-pool name: hand over the chunk's memoized
                     // `Symbol` instead of re-interning it on every hash read.
                     .or_else(|| self.get_env_with_main_alias_sym(name, name_sym))
+                    .or_else(|| self.global_package_dynamic_fallback(name))
                     .or_else(|| self.get_local_by_bare_name(code, name))
                     .or_else(|| {
                         name.strip_prefix('%')

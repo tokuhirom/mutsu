@@ -22,5 +22,7 @@
 
 LibraryMake #12829 -- get-vars dispatches on $*VM.name (moar/jvm) and dies on anything else; mutsu reports 'mutsu' and will not report 'moar' (same principle as ADR-0104; user decision 2026-09-25, see uniprop).
 MoarVM::Bytecode #13511 -- its suite parses CORE.c.setting.moarvm found under $*EXECUTABLE.parent(3) (the running compiler's install tree); mutsu is not a MoarVM and ships no .moarvm files, so it can only pass by pointing at a rakudo install.
+MoarVM::Profile -- the MoarVM:: namespace is out of scope (user decision 2026-10-23): it reads MoarVM's own profiler output; mutsu is not a MoarVM.
+MoarVM::Remote -- the MoarVM:: namespace is out of scope (user decision 2026-10-23): it drives MoarVM's remote debug protocol (its suite spawns `nqp`/moar); mutsu is not a MoarVM.
 Rakudo::Version #8945 -- its own BEGIN checks $*RAKU.compiler.name eq 'rakudo'; ADR-0104 already rejected outright ever spoofing .name, so this can only pass by superseding that decision.
 uniprop -- dispatches on $*VM.name (moar/jvm/js) and dies on anything else; mutsu reports 'mutsu' and, by the same principle as ADR-0104 (never claim to be another implementation), will not report 'moar' (user decision 2026-09-25). Its moar branch also needs nqp::getuniprop_* / nqp::unipropcode.

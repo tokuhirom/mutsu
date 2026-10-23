@@ -167,6 +167,14 @@ a one-line reason citing the issue/ADR, alongside filing the finding as a
 `tokuhirom/mutsu` issue per `ecosystem-dist-fix`. Without that entry, the queue
 re-offers it and the next agent re-investigates the same dead end from scratch.
 
+**The `MoarVM::` namespace is out of scope** (user decision 2026-10-23). Those
+distributions inspect or drive MoarVM itself (its bytecode files, its profiler
+output, its remote debug protocol), and mutsu is not a MoarVM. Every `MoarVM::`
+distribution gets an `exclude.txt` entry citing this decision, including one that
+appears in the index later, and its issues are closed as not planned. This is
+not a reason to exclude a distribution that merely *uses* `nqp::` ops or checks
+`$*VM`: those are judged one by one, as `LibraryMake` and `uniprop` were.
+
 **When it is one test file, not the distribution** — rakudo passes it only
 because of an implementation artefact the project decided not to copy (the
 worked example is DSL::Shared's `t/Array-of-regexes-matches.rakutest` and
