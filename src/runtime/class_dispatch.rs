@@ -741,7 +741,25 @@ impl Interpreter {
                 let attr_key = attr_var_name
                     .trim_start_matches('.')
                     .trim_start_matches('!');
-                attributes.get(attr_key).cloned().unwrap_or(Value::NIL)
+                // The attributes the dispatch handed over are empty for a `but`
+                // mixin's inner instance: read the delegate attribute off the
+                // invocant itself then.
+                attributes
+                    .get(attr_key)
+                    .cloned()
+                    .or_else(|| {
+                        let inner = invocant.as_ref().map(|inv| match inv.view() {
+                            ValueView::Mixin(inner, _) => inner.as_ref().clone(),
+                            _ => inv.clone(),
+                        })?;
+                        match inner.view() {
+                            ValueView::Instance { attributes, .. } => {
+                                attributes.as_map().get(attr_key).cloned()
+                            }
+                            _ => None,
+                        }
+                    })
+                    .unwrap_or(Value::NIL)
             };
             let is_method_based = attr_var_name.starts_with('&');
             let attr_key = attr_var_name

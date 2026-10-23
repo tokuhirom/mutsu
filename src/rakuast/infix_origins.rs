@@ -22,6 +22,11 @@ pub(super) fn derive(node: &mut RakuAstNode) {
         RakuAstClass::ApplyInfix => apply_infix(node),
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => call_name(node),
         RakuAstClass::VarDeclarationSimple => initializer(node),
+        RakuAstClass::ApplyListInfix => super::list_origins::apply_list_infix(node),
+        RakuAstClass::CircumfixParentheses | RakuAstClass::CircumfixArrayComposer => {
+            super::list_origins::circumfix(node)
+        }
+        RakuAstClass::ApplyPostfix => super::list_origins::postcircumfix(node),
         _ => {}
     }
 }
@@ -43,7 +48,7 @@ pub(super) fn byte_range(node: &RakuAstNode) -> Option<(usize, usize)> {
 
 /// The node held in `node`'s field `name`.
 // Cost: O(f), f = fields of `node`.
-fn child<'a>(node: &'a RakuAstNode, name: &str) -> Option<&'a RakuAstNode> {
+pub(super) fn child<'a>(node: &'a RakuAstNode, name: &str) -> Option<&'a RakuAstNode> {
     node.fields.iter().find_map(|f| match &f.value {
         RakuAstFieldValue::Node(v) if f.name == Some(name) => match v.view() {
             ValueView::RakuAst(held) => Some(held),
@@ -55,7 +60,7 @@ fn child<'a>(node: &'a RakuAstNode, name: &str) -> Option<&'a RakuAstNode> {
 
 /// Apply `f` to the node held in `node`'s field `name`, if it holds one.
 // Cost: O(f), f = fields of `node`, plus `f`.
-fn with_child(node: &mut RakuAstNode, name: &str, f: impl FnOnce(&mut RakuAstNode)) {
+pub(super) fn with_child(node: &mut RakuAstNode, name: &str, f: impl FnOnce(&mut RakuAstNode)) {
     let Some(field) = node
         .fields
         .iter_mut()
@@ -77,7 +82,7 @@ fn with_child(node: &mut RakuAstNode, name: &str, f: impl FnOnce(&mut RakuAstNod
 /// The text of the first leaf field of `node` (an `Infix`'s operator, a
 /// `Name`'s identifier).
 // Cost: O(f), f = fields of `node`.
-fn leaf_text(node: &RakuAstNode) -> Option<String> {
+pub(super) fn leaf_text(node: &RakuAstNode) -> Option<String> {
     node.fields.iter().find_map(|f| match &f.value {
         RakuAstFieldValue::Node(v) => match v.view() {
             ValueView::Str(s) => Some(s.to_string()),
@@ -116,7 +121,7 @@ fn written(infix: &RakuAstNode) -> Option<(String, Option<(usize, usize)>)> {
 
 /// The node in `node`'s `index`-th field.
 // Cost: O(1).
-fn child_at(node: &RakuAstNode, index: usize) -> Option<&RakuAstNode> {
+pub(super) fn child_at(node: &RakuAstNode, index: usize) -> Option<&RakuAstNode> {
     match &node.fields.get(index)?.value {
         RakuAstFieldValue::Node(v) => match v.view() {
             ValueView::RakuAst(held) => Some(held),
@@ -228,7 +233,11 @@ fn leading_variable(node: &mut RakuAstNode) {
 
 /// Apply `f` to the node in `node`'s `index`-th field.
 // Cost: O(1) plus `f`.
-fn with_child_at(node: &mut RakuAstNode, index: usize, f: impl FnOnce(&mut RakuAstNode)) {
+pub(super) fn with_child_at(
+    node: &mut RakuAstNode,
+    index: usize,
+    f: impl FnOnce(&mut RakuAstNode),
+) {
     let Some(field) = node.fields.get_mut(index) else {
         return;
     };

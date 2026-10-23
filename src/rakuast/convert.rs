@@ -7617,7 +7617,7 @@ fn comma_list_node(items: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     for it in items {
         operands.push(Value::rakuast(Box::new(convert_expr(it)?)));
     }
-    Ok(RakuAstNode {
+    let mut node = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ApplyListInfix,
         fields: vec![
@@ -7627,7 +7627,9 @@ fn comma_list_node(items: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
                 value: RakuAstFieldValue::List(operands),
             },
         ],
-    })
+    };
+    super::infix_origins::derive(&mut node);
+    Ok(node)
 }
 
 pub(super) fn arg_list(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
