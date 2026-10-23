@@ -14,6 +14,12 @@ pub(super) fn is_block_ending_stmt(stmt: &Stmt, consumed: &str) -> bool {
         // modifiers. So `when 1 { } when 2 { }` on one line (no `;`) is a
         // "Strange text after block" error in Raku, matching `given $x { ... }`.
         Stmt::When { .. } | Stmt::Default(_) => true,
+        // The same, kept in its RakuAST shape by a `.AST` parse.
+        Stmt::Ast(node) => matches!(
+            node.as_ref(),
+            crate::ast::parsed::ParsedStmt::When { .. }
+                | crate::ast::parsed::ParsedStmt::Default(_)
+        ),
         // A direct method declaration ends with its body. Lexical and
         // package-qualified methods are excluded because `my_decl` parses their
         // trailing statement modifier before returning them here. The `is_my`
