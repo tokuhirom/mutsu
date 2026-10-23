@@ -245,6 +245,7 @@ impl Interpreter {
         let mut explicit_return: Option<Value> = None;
         let mut fail_bypass = false;
         let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let frame_caller_code = self.current_code;
         while ip < cf.code.ops.len() {
             // JIT entry (ADR-0004 J2): same hook as vm_call_light.rs — at body
             // start, run the whole body natively when the chunk is hot and
@@ -292,6 +293,7 @@ impl Interpreter {
                 break;
             }
         }
+        self.current_code = frame_caller_code;
 
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {

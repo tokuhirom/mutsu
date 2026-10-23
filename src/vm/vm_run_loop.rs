@@ -185,9 +185,13 @@ impl Interpreter {
         let entry_caller_env_depth = self.caller_env_stack_depth();
         let entry_let_saves_mark = self.let_saves_len();
         let entry_test_assertion_depth = self.test_assertion_line_stack_depth();
+        // Every frame run restores its caller's chunk address, whatever path it
+        // leaves by (the frame's own chunk may be dropped on return).
+        let caller_code = self.current_code;
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.run_inner(code, compiled_fns)
         }));
+        self.current_code = caller_code;
         IN_VM_PANIC_BOUNDARY.with(|f| f.set(prev));
         match caught {
             Ok(r) => r,

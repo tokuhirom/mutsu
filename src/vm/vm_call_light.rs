@@ -981,6 +981,7 @@ impl Interpreter {
             let mut explicit_from_method = false;
             let mut fail_bypass = false;
             let polls = crate::vm::vm_poll::DispatchPolls::current();
+            let frame_caller_code = self.current_code;
             while ip < cf.code.ops.len() {
                 // JIT entry (ADR-0004 J1): at body start, run the whole body
                 // natively when the chunk is hot and Tier A-compilable. The
@@ -1060,6 +1061,7 @@ impl Interpreter {
                     break;
                 }
             }
+            self.current_code = frame_caller_code;
             (result, explicit_return, fail_bypass, explicit_from_method)
         }));
         let (result, explicit_return, fail_bypass, explicit_from_method) = match body_outcome {
