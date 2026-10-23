@@ -96,6 +96,29 @@ impl Interpreter {
     // Cost: O(d + m + s), d = the class's MRO length, m = chars of the message,
     // s = routine-stack depth (the backtrace of a built-in exception thrown
     // without one).
+    /// `$exception.throw($backtrace)`: throw it carrying the given backtrace,
+    /// not the throw site's (a mapped driver exception keeps the original one).
+    // Cost: O(1) plus [`Self::exception_control`].
+    pub(crate) fn exception_throw_with_backtrace(
+        &mut self,
+        target: &Value,
+        backtrace: &Value,
+    ) -> Result<Value, RuntimeError> {
+        let target = match target.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                id,
+            } if target.instance_is_exception_by_name() && !backtrace.is_nil() => {
+                let mut attrs = attributes.as_map().clone();
+                attrs.insert("backtrace".to_string(), backtrace.clone());
+                Value::write_back_sharing(&attributes, class_name, attrs, id)
+            }
+            _ => target.clone(),
+        };
+        self.exception_control(&target, "throw")
+    }
+
     pub(crate) fn exception_control(
         &mut self,
         target: &Value,
