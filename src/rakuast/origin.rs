@@ -213,3 +213,47 @@ pub(super) fn unit_list_span(stmts: &[Stmt], source: &str) -> crate::ast::SrcSpa
         .map_or(0, |tail| tail.iter().take_while(|&&b| b == b';').count());
     crate::ast::SrcSpan::new(first.from as usize, end + skipped)
 }
+
+/// Give the one `StrLiteral` of a quoted string written at `span` (`"abc"`,
+/// `Q{...}`) the range inside the quote's delimiters, as in Rakudo: from after
+/// the opening delimiter (past a `q` / `qq` / `Q` and its adverbs) to the
+/// closing one. A quote with processors (word quotes) or more than one
+/// segment is left alone.
+// Cost: O(n), n = length of the quote's source.
+pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
+    if node.class != super::RakuAstClass::QuotedString
+        || node.fields.iter().any(|f| f.name == Some("processors"))
+    {
+        return;
+    }
+    let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("segments")) else {
+        return;
+    };
+    let RakuAstFieldValue::List(items) = &mut field.value else {
+        return;
+    };
+    let [only] = items.as_mut_slice() else {
+        return;
+    };
+    let ValueView::RakuAst(text) = only.view() else {
+        return;
+    };
+    if text.class != super::RakuAstClass::StrLiteral || text.origin.0.is_some() {
+        return;
+    }
+    let inside = super::unit_source::with_text(span, |written| {
+        let (open, delimiter) = written
+            .char_indices()
+            .find(|(_, c)| !(c.is_alphanumeric() || matches!(c, ':' | '_')))?;
+        let start = open + delimiter.len_utf8();
+        let (close, _) = written.char_indices().last()?;
+        (close >= start).then(|| {
+            crate::ast::SrcSpan::new(span.from as usize + start, span.from as usize + close)
+        })
+    });
+    if let Some(inside) = inside {
+        let mut text = RakuAstNode::clone(text);
+        set_span(&mut text, inside);
+        *only = Value::rakuast(Box::new(text));
+    }
+}
