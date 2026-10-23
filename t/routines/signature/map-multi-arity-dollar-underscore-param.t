@@ -5,9 +5,9 @@ plan 6;
 
 # In a multi-parameter pointy block, `$_` named as one of the parameters is that
 # parameter, not the first element map/grep would otherwise topicalize.
-is (1, [3]).kv.map(-> $n, $_ { "$n:" ~ .raku }).join(' '), '0:1 1:[3]',
+is (1, [3]).kv.map(-> $n, $_ { "$n:" ~ .join("+") }).join(' '), '0:1 1:3',
     'map: the second parameter $_ keeps its own value';
-is (1, [3]).map(-> $n, $_ { "$n:" ~ .raku }).join(' '), '1:[3]',
+is (1, [3]).map(-> $n, $_ { "$n:" ~ .join("+") }).join(' '), '1:3',
     'map over a plain list';
 is (1, [3]).kv.map(-> $n, $_ { when Positional { "p$n" }; default { "d$n" } }).join(' '), 'd0 p1',
     'when smartmatches the $_ parameter';
