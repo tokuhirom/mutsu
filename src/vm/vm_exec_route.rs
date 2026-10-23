@@ -79,7 +79,6 @@ impl Interpreter {
             | OpCode::Sub => self.exec_ops_group_03(code, ip, compiled_fns),
             OpCode::ApproxEq
             | OpCode::AttrContainerRef(..)
-            | OpCode::PublicRwAttrContainerRef(..)
             | OpCode::BoolCoerce
             | OpCode::CaptureRwArgCell
             | OpCode::CaptureVarCell
@@ -113,6 +112,7 @@ impl Interpreter {
             | OpCode::NumLt
             | OpCode::NumNe
             | OpCode::NumNeNative(..)
+            | OpCode::PublicRwAttrContainerRef(..)
             | OpCode::ResolveAttrRwCandidate(..)
             | OpCode::StashVarDeclInit
             | OpCode::WrapScalar
