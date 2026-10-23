@@ -234,6 +234,20 @@ impl Interpreter {
         {
             return false;
         }
+        // An `@`/`%` parameter carries an implicit `Positional`/`Associative`
+        // check, as real binding does (`\(:to(Mu)) ~~ :(:@to!)` is False).
+        if !param.slurpy {
+            let implicit = match param.sigil {
+                '@' => Some("Positional"),
+                '%' => Some("Associative"),
+                _ => None,
+            };
+            if let Some(role) = implicit
+                && !self.type_matches_value(role, candidate)
+            {
+                return false;
+            }
+        }
         if let Some(where_expr) = &param.where_constraint
             && !self.signature_where_ok(candidate, where_expr)
         {
