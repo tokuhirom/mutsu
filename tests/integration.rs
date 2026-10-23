@@ -24,6 +24,7 @@ mod closure_call_intern_budget;
 mod crash_report;
 mod dispatch_poll_placement;
 mod dynamic_method_intern_budget;
+mod eval_in_unrelated_routine_no_env_copy;
 mod flaky_retry;
 mod gc_parallel_interpreters;
 mod gc_stress;

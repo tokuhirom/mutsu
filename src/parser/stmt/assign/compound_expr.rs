@@ -529,6 +529,60 @@ pub(crate) fn build_compound_assign_expr(
                 with_kind: None,
             }))
         }
+        // `(A || B) op= rhs`, `(A && B) op= rhs`, `(A // B) op= rhs`: the operator
+        // yields the selected operand's container (`callsame() || %!h{$k} //= v`
+        // parses as `(callsame() || %!h{$k}) //= v`), so the compound assignment
+        // writes to whichever operand it picked. `A` is evaluated once for the
+        // decision, as the plain `=` form does; `op= rhs` then runs on the
+        // selected side only.
+        Expr::Binary {
+            left,
+            op: logical @ (TokenKind::OrOr | TokenKind::AndAnd | TokenKind::SlashSlash),
+            right,
+            ..
+        } => {
+            static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let tmp = format!(
+                "__mutsu_logical_compound_{}",
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            );
+            let tmp_var = Expr::Var(tmp.clone());
+            let left_assign = build_compound_assign_expr((*left).clone(), op, rhs.clone())?;
+            let right_assign = build_compound_assign_expr(*right, op, rhs)?;
+            let (cond, then_expr, else_expr) = match logical {
+                TokenKind::SlashSlash => (
+                    Expr::Call {
+                        name: Symbol::intern("defined"),
+                        args: vec![tmp_var],
+                        listop: false,
+                    },
+                    left_assign,
+                    right_assign,
+                ),
+                TokenKind::OrOr => (tmp_var, left_assign, right_assign),
+                _ => (tmp_var, right_assign, left_assign),
+            };
+            Expr::desugar_block(vec![
+                Stmt::VarDecl {
+                    anonymous: false,
+                    name: tmp,
+                    expr: *left,
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                },
+                Stmt::Expr(Expr::Ternary {
+                    cond: Box::new(cond),
+                    then_expr: Box::new(then_expr),
+                    else_expr: Box::new(else_expr),
+                }),
+            ])
+        }
         // `(cond ?? A !! B) op= rhs`: the ternary is an lvalue selecting one
         // branch, so the compound assignment writes through to whichever branch
         // is taken. Desugar to `cond ?? (A op= rhs) !! (B op= rhs)` so only the

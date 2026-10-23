@@ -566,7 +566,26 @@ impl Interpreter {
                         self.run_callback_first_phasers(&func, &elem)?;
                     }
                     let mut pending_slip: Option<Value> = None;
-                    let applied: Result<Vec<Value>, RuntimeError> = if is_grep {
+                    // A callback that is `$_ OP constant` over an Int is
+                    // computed by the built-in operator itself: no closure
+                    // call, which cost ~14k instructions per element
+                    // (#14370). The operator is the one the opcode would run
+                    // as long as no user `infix:` is declared.
+                    let native = if self.dispatch.user_declared_infix_ops.is_empty() {
+                        super::vm_map_grep_pure::pure_int_topic_op(Some(&func))
+                            .and_then(|op| op.apply(&elem))
+                    } else {
+                        None
+                    };
+                    let applied: Result<Vec<Value>, RuntimeError> = if let Some(value) = native {
+                        if !is_grep {
+                            Ok(vec![value])
+                        } else if matches!(value.view(), ValueView::Bool(true)) {
+                            Ok(vec![elem])
+                        } else {
+                            Ok(Vec::new())
+                        }
+                    } else if is_grep {
                         match self.vm_grep_item_matches(&func, &elem) {
                             Ok(true) => Ok(vec![elem]),
                             Ok(false) => Ok(Vec::new()),

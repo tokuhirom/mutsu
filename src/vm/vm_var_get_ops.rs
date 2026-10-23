@@ -1,6 +1,17 @@
 use super::*;
 use crate::meta_ns::MetaNs;
 
+/// The `Package(Any)` a declaration seeds into `env` before its binding is
+/// made. A package-qualified term key (`\Graph::Indexed`) is only ever declared
+/// by a block-scoped `use` whose `sub EXPORT` hook returns that key; the hook
+/// value goes to the importing block's lexical set (ADR-8751), so the seed is
+/// all `env` holds, and a routine of another compunit that inherits the
+/// caller's frame must not read it as the term's value.
+// Cost: O(1).
+fn is_decl_seed(v: &Value) -> bool {
+    matches!(v.view(), ValueView::Package(p) if p == crate::symbol::wk::any())
+}
+
 impl Interpreter {
     /// The name of the type object a bareword that `has_type`/`is_builtin_type`
     /// already accepted must resolve to.
@@ -558,6 +569,7 @@ impl Interpreter {
         } else if let Some(v) = self
             .env()
             .overlay_get_sym(crate::runtime::term_names::term_key_sym(name_sym))
+            .filter(|v| !(name_is_qualified && is_decl_seed(v)))
             .cloned()
         {
             // A term declared in this routine's live frame shadows the

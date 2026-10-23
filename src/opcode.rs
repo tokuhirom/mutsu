@@ -27,11 +27,28 @@ use crate::value::{Value, ValueView};
 /// write -- an over-set is conservative, never wrong.
 static REFLECTIVE_NAME_ACCESS_SEEN: AtomicBool = AtomicBool::new(false);
 
+/// The part of [`REFLECTIVE_NAME_ACCESS_SEEN`] that is not an `EVAL`: set by
+/// the ops that can read *another* frame's lexical (`CALLER::`, symbolic
+/// dereference, pseudo-stashes, ...). An `EVAL` resolves names in the scope it
+/// is written in (and its enclosing scopes), so a routine's parameters need the
+/// env write only when this latch is set or the routine's own chunk (or one
+/// nested in it) holds the `EVAL` (#14337). Stores of plain locals keep using
+/// the broader latch: an `EVAL` nested in a closure or routine reads the
+/// enclosing chunks' locals, which no per-chunk flag of theirs records.
+static NON_EVAL_REFLECTIVE_SEEN: AtomicBool = AtomicBool::new(false);
+
 /// True if any compiled code may read a caller frame's lexical by dynamic name.
 /// See [`REFLECTIVE_NAME_ACCESS_SEEN`].
 #[inline]
 pub(crate) fn reflective_name_access_possible() -> bool {
     REFLECTIVE_NAME_ACCESS_SEEN.load(Ordering::Relaxed)
+}
+
+/// True if any compiled code may read another frame's lexical by name (the
+/// non-`EVAL` part of [`reflective_name_access_possible`]).
+#[inline]
+pub(crate) fn non_eval_reflective_possible() -> bool {
+    NON_EVAL_REFLECTIVE_SEEN.load(Ordering::Relaxed)
 }
 
 /// Process-global latch: set once any compiled chunk anywhere in the program
@@ -71,9 +88,16 @@ pub(crate) fn sorted_by_name(set: impl IntoIterator<Item = Symbol>) -> Vec<Symbo
 /// Set both compile-time latches as a compile that set them would have: what a
 /// load served from the compiled-bytecode cache replays (ADR-11756 §2.2).
 // Cost: O(1).
-pub(crate) fn replay_compile_latches(reflective: bool, dispatcher: bool) {
+pub(crate) fn replay_compile_latches(
+    reflective: bool,
+    non_eval_reflective: bool,
+    dispatcher: bool,
+) {
     if reflective {
         REFLECTIVE_NAME_ACCESS_SEEN.store(true, Ordering::Relaxed);
+    }
+    if non_eval_reflective {
+        NON_EVAL_REFLECTIVE_SEEN.store(true, Ordering::Relaxed);
     }
     if dispatcher {
         DISPATCHER_SEEN.store(true, Ordering::Relaxed);
@@ -442,6 +466,11 @@ pub(crate) struct ForLoopSpec {
     /// cannot tell the two apart -- the AST stores `\v` as plain `"v"` -- so
     /// the compiler records the distinction here.
     pub(crate) param_sigilless: bool,
+    /// The body provably cannot tell the implicit topic bound to an element's
+    /// own container from a copy of its value (`compiler::for_topic_alias`), so
+    /// a `for @a` over a real array skips promoting every element to a
+    /// `ContainerRef` cell (#14495).
+    pub(crate) topic_alias_unobservable: bool,
 }
 
 impl ForLoopSpec {
@@ -9808,9 +9837,25 @@ impl CompiledCode {
         )
     }
 
+    /// Whether this routine's parameters must all be mirrored into `env` by
+    /// name: a reflective op that can reach another frame's lexical exists
+    /// somewhere, or this chunk (or a closure nested in it) looks one up by a
+    /// runtime string (`EVAL`, ...). An `EVAL` in an unrelated routine -- as in
+    /// every program that loads `JSON::Fast` -- does not make this routine's
+    /// parameters pay the env write (#14337).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn mirrors_all_params(&self) -> bool {
+        NON_EVAL_REFLECTIVE_SEEN.load(Ordering::Relaxed) || self.needs_reflective_capture
+    }
+
     pub(crate) fn scan_reflective_name_access(&mut self) {
         let mut own_reflective = false;
+        // Whether a reflective op other than `EVAL` was seen: only those latch
+        // the process-global flag (see `eval_reads_own_scope_only`).
+        let mut latch_reflective = false;
         for (i, op) in self.ops.iter().enumerate() {
+            let mut is_eval = false;
             let reflective = match op {
                 // `::($name)` / `::('$x')` names a lexical by string unless
                 // its operand is a constant type name (`::('Int')`,
@@ -9848,38 +9893,47 @@ impl CompiledCode {
                 // caller's local slots -- read the stale placeholder instead
                 // of the live value.
                 OpCode::CallFunc { name_idx, .. } | OpCode::CallFuncNamed { name_idx, .. } => {
-                    matches!(
+                    is_eval = matches!(
                         self.constants.get(*name_idx as usize).map(Value::view),
                         Some(ValueView::Str(name))
                             if matches!(name.as_str(), "EVAL" | "EVALFILE" | "repl")
-                    )
+                    );
+                    is_eval
                 }
                 // The method form `$code.EVAL` resolves the caller's lexicals
                 // the same way; missing it left a top-level `my $x` unmirrored,
                 // so `Q{ $x }.EVAL` read `Any` unless some other chunk (a `use`d
                 // module's own `EVAL`) had latched the global flag (#11399).
                 OpCode::CallMethod { name_idx, .. } | OpCode::CallMethodMut { name_idx, .. } => {
-                    matches!(
+                    is_eval = matches!(
                         self.constants.get(*name_idx as usize).map(Value::view),
                         Some(ValueView::Str(name)) if name.as_str() == "EVAL"
-                    )
+                    );
+                    is_eval
                 }
                 _ => false,
             };
             if reflective {
                 own_reflective = true;
-                break;
+                if !is_eval {
+                    latch_reflective = true;
+                    break;
+                }
             }
         }
         // Code embedded in a regex or a substitution replacement that looks a
         // name up indirectly (`/ <?{ EVAL '$x' }> /`, `s/x/{ ::($n) }/`) is
         // the same reflective access, only compiled from the regex text at
         // match time instead of into this chunk's ops (#9293).
-        if !own_reflective && self.holds_indirect_regex_lookup() {
+        if !latch_reflective && self.holds_indirect_regex_lookup() {
             own_reflective = true;
+            latch_reflective = true;
         }
         if own_reflective {
             REFLECTIVE_NAME_ACCESS_SEEN.store(true, Ordering::Relaxed);
+        }
+        if latch_reflective {
+            NON_EVAL_REFLECTIVE_SEEN.store(true, Ordering::Relaxed);
         }
         // The spellings that name a lexical by string, as opposed to running
         // a stashed body against the live env (see `static_name_lookup`).

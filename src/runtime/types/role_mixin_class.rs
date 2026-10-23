@@ -264,11 +264,15 @@ impl Interpreter {
         // `Attribute` dispatch shape covers `Attribute+{R}`, see
         // `value::attribute_class`), and only rebless makes a role a trait
         // handler mixes in visible to the handler that called it (#13263).
+        // `ObjAt` / `ValueObjAt` (what `.WHICH` answers) are the same: a value
+        // class caches its identity object, and `$which does R` has to be seen
+        // by every holder of it (ValueClass's `$!WHICH`).
         // Another built-in type with no registry entry keeps the wrapper path.
         if !self.registry().classes.contains_key(base.as_str())
             && !crate::runtime::registration_class_decl::BUILTIN_PARENT_TYPES
                 .contains(&base.as_str())
             && base != "Attribute"
+            && !matches!(base.as_str(), "ObjAt" | "ValueObjAt")
         {
             return Ok(None);
         }

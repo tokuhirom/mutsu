@@ -575,6 +575,15 @@ impl Compiler {
                 decl_line = Some(*line);
                 continue;
             }
+            // The walk is in source order, so a `use fatal` in a role body
+            // covers the methods declared after it (#11452).
+            if self.in_role_body
+                && let Stmt::Use { module, .. } = stmt
+                && module == "fatal"
+            {
+                self.fatal_pragma_active = true;
+                continue;
+            }
             let Stmt::MethodDecl {
                 name,
                 name_expr,
@@ -853,6 +862,9 @@ impl Compiler {
             (!role_param_scope.is_empty()).then_some(role_param_scope),
         );
         let saved_in_role_body = std::mem::replace(&mut self.in_role_body, true);
+        // An enclosing `use fatal` does not reach a role body (rakudo; #11452):
+        // only a `use fatal` written inside the body does, from where it stands.
+        let saved_fatal_pragma_active = std::mem::replace(&mut self.fatal_pragma_active, false);
         let saved_role_type_params = std::mem::replace(
             &mut self.role_type_param_names,
             type_param_defs.iter().map(|p| p.name.clone()).collect(),
@@ -895,6 +907,7 @@ impl Compiler {
                 self.declared_type_name(&name.resolve(), self.decl_name_is_prequalified())
             }),
         );
+        self.fatal_pragma_active = saved_fatal_pragma_active;
         let method_outer_lexical_slots = self.local_slots_by_name();
         self.code.add_role_decl_plan(
             stmt,

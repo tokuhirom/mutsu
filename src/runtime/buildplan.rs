@@ -281,7 +281,7 @@ impl Interpreter {
         let Some(how) = self.registry().class_how_values.get(class).cloned() else {
             return Ok(());
         };
-        if !matches!(how.view(), ValueView::Mixin(..)) {
+        if !Self::is_how_with_role_mixed_in(&how) {
             return Ok(());
         }
         let type_obj = Value::package(Symbol::intern(class));

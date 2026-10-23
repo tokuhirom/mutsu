@@ -416,6 +416,11 @@ pub(crate) struct Registry {
     /// separately from `mro`: the C3 order is available while registration is
     /// still in progress, before Rakudo's compose protocol has completed.
     pub(crate) composed_classes: std::collections::HashSet<String>,
+    /// Bare names a `Metamodel::*HOW.new_type` already minted a type under. A
+    /// later `new_type` with the same `:name` is a different type (rakudo), so
+    /// it gets its own storage key (`Name\0nt<n>`, the lexical-site-key form of
+    /// ADR-0047) while keeping the name for display.
+    pub(crate) minted_type_names: std::collections::HashSet<String>,
     /// `(class, method)` pairs a `^add_multi_method` added to a class that is not
     /// composed yet. Rakudo keeps those candidates in `multi_methods_to_incorporate`
     /// until `compose`, so `^can` does not see them before then.

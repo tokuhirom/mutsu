@@ -267,6 +267,19 @@ impl Interpreter {
         Ok(())
     }
 
+    /// One argument of a sigiled slurpy (`*@a`, `+@a`) as the Array stores it:
+    /// read through its container, and a `Proxy` (the result of an `is rw`
+    /// method call) is fetched, so a `where` clause on the slurpy and the body
+    /// see the value and not the Proxy.
+    // Cost: O(1) plus the FETCH of a Proxy.
+    fn slurpy_item(&mut self, value: Value) -> Value {
+        let value = value.into_deref();
+        if value.is_proxy_value() {
+            return self.auto_fetch_proxy(&value).unwrap_or(value);
+        }
+        value
+    }
+
     /// Evaluate a positional parameter's `where` post-constraint against the
     /// value the parameter is about to bind.
     ///
@@ -1827,7 +1840,7 @@ impl Interpreter {
                     // the caller's element container: reading through any
                     // `ContainerRef` cell here is what keeps `-> +@l { @l }(@x)[0]
                     // =:= @x[0]` False (rakudo).
-                    Value::real_array(items.into_iter().map(Value::into_deref).collect())
+                    Value::real_array(items.into_iter().map(|v| self.slurpy_item(v)).collect())
                 };
                 if pd.sigilless {
                     // Sigilless single-argument rule slurpy (`+foo`): bind a
@@ -2359,7 +2372,7 @@ impl Interpreter {
                             true,
                         )
                     } else {
-                        Value::real_array(items.into_iter().map(Value::into_deref).collect())
+                        Value::real_array(items.into_iter().map(|v| self.slurpy_item(v)).collect())
                     };
                     if !pd.name.is_empty() {
                         let key = if pd.name.starts_with('@') {
@@ -2534,6 +2547,22 @@ impl Interpreter {
                                 None,
                                 skip_constraint_recheck,
                             )?;
+                            // An untyped `:@x` is implicitly `Positional`, as its
+                            // positional counterpart is: `f(:x(Mu))` and `f(:x(5))`
+                            // fail to bind instead of leaving `@x` a scalar.
+                            if pd.type_constraint.is_none()
+                                && pd.name.starts_with('@')
+                                && !pd.slurpy
+                                && !self.type_matches_value("Positional", &bound_value)
+                            {
+                                return Err(self
+                                    .typecheck_binding_parameter_failure(
+                                        &param_display_name(pd),
+                                        "Positional",
+                                        &bound_value,
+                                    )
+                                    .with_parameter_object(pd, Some(&*self)));
+                            }
                             // An untyped routine `:$x` is implicitly `Any`, as
                             // its positional counterpart is (#10878).
                             if crate::opcode::FastParamCheck::implicitly_any(pd)
@@ -2608,6 +2637,23 @@ impl Interpreter {
                             if let Some(entries) = entries {
                                 bound_value = Value::hash_bare_values(entries);
                             }
+                        }
+                        // An untyped `:%x` is implicitly `Associative`; checked
+                        // once a lone Pair has been collected into a Hash above.
+                        if enforce_named_constraints
+                            && pd.type_constraint.is_none()
+                            && pd.name.starts_with('%')
+                            && !pd.slurpy
+                            && !pd.double_slurpy
+                            && !self.type_matches_value("Associative", &bound_value)
+                        {
+                            return Err(self
+                                .typecheck_binding_parameter_failure(
+                                    &param_display_name(pd),
+                                    "Associative",
+                                    &bound_value,
+                                )
+                                .with_parameter_object(pd, Some(&*self)));
                         }
                         // Named `is copy` container param: own a distinct
                         // container, exactly like the positional arm — and give

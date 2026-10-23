@@ -472,7 +472,13 @@ impl Interpreter {
                                     continue;
                                 }
                             }
-                            items.push(arg);
+                            // An `is rw` call's Proxy is fetched when it binds
+                            // a slurpy, so the `where` clause sees its value.
+                            items.push(if arg.is_proxy_value() {
+                                self.auto_fetch_proxy(&arg).unwrap_or(arg)
+                            } else {
+                                arg
+                            });
                         }
                         Some(Value::real_array(items))
                     }

@@ -529,6 +529,9 @@ impl Compiler {
                 body_declares_routines: Self::stmts_declare_routines(&loop_body),
                 source_items_are_bare: self.receiver_provably_yields_bare_items(iterable),
                 param_sigilless: param_def.as_ref().is_some_and(|d| d.sigilless),
+                topic_alias_unobservable: super::for_topic_alias::topic_alias_unobservable(
+                    &loop_body,
+                ),
             })));
         // Register sigilless for-params (`-> \v`, `-> \k, \v`) as sigilless
         // locals while compiling the body so postfix/prefix `++`/`--` on the

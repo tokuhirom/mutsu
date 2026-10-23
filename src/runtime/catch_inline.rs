@@ -120,7 +120,7 @@ impl Interpreter {
                             .rev()
                             .find_map(|f| f.def_file);
                     }
-                    self.routine_stack.push(frame);
+                    self.routine_stack.push_copy(frame);
                 }
                 (self.types.method_class_stack.len() > method_depth)
                     .then(|| self.types.method_class_stack.split_off(method_depth))

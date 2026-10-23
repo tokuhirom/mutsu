@@ -171,6 +171,27 @@ impl Interpreter {
         class_def
     }
 
+    /// Drop a role-mixed HOW (`$class.HOW does R` from a class or attribute
+    /// trait) left by a previous registration of this declaration (the
+    /// hoisted pre-pass): the traits re-run and rebuild it, and its `compose`
+    /// hook must fire again to re-apply what the method-wrap clear dropped
+    /// (Staticish's wrapped methods). A custom HOW *instance*
+    /// (EXPORTHOW/DECLARE) is reinstalled by its own path. Runs before this
+    /// registration's role composition, whose attribute traits may mix a role
+    /// into the HOW again.
+    // Cost: O(1).
+    pub(super) fn clear_stale_how_mixin(&mut self, name: &str) {
+        let mut reg = self.registry_mut();
+        if reg
+            .class_how_values
+            .get(name)
+            .is_some_and(|how| matches!(how.view(), crate::value::ValueView::Mixin(..)))
+        {
+            reg.class_how_values.remove(name);
+        }
+    }
+
+
     /// Publish the class shell before the body walk: record `trusts`, clear
     /// stale wrap chains, record `hides` parents and `does`-only roles, and
     /// insert the class so it is visible while its body executes. Returns
@@ -200,21 +221,6 @@ impl Interpreter {
         // like `A.^add_method(...)` inside the declaration can resolve `A`.
         // Clear stale method wrap chains from a previous class with the same name.
         self.registry_mut().clear_method_wrap_chains_for_class(name);
-        // Likewise a role-mixed HOW (`$class.HOW does R` from a class or
-        // attribute trait) left by a previous registration of this
-        // declaration (the hoisted pre-pass): the traits re-run and rebuild
-        // it, and its `compose` hook must fire again to re-apply what the
-        // clear above just dropped (Staticish's wrapped methods). A custom
-        // HOW *instance* (EXPORTHOW/DECLARE) is reinstalled by its own path.
-        let mut reg = self.registry_mut();
-        if reg
-            .class_how_values
-            .get(name)
-            .is_some_and(|how| matches!(how.view(), crate::value::ValueView::Mixin(..)))
-        {
-            reg.class_how_values.remove(name);
-        }
-        drop(reg);
         // `class C hides P` marks parent P hidden from C's (and descendants')
         // `.^mro_unhidden`. Record it so the mro_unhidden filter can drop P.
         if !hidden_parents.is_empty() {

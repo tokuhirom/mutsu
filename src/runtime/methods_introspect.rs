@@ -330,6 +330,18 @@ impl Interpreter {
         if let Some(how) = target.custom_how() {
             return Ok(how.clone());
         }
+        // The metaobject classes themselves (`Metamodel::ClassHOW`) are NQP
+        // classes in Rakudo, so their metaobject is an `NQPClassHOW`, not a
+        // Raku `ClassHOW` (`Metamodel::ClassHOW.HOW ~~ Metamodel::ClassHOW` is
+        // False, which AttrX::Mooish relies on to refuse `Metamodel::ClassHOW
+        // but R`).
+        if let ValueView::Package(name) = target.view() {
+            let resolved = name.resolve();
+            let bare = resolved.strip_prefix("Perl6::").unwrap_or(&resolved);
+            if bare.starts_with("Metamodel::") && bare.ends_with("HOW") {
+                return Ok(Self::native_how_instance("NQPClassHOW", &resolved));
+            }
+        }
         // Return CurriedRoleHOW for parameterized roles
         if let ValueView::ParametricRole {
             base_name,
@@ -447,6 +459,37 @@ impl Interpreter {
                     .class_how_values
                     .insert(resolved, how.clone());
                 return Ok(how);
+            }
+        }
+        // A candidate object whose declaration was built with a superseding
+        // role HOW (`EXPORTHOW::SUPERSEDE`): that HOW is installed under the
+        // declaration's candidate key.
+        if let ValueView::Instance { attributes, .. } = target.view()
+            && let (Some(ValueView::Int(idx)), Some(ValueView::Str(base))) = (
+                attributes
+                    .as_map()
+                    .get("__mutsu_role_candidate_idx")
+                    .map(Value::view),
+                attributes
+                    .as_map()
+                    .get("__mutsu_role_base_name")
+                    .map(Value::view),
+            )
+        {
+            let registry = self.registry();
+            let role_id = registry
+                .role_candidates
+                .get(base.as_str())
+                .and_then(|cands| cands.get(idx as usize))
+                .map(|cand| cand.role_def.role_id)
+                .or_else(|| registry.roles.get(base.as_str()).map(|r| r.role_id));
+            if let Some(role_id) = role_id
+                && role_id != 0
+                && let Some(how) = registry
+                    .class_how_values
+                    .get(&crate::runtime::types::role_candidate_type_name(&base, role_id))
+            {
+                return Ok(how.clone());
             }
         }
         if self.is_individual_role_type_object(target) {

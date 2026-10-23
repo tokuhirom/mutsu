@@ -357,6 +357,29 @@ impl Interpreter {
         !self.dispatch.wrap_name_to_sub.is_empty()
     }
 
+    /// The wrapper chain of `value`, a routine a lexical import bound as a
+    /// code object: the wrapped routine when `value` is the routine `.wrap`
+    /// was called on (the wrap is recorded by bare name, so the package must
+    /// agree), else `value` itself.
+    // Cost: O(1) in a program that wraps nothing; O(w) otherwise, w = wrapped routines.
+    pub(crate) fn wrapped_bound_routine(&self, value: Value) -> Value {
+        if !self.any_routine_wrapped() {
+            return value;
+        }
+        let inner = Self::unwrap_callable_mixin(value.clone());
+        let ValueView::Sub(data) = inner.view() else {
+            return value;
+        };
+        let Some(wrapped) = self.wrapped_sub_for_call(&data.name.resolve()) else {
+            return value;
+        };
+        let wrapped_inner = Self::unwrap_callable_mixin(wrapped.clone());
+        match wrapped_inner.view() {
+            ValueView::Sub(w) if w.package == data.package => wrapped,
+            _ => value,
+        }
+    }
+
     /// Whether the routine `name` currently carries a wrapper.
     pub(crate) fn routine_is_wrapped(&self, name: &str) -> bool {
         self.dispatch.wrap_name_to_sub.contains_key(name)

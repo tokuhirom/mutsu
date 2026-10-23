@@ -537,6 +537,16 @@ impl AttrMap {
         }
     }
 
+    /// Whether `class_name` is `ObjAt`, `ValueObjAt` or a role mixin over one
+    /// (`ValueObjAt+{R}` after `$which does R` reblessed it in place): the
+    /// object keeps the identity attributes [`Self::objat_which`] reads.
+    // Cost: O(1).
+    pub(crate) fn is_objat_class_name(class_name: &str) -> bool {
+        matches!(class_name, "ObjAt" | "ValueObjAt")
+            || class_name.starts_with("ObjAt+{")
+            || class_name.starts_with("ValueObjAt+{")
+    }
+
     /// The identity text of an `ObjAt` / `ValueObjAt` instance. `Str.WHICH`
     /// stores its invocant under [`OBJAT_STR_PAYLOAD`] (shared, O(1)) instead of
     /// a pre-rendered `Str|...` key, so the text is assembled here, only when

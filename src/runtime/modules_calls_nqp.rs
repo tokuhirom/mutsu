@@ -29,6 +29,7 @@ mod ctor_phase_plan;
 pub(crate) mod native_decl;
 pub(crate) mod instance_backing;
 mod native_pointer_value;
+pub(crate) mod native_attr_ref;
 pub(crate) mod native_pos_ref;
 pub(crate) mod nqp_attr;
 pub(crate) mod nqp_backing;

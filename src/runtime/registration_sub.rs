@@ -2589,7 +2589,16 @@ impl Interpreter {
                     ev
                 } else {
                     next_str_value = None;
-                    EnumValue::Generic(Box::new(v))
+                    // A value written `(1, 2)` / `[...]` in the pair is the list
+                    // itself (`Map.new((:a((1, 2))))`), not an itemized copy.
+                    let listed = match v.view() {
+                        ValueView::Array(items, kind) if kind.is_itemized() => {
+                            Value::array_with_kind(items.clone(), kind.decontainerize())
+                        }
+                        ValueView::Scalar(inner) => (*inner).clone(),
+                        _ => v.clone(),
+                    };
+                    EnumValue::Generic(Box::new(listed))
                 }
             } else if let Some(ref s) = next_str_value {
                 let ev = EnumValue::Str(s.clone());

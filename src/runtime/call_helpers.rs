@@ -31,6 +31,21 @@ impl Interpreter {
         self.pending_call_arg_sources.as_deref()
     }
 
+    /// The shared container the caller's `index`-th positional argument names,
+    /// when the pending call site passes a plain scalar variable that lives in
+    /// a `ContainerRef` cell (a raw/aliased parameter, a captured lexical), so a
+    /// native method that binds its argument can bind that container rather
+    /// than a copy of its value.
+    // Cost: O(1), one env probe.
+    pub(crate) fn container_of_arg_source(&self, index: usize) -> Option<Value> {
+        let name = self.pending_call_arg_sources()?.get(index)?.as_ref()?;
+        if name.starts_with(['@', '%', '&']) || name.contains('=') {
+            return None;
+        }
+        let value = self.env.get(name)?;
+        value.is_container_ref().then(|| value.clone())
+    }
+
     /// The caller's variable name a bare block's implicit `$_` may ALIAS for
     /// this call (`TopicArgSite::source`). `None` for every
     /// shape that is not a lone positional argument naming a plain scalar

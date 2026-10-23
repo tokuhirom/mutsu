@@ -86,8 +86,13 @@ impl Interpreter {
     /// when `name` is that type's short name bound in the current scope:
     /// `.type` must be the type object itself (`=== P`, with its attributes),
     /// not a fresh package of the bare spelling (JSON::Unmarshal's
-    /// `$attr.type.^attributes` saw an empty list).
-    // Cost: O(1), one env probe.
+    /// `$attr.type.^attributes` saw an empty list). A class another module
+    /// exported and this scope imported under its short name
+    /// (`use A::ES` binds `JsonLineParser` to `A::ES::JsonLineParser`) is
+    /// named by its full name too: the scope that maps the short spelling is
+    /// the declaring module's, which the code that later checks a value
+    /// against the attribute (a `.new` from another unit) does not see.
+    // Cost: O(1), a few env probes.
     pub(crate) fn lexical_type_storage_name(&self, name: String) -> String {
         if let Some(bound) = self.env().get(&name)
             && let ValueView::Package(sym) = bound.view()
@@ -96,6 +101,15 @@ impl Interpreter {
             if storage != name && storage.split('\u{0}').next() == Some(name.as_str()) {
                 return storage.to_string();
             }
+        }
+        if !name.contains([':', '[', '(', '{', ' '])
+            && let Some(term) = self.imported_type_term(&name)
+            && let ValueView::Package(sym) = term.view()
+            && sym.as_str() != name
+            && crate::qualified::unqualified_part(sym).as_str() == name
+            && self.registry().classes.contains_key(sym.as_str())
+        {
+            return sym.resolve().to_string();
         }
         name
     }
@@ -493,6 +507,20 @@ impl Interpreter {
         self.mixin_has_hook(value, "compose")
     }
 
+    /// Whether `value` is an instance of a mixin class (`Class+{R}`): a HOW of
+    /// a user class that `does R` reblessed rather than wrapped.
+    // Cost: O(len of the class name).
+    pub(crate) fn is_how_mixin_instance(value: &Value) -> bool {
+        matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.as_str().contains("+{"))
+    }
+
+    /// Whether `value` is a HOW with a role mixed in: a `Mixin` wrapper, or the
+    /// instance of a mixin class.
+    // Cost: O(len of the class name).
+    pub(crate) fn is_how_with_role_mixed_in(value: &Value) -> bool {
+        matches!(value.view(), ValueView::Mixin(..)) || Self::is_how_mixin_instance(value)
+    }
+
     /// Whether `value` is a HOW with a role mixed in that defines a public
     /// method called `method_name`.
     pub(crate) fn mixin_has_hook(&self, value: &Value, method_name: &str) -> bool {
@@ -509,8 +537,11 @@ impl Interpreter {
             }),
             // An `Attribute` reblessed by `$attr does R`: the mixin type
             // composed the role's methods.
+            // A user-class HOW reblessed by `$how does R` (`CustomClassHOW`
+            // superseding `class`): the mixin type composed the role's methods.
             ValueView::Instance { class_name, .. }
-                if crate::value::attribute_class::is_composed_meta_object(value) =>
+                if crate::value::attribute_class::is_composed_meta_object(value)
+                    || Self::is_how_mixin_instance(value) =>
             {
                 self.registry()
                     .user_method_overloads(class_name.as_str(), method_name)
