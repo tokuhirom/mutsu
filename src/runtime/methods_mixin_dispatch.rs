@@ -500,10 +500,12 @@ impl Interpreter {
                 // leaves the bare name absent; role parameters are injected
                 // directly at dispatch time, so keep the same contract here.
                 let is_callable = callable_role_params.contains(name)
-                    && matches!(
-                        value.view(),
-                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-                    );
+                    && match value.view() {
+                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => true,
+                        // An unsupplied `&cb?` is the `Callable` type object.
+                        ValueView::Package(pkg) => pkg == "Callable",
+                        _ => false,
+                    };
                 saved_role_params.push((name.clone(), self.env.get(name).cloned()));
                 if is_callable {
                     self.env.remove(name);
