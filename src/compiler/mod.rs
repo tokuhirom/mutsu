@@ -3689,7 +3689,8 @@ impl Compiler {
     }
 
     fn positional_arg_source_name(&self, expr: &Expr) -> Option<String> {
-        match Self::peel_assign_parens(expr) {
+        let expr = Self::peel_assign_parens(expr);
+        match expr {
             // A sigilless binding is stored under its term key (ADR-12441).
             Expr::BareWord(name) if self.names_sigilless_binding(name) => {
                 Some(crate::runtime::term_names::term_key(name))
