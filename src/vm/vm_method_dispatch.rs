@@ -914,6 +914,11 @@ impl Interpreter {
             method_def.is_submethod,
             method_def.is_hidden_from_backtrace,
             method_callable_id,
+            crate::runtime::routine_stack::FrameFixtures {
+                invocant: base.clone(),
+                class: owner_sym,
+                role: role_context.as_deref().map(crate::symbol::Symbol::intern),
+            },
         );
 
         // Bind method parameters
@@ -2688,6 +2693,11 @@ impl Interpreter {
             method_def.is_submethod,
             method_def.is_hidden_from_backtrace,
             method_callable_id,
+            crate::runtime::routine_stack::FrameFixtures {
+                invocant: base.clone(),
+                class: owner_sym,
+                role: role_context.as_deref().map(crate::symbol::Symbol::intern),
+            },
         );
 
         // Execute bytecode (same as slow path)
