@@ -1,6 +1,6 @@
 # ADR-14632: An element store into a local the code declares operates on the slot, not on the name
 
-- **Status**: Proposed (awaiting the maintainer's Accept)
+- **Status**: Accepted (2026-10-23, by tokuhirom)
 - **Date**: 2026-10-23
 - **Issue**: [#14632](https://github.com/tokuhirom/mutsu/issues/14632) (retire the env-centric
   named element-store handler), which also carries
