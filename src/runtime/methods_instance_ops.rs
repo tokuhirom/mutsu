@@ -2135,7 +2135,15 @@ impl Interpreter {
                     && Self::is_classhow_method(method)
                     && self.is_metamodel_how_class(&class_name.resolve())
                 {
-                    return self.dispatch_classhow_method(method, args.to_vec());
+                    let mut how_args = args.to_vec();
+                    // `$how.archetypes` takes the type optionally: a metaobject
+                    // installed for a class answers about that class.
+                    if how_args.is_empty() {
+                        let described = Self::how_target_from_value(&target)
+                            .unwrap_or_else(|| "Any".to_string());
+                        how_args.push(Value::package(Symbol::intern(&described)));
+                    }
+                    return self.dispatch_classhow_method(method, how_args);
                 }
                 // A grammar token/rule called as an instance method
                 // (`G.new.tok`, URI's `IETF::RFC_Grammar::URI.new()

@@ -496,7 +496,26 @@ impl Interpreter {
                 .user_method_overloads(c.as_str(), "compose")
                 .is_some()
         });
-        let instance = self.call_method_with_values(how_type, "new", Vec::new())?;
+        let mut instance = self.call_method_with_values(how_type, "new", Vec::new())?;
+        // A hoisted forward declaration composed the class's roles (and ran
+        // their attribute traits, once) under the default HOW before this
+        // module's EXPORTHOW mapping was imported: the roles its traits mixed
+        // into that HOW belong to the superseding one too.
+        let earlier_mixins: Vec<String> = match self
+            .registry()
+            .class_how_values
+            .get(class_name)
+            .map(Value::view)
+        {
+            Some(ValueView::Mixin(_, mixins)) => mixins
+                .keys()
+                .filter_map(|key| key.strip_prefix("__mutsu_role__").map(str::to_string))
+                .collect(),
+            _ => Vec::new(),
+        };
+        for role in earlier_mixins {
+            instance = self.eval_does_values(instance, Value::package(Symbol::intern(&role)))?;
+        }
         // Names the type the metaobject describes, so a `nqp::getattr` of its
         // `@!BUILDPLAN` (AttrX::Mooish's `create_BUILDPLAN`) finds the class.
         if let ValueView::Instance { attributes, .. } = instance.view() {

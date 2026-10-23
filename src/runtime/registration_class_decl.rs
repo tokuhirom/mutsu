@@ -366,6 +366,13 @@ impl Interpreter {
         // classes` is untouched at this point either way) methodless.
         self.registry_mut()
             .clear_user_methods_for_owner(crate::symbol::Symbol::intern(name));
+        // The metaobject a `use`d module's EXPORTHOW mapping supplies exists
+        // before roles compose: a composed role's attribute trait reaches
+        // `$*PACKAGE.HOW` and may mix a role into it (AttrX::Mooish). Installed
+        // first so it takes over the roles a hoisted pre-pass mixed into the
+        // default HOW; what is still a bare mixin after that is stale.
+        self.install_class_exporthow(name, parents)?;
+        self.clear_stale_how_mixin(name);
         // Compose roles listed in the parents (from "does Role" or "is Role" in class header)
         let RoleCompositionOutcome {
             mut composed_roles_list,
@@ -504,7 +511,11 @@ impl Interpreter {
         let declaring_unit = self.unit_of_declaring_file(self.current_source_file().as_deref());
         crate::runtime::cow_table_mut(&mut self.module.class_declaring_units)
             .insert(name.to_string(), declaring_unit);
-        self.install_class_exporthow(name, &final_parents)?;
+        if !deferred_body_parents.is_empty() && !self.registry().class_how_values.contains_key(name)
+        {
+            // An `also is Grammar` of the body makes the class a grammar only now.
+            self.install_class_exporthow(name, &final_parents)?;
+        }
         // Loading a child module can vivify this namespace before the class
         // is published. The completed class uses its own HOW.
         if self.registry().package_kinds.get(name) == Some(&crate::ast::PackageKind::Package) {

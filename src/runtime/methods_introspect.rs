@@ -461,6 +461,37 @@ impl Interpreter {
                 return Ok(how);
             }
         }
+        // A candidate object whose declaration was built with a superseding
+        // role HOW (`EXPORTHOW::SUPERSEDE`): that HOW is installed under the
+        // declaration's candidate key.
+        if let ValueView::Instance { attributes, .. } = target.view()
+            && let (Some(ValueView::Int(idx)), Some(ValueView::Str(base))) = (
+                attributes
+                    .as_map()
+                    .get("__mutsu_role_candidate_idx")
+                    .map(Value::view),
+                attributes
+                    .as_map()
+                    .get("__mutsu_role_base_name")
+                    .map(Value::view),
+            )
+        {
+            let registry = self.registry();
+            let role_id = registry
+                .role_candidates
+                .get(base.as_str())
+                .and_then(|cands| cands.get(idx as usize))
+                .map(|cand| cand.role_def.role_id)
+                .or_else(|| registry.roles.get(base.as_str()).map(|r| r.role_id));
+            if let Some(role_id) = role_id
+                && role_id != 0
+                && let Some(how) = registry
+                    .class_how_values
+                    .get(&crate::runtime::types::role_candidate_type_name(&base, role_id))
+            {
+                return Ok(how.clone());
+            }
+        }
         if self.is_individual_role_type_object(target) {
             let display = self.role_type_object_display_name(target);
             let mut how =

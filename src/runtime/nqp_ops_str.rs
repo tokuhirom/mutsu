@@ -170,6 +170,14 @@ impl Interpreter {
                     (_, Some(ty)) => crate::value::register_container_constraint(&copy, &ty),
                     _ => {}
                 }
+                // A `Nil` stored into the copy resets it to what the original
+                // resets to (its `is default`, else its `of` type object).
+                if cell.default_value().is_some()
+                    || crate::value::lookup_container_constraint(&cell).is_some()
+                {
+                    let reset = self.cell_nil_reset_value(&cell);
+                    copy.set_default(reset);
+                }
                 Ok(Value::container_ref(copy))
             }
             "clone" | "clone_nd" => {
