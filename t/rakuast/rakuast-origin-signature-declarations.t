@@ -51,8 +51,7 @@ is range(@p[1]), '79..86', 'a binding initializer';
 my $parameter = parts(parts(@s[4].expression)[1])[0];
 is range(parts(parts($parameter)[1])[0]), '98..100', 'a routine parameter declaration';
 
-# Anonymous variables are not read back (Rakudo places them; mutsu leaves the
-# signature absent).
+# An anonymous variable is placed at its sigil.
 my $anonymous = 'my ($, $z) = 1, 2;'.AST.statements[0].expression;
-is range(parts($anonymous)[0]), 'none', 'a signature with an anonymous variable has no range';
+is range(parts($anonymous)[0]), '4..9', 'a signature with an anonymous variable';
 is range(parts($anonymous)[1]), '11..17', 'but its initializer keeps its range';
