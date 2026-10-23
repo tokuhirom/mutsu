@@ -678,7 +678,14 @@ pub(in crate::parser) fn postfix_expr_continue_from<'a>(
 ) -> PResult<'a, Expr> {
     let ends_with_ws =
         consumed_span(term_start, rest).is_some_and(|c| c.ends_with(char::is_whitespace));
-    postfix_expr_loop_from(rest, expr, true, (false, false), ends_with_ws)
+    postfix_expr_loop_from(
+        rest,
+        expr,
+        true,
+        (false, false),
+        ends_with_ws,
+        Some(term_start),
+    )
 }
 
 /// Postfix: method calls (.method), indexing ([]), ++, --
@@ -723,7 +730,14 @@ fn postfix_expr_inner(input: &str, allow_ws_dot: bool) -> PResult<'_, Expr> {
     // `my $x`, the `gather EXPR` statement prefix); record it so a following
     // `{ ... }` is still recognised as a separate block, not a subscript.
     let ends_with_ws = consumed.is_some_and(|c| c.ends_with(char::is_whitespace));
-    postfix_expr_loop_from(rest, expr, allow_ws_dot, brace_state, ends_with_ws)
+    postfix_expr_loop_from(
+        rest,
+        expr,
+        allow_ws_dot,
+        brace_state,
+        ends_with_ws,
+        Some(input),
+    )
 }
 
 /// The span of `input` consumed to reach `rest`, IF `rest` really is a suffix
@@ -867,16 +881,20 @@ fn parse_zen_angle(expr: Expr, rest: &str) -> (Expr, &str) {
 }
 
 fn postfix_expr_loop(rest: &str, expr: Expr, allow_ws_dot: bool) -> PResult<'_, Expr> {
-    postfix_expr_loop_from(rest, expr, allow_ws_dot, (false, false), false)
+    postfix_expr_loop_from(rest, expr, allow_ws_dot, (false, false), false, None)
 }
 
-fn postfix_expr_loop_from(
-    mut rest: &str,
+/// `chain_start`, when known, is where the term the postfixes apply to was
+/// written: each partial chain (`@a.map(...)` of `@a.map(...).sum`) is a term
+/// of its own, noted from there (ADR-10723 Stage 2).
+fn postfix_expr_loop_from<'a>(
+    mut rest: &'a str,
     mut expr: Expr,
     allow_ws_dot: bool,
     brace_state: (bool, bool),
     ends_with_ws: bool,
-) -> PResult<'_, Expr> {
+    chain_start: Option<&str>,
+) -> PResult<'a, Expr> {
     let (mut brace_final, mut newline_after_brace) = brace_state;
     // Whether the span consumed to produce the CURRENT `expr` ended on
     // whitespace — see `brace_is_postcircumfix`. Recomputed alongside
@@ -890,6 +908,9 @@ fn postfix_expr_loop_from(
     let mut dotted_subscript = false;
     loop {
         let came_from_dot = std::mem::take(&mut dotted_subscript);
+        if let (Some(start), Some(_)) = (chain_start, last_iter_start) {
+            crate::parser::primary::note_origin(start, rest, &expr);
+        }
         // A postfix op consumed in the previous iteration moves the
         // "does the expression end in `}` at end of line" state along:
         // `.map({...})` ends in `)` (keeps chaining), `.map: {...}` ends in
