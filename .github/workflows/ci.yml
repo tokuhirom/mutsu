@@ -708,31 +708,6 @@ jobs:
         env:
           MUTSU_BIN: target/release/mutsu
 
-      - name: Crash reports (fatal signals)
-        # A `Wstat: 11 (Signal: SEGV)` line in the summary above names neither
-        # the process that faulted nor the place. src/crash_report/ writes one
-        # <pid>.txt per crashed process; print them here so the answer is in
-        # the job log the first time the crash fires.
-        #
-        # This covers every mutsu in the job — any t/ or roast file's own
-        # interpreter, and any subprocess it spawned (each writes its own
-        # report, told apart by pid and argv). That is why the job env sets an
-        # ABSOLUTE MUTSU_CRASH_DIR: without it a report goes to stderr only,
-        # and a relative one is resolved against each process's startup
-        # working directory, so a subprocess spawned with `:cwd`, or one
-        # inheriting a `chdir`, would drop its report in some temp directory
-        # this step never looks at.
-        #
-        # `always()` (not `failure()`): a report can exist on an otherwise
-        # green job -- a deliberately-provoked subprocess crash a test
-        # asserts on (see the allowlist in report-crash-reports.sh), or,
-        # before this existed, a genuine crash whose job still passed. The
-        # script itself now fails the job when a report is NOT on that
-        # allowlist, so this step is where an unexpected crash actually
-        # surfaces (todo/deep/procasync-stress-segv.md).
-        if: always()
-        run: scripts/report-crash-reports.sh
-
       - name: Upload roast log
         # Always upload the full (untruncated) roast log so a failure can be
         # diagnosed from the artifact even when the web log viewer truncates the
@@ -742,19 +717,6 @@ jobs:
         with:
           name: roast-log
           path: tmp/roast.log
-          retention-days: 7
-          if-no-files-found: ignore
-
-      - name: Upload crash reports
-        # Only `*.txt` at the top level: report-crash-reports.sh moves the
-        # allowlisted (deliberately provoked) reports into tmp/crash/expected/,
-        # so this artifact exists only when an unexpected crash happened. The
-        # four stress-job uploads below follow the same rule.
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: crash-reports
-          path: tmp/crash/*.txt
           retention-days: 7
           if-no-files-found: ignore
 
@@ -838,6 +800,49 @@ jobs:
         with:
           path: tmp/battery-src-cache
           key: battery-src-${{ hashFiles('batteries.lock') }}
+
+      # The crash-report steps run LAST in this job, after the battery gate:
+      # a report a battery's interpreter writes is collected only by a step
+      # that runs after it. They used to sit between the roast run and the
+      # gate, so the one Cro::HTTP SIGSEGV (#14765) left its report on the
+      # runner and no backtrace anywhere.
+      - name: Crash reports (fatal signals)
+        # A `Wstat: 11 (Signal: SEGV)` line in the summary above names neither
+        # the process that faulted nor the place. src/crash_report/ writes one
+        # <pid>.txt per crashed process; print them here so the answer is in
+        # the job log the first time the crash fires.
+        #
+        # This covers every mutsu in the job — any t/ or roast file's own
+        # interpreter, and any subprocess it spawned (each writes its own
+        # report, told apart by pid and argv). That is why the job env sets an
+        # ABSOLUTE MUTSU_CRASH_DIR: without it a report goes to stderr only,
+        # and a relative one is resolved against each process's startup
+        # working directory, so a subprocess spawned with `:cwd`, or one
+        # inheriting a `chdir`, would drop its report in some temp directory
+        # this step never looks at.
+        #
+        # `always()` (not `failure()`): a report can exist on an otherwise
+        # green job -- a deliberately-provoked subprocess crash a test
+        # asserts on (see the allowlist in report-crash-reports.sh), or,
+        # before this existed, a genuine crash whose job still passed. The
+        # script itself now fails the job when a report is NOT on that
+        # allowlist, so this step is where an unexpected crash actually
+        # surfaces (todo/deep/procasync-stress-segv.md).
+        if: always()
+        run: scripts/report-crash-reports.sh
+
+      - name: Upload crash reports
+        # Only `*.txt` at the top level: report-crash-reports.sh moves the
+        # allowlisted (deliberately provoked) reports into tmp/crash/expected/,
+        # so this artifact exists only when an unexpected crash happened. The
+        # four stress-job uploads below follow the same rule.
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: crash-reports
+          path: tmp/crash/*.txt
+          retention-days: 7
+          if-no-files-found: ignore
 
   # REQUIRED STATUS CHECK. This job exists for its NAME: branch protection
   # requires `test`, and a required check that is never created leaves the PR
