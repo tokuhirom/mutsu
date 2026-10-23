@@ -109,6 +109,12 @@ pub(crate) enum RegexExtension {
     VariableAlias {
         name: String,
         sequential: bool,
+        /// `@name=ATOM`: the alias of an array interpolation.
+        #[serde(default)]
+        array: bool,
+        /// Whitespace written before and after the `=` (`$name = ATOM`).
+        #[serde(default)]
+        gaps: Option<Box<(String, String)>>,
         regex: Box<RegexNode>,
     },
     /// `<name regex>`: a named assertion with a regex argument rather than
@@ -269,7 +275,20 @@ impl RegexExtension {
             Self::NamedRegexArg { name, regex_arg } => {
                 format!("<{name} {}>", regex_arg.to_source())
             }
-            Self::VariableAlias { name, regex, .. } => format!("${name}={}", regex.to_source()),
+            Self::VariableAlias {
+                name,
+                array,
+                regex,
+                gaps,
+                ..
+            } => {
+                let (before, after) = gaps.as_deref().map_or(("", ""), |g| (&g.0[..], &g.1[..]));
+                format!(
+                    "{}{name}{before}={after}{}",
+                    if *array { '@' } else { '$' },
+                    regex.to_source()
+                )
+            }
         }
     }
 }
