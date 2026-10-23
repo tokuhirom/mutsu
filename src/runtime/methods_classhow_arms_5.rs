@@ -320,7 +320,14 @@ impl Interpreter {
                     self.role_candidate_own_attribute_objects(&owner_class, candidate),
                 ));
             }
-            let mut values = self.mixin_role_attribute_objects(&args[0], &owner_class);
+            // A mixin type object with its own class (`Class.^mixin(R)`) lists
+            // the role attributes through that class; any other mixin through
+            // the roles it carries.
+            let mut values = if self.mixin_class_of_type_object(&args[0]).is_some() {
+                Vec::new()
+            } else {
+                self.mixin_role_attribute_objects(&args[0], &owner_class)
+            };
             if !(local_only && !values.is_empty()) {
                 values.extend(self.collect_attribute_objects(&owner_class, local_only));
             }
