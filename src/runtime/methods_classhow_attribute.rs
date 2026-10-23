@@ -292,6 +292,13 @@ impl Interpreter {
                         false,
                     ),
                 };
+                // Rakudo's `Attribute.build` hands out a `Method` (it takes the
+                // object being built as its invocant).
+                let mut build_env = self.env().clone();
+                build_env.insert(
+                    "__mutsu_callable_type".to_string(),
+                    Value::str_from("Method"),
+                );
                 let sub_data = crate::value::SubData {
                     package: Symbol::intern("GLOBAL"),
                     name: Symbol::intern("<attribute-build>"),
@@ -300,7 +307,7 @@ impl Interpreter {
                     body: std::sync::Arc::new(body),
                     is_rw: false,
                     is_raw: false,
-                    env: self.env().clone(),
+                    env: build_env,
                     assumed_positional: Vec::new(),
                     assumed_named: ValueMap::default(),
                     id: crate::value::next_instance_id(),
