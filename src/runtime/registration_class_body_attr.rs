@@ -328,6 +328,19 @@ impl Interpreter {
             default_is_seed: decl.default_is_seed,
             default_is_trait: decl.default_is_trait,
         });
+        // `has C[T] $.a` where `C` declares `^parameterize` (NativeCall's
+        // `CArray[uint8]`): evaluate the type once, in the declaring scope, under
+        // the spelling the attribute stores, so `Attribute.type` can answer the
+        // type object the declaration denotes rather than a bare package.
+        if let Some(tc) = cx
+            .class_def
+            .attributes
+            .last()
+            .and_then(|a| a.type_constraint.clone())
+            && tc.contains('[')
+        {
+            self.meta_parameterized_type(&tc);
+        }
         if decl.where_constraint.is_some() {
             Self::mark_attr_where_constraint_seen();
         }

@@ -263,6 +263,9 @@ fn is_modifier_body(body: &[Stmt]) -> bool {
 fn warn_expr_sink(expr: &Expr, nil_hint: bool, line: i64) {
     match expr {
         Expr::Grouped(inner) => warn_expr_sink(inner, nil_hint, line),
+        // A term whose spelling the parse kept (`<42i>`): the wrapper only
+        // records how it was written, never what it is.
+        Expr::Spelled(spelled) => warn_expr_sink(&spelled.expr, nil_hint, line),
         Expr::DoBlock {
             body,
             origin: DoBlockOrigin::SourceBlock,
@@ -316,6 +319,7 @@ fn emit(desc: String, nil_hint: bool, line: i64) {
 fn describe_useless(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Grouped(inner) => describe_useless(inner),
+        Expr::Spelled(spelled) => describe_useless(&spelled.expr),
         Expr::PositionalPair(inner) => describe_useless(inner),
         Expr::Literal(v) => describe_literal(v),
         // A source-preserving numeric literal: describe by the inner value's

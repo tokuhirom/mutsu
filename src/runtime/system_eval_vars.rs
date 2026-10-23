@@ -56,6 +56,21 @@ impl Interpreter {
         }
     }
 
+    /// Reject a `:=` whose target is a lexical of the scope around the
+    /// `EVAL` (`my $x; EVAL q[$x := 5]`), as rakudo does while compiling the
+    /// `EVAL`: `X::Bind`, "Cannot use bind operator with this left-hand side".
+    /// A bind to a variable the snippet declares itself is untouched.
+    // Cost: see `eval_var_scan::first_outer_bind`.
+    pub(crate) fn check_eval_outer_binds(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        if super::eval_var_scan::first_outer_bind(self, stmts).is_none() {
+            return Ok(());
+        }
+        let message = "Cannot use bind operator with this left-hand side";
+        let mut attrs = ValueMap::default();
+        attrs.insert("message".to_string(), Value::str(message.to_string()));
+        Err(RuntimeError::typed("X::Bind", attrs))
+    }
+
     /// Reject, at CHECK time, a variable the unit uses before its top level
     /// declares it (`sub f { $zz = 42 }; my $zz = 1`), as rakudo does
     /// (#12800). Without it a routine resolved the name at run time and

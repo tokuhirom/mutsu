@@ -1262,18 +1262,26 @@ impl RegexNode {
             // A single-quoted term interpolates nothing; spell it that way when
             // the text needs no escape, as it is most often written (rakudo
             // reports a `~` goal in its source form, quotes included).
-            Self::Quote(text) if !text.contains(['\'', '\\']) => format!("'{text}'"),
+            // The text stays single-quoted, as written: a double-quoted spelling
+            // would interpolate `$`, `@`, `{`, `&` and the like out of the
+            // literal. Only a quote, and a backslash that would otherwise
+            // escape what follows it (another backslash, a quote, the closing
+            // quote), are escaped.
             Self::Quote(text) => {
-                // A double-quoted term interpolates `$`, `@` and `{`, so those
-                // are escaped along with the quote and backslash themselves.
-                let escaped: String = text
-                    .chars()
-                    .flat_map(|ch| match ch {
-                        '\\' | '"' | '$' | '@' | '{' | '}' => vec!['\\', ch],
-                        _ => vec![ch],
-                    })
-                    .collect();
-                format!("\"{escaped}\"")
+                let mut escaped = String::with_capacity(text.len() + 2);
+                let mut chars = text.chars().peekable();
+                while let Some(ch) = chars.next() {
+                    let escape = match ch {
+                        '\'' => true,
+                        '\\' => matches!(chars.peek(), None | Some('\\') | Some('\'')),
+                        _ => false,
+                    };
+                    if escape {
+                        escaped.push('\\');
+                    }
+                    escaped.push(ch);
+                }
+                format!("'{escaped}'")
             }
             Self::Sequence(nodes) => {
                 nodes
@@ -1895,7 +1903,25 @@ impl Parser {
             self.pos = start;
             return None;
         };
-        let name = if scalar { format!("${name}") } else { name };
+        let mut name = if scalar { format!("${name}") } else { name };
+        // `<&Pkg::name>`: a package-qualified routine. A `::` is part of the
+        // name; only a lone `:` opens the colon-argument form.
+        while !scalar
+            && self.chars.get(self.pos) == Some(&':')
+            && self.chars.get(self.pos + 1) == Some(&':')
+            && self
+                .chars
+                .get(self.pos + 2)
+                .is_some_and(|ch| ch.is_alphabetic() || *ch == '_')
+        {
+            self.pos += 2;
+            let Some(part) = self.parse_variable_name() else {
+                self.pos = start;
+                return None;
+            };
+            name.push_str("::");
+            name.push_str(&part);
+        }
         self.skip_whitespace();
         let mut args = Vec::new();
         let mut arg_source = None;

@@ -56,10 +56,36 @@ pub(super) fn first_undeclared_var(interp: &Interpreter, stmts: &[Stmt]) -> Opti
         strict: true,
         judged_stmt: true,
         forward: None,
+        bind_mode: false,
+        outer_bind: None,
         found: None,
     };
     walk_stmts(&mut scan, stmts);
     scan.found
+}
+
+/// The first `:=` of the snippet whose target is a lexical of the scope
+/// around the `EVAL` rather than one the snippet declares, as the target's
+/// source spelling (`$x`, `@a`, `&h`). Rakudo refuses it while compiling the
+/// `EVAL` (`X::Bind`, "Cannot use bind operator with this left-hand side");
+/// a bind to a variable the snippet declares itself is fine (#14657).
+// Cost: O(n * d), n = size of the snippet's AST, d = depth of the scope
+// stack.
+pub(super) fn first_outer_bind(interp: &Interpreter, stmts: &[Stmt]) -> Option<String> {
+    let mut scan = UndeclaredVars {
+        interp,
+        placeholder_names: HashSet::new(),
+        package_exports: super::eval_package_exports::package_exported_vars(stmts),
+        scopes: vec![HashSet::new()],
+        strict: true,
+        judged_stmt: true,
+        forward: None,
+        bind_mode: true,
+        outer_bind: None,
+        found: None,
+    };
+    walk_stmts(&mut scan, stmts);
+    scan.outer_bind
 }
 
 /// The name a declaration (variable, parameter, attribute alias) puts in
@@ -137,6 +163,11 @@ struct UndeclaredVars<'a> {
     strict: bool,
     /// The narrow compunit mode ([`first_var_used_before_unit_declares`]).
     forward: Option<ForwardUses>,
+    /// The outer-bind mode ([`first_outer_bind`]): no use is judged; a `:=`
+    /// whose target is a lexical of the scope around the `EVAL`, not one the
+    /// snippet declares, is recorded in `outer_bind`.
+    bind_mode: bool,
+    outer_bind: Option<String>,
     /// The statement being visited is a statement of a statement list (not
     /// one embedded in an expression): its assignment target is judged.
     judged_stmt: bool,
@@ -205,7 +236,7 @@ impl UndeclaredVars<'_> {
     }
 
     fn check_var(&mut self, expr: &Expr) {
-        if self.found.is_some() || !self.strict {
+        if self.found.is_some() || !self.strict || self.bind_mode {
             return;
         }
         let found = match expr {
@@ -286,6 +317,45 @@ impl UndeclaredVars<'_> {
         }
         let suggestions = Interpreter::suggest_declared_vars(&sigiled, &self.all_declared());
         Some((sigil, name.to_string(), suggestions))
+    }
+
+    /// Record `name :=` when `name` is a lexical of the scope around the
+    /// `EVAL` that the snippet does not declare.
+    // Cost: O(d + 1) hash probes, d = depth of the scope stack.
+    fn note_outer_bind(&mut self, name: &str, target_is_sigilless: bool) {
+        if self.outer_bind.is_some() || target_is_sigilless {
+            return;
+        }
+        let (sigil, bare) = match name.chars().next() {
+            Some(c @ ('@' | '%' | '&')) => (c, &name[1..]),
+            _ => ('$', name.trim_start_matches('$')),
+        };
+        let spelled = if sigil == '$' {
+            bare.to_string()
+        } else {
+            name.to_string()
+        };
+        if bare.is_empty()
+            || (sigil != '&' && is_exempt(bare))
+            || self.is_declared(&spelled)
+            || self.is_declared(bare)
+            || self.placeholder_names.contains(bare)
+        {
+            return;
+        }
+        let sigiled = format!("{sigil}{bare}");
+        let env = self.interp.env();
+        let outer = self.caller_scope_declares(&spelled)
+            || self.caller_scope_declares(&sigiled)
+            || env.contains_key(&sigiled)
+            || self.unit_lexical_declares(&sigiled)
+            || (sigil == '$'
+                && env.contains_key(bare)
+                && !self.interp.registry().classes.contains_key(bare)
+                && !self.interp.has_function(bare));
+        if outer {
+            self.outer_bind = Some(sigiled);
+        }
     }
 
     /// The target of `$x = ...` must be declared (assignment does not declare
@@ -395,9 +465,13 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             Stmt::Assign {
                 name,
                 expr,
+                op,
                 target_is_sigilless,
                 ..
             } => {
+                if self.bind_mode && matches!(op, crate::ast::AssignOp::Bind) {
+                    self.note_outer_bind(name, *target_is_sigilless);
+                }
                 self.assign_target(name, *target_is_sigilless);
                 self.judging(false, |v| v.visit_expr(expr));
             }

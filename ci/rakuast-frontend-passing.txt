@@ -5457,6 +5457,7 @@ t/rakuast/rakuast-require-import-list.t
 t/rakuast/rakuast-require-statement.t
 t/rakuast/rakuast-residual-source-terms.t
 t/rakuast/rakuast-return-type.t
+t/rakuast/rakuast-roast-tap-cohort.t
 t/rakuast/rakuast-role-arg-blocks.t
 t/rakuast/rakuast-role-composition-boundaries.t
 t/rakuast/rakuast-role-hidden-traits.t

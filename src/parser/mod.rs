@@ -51,6 +51,7 @@ pub(crate) use stmt::simple::{
     CanonicalScans, ExportedVar, canonical_export_scans, scanned_exported_types,
     scanned_exported_vars, scanned_exported_vars_complete, scanned_hook_type_keys,
 };
+pub(crate) use stmt::sub::placeholder_signature_exception;
 pub(crate) use stmt::sub::{INDIRECT_DECL_NAME, op_prec_trait};
 
 /// Lowered RakuAST blocks need the same lexical user-sub view the parser had

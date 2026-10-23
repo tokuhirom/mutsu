@@ -211,9 +211,16 @@ impl Interpreter {
         meta.insert("is_public".to_string(), Value::truth(is_public));
         meta.insert("is_rw".to_string(), Value::truth(is_rw));
         meta.insert("sigil".to_string(), Value::str(sigil.to_string()));
+        // A `C[T]` whose `C` declares `^parameterize` denotes the type object that
+        // meta-method built (evaluated when the attribute was declared).
+        let declared_type = attr
+            .type_constraint
+            .as_deref()
+            .filter(|_| matches!(sigil, '$' | '&'))
+            .and_then(|tc| self.cached_meta_parameterized_type(tc));
         meta.insert(
             "type".to_string(),
-            Value::package(Symbol::intern(&type_name)),
+            declared_type.unwrap_or_else(|| Value::package(Symbol::intern(&type_name))),
         );
         meta.insert("has_accessor".to_string(), Value::truth(is_public));
         if let Some(message) = self.class_attribute_deprecated(owner, attr_name) {
