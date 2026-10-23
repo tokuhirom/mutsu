@@ -26,7 +26,12 @@ pub(super) fn quoted(node: &mut RakuAstNode) {
     else {
         return;
     };
-    let Some((adverbs, open, close)) = opener(&text) else {
+    let Some(Opener {
+        adverbs,
+        body_at: open,
+        close,
+    }) = opener(&text)
+    else {
         return;
     };
     if !text.ends_with(close) || open + close.len_utf8() > text.len() {
@@ -87,10 +92,20 @@ fn walk_body(regex: &mut RakuAstNode, body: SrcSpan) {
     walk.place(regex);
 }
 
+/// What a quoted regex's text says before its body.
+struct Opener {
+    /// The `:name` adverbs, as offsets into the text.
+    adverbs: Vec<(usize, usize)>,
+    /// Where the body starts.
+    body_at: usize,
+    /// The delimiter that closes the body.
+    close: char,
+}
+
 /// A quoted regex's adverbs (`:i`) and where its body starts and what closes
 /// it, read from its `text`.
 // Cost: O(n), n = length of the prefix.
-fn opener(text: &str) -> Option<(Vec<(usize, usize)>, usize, char)> {
+fn opener(text: &str) -> Option<Opener> {
     let mut at = ["rx", "ms", "m"]
         .into_iter()
         .find(|p| text.starts_with(p) && !text[p.len()..].starts_with(char::is_alphanumeric))
@@ -117,7 +132,11 @@ fn opener(text: &str) -> Option<(Vec<(usize, usize)>, usize, char)> {
         '!' | '|' => open,
         _ => return None,
     };
-    Some((adverbs, at + open.len_utf8(), close))
+    Some(Opener {
+        adverbs,
+        body_at: at + open.len_utf8(),
+        close,
+    })
 }
 
 /// Give a quoted regex's `:name` adverbs the ranges read off its prefix.
