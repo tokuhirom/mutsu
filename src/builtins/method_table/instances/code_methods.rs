@@ -8,10 +8,10 @@
 //! different state, so a row has one body per kind
 //! (`Interpreter::routine_handle_*` and `sub_*`, `runtime/methods_code_*rows.rs`)
 //! and its handler picks by kind ([`by_kind`]). The rows are reached through
-//! the owners of `routine::owners_of` from the callable dispatch, ahead of the
-//! kind's own dispatcher. A method object (an instance of a code class) is the
-//! third kind (`Interpreter::method_object_code_row`, §9.167), reached through
-//! [`method_object_answer`].
+//! the owner chain of [`super::code_class::owners_of`] from the callable
+//! dispatch, ahead of the kind's own dispatcher. A method object (an instance
+//! of a code class) is the third kind (`Interpreter::method_object_code_row`,
+//! §9.167), and a regex the fourth ([`super::code_regex`]).
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
