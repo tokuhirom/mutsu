@@ -715,6 +715,15 @@ impl Interpreter {
         // authoritative from its creating frame. Same overwrite-install as
         // `authoritative_free_vars` above — a never-written, lexically-authoritative
         // value that a same-named caller lexical must not shadow.
+        // `data.authoritative_captures` is installed like `authoritative_free_vars`
+        // above. #14573's ablation found the whole-capture loop does NOT subsume
+        // it: removing this install fails
+        // `t/concurrency/supply/supply-block-reinstantiated.t`,
+        // `supply-block-captured-lexical.t`,
+        // `supply-whenever-container-parameter-capture.t` and
+        // `whenever-callback-recompile-semantics.t` -- a `supply`/`whenever`
+        // callback runs in a frame whose `Env` the whole-capture loop does not
+        // reach.
         for sym in &data.authoritative_captures {
             if let Some(val) = data.env.get_sym(*sym).cloned() {
                 self.env_mut().insert_sym(*sym, val);
