@@ -32,6 +32,7 @@ use super::helpers::{
 };
 
 // Re-export submodule items used across submodules
+pub(in crate::parser) use args::keep_written_parens;
 use args::{parse_stmt_call_args, parse_stmt_call_args_no_paren, parse_stmt_call_args_paren};
 pub(in crate::parser) use assign::assign_stmt;
 use assign::{

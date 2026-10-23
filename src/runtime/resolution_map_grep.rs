@@ -830,6 +830,14 @@ impl Interpreter {
                             }
                             bind_loop_topic(vm.env_mut(), &item, is_whatever_code, &outer_topic);
                         } else {
+                            // The topic is the first element; a `$_` parameter among the
+                            // block's own is bound after it and wins.
+                            bind_loop_topic(
+                                vm.env_mut(),
+                                &src.buf[i],
+                                is_whatever_code,
+                                &outer_topic,
+                            );
                             for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
                                 if i + idx < src.buf.len() {
                                     let item = src.buf[i + idx].clone();
@@ -847,12 +855,6 @@ impl Interpreter {
                                     );
                                 }
                             }
-                            bind_loop_topic(
-                                vm.env_mut(),
-                                &src.buf[i],
-                                is_whatever_code,
-                                &outer_topic,
-                            );
                         }
                     }
                     let saved_when_matched = vm.when_matched();

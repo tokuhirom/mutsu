@@ -13,8 +13,8 @@ nok (sub d() { 1 }).yada,       'real body is not yada';
 nok (sub e() { ...; 2 }).yada,  'stub plus more is not yada';
 nok (sub f() { }).yada,         'empty body is not yada';
 
-# Blocks/pointy blocks are Code too.
-ok  ({ ... }).yada,             'bare block stub is yada';
-nok ({ 42 }).yada,              'bare block with body is not yada';
+# `yada` is `Routine`'s, not `Block`'s or `Code`'s: Rakudo has no such method there.
+throws-like { ({ ... }).yada }, X::Method::NotFound, 'a bare block has no yada';
+throws-like { (-> { 42 }).yada }, X::Method::NotFound, 'a pointy block has no yada';
 
 done-testing;

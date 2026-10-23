@@ -439,6 +439,14 @@ impl Interpreter {
                                     vm.env_mut().insert_sym(topic_source_key, chunk[0].clone());
                                 }
                             } else {
+                                // The topic is the first element; a `$_` parameter among the
+                                // block's own is bound after it and wins.
+                                bind_loop_topic(
+                                    vm.env_mut(),
+                                    &chunk[0],
+                                    keeps_outer_topic,
+                                    &outer_topic,
+                                );
                                 for (idx, &p) in
                                     plan.param_syms.iter().skip(assumed_count).enumerate()
                                 {
@@ -446,12 +454,6 @@ impl Interpreter {
                                         vm.env_mut().insert_sym_noting(p, chunk[idx].clone());
                                     }
                                 }
-                                bind_loop_topic(
-                                    vm.env_mut(),
-                                    &chunk[0],
-                                    keeps_outer_topic,
-                                    &outer_topic,
-                                );
                             }
                         }
                         // `$_` holding the caller's topic is not an alias for the

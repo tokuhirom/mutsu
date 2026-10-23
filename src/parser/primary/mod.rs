@@ -594,7 +594,24 @@ pub(in crate::parser) use misc::{colonpair_expr, parse_block_body, wrap_colonpai
 pub(in crate::parser) use number::wrap_divergent_literal;
 pub(in crate::parser) use regex::parse_call_arg_list;
 
+/// Note where `expr`, parsed from `input` up to `rest`, was written, for a
+/// parse that keeps origins for the RakuAST conversion (ADR-10723 Stage 2,
+/// `parser::term_origins`).
+// Cost: O(1) when the parse keeps no origins, O(n) otherwise, n = size of
+// `expr`.
+pub(in crate::parser) fn note_origin(input: &str, rest: &str, expr: &Expr) {
+    if crate::ast::spelled::keeping() {
+        crate::parser::term_origins::note(expr, source_span(input, rest));
+    }
+}
+
 pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
+    let (rest, expr) = primary_term(input)?;
+    note_origin(input, rest, &expr);
+    Ok((rest, expr))
+}
+
+fn primary_term(input: &str) -> PResult<'_, Expr> {
     let _nesting = crate::parser::NestingGuard::enter(input)?;
     if let Some(cached) = PRIMARY_MEMO.get(input) {
         return cached;

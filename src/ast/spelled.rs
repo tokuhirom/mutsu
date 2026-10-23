@@ -105,6 +105,9 @@ pub(crate) enum Spelling {
     /// A bare Whatever operand of `o` is expanded to a closure for execution;
     /// the public RakuAST keeps the written composition and Whatever argument.
     CompositionWhatever(Box<Expr>),
+    /// Where the term was written (ADR-10723 Stage 2, expression families):
+    /// the byte range its RakuAST node's `origin` answers.
+    Origin(crate::ast::SrcSpan),
 }
 
 /// A term and the way it was spelled; see the module documentation.
@@ -180,6 +183,22 @@ impl Expr {
             }))
         } else {
             expr
+        }
+    }
+}
+
+impl Expr {
+    /// The term itself, without the origin a `.AST` parse attaches around
+    /// it once the unit is parsed (ADR-10723 Stage 2, `parser::term_origins`).
+    // Cost: O(d), d = nested origin wrappers.
+    pub(crate) fn unpositioned_mut(&mut self) -> &mut Expr {
+        if !matches!(self, Expr::Spelled(spelled) if matches!(spelled.spelling, Spelling::Origin(_)))
+        {
+            return self;
+        }
+        match self {
+            Expr::Spelled(spelled) => spelled.expr.unpositioned_mut(),
+            _ => unreachable!("checked above"),
         }
     }
 }

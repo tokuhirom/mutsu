@@ -125,7 +125,10 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
                 || trimmed.starts_with(')')
                 || trimmed.starts_with(';')
             {
-                (rest, assign_expr)
+                (
+                    rest,
+                    crate::parser::stmt::keep_written_parens(input, assign_expr),
+                )
             } else {
                 expression(input)?
             }

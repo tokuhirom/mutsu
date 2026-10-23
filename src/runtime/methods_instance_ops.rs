@@ -645,13 +645,6 @@ impl Interpreter {
             {
                 return Ok(msg.clone());
             }
-            // A method object's `wrap`, `unwrap`, `assuming`, `cando` and
-            // `set_name` are the `Routine`/`Code` rows (ADR-11276 §9.167).
-            if let Some(result) =
-                crate::builtins::method_table::method_object_answer(self, &target, method, &args)
-            {
-                return result;
-            }
             // A per-attribute container descriptor produced by `Attribute.container`
             // (tagged with `__mutsu_attr_container_owner`). `.VAR` returns the
             // descriptor itself so a subsequent `does Role(...)` can be recorded
@@ -1830,18 +1823,6 @@ impl Interpreter {
         {
             return answer;
         }
-        if let Some(owners) = crate::builtins::method_table::routine_owners_of(&target)
-            && let Some(answer) = crate::builtins::method_table::invoke_owner(
-                self,
-                owners,
-                method,
-                &args,
-                || target.clone(),
-            )
-        {
-            return answer;
-        }
-
         // `Mu`'s and `Cool`'s late rows: `gist`, `raku`, `Str`, `isa`, `REPR`,
         // ... of a receiver every answer above declined, from the first late
         // row of its MRO that binds the call (ADR-11276 §9.138).

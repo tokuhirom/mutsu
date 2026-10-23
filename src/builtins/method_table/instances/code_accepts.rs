@@ -59,30 +59,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
 ];
 
-/// The owners whose `ACCEPTS` row answers the code object `target`, closest
-/// first, or `None` when it is not one.
-// Cost: O(1).
-pub(crate) fn code_accepts_owners(target: &Value) -> Option<&'static [&'static str]> {
-    match target.view() {
-        ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => Some(&["Regex", "Code"]),
-        ValueView::Sub(data) if is_whatever_code(&data) => Some(&["WhateverCode", "Code"]),
-        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => Some(&["Code"]),
-        _ => None,
-    }
-}
-
-/// Whether the closure is a `WhateverCode` (`* > 3`): the compiler records the
-/// callable's type in its environment.
-// Cost: O(1).
-fn is_whatever_code(data: &crate::value::SubData) -> bool {
-    matches!(
-        data.env
-            .get_sym(crate::symbol::well_known::callable_type())
-            .map(Value::view),
-        Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
-    )
-}
-
 /// `Regex.ACCEPTS`: `$topic.match(self)`, the `Match` or `Nil`.
 // Cost: the regex engine's on the topic's string.
 fn regex(interp: &mut Interpreter, target: &Value, args: &[Value], _named: Named<'_>) -> Answer {
