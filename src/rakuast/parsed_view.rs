@@ -224,6 +224,19 @@ fn view_block(block: &ParsedBlock, kind: BlockKind) -> Result<RakuAstNode, Runti
 // Cost: O(f), f = fields of the three nodes.
 fn with_block_origins(mut node: RakuAstNode, block: BlockSpans) -> RakuAstNode {
     super::origin::set_span(&mut node, block.span);
+    // `-> { ... }`: the empty `Signature` sits right after the arrow.
+    if node.class == super::RakuAstClass::PointyBlock
+        && node.fields.iter().all(|f| f.name != Some("signature"))
+        && let Some(arrow) = super::unit_source::with_text(block.span, |text| {
+            ["->", "<->"]
+                .into_iter()
+                .find(|a| text.starts_with(a))
+                .map(str::len)
+        })
+    {
+        let at = block.span.from as usize + arrow;
+        super::empty_fields::set_span(&mut node, "signature", crate::ast::SrcSpan::new(at, at));
+    }
     let Some(body) = node.fields.iter_mut().find(|f| f.name == Some("body")) else {
         return node;
     };

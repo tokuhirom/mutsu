@@ -12,6 +12,7 @@ mod attribute_decl;
 mod attribute_group;
 mod bare_prefix;
 mod bareword;
+mod call_origins;
 mod callable_context;
 mod capture_term;
 mod chain;
@@ -22,6 +23,7 @@ mod conditional_lower;
 mod constructor_positional;
 mod contextualizer;
 mod control_signature;
+pub(crate) mod empty_fields;
 mod expr_origins;
 mod parsed_view;
 mod trait_is_constructor;
@@ -151,10 +153,12 @@ pub struct RakuAstNode {
 }
 
 /// A node's `RakuAST::Origin`, or none (a hand-built node, a node `convert`
-/// made below the statement level). It takes no part in a node's equality:
-/// two trees that differ only in where they were written are the same tree.
+/// made below the statement level), and the origins of the empty nodes its
+/// absent fields stand for ([`empty_fields`]). It takes no part in a node's
+/// equality: two trees that differ only in where they were written are the
+/// same tree.
 #[derive(Debug, Clone, Default)]
-pub struct NodeOrigin(pub Option<Value>);
+pub struct NodeOrigin(pub Option<Value>, pub empty_fields::EmptyOrigins);
 
 impl PartialEq for NodeOrigin {
     fn eq(&self, _other: &Self) -> bool {
@@ -3635,11 +3639,14 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     // reads as an undefined type object (or `()` / `False` / `0`) rather than
     // dying. That is what makes `.defined` the way to test for one — see
     // `fields::Absent`.
-    fields::model_fields(node.class)
+    let (name, absent) = fields::model_fields(node.class)
         .iter()
         .chain(inherited_fields::for_class(node.class))
-        .find(|(name, _)| *name == method)
-        .and_then(|(_, absent)| absent.value())
+        .find(|(name, _)| *name == method)?;
+    match absent {
+        fields::Absent::EmptyNode(class) => Some(empty_fields::empty_node(node, name, *class)),
+        _ => absent.value(),
+    }
 }
 
 /// Native methods currently exposed directly by a RakuAST model class.
