@@ -145,15 +145,11 @@ impl Interpreter {
                     // scenario) — so a later `.^name` on ANY value with
                     // this exact composition, including one constructed
                     // after this call, observes the rename.
+                    // The node is shared with other threads, so the name goes
+                    // into its locked slot, never into the map they read
+                    // unlocked (#14765).
                     let overrides = self.mixin_instance_composition_overrides(inner, mixins)?;
-                    // SAFETY: aliased in-place mutation of a shared container
-                    // (see `gc_contents_mut`); no borrow into the map is live
-                    // across the insert, and the insert does not re-enter the VM.
-                    let map = unsafe { crate::gc::gc_contents_mut(&overrides) };
-                    map.insert(
-                        "__mutsu_type_name__".to_string(),
-                        Value::str(new_name.clone()),
-                    );
+                    overrides.set_type_name(&new_name);
                     // A type object (`p.^mixin(TypedPointer[t])` renamed
                     // in upstream NativeCall's `^parameterize`) also
                     // carries the name itself, so the interpreter-free
@@ -162,14 +158,7 @@ impl Interpreter {
                     if matches!(inner.view(), ValueView::Package(_))
                         && !crate::gc::Gc::ptr_eq(&overrides, mixins)
                     {
-                        // SAFETY: as above -- an aliased in-place insert
-                        // into the type object's own overrides node; no
-                        // borrow into it is live and nothing re-enters.
-                        let own = unsafe { crate::gc::gc_contents_mut(mixins) };
-                        own.insert(
-                            "__mutsu_type_name__".to_string(),
-                            Value::str(new_name.clone()),
-                        );
+                        mixins.set_type_name(&new_name);
                     }
                 }
                 ValueView::Package(name) => {

@@ -141,6 +141,28 @@ fetch_commit() {
   fi
 }
 
+# --- print the crash report of an interpreter that died of a signal ------------
+#
+# src/crash_report/ writes the report to $MUTSU_CRASH_DIR/<pid>.txt and only
+# its path to stderr, or (with no directory) the whole report to stderr. Either
+# way the five-line tail above loses it, and CI's crash-report step runs before
+# this gate, so it never collects a report written here (#14765: the one
+# Cro::HTTP SIGSEGV left no backtrace anywhere). Print it into the log so a
+# rare crash yields its evidence the one time it fires.
+print_crash_report() {
+  local out="$1" path
+  path="$(printf '%s\n' "$out" | sed -n 's/^mutsu: fatal signal .*; crash report: //p' | head -1)"
+  if [ -n "$path" ] && [ -f "$path" ]; then
+    echo "      | --- crash report $path ---"
+    sed 's/^/      | /' "$path"
+  elif printf '%s\n' "$out" | grep -q '^mutsu crash report$'; then
+    echo "      | --- crash report (stderr) ---"
+    printf '%s\n' "$out" | sed -n '/^mutsu crash report$/,$p' | sed 's/^/      | /'
+  else
+    echo "      | (no crash report: the process wrote none)"
+  fi
+}
+
 # --- run one test file; echo PASS or FAIL(detail); return 0 iff it fully passes,
 # 2 if the interpreter died of a signal, 1 for any other failure
 #
@@ -183,6 +205,7 @@ run_one() {
   # A signal death (rc = 128 + signum; `timeout` reports its own 124) is a
   # crash, which the quarantine below must never re-roll.
   if [ "$rc" -ge 128 ]; then
+    print_crash_report "$out"
     return 2
   fi
   return 1

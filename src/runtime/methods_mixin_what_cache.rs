@@ -47,10 +47,12 @@ impl Interpreter {
     /// Get-or-create the shared `Gc<MixinOverrides>` node for a composition
     /// key. Every `.WHAT` call (and every `.^set_name`/`.^name` on a `Mixin`
     /// value, direct or via `.WHAT`) for the same composition resolves to
-    /// this exact node, so an in-place write through
-    /// [`crate::gc::gc_contents_mut`] on one alias is visible through every
-    /// other — including instances constructed AFTER the write (verified
-    /// against `raku`, see ADR-0060).
+    /// this exact node, so a rename written into its locked
+    /// `MixinOverrides::type_name` slot on one
+    /// alias is visible through every other — including instances
+    /// constructed AFTER the write (verified against `raku`, see ADR-0060).
+    /// The node is shared by threads spawned after it was made, so nothing
+    /// may write its `overrides` map in place (#14765).
     ///
     /// On a cache miss, the new node is seeded with `mixins`' filtered
     /// composition markers ([`crate::value::types::filter_composition_markers`])
@@ -104,8 +106,8 @@ impl Interpreter {
         mixins: &crate::value::MixinOverrides,
     ) -> Result<String, RuntimeError> {
         let overrides = self.mixin_instance_composition_overrides(inner, mixins)?;
-        Ok(match overrides.get("__mutsu_type_name__") {
-            Some(renamed) => renamed.to_string_value(),
+        Ok(match overrides.type_name() {
+            Some(renamed) => renamed.to_string(),
             None => crate::value::types::what_type_name(target),
         })
     }

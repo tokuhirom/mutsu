@@ -1747,9 +1747,7 @@ impl Interpreter {
                     // an undefined mixin type object, which names itself by
                     // what its `^parameterize` gave `.^set_name`.
                     crate::value::ValueView::Mixin(_, mixins) if !value_is_defined(&value) => {
-                        mixins
-                            .get("__mutsu_type_name__")
-                            .map(Value::to_string_value)
+                        mixins.type_name().map(|name| name.to_string())
                     }
                     _ => None,
                 })
