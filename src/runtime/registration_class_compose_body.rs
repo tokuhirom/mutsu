@@ -275,6 +275,79 @@ impl Interpreter {
     /// declarations for the duration of the body so introspection agrees.
     ///
     /// Cost: O(a + m), a = pending attributes, m = the role's methods, plus the body.
+    /// Run a parameterized role's custom attribute traits (`has T $.x is
+    /// mooish(:lazy)`) on the composing class's attribute, with the role's type
+    /// parameters bound as they are for its body: Rakudo specializes the role
+    /// per consumer, so the trait runs once per composition.
+    ///
+    /// Cost: O(p + t), p = the role's recorded attribute traits, t = traits applied.
+    fn apply_param_role_attribute_traits(
+        &mut self,
+        cx: &mut RoleCompositionCx<'_>,
+        base_role_name: &str,
+        role: &RoleDef,
+        role_param_values: &ValueMap,
+    ) -> Result<(), RuntimeError> {
+        if role_param_values.is_empty() || self.registry().param_role_attribute_traits.is_empty() {
+            return Ok(());
+        }
+        let traits: Vec<(String, crate::opcode::CompiledAttrDecl)> = self
+            .registry()
+            .param_role_attribute_traits
+            .iter()
+            .filter(|((id, _), _)| *id == role.role_id)
+            .map(|((_, attr), decl)| (attr.clone(), decl.clone()))
+            .collect();
+        if traits.is_empty() {
+            return Ok(());
+        }
+        let type_capture_names: HashSet<String> = self
+            .registry()
+            .role_candidates
+            .get(base_role_name)
+            .into_iter()
+            .flat_map(|candidates| candidates.iter())
+            .find(|candidate| candidate.role_def.role_id == role.role_id)
+            .map(|candidate| {
+                candidate
+                    .type_param_defs
+                    .iter()
+                    .filter_map(|pd| pd.captured_type_name().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        for (param_name, param_value) in role_param_values {
+            if type_capture_names.contains(param_name) {
+                self.bind_type_capture(param_name, param_value);
+            }
+        }
+        let saved_package = self.current_package();
+        self.set_current_package(cx.name.to_string());
+        let mut result = Ok(());
+        for (attr, mut decl) in traits {
+            // `has T $.x` is the argument's type for this consumer.
+            if let Some(tc) = decl.type_constraint.as_deref()
+                && type_capture_names.contains(tc)
+                && let Some(bound) = role_param_values.get(tc)
+                && let ValueView::Package(name) = bound.view()
+            {
+                decl.type_constraint = Some(name.as_str().to_string());
+            }
+            let mut composes = Vec::new();
+            if let Err(err) = self.apply_attribute_traits(&decl, &attr, cx.name, &mut composes) {
+                result = Err(err);
+                break;
+            }
+        }
+        self.set_current_package(saved_package);
+        for param_name in role_param_values.keys() {
+            if type_capture_names.contains(param_name) {
+                self.env.remove(&Self::type_capture_marker_key(param_name));
+            }
+        }
+        result
+    }
+
     pub(super) fn run_composed_role_deferred_body(
         &mut self,
         cx: &mut RoleCompositionCx<'_>,
@@ -283,6 +356,7 @@ impl Interpreter {
         role_param_values: &ValueMap,
         role_arg_values: &[Value],
     ) -> Result<(), RuntimeError> {
+        self.apply_param_role_attribute_traits(cx, base_role_name, role, role_param_values)?;
         if role.deferred_body.is_empty() {
             return Ok(());
         }
