@@ -585,9 +585,20 @@ impl Interpreter {
     /// `OpCode::MakePair`: build a data-minted Pair (ADR-0021 I2), always the
     /// positional flavour — this is every fat-arrow compile except
     /// argument-position named-arg synthesis (`OpCode::MakeNamedArg`, below).
-    pub(super) fn exec_make_pair_op(&mut self, code: &crate::opcode::CompiledCode) {
+    pub(super) fn exec_make_pair_op(
+        &mut self,
+        code: &crate::opcode::CompiledCode,
+    ) -> Result<(), RuntimeError> {
         let (left, right) = self.pop_pair_operands_capturing(code);
+        // A `gather` Seq key is read when the Pair lands in a hash or a string
+        // (`%h = (gather { take "k" }) => 1` keys "k"); that read cannot pull
+        // the deferred source itself, so it is pulled here, once.
+        if let ValueView::Seq(body) = left.view() {
+            let body = body.clone();
+            self.reify_seq_body(&body)?;
+        }
         self.stack.push(Value::value_pair(left, right));
+        Ok(())
     }
 
     /// `OpCode::MakeNamedArg`: build a named-argument-flavour Pair (ADR-0021
