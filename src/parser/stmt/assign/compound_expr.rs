@@ -194,8 +194,10 @@ pub(crate) fn build_compound_assign_expr(
             ..
         } if matches!(
             (&guard, op),
-            (&TokenKind::OrOr, CompoundAssignOp::DefinedOr | CompoundAssignOp::LogicalOr)
-                | (&TokenKind::SlashSlash, CompoundAssignOp::DefinedOr)
+            (
+                &TokenKind::OrOr,
+                CompoundAssignOp::DefinedOr | CompoundAssignOp::LogicalOr
+            ) | (&TokenKind::SlashSlash, CompoundAssignOp::DefinedOr)
         ) =>
         {
             Expr::Binary {
