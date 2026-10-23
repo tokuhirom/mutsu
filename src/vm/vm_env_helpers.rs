@@ -1680,7 +1680,7 @@ impl Interpreter {
         self.get_env_with_main_alias_inner(name, sym)
             // A method frame that wrote no env keys answers its fixed names
             // from its record (ADR-14633).
-            .or_else(|| self.frame_fixture_value(sym))
+            .or_else(|| if std::env::var_os("MUTSU_NO_CENTRAL").is_some() { None } else { self.frame_fixture_value(sym) })
             // Under `no strict` an undeclared name is the package variable,
             // which outlives the block whose write auto-declared it (#10622).
             .or_else(|| self.no_strict_package_var(name, sym))
