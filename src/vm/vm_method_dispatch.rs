@@ -2421,8 +2421,18 @@ impl Interpreter {
             }
             Self::insert_fast_param_values(env, &param_values);
         } else {
+            // A body that assigns to `self` by name (a mutating call on an
+            // aggregate or mixin invocant) writes through the env binding of
+            // `self`, which is the invocant's live cell: without the key the
+            // write would bind a fresh name instead and the caller's variable
+            // would not see it. Only an object or type-object invocant, whose
+            // state lives behind its own shared cell, goes without the keys.
+            let keyless_invocant = matches!(
+                base.view(),
+                ValueView::Instance { .. } | ValueView::Package(_)
+            );
             let env = self.env_mut();
-            if shadows_visible_key {
+            if shadows_visible_key || !keyless_invocant {
                 // 6 fixed keys below plus one per bound parameter -- see
                 // `Env::reserve`.
                 env.reserve(6 + param_values.len());
