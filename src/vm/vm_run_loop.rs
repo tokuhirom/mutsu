@@ -1516,7 +1516,8 @@ impl Interpreter {
                 && !attr.is_empty()
                 && let Some(tc) = self.self_attr_type_constraint(name)
             {
-                return Value::package(crate::symbol::Symbol::intern(&tc));
+                let (base, _) = crate::runtime::types::strip_type_smiley(&tc);
+                return Value::package(crate::symbol::Symbol::intern(base));
             }
             Value::package(crate::symbol::wk::any())
         } else {

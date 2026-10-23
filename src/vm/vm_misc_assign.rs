@@ -522,9 +522,15 @@ impl Interpreter {
         // registry, not in the name-keyed constraint lane (see
         // `scalar_attr_type_constraint`). Nil keeps the untyped path below,
         // which resets the attribute to its own type object.
-        let attr_constraint = (!val.is_nil())
-            .then(|| self.scalar_attr_type_constraint(&name))
-            .flatten();
+        let attr_constraint = self
+            .scalar_attr_type_constraint(&name)
+            .or_else(|| {
+                bind_source
+                    .is_none()
+                    .then(|| self.self_attr_bound_cell_constraint(&name))
+                    .flatten()
+            })
+            .filter(|tc| !val.is_nil() || self.is_definite_constraint(tc));
         // A Proxy's STORE gets an assigned `Nil` as written (see the Proxy arm
         // below); the Nil resets that follow are for containers.
         let assigned_nil = val.is_nil();
