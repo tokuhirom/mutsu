@@ -176,6 +176,10 @@ pub(crate) struct ParamDef {
     /// signature. Code that rewrites one of those expressions must reset it.
     #[serde(default)]
     pub(crate) code: ParamCode,
+    /// Where the parameter was written (ADR-10723 Stage 2); not part of its
+    /// identity.
+    #[serde(default)]
+    pub(crate) spans: parsed::ParamSpans,
 }
 
 /// The bytecode for a parameter's signature-time expressions, compiled once in
@@ -2211,6 +2215,10 @@ pub(crate) enum Stmt {
         supersede: bool,
         /// Custom `is` traits (non-builtin trait names like `me'd`) with optional argument expression
         custom_traits: Vec<(String, Option<Expr>)>,
+        /// Where the name, signature and block were written (ADR-10723
+        /// Stage 2); `None` for a declaration nobody wrote.
+        #[serde(default)]
+        spans: Option<Box<parsed::RoutineSpans>>,
     },
     TokenDecl {
         name: Symbol,
@@ -2773,6 +2781,10 @@ pub(crate) enum Stmt {
         /// methods are made available as their sub-form (e.g. operator subs).
         is_export: bool,
         export_tags: Vec<String>,
+        /// Where the name, signature and block were written (ADR-10723
+        /// Stage 2); `None` for a declaration nobody wrote.
+        #[serde(default)]
+        spans: Option<Box<parsed::RoutineSpans>>,
     },
     RoleDecl {
         name: Symbol,
@@ -3018,6 +3030,12 @@ impl SrcSpan {
 /// [`function_body_fingerprint`]), exactly as before spans existed.
 impl Hash for SrcSpan {
     fn hash<H: Hasher>(&self, _state: &mut H) {}
+}
+
+impl Default for SrcSpan {
+    fn default() -> Self {
+        SrcSpan::NONE
+    }
 }
 
 impl Stmt {
