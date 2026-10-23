@@ -292,3 +292,23 @@ pub(super) fn construct(
         fields,
     }))))
 }
+
+/// How the character class `node` is written as an atom: its backslash class
+/// (`\d`, `\D` when negated) or `.`.
+// Cost: O(1).
+pub(super) fn written(node: &super::RakuAstNode) -> Option<String> {
+    let super::RakuAstClass::RegexCharClass(kind) = node.class else {
+        return None;
+    };
+    if kind == K::Any {
+        return Some(".".to_string());
+    }
+    let class = KINDS
+        .iter()
+        .find_map(|&(k, _, class)| (k == kind).then_some(class))??;
+    let negated = node.fields.iter().any(|f| {
+        f.name == Some("negated")
+            && matches!(&f.value, super::RakuAstFieldValue::Node(v) if v.truthy())
+    });
+    Some(format!("\\{}", class.letter(negated)))
+}

@@ -276,6 +276,8 @@ fn comparison_tail(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Ex
                     }
                 } else {
                     rhs_is_regex_lit = true;
+                    // Read here rather than through `primary`, so noted here.
+                    crate::parser::primary::note_origin(r, rest, &expr);
                     (rest, expr)
                 }
             } else if mode == ExprMode::Full {

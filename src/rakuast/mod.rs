@@ -29,6 +29,7 @@ pub(crate) mod empty_fields;
 mod expr_origins;
 mod package_trait_origins;
 mod parsed_view;
+mod regex_origins;
 mod trait_is_constructor;
 use constructor_positional::single_positional_class;
 mod convert;

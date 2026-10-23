@@ -283,6 +283,23 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
                 rakuast(target_declaration(node), Vec::new(), &node.origin)
             })])
         }
+        // Rakudo visits a quoted regex's adverbs before its body.
+        RakuAstClass::QuotedRegex | RakuAstClass::QuotedRegexRx
+            if node.fields.iter().any(|f| f.name == Some("adverbs")) =>
+        {
+            let mut rest = node.clone();
+            let (adverbs, mut fields): (Vec<_>, Vec<_>) = rest
+                .fields
+                .into_iter()
+                .partition(|f| f.name == Some("adverbs"));
+            let at = fields
+                .iter()
+                .position(|f| f.name == Some("body"))
+                .unwrap_or(0);
+            fields.splice(at..at, adverbs);
+            rest.fields = fields;
+            Some(field_children(&rest))
+        }
         RakuAstClass::VarDeclarationSimple => {
             let mut rest = node.clone();
             rest.fields.retain(|f| f.name != Some("desigilname"));
