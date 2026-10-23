@@ -106,7 +106,7 @@ impl Interpreter {
             && let Some(term) = self.imported_type_term(&name)
             && let ValueView::Package(sym) = term.view()
             && sym.as_str() != name
-            && sym.as_str().rsplit("::").next() == Some(name.as_str())
+            && crate::qualified::unqualified_part(sym).as_str() == name
             && self.registry().classes.contains_key(sym.as_str())
         {
             return sym.resolve().to_string();
