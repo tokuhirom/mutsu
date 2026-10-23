@@ -369,4 +369,53 @@ impl Interpreter {
             self.locals[slot] = Value::NIL;
         }
     }
+
+    /// The `IndexAssignExprNamed` / `IndexAssignLocal` store: `target_slot` is
+    /// the local the compiler resolved the target to, `None` for a name it did
+    /// not. Stack: `[value, index]` (or `[index, value]` with `index_first`,
+    /// `[index, element, rhs]` with `concat_append`) → `[result]`.
+    // Cost: O(1) for a single index/key; O(k) for a slice (see
+    // exec_index_assign_expr_named_op). With `concat_append`, plus the append:
+    // amortized O(m) in place, m = chars of the RHS, or O(n + m) when the
+    // element's string is shared or a gate declines, n = chars already in the
+    // element (see exec_index_concat_append_op).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn exec_index_assign_store(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        target_slot: Option<u32>,
+        is_positional: bool,
+        index_first: bool,
+        concat_append: bool,
+        element_share: bool,
+    ) -> Result<(), crate::value::RuntimeError> {
+        let appended_in_place = concat_append
+            && self.exec_index_concat_append_op(code, name_idx, is_positional, target_slot)?;
+        if appended_in_place {
+            return Ok(());
+        }
+        if index_first && self.stack.len() >= 2 {
+            let top = self.stack.len() - 1;
+            self.stack.swap(top, top - 1);
+        }
+        let pre = self.attr_elem_env_snapshot(code, name_idx);
+        let depth = self.stack.len();
+        if let Err(err) = self.exec_index_assign_expr_named_op(
+            code,
+            name_idx,
+            is_positional,
+            target_slot,
+            element_share,
+        ) {
+            // A refused store a handler may resume (#14153) leaves the stack
+            // as before the op's two operands.
+            if err.element_store_resume().is_some() {
+                self.stack.truncate(depth.saturating_sub(2));
+            }
+            return Err(err);
+        }
+        self.mirror_attr_elem_env_to_cell(code, name_idx, pre);
+        Ok(())
+    }
 }

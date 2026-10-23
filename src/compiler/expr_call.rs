@@ -1152,14 +1152,16 @@ impl Compiler {
             // ASSIGN-KEY and ASSIGN-POS) dispatches ASSIGN-KEY, not
             // ASSIGN-POS("baz", ...) — Text::CSV's CSV::Row died on the int
             // type check of its ASSIGN-POS (91_csv_cb.t test 16).
-            self.code.emit(OpCode::IndexAssignExprNamed {
-                name_idx: var_name_idx,
-                is_positional: *index_is_positional,
-                index_first: false,
+            self.emit_index_assign_named(
+                var_name_idx,
                 target_slot,
-                concat_append: false,
-                element_share: false,
-            });
+                expr_index_assign_emit::IndexAssignFlags {
+                    is_positional: *index_is_positional,
+                    index_first: false,
+                    concat_append: false,
+                    element_share: false,
+                },
+            );
             self.code.emit(OpCode::Pop);
             self.code.emit(OpCode::GetGlobal(tmp_result_idx));
             return;

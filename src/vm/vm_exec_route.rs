@@ -276,6 +276,7 @@ impl Interpreter {
             OpCode::IndexAssignDeepNested { .. }
             | OpCode::IndexAssignExprNamed { .. }
             | OpCode::IndexAssignExprNested { .. }
+            | OpCode::IndexAssignLocal { .. }
             | OpCode::IndexAssignPseudoStashKeyed { .. }
             | OpCode::IndexAssignPseudoStashNamed { .. }
             | OpCode::IndexElemAutoviv { .. }
