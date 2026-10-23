@@ -240,6 +240,35 @@ pub(crate) fn role_mixin_suffix(mixins: &MixinOverrides) -> Option<String> {
     role_mixin_suffix_excluding(mixins, "")
 }
 
+/// The registry keys of the roles composed into `mixins` (the `__mutsu_role__`
+/// markers), most recently applied first, skipping the role named `base`.
+/// [`mixin_roles_applied_last_first`] orders the same roles but renders each
+/// for display, which turns an anonymous role's key into `<anon|N>`; a lookup
+/// in the role registry needs the key itself.
+// Cost: O(r log r), r = roles composed into the mixin.
+pub(crate) fn mixin_role_keys_applied_last_first(
+    mixins: &MixinOverrides,
+    base: &str,
+) -> Vec<String> {
+    let mut entries: Vec<(i64, String)> = mixins
+        .keys()
+        .filter_map(|k| k.strip_prefix("__mutsu_role__"))
+        .filter(|n| *n != base)
+        .map(|n| {
+            let seq = mixins
+                .get(MetaNs::RoleSeq.str_key_for_str(n))
+                .and_then(|v| match v.view() {
+                    ValueView::Int(i) => Some(i),
+                    _ => None,
+                })
+                .unwrap_or(i64::MIN);
+            (seq, n.to_string())
+        })
+        .collect();
+    entries.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    entries.into_iter().map(|(_, name)| name).collect()
+}
+
 /// The roles a `Mixin` value's `overrides` record, MOST-RECENTLY-APPLIED
 /// FIRST — the order `.^roles` reports them in
 /// (`((1 but A) but B).^roles` is `(B, A, Real, Numeric)` in raku, with the
