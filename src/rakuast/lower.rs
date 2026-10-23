@@ -62,6 +62,7 @@ pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
 pub(super) fn lower_stmts(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     // Operators the list declares are scoped to it.
     let _operators = super::infix_func::enter_scope();
+    let _keywords = super::shadowed_terms::enter_scope();
     match node.class {
         RakuAstClass::CompUnit => lower_stmt_list(named_child(node, "statement-list")?),
         _ => super::anon_state::with_frame(|| lower_stmt_list(node)),
@@ -102,6 +103,7 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
                 }
                 let child = child_node(&f.value)?;
                 super::infix_func::note_declaration(child);
+                super::shadowed_terms::note_keyword_declaration(child);
                 if let Some(line) = super::origin::line_of(child) {
                     stmts.push(Stmt::SetLine(line, crate::ast::SrcSpan::NONE));
                 }
@@ -3073,6 +3075,24 @@ fn lower_named_call(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             _ => {}
         }
     }
+    // `not(...)` / `so(...)` with one argument is the parser's prefix operator
+    // (its argument is evaluated once, in boolean context), not a sub call.
+    if matches!(name.as_str(), "not" | "so")
+        && args.len() == 1
+        && !super::declared_routines::is_declared(&name)
+        && !super::declared_routines::is_user_call(node)
+    {
+        let op = if name == "not" {
+            crate::token_kind::TokenKind::Bang
+        } else {
+            crate::token_kind::TokenKind::Question
+        };
+        return Ok(Expr::Unary {
+            op,
+            expr: Box::new(args.remove(0)),
+            word: false,
+        });
+    }
     if let Some(line) = super::origin::current_line() {
         if args.is_empty() && super::declared_routines::is_declared(&name) {
             args.push(crate::parser::callsite_line_arg(line));
@@ -3380,7 +3400,7 @@ pub(super) fn named_child_or_positional(node: &RakuAstNode) -> Result<&RakuAstNo
 // Cost: O(1).
 pub(super) fn term_identifier_expr(name: &str) -> Expr {
     match name {
-        "True" | "False" => {
+        "True" | "False" if !super::shadowed_terms::is_keyword_shadowed(name) => {
             let value = Value::truth(name == "True");
             // In a unit that imported through a run-time `sub EXPORT` hook the
             // parser keeps the keyword shadowable (#9047); so does lowering.

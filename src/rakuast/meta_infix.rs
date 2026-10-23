@@ -376,6 +376,25 @@ fn fold(node: &RakuAstNode, meta: &str, op: String) -> Result<Expr, RuntimeError
     let (Some(first), Some(second)) = (items.next(), items.next()) else {
         return Err(unsupported(node));
     };
+    // The parser spells a negated comparison as `!(left OP right)` (so
+    // `!=:=` sees the operand expressions themselves, which a `MetaOp` call
+    // would pass as plain values: `$list[0] !=:= $x` compared the element's
+    // value, and a priming `*` is found by the same walk as for the plain op).
+    if meta == "!"
+        && items.as_slice().is_empty()
+        && let Some(token) = crate::compiler::helpers_ops::op_name_to_token_kind(&op)
+    {
+        return Ok(Expr::Unary {
+            op: crate::token_kind::TokenKind::Bang,
+            expr: Box::new(Expr::Binary {
+                left: Box::new(first),
+                op: token,
+                right: Box::new(second),
+                form: Default::default(),
+            }),
+            word: false,
+        });
+    }
     let mut acc = Expr::MetaOp {
         meta: meta.to_string(),
         op: op.clone(),

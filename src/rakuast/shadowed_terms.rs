@@ -21,11 +21,72 @@ thread_local! {
     /// The names of the packages the unit declares (`class Nil`, `role X`,
     /// `grammar G`, `module M`, `package P`).
     static PACKAGES: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+    /// The `True` / `False` terms each enclosing statement list redeclares
+    /// (`constant True = 42`), innermost last. Unlike `SHADOWED` these are
+    /// scoped: the redeclaration holds in its own block and what is nested in it.
+    static KEYWORD_SCOPES: RefCell<Vec<HashSet<String>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Pops the scope [`enter_scope`] pushed.
+pub(super) struct KeywordScope;
+
+impl Drop for KeywordScope {
+    fn drop(&mut self) {
+        KEYWORD_SCOPES.with(|s| {
+            s.borrow_mut().pop();
+        });
+    }
+}
+
+/// Start a statement list: a `True` / `False` it declares is visible to the
+/// rest of it and to what it contains, as in the parser.
+// Cost: O(1).
+pub(super) fn enter_scope() -> KeywordScope {
+    KEYWORD_SCOPES.with(|s| s.borrow_mut().push(HashSet::new()));
+    KeywordScope
+}
+
+/// Record the `True` / `False` term the statement `stmt` declares, if it does.
+// Cost: O(1).
+pub(super) fn note_keyword_declaration(stmt: &RakuAstNode) {
+    let target = if stmt.class == RakuAstClass::StatementExpression {
+        match named_child(stmt, "expression") {
+            Ok(inner) => inner,
+            Err(_) => return,
+        }
+    } else {
+        stmt
+    };
+    let name = match target.class {
+        RakuAstClass::VarDeclarationConstant => leaf_str(target, "name").ok(),
+        RakuAstClass::VarDeclarationTerm => named_child(target, "name")
+            .ok()
+            .and_then(name_parts::name_shape)
+            .and_then(|shape| match shape {
+                NameShape::Identifier(name) => Some(name),
+                _ => None,
+            }),
+        _ => None,
+    };
+    if let Some(name) = name.filter(|n| n == "True" || n == "False") {
+        KEYWORD_SCOPES.with(|s| {
+            if let Some(scope) = s.borrow_mut().last_mut() {
+                scope.insert(name);
+            }
+        });
+    }
+}
+
+/// Whether an enclosing statement list redeclares the term `True` / `False`.
+// Cost: O(s), s = open scopes.
+pub(super) fn is_keyword_shadowed(name: &str) -> bool {
+    KEYWORD_SCOPES.with(|s| s.borrow().iter().any(|scope| scope.contains(name)))
 }
 
 /// Record the constant names `root` redeclares, replacing the previous unit's.
 // Cost: O(n), n = nodes in the unit.
 pub(super) fn scan(root: &RakuAstNode) {
+    KEYWORD_SCOPES.with(|s| s.borrow_mut().clear());
     let mut found = HashSet::new();
     visit(root, false, &mut found);
     SHADOWED.with(|s| *s.borrow_mut() = found);
@@ -137,10 +198,13 @@ fn is_term_declaration(class: RakuAstClass) -> bool {
 fn visit(node: &RakuAstNode, in_decl: bool, found: &mut HashSet<String>) {
     let in_decl = in_decl || is_term_declaration(node.class);
     for field in &node.fields {
-        // The initializer of `constant p = pi` reads terms, it declares none.
+        // The initializer of `constant p = pi` / `my \p = pi` reads terms, it
+        // declares none.
         let in_decl = in_decl
-            && !(node.class == RakuAstClass::VarDeclarationConstant
-                && field.name == Some("initializer"));
+            && !(matches!(
+                node.class,
+                RakuAstClass::VarDeclarationConstant | RakuAstClass::VarDeclarationTerm
+            ) && field.name == Some("initializer"));
         match &field.value {
             RakuAstFieldValue::Node(v) => visit_value(v, in_decl, found),
             RakuAstFieldValue::List(items) => {
