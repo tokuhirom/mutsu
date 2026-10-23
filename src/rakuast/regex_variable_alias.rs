@@ -14,28 +14,39 @@
 //! grammar, so its `WithWhitespace` disappears with the atom: the public node
 //! is the bare interpolation and the hidden atom carries the wrapper.
 
-use super::convert::{node_field, regex_node};
+use super::convert::{leaf_field, node_field, regex_node};
 use super::lower::{lower_regex_node, named_child};
 use super::{RakuAstClass, RakuAstField, RakuAstNode};
 use crate::regex_tree::{RegexExtension, RegexNode};
-use crate::value::RuntimeError;
+use crate::value::{RuntimeError, Value};
 
 /// The hidden field's name.
 const FIELD: &str = "source-alias";
+/// The hidden whitespace written before / after the `=` (`$name = ATOM`).
+const GAP_BEFORE: &str = "source-alias-gap-before";
+const GAP_AFTER: &str = "source-alias-gap-after";
 
 /// `$name=regex` as the node rakudo renders, with the aliased atom hidden.
 // Cost: O(n), n = size of the aliased atom.
 pub(super) fn convert(
-    name: &str,
-    sequential: bool,
+    (name, sequential, array): (&str, bool, bool),
+    gap: (&str, &str),
     regex: &RegexNode,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = regex_node(&RegexNode::Interpolation {
-        name: name.to_string(),
-        sequential,
+    let (name, sequential) = (name.to_string(), sequential);
+    let mut node = regex_node(&if array {
+        RegexNode::ArrayInterpolation { name, sequential }
+    } else {
+        RegexNode::Interpolation { name, sequential }
     })?;
     node.fields
         .push(node_field(Some(FIELD), regex_node(regex)?));
+    for (field, text) in [(GAP_BEFORE, gap.0), (GAP_AFTER, gap.1)] {
+        if !text.is_empty() {
+            node.fields
+                .push(leaf_field(Some(field), Value::str(text.to_string())));
+        }
+    }
     Ok(node)
 }
 
@@ -45,18 +56,26 @@ pub(super) fn convert_spaced(alias: &RegexNode) -> Result<RakuAstNode, RuntimeEr
     let RegexNode::Extension(RegexExtension::VariableAlias {
         name,
         sequential,
+        array,
+        gap_before,
+        gap_after,
         regex,
     }) = alias
     else {
         return Err(super::convert::unsupported("spaced regex variable alias"));
     };
-    convert(name, *sequential, &RegexNode::WithWhitespace(regex.clone()))
+    convert(
+        (name, *sequential, *array),
+        (gap_before, gap_after),
+        &RegexNode::WithWhitespace(regex.clone()),
+    )
 }
 
 /// Whether `field` is the hidden aliased atom of a regex interpolation.
 // Cost: O(1).
 pub(super) fn is_source_field(node: &RakuAstNode, field: &RakuAstField) -> bool {
-    node.class == RakuAstClass::RegexInterpolation && field.name == Some(FIELD)
+    node.class == RakuAstClass::RegexInterpolation
+        && matches!(field.name, Some(name) if name == FIELD || name == GAP_BEFORE || name == GAP_AFTER)
 }
 
 /// A `Regex::Interpolation` carrying an aliased atom, as the alias again;
@@ -75,19 +94,28 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError
             fields: node
                 .fields
                 .iter()
-                .filter(|field| field.name != Some(FIELD))
+                .filter(|field| !is_source_field(node, field))
                 .cloned()
                 .collect(),
         };
-        match lower_regex_node(&interpolation)? {
-            RegexNode::Interpolation { name, sequential } => {
+        let (name, sequential, array) = match lower_regex_node(&interpolation)? {
+            RegexNode::Interpolation { name, sequential } => (name, sequential, false),
+            RegexNode::ArrayInterpolation { name, sequential } => (name, sequential, true),
+            _ => return Err(super::lower::unsupported(node)),
+        };
+        {
+            {
                 let (regex, spaced) = match regex {
                     RegexNode::WithWhitespace(regex) => (regex, true),
                     regex => (Box::new(regex), false),
                 };
+                let gap = |wanted| super::lower::leaf_str(node, wanted).unwrap_or_default();
                 let alias = RegexNode::Extension(RegexExtension::VariableAlias {
                     name,
                     sequential,
+                    array,
+                    gap_before: gap(GAP_BEFORE),
+                    gap_after: gap(GAP_AFTER),
                     regex,
                 });
                 Ok(if spaced {
@@ -96,7 +124,6 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError
                     alias
                 })
             }
-            _ => Err(super::lower::unsupported(node)),
         }
     })())
 }

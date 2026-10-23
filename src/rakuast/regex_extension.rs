@@ -176,8 +176,15 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
         RegexExtension::VariableAlias {
             name,
             sequential,
+            array,
+            gap_before,
+            gap_after,
             regex,
-        } => super::regex_variable_alias::convert(name, *sequential, regex)?,
+        } => super::regex_variable_alias::convert(
+            (name, *sequential, *array),
+            (gap_before, gap_after),
+            regex,
+        )?,
         RegexExtension::NamedRegexArg { name, regex_arg } => RakuAstNode {
             class: RakuAstClass::RegexAssertionNamedRegexArg,
             fields: vec![
