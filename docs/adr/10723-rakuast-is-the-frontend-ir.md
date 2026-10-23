@@ -2078,3 +2078,24 @@ overloaded junction operator pairwise when it carries adverbs is #14630; that
 an adverb on a core infix is dropped is #14644. The executable contract is
 `t/rakuast/rakuast-list-infix-adverbs.t`; `roast/integration/advent2013-day10.t`
 passes in frontend mode.
+
+### 6.107 S10: core infix adverbs and dunder variable traits (2026-10-23)
+
+Survey after §6.106 (`scripts/rakuast-frontend.sh causes`, debug build): 49 files
+outside the ratchet, 46 of them already passing, 1 differing, 2 refusing.
+
+- An application with adverbs calls the operator routine whatever the operator
+  (`1 + 2 :adverb`, #14644): the parser now builds the `InfixFunc` call for a core
+  infix too, so `convert` renders it as `ApplyInfix` / `ApplyListInfix` (identical to
+  rakudo's `.raku`), and `lower` no longer refuses an undeclared operator with
+  adverbs; the call is rejected at run time by the core operator, as on the ordinary
+  frontend.
+- A user variable trait spelled like a parser marker (`my $x is __x`) is recorded
+  under `ast::USER_TRAIT_ESCAPE` (#14532). `decl_traits` renders it as the
+  `Trait::Is` of the unescaped name and lowering escapes it again, so the dunder
+  name is a user trait and only an unescaped `__` name is a marker.
+
+The 46 passing files and the three fixed ones are added to
+`ci/rakuast-frontend-passing.txt`. `t/oo/construct/buildplan-built-bind.t` still
+differs; it belongs to #14559.
+

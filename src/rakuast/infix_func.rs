@@ -349,10 +349,9 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
         list_field(node, ADVERBS).unwrap_or_default()
     };
     if !adverbs.is_empty() {
-        // The adverbs go to the outermost call, as the parser attaches them.
-        if !is_declared(&name) {
-            return Some(Err(unsupported(node)));
-        }
+        // The adverbs go to the outermost call, as the parser attaches them. A
+        // core operator is called too: it declares no named parameter, so the
+        // call is rejected at run time exactly as on the ordinary frontend.
         return Some(fold(node, name).and_then(|mut call| {
             if let Expr::InfixFunc { right, .. } = &mut call {
                 for adverb in adverbs {
