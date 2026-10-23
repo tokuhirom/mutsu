@@ -57,7 +57,34 @@ impl Interpreter {
             // itself, not a copy the caller has to keep (Tinky's
             // `apply-workflow`).
             let mut result = args[0].clone();
+            // `Class.^mixin(R)` makes the mixin class, composing the roles
+            // (their attribute traits run then, as `class C does R` runs
+            // them) rather than leaving that to the first instance.
+            if let ValueView::Package(base) = args[0].view()
+                && self.registry().classes.contains_key(base.as_str())
+            {
+                let mut role_names = Vec::new();
+                for role in &args[1..] {
+                    match self.extract_role_application(&self.normalize_role_type_object(role)) {
+                        Some((name, role_args, _))
+                            if role_args.is_empty()
+                                && self.registry().roles.contains_key(&name) =>
+                        {
+                            role_names.push(name)
+                        }
+                        _ => {
+                            role_names.clear();
+                            break;
+                        }
+                    }
+                }
+                if !role_names.is_empty() {
+                    self.ensure_mixin_class(&base.resolve(), &role_names)?;
+                }
+            }
             for role in &args[1..] {
+                // `role { ... }` evaluates to one candidate of its group.
+                let role = &self.normalize_role_type_object(role);
                 result = if self.is_role_application(role) {
                     self.eval_does_values_mutating(result, role.clone())?
                 } else {
