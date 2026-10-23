@@ -250,6 +250,8 @@ struct BlockLocalDeclScan {
     found: bool,
     /// Look for the lexically scoped types only, not the `my` variables.
     types_only: bool,
+    /// Look for dynamic `my $*x` declarations only.
+    dynamic_only: bool,
 }
 
 impl<'ast> Visit<'ast> for BlockLocalDeclScan {
@@ -263,7 +265,13 @@ impl<'ast> Visit<'ast> for BlockLocalDeclScan {
                 is_our: false,
                 is_dynamic: false,
                 ..
-            } if !self.types_only => self.found = true,
+            } if !self.types_only && !self.dynamic_only => self.found = true,
+            Stmt::VarDecl {
+                is_state: false,
+                is_our: false,
+                is_dynamic: true,
+                ..
+            } if self.dynamic_only => self.found = true,
             // A lexical type name is bound in the declaring scope's env just
             // like a `my` variable, so a branch that declares one owes the same
             // scope exit (#10594).
@@ -295,6 +303,17 @@ impl<'ast> Visit<'ast> for BlockLocalDeclScan {
 // Cost: O(n), n = size of the part of `stmts` in the branch's own scope.
 pub(super) fn declares_block_local(stmts: &[Stmt]) -> bool {
     let mut scan = BlockLocalDeclScan::default();
+    walk_stmts(&mut scan, stmts);
+    scan.found
+}
+
+/// Whether a branch body declares a dynamic `my $*x` in its own scope.
+// Cost: O(n), n = size of the part of `stmts` in the branch's own scope.
+pub(super) fn declares_dynamic_local(stmts: &[Stmt]) -> bool {
+    let mut scan = BlockLocalDeclScan {
+        dynamic_only: true,
+        ..Default::default()
+    };
     walk_stmts(&mut scan, stmts);
     scan.found
 }

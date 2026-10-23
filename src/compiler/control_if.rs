@@ -60,6 +60,30 @@ impl Compiler {
             } else {
                 then_branch
             };
+        // A branch's own `my $*x` shadows the enclosing dynamic binding for the
+        // branch only. The shadow-only restore of a branch scope does not take
+        // an env-mirrored dynamic back, so such a branch runs as a real block.
+        let (then_block, else_block);
+        let (then_branch, else_branch) = if is_statement_modifier {
+            (then_branch, else_branch)
+        } else {
+            let wrap = |branch: &[Stmt]| {
+                super::body_scans::declares_dynamic_local(branch)
+                    .then(|| {
+                        vec![Stmt::Expr(Expr::DoBlock {
+                            body: branch.to_vec(),
+                            label: None,
+                            origin: crate::ast::DoBlockOrigin::SourceBlock,
+                        })]
+                    })
+            };
+            then_block = wrap(then_branch);
+            else_block = wrap(else_branch);
+            (
+                then_block.as_deref().unwrap_or(then_branch),
+                else_block.as_deref().unwrap_or(else_branch),
+            )
+        };
         self.compile_if_construct_inner(
             cond,
             then_branch,
