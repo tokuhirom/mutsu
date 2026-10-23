@@ -172,22 +172,39 @@ pub(super) fn parameters(signature: &mut RakuAstNode, params: &[ParamDef]) {
             continue;
         };
         let mut node = RakuAstNode::clone(node);
-        super::origin::set_span(&mut node, param.spans.param);
-        with_child(&mut node, "target", |target| {
-            super::origin::set_span(target, param.spans.target);
-            // `\x`: a `ParameterTarget::Term` over the term's `Name`.
-            if target.class == RakuAstClass::ParameterTargetTerm
-                && let Some(field) = target.fields.first_mut()
-            {
-                with_value(&mut field.value, |name| {
-                    super::origin::set_span(name, param.spans.target)
-                });
-            }
-        });
-        with_child(&mut node, "type", |ty| type_origin(ty, param.spans.type_));
+        parameter(
+            &mut node,
+            param.spans.param,
+            param.spans.target,
+            param.spans.type_,
+        );
         list_origins(&mut node, "traits", &param.spans.traits);
         *value = Value::rakuast(Box::new(node));
     }
+}
+
+/// Give a `Parameter`, its target and its type the origins of the text they
+/// were written at.
+// Cost: O(d), d = nesting of the type nodes.
+pub(super) fn parameter(
+    node: &mut RakuAstNode,
+    param: crate::ast::SrcSpan,
+    target_span: crate::ast::SrcSpan,
+    type_span: crate::ast::SrcSpan,
+) {
+    super::origin::set_span(node, param);
+    with_child(node, "target", |target| {
+        super::origin::set_span(target, target_span);
+        // `\x`: a `ParameterTarget::Term` over the term's `Name`.
+        if target.class == RakuAstClass::ParameterTargetTerm
+            && let Some(field) = target.fields.first_mut()
+        {
+            with_value(&mut field.value, |name| {
+                super::origin::set_span(name, target_span)
+            });
+        }
+    });
+    with_child(node, "type", |ty| type_origin(ty, type_span));
 }
 
 /// Give a parameter's type, and the type and name nodes it wraps

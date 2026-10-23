@@ -234,11 +234,13 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
             _ => None,
         })
     };
-    let rakuast = |class, fields: Vec<RakuAstField>| {
+    // The declaration a parameter's target visits is written where the
+    // target is, so it has the target's range.
+    let rakuast = |class, fields: Vec<RakuAstField>, origin: &crate::rakuast::NodeOrigin| {
         Value::rakuast(Box::new(RakuAstNode {
             class,
             fields,
-            origin: Default::default(),
+            origin: origin.clone(),
         }))
     };
     match node.class {
@@ -274,7 +276,7 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
         }
         RakuAstClass::ParameterTargetVar => {
             Some(vec![node_value("declaration").unwrap_or_else(|| {
-                rakuast(RakuAstClass::VarDeclarationSimple, Vec::new())
+                rakuast(RakuAstClass::VarDeclarationSimple, Vec::new(), &node.origin)
             })])
         }
         RakuAstClass::VarDeclarationSimple => {
@@ -301,6 +303,7 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
                     name: Some("type"),
                     value: RakuAstFieldValue::Node(explicit_type),
                 }],
+                &target_node.origin,
             );
             let mut new_target = target_node.clone();
             new_target.fields.push(RakuAstField {

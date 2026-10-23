@@ -100,6 +100,7 @@ mod routine_source;
 mod routine_traits;
 mod shadowed_terms;
 mod signature_decl;
+mod signature_decl_origins;
 mod signature_literal;
 mod source_identifier;
 #[cfg(test)]

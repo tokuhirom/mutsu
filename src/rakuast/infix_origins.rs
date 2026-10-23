@@ -22,6 +22,10 @@ pub(super) fn derive(node: &mut RakuAstNode) {
         RakuAstClass::ApplyInfix => apply_infix(node),
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => call_name(node),
         RakuAstClass::VarDeclarationSimple => initializer(node),
+        RakuAstClass::VarDeclarationSignature => {
+            initializer(node);
+            super::signature_decl_origins::declaration(node);
+        }
         RakuAstClass::ApplyListInfix => super::list_origins::apply_list_infix(node),
         RakuAstClass::CircumfixParentheses | RakuAstClass::CircumfixArrayComposer => {
             super::list_origins::circumfix(node)
