@@ -18,6 +18,7 @@ mod chain;
 mod class_constructor;
 mod composition_source;
 mod compound_stmt;
+mod expr_origins;
 mod conditional_lower;
 mod constructor_positional;
 mod contextualizer;
@@ -1737,9 +1738,10 @@ pub(crate) fn lower_parsed_stmt(
 
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
 pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
-    let (stmts, _finish) = crate::parse_dispatch::parse_source_spelled(source)?;
+    let (mut stmts, _finish) = crate::parse_dispatch::parse_source_spelled(source)?;
     // The origins of the tree index this text (ADR-10723 §4).
     let _source = unit_source::Scope::enter(source);
+    let _origins = expr_origins::strip(&mut stmts);
     let node = convert::statement_list(&stmts)?;
     Ok(Value::rakuast(Box::new(node)))
 }

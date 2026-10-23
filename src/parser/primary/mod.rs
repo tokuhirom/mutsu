@@ -595,6 +595,25 @@ pub(in crate::parser) use number::wrap_divergent_literal;
 pub(in crate::parser) use regex::parse_call_arg_list;
 
 pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
+    let (rest, expr) = primary_term(input)?;
+    // A parse the RakuAST conversion reads keeps where each term was written
+    // (ADR-10723 Stage 2).
+    if crate::ast::spelled::keeping() && !matches!(&expr, Expr::Spelled(s) if matches!(s.spelling, crate::ast::spelled::Spelling::Origin(_))) {
+        let span = source_span(input, rest);
+        if span.is_some() {
+            return Ok((
+                rest,
+                Expr::Spelled(Box::new(crate::ast::spelled::Spelled {
+                    expr,
+                    spelling: crate::ast::spelled::Spelling::Origin(span),
+                })),
+            ));
+        }
+    }
+    Ok((rest, expr))
+}
+
+fn primary_term(input: &str) -> PResult<'_, Expr> {
     let _nesting = crate::parser::NestingGuard::enter(input)?;
     if let Some(cached) = PRIMARY_MEMO.get(input) {
         return cached;

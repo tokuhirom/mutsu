@@ -94,7 +94,11 @@ fn refusal(err: RuntimeError) -> RuntimeError {
 /// `parse → RakuAST → lower`, the pipeline the RakuAST frontend replaces the
 /// parser's tree with.
 pub(crate) fn round_trip(stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
-    let node = super::convert::statement_list(stmts)?;
+    // The conversion matches expressions by shape, so the term origins the
+    // spelled parse kept come off first (`expr_origins`).
+    let mut stmts = stmts.to_vec();
+    let _origins = super::expr_origins::strip(&mut stmts);
+    let node = super::convert::statement_list(&stmts)?;
     let mut lowered = super::lower(&node)?;
     // The spelled parse keeps bare type names for the conversion; the
     // lowered tree gets the qualification an ordinary parse does.

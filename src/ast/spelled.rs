@@ -102,6 +102,9 @@ pub(crate) enum Spelling {
     /// A bare Whatever operand of `o` is expanded to a closure for execution;
     /// the public RakuAST keeps the written composition and Whatever argument.
     CompositionWhatever(Box<Expr>),
+    /// Where the term was written (ADR-10723 Stage 2, expression families):
+    /// the byte range its RakuAST node's `origin` answers.
+    Origin(crate::ast::SrcSpan),
 }
 
 /// A term and the way it was spelled; see the module documentation.
