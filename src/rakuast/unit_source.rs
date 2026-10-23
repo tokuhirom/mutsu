@@ -35,6 +35,9 @@ pub(super) struct UnitSource {
     char_starts: Vec<u32>,
     /// Characters in the text.
     chars: i64,
+    /// The text itself, for the positions that are found in it (the inside
+    /// of a quote's delimiters).
+    text: Rc<str>,
 }
 
 thread_local! {
@@ -99,6 +102,7 @@ impl UnitSource {
             line_starts,
             char_starts,
             chars,
+            text: Rc::from(text),
         }
     }
 
@@ -172,4 +176,31 @@ pub(super) fn span_origin_value(span: SrcSpan) -> Option<Value> {
         Symbol::intern("RakuAST::Origin"),
         attrs,
     ))
+}
+
+/// Call `f` with the text of the current unit's source that `span` occupies,
+/// when the unit's source is known and holds the span.
+// Cost: O(1) plus `f`.
+pub(super) fn with_text<R>(span: SrcSpan, f: impl FnOnce(&str) -> Option<R>) -> Option<R> {
+    if !span.is_some() {
+        return None;
+    }
+    let unit = CURRENT.with(|c| c.borrow().clone())?;
+    f(unit.text.get(span.from as usize..span.to as usize)?)
+}
+
+/// The byte offset of character offset `char` in the current unit's source,
+/// when the unit's source is known.
+// Cost: O(1).
+pub(super) fn byte_of(char: i64) -> Option<u32> {
+    let unit = CURRENT.with(|c| c.borrow().clone())?;
+    let at = usize::try_from(char).ok()?;
+    if unit.char_starts.is_empty() {
+        return u32::try_from(at).ok().filter(|_| char <= unit.chars);
+    }
+    match unit.char_starts.get(at) {
+        Some(byte) => Some(*byte),
+        None if char == unit.chars => u32::try_from(unit.text.len()).ok(),
+        None => None,
+    }
 }

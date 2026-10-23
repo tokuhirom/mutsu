@@ -40,8 +40,13 @@ pub(crate) enum Spelling {
     /// An attribute trait's direct `[ ... ]` argument, not `([ ... ])`.
     BracketTraitArgument,
     /// `q:to/END/`: the terminator line as written, indentation and newline
-    /// included (`    END\n`).
-    Heredoc { stop: Box<str> },
+    /// included (`    END\n`), and where the body was written (ADR-10723
+    /// Stage 2: the origin of its text).
+    Heredoc {
+        stop: Box<str>,
+        #[serde(default)]
+        body: crate::ast::SrcSpan,
+    },
     /// `qw/a b/`, `qqww/a b/`, `«a b»`: the raw text and the processors the
     /// quote applies to it (`words` or `quotewords`, then optionally `val`).
     WordQuote {

@@ -16,6 +16,17 @@ Where the Raku language leaves a behaviour to the program, mutsu promises no mor
 (user decision 2026-10-23, ADR-12814). The invariants below protect the interpreter's own
 surfaces: what it loads, writes, decodes and shares.
 
+That principle is about language semantics. It is no reason to relax an interpreter surface
+where mutsu is deliberately stricter than rakudo. Two such rules are kept on purpose (user
+decision 2026-10-23):
+
+- **Analysis never executes.** `raku -c` runs `BEGIN` blocks and `use`d modules. mutsu's
+  analysis paths do not (the first table row), because the language server is a "look at this
+  file" tool (ADR-0065 D4), not a compile check.
+- **Caches are private.** Rakudo writes precompiled modules next to the source (`lib/.precomp`).
+  mutsu keeps its caches in the user's own `0700` cache directory (the caches invariant below),
+  so a checkout cannot plant a cache entry that gets executed.
+
 
 | Surface | What the user agreed to | Must never become |
 | --- | --- | --- |

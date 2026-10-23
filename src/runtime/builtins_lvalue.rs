@@ -671,7 +671,15 @@ impl Interpreter {
             let was_lvalue = self.in_lvalue_assignment;
             self.in_lvalue_assignment = true;
             self.lexicals.readonly_rw_tail = None;
-            let result = self.call_function(name, call_args);
+            // A user routine named like a builtin (`sub get($x is rw) is rw`)
+            // is what the call resolved to: `call_function` would match the
+            // builtin's arm first (`get` -> `IO::Handle.get`), so run the
+            // resolved definition itself.
+            let result = if Self::is_builtin_function(name) {
+                self.call_routine_def(&def, call_args)
+            } else {
+                self.call_function(name, call_args)
+            };
             self.in_lvalue_assignment = was_lvalue;
             let result = result?;
             if rw_capable {
