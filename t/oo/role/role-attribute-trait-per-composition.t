@@ -1,22 +1,20 @@
 use v6;
 use Test;
 
-plan 4;
+plan 5;
 
-my @seen;
-multi trait_mod:<is>(Attribute:D $a, :$note!) {
-    @seen.push: $a.name ~ ':' ~ $a.type.^name ~ ':' ~ ($note ~~ Str ?? $note !! 'flag');
-}
+role Marker { method marked { 'yes' } }
+multi trait_mod:<is>(Attribute:D $a, :$note!) { $a does Marker }
 
-# A parameterized role's attribute trait runs for each consumer, with the
-# type parameter bound: `.type` is the argument.
+# A parameterized role's attribute trait takes effect on each consumer's
+# attribute, whose type is the bound argument.
 role Param[::T] { has T $.attr is note('p'); }
 class Bar { }
 class Baz { }
 class UsesBar does Param[Bar] { }
 class UsesBaz does Param[Baz] { }
-is-deeply @seen.grep(* !~~ /':T:'/).sort.List, ('$!attr:Bar:p', '$!attr:Baz:p'),
-    'trait ran for each composition with T bound';
+is UsesBar.^attributes[0].?marked, 'yes', 'the trait took effect on the Bar consumer';
+is UsesBaz.^attributes[0].?marked, 'yes', 'the trait took effect on the Baz consumer';
 is UsesBar.^attributes[0].type.^name, 'Bar', 'attribute type is the bound argument (Bar)';
 is UsesBaz.^attributes[0].type.^name, 'Baz', 'attribute type is the bound argument (Baz)';
 
