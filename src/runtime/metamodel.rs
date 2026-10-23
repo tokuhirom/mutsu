@@ -497,6 +497,11 @@ impl Interpreter {
                 .is_some()
         });
         let instance = self.call_method_with_values(how_type, "new", Vec::new())?;
+        // Names the type the metaobject describes, so a `nqp::getattr` of its
+        // `@!BUILDPLAN` (AttrX::Mooish's `create_BUILDPLAN`) finds the class.
+        if let ValueView::Instance { attributes, .. } = instance.view() {
+            attributes.insert("__mutsu_how_target", Value::str(class_name.to_string()));
+        }
         self.registry_mut()
             .class_how_values
             .insert(class_name.to_string(), instance);
@@ -537,7 +542,7 @@ impl Interpreter {
         let Some(how) = self.registry().class_how_values.get(class_name).cloned() else {
             return Ok(());
         };
-        if !matches!(how.view(), ValueView::Mixin(..)) {
+        if !Self::is_how_with_role_mixed_in(&how) {
             return Ok(());
         }
         if self.class_how_compose_hook(class_name) {

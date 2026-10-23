@@ -493,6 +493,20 @@ impl Interpreter {
         self.mixin_has_hook(value, "compose")
     }
 
+    /// Whether `value` is an instance of a mixin class (`Class+{R}`): a HOW of
+    /// a user class that `does R` reblessed rather than wrapped.
+    // Cost: O(len of the class name).
+    pub(crate) fn is_how_mixin_instance(value: &Value) -> bool {
+        matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.as_str().contains("+{"))
+    }
+
+    /// Whether `value` is a HOW with a role mixed in: a `Mixin` wrapper, or the
+    /// instance of a mixin class.
+    // Cost: O(len of the class name).
+    pub(crate) fn is_how_with_role_mixed_in(value: &Value) -> bool {
+        matches!(value.view(), ValueView::Mixin(..)) || Self::is_how_mixin_instance(value)
+    }
+
     /// Whether `value` is a HOW with a role mixed in that defines a public
     /// method called `method_name`.
     pub(crate) fn mixin_has_hook(&self, value: &Value, method_name: &str) -> bool {
@@ -509,8 +523,11 @@ impl Interpreter {
             }),
             // An `Attribute` reblessed by `$attr does R`: the mixin type
             // composed the role's methods.
+            // A user-class HOW reblessed by `$how does R` (`CustomClassHOW`
+            // superseding `class`): the mixin type composed the role's methods.
             ValueView::Instance { class_name, .. }
-                if crate::value::attribute_class::is_composed_meta_object(value) =>
+                if crate::value::attribute_class::is_composed_meta_object(value)
+                    || Self::is_how_mixin_instance(value) =>
             {
                 self.registry()
                     .user_method_overloads(class_name.as_str(), method_name)
