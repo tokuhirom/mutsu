@@ -202,8 +202,14 @@ impl Interpreter {
                 }
             }
             let mro = self.class_mro(&class_resolved);
+            if mro.iter().any(|p| p.as_str() == other_resolved) {
+                return Ok(Value::int(1));
+            }
+            // A concrete built-in value (`$x.VAR`, a `Scalar`) has no class
+            // entry of its own; its ancestry is the chain `.^mro` reports.
+            let chain = self.classhow_mro_names_without_does_roles(&args[0]);
             Ok(Value::int(
-                mro.iter().any(|p| p.as_str() == other_resolved) as i64
+                chain.iter().any(|p| p.as_str() == other_resolved) as i64
             ))
     }
 
