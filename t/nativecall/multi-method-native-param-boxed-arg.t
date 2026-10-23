@@ -6,7 +6,7 @@ use NativeCall;
 # (`int`, `uint`) and a native candidate never makes the call ambiguous
 # (#14670). Expected values are the `raku` output.
 
-plan 9;
+plan 11;
 
 class C {
     multi method a(int $pos, int $value) { "ii" }
@@ -41,3 +41,14 @@ is (^8).map({ $bytes[$_] }).join(','), '170,170,170,170,170,170,170,170', 'and i
 my $i64 = CArray[int64].new;
 $i64[0] = -1;
 is $i64[0], -1, 'a negative CArray[int64] element still works';
+
+class CS is repr('CStruct') {
+    has uint64 $.channels;
+    has uint32 $.x;
+}
+my $attr = CS.^attributes.first(*.name eq '$!channels');
+my $cs = CS.CREATE;
+$attr.set_value($cs, 2**64 - 1);
+my $raw = nativecast(CArray[uint8], $cs);
+is (^8).map({ $raw[$_] }).join(','), '255,255,255,255,255,255,255,255', 'a uint64 CStruct field keeps all 64 bits';
+is $attr.get_value($cs), 18446744073709551615, 'and reads them back';
