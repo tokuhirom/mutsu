@@ -47,7 +47,7 @@ impl Interpreter {
         } else {
             // Digits only, like a lexical declaration id, and far above the ids
             // the declaration counter reaches, so the two never collide.
-            let n = crate::value::next_instance_id() as u64 | (1u64 << 40);
+            let n = crate::value::next_instance_id() | (1u64 << 40);
             format!("{name}\u{0}{n}")
         };
         // The builtin metamodel class this call ultimately goes through: the
