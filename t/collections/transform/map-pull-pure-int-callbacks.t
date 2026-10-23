@@ -5,7 +5,7 @@ use Test;
 # by the operator itself while a consumer pulls it one element at a time
 # (#10187). Laziness against a live source and every fallback are pinned.
 
-plan 8;
+plan 9;
 
 my @a = 1..6;
 my @out;
@@ -33,3 +33,7 @@ is $it.pull-one, 40, '... and the next one';
 
 my @e = <1 2 3>;
 is-deeply @e.map(* + 1).list, (2, 3, 4), 'numeric string elements';
+
+my @f = 1..3;
+for @f.map(* + 1) { }
+is-deeply @f, [1, 2, 3], 'the source array is not written by a pure map';

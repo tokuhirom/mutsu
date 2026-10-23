@@ -184,7 +184,9 @@ impl Interpreter {
         // live source between pulls is still seen; the first element it
         // cannot compute (not a plain Int, or an overflow) hands over to the
         // loop below, which also owns the end-of-source handling.
-        if matches!(mode, MapGrepMode::Map)
+        // (A map over a real Array rw-binds `$_`, but `$_ OP constant` never
+        // writes it, so `MapRw` is the same loop here.)
+        if matches!(mode, MapGrepMode::Map | MapGrepMode::MapRw(_))
             && plan.pending_slip.is_none()
             && self.dispatch.user_declared_infix_ops.is_empty()
             && let Some(op) = super::vm_map_grep_pure::pure_int_topic_op(func.as_ref())
