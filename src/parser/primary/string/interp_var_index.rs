@@ -71,7 +71,7 @@ fn parse_one_postcircumfix_index(input: &str, target: Expr) -> (Expr, &str) {
                 target: Box::new(target),
                 index: Box::new(index),
                 is_positional: false,
-                spelling: Default::default(),
+                spelling: crate::ast::IndexSpelling::Angle,
             },
             &after_lt[end + 1..],
         );
