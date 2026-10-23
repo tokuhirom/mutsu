@@ -536,17 +536,14 @@ impl Value {
                 }
                 // Cycle detection for recursive array structures
                 thread_local! {
-                    static SEEN_ARR_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
+                    static SEEN_ARR_PTRS: std::cell::RefCell<crate::value::ancestor_stack::AncestorStack<()>> = std::cell::RefCell::new(crate::value::ancestor_stack::AncestorStack::new());
                 }
                 let ptr = crate::gc::Gc::as_ptr(&items) as usize;
-                let is_cycle = SEEN_ARR_PTRS.with(|seen| {
-                    let s = seen.borrow();
-                    s.contains(&ptr)
-                });
+                let is_cycle = SEEN_ARR_PTRS.with(|seen| seen.borrow().get(ptr).is_some());
                 if is_cycle {
                     return "[...]".to_string();
                 }
-                SEEN_ARR_PTRS.with(|seen| seen.borrow_mut().push(ptr));
+                SEEN_ARR_PTRS.with(|seen| seen.borrow_mut().push(ptr, ()));
                 // The walk reads the live range another thread's `push`/`shift`
                 // rewrites under the node's stripe (ADR-0068): take it too. A
                 // leaf (rendering runs no user code); nested renders no-op.
@@ -562,10 +559,7 @@ impl Value {
                     .join(" ");
                 drop(structure);
                 SEEN_ARR_PTRS.with(|seen| {
-                    let mut s = seen.borrow_mut();
-                    if let Some(pos) = s.iter().rposition(|p| *p == ptr) {
-                        s.remove(pos);
-                    }
+                    seen.borrow_mut().pop(ptr);
                 });
                 result
             }
@@ -596,17 +590,14 @@ impl Value {
                 }
                 // Cycle detection for recursive hash structures
                 thread_local! {
-                    static SEEN_HASH_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
+                    static SEEN_HASH_PTRS: std::cell::RefCell<crate::value::ancestor_stack::AncestorStack<()>> = std::cell::RefCell::new(crate::value::ancestor_stack::AncestorStack::new());
                 }
                 let ptr = crate::gc::Gc::as_ptr(&items) as usize;
-                let is_cycle = SEEN_HASH_PTRS.with(|seen| {
-                    let s = seen.borrow();
-                    s.contains(&ptr)
-                });
+                let is_cycle = SEEN_HASH_PTRS.with(|seen| seen.borrow().get(ptr).is_some());
                 if is_cycle {
                     return "{...}".to_string();
                 }
-                SEEN_HASH_PTRS.with(|seen| seen.borrow_mut().push(ptr));
+                SEEN_HASH_PTRS.with(|seen| seen.borrow_mut().push(ptr, ()));
                 // As for an Array above: a concurrent insert can rehash the map.
                 let structure =
                     crate::value::container_lock::ContainerStructGuard::acquire_for(None, self);
@@ -625,10 +616,7 @@ impl Value {
                 drop(structure);
                 pairs.sort();
                 SEEN_HASH_PTRS.with(|seen| {
-                    let mut s = seen.borrow_mut();
-                    if let Some(pos) = s.iter().rposition(|p| *p == ptr) {
-                        s.remove(pos);
-                    }
+                    seen.borrow_mut().pop(ptr);
                 });
                 pairs.join("\n")
             }

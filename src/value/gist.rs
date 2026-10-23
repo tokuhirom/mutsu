@@ -285,27 +285,29 @@ pub(crate) fn gist_value(value: &Value) -> String {
     // back-reference. Each entry carries a "was looped back to" flag that the
     // revisit sets and the exit reads.
     thread_local! {
-        static SEEN_PTRS: std::cell::RefCell<Vec<(usize, bool)>> = const { std::cell::RefCell::new(Vec::new()) };
+        static SEEN_PTRS: std::cell::RefCell<crate::value::ancestor_stack::AncestorStack<bool>> = std::cell::RefCell::new(crate::value::ancestor_stack::AncestorStack::new());
     }
     /// Mark `ptr` as being rendered. Returns true when `ptr` is already an
     /// ancestor — a cycle — flagging that ancestor so its exit emits the
     /// binding preamble.
-    fn check_and_push(ptrs: &std::cell::RefCell<Vec<(usize, bool)>>, ptr: usize) -> bool {
+    fn check_and_push(
+        ptrs: &std::cell::RefCell<crate::value::ancestor_stack::AncestorStack<bool>>,
+        ptr: usize,
+    ) -> bool {
         let mut s = ptrs.borrow_mut();
-        if let Some(entry) = s.iter_mut().rev().find(|(p, _)| *p == ptr) {
-            entry.1 = true;
+        if let Some(looped_back_to) = s.get_mut(ptr) {
+            *looped_back_to = true;
             return true; // cycle detected
         }
-        s.push((ptr, false));
+        s.push(ptr, false);
         false
     }
     /// Pop `ptr`, reporting whether the walk under it looped back to it.
-    fn pop_ptr(ptrs: &std::cell::RefCell<Vec<(usize, bool)>>, ptr: usize) -> bool {
-        let mut s = ptrs.borrow_mut();
-        match s.iter().rposition(|(p, _)| *p == ptr) {
-            Some(pos) => s.remove(pos).1,
-            None => false,
-        }
+    fn pop_ptr(
+        ptrs: &std::cell::RefCell<crate::value::ancestor_stack::AncestorStack<bool>>,
+        ptr: usize,
+    ) -> bool {
+        ptrs.borrow_mut().pop(ptr).unwrap_or(false)
     }
     /// `(\Array_140… = [42 Array_140…])` — the binding preamble Rakudo emits on
     /// the node a cycle loops back to.

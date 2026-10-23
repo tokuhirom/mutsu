@@ -565,6 +565,7 @@ pub(crate) struct MixData {
 }
 
 mod aliased_mut;
+pub(crate) mod ancestor_stack;
 pub(crate) mod array_coerce;
 mod array_data_ops;
 mod array_holes;

@@ -108,7 +108,7 @@ impl Interpreter {
     /// Whether a value is (or contains, one container level deep per recursion
     /// step) a `Proxy` element that a value-context read must FETCH.
     pub(crate) fn value_has_proxy(value: &Value) -> bool {
-        Self::value_has_proxy_seen(value, &mut Vec::new())
+        Self::value_has_proxy_seen(value, &mut crate::value::ancestor_stack::AncestorStack::new())
     }
 
     /// The body of [`Self::value_has_proxy`], carrying the set of aggregate
@@ -121,17 +121,21 @@ impl Interpreter {
     /// process. Re-entering a node cannot reveal a Proxy the first visit missed,
     /// so stopping there costs no accuracy. Identity is the `Gc` node pointer,
     /// the same handle the `.raku` renderer's own cycle detection uses.
-    fn value_has_proxy_seen(value: &Value, seen: &mut Vec<usize>) -> bool {
-        // A cheap guard on the way in: only aggregates can close a cycle, and
-        // `seen` is short (cycle depth, not element count), so the linear scan
-        // is cheaper than a set.
+    fn value_has_proxy_seen(
+        value: &Value,
+        seen: &mut crate::value::ancestor_stack::AncestorStack<()>,
+    ) -> bool {
+        // A cheap guard on the way in: only aggregates can close a cycle.
+        // `seen` is the ancestor stack, as deep as the nesting, so its
+        // membership test is O(1) once deep (a linear scan made `.gist` of
+        // 200,000 nested arrays quadratic, #12714).
         macro_rules! enter {
             ($node:expr) => {{
                 let ptr = crate::gc::Gc::as_ptr(&$node) as usize;
-                if seen.contains(&ptr) {
+                if seen.get(ptr).is_some() {
                     return false;
                 }
-                seen.push(ptr);
+                seen.push(ptr, ());
                 ptr
             }};
         }
@@ -154,19 +158,19 @@ impl Interpreter {
             // A pure walk of a container another thread may restructure:
             // hold its stripe (ADR-0068, #13079).
             ValueView::Array(items, _) => {
-                enter!(items);
+                let ptr = enter!(items);
                 let _read = ContainerStructGuard::acquire_for(None, value);
                 let found = items.iter().any(|v| Self::value_has_proxy_seen(v, seen));
-                seen.pop();
+                seen.pop(ptr);
                 found
             }
             ValueView::Seq(items) => items.iter().any(|v| Self::value_has_proxy_seen(v, seen)),
             ValueView::Slip(items) => items.iter().any(|v| Self::value_has_proxy_seen(v, seen)),
             ValueView::Hash(map) => {
-                enter!(map);
+                let ptr = enter!(map);
                 let _read = ContainerStructGuard::acquire_for(None, value);
                 let found = map.values().any(|v| Self::value_has_proxy_seen(v, seen));
-                seen.pop();
+                seen.pop(ptr);
                 found
             }
             ValueView::Pair(_, v) => Self::value_has_proxy_seen(v, seen),
