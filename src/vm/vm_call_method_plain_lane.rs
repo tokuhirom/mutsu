@@ -166,6 +166,88 @@ impl Interpreter {
         Ok(())
     }
 
+    /// The early form of the lane for the commonest call shape, a method with
+    /// no arguments on an ordinary object: a hit skips the whole stretch of
+    /// opcode-level receiver probes before the lane's own gate, not only the
+    /// prefix after it (~2k of the ~15k instructions of `$o.m()`).
+    ///
+    /// The late gate sits after that stretch because several of its probes read
+    /// the *instance* rather than the class. Hoisting the gate is sound only
+    /// for a call none of them can claim, so this refuses by method name every
+    /// probe in the stretch that reads per-instance state, and relies on the
+    /// memo for the rest -- those key on the receiver's kind, the method name
+    /// or the arguments, all fixed by the key (a `Seq`, a lazy list, a gather,
+    /// a shaped array or a `Slip` is never an `Instance`):
+    ///
+    /// * `message`: the thrown-message attribute of an exception instance;
+    /// * `value`: the weight pair of a QuantHash instance;
+    /// * the renderers (`renders_receiver_elements`): the nested-`Proxy` scan
+    ///   over the instance's attributes, and `raku`'s itemization test;
+    /// * the push family: `vivify_bound_entry_variable` reads the variable's
+    ///   binding by name;
+    /// * `subbuf-rw`, `freeze`, `flat`, `Slip`: kind-specific interceptions.
+    ///
+    /// **A probe added to that stretch that reads the instance must add its
+    /// method name here**, or a warm lane would skip it for the instances it
+    /// would have claimed.
+    ///
+    /// Also refused: any program with a user `^find_method` or a wrapped
+    /// method (their probes sit in the stretch and are not covered by the
+    /// memo's generation).
+    // Cost: O(1) -- one set probe.
+    pub(super) fn try_plain_method_early_lane(
+        &mut self,
+        code: &CompiledCode,
+        target_name: &str,
+        method: &str,
+        method_sym: crate::symbol::Symbol,
+    ) -> Option<Result<(), RuntimeError>> {
+        if self.caches.plain_method_lane.is_empty()
+            || Self::early_lane_method_excluded(method)
+            || crate::runtime::find_method_intercept::any_user_find_method()
+            || self.has_any_wrap_chains()
+        {
+            return None;
+        }
+        let ValueView::Instance { class_name, .. } = self.stack.last()?.view() else {
+            return None;
+        };
+        self.refresh_method_caches_for_generation();
+        if !self
+            .caches
+            .plain_method_lane
+            .contains(&(class_name, method_sym, Vec::new()))
+        {
+            return None;
+        }
+        let target = self.stack.pop()?;
+        // What the stretch leaves behind for a call without arguments.
+        self.caches.ctor_lane_candidate = None;
+        self.caches.plain_method_lane_candidate = None;
+        self.pending_call_arg_source_slots.clear();
+        self.set_pending_call_arg_sources(None);
+        Some(self.run_plain_method_lane(code, target_name, target, method, method_sym, Vec::new()))
+    }
+
+    /// Method names the stretch handles for an instance receiver by reading
+    /// the instance, which [`Self::try_plain_method_early_lane`] must not skip.
+    fn early_lane_method_excluded(method: &str) -> bool {
+        Self::renders_receiver_elements(method)
+            || matches!(
+                method,
+                "message"
+                    | "value"
+                    | "push"
+                    | "append"
+                    | "unshift"
+                    | "prepend"
+                    | "subbuf-rw"
+                    | "freeze"
+                    | "flat"
+                    | "Slip"
+            )
+    }
+
     /// Record that the prefix was inert for this pair, if the pair is the one
     /// the current dispatch's gate nominated.
     ///

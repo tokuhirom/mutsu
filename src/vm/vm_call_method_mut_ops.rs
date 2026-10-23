@@ -455,6 +455,22 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // #8880: the plain-method lane's early form for a call without
+        // arguments on an ordinary object (`try_plain_method_early_lane`).
+        if arity == 0
+            && modifier_idx.is_none()
+            && !quoted
+            && arg_sources_idx.is_none()
+            && !self.accessor_ref_pending
+            && let Some(result) = self.try_plain_method_early_lane(
+                code,
+                Self::const_str(code, target_name_idx),
+                name.raw,
+                name.sym,
+            )
+        {
+            return result;
+        }
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.
         let want_ref = std::mem::take(&mut self.accessor_ref_pending);
