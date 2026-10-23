@@ -3,7 +3,8 @@
 - **Status**: Accepted (user decision 2026-10-22; proposed 2026-10-02). Supersedes the pipeline
   decision of [ADR-0011](0011-rakuast-model-layer-and-phasing.md). The §4 questions stay gates
   before Stage 2; the source-position question is decided (2026-10-22); the representation
-  question and the Stage 2 mechanism are Proposed (2026-10-23, §4).
+  question and the Stage 2 mechanism are Proposed (2026-10-23, §4), and so is the expression-term
+  origin amendment to the source-position decision (2026-10-23, §4).
 - **Date**: 2026-10-02
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#10723](https://github.com/tokuhirom/mutsu/issues/10723). Roadmap:
