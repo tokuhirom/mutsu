@@ -188,3 +188,19 @@ pub(super) fn with_text<R>(span: SrcSpan, f: impl FnOnce(&str) -> Option<R>) -> 
     let unit = CURRENT.with(|c| c.borrow().clone())?;
     f(unit.text.get(span.from as usize..span.to as usize)?)
 }
+
+/// The byte offset of character offset `char` in the current unit's source,
+/// when the unit's source is known.
+// Cost: O(1).
+pub(super) fn byte_of(char: i64) -> Option<u32> {
+    let unit = CURRENT.with(|c| c.borrow().clone())?;
+    let at = usize::try_from(char).ok()?;
+    if unit.char_starts.is_empty() {
+        return u32::try_from(at).ok().filter(|_| char <= unit.chars);
+    }
+    match unit.char_starts.get(at) {
+        Some(byte) => Some(*byte),
+        None if char == unit.chars => u32::try_from(unit.text.len()).ok(),
+        None => None,
+    }
+}

@@ -257,3 +257,107 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         *only = Value::rakuast(Box::new(text));
     }
 }
+
+/// The character offset an origin ends at.
+// Cost: O(1).
+fn origin_end(node: &RakuAstNode) -> Option<i64> {
+    let origin = node.origin.0.as_ref()?;
+    let ValueView::Instance { attributes, .. } = origin.view() else {
+        return None;
+    };
+    match attributes.as_map().get("to")?.view() {
+        ValueView::Int(to) => Some(to),
+        _ => None,
+    }
+}
+
+/// Give the `Call::Method` of a method-call application written at `span`
+/// (`ApplyPostfix(operand, Call::Method(name, args))`) its origin, its
+/// `Name`'s and its `ArgList`'s, as Rakudo does: from the method name to the
+/// end of the call, the name, and the inside of the parentheses (empty right
+/// after the name when there are none). The text between the operand's end
+/// and the call's end is read off the source; anything but `.name`,
+/// `.name(...)` and their `.?` / `.+` / `.*` / `.^` / `!` forms is left alone.
+// Cost: O(n), n = length of the call's source.
+pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
+    use super::RakuAstClass;
+    if node.class != RakuAstClass::ApplyPostfix || !span.is_some() {
+        return;
+    }
+    let Some(operand_end) = node
+        .fields
+        .iter()
+        .find(|f| f.name == Some("operand"))
+        .and_then(|f| match &f.value {
+            RakuAstFieldValue::Node(v) => match v.view() {
+                ValueView::RakuAst(operand) => origin_end(operand),
+                _ => None,
+            },
+            _ => None,
+        })
+        .and_then(super::unit_source::byte_of)
+    else {
+        return;
+    };
+    let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("postfix")) else {
+        return;
+    };
+    let RakuAstFieldValue::Node(held) = &mut field.value else {
+        return;
+    };
+    let ValueView::RakuAst(call) = held.view() else {
+        return;
+    };
+    if call.class != RakuAstClass::CallMethod || call.origin.0.is_some() {
+        return;
+    }
+    let from = operand_end as usize;
+    let Some((name, args)) =
+        super::unit_source::with_text(crate::ast::SrcSpan::new(from, span.to as usize), |text| {
+            let after_ws = text.trim_start();
+            let after_op = after_ws
+                .strip_prefix('.')
+                .map(|r| r.strip_prefix(['?', '+', '*', '^']).unwrap_or(r))
+                .or_else(|| after_ws.strip_prefix('!'))?;
+            let name_at = from + (text.len() - after_op.len());
+            let name_len = after_op
+                .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '\'' | ':')))
+                .unwrap_or(after_op.len());
+            if name_len == 0 {
+                return None;
+            }
+            let name_end = name_at + name_len;
+            let rest = &after_op[name_len..];
+            let args = if rest.is_empty() {
+                (name_end, name_end)
+            } else if rest.starts_with('(') && rest.ends_with(')') && rest.len() >= 2 {
+                (name_end + 1, from + text.len() - 1)
+            } else {
+                return None;
+            };
+            Some(((name_at, name_end), args))
+        })
+    else {
+        return;
+    };
+    let mut call = RakuAstNode::clone(call);
+    set_span(
+        &mut call,
+        crate::ast::SrcSpan::new(name.0, span.to as usize),
+    );
+    for f in call.fields.iter_mut() {
+        let at = match f.name {
+            Some("name") => name,
+            Some("args") => args,
+            _ => continue,
+        };
+        if let RakuAstFieldValue::Node(v) = &mut f.value
+            && let ValueView::RakuAst(part) = v.view()
+        {
+            let mut part = RakuAstNode::clone(part);
+            set_span(&mut part, crate::ast::SrcSpan::new(at.0, at.1));
+            *v = Value::rakuast(Box::new(part));
+        }
+    }
+    *held = Value::rakuast(Box::new(call));
+}
