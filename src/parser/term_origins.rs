@@ -321,7 +321,11 @@ impl VisitMut for Walk {
         }
         let print = self.terms[self.next].1;
         self.next += 1;
-        let Some(span) = self.claim(print) else {
+        let claimed = self.claim(print);
+        // A `*` the whole-unit pass curried is the curried code's argument,
+        // which Rakudo gives no origin: it takes its note (so the `*`s after
+        // it keep theirs) and attaches none.
+        let Some(span) = claimed.filter(|_| !matches!(expr, Expr::WhateverArg)) else {
             crate::ast_visit::walk_expr_mut(self, expr);
             return;
         };
