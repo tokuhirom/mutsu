@@ -34,7 +34,9 @@ $go.keep;
 is ([+] await @workers), 6 * @bases, 'every thread reads back each concurrent rename';
 
 is @bases[7].^mixin(R).^name, 'C7+R', 'a rename made on a worker is visible on the main thread';
-is @bases[7].^mixin(R).raku, 'C7+R', '... and renders the type object by that name';
+my $renamed := @bases[9].^mixin(R);
+$renamed.^set_name('Nine');
+is $renamed.raku, 'Nine', 'a renamed type object renders by its new name';
 
 use NativeCall;
 my @types = uint8, int16, int32, int64, num32, num64, Str;
