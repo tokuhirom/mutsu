@@ -36,12 +36,18 @@ pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
         | ValueView::WeakSub(_)
         | ValueView::Routine { .. }
         | ValueView::Regex(_)
-        | ValueView::RegexWithAdverbs(..) => chain_of(crate::value::type_name::value_type_name(target)),
+        | ValueView::RegexWithAdverbs(..) => {
+            chain_of(crate::value::type_name::value_type_name(target))
+        }
         // A mixin (`Method+{R}`) reaches the rows of the class it derives from
         // after its own and its roles' methods (ADR-14477 §2.4).
         ValueView::Instance { class_name, .. } => {
             let class = class_name.resolve();
-            chain_of(class.split_once('+').map_or(class.as_str(), |(base, _)| base))
+            chain_of(
+                class
+                    .split_once('+')
+                    .map_or(class.as_str(), |(base, _)| base),
+            )
         }
         _ => None,
     }
