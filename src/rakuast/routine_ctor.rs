@@ -80,5 +80,9 @@ fn build(class: RakuAstClass, args: &[Value]) -> Result<Value, RuntimeError> {
         name: Some("body"),
         value: RakuAstFieldValue::Node(body),
     });
-    Ok(Value::rakuast(Box::new(RakuAstNode { class, fields })))
+    Ok(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    })))
 }

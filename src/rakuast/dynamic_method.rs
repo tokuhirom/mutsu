@@ -76,7 +76,11 @@ fn postfix_of(
         fields.push(node_field(Some("args"), arg_list(args)?));
     }
     fields.extend(dispatch);
-    Ok(RakuAstNode { class, fields })
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    })
 }
 
 /// The `right` of a `.=` whose method is a term: `$x .= &f` / `$x .= $m`
@@ -150,6 +154,7 @@ pub(super) fn convert(
     modifier: Option<char>,
 ) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyPostfix,
         fields: vec![
             node_field(Some("operand"), postfix_operand(target)?),
@@ -167,10 +172,12 @@ pub(super) fn convert_hyper(
     modifier: Option<char>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let hyper = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::MetaPostfixHyper,
         fields: vec![node_field(None, postfix(name_expr, args, modifier)?)],
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyPostfix,
         fields: vec![
             node_field(Some("operand"), postfix_operand(target)?),

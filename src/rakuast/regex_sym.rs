@@ -22,6 +22,7 @@ use crate::value::{RuntimeError, Value};
 pub(super) fn name_colonpairs(args: &SubruleArgs) -> Option<RakuAstField> {
     let text = args.sym_adverb()?;
     let pair = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ColonPairValue,
         fields: vec![
             leaf_field(Some("key"), Value::str("sym".to_string())),

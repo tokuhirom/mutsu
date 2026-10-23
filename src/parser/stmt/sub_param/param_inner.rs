@@ -14,7 +14,54 @@ pub(crate) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         p.traits.retain(|t| t != "required");
     }
     crate::parser::decl_doc::attach_param(input, rest, &p);
+    p.spans = param_spans(input, rest, &p);
     Ok((rest, p))
+}
+
+/// Where the parameter `p`, read from `input` up to `rest`, was written: all
+/// of it, and its target variable (ADR-10723 Stage 2).
+// Cost: O(n), n = length of the parameter's source.
+fn param_spans(input: &str, rest: &str, p: &ParamDef) -> crate::ast::parsed::ParamSpans {
+    let text = input[..input.len() - rest.len()].trim_end();
+    let param = crate::parser::primary::source_span(input, &input[text.len()..]);
+    let target = target_offset(text, p).map_or(crate::ast::SrcSpan::NONE, |(at, len)| {
+        crate::parser::primary::source_span(&input[at..], &input[at + len..])
+    });
+    let type_ = p
+        .type_constraint
+        .as_deref()
+        .and_then(|tc| text.find(tc).map(|at| (at, tc.len())))
+        .map_or(crate::ast::SrcSpan::NONE, |(at, len)| {
+            crate::parser::primary::source_span(&input[at..], &input[at + len..])
+        });
+    crate::ast::parsed::ParamSpans {
+        param,
+        target,
+        type_,
+    }
+}
+
+/// The offset and length of `p`'s variable in its source `text`.
+// Cost: O(n), n = length of `text`.
+fn target_offset(text: &str, p: &ParamDef) -> Option<(usize, usize)> {
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'';
+    let (needle, skip) = if p.sigilless {
+        (format!("\\{}", p.name), 1)
+    } else if p.name.starts_with(['$', '@', '%', '&']) {
+        (p.name.clone(), 0)
+    } else {
+        (format!("${}", p.name), 0)
+    };
+    let mut from = 0;
+    while let Some(at) = text[from..].find(&needle) {
+        let at = from + at;
+        let end = at + needle.len();
+        if !text[end..].starts_with(is_ident) {
+            return Some((at + skip, needle.len() - skip));
+        }
+        from = end;
+    }
+    None
 }
 
 /// A nominal type may be followed by a **type capture** of the same parameter:

@@ -81,6 +81,7 @@ impl Compiler {
             let esc = self.escaping_position;
             let cc_idx = self.add_closure_code_baked(compiled, esc);
             let idx = self.code.add_stmt(Stmt::SubDecl {
+                spans: Default::default(),
                 name: Symbol::intern(""),
                 name_expr: None,
                 params: Vec::new(),
@@ -250,6 +251,7 @@ impl Compiler {
             && crate::whatever_curry::body_mutates_placeholder(body, "_");
         let wc_param_defs: Vec<crate::ast::ParamDef> = if wc_raw {
             vec![crate::ast::ParamDef {
+                spans: Default::default(),
                 trait_meta: Default::default(),
                 type_capture: None,
                 name: "_".to_string(),
@@ -324,6 +326,7 @@ impl Compiler {
         let esc = self.escaping_position;
         let cc_idx = self.add_closure_code_baked(compiled, esc);
         let idx = self.code.add_stmt(Stmt::SubDecl {
+            spans: Default::default(),
             name: Symbol::intern(""),
             name_expr: None,
             params: params.clone(),

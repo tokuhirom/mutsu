@@ -44,12 +44,14 @@ pub(super) fn written_variable(sigil: &str, name: &str) -> RakuAstNode {
     // spelling too (measured on 2026.09).
     if name.len() > 1 && name.starts_with('!') {
         return RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::VarAttribute,
             fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
         };
     }
     if name.len() > 1 && name.starts_with('.') {
         return RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::VarAttributePublic,
             fields: vec![leaf_field(
                 Some("name"),
@@ -59,12 +61,14 @@ pub(super) fn written_variable(sigil: &str, name: &str) -> RakuAstNode {
     }
     if name.len() > 1 && name.starts_with('*') {
         return RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::VarDynamic,
             fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
         };
     }
     if name_parts::is_qualified_identifier(name) {
         return RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::VarPackage,
             fields: vec![
                 node_field(Some("name"), name_parts::qualified_name(name)),
@@ -73,6 +77,7 @@ pub(super) fn written_variable(sigil: &str, name: &str) -> RakuAstNode {
         };
     }
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::VarLexical,
         fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
     }

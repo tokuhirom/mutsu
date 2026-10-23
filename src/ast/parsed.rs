@@ -50,6 +50,41 @@ pub(crate) struct BlockSpans {
     pub(crate) list: SrcSpan,
 }
 
+/// Where a routine declaration (`Sub`, `Method`, `Submethod`) was written,
+/// below the statement it is: its name, its signature and its block. Kept on
+/// `Stmt::SubDecl` / `Stmt::MethodDecl`, which already hold what the source
+/// wrote, so the declaration is its own typed node (ADR-10723 §4).
+#[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct RoutineSpans {
+    /// The declared name (`foo`, `p` of `!p`).
+    pub(crate) name: SrcSpan,
+    /// From the first parameter to the end of the last; an empty `( )` sits at
+    /// its `)`, and a routine with no parentheses has none.
+    pub(crate) signature: SrcSpan,
+    pub(crate) block: BlockSpans,
+}
+
+/// Where a parameter was written: all of it (type, traits and default
+/// included) and its target variable.
+///
+/// Like `SrcSpan`'s `Hash`, its `Debug` leaves the positions out: the runtime
+/// still tells two signatures apart by their `Debug` text in places (a forward
+/// declaration and its definition, a role's re-registered method), and a
+/// signature is the same wherever it was written.
+#[derive(Clone, Copy, Default, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ParamSpans {
+    pub(crate) param: SrcSpan,
+    pub(crate) target: SrcSpan,
+    /// The nominal type, smiley included (`Int:D`).
+    pub(crate) type_: SrcSpan,
+}
+
+impl std::fmt::Debug for ParamSpans {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ParamSpans")
+    }
+}
+
 /// Which loop a [`LoopStmt`] is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum LoopKind {

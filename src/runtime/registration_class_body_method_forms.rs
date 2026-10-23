@@ -31,7 +31,7 @@ pub(crate) fn method_sub_form_params(
                 .filter(|p| p.as_str() != "self")
                 .cloned(),
         );
-        let self_param = crate::ast::ParamDef { trait_meta: Default::default(),
+        let self_param = crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
             type_capture: None,
             name: "self".to_string(),
             default: None,
@@ -96,7 +96,7 @@ impl Interpreter {
             sub_param_defs.push(inv);
             &method_param_defs[1..]
         } else {
-            sub_param_defs.push(ParamDef { trait_meta: Default::default(),
+            sub_param_defs.push(ParamDef { spans: Default::default(), trait_meta: Default::default(),
                 type_capture: None,
                 name: "self".to_string(),
                 default: None,

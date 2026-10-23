@@ -8,15 +8,18 @@ use crate::value::{RuntimeError, Value};
 
 fn assignment_node(left: RakuAstNode, right: &Expr) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyListInfix,
         fields: vec![
             node_field(
                 Some("infix"),
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::MetaInfixZip,
                     fields: vec![node_field(
                         None,
                         RakuAstNode {
+                            origin: Default::default(),
                             class: RakuAstClass::Assignment,
                             fields: vec![RakuAstField {
                                 name: None,

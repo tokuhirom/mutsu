@@ -4360,6 +4360,7 @@ impl Compiler {
                     first.is_invocant = true;
                 }
                 let lowered = Stmt::SubDecl {
+                    spans: Default::default(),
                     name: *name,
                     name_expr: name_expr.clone(),
                     params: sub_params,

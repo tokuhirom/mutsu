@@ -20,10 +20,12 @@ pub(super) fn trait_argument(argument: &Expr) -> Result<RakuAstNode, RuntimeErro
 // Cost: O(e), e = size of the expression.
 pub(in crate::rakuast) fn paren_argument(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let semilist = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::SemiList,
         fields: vec![node_field(None, statement_expression(convert_expr(expr)?))],
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::CircumfixParentheses,
         fields: vec![node_field(None, semilist)],
     })

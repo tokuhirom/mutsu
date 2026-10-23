@@ -46,6 +46,7 @@ pub(super) fn is_thunk(node: &RakuAstNode) -> bool {
 // Cost: O(f), f = fields of `node`.
 pub(super) fn unmark(node: &RakuAstNode) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: node.class,
         fields: node
             .fields

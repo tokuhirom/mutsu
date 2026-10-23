@@ -21,6 +21,7 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
     Ok(match node {
         ParsedStmt::Conditional(c) => conditional_node(c)?,
         ParsedStmt::Given { topic, block } => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::StatementGiven,
             fields: vec![
                 node_field(Some("source"), convert_expr(topic)?),
@@ -28,6 +29,7 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
             ],
         },
         ParsedStmt::When { condition, block } => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::StatementWhen,
             fields: vec![
                 node_field(Some("condition"), convert_expr(condition)?),
@@ -35,6 +37,7 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
             ],
         },
         ParsedStmt::Default(block) => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::StatementDefault,
             fields: vec![node_field(
                 Some("body"),
@@ -49,6 +52,7 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
                 view_block(&w.block, BlockKind::Signature)?,
             ));
             RakuAstNode {
+                origin: Default::default(),
                 class: if w.until {
                     RakuAstClass::StatementLoopUntil
                 } else {
@@ -96,6 +100,7 @@ fn loop_node(l: &LoopStmt) -> Result<RakuAstNode, RuntimeError> {
             view_block(&l.block, BlockKind::Plain)?,
         ));
         return Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::StatementLoop,
             fields,
         });
@@ -108,6 +113,7 @@ fn loop_node(l: &LoopStmt) -> Result<RakuAstNode, RuntimeError> {
         fields.push(node_field(Some("condition"), convert_expr(cond)?));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: if l.kind == LoopKind::RepeatUntil {
             RakuAstClass::StatementLoopRepeatUntil
         } else {
@@ -149,6 +155,7 @@ pub(super) fn conditional_node(node: &Conditional) -> Result<RakuAstNode, Runtim
     for clause in &node.clauses {
         let orwith = clause.kind == ClauseKind::Orwith;
         let clause_node = RakuAstNode {
+            origin: Default::default(),
             class: if orwith {
                 RakuAstClass::StatementOrwith
             } else {
@@ -171,7 +178,11 @@ pub(super) fn conditional_node(node: &Conditional) -> Result<RakuAstNode, Runtim
     if let Some(block) = &node.else_block {
         fields.push(node_field(Some("else"), clause_block(block, else_topical)?));
     }
-    Ok(RakuAstNode { class, fields })
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    })
 }
 
 /// A clause's `Block` (`implicit-topic` when the clause topicalizes) or
@@ -212,7 +223,7 @@ fn view_block(block: &ParsedBlock, kind: BlockKind) -> Result<RakuAstNode, Runti
 /// `StatementList`) with the three origins the parser recorded for `block`.
 // Cost: O(f), f = fields of the three nodes.
 fn with_block_origins(mut node: RakuAstNode, block: BlockSpans) -> RakuAstNode {
-    node.fields.extend(super::origin::span_field(block.span));
+    super::origin::set_span(&mut node, block.span);
     let Some(body) = node.fields.iter_mut().find(|f| f.name == Some("body")) else {
         return node;
     };
@@ -223,15 +234,13 @@ fn with_block_origins(mut node: RakuAstNode, block: BlockSpans) -> RakuAstNode {
         return node;
     };
     let mut blockoid = RakuAstNode::clone(blockoid);
-    blockoid
-        .fields
-        .extend(super::origin::span_field(block.blockoid));
+    super::origin::set_span(&mut blockoid, block.blockoid);
     if let Some(list_field) = blockoid.fields.first_mut()
         && let RakuAstFieldValue::Node(list) = &list_field.value
         && let ValueView::RakuAst(list) = list.view()
     {
         let mut list = RakuAstNode::clone(list);
-        list.fields.extend(super::origin::span_field(block.list));
+        super::origin::set_span(&mut list, block.list);
         list_field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(list)));
     }
     body.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(blockoid)));

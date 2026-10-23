@@ -69,6 +69,7 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
         });
     }
     Ok(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::VarDeclarationSignature,
         fields,
     })))
@@ -99,6 +100,7 @@ pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError>
         ));
     }
     let signature = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Signature,
         fields: signature_fields,
     };
@@ -127,12 +129,14 @@ pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError>
         fields.push(node_field(
             Some("initializer"),
             RakuAstNode {
+                origin: Default::default(),
                 class,
                 fields: vec![node_field(None, convert_expr(&init.rhs)?)],
             },
         ));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::VarDeclarationSignature,
         fields,
     })
@@ -163,12 +167,14 @@ fn convert_group(
                 .map(|member| convert_group(member, vars, is_binding, depth + 1))
                 .collect::<Result<Vec<_>, _>>()?;
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::Parameter,
                 fields: vec![
                     leaf_field(Some("optional"), Value::truth(false)),
                     node_field(
                         Some("sub-signature"),
                         RakuAstNode {
+                            origin: Default::default(),
                             class: RakuAstClass::Signature,
                             fields: vec![RakuAstField {
                                 name: Some("parameters"),
@@ -195,6 +201,7 @@ fn parameter(var: &SignatureVar, is_binding: bool) -> Result<RakuAstNode, Runtim
     }
     let target = if var.sigilless {
         RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ParameterTargetTerm,
             fields: vec![node_field(
                 None,
@@ -203,6 +210,7 @@ fn parameter(var: &SignatureVar, is_binding: bool) -> Result<RakuAstNode, Runtim
         }
     } else {
         RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ParameterTargetVar,
             fields: vec![leaf_field(Some("name"), Value::str(var.spelling()))],
         }
@@ -250,6 +258,7 @@ fn parameter(var: &SignatureVar, is_binding: bool) -> Result<RakuAstNode, Runtim
         });
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Parameter,
         fields,
     })

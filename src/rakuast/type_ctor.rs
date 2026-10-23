@@ -61,5 +61,9 @@ fn build(class: RakuAstClass, class_name: &str, args: &[Value]) -> Result<Value,
         }
         _ => {}
     }
-    Ok(Value::rakuast(Box::new(RakuAstNode { class, fields })))
+    Ok(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    })))
 }

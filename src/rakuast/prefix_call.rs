@@ -40,6 +40,7 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, R
         return None;
     };
     Some(blorst(arg).map(|blorst| RakuAstNode {
+        origin: Default::default(),
         class,
         fields: vec![node_field(None, blorst)],
     }))
@@ -131,6 +132,7 @@ pub(super) fn convert_method(
 ) -> Option<Result<RakuAstNode, RuntimeError>> {
     let class = method_prefix_class(name)?;
     Some(blorst(target).map(|blorst| RakuAstNode {
+        origin: Default::default(),
         class,
         fields: vec![node_field(None, blorst)],
     }))

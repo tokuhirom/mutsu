@@ -22,6 +22,7 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
         fields.push(field("argument", argument));
     }
     Ok(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TraitIs,
         fields,
     })))

@@ -17,14 +17,17 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, R
     let [index] = args else { return None };
     Some((|| {
         let statement = RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::StatementExpression,
             fields: vec![node_field(Some("expression"), convert_expr(index)?)],
         };
         let semilist = RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::SemiList,
             fields: vec![node_field(None, statement)],
         };
         Ok(RakuAstNode {
+            origin: Default::default(),
             class,
             fields: vec![node_field(Some("index"), semilist)],
         })

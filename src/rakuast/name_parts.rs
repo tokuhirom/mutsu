@@ -75,6 +75,7 @@ pub(super) fn part_identifier(value: &Value) -> Option<String> {
 /// The leading `::` of a name: an `Empty` instance.
 pub(super) fn leading_empty() -> Value {
     Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::NamePartEmpty,
         fields: Vec::new(),
     }))
@@ -89,6 +90,7 @@ pub(super) fn trailing_empty() -> Value {
 
 pub(super) fn simple_part(name: &str) -> Value {
     Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::NamePartSimple,
         fields: vec![RakuAstField {
             name: None,
@@ -100,6 +102,7 @@ pub(super) fn simple_part(name: &str) -> Value {
 /// A `RakuAST::Name` over an explicit part list.
 pub(super) fn name_from_parts(parts: Vec<Value>) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Name,
         fields: vec![RakuAstField {
             name: Some("parts"),
@@ -288,6 +291,7 @@ pub(super) fn operator_name(name: &str) -> Option<RakuAstNode> {
     } else {
         let parts = segments.iter().map(|seg| simple_part(seg)).collect();
         return Some(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::Name,
             fields: vec![
                 RakuAstField {
@@ -300,6 +304,7 @@ pub(super) fn operator_name(name: &str) -> Option<RakuAstNode> {
     };
     fields.push(operator_colonpairs(symbol));
     Some(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Name,
         fields,
     })

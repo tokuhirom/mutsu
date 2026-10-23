@@ -100,6 +100,7 @@ pub(super) fn anonymous_destructuring(
     }
     fields.push(node_field(Some("sub-signature"), sub));
     Ok(Some(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Parameter,
         fields,
     }))

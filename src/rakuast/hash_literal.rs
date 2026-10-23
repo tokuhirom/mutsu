@@ -31,11 +31,13 @@ pub(super) fn convert(
     let contents = contents_node(pairs)?;
     Ok(match spelling {
         HashSpelling::Composer => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::CircumfixHashComposer,
             fields: contents.map(|c| node_field(None, c)).into_iter().collect(),
         },
         HashSpelling::Contextualizer => {
             let sequence = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::StatementSequence,
                 fields: contents
                     .map(|c| node_field(None, statement_expression(c)))
@@ -43,6 +45,7 @@ pub(super) fn convert(
                     .collect(),
             };
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ContextualizerHash,
                 fields: vec![node_field(None, sequence)],
             }
@@ -59,12 +62,14 @@ fn contents_node(pairs: &[(String, Option<Expr>)]) -> Result<Option<RakuAstNode>
         // which is `x => True`; rakudo spells it `ColonPair::True`.
         let Some(value) = value.as_ref() else {
             fatarrows.push(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ColonPairTrue,
                 fields: vec![leaf_field(None, Value::str(key.clone()))],
             });
             continue;
         };
         fatarrows.push(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::FatArrow,
             fields: vec![
                 leaf_field(Some("key"), Value::str(key.clone())),
@@ -80,6 +85,7 @@ fn contents_node(pairs: &[(String, Option<Expr>)]) -> Result<Option<RakuAstNode>
         .map(|n| Value::rakuast(Box::new(n)))
         .collect();
     Ok(Some(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyListInfix,
         fields: vec![
             node_field(Some("infix"), plain_infix(",")),

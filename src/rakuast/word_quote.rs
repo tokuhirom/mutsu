@@ -57,6 +57,7 @@ fn convert_nested(
             }
             QuoteWordsPart::Atom(expr) => {
                 segments.push(Value::rakuast(Box::new(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::QuoteWordsAtom,
                     fields: vec![node_field(None, convert_expr(expr)?)],
                 })));
@@ -77,6 +78,7 @@ fn convert_nested(
         processors.push(Value::str("val".to_string()));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::QuotedString,
         fields: vec![
             RakuAstField {
@@ -129,6 +131,7 @@ fn words_string(string: &Expr, val: bool) -> Result<RakuAstNode, RuntimeError> {
         processors.push(Value::str("val".to_string()));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::QuotedString,
         fields: vec![
             RakuAstField {

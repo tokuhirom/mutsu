@@ -54,7 +54,11 @@ fn build(class: RakuAstClass, args: &[Value]) -> Result<Value, RuntimeError> {
         .ok_or_else(|| RuntimeError::new(format!("{constructor} requires `body`")))?;
     require_regex_node(&body, &constructor)?;
     fields.push(field("body", body));
-    Ok(Value::rakuast(Box::new(RakuAstNode { class, fields })))
+    Ok(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    })))
 }
 
 fn field(name: &'static str, value: Value) -> RakuAstField {

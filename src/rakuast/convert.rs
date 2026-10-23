@@ -100,7 +100,7 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
                     node.fields.push(field);
                 }
                 if let Some((n, span)) = line.take() {
-                    node.fields.push(origin::field(n, span));
+                    origin::set(&mut node, n, span);
                 }
                 fields.push(node_field(None, node));
             }
@@ -118,7 +118,7 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
                         node.fields.push(field);
                     }
                     if let Some((n, span)) = line.take() {
-                        node.fields.push(origin::field(n, span));
+                        origin::set(&mut node, n, span);
                     }
                     fields.push(node_field(None, node));
                 }
@@ -130,12 +130,13 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
                 node.fields.push(field);
             }
             if let Some((n, span)) = line.take() {
-                node.fields.push(origin::field(n, span));
+                origin::set(&mut node, n, span);
             }
             fields.push(node_field(None, node));
         }
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementList,
         fields,
     })
@@ -398,6 +399,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 Some("proto"),
                 param_defs,
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::OnlyStar,
                     fields: Vec::new(),
                 },
@@ -460,6 +462,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             statement.fields.push(node_field(
                 Some("loop-modifier"),
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::StatementModifierGiven,
                     fields: vec![node_field(None, convert_expr(topic)?)],
                 },
@@ -769,7 +772,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             let mut fields = vec![node_field(None, block_node(body)?)];
             // The source position of a main-compunit `END` (see `origin`).
             fields.extend(end_index.map(origin::end_index_field));
-            Ok(Some(statement_expression(RakuAstNode { class, fields })))
+            Ok(Some(statement_expression(RakuAstNode {
+                origin: Default::default(),
+                class,
+                fields,
+            })))
         }
         Stmt::If {
             cond,
@@ -829,6 +836,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 statement.fields.push(node_field(
                     Some("condition-modifier"),
                     RakuAstNode {
+                        origin: Default::default(),
                         class: if *is_unless {
                             RakuAstClass::StatementModifierUnless
                         } else {
@@ -844,6 +852,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             // `then`.
             if *is_unless {
                 return Ok(Some(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::StatementUnless,
                     fields: vec![
                         node_field(Some("condition"), convert_expr(written_cond)?),
@@ -857,6 +866,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             ];
             fields.extend(conditional_chain_fields(else_branch)?);
             Ok(Some(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::StatementIf,
                 fields,
             }))
@@ -881,6 +891,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     statement.fields.push(node_field(
                         Some("loop-modifier"),
                         RakuAstNode {
+                            origin: Default::default(),
                             class: if *is_until {
                                 RakuAstClass::StatementModifierUntil
                             } else {
@@ -910,6 +921,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             ));
             fields.push(node_field(Some("body"), signature_block_node(body)?));
             Ok(Some(RakuAstNode {
+                origin: Default::default(),
                 class: if *is_until {
                     RakuAstClass::StatementLoopUntil
                 } else {
@@ -957,6 +969,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     })?,
                 ));
                 return Ok(Some(RakuAstNode {
+                    origin: Default::default(),
                     class: if *is_until {
                         RakuAstClass::StatementLoopRepeatUntil
                     } else {
@@ -970,6 +983,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 let mut fields = label_fields(label);
                 fields.push(node_field(Some("body"), block_node(body)?));
                 return Ok(Some(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::StatementLoop,
                     fields,
                 }));
@@ -988,6 +1002,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             }
             fields.push(node_field(Some("body"), block_node(body)?));
             Ok(Some(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::StatementLoop,
                 fields,
             }))
@@ -1031,6 +1046,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     statement.fields.push(node_field(
                         Some("loop-modifier"),
                         RakuAstNode {
+                            origin: Default::default(),
                             class: RakuAstClass::StatementModifierFor,
                             fields: vec![node_field(None, convert_expr(iterable)?)],
                         },
@@ -1075,6 +1091,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             fields.push(node_field(Some("source"), convert_expr(iterable)?));
             fields.push(node_field(Some("body"), body_node));
             let for_node = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::StatementFor,
                 fields,
             };
@@ -1120,6 +1137,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 statement.fields.push(node_field(
                     Some("condition-modifier"),
                     RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::StatementModifierWhen,
                         fields: vec![node_field(None, convert_expr(cond)?)],
                     },
@@ -1135,6 +1153,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 statement.fields.push(node_field(
                     Some("loop-modifier"),
                     RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::StatementModifierGiven,
                         fields: vec![node_field(None, convert_expr(topic)?)],
                     },
@@ -1142,6 +1161,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 Ok(Some(statement))
             } else {
                 Ok(Some(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::StatementGiven,
                     fields: vec![
                         node_field(Some("source"), convert_expr(topic)?),
@@ -1152,6 +1172,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         }
         // `when Y { ... }` -> Statement::When(condition, body => plain Block).
         Stmt::When { cond, body, .. } => Ok(Some(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::StatementWhen,
             fields: vec![
                 node_field(Some("condition"), convert_expr(cond)?),
@@ -1160,6 +1181,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         })),
         // `default { ... }` -> Statement::Default(body => plain Block).
         Stmt::Default(body) => Ok(Some(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::StatementDefault,
             fields: vec![node_field(Some("body"), block_node(body)?)],
         })),
@@ -1168,11 +1190,13 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         // `implicit-topic`/`required-topic` (like a `given` body) and
         // `exception => 1`, which is what distinguishes it from one.
         Stmt::Catch(body) => Ok(Some(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::StatementCatch,
             fields: vec![node_field(Some("body"), exception_block_node(body)?)],
         })),
         // `CONTROL { ... }` -> Statement::Control, the same exception block.
         Stmt::Control(body) => Ok(Some(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::StatementControl,
             fields: vec![node_field(Some("body"), exception_block_node(body)?)],
         })),
@@ -1193,6 +1217,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             is_test_assertion,
             supersede,
             custom_traits,
+            spans,
             ..
         } => {
             // Phase 2 slice 7 covers the plain named `sub NAME (params) { body }`
@@ -1240,6 +1265,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
             )?;
+            super::routine_origins::apply(&mut node, spans.as_deref(), param_defs);
             super::routine_source::mark_legacy_sub_forms(
                 &mut node,
                 signature_alternates,
@@ -1291,6 +1317,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             custom_traits,
             is_export,
             export_tags,
+            spans,
             ..
         } => {
             // Plain `method NAME (params) { body }` and `submethod NAME (…) { … }`,
@@ -1342,6 +1369,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
             )?;
+            super::routine_origins::apply(&mut node, spans.as_deref(), param_defs);
             super::symbolic_deref::replace_declarator_name(&mut node, name_expr.as_ref())?;
             let source_traits = super::routine_source::apply(&mut node, body)?;
             let flags = routine_traits::IsTraits {
@@ -1444,6 +1472,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     block_node(&crate::parser::unhoist_nested_methods(body))?,
                 ));
                 let grammar = RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::Grammar,
                     fields,
                 };
@@ -1544,6 +1573,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 super::role::with_leading_statements(class_body, also_statements),
             ));
             let class = RakuAstNode {
+                origin: Default::default(),
                 class: if is_native {
                     RakuAstClass::Native
                 } else {
@@ -1567,6 +1597,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         // `trusts B;` in a class body is a `Statement::Trusts` of its own, not an
         // expression statement.
         Stmt::TrustsDecl { name } => Ok(Some(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::StatementTrusts,
             fields: vec![node_field(Some("type"), build_type_node(&name.resolve())?)],
         })),
@@ -1586,6 +1617,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 let mut traits = Vec::new();
                 for role in does_roles {
                     traits.push(Value::rakuast(Box::new(RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::TraitDoes,
                         fields: vec![node_field(None, build_type_node(&role.resolve())?)],
                     })));
@@ -1600,6 +1632,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 block_node(&crate::parser::unhoist_nested_methods(body))?,
             ));
             Ok(Some(statement_expression(RakuAstNode {
+                origin: Default::default(),
                 class: if *is_role {
                     RakuAstClass::Role
                 } else {
@@ -1647,6 +1680,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             let mut traits = Vec::new();
             for role in roles {
                 traits.push(Value::rakuast(Box::new(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::TraitDoes,
                     fields: vec![node_field(None, build_type_node(role)?)],
                 })));
@@ -1663,6 +1697,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             }
             fields.push(node_field(Some("term"), term));
             Ok(Some(statement_expression(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::TypeEnum,
                 fields,
             })))
@@ -1701,7 +1736,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 Some("body"),
                 block_node(&crate::parser::unhoist_nested_methods(body))?,
             ));
-            let mut node = RakuAstNode { class, fields };
+            let mut node = RakuAstNode {
+                origin: Default::default(),
+                class,
+                fields,
+            };
             super::package_traits::apply(&mut node, custom_traits, body)?;
             Ok(Some(statement_expression(node)))
         }
@@ -1743,6 +1782,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             .collect();
             if *base_is_explicit {
                 traits.push(Value::rakuast(Box::new(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::TraitOf,
                     fields: vec![node_field(None, build_type_node(base)?)],
                 })));
@@ -1754,6 +1794,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 });
             }
             Ok(Some(statement_expression(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::TypeSubset,
                 fields,
             })))
@@ -1845,11 +1886,13 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             op: AssignOp::Assign,
             target_is_sigilless: true,
         } => Ok(Some(statement_expression(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
                 node_field(
                     Some("left"),
                     RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::TermName,
                         fields: vec![node_field(None, name_from_identifier(name))],
                     },
@@ -1857,6 +1900,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 node_field(
                     Some("infix"),
                     RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::Assignment,
                         fields: Vec::new(),
                     },
@@ -1941,6 +1985,7 @@ fn hyper_infix(
         Some("infix"),
         if op == "=" {
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::Assignment,
                 fields: vec![RakuAstField {
                     name: None,
@@ -1949,6 +1994,7 @@ fn hyper_infix(
             }
         } else {
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::Infix,
                 fields: vec![leaf_field(None, Value::str(op.to_string()))],
             }
@@ -1961,12 +2007,14 @@ fn hyper_infix(
         });
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
             node_field(Some("left"), convert_expr(left)?),
             node_field(
                 Some("infix"),
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::MetaInfixHyper,
                     fields: hyper_fields,
                 },
@@ -1992,6 +2040,7 @@ pub(super) fn assignment_around(
     rhs: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
     let assignment = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Assignment,
         fields: if is_item {
             vec![RakuAstField {
@@ -2003,6 +2052,7 @@ pub(super) fn assignment_around(
         },
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
             node_field(Some("left"), left),
@@ -2017,6 +2067,7 @@ pub(super) fn assignment_around(
 fn bind_infix(name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let (sigil, desigil) = split_sigil(name);
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
             node_field(Some("left"), var_lexical(sigil, desigil)),
@@ -2132,11 +2183,13 @@ fn stub_node(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, RuntimeErr
     };
     if args.is_empty() {
         return Some(Ok(RakuAstNode {
+            origin: Default::default(),
             class,
             fields: Vec::new(),
         }));
     }
     Some(arg_list(args).map(|list| RakuAstNode {
+        origin: Default::default(),
         class,
         fields: vec![node_field(Some("args"), list)],
     }))
@@ -2230,10 +2283,12 @@ fn call_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Expr
 
 fn method_lvalue_assignment(left: RakuAstNode, right: RakuAstNode) -> RakuAstNode {
     let assignment = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Assignment,
         fields: vec![],
     };
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
             node_field(Some("left"), left),
@@ -2246,6 +2301,7 @@ fn method_lvalue_assignment(left: RakuAstNode, right: RakuAstNode) -> RakuAstNod
 /// A plain `Infix.new("<op>")` node from a literal operator string.
 pub(super) fn plain_infix(op: &str) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Infix,
         fields: vec![leaf_field(None, Value::str(op.to_string()))],
     }
@@ -2354,11 +2410,13 @@ pub(super) fn compound_assignment_with_left(
     let meta_assign = match base_op.strip_prefix('R') {
         // `$x R-= $y` / `$x R= $y`: the reverse of the assignment infix.
         Some(inner) if !inner.is_empty() => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::MetaInfixReverse,
             fields: vec![node_field(
                 None,
                 if inner == "=" {
                     RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::Assignment,
                         fields: vec![RakuAstField {
                             name: None,
@@ -2367,6 +2425,7 @@ pub(super) fn compound_assignment_with_left(
                     }
                 } else {
                     RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::MetaInfixAssign,
                         fields: vec![node_field(None, plain_infix(inner))],
                     }
@@ -2374,11 +2433,13 @@ pub(super) fn compound_assignment_with_left(
             )],
         },
         _ => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::MetaInfixAssign,
             fields: vec![node_field(None, plain_infix(base_op))],
         },
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
             node_field(Some("left"), left),
@@ -2413,12 +2474,14 @@ pub(super) fn dotty_assignment_with_left(
         None => super::dynamic_method::call_assign_postfix(call)?,
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyDottyInfix,
         fields: vec![
             node_field(Some("left"), left),
             node_field(
                 Some("infix"),
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::DottyInfixCallAssign,
                     fields: Vec::new(),
                 },
@@ -2626,6 +2689,7 @@ pub(super) fn does_declaration(
         return Ok(None);
     };
     let does = Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TraitDoes,
         fields: vec![node_field(None, convert_expr(role)?)],
     }));
@@ -2759,6 +2823,7 @@ pub(super) fn var_declaration(
         // An attribute default (`has $.x = 5`) is a `Trait::WillBuild` (and also
         // an `initializer`, emitted below).
         let trait_node = RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TraitWillBuild,
             fields: vec![node_field(None, convert_expr(wb)?)],
         };
@@ -2770,14 +2835,17 @@ pub(super) fn var_declaration(
     if let Some(init) = init {
         let initializer = match init {
             Initializer::Assign(e) => RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::InitializerAssign,
                 fields: vec![node_field(None, convert_expr(e)?)],
             },
             Initializer::Bind(e) => RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::InitializerBind,
                 fields: vec![node_field(None, convert_expr(e)?)],
             },
             Initializer::CallAssignMarker(call) => RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::InitializerCallAssign,
                 fields: vec![node_field(
                     None,
@@ -2788,6 +2856,7 @@ pub(super) fn var_declaration(
                 )],
             },
             Initializer::CallAssign(form) => RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::InitializerCallAssign,
                 fields: vec![node_field(
                     None,
@@ -2801,6 +2870,7 @@ pub(super) fn var_declaration(
         fields.push(node_field(Some("initializer"), initializer));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: if is_anonymous {
             RakuAstClass::VarDeclarationAnonymous
         } else {
@@ -2830,6 +2900,7 @@ pub(super) fn name_from_identifier(s: &str) -> RakuAstNode {
         return name_parts::qualified_name(s);
     }
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Name,
         fields: vec![leaf_field(None, Value::str(s.to_string()))],
     }
@@ -2855,6 +2926,7 @@ fn term_declaration(
         Some("initializer"),
         match decl.call_assign {
             Some((method, args)) => RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::InitializerCallAssign,
                 fields: vec![node_field(
                     None,
@@ -2862,6 +2934,7 @@ fn term_declaration(
                 )],
             },
             None => RakuAstNode {
+                origin: Default::default(),
                 class: if decl.assigned {
                     RakuAstClass::InitializerAssign
                 } else {
@@ -2872,6 +2945,7 @@ fn term_declaration(
         },
     ));
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::VarDeclarationTerm,
         fields,
     })
@@ -2911,6 +2985,7 @@ pub(super) fn split_sigil(name: &str) -> (&str, &str) {
 
 pub(super) fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementExpression,
         fields: vec![node_field(Some("expression"), expr)],
     }
@@ -2918,10 +2993,12 @@ pub(super) fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
 
 fn parenthesized_expression(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let semilist = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::SemiList,
         fields: vec![node_field(None, statement_expression(convert_expr(expr)?))],
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::CircumfixParentheses,
         fields: vec![node_field(None, semilist)],
     })
@@ -3101,6 +3178,7 @@ pub(super) fn angle_subscript_node(
         word_quote(&text)
     };
     let mut index_node = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::PostcircumfixLiteralHashIndex,
         fields: vec![node_field(Some("index"), quote)],
     };
@@ -3161,12 +3239,14 @@ pub(super) fn subscript_dims_node(
             args.push(node_field(None, convert_expr(item)?));
         }
         return Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TypeParameterized,
             fields: vec![
                 node_field(Some("base-type"), base),
                 node_field(
                     Some("args"),
                     RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::ArgList,
                         fields: args,
                     },
@@ -3179,10 +3259,12 @@ pub(super) fn subscript_dims_node(
         statements.push(node_field(None, statement_expression(convert_expr(dim)?)));
     }
     let semilist = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::SemiList,
         fields: statements,
     };
     let mut index_node = RakuAstNode {
+        origin: Default::default(),
         class: if is_positional {
             RakuAstClass::PostcircumfixArrayIndex
         } else {
@@ -3221,6 +3303,7 @@ fn take_logical_tail_node(
     right: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
             node_field(
@@ -3235,6 +3318,7 @@ fn take_logical_tail_node(
 
 fn signature_bind_node(signature: &Expr, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
             node_field(Some("left"), convert_expr(signature)?),
@@ -3273,6 +3357,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                             return Ok(node_field(
                                 None,
                                 RakuAstNode {
+                                    origin: Default::default(),
                                     class: RakuAstClass::StatementEmpty,
                                     fields: Vec::new(),
                                 },
@@ -3291,10 +3376,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     })
                     .collect::<Result<Vec<_>, RuntimeError>>()?;
                 Ok(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::CircumfixArrayComposer,
                     fields: vec![node_field(
                         None,
                         RakuAstNode {
+                            origin: Default::default(),
                             class: RakuAstClass::SemiList,
                             fields,
                         },
@@ -3308,6 +3395,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 let mut fields = label_fields(label);
                 fields.push(node_field(Some("expression"), block_node(body)?));
                 Ok(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::StatementExpression,
                     fields,
                 })
@@ -3317,6 +3405,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     return Err(unsupported("label spelling without a label value"));
                 };
                 Ok(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::TermName,
                     fields: vec![
                         node_field(None, name_from_identifier(name)),
@@ -3355,6 +3444,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     _ => return Err(unsupported("prefix call spelling of an unknown prefix")),
                 };
                 Ok(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::CallName,
                     fields: vec![
                         node_field(Some("name"), name_from_identifier(name)),
@@ -3460,12 +3550,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // `{*}` in a proto body.
         _ if expr.is_onlystar_dispatch() => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::OnlyStar,
             fields: Vec::new(),
         }),
         // `now` is `Term::Named`, not a call.
         Expr::Call { name, args, .. } if args.is_empty() && name.as_str() == "now" => {
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::TermNamed,
                 fields: vec![leaf_field(None, Value::str("now".to_string()))],
             })
@@ -3495,6 +3587,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 }
                 fields.push(leaf_field(Some("object-hash"), Value::truth(true)));
                 return Ok(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::CircumfixHashComposer,
                     fields,
                 });
@@ -3566,6 +3659,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     fields.push(node_field(None, convert_expr(arg)?));
                 }
                 return Ok(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::Nqp,
                     fields,
                 });
@@ -3626,6 +3720,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // trip; rendering it as a static Name would change the lookup mode.
         Expr::IndirectTypeLookup(inner) => {
             let part = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::NamePartExpression,
                 fields: vec![node_field(None, convert_expr(inner)?)],
             };
@@ -3634,6 +3729,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 Value::rakuast(Box::new(part)),
             ]);
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::TermName,
                 fields: vec![node_field(None, name)],
             })
@@ -3647,6 +3743,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             trailing,
         } => {
             let part = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::NamePartExpression,
                 fields: vec![node_field(None, convert_expr(head)?)],
             };
@@ -3656,6 +3753,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 parts.push(name_parts::trailing_empty());
             }
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::TermName,
                 fields: vec![node_field(None, name_parts::name_from_parts(parts))],
             })
@@ -3671,11 +3769,13 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 .ok_or_else(|| unsupported("stash lookup with an empty name segment"))?;
             if stem.is_empty() || bareword::package_resolves(stem) {
                 Ok(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::TermName,
                     fields: vec![node_field(None, name)],
                 })
             } else {
                 Ok(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::CallName,
                     fields: vec![node_field(Some("name"), name)],
                 })
@@ -3685,6 +3785,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::CallOn { target, args } => {
             // raku omits `args` for an argument-less `$f()` / `&f()` / `$f.()`.
             let mut call_term = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::CallTerm,
                 fields: Vec::new(),
             };
@@ -3697,17 +3798,20 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // The `*` whatever term (a *value*, not a priming argument).
         Expr::Whatever => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TermWhatever,
             fields: Vec::new(),
         }),
         // A `*` that participates in Whatever-priming (ADR-0033 Phase 2): the
         // left operand of `* + 1` is `WhateverCode::Argument`, not `Term::Whatever`.
         Expr::WhateverArg => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::WhateverCodeArgument,
             fields: Vec::new(),
         }),
         // `**` — read direction only; priming for `**` is out of scope (ADR-0033 §1).
         Expr::HyperWhatever => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TermHyperWhatever,
             fields: Vec::new(),
         }),
@@ -3773,6 +3877,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 return Err(unsupported("desugared do-block"));
             }
             let expression = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::StatementPrefixDo,
                 fields: vec![node_field(None, block_node(body)?)],
             };
@@ -3780,6 +3885,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 let mut fields = label_fields(label);
                 fields.push(node_field(Some("expression"), expression));
                 Ok(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::StatementExpression,
                     fields,
                 })
@@ -3794,12 +3900,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 return Err(unsupported("try with a CATCH block"));
             }
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::StatementPrefixTry,
                 fields: vec![node_field(None, block_node(body)?)],
             })
         }
         // `gather { … }` -> `StatementPrefix::Gather(Block)`.
         Expr::Gather(body) => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::StatementPrefixGather,
             fields: vec![node_field(None, block_node(body)?)],
         }),
@@ -3810,6 +3918,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 return Err(unsupported("eager block"));
             }
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::StatementPrefixEager,
                 fields: vec![node_field(None, statement_expression(operand))],
             })
@@ -3844,6 +3953,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 right,
                 ..
             } => Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ApplyInfix,
                 fields: vec![
                     node_field(Some("left"), convert_expr(left)?),
@@ -3897,12 +4007,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             let class =
                 phaser_class(kind).ok_or_else(|| unsupported("PRE/POST phaser expression"))?;
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class,
                 fields: vec![node_field(None, block_node(body)?)],
             })
         }
         // `once { ... }` -> `StatementPrefix::Once(Block)`.
         Expr::Once { body } => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::StatementPrefixOnce,
             fields: vec![node_field(None, block_node(body)?)],
         }),
@@ -3967,6 +4079,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 operands.push(Value::rakuast(Box::new(expression)));
             }
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ApplyListInfix,
                 fields: vec![
                     node_field(Some("infix"), plain_infix(",")),
@@ -4009,6 +4122,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     .ok_or_else(|| unsupported("hyper/race/lazy loop"));
             }
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::StatementPrefixDo,
                 fields: vec![node_field(None, statement)],
             })
@@ -4056,6 +4170,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 let node = super::immediate_call::convert(stmt)
                     .ok_or_else(|| unsupported("source form"))??;
                 Ok(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::StatementPrefixDo,
                     fields: vec![node_field(None, statement_expression(node))],
                 })
@@ -4078,10 +4193,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // `()` -> `Circumfix::Parentheses(SemiList.new)`: no statement inside.
         Expr::Grouped(inner) if matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty()) => {
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::CircumfixParentheses,
                 fields: vec![node_field(
                     None,
                     RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::SemiList,
                         fields: Vec::new(),
                     },
@@ -4109,10 +4226,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 }
             };
             let semilist = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::SemiList,
                 fields: vec![node_field(None, content)],
             };
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::CircumfixParentheses,
                 fields: vec![node_field(None, semilist)],
             })
@@ -4129,6 +4248,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // a list assignment (no `:item`).
             if let Some(term) = crate::runtime::term_names::term_spelling(name) {
                 let left = RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::TermName,
                     fields: vec![node_field(None, name_from_identifier(term))],
                 };
@@ -4136,11 +4256,13 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     plain_infix(":=")
                 } else {
                     RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::Assignment,
                         fields: Vec::new(),
                     }
                 };
                 return Ok(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::ApplyInfix,
                     fields: vec![
                         node_field(Some("left"), left),
@@ -4174,6 +4296,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             if name == "_" && super::underscore_bindings::declares_placeholder(true) {
                 return Ok(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::VarDeclarationPlaceholderSlurpyArray,
                     fields: Vec::new(),
                 });
@@ -4204,6 +4327,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             if name == "_" && super::underscore_bindings::declares_placeholder(false) {
                 return Ok(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::VarDeclarationPlaceholderSlurpyHash,
                     fields: Vec::new(),
                 });
@@ -4231,6 +4355,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::CodeVar(name) => {
             if matches!(name.as_str(), "?BLOCK" | "?ROUTINE") {
                 return Ok(RakuAstNode {
+                    origin: Default::default(),
                     class: if name == "?BLOCK" {
                         RakuAstClass::VarCompilerBlock
                     } else {
@@ -4302,6 +4427,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 unreachable!("guarded above")
             };
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::FatArrow,
                 fields: vec![
                     leaf_field(Some("key"), Value::str(key.to_string())),
@@ -4322,6 +4448,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 nodes.push(Value::rakuast(Box::new(convert_expr(e)?)));
             }
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ApplyListInfix,
                 fields: vec![
                     node_field(Some("infix"), operator_node(RakuAstClass::Infix, op)),
@@ -4340,6 +4467,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             form: crate::ast::BinaryForm::CaretPrefix,
         } if matches!(&**left, Expr::Literal(v) if matches!(v.view(), ValueView::Int(0))) => {
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ApplyPrefix,
                 fields: vec![
                     node_field(
@@ -4353,6 +4481,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Binary {
             left, op, right, ..
         } => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
                 node_field(Some("left"), convert_expr(left)?),
@@ -4403,6 +4532,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             hyper_fields.push(node_field(
                 Some("infix"),
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::FunctionInfix,
                     fields: vec![node_field(
                         None,
@@ -4417,12 +4547,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 });
             }
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ApplyInfix,
                 fields: vec![
                     node_field(Some("left"), convert_expr(left)?),
                     node_field(
                         Some("infix"),
                         RakuAstNode {
+                            origin: Default::default(),
                             class: RakuAstClass::MetaInfixHyper,
                             fields: hyper_fields,
                         },
@@ -4432,6 +4564,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             })
         }
         Expr::Unary { op, expr, word } => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyPrefix,
             fields: vec![
                 node_field(
@@ -4440,16 +4573,19 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     // folds them into.
                     match (word, op) {
                         (true, crate::token_kind::TokenKind::Question) => RakuAstNode {
+                            origin: Default::default(),
                             class: RakuAstClass::Prefix,
                             fields: vec![leaf_field(None, Value::str("so".to_string()))],
                         },
                         (true, crate::token_kind::TokenKind::Bang) => RakuAstNode {
+                            origin: Default::default(),
                             class: RakuAstClass::Prefix,
                             fields: vec![leaf_field(None, Value::str("not".to_string()))],
                         },
                         // `||` only ever prefixes a subscript dimension
                         // (`splat_dimensions`).
                         (false, crate::token_kind::TokenKind::OrOr) => RakuAstNode {
+                            origin: Default::default(),
                             class: RakuAstClass::PrefixMultislice,
                             fields: Vec::new(),
                         },
@@ -4468,6 +4604,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             then_expr,
             else_expr,
         } => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::Ternary,
             fields: vec![
                 node_field(Some("condition"), convert_expr(cond)?),
@@ -4507,6 +4644,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // invocant is `Term::TopicCall` over the bare call.
             if *sugar && matches!(&**target, Expr::Var(topic) if topic == "_") {
                 return Ok(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::TermTopicCall,
                     fields: vec![node_field(None, postfix)],
                 });
@@ -4561,6 +4699,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 method_call_postfix(name.as_str(), args, *modifier, *quoted)?
             };
             let hyper = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::MetaPostfixHyper,
                 fields: vec![node_field(None, inner)],
             };
@@ -4597,10 +4736,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // `Circumfix::ArrayComposer(SemiList(Statement::Expression(comma-list)))`.
         // `[]`: a composer of an empty semilist, with no statement at all.
         Expr::BracketArray(items, false) if items.is_empty() => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::CircumfixArrayComposer,
             fields: vec![node_field(
                 None,
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::SemiList,
                     fields: Vec::new(),
                 },
@@ -4618,10 +4759,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 _ => statement_expression(comma_list_node(items)?),
             };
             let semilist = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::SemiList,
                 fields: vec![node_field(None, statement)],
             };
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::CircumfixArrayComposer,
                 fields: vec![node_field(None, semilist)],
             })
@@ -4638,10 +4781,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 None => (false, op.as_str()),
             };
             let arglist = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ArgList,
                 fields: vec![node_field(None, convert_expr(expr)?)],
             };
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::TermReduce,
                 fields: vec![
                     RakuAstField {
@@ -4708,6 +4853,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             value,
             is_positional,
         } => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
                 node_field(
@@ -4723,6 +4869,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 node_field(
                     Some("infix"),
                     RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::Assignment,
                         fields: Vec::new(),
                     },
@@ -4759,6 +4906,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 subscript_node(target, index, *is_positional, None, Vec::new())?
             };
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ApplyInfix,
                 fields: vec![
                     node_field(Some("left"), left),
@@ -4791,6 +4939,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             is_positional: false,
             ..
         } => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
                 node_field(
@@ -4800,6 +4949,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 node_field(
                     Some("infix"),
                     RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::Assignment,
                         fields: Vec::new(),
                     },
@@ -4831,6 +4981,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 // An anonymous, parameter-less `sub { ... }`, with the `is rw`
                 // / `is raw` it was written with.
                 let mut node = RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::Sub,
                     fields: vec![node_field(Some("body"), blockoid(body)?)],
                 };
@@ -4951,6 +5102,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 segments.push(Value::rakuast(Box::new(interp_segment(p)?)));
             }
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::QuotedString,
                 fields: vec![RakuAstField {
                     name: Some("segments"),
@@ -4969,6 +5121,7 @@ pub(super) fn interp_segment(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match expr {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) if matches!(v.view(), ValueView::Str(_)) => {
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::StrLiteral,
                 fields: vec![leaf_field(None, v.clone())],
             })
@@ -5055,6 +5208,7 @@ fn with_modifier_node(
     statement.fields.push(node_field(
         Some("condition-modifier"),
         RakuAstNode {
+            origin: Default::default(),
             class: match kind {
                 GivenWithKind::With => RakuAstClass::StatementModifierWith,
                 GivenWithKind::Without => RakuAstClass::StatementModifierWithout,
@@ -5078,6 +5232,7 @@ fn with_modifier_node(
 /// with the block's own, hiding `class C { }` from a closure `{ C.new }`.
 pub(super) fn blockoid(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Blockoid,
         fields: vec![node_field(None, statement_list_inner(body)?)],
     })
@@ -5096,6 +5251,7 @@ pub(super) fn postfix_operand(operand: &Expr) -> Result<RakuAstNode, RuntimeErro
 /// (`Block(body => Blockoid)`).
 pub(super) fn block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Block,
         fields: vec![node_field(Some("body"), blockoid(body)?)],
     })
@@ -5107,6 +5263,7 @@ pub(super) fn block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
 /// `may-have-signature => True` ahead of the body (measured on 2026.09).
 pub(super) fn signature_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Block,
         fields: vec![
             true_field("may-have-signature"),
@@ -5236,6 +5393,7 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
                 assertion_fields.push(leaf_field(Some("capturing"), Value::truth(true)));
             }
             let assertion = RakuAstNode {
+                origin: Default::default(),
                 class: if args.is_some() && sym.is_none() {
                     RakuAstClass::RegexAssertionNamedArgs
                 } else {
@@ -5258,6 +5416,7 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
         } => {
             let keyword = if *is_behind { "after" } else { "before" };
             let named_assertion = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::RegexAssertionNamedRegexArg,
                 fields: vec![
                     node_field(Some("name"), name_from_identifier(keyword)),
@@ -5274,6 +5433,7 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
         }
         RegexNode::ArrayLookaround { name, negated } => {
             let interpolated = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::RegexAssertionInterpolatedVar,
                 fields: vec![
                     leaf_field(Some("sequential"), Value::truth(false)),
@@ -5293,6 +5453,7 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
             expr, capturing, ..
         } => {
             let part = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::NamePartExpression,
                 fields: vec![node_field(None, convert_expr(expr)?)],
             };
@@ -5310,6 +5471,7 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
             // `<&$var>`: rakudo item-contextualizes the scalar.
             let callee = match name.strip_prefix('$') {
                 Some(name) => RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::ContextualizerItem,
                     fields: vec![node_field(None, var_lexical("$", name))],
                 },
@@ -5457,7 +5619,11 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
             vec![node_field(None, regex_node(child)?)],
         ),
     };
-    Ok(RakuAstNode { class, fields })
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    })
 }
 
 fn quoted_regex_node(tree: &RegexTree) -> Result<RakuAstNode, RuntimeError> {
@@ -5483,6 +5649,7 @@ fn quoted_regex_node(tree: &RegexTree) -> Result<RakuAstNode, RuntimeError> {
         });
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::QuotedRegex,
         fields,
     })
@@ -5496,6 +5663,7 @@ pub(super) fn label_fields(label: &Option<String>) -> Vec<RakuAstField> {
         None => Vec::new(),
         Some(name) => {
             let label_node = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::Label,
                 fields: vec![leaf_field(None, Value::str(name.clone()))],
             };
@@ -5532,6 +5700,7 @@ pub(super) fn loop_setup_node(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> 
 /// `may-have-signature`, all `True`, before the `body` field.
 pub(super) fn topic_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Block,
         fields: vec![
             true_field("implicit-topic"),
@@ -5565,6 +5734,7 @@ fn given_body_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
 /// `True`, and gives it no `may-have-signature`.
 fn exception_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Block,
         fields: vec![
             true_field("implicit-topic"),
@@ -5637,6 +5807,7 @@ pub(super) fn pointy_block(
     }
     fields.push(node_field(Some("body"), blockoid(body)?));
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::PointyBlock,
         fields,
     })
@@ -5663,6 +5834,7 @@ fn anon_routine_node(
     }
     fields.push(node_field(Some("body"), blockoid(body)?));
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Sub,
         fields,
     })
@@ -5735,6 +5907,7 @@ fn declared_invocant_parameter(
     if let Some((name, sigilless)) = alias {
         let target = if *sigilless {
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ParameterTargetTerm,
                 fields: vec![node_field(None, name_from_identifier(name))],
             }
@@ -5747,6 +5920,7 @@ fn declared_invocant_parameter(
                 format!("${name}")
             };
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ParameterTargetVar,
                 fields: vec![leaf_field(Some("name"), Value::str(spelled))],
             }
@@ -5762,6 +5936,7 @@ fn declared_invocant_parameter(
         });
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Parameter,
         fields,
     })
@@ -5789,6 +5964,7 @@ fn add_leading_parameter(node: &mut RakuAstNode, parameter: RakuAstNode) {
         return;
     }
     let signature = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Signature,
         fields: vec![RakuAstField {
             name: Some("parameters"),
@@ -5818,6 +5994,7 @@ fn pointy_block_from_lambda(
         sigilless_target(&mut parameter, param);
     }
     let sig = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Signature,
         fields: vec![RakuAstField {
             name: Some("parameters"),
@@ -5825,6 +6002,7 @@ fn pointy_block_from_lambda(
         }],
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::PointyBlock,
         fields: vec![
             node_field(Some("signature"), sig),
@@ -5898,11 +6076,13 @@ fn constant_declaration(
     fields.push(node_field(
         Some("initializer"),
         RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::InitializerAssign,
             fields: vec![node_field(None, convert_expr(expr)?)],
         },
     ));
     Ok(Some(statement_expression(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::VarDeclarationConstant,
         fields,
     })))
@@ -5963,12 +6143,14 @@ fn class_traits(
     let mut traits = Vec::new();
     let does_node = |role: &str| -> Result<Value, RuntimeError> {
         Ok(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TraitDoes,
             fields: vec![node_field(None, parent_type_node(role, parent_args)?)],
         })))
     };
     let hides_node = |hidden: &str| -> Result<Value, RuntimeError> {
         Ok(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TraitHides,
             fields: vec![node_field(None, parent_type_node(hidden, parent_args)?)],
         })))
@@ -6010,6 +6192,7 @@ fn class_traits(
             node_field(Some("name"), name_from_identifier(parent))
         };
         traits.push(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TraitIs,
             fields: vec![field],
         })));
@@ -6022,12 +6205,14 @@ fn class_traits(
     }
     if is_rw {
         traits.push(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TraitIs,
             fields: vec![node_field(Some("name"), name_from_identifier("rw"))],
         })));
     }
     if is_hidden {
         traits.push(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TraitIs,
             fields: vec![node_field(Some("name"), name_from_identifier("hidden"))],
         })));
@@ -6122,6 +6307,7 @@ pub(super) fn signature(
         ));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Signature,
         fields,
     })
@@ -6206,6 +6392,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
             }),
         }
         return Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::Parameter,
             fields,
         });
@@ -6432,6 +6619,7 @@ pub(super) fn parameter_traits(pd: &ParamDef) -> Result<Option<RakuAstField>, Ru
                 ));
             }
             Ok(Value::rakuast(Box::new(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::TraitIs,
                 fields,
             })))
@@ -6519,6 +6707,7 @@ pub(super) fn type_capture_node(name: &str) -> Result<RakuAstNode, RuntimeError>
         return Err(unsupported("complex type capture"));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TypeCapture,
         fields: vec![node_field(None, name_from_identifier(name))],
     })
@@ -6541,6 +6730,7 @@ fn slurpy_parameter(
     marker: RakuAstClass,
 ) -> Result<RakuAstNode, RuntimeError> {
     let target = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ParameterTargetVar,
         fields: vec![leaf_field(
             Some("name"),
@@ -6551,6 +6741,7 @@ fn slurpy_parameter(
     // rakudo -- see `slurpy_marker_value`.
     let slurpy = super::slurpy_marker_value(marker);
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Parameter,
         fields: vec![
             node_field(Some("target"), target),
@@ -6574,6 +6765,7 @@ fn sigilless_slurpy_parameter(pd: &ParamDef, type_setting: bool) -> RakuAstNode 
         fields.push(node_field(
             Some("target"),
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ParameterTargetTerm,
                 fields: vec![node_field(None, name_from_identifier(&pd.name))],
             },
@@ -6589,6 +6781,7 @@ fn sigilless_slurpy_parameter(pd: &ParamDef, type_setting: bool) -> RakuAstNode 
         super::slurpy_marker_value(marker),
     ));
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Parameter,
         fields,
     }
@@ -6602,6 +6795,7 @@ fn sigilless_target(parameter: &mut RakuAstNode, name: &str) {
             *field = node_field(
                 Some("target"),
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::ParameterTargetTerm,
                     fields: vec![node_field(None, name_from_identifier(name))],
                 },
@@ -6621,10 +6815,12 @@ pub(super) fn implicit_parameter_type(sigil: &str, type_setting: bool) -> Option
 
 pub(super) fn type_setting_any() -> RakuAstNode {
     let name = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Name,
         fields: vec![leaf_field(None, Value::str("Any".to_string()))],
     };
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TypeSetting,
         fields: vec![node_field(None, name)],
     }
@@ -6642,6 +6838,7 @@ fn simple_parameter(
     where_constraint: Option<&Expr>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let target = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ParameterTargetVar,
         fields: vec![leaf_field(
             Some("name"),
@@ -6674,6 +6871,7 @@ fn simple_parameter(
         fields.push(node_field(Some("where"), convert_expr(w)?));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Parameter,
         fields,
     })
@@ -6703,6 +6901,7 @@ pub(super) fn method_call_postfix(
             fields.push(node_field(Some("args"), arg_list(args)?));
         }
         return Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::CallMetaMethod,
             fields,
         });
@@ -6744,6 +6943,7 @@ pub(super) fn call_quoted_method_expr(
         fields.push(leaf_field(Some("dispatch"), Value::str(dispatch)));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::CallQuotedMethod,
         fields,
     })
@@ -6784,6 +6984,7 @@ pub(super) fn anonymous_declaration(
         fields.push(node_field(Some("initializer"), initializer));
     }
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::VarDeclarationAnonymous,
         fields,
     }
@@ -6809,6 +7010,7 @@ pub(super) fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
 /// `Infix`/`Prefix` — a single positional operator string (e.g. `Infix.new("+")`).
 fn operator_node(class: RakuAstClass, op: &crate::token_kind::TokenKind) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class,
         fields: vec![leaf_field(None, Value::str(token_kind_to_op_name(op)))],
     }
@@ -6831,6 +7033,7 @@ fn convert_chained_compare(
     let mut node = convert_expr(&operands[0])?;
     for (i, (op, negated)) in ops.iter().enumerate() {
         let infix = RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
                 node_field(Some("left"), node),
@@ -6840,6 +7043,7 @@ fn convert_chained_compare(
         };
         node = if *negated {
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ApplyPrefix,
                 fields: vec![
                     node_field(
@@ -6888,6 +7092,7 @@ fn is_list_infix(op: &crate::token_kind::TokenKind) -> bool {
 /// `Postfix` — a single NAMED `operator` string (e.g. `Postfix.new(operator => "++")`).
 fn postfix_node(op: &crate::token_kind::TokenKind) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Postfix,
         fields: vec![leaf_field(
             Some("operator"),
@@ -6921,6 +7126,7 @@ fn math_constant_spelling(v: &Value, src: Option<&str>) -> Option<&'static str> 
 
 fn term_name_node(name: &str) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TermName,
         fields: vec![node_field(None, name_from_identifier(name))],
     }
@@ -6940,6 +7146,7 @@ fn imaginary_literal(im: f64) -> Result<RakuAstNode, RuntimeError> {
     }
     let number = if im.fract() == 0.0 && im < 9.007_199_254_740_992e15 {
         RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::IntLiteral,
             fields: vec![leaf_field(None, Value::int(im as i64))],
         }
@@ -6948,17 +7155,20 @@ fn imaginary_literal(im: f64) -> Result<RakuAstNode, RuntimeError> {
         let rat = crate::parser::decimal_literal_value(&spelling)
             .ok_or_else(|| unsupported("imaginary literal without a decimal spelling"))?;
         RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RatLiteral,
             fields: vec![leaf_field(None, rat)],
         }
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyPostfix,
         fields: vec![
             node_field(Some("operand"), number),
             node_field(
                 Some("postfix"),
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::Postfix,
                     fields: vec![leaf_field(Some("operator"), Value::str_from("i"))],
                 },
@@ -6978,14 +7188,17 @@ pub(super) fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
     }
     match v.view() {
         ValueView::Int(_) | ValueView::BigInt(_) => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::IntLiteral,
             fields: vec![leaf_field(None, v.clone())],
         }),
         ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::BigRat(..) => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RatLiteral,
             fields: vec![leaf_field(None, v.clone())],
         }),
         ValueView::Num(_) => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::NumLiteral,
             fields: vec![leaf_field(None, v.clone())],
         }),
@@ -6996,11 +7209,13 @@ pub(super) fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
         // The parser folds the term `Empty` to the empty Slip it denotes;
         // raku keeps the name.
         ValueView::Slip(items) if items.is_empty() => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TermName,
             fields: vec![node_field(None, name_from_identifier("Empty"))],
         }),
         // `True`/`False` are enum values: `Term::Enum.from-identifier('True')`.
         ValueView::Bool(b) => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TermEnum,
             fields: vec![leaf_field(
                 None,
@@ -7020,6 +7235,7 @@ pub(super) fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
         }
         // `<1+2i>`: a complex number written whole.
         ValueView::Complex(..) => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ComplexLiteral,
             fields: vec![leaf_field(None, v.clone())],
         }),
@@ -7027,6 +7243,7 @@ pub(super) fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
         ValueView::Uni(uni) => super::nf_quote::convert(uni),
         // `v6.d`, `v1.2.3+`.
         ValueView::Version { .. } => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::VersionLiteral,
             fields: vec![leaf_field(None, v.clone())],
         }),
@@ -7092,6 +7309,7 @@ fn signature_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
         return Err(unsupported("signature literal without declared parameters"));
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::FakeSignature,
         fields: vec![node_field(
             None,
@@ -7147,6 +7365,7 @@ pub(super) fn word_quote_with(quotewords: bool, val: bool, word: &str) -> RakuAs
         processors.push(Value::str("val".to_string()));
     }
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::QuotedString,
         fields: vec![
             RakuAstField {
@@ -7156,6 +7375,7 @@ pub(super) fn word_quote_with(quotewords: bool, val: bool, word: &str) -> RakuAs
             RakuAstField {
                 name: Some("segments"),
                 value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::StrLiteral,
                     fields: vec![leaf_field(None, Value::str(word.to_string()))],
                 }))]),
@@ -7180,10 +7400,12 @@ fn heredoc_node(body: &Expr, stop: &str) -> Result<RakuAstNode, RuntimeError> {
 /// A string literal renders as `QuotedString.new(segments => (StrLiteral,))`.
 pub(super) fn quoted_string(str_value: Value) -> RakuAstNode {
     let seg = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StrLiteral,
         fields: vec![leaf_field(None, str_value)],
     };
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::QuotedString,
         fields: vec![RakuAstField {
             name: Some("segments"),
@@ -7221,7 +7443,11 @@ pub(super) fn call_name(
     if !arg_list.fields.is_empty() {
         fields.push(node_field(Some("args"), arg_list));
     }
-    Ok(RakuAstNode { class, fields })
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    })
 }
 
 /// A control-flow listop (`return`/`last`/`next`) — a `Call::Name` in
@@ -7261,6 +7487,7 @@ fn slipped_control_call(
 
 fn control_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let name_node = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Name,
         fields: vec![leaf_field(None, Value::str(name.to_string()))],
     };
@@ -7269,6 +7496,7 @@ fn control_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, Runtim
         fields.push(node_field(Some("args"), arg_list(args)?));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::CallNameWithoutParentheses,
         fields,
     })
@@ -7278,16 +7506,19 @@ fn control_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, Runtim
 // Cost: O(|label|).
 fn labelled_control_call(name: &'static str, label: &str) -> RakuAstNode {
     let term = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TermName,
         fields: vec![node_field(None, name_from_identifier(label))],
     };
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::CallNameWithoutParentheses,
         fields: vec![
             node_field(Some("name"), name_from_identifier(name)),
             node_field(
                 Some("args"),
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::ArgList,
                     fields: vec![node_field(None, term)],
                 },
@@ -7322,6 +7553,7 @@ fn comma_declarations_node(declarations: &[Stmt]) -> Result<RakuAstNode, Runtime
         operands.push(Value::rakuast(Box::new(expression)));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyListInfix,
         fields: vec![
             node_field(Some("infix"), plain_infix(",")),
@@ -7339,6 +7571,7 @@ fn comma_list_node(items: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
         operands.push(Value::rakuast(Box::new(convert_expr(it)?)));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyListInfix,
         fields: vec![
             node_field(Some("infix"), plain_infix(",")),
@@ -7364,6 +7597,7 @@ pub(super) fn arg_list(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
         fields.push(node_field(None, convert_expr(a)?));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ArgList,
         fields,
     })
@@ -7371,6 +7605,7 @@ pub(super) fn arg_list(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
 
 fn regex_arg_list(args: &crate::regex_tree::SubruleArgs) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ArgList,
         fields: args
             .args
@@ -7444,6 +7679,7 @@ fn colonpair_number_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         return Err(unsupported("colonpair number key"));
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ColonPairNumber,
         fields: vec![
             leaf_field(Some("key"), Value::str(key.to_string())),
@@ -7473,6 +7709,7 @@ fn colonpair_true_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         return Err(unsupported("colonpair true value"));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ColonPairTrue,
         fields: vec![leaf_field(None, Value::str(key.to_string()))],
     })
@@ -7502,6 +7739,7 @@ fn colonpair_false_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         return Err(unsupported("colonpair false value"));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ColonPairFalse,
         fields: vec![leaf_field(None, Value::str(key.to_string()))],
     })
@@ -7532,6 +7770,7 @@ fn colonpair_variable_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         return Err(unsupported("colonpair variable value"));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ColonPairVariable,
         fields: vec![
             leaf_field(Some("key"), Value::str(key.to_string())),
@@ -7591,6 +7830,7 @@ fn colonpair_value_node(expr: &Expr, parenthesize: bool) -> Result<RakuAstNode, 
         || crate::ast::placeholders::is_implicit_placeholder_block(right);
     if is_direct_block || !parenthesize {
         return Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ColonPairValue,
             fields: vec![
                 leaf_field(Some("key"), Value::str(key.to_string())),
@@ -7599,6 +7839,7 @@ fn colonpair_value_node(expr: &Expr, parenthesize: bool) -> Result<RakuAstNode, 
         });
     }
     let semilist = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::SemiList,
         fields: vec![node_field(
             None,
@@ -7610,10 +7851,12 @@ fn colonpair_value_node(expr: &Expr, parenthesize: bool) -> Result<RakuAstNode, 
         )],
     };
     let parenthesized = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::CircumfixParentheses,
         fields: vec![node_field(None, semilist)],
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ColonPairValue,
         fields: vec![
             leaf_field(Some("key"), Value::str(key.to_string())),
@@ -7635,6 +7878,7 @@ fn literal_hash_index_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     super::postfix_grouping::convert(
         target,
         RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::PostcircumfixLiteralHashIndex,
             fields: vec![node_field(Some("index"), convert_expr(index)?)],
         },
