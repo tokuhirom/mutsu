@@ -42,8 +42,11 @@ pub(crate) fn builtin_type_is_a(type_name: &str, ancestor: &str) -> bool {
 // Cost: O(1).
 pub(crate) fn builtin_role_ancestors(role: &str) -> &'static [&'static str] {
     match role {
-        "Rational" => &["Real", "Numeric"],
-        "Real" => &["Numeric"],
+        // Rakudo answers `Rational ~~ Cool` (and `Real`, `Numeric`) with True,
+        // so a user `Cool` parameter is wider than the core `Rational` one.
+        "Rational" => &["Real", "Numeric", "Cool"],
+        "Real" => &["Numeric", "Cool"],
+        "Numeric" => &["Cool"],
         _ => &[],
     }
 }
