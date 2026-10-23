@@ -465,6 +465,11 @@ impl Interpreter {
                 "BOOTSTRAPATTR".to_string()
             }
             ValueView::Instance { class_name, .. } => class_name.resolve(),
+            // The type object of `Class.^mixin(R)`: its metaobject is the
+            // mixin class `Class+{R}`, whose members the `^` methods read.
+            ValueView::Mixin(..) => self
+                .mixin_class_of_type_object(value)
+                .unwrap_or_else(|| self.dispatch_owner_name(value).to_string()),
             _ => self.dispatch_owner_name(value).to_string(),
         }
     }
