@@ -205,7 +205,12 @@ impl Compiler {
             .cloned()
             // A role method's closure outlives the frame that bound the role's
             // `&` parameters, so it has to capture them like any outer `&name`.
-            .chain(self.role_type_param_names.iter().filter(|n| n.starts_with('&')).cloned())
+            .chain(
+                self.role_type_param_names
+                    .iter()
+                    .filter(|n| n.starts_with('&'))
+                    .cloned(),
+            )
             .chain(self.code.outer_code_var_names.iter().cloned())
             .collect();
         child.lexical_scope_known = self.lexical_scope_known;
