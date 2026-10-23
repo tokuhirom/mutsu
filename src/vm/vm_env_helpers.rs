@@ -1789,7 +1789,11 @@ impl Interpreter {
             return Some(val.clone());
         }
         if let Some(alias) = Self::twigil_dynamic_alias(name) {
-            return self.env().get(&alias).cloned();
+            return self
+                .env()
+                .get(&alias)
+                .cloned()
+                .or_else(|| self.global_package_dynamic_fallback(name));
         }
         if let Some(alias) = Self::main_unqualified_name(name) {
             return self.env().get(&alias).cloned();
@@ -1845,7 +1849,32 @@ impl Interpreter {
                 return Some(val);
             }
         }
-        None
+        // A dynamic variable nobody declared in the dynamic scope falls back to
+        // the same-named `GLOBAL::` package variable (`%*X` reads `%GLOBAL::X`),
+        // as rakudo's dynamic lookup ends at `GLOBAL`.
+        self.global_package_dynamic_fallback(name)
+    }
+
+    // Cost: O(|name|) plus one env probe.
+    pub(super) fn global_package_dynamic_fallback(&self, name: &str) -> Option<Value> {
+        let (sigil, rest) = match name.chars().next()? {
+            c @ ('@' | '%') => (Some(c), &name[1..]),
+            _ => (None, name),
+        };
+        let rest = rest.strip_prefix('*')?;
+        if rest.is_empty() || rest.contains("::") {
+            return None;
+        }
+        let key = match sigil {
+            Some(c) => format!("{c}GLOBAL::{rest}"),
+            None => format!("GLOBAL::{rest}"),
+        };
+        self.env()
+            .get(&key)
+            .cloned()
+            .or_else(|| self.our_pseudo_var_read(&key))
+            .or_else(|| self.get_our_var(&key).cloned())
+            .filter(|v| !v.is_nil())
     }
 
     pub(crate) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
