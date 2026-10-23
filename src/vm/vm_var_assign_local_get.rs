@@ -40,19 +40,6 @@ impl Interpreter {
                 .or_else(|| self.get_env_with_main_alias(name))
         }
         .unwrap_or(Value::NIL);
-        // A variable bound to a `Proxy` IS that container: boxing it in a
-        // fresh cell would hide its STORE from an `is rw` routine's caller.
-        if current.is_proxy_value() {
-            self.stack.push(current);
-            return;
-        }
-        if let ValueView::ContainerRef(cell) = current.view() {
-            let held = cell.lock().unwrap().clone();
-            if held.is_proxy_value() {
-                self.stack.push(held);
-                return;
-            }
-        }
         let cell = if current.is_container_ref() {
             current
         } else {

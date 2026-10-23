@@ -711,6 +711,18 @@ impl Interpreter {
     /// has been deleted. Every non-delegation candidate is now compiled on-demand by
     /// its caller (`compile_method_def_in_place`) before reaching here, so this only
     /// handles delegation forwarders.)
+    /// A Proxy-bound delegate (a lazy attribute) is FETCHed: a method is called
+    /// on what it holds, not on the Scalar around it.
+    // Cost: O(1) for a non-Proxy delegate; a Proxy runs its FETCH.
+    pub(super) fn fetch_proxy_delegate(&mut self, delegate: Value) -> Result<Value, RuntimeError> {
+        let bare = delegate.clone().deref_container();
+        if bare.is_proxy_value() {
+            Ok(self.auto_fetch_proxy(&bare)?.deref_container())
+        } else {
+            Ok(delegate)
+        }
+    }
+
     pub(super) fn forward_resolved_delegation(
         &mut self,
         receiver_class_name: &str,
@@ -761,6 +773,7 @@ impl Interpreter {
                     })
                     .unwrap_or(Value::NIL)
             };
+            let delegate = self.fetch_proxy_delegate(delegate)?;
             let is_method_based = attr_var_name.starts_with('&');
             let attr_key = attr_var_name
                 .trim_start_matches('&')
