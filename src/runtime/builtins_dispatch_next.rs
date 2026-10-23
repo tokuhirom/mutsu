@@ -500,9 +500,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let invocant = self
-            .env
-            .get("self")
-            .cloned()
+            .env_self_value()
             .unwrap_or_else(|| frame_invocant.clone());
         match method_name {
             "BUILDALL" | "POPULATE" => crate::builtins::method_table::invoke_base(
@@ -1362,8 +1360,10 @@ impl Interpreter {
                 let base_invocant = if came_from_wrapper {
                     frame.invocant.clone()
                 } else {
+                    // The dispatch frame's own invocant is the fallback, so a
+                    // frame without an env `self` needs no record lookup.
                     self.env
-                        .get("self")
+                        .get_sym(crate::symbol::wk::self_())
                         .cloned()
                         .unwrap_or_else(|| frame.invocant.clone())
                 };
@@ -1774,7 +1774,7 @@ impl Interpreter {
                     .samewith_context_stack
                     .last()
                     .is_some_and(|ctx| ctx.name == "new");
-            if in_new && let Some(invocant) = self.env.get("self").cloned() {
+            if in_new && let Some(invocant) = self.env_self_value() {
                 let call_args = match override_args {
                     Some(args) => args,
                     None => self

@@ -200,7 +200,7 @@ impl Interpreter {
             .filter(|v| !matches!(v.view(), ValueView::Nil))
             .cloned()
             .or_else(|| captured_env.and_then(|e| e.get("self").cloned()));
-        let saved_self = self.get_env_self();
+        let saved_self = self.env().get_sym(crate::symbol::wk::self_()).cloned();
         if let Some(ref s) = enclosing_self {
             self.set_env_with_main_alias("self", s.clone());
         }

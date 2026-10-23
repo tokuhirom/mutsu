@@ -229,10 +229,10 @@ impl Interpreter {
         // cell captured by the outer method call; reuse it so a nested method
         // assignment updates the original aggregate.
         if name == "self"
-            && let Some(existing) = self.env().get("self")
+            && let Some(existing) = self.env_self_value()
             && existing.is_container_ref()
         {
-            return Some(existing.clone());
+            return Some(existing);
         }
         if let Some(idx) = Self::frame_local_slot(code, name, None) {
             let current = self.locals.get(idx)?.clone();

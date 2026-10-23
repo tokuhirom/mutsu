@@ -896,7 +896,7 @@ impl Interpreter {
             // with `.new(:x(Nil))` leaves `$!x` as `Any`).
             let attr_value = if name.starts_with('!')
                 && value.is_nil()
-                && let Some(self_val) = self.env.get("self")
+                && let Some(self_val) = self.env_self_value()
                 && let ValueView::Instance { class_name, .. } = self_val.view()
             {
                 let class_name = class_name.resolve();
@@ -909,7 +909,7 @@ impl Interpreter {
                 .insert(format!("!{}", attr_name), attr_value.clone());
             self.env
                 .insert(format!(".{}", attr_name), attr_value.clone());
-            if let Some(self_val) = self.env.get("self")
+            if let Some(self_val) = self.env_self_value()
                 && let ValueView::Instance { attributes, .. } = self_val.view()
             {
                 // Write the one attribute in place through `self`'s shared cell

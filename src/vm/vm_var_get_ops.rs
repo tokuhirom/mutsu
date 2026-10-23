@@ -233,9 +233,8 @@ impl Interpreter {
         // method reads. Without an invocant in scope it falls through to the
         // ordinary resolution (a `constant self`, or the undeclared error).
         if name == "self"
-            && let Some(v) = self.env().get_sym(crate::symbol::wk::self_())
+            && let Some(v) = self.env_self_value()
         {
-            let v = v.clone();
             self.stack.push(v);
             return Ok(());
         }

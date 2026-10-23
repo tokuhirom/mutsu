@@ -98,7 +98,7 @@ impl Interpreter {
     /// The native kind of attribute `attr` of the current invocant's class.
     // Cost: O(d), d = ancestors of the class.
     fn native_attribute_kind(&self, attr: &str) -> Option<char> {
-        let invocant = self.env().get("self")?.clone();
+        let invocant = self.env_self_value()?;
         let class = match invocant.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             ValueView::Package(name) => name.resolve(),

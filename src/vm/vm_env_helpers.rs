@@ -316,7 +316,8 @@ impl Interpreter {
         // declaring scope is the invocant's class (`self`), so probe its
         // package chain too (`unit class EnumC; our enum HF <… Lists>;
         // method new(:$h = Lists)` reads `Lists` as `EnumC::Lists`).
-        let invocant_class = match self.env().get("self").map(|v| v.view()) {
+        let self_value = self.env_self_value();
+        let invocant_class = match self_value.as_ref().map(|v| v.view()) {
             Some(ValueView::Instance { class_name, .. }) => Some(class_name),
             Some(ValueView::Package(p)) => Some(p),
             _ => None,
@@ -1677,6 +1678,9 @@ impl Interpreter {
             }
         }
         self.get_env_with_main_alias_inner(name, sym)
+            // A method frame that wrote no env keys answers its fixed names
+            // from its record (ADR-14633).
+            .or_else(|| self.frame_fixture_value(sym))
             // Under `no strict` an undeclared name is the package variable,
             // which outlives the block whose write auto-declared it (#10622).
             .or_else(|| self.no_strict_package_var(name, sym))

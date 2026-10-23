@@ -83,7 +83,7 @@ impl Interpreter {
             .last()
             .map(|f| f.invocant.clone())
             .or_else(|| ctx.invocant.clone())
-            .or_else(|| self.env.get("self").cloned())?;
+            .or_else(|| self.env_self_value())?;
         let crate::value::ValueView::Instance { attributes, .. } = invocant.view() else {
             return None;
         };
