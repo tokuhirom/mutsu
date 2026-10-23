@@ -715,11 +715,12 @@ impl Interpreter {
         // authoritative from its creating frame. Same overwrite-install as
         // `authoritative_free_vars` above — a never-written, lexically-authoritative
         // value that a same-named caller lexical must not shadow.
-        for sym in &data.authoritative_captures {
-            if let Some(val) = data.env.get_sym(*sym).cloned() {
-                self.env_mut().insert_sym(*sym, val);
-            }
-        }
+        // `data.authoritative_captures` needs no install of its own here: every
+        // name it lists is a plain user lexical, so the whole-capture loop above
+        // already overwrote it (#14573 ablation). Only `authoritative_free_vars`
+        // stays a separate install -- removing it fails
+        // `t/routines/closure/closure-free-var-scope.t` and
+        // `roast/integration/99problems-41-to-50.t`.
         // Per-iteration loop captures (Raku fresh-binding semantics): these free
         // variables were declared in an enclosing loop body when this closure was
         // created, so each iteration's closure froze a distinct value in its

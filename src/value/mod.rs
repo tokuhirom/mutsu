@@ -1696,6 +1696,13 @@ pub struct SubData {
     /// `.map`/`.grep` fast path re-compiles. Kept SEPARATE from `owned_captures`
     /// because loop captures may be concurrently mutated (shared cells) and must
     /// NOT be propagated as authoritative — only these never-written names are.
+    ///
+    /// ADR-0055 slice 5 ablation (#14573): this vouch is a HINT, not a
+    /// correctness gate, for the call-time install -- the plain-lexical capture
+    /// loop in `call_compiled_closure_in_unit` already overwrites every name
+    /// listed here, and that install loop is gone. The set still decides which
+    /// names the interpreter-path merge treats as authoritative and seeds the
+    /// cascading `frame_authoritative`.
     pub(crate) authoritative_captures: Vec<Symbol>,
     /// Free variables this closure captures as a LIVE shared `ContainerRef`
     /// cell that a lexically enclosing routine (or a block inside it) owns: the
