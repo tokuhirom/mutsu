@@ -160,8 +160,10 @@ pub(super) static ROWS: &[MethodRow] = &[
             .collect();
         // `Any.tail(n)` is `self.list.tail(n)`: an instance (a `CArray`, say)
         // counts from the end of its own list, not of itself.
-        if matches!(target.view(), ValueView::Instance { .. } | ValueView::Mixin(..))
-            && let Some(answer) = via_self_list_args(interp, &target, "tail", counts.clone())
+        if matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Mixin(..)
+        ) && let Some(answer) = via_self_list_args(interp, &target, "tail", counts.clone())
         {
             return Some(answer);
         }
@@ -195,7 +197,10 @@ pub(super) static ROWS: &[MethodRow] = &[
     twin!("reverse", TWIN_NULLARY, |interp, target, _args| {
         // A type object is left to the rows that answer or refuse it
         // (`Supply.reverse` must die).
-        if !matches!(target.view(), ValueView::Instance { .. } | ValueView::Mixin(..)) {
+        if !matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Mixin(..)
+        ) {
             return None;
         }
         via_self_list(interp, &target, "reverse")

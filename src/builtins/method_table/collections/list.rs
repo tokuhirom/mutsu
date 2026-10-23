@@ -416,7 +416,10 @@ pub(crate) fn tail(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
         ValueView::Instance { .. } | ValueView::Mixin(..)
             if runtime::with_receiver_items(target, |items| {
                 items.len() == 1
-                    && matches!(items[0].view(), ValueView::Instance { .. } | ValueView::Mixin(..))
+                    && matches!(
+                        items[0].view(),
+                        ValueView::Instance { .. } | ValueView::Mixin(..)
+                    )
             }) =>
         {
             None
