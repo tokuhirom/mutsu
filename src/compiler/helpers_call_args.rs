@@ -883,6 +883,19 @@ impl Compiler {
             // not a source resolved by name later (#13941).
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             self.code.emit(OpCode::WrapPackageVarRef { name_idx });
+        } else if is_bind_target
+            && let Expr::Var(name) = arg
+            && let Some((bare, true)) = crate::value::attr_twigil_base(name)
+            && crate::value::attr_twigil_sigil(name).unwrap_or('$') == '$'
+        {
+            // `my $p := $!attr` aliases the attribute's OWN container, the one
+            // `self` holds. A method frame reads `$!attr` out of a seeded local
+            // slot, so tagging that slot (`WrapVarRef`) would box a cell that is
+            // disconnected from the instance and that the method's exit would
+            // later seat over the attribute, undoing a `:=` rebind a nested call
+            // made meanwhile (#14663). Promote the instance's slot instead.
+            let name_idx = self.code.add_constant(Value::str(bare.to_string()));
+            self.code.emit(OpCode::AttrContainerRef(name_idx));
         } else if is_call_arg && self.is_readonly_param_operand(arg) {
             // A readonly `$` parameter is a value, not a container: tagging it
             // would let an `is rw` parameter bind it and write into this frame
