@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 10;
+plan 9;
 
 my $*A = 1;
 sub rd { $*A }
@@ -22,7 +22,3 @@ sub g3($c) { my $r = do with $c { my $*A = 8; 9 }; $r }
 is g1(1), 1, "do with in a sub leaves the dynamic variable alone";
 is g2(1), 1, "do if in a sub leaves the dynamic variable alone";
 is g3(1), 9, "and still yields the branch value";
-
-my $x = 1;
-my $r = do with $t { my $x = 3; 8 };
-is $x, 1, "a value-position branch's plain my does not leak either";

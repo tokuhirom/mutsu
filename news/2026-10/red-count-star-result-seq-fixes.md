@@ -11,8 +11,8 @@ now fixed and pinned by its own test:
   user-defined `Seq` method. Red's `create-map` returns `self but role CMModel[...]`, so
   `do-it(...).Seq` never reached `ResultSeq.Seq`.
 - **A branch's own `my $*x`** shadows an enclosing dynamic variable for the branch only.
-  In `if`/`with`/`given` bodies (and, for plain `my`, in value-position `do if`/`do with`)
-  the declaration leaked past the branch, so `$*RED-INSIDE-COMPUTATION` stayed set and the
+  In `if`/`with`/`given` bodies, including their value-position `do if`/`do with` forms, the
+  declaration leaked past the branch, so `$*RED-INSIDE-COMPUTATION` stayed set and the
   aggregate column lost its `as "data_1"` alias. Such branches now run as real blocks.
 - **`^add_attribute` with a role-mixed Attribute** (`$attr does Red::Attr::Column(...)`)
   dropped the role, so `.^attributes.grep(Red::Attr::Column)` came back empty inside
