@@ -2624,7 +2624,10 @@ impl Compiler {
                         self.compile_expr(expr);
                         self.code.emit(OpCode::ContainerizePair);
                     } else if let Expr::BareWord(src) = expr
-                        && self.for_param_names.iter().any(|p| p.strip_prefix('\\') == Some(src.as_str()))
+                        && self
+                            .for_param_names
+                            .iter()
+                            .any(|p| p.strip_prefix('\\') == Some(src.as_str()))
                         && !self.local_map.contains_key(src.as_str())
                     {
                         // A sigilless `for` parameter (`-> \p`) is the element's
