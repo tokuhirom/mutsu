@@ -177,3 +177,13 @@ pub(super) fn with_line<T>(line: Option<i64>, f: impl FnOnce() -> T) -> T {
 pub(super) fn current_line() -> Option<i64> {
     CURRENT_LINE.with(|c| c.get())
 }
+
+/// The `origin` field for a node below the statement level that the parser
+/// placed at `span` (ADR-10723 Stage 2), when the unit's source is known.
+// Cost: O(log n), n = lines of the unit.
+pub(super) fn span_field(span: crate::ast::SrcSpan) -> Option<RakuAstField> {
+    Some(RakuAstField {
+        name: Some(FIELD),
+        value: RakuAstFieldValue::Node(super::unit_source::span_origin_value(span)?),
+    })
+}

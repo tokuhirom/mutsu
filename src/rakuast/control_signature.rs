@@ -1,11 +1,9 @@
 //! Written control signatures and their shared parser expansions.
 
 use super::convert::{convert_expr, node_field, pointy_block};
-use super::lower::{
-    lower_block, lower_expr, name_for_unpack_params, named_child, signature_positional_params,
-};
+use super::lower::{name_for_unpack_params, signature_positional_params};
 use super::{RakuAstClass, RakuAstNode};
-use crate::ast::{ControlPointyKind, Expr, ParamDef, SourceForm, Stmt};
+use crate::ast::{ControlPointyKind, ParamDef, SourceForm, Stmt};
 use crate::value::RuntimeError;
 
 // Cost: O(1), bounded class names.
@@ -145,46 +143,4 @@ pub(super) fn params(block: &RakuAstNode) -> Result<Vec<ParamDef>, RuntimeError>
     let (mut names, mut defs) = signature_positional_params(block)?;
     name_for_unpack_params(&mut names, &mut defs);
     Ok(defs)
-}
-
-// Cost: O(n), n = size of the written clause.
-pub(super) fn lower_unless(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let block = named_child(node, "body")?;
-    let defs = if block.class == RakuAstClass::PointyBlock {
-        Some(params(block)?)
-    } else {
-        None
-    };
-    crate::parser::unless_clause(
-        lower_expr(named_child(node, "condition")?)?,
-        defs,
-        lower_block(block)?,
-    )
-}
-
-/// Expand the same with-family pointy signature on both entry paths.
-// Cost: O(n), n = size of the signature and body.
-pub(super) fn with_body(
-    cond: &Expr,
-    tmp: &Expr,
-    block: &RakuAstNode,
-) -> Result<Vec<Stmt>, RuntimeError> {
-    let mut defs = params(block)?;
-    if defs.len() != 1 {
-        return Err(RuntimeError::new(
-            "RakuAST: with-family pointy block requires one parameter",
-        ));
-    }
-    let Some(def) = defs.pop() else {
-        return Err(RuntimeError::new(
-            "RakuAST: missing with-family pointy parameter",
-        ));
-    };
-    crate::parser::with_then_branch(
-        cond,
-        tmp,
-        &Some(def.name.clone()),
-        &Some(def),
-        lower_block(block)?,
-    )
 }

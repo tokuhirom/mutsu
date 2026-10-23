@@ -208,7 +208,8 @@ fn is_do_statement(stmt: &Stmt) -> bool {
             is_statement_modifier,
             ..
         } => !*is_statement_modifier,
-        Stmt::While { .. }
+        Stmt::Ast(_)
+        | Stmt::While { .. }
         | Stmt::Loop { .. }
         | Stmt::Whenever { .. }
         | Stmt::When { .. }
@@ -286,6 +287,13 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         // The `use trace` hook is bookkeeping too: rakudo models the trace as a
         // flag on the traced statement, not as a statement of its own.
         Stmt::SetLine(..) | Stmt::Trace { .. } => Ok(None),
+        // A construct the parser built in its RakuAST shape (ADR-10723
+        // Stage 2): rendered, not reconstructed.
+        Stmt::Ast(node) => match node.as_ref() {
+            crate::ast::parsed::ParsedStmt::Conditional(c) => {
+                super::conditional_view::conditional_node(c).map(Some)
+            }
+        },
         Stmt::SourceForm(form)
             if matches!(form.as_ref(), crate::ast::SourceForm::RoutineTraits(_)) =>
         {
@@ -5495,7 +5503,7 @@ fn loop_setup_node(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
 /// A topic-taking block body (the `{ ... }` of an implicit-topic `for`, a
 /// `given`, a `with`), which raku marks `implicit-topic`, `required-topic` and
 /// `may-have-signature`, all `True`, before the `body` field.
-fn topic_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn topic_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         class: RakuAstClass::Block,
         fields: vec![

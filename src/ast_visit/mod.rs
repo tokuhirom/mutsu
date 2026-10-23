@@ -26,6 +26,7 @@ mod walk_expr;
 mod walk_mut_decl;
 mod walk_mut_expr;
 mod walk_mut_stmt;
+mod walk_parsed;
 mod walk_source;
 mod walk_stmt;
 pub(crate) use walk_source::{walk_signature_decl, walk_signature_var, walk_source_form};
@@ -37,6 +38,7 @@ use visit_mut::{walk_call_arg_mut, walk_handle_spec_mut, walk_regex_tree_mut};
 pub(crate) use walk_expr::walk_expr;
 pub(crate) use walk_mut_expr::walk_expr_mut;
 pub(crate) use walk_mut_stmt::{walk_stmt_mut, walk_stmts_mut};
+pub(crate) use walk_parsed::{walk_parsed, walk_parsed_mut};
 pub(crate) use walk_stmt::{walk_stmt, walk_stmts};
 
 use crate::ast::{CallArg, Expr, HandleSpec, ParamDef, Stmt};

@@ -14,7 +14,7 @@
 //! hand-written `RakuAST::Statement::With`, so the parts both sides need live
 //! here rather than being spelled twice and drifting apart.
 
-use crate::ast::{Expr, GivenWithKind, Stmt, WithBlockKind};
+use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -114,77 +114,5 @@ pub(crate) fn element_source_root_key(root: &Expr) -> Option<String> {
         Expr::Var(name) | Expr::ArrayVar(name) if name.starts_with(['!', '.']) => None,
         Expr::HashVar(name) if name.starts_with(['!', '.', '?']) => None,
         other => other.container_var_key(),
-    }
-}
-
-/// The topic the parameterless block form's scaffold `given` runs on.
-///
-/// An lvalue condition is represented by a bound once-evaluated temp, so it
-/// topicalizes on that temp and mutations through `$_` still write back to the
-/// source. A literal topicalizes on the literal so `$_` keeps `given`'s
-/// read-only semantics; anything else uses the once-evaluated temp.
-/// Mirrors the routing in `parser::stmt::control::with_stmt` for the case with
-/// no pointy parameter -- keep the two in step.
-pub(crate) fn body_topic(cond_expr: &Expr, tmp_var: &Expr) -> Expr {
-    if matches!(
-        cond_expr,
-        Expr::Literal(_) | Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
-    ) {
-        cond_expr.clone()
-    } else {
-        tmp_var.clone()
-    }
-}
-
-/// The topicalizing `given` a `with`-family block body runs under, tagged so
-/// the RakuAST converter can render it as the block's `implicit-topic` flag
-/// rather than as a source-level `given`.
-pub(crate) fn topic_given(topic: Expr, body: Vec<Stmt>) -> Stmt {
-    Stmt::Given {
-        topic,
-        body,
-        is_statement_modifier: false,
-        with_kind: Some(GivenWithKind::BlockTopic),
-    }
-}
-
-/// The conditional a `with` / `without` block form lowers to, given an already
-/// built `else` branch (an `orwith`/`elsif` chain, a topicalized `else` block,
-/// or nothing).
-pub(crate) fn with_conditional(
-    kind: WithBlockKind,
-    tmp_name: &str,
-    cond_expr: Expr,
-    body: Vec<Stmt>,
-    else_branch: Vec<Stmt>,
-) -> Stmt {
-    let tmp_var = Expr::Var(tmp_name.to_string());
-    let topic = body_topic(&cond_expr, &tmp_var);
-    with_conditional_branch(
-        kind,
-        tmp_name,
-        cond_expr,
-        vec![topic_given(topic, body)],
-        else_branch,
-    )
-}
-
-/// [`with_conditional`] over an already built then-branch (a pointy block's
-/// parameter binds come from the parser's `with_then_branch`).
-pub(crate) fn with_conditional_branch(
-    kind: WithBlockKind,
-    tmp_name: &str,
-    cond_expr: Expr,
-    then_branch: Vec<Stmt>,
-    else_branch: Vec<Stmt>,
-) -> Stmt {
-    Stmt::If {
-        cond: defined_condition(kind == WithBlockKind::Without, tmp_name, cond_expr),
-        then_branch,
-        else_branch,
-        binding_var: None,
-        is_statement_modifier: false,
-        is_unless: false,
-        with_kind: Some(kind),
     }
 }

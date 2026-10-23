@@ -392,6 +392,38 @@ pub(in crate::parser) fn statement_span(start: &str, end: &str) -> crate::ast::S
     }
 }
 
+/// The byte range from `start` to `end` in the unit's source, as consumed:
+/// nothing is trimmed. `SrcSpan::NONE` when either position is outside the
+/// source.
+// Cost: O(h), h = leaked heredoc regions.
+pub(in crate::parser) fn source_span(start: &str, end: &str) -> crate::ast::SrcSpan {
+    match (source_offset(start), source_offset(end)) {
+        (Some(from), Some(to)) if from <= to => crate::ast::SrcSpan::new(from, to),
+        _ => crate::ast::SrcSpan::NONE,
+    }
+}
+
+/// `span` extended over the `;` terminators that directly follow it, as a
+/// RakuAST `StatementList`'s range ends after its last statement's `;`.
+// Cost: O(k), k = terminators skipped.
+pub(in crate::parser) fn extend_over_semicolons(span: crate::ast::SrcSpan) -> crate::ast::SrcSpan {
+    if !span.is_some() {
+        return span;
+    }
+    let skipped = ORIGINAL_SOURCE.with(|s| {
+        let origin = s.borrow();
+        if origin.ptr == 0 {
+            return 0;
+        }
+        // SAFETY: (ptr, len) was recorded from a live `&str` by
+        // `set_original_source`; the slice is only read within `len`.
+        let full = unsafe { std::slice::from_raw_parts(origin.ptr as *const u8, origin.len) };
+        full.get(span.to as usize..)
+            .map_or(0, |tail| tail.iter().take_while(|&&b| b == b';').count())
+    });
+    crate::ast::SrcSpan::new(span.from as usize, span.to as usize + skipped)
+}
+
 /// Reconstruct the `pre`/`post` source spans around an eject point, for the
 /// `pre`/`post` attributes of compile-time errors such as `X::Syntax::Confused`.
 /// `eject` must be a sub-slice of the original source positioned at the point

@@ -152,7 +152,8 @@ fn original_line(target: &Value, args: &[Value]) -> Option<Result<Value, Runtime
 }
 
 /// The child nodes of `node`, in field order: every field value that is itself
-/// a RakuAST node, and every such element of a list field. Leaf payloads (a
+/// a RakuAST node, and every such element of a list field (a conditional's
+/// `elsifs` clauses contribute their own children). Leaf payloads (a
 /// name, a number) and the hidden `origin` are not nodes.
 // Cost: O(f + c), f = fields of `node`, c = child nodes listed in them.
 pub(super) fn children(node: &RakuAstNode) -> Vec<Value> {
@@ -165,6 +166,15 @@ pub(super) fn children(node: &RakuAstNode) -> Vec<Value> {
         match &field.value {
             RakuAstFieldValue::Node(v) if crate::rakuast::is_node_value(v) => {
                 out.push(v.clone());
+            }
+            // Rakudo's conditionals visit each `elsif` / `orwith` clause's
+            // condition and block directly, never the clause node itself.
+            RakuAstFieldValue::List(items) if field.name == Some("elsifs") => {
+                for item in items {
+                    if let ValueView::RakuAst(clause) = item.view() {
+                        out.extend(children(clause));
+                    }
+                }
             }
             RakuAstFieldValue::List(items) => out.extend(
                 items
