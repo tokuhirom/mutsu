@@ -363,4 +363,40 @@ mod tests {
         stack.truncate(0);
         assert_agrees(&stack);
     }
+
+    fn fixtures(class: &str) -> FrameFixtures {
+        FrameFixtures {
+            invocant: Value::int(1),
+            class: Symbol::intern(class),
+            role: None,
+        }
+    }
+
+    #[test]
+    fn records_are_cut_back_with_their_frames() {
+        let mut stack = RoutineStack::default();
+        assert!(stack.top_fixtures().is_none());
+        stack.push_with_fixtures(frame(false), fixtures("A"));
+        stack.push(frame(false));
+        stack.push_with_fixtures(frame(false), fixtures("B"));
+        assert_eq!(stack.top_fixtures().unwrap().class.as_str(), "B");
+        // A frame without a record leaves the innermost record answering.
+        stack.push(frame(false));
+        assert_eq!(stack.top_fixtures().unwrap().class.as_str(), "B");
+        stack.pop();
+        stack.pop();
+        assert_eq!(stack.top_fixtures().unwrap().class.as_str(), "A");
+        // replace_top keeps the record of the frame it replaces.
+        let top = *stack.last().unwrap();
+        stack.replace_top(RoutineFrame { callable_id: 7, ..top });
+        assert_eq!(stack.last().unwrap().callable_id, 7);
+        assert_eq!(stack.top_fixtures().unwrap().class.as_str(), "A");
+        // truncate drops the records of every dropped frame.
+        stack.push_with_fixtures(frame(false), fixtures("C"));
+        stack.push_with_fixtures(frame(false), fixtures("D"));
+        stack.truncate(1);
+        assert_eq!(stack.top_fixtures().unwrap().class.as_str(), "A");
+        stack.truncate(0);
+        assert!(stack.top_fixtures().is_none());
+    }
 }

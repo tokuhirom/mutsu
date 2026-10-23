@@ -537,16 +537,15 @@ impl Interpreter {
     /// invocant, `?CLASS` and `?ROLE` of the running method call
     /// (ADR-14633 §2.1).
     // Cost: O(1).
+    // TODO(ADR-14633 slice 2): no reader uses the record yet. The env keys it
+    // mirrors are still rebound mid-frame by ~20 helpers (role mixins, grammar
+    // actions, attribute defaults) and by closure calls that push no record,
+    // so answering `self` from it before those become scoped helpers would
+    // change answers.
+    #[allow(dead_code)]
     #[inline]
     pub(crate) fn frame_fixtures(&self) -> Option<&super::routine_stack::FrameFixtures> {
         self.routine_stack.top_fixtures()
-    }
-
-    /// The invocant of the innermost method frame (`self`, `__ANON_STATE#`).
-    // Cost: O(1).
-    #[inline]
-    pub(crate) fn frame_invocant(&self) -> Option<&Value> {
-        self.frame_fixtures().map(|f| &f.invocant)
     }
 
     /// The fixture rule's answer for a fixed name (`self`, `__ANON_STATE#`,
@@ -555,6 +554,7 @@ impl Interpreter {
     /// `Some(None)`-as-absent through `None` too, since an absent role is an
     /// absent env key.
     // Cost: O(1).
+    #[allow(dead_code)] // TODO(ADR-14633 slice 2): see `frame_fixtures`.
     pub(crate) fn frame_fixture_value(&self, sym: Symbol) -> Option<Value> {
         let fixtures = self.frame_fixtures()?;
         if sym == crate::symbol::wk::self_() || sym == crate::symbol::wk::anon_state() {
@@ -566,34 +566,6 @@ impl Interpreter {
         } else {
             None
         }
-    }
-
-    /// Debug-build check that a by-name read of a fixed name agrees with the
-    /// frame's record. Asserted only while the innermost routine frame is the
-    /// record's own: a block or closure frame above it reads the lexical
-    /// `self` of where it was written, which the record of the dynamically
-    /// innermost method need not be (closures carry their own record from
-    /// ADR-14633 slice 2 on).
-    // Cost: O(1) in debug builds, nothing in release.
-    #[inline]
-    pub(crate) fn debug_assert_fixture_agrees(&self, sym: Symbol, env_value: Option<&Value>) {
-        #[cfg(debug_assertions)]
-        if self.routine_stack.last().is_some_and(|f| f.fixtures != 0)
-            && let Some(expected) = self.frame_fixture_value(sym)
-        {
-            match env_value {
-                Some(actual) => debug_assert!(
-                    crate::value::identity::values_same_object(&expected, actual),
-                    "fixture {} disagrees with the env: record {:?}, env {:?}",
-                    sym.as_str(),
-                    expected,
-                    actual
-                ),
-                None => debug_assert!(false, "fixture {} is in the record but not the env", sym.as_str()),
-            }
-        }
-        #[cfg(not(debug_assertions))]
-        let _ = (sym, env_value);
     }
 
     pub(crate) fn pop_routine(&mut self) {
