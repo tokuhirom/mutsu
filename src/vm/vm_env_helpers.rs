@@ -1862,7 +1862,7 @@ impl Interpreter {
             _ => (None, name),
         };
         let rest = rest.strip_prefix('*')?;
-        if rest.is_empty() || rest.contains("::") {
+        if rest.is_empty() || crate::qualified::is_qualified_str(rest) {
             return None;
         }
         let key = match sigil {
