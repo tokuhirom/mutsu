@@ -1316,7 +1316,13 @@ fn raku_value_node(v: &Value) -> String {
             ..
         } if crate::value::AttrMap::is_objat_class_name(class_name.as_str()) => {
             let which = attributes.as_map().objat_which().unwrap_or_default();
-            format!("{}.new(\"{}\")", class_name.resolve(), which)
+            // A role-mixed one (`$w does role { }`) names its roles inside
+            // `+{...}`; an anonymous role is `<anon|N>`, not its internal key.
+            format!(
+                "{}.new(\"{}\")",
+                crate::value::user_facing_type_name(&class_name.resolve()),
+                which
+            )
         }
         ValueView::Mixin(inner, mixins) => {
             // An allomorphic value (IntStr/RatStr/NumStr/ComplexStr) renders as
