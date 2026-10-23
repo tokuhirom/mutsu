@@ -51,6 +51,17 @@ impl Interpreter {
             "?ROLE".to_string(),
         ];
         method_params.extend(def.params.iter().cloned());
+        // A method added at run time (`^add_multi_method` with a closure) reads the
+        // sigilless parameters (`\type`) of the routine that created it from its
+        // captured env; a closure nested in its body has to capture them by name
+        // rather than compile the bare reference as a bareword.
+        if let Some(captured) = &def.captured_env {
+            let sigilless: Vec<String> = captured
+                .iter()
+                .filter_map(|(sym, _)| sym.with_str(|k| k.strip_prefix('\\').map(str::to_string)))
+                .collect();
+            compiler.seed_enclosing_sigilless(&sigilless);
+        }
         let mut cc = compiler.compile_routine_closure_body(
             &method_params,
             &def.param_defs,
