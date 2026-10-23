@@ -37,6 +37,7 @@ mod regex_parse_core;
 mod regex_parse_grapheme;
 mod regex_parse_ltm;
 mod regex_parse_modifier;
+mod regex_variable_alias;
 mod regex_parse_numbering;
 mod regex_qq_array_interp;
 mod regex_quote_scan;
