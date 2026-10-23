@@ -187,15 +187,41 @@ impl Interpreter {
         def: &FunctionDef,
         f: impl FnOnce(&mut Self) -> T,
     ) -> T {
-        let saved_unit = def.source_file.as_deref().map(|file| {
-            let unit = self.unit_of_source(Some(file));
-            std::mem::replace(&mut self.current_unit, unit)
-        });
-        let result = self.with_candidate_package(Some(def.package), f);
-        if let Some(saved_unit) = saved_unit {
-            self.current_unit = saved_unit;
-        }
+        let Some(file) = def.source_file.as_deref() else {
+            return self.with_candidate_package(Some(def.package), f);
+        };
+        self.with_candidate_unit(file, |this| this.with_candidate_package(Some(def.package), f))
+    }
+
+    /// Run `f` in the compilation unit of `file`, the scope a candidate's
+    /// signature-time code was compiled in, and mark that unit as the one whose
+    /// file-scope lexicals a not-yet-framed candidate reads
+    /// (`LexicalState::candidate_scope_unit`).
+    pub(crate) fn with_candidate_unit<T>(
+        &mut self,
+        file: &str,
+        f: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let unit = self.unit_of_source(Some(file));
+        let depth = self.routine_stack().len();
+        let saved_scope = self.lexicals.candidate_scope_unit.replace((unit, depth));
+        let saved_unit = std::mem::replace(&mut self.current_unit, unit);
+        let result = f(self);
+        self.current_unit = saved_unit;
+        self.lexicals.candidate_scope_unit = saved_scope;
         result
+    }
+
+    /// The lexical package of the compunit whose multi candidate is being
+    /// matched, while no frame of the candidate exists yet (see
+    /// `LexicalState::candidate_scope_unit`): its `where` reads the module's
+    /// file-scope constants through it, not through the caller's frame.
+    // Cost: O(1) when no candidate is being matched; else one unit-package probe.
+    pub(crate) fn candidate_scope_lexical_package(&self) -> Option<Symbol> {
+        let (unit, depth) = self.lexicals.candidate_scope_unit?;
+        (depth == self.routine_stack.len())
+            .then(|| self.lexical_package_for_frame(Some(unit)))
+            .flatten()
     }
 
     pub(crate) fn with_candidate_package<T>(

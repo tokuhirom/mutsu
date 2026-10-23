@@ -941,7 +941,8 @@ impl Interpreter {
     pub(super) fn unit_lexical_candidates(&self, cur: Symbol) -> [Option<Symbol>; 4] {
         let frame = self.routine_stack().last();
         [
-            frame.and_then(|f| f.lexical_package),
+            self.candidate_scope_lexical_package()
+                .or_else(|| frame.and_then(|f| f.lexical_package)),
             self.method_class_stack_top_sym(),
             frame.map(|f| f.package),
             Some(cur),

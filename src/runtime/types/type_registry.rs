@@ -720,7 +720,9 @@ impl Interpreter {
         });
         [
             self.method_class_stack_top_str(),
-            frame.and_then(|frame| frame.lexical_package.map(|pkg| pkg.as_str())),
+            self.candidate_scope_lexical_package()
+                .or_else(|| frame.and_then(|frame| frame.lexical_package))
+                .map(|pkg| pkg.as_str()),
             frame
                 .map(|frame| frame.package)
                 .filter(|pkg| !crate::qualified::is_global_package(*pkg))
