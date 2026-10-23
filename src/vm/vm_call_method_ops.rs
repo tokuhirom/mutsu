@@ -344,6 +344,18 @@ impl Interpreter {
                 Some(crate::runtime::UserMethodOrAccessor::Accessor)
             )
         {
+            // An `is rw` field asked for as a location (`$!content.top` as an
+            // `is rw` routine's tail, a `:=` bind) is a native attribute
+            // reference into the struct, not a copy of its value.
+            if want_ref
+                && self
+                    .collect_class_attributes(&registered)
+                    .iter()
+                    .any(|attr| attr.is_public && attr.name == method && attr.is_rw)
+                && let Some(reference) = self.cstruct_field_ref(target, method)
+            {
+                return Some(reference);
+            }
             return self.cstruct_field_value(target, method);
         }
         if matches!(
@@ -1005,6 +1017,12 @@ impl Interpreter {
                     if args.is_empty() && matches!(method, "WHAT" | "^name") =>
                 {
                     target
+                }
+                // The metamethods of a `.VAR` view describe the `Scalar`
+                // container (`$obj.attr.VAR.^mro`, `.VAR.^isa(Scalar)`), as
+                // `.WHAT` does above, not the value it holds.
+                ValueView::ContainerView(_) if method.starts_with('^') || method == "isa" => {
+                    Value::package(Symbol::intern("Scalar"))
                 }
                 ValueView::ContainerView(_) => target.deref_container(),
                 ValueView::ContainerRef(_) => target.deref_container(),

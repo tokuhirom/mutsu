@@ -115,17 +115,13 @@ impl Interpreter {
     // Cost: O(v), v = values of the enumeration.
     pub(crate) fn dispatch_enums(&mut self, target: &Value) -> Option<Result<Value, RuntimeError>> {
         let variants = self.enumeration_variants(target)?;
-        let mut map = ValueMap::default();
-        for (k, v) in variants {
-            map.insert(k, v.to_value());
-        }
-        Some(Ok(self.tag_container_metadata(
-            Value::hash(map),
-            ContainerTypeInfo {
-                value_type: String::new(),
-                key_type: None,
-                declared_type: Some("Map".to_string()),
-            },
-        )))
+        // Built as `Map.new(|pairs)` is, so a list value (`:A4(210, 297)`) is
+        // the list itself rather than an itemized hash value.
+        let pairs: Vec<Value> = variants
+            .into_iter()
+            .map(|(k, v)| Value::pair(k, v.to_value()))
+            .collect();
+        let map = self.call_method_with_values(Value::package(Symbol::intern("Map")), "new", pairs);
+        Some(map)
     }
 }

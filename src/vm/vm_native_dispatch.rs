@@ -331,6 +331,11 @@ impl Interpreter {
             if crate::runtime::native_pos_ref::is_native_pos_ref_routine(name) {
                 return self.try_native_pos_ref_routine(name, args);
             }
+            // The same for a native attribute reference to a CStruct field
+            // (`NumAttrRef`, #14744).
+            if crate::runtime::native_attr_ref::is_native_attr_ref_routine(name) {
+                return self.try_native_attr_ref_routine(name, args);
+            }
             // The same for a native lexical reference (`IntLexRef`, #11498).
             if let Some(result) = self.try_native_lex_ref_routine(name, args) {
                 return Some(result);

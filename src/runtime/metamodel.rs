@@ -496,7 +496,31 @@ impl Interpreter {
                 .user_method_overloads(c.as_str(), "compose")
                 .is_some()
         });
-        let instance = self.call_method_with_values(how_type, "new", Vec::new())?;
+        let mut instance = self.call_method_with_values(how_type, "new", Vec::new())?;
+        // A hoisted forward declaration composed the class's roles (and ran
+        // their attribute traits, once) under the default HOW before this
+        // module's EXPORTHOW mapping was imported: the roles its traits mixed
+        // into that HOW belong to the superseding one too.
+        let earlier_mixins: Vec<String> = match self
+            .registry()
+            .class_how_values
+            .get(class_name)
+            .map(Value::view)
+        {
+            Some(ValueView::Mixin(_, mixins)) => mixins
+                .keys()
+                .filter_map(|key| key.strip_prefix("__mutsu_role__").map(str::to_string))
+                .collect(),
+            _ => Vec::new(),
+        };
+        for role in earlier_mixins {
+            instance = self.eval_does_values(instance, Value::package(Symbol::intern(&role)))?;
+        }
+        // Names the type the metaobject describes, so a `nqp::getattr` of its
+        // `@!BUILDPLAN` (AttrX::Mooish's `create_BUILDPLAN`) finds the class.
+        if let ValueView::Instance { attributes, .. } = instance.view() {
+            attributes.insert("__mutsu_how_target", Value::str(class_name.to_string()));
+        }
         self.registry_mut()
             .class_how_values
             .insert(class_name.to_string(), instance);
@@ -537,7 +561,7 @@ impl Interpreter {
         let Some(how) = self.registry().class_how_values.get(class_name).cloned() else {
             return Ok(());
         };
-        if !matches!(how.view(), ValueView::Mixin(..)) {
+        if !Self::is_how_with_role_mixed_in(&how) {
             return Ok(());
         }
         if self.class_how_compose_hook(class_name) {
@@ -570,16 +594,30 @@ impl Interpreter {
             // A lexical role (`my role R`) is stored under a mangled name
             // (`R\0N`); a trait's `$*PACKAGE.HOW does ...` is keyed by the
             // name the program sees.
-            let visible = role_name.split('\u{0}').next().unwrap_or(&role_name);
-            let how = [key.as_str(), role_name.as_str(), visible]
-                .into_iter()
-                .filter_map(|k| self.registry().class_how_values.get(k).cloned())
-                .find(|how| self.mixin_has_hook(how, "specialize"));
-            if let Some(how) = how {
-                let role_obj = Value::package(Symbol::intern(&role_name));
-                let class_obj = Value::package(Symbol::intern(class_name));
-                self.call_method_with_values(how, "specialize", vec![role_obj, class_obj])?;
-            }
+            let class_obj = Value::package(Symbol::intern(class_name));
+            self.call_role_how_specialize(&key, &role_name, class_obj)?;
+        }
+        Ok(())
+    }
+
+    /// Call the user `specialize` of `role_name`'s HOW (looked up by `key`, the
+    /// role's own name, or its program-visible name), if it has one, with the
+    /// type object `target` the role is specialized onto.
+    // Cost: O(1) plus the hook's own cost.
+    pub(crate) fn call_role_how_specialize(
+        &mut self,
+        key: &str,
+        role_name: &str,
+        target: Value,
+    ) -> Result<(), RuntimeError> {
+        let visible = role_name.split('\u{0}').next().unwrap_or(role_name);
+        let how = [key, role_name, visible]
+            .into_iter()
+            .filter_map(|k| self.registry().class_how_values.get(k).cloned())
+            .find(|how| self.mixin_has_hook(how, "specialize"));
+        if let Some(how) = how {
+            let role_obj = Value::package(Symbol::intern(role_name));
+            self.call_method_with_values(how, "specialize", vec![role_obj, target])?;
         }
         Ok(())
     }

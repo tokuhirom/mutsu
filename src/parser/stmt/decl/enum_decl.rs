@@ -261,9 +261,12 @@ fn parse_double_angle_enum_variants(input: &str) -> PResult<'_, Vec<(String, Opt
                 // not `expression(after_key)` on the raw remainder: otherwise the
                 // enum's closing `»`/`>>` delimiter right after `)` is swallowed
                 // as a hyper operator (`«:one(1)»` mis-parsed as `(1)».(...)`).
+                // The parenthesized term as a whole, so a list value
+                // (`:A4(210mm, 297mm)`) stays a list rather than its first
+                // element.
                 let after_parens = skip_balanced_parens(after_key);
-                let inner = &after_key[1..after_key.len() - after_parens.len() - 1];
-                let (_, expr) = expression(inner.trim())?;
+                let term = &after_key[..after_key.len() - after_parens.len()];
+                let (_, expr) = expression(term)?;
                 variants.push((key.to_string(), Some(expr)));
                 r = after_parens;
             } else {

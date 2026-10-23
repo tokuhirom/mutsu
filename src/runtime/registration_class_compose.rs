@@ -735,7 +735,7 @@ impl Interpreter {
         // among them) have registered; the in-place declaration composes for
         // real.
         if cx.is_hoisted_shell != super::registration_class::HoistedShell::Forward {
-            self.apply_pending_role_attribute_traits(cx, base_role_name)?;
+            self.apply_pending_role_attribute_traits(Some(cx), base_role_name)?;
             self.copy_role_attribute_trait_objects(cx, base_role_name, &role);
         }
         self.propagate_composed_role_parent_specs(cx, base_role_name, &role, &role_param_values);
@@ -767,6 +767,17 @@ fn rehome_attribute_object(obj: &Value, owner: &str) -> Value {
 }
 
 impl Interpreter {
+    /// [`Interpreter::apply_pending_role_attribute_traits`] for a role no
+    /// class is composing (`Metamodel::ClassHOW but R`): the traits run, with
+    /// no class to fold their core effects into.
+    // Cost: as `apply_pending_role_attribute_traits`.
+    pub(crate) fn apply_pending_role_attribute_traits_standalone(
+        &mut self,
+        role_name: &str,
+    ) -> Result<(), RuntimeError> {
+        self.apply_pending_role_attribute_traits(None, role_name)
+    }
+
     /// Run the custom attribute traits `record_role_attribute_traits` stashed
     /// for `role_name` and its ancestor roles, now that a composition has run
     /// the role body's `use` statements and the trait handlers are callable.
@@ -776,7 +787,7 @@ impl Interpreter {
     /// Cost: O(r * p), r = the role and its ancestors, p = pending entries.
     fn apply_pending_role_attribute_traits(
         &mut self,
-        cx: &mut RoleCompositionCx<'_>,
+        mut cx: Option<&mut RoleCompositionCx<'_>>,
         role_name: &str,
     ) -> Result<(), RuntimeError> {
         if self.registry().role_attribute_pending_traits.is_empty() {
@@ -816,12 +827,14 @@ impl Interpreter {
                             &attr,
                         );
                     }
-                    let class_def = &mut *cx.class_def;
-                    core_effects.fold_into(
-                        &mut class_def.attributes,
-                        &mut class_def.attribute_built,
-                        &attr,
-                    );
+                    if let Some(cx) = cx.as_deref_mut() {
+                        let class_def = &mut *cx.class_def;
+                        core_effects.fold_into(
+                            &mut class_def.attributes,
+                            &mut class_def.attribute_built,
+                            &attr,
+                        );
+                    }
                 }
             }
         }
