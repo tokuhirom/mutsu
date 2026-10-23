@@ -466,7 +466,7 @@ impl Interpreter {
         //   - `__mutsu_state_key::`/`__mutsu_predictive_seq_iter::` keys have
         //     no consumer on the store path at all.
         !(self.locals.get(idx).is_some_and(Value::is_bound_slice)
-            || self.bound_decont_active().get()
+            || self.slot_has_bound_decont_marker(code, idx)
             || !self.pending_alias_bind_names.is_empty()
             || self.slot_is_bind_pair_source(idx)
             || self.slot_has_sigilless_readonly_marker(code, idx)
@@ -478,6 +478,30 @@ impl Interpreter {
             || self.module.lexical_fatal_mode
             || !self.threads.thread_decl_in_flight.is_empty()
             || !code.our_locals.is_empty())
+    }
+
+    /// Whether this slot's name carries a `:=`-bound decont marker, which a
+    /// store to the name has to clear. The program-wide latch only says that
+    /// some name ever got one (any `my $codes := text.NFD` sets it, so loading
+    /// `JSON::Fast` set it for every program), so it is asked first and the
+    /// name's own marker second: the full path removes exactly that key, which
+    /// is a no-op when it is absent (#14774).
+    // Cost: O(1): one relaxed load; once the latch is set, one memoized key and
+    // one env probe.
+    #[inline]
+    fn slot_has_bound_decont_marker(&self, code: &CompiledCode, idx: usize) -> bool {
+        if !self.bound_decont_active().get() {
+            return false;
+        }
+        let Some(&sym) = code.locals_sym.get(idx) else {
+            return true;
+        };
+        matches!(
+            self.env()
+                .get_sym(crate::meta_ns::MetaNs::BoundDecont.key(sym))
+                .map(Value::view),
+            Some(ValueView::Bool(true))
+        )
     }
 
     /// Whether this slot's sigilless-readonly marker is set: the condition the
