@@ -181,6 +181,30 @@ pub(crate) fn build_compound_assign_expr(
         other => other,
     };
     Ok(match lhs {
+        // `(A || B) //= v`, `(A || B) ||= v`, `(A // B) //= v`: the left operator
+        // yields the selected operand's container. When `A` is the selected
+        // operand its value is defined (resp. true), so the short-circuit
+        // assignment does nothing; otherwise the target is `B`. So the target
+        // is `B` and `A` is only the guard, evaluated once:
+        // `A || (B //= v)`. (`Rakudo`: `callsame() || %!meths{$n} //= ...`.)
+        Expr::Binary {
+            left,
+            op: guard @ (TokenKind::OrOr | TokenKind::SlashSlash),
+            right,
+            ..
+        } if matches!(
+            (&guard, op),
+            (&TokenKind::OrOr, CompoundAssignOp::DefinedOr | CompoundAssignOp::LogicalOr)
+                | (&TokenKind::SlashSlash, CompoundAssignOp::DefinedOr)
+        ) =>
+        {
+            Expr::Binary {
+                left,
+                op: guard,
+                right: Box::new(build_compound_assign_expr(*right, op, rhs)?),
+                form: Default::default(),
+            }
+        }
         // Bare `* op= rhs` curries to a WhateverCode that mutates its topic:
         // `{ $_ op= rhs }`. Used for e.g. `@a.map(* *= 2)`.
         Expr::Whatever => {
