@@ -383,12 +383,15 @@ pub(crate) fn try_interpolate_var<'a>(
             let mut remainder = after_name;
             // Zen-slice interpolation: "@arr[]" and "@arr.[]" should interpolate the array value
             let mut consumed = false;
+            let mut expr = expr;
             if let Some(r) = remainder.strip_prefix(".[]") {
                 remainder = r;
                 consumed = true;
+                expr = Expr::ZenSlice(Box::new(expr));
             } else if let Some(r) = remainder.strip_prefix("[]") {
                 remainder = r;
                 consumed = true;
+                expr = Expr::ZenSlice(Box::new(expr));
             }
             let (expr, remainder) = parse_postcircumfix_index(remainder, expr);
             // Try method call interpolation: "@arr.method()" or "@arr.join(' ')"
@@ -420,7 +423,7 @@ pub(crate) fn try_interpolate_var<'a>(
                 if !current.is_empty() {
                     parts.push(Expr::Literal(literal_str(std::mem::take(current))));
                 }
-                parts.push(expr);
+                parts.push(Expr::ZenSlice(Box::new(expr)));
                 return Some(r);
             }
             // Zen-slice: %hash<> should stringify the whole hash
