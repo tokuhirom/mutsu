@@ -4306,7 +4306,7 @@ impl Interpreter {
             // Cost: O(1); a `key => $var` value boxes the variable's slot, O(1)
             // with the compiler's slot hint, O(L) by-name scan without one.
             OpCode::MakePair => {
-                self.exec_make_pair_op(code);
+                self.exec_make_pair_op(code)?;
                 *ip += 1;
             }
             // Cost: O(m), m = chars of a Str key (copied into the Pair); the

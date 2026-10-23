@@ -95,6 +95,11 @@ impl Interpreter {
         {
             let how_type = Value::package(Symbol::intern(how_class));
             let instance = self.call_method_with_values(how_type, "new", Vec::new())?;
+            // Names the type the metaobject describes, so `$type.HOW does Role`
+            // persists the mixin under it (see `eval_does_values`).
+            if let ValueView::Instance { attributes, .. } = instance.view() {
+                attributes.insert("__mutsu_how_target", Value::str(name.clone()));
+            }
             self.registry_mut()
                 .class_how_values
                 .insert(name.clone(), instance);
