@@ -18,7 +18,7 @@
         "nok": 1,
         "ok": 16,
         "plan": 17,
-        "secs": 0.15,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -28,30 +28,30 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 3.17,
+        "secs": 4.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "no_baseline",
+      "flaky": true,
       "mutsu": {
-        "first_failure": "did we get something else than Foo yet again",
-        "nok": 1,
-        "ok": 14,
+        "nok": 0,
+        "ok": 15,
         "plan": 15,
-        "secs": 1.13,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/02-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 2.17,
+        "secs": 2.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -63,7 +63,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.11,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -73,7 +73,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.67,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -85,7 +85,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.11,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -95,7 +95,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.64,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,10 +107,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-22",
+    "date": "2026-10-23",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "9746fdb1",
+    "mutsu_commit": "439101ad",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -123,11 +123,11 @@
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 51,
-    "baseline_files": 4,
-    "mutsu_assertions": 49,
+    "baseline_assertions": 36,
+    "baseline_files": 3,
+    "mutsu_assertions": 35,
     "parity_files": 2,
-    "regressed_files": 2
+    "regressed_files": 1
   },
   "version": "0.0.13"
 }

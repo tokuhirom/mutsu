@@ -40,69 +40,66 @@
   "dist": "CSS::TagSet",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "<i/>",
-        "nok": 22,
-        "ok": 0,
+        "nok": 0,
+        "ok": 22,
         "plan": 22,
-        "secs": 7.43,
+        "secs": 13.5,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/tag-set-pango.t",
       "raku": {
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 52.73,
+        "secs": 54.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "<P/>",
-        "nok": 11,
-        "ok": 0,
+        "nok": 0,
+        "ok": 11,
         "plan": 11,
-        "secs": 58.56,
+        "secs": 59.73,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/tag-set-pdf.t",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 14.59,
+        "secs": 19.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "<i/>",
-        "nok": 12,
-        "ok": 0,
+        "nok": 0,
+        "ok": 12,
         "plan": 12,
-        "secs": 39.89,
+        "secs": 46.76,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/tag-set-xhtml.t",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 6.61,
+        "secs": 8.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,10 +114,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-22",
+    "date": "2026-10-23",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "9746fdb1",
+    "mutsu_commit": "439101ad",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -131,13 +128,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_TAGSET/095dbd2cdc57ece26ec7cdf31726aabd1d0a88df.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 45,
     "baseline_files": 3,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 3
+    "mutsu_assertions": 45,
+    "parity_files": 3,
+    "regressed_files": 0
   },
   "version": "0.1.4"
 }

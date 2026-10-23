@@ -9,26 +9,17 @@
   "dist": "Concurrent::BoundedChannel",
   "files": [
     {
-      "cmp": "partial",
-      "mutsu": {
+      "cmp": "no_baseline",
+      "path": "t/01-sanity.rakutest",
+      "raku": {
         "first_failure": "not ok 27 -",
         "nok": 4,
         "ok": 35,
         "plan": 39,
-        "secs": 7.4,
+        "secs": 9.96,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
-      },
-      "path": "t/01-sanity.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 39,
-        "plan": 39,
-        "secs": 8.75,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
       }
     }
   ],
@@ -37,10 +28,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-22",
+    "date": "2026-10-23",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "9746fdb1",
+    "mutsu_commit": "439101ad",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -51,13 +42,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/ON/CONCURRENT_BOUNDEDCHANNEL/9ed7e5076b4d9f5f96a3e544fb27225de9de7823.tar.gz"
   },
-  "status": "red",
+  "status": "no_baseline",
   "totals": {
-    "baseline_assertions": 39,
-    "baseline_files": 1,
-    "mutsu_assertions": 35,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 1
+    "regressed_files": 0
   },
   "version": "0.4.1"
 }

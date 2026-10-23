@@ -66,7 +66,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 2,
-        "secs": 0.14,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -76,7 +76,269 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.47,
+        "secs": 3.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-version.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-json.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-headers-proto-sn.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-headers-proto.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-access-filechain.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-access-unified.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 14.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-blockchain-common.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-blockchain-heavy.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09-blockchain-comp.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-blockchain-write.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/11-datepack.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/12-debug.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/13-headers.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/14-utils.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/15-template.t",
+      "raku": {
+        "first_failure": "Could not find HTML::Template:ver<0.0.2+> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/16-stats.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/17-resources-en.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -93,275 +355,12 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/01-version.t",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 1.4,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/02-json.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.79,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/03-headers-proto-sn.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.99,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/04-headers-proto.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.05,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/05-access-filechain.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 7.46,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/06-access-unified.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 7.41,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/07-blockchain-common.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 9.08,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/08-blockchain-heavy.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 7.65,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/09-blockchain-comp.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 7.96,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/10-blockchain-write.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 6.57,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/11-datepack.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.38,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.11,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/12-debug.t",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 1.99,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/13-headers.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.64,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/14-utils.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.13,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/15-template.t",
-      "raku": {
-        "first_failure": "Could not find HTML::Template:ver<0.0.2+> in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.13,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/16-stats.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.43,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Check attributes from RU locale",
-        "nok": 1,
-        "ok": 1,
-        "plan": 2,
-        "secs": 0.22,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/17-resources-en.t",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.8,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.08,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
       "path": "t/18-markup.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.52,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -375,7 +374,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.31,
+        "secs": 3.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -389,7 +388,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.62,
+        "secs": 5.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -403,7 +402,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.4,
+        "secs": 3.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -417,7 +416,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.91,
+        "secs": 2.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -431,7 +430,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.46,
+        "secs": 7.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -443,7 +442,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.33,
+        "secs": 0.54,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -453,7 +452,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.54,
+        "secs": 2.84,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -467,7 +466,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.12,
+        "secs": 3.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -481,7 +480,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.06,
+        "secs": 4.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -495,7 +494,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.19,
+        "secs": 6.0,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -509,7 +508,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.96,
+        "secs": 4.91,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -523,7 +522,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.93,
+        "secs": 5.73,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -537,7 +536,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.65,
+        "secs": 2.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -551,7 +550,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.75,
+        "secs": 3.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -565,7 +564,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.9,
+        "secs": 3.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -579,7 +578,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.29,
+        "secs": 4.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -593,7 +592,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.04,
+        "secs": 3.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -607,7 +606,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.95,
+        "secs": 5.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -621,7 +620,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.36,
+        "secs": 5.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -635,7 +634,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.7,
+        "secs": 5.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -685,10 +684,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-22",
+    "date": "2026-10-23",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "9746fdb1",
+    "mutsu_commit": "439101ad",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -703,9 +702,9 @@
   "totals": {
     "baseline_assertions": 15,
     "baseline_files": 6,
-    "mutsu_assertions": 13,
-    "parity_files": 4,
-    "regressed_files": 2
+    "mutsu_assertions": 14,
+    "parity_files": 5,
+    "regressed_files": 1
   },
   "version": "1.1.3"
 }

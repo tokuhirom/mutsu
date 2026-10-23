@@ -28,69 +28,66 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.01,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Class Basics",
-        "nok": 4,
-        "ok": 2,
+        "nok": 0,
+        "ok": 6,
         "plan": 6,
-        "secs": 0.43,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/010-base.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 9.64,
+        "secs": 10.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Unbinding",
-        "nok": 1,
-        "ok": 5,
+        "nok": 0,
+        "ok": 6,
         "plan": 6,
-        "secs": 0.68,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/010-base.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.89,
+        "secs": 1.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "correct number of elements",
-        "nok": 2,
-        "ok": 2,
+        "nok": 0,
+        "ok": 7,
         "plan": 7,
-        "secs": 0.26,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/011-arrays.custom.rakutest",
       "raku": {
@@ -109,7 +106,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.25,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -119,30 +116,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.68,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Simple",
-        "nok": 2,
-        "ok": 0,
-        "plan": 2,
-        "secs": 0.25,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/012-hashes.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.08,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -154,7 +128,29 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.24,
+        "secs": 0.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/012-hashes.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -164,76 +160,51 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.88,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Immutable",
-        "nok": 2,
-        "ok": 2,
+        "nok": 0,
+        "ok": 5,
         "plan": 5,
-        "secs": 0.44,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/013-validations.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.42,
+        "secs": 1.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Immutable",
-        "nok": 2,
-        "ok": 3,
+        "nok": 0,
+        "ok": 5,
         "plan": 5,
-        "secs": 0.47,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/013-validations.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.4,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "initialized with private builder",
-        "nok": 7,
-        "ok": 4,
-        "plan": 11,
-        "secs": 0.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/014-private.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 0.97,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -245,7 +216,29 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.3,
+        "secs": 0.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/014-private.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -255,30 +248,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.0,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Triggers",
-        "nok": 1,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/015-triggers.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 1.23,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -290,7 +260,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.26,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/015-triggers.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -300,30 +292,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.88,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "filtered value",
-        "nok": 4,
-        "ok": 1,
-        "plan": 15,
-        "secs": 0.26,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/016-filtering.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 0.89,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -340,51 +309,71 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/016-filtering.rakutest",
+      "path": "t/016-filtering.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 1.03,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'setup-attr-helpers' for invocant of type",
         "nok": 0,
-        "ok": 0,
-        "plan": 5,
-        "secs": 0.32,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
+      },
+      "path": "t/016-filtering.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 1.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
       },
       "path": "t/020-role.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.92,
+        "secs": 1.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Require method",
-        "nok": 1,
-        "ok": 2,
+        "nok": 0,
+        "ok": 5,
         "plan": 5,
-        "secs": 0.36,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/020-role.rakutest",
       "raku": {
@@ -398,23 +387,22 @@
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Inheritance basics",
-        "nok": 5,
-        "ok": 2,
+        "nok": 0,
+        "ok": 7,
         "plan": 7,
-        "secs": 0.59,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/030-inheritance.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.86,
+        "secs": 1.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -426,7 +414,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.44,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -436,30 +424,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.65,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Base Errors",
-        "nok": 2,
-        "ok": 2,
-        "plan": 4,
-        "secs": 0.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/040-errors.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.14,
+        "secs": 1.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -471,7 +436,29 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.43,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/040-errors.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -481,74 +468,29 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.12,
+        "secs": 1.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "built as expected",
-        "nok": 3,
-        "ok": 1,
+        "nok": 0,
+        "ok": 8,
         "plan": 8,
-        "secs": 0.37,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/050-multi-filter.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.02,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 0.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/050-multi-filter.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.1,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 0.27,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/060-composer.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.03,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -565,80 +507,77 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/060-composer.rakutest",
+      "path": "t/050-multi-filter.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.14,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Basics",
-        "nok": 2,
-        "ok": 1,
-        "plan": 3,
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
         "secs": 0.36,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
+      },
+      "path": "t/060-composer.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/060-composer.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
       },
       "path": "t/070-typecheck-coerce.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.41,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Exception X::TypeCheck::Assignment has been thrown while storing a value into $!foo; exception details:",
-        "nok": 0,
-        "ok": 2,
-        "plan": 3,
-        "secs": 0.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/070-typecheck-coerce.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'setup-attr-helpers' for invocant of type",
-        "nok": 0,
-        "ok": 0,
-        "plan": 2,
-        "secs": 0.27,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/080-aliasing.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
         "secs": 1.31,
         "skip": 0,
         "todo": 0,
@@ -646,46 +585,66 @@
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot assign to an immutable value",
         "nok": 0,
-        "ok": 1,
-        "plan": 2,
-        "secs": 0.46,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
-      "path": "t/080-aliasing.rakutest",
+      "path": "t/070-typecheck-coerce.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.28,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "An operation first awaited:",
         "nok": 0,
-        "ok": 0,
+        "ok": 2,
         "plan": 2,
-        "secs": 0.35,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
-      "path": "t/090-concurrent.custom.rakutest",
+      "path": "t/080-aliasing.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 16.24,
+        "secs": 1.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/080-aliasing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -703,12 +662,12 @@
         "todo": 0,
         "verdict": "timeout"
       },
-      "path": "t/090-concurrent.rakutest",
+      "path": "t/090-concurrent.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 16.92,
+        "secs": 14.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -717,21 +676,43 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in assignment to $!foo-copy; expected Int:D but got Int (Int) (perhaps Nil was assigned to a :D which had no default?)",
+        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
         "ok": 0,
-        "plan": 16,
-        "secs": 0.19,
+        "plan": null,
+        "secs": 240.11,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "timeout"
+      },
+      "path": "t/090-concurrent.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 11.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
       },
       "path": "t/100-clone.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.64,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -753,23 +734,22 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.66,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "with NQP class",
-        "nok": 1,
-        "ok": 0,
+        "nok": 0,
+        "ok": 1,
         "plan": 1,
-        "secs": 0.15,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/110-non-raku-typeobj.rakutest",
       "raku": {
@@ -798,7 +778,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.57,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -816,10 +796,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-22",
+    "date": "2026-10-23",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "9746fdb1",
+    "mutsu_commit": "439101ad",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -834,9 +814,9 @@
   "totals": {
     "baseline_assertions": 214,
     "baseline_files": 34,
-    "mutsu_assertions": 126,
-    "parity_files": 12,
-    "regressed_files": 22
+    "mutsu_assertions": 210,
+    "parity_files": 32,
+    "regressed_files": 2
   },
   "version": "1.0.10"
 }

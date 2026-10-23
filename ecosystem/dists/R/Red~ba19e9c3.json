@@ -32,7 +32,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 6.05,
+        "secs": 6.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +42,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 30.11,
+        "secs": 29.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,11 +51,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller a(__ANON_CLASS_8__:D: ); none of these signatures matches:",
+        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 0,
-        "ok": 12,
+        "ok": 39,
         "plan": null,
-        "secs": 6.57,
+        "secs": 218.34,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -65,7 +65,7 @@
         "nok": 0,
         "ok": 163,
         "plan": 163,
-        "secs": 110.83,
+        "secs": 99.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -78,7 +78,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.38,
+        "secs": 65.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -88,53 +88,52 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.13,
+        "secs": 1.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'name' for invocant of type 'Any'",
-        "nok": 3,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.74,
+        "first_failure": "not ok 9 -",
+        "nok": 5,
+        "ok": 23,
+        "plan": 28,
+        "secs": 11.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/03-blog.rakutest",
       "raku": {
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 3.61,
+        "secs": 2.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller name(Person:D: ); none of these signatures matches:",
         "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 10.02,
+        "ok": 15,
+        "plan": 15,
+        "secs": 10.33,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/04-ticket.rakutest",
       "raku": {
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 3.69,
+        "secs": 2.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -143,11 +142,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
-        "nok": 0,
+        "first_failure": "X::TypeCheck::Assignment with no message",
+        "nok": 2,
         "ok": 0,
         "plan": null,
-        "secs": 5.94,
+        "secs": 4.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -157,7 +156,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.66,
+        "secs": 1.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -170,7 +169,7 @@
         "nok": 0,
         "ok": 6,
         "plan": null,
-        "secs": 4.78,
+        "secs": 3.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -180,7 +179,7 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 2.8,
+        "secs": 1.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -193,7 +192,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 7.0,
+        "secs": 4.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -203,7 +202,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 3.73,
+        "secs": 2.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -212,11 +211,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller name(Person:D: ); none of these signatures matches:",
-        "nok": 0,
-        "ok": 3,
+        "first_failure": "No such method 'id' for invocant of type 'Any'",
+        "nok": 2,
+        "ok": 11,
         "plan": null,
-        "secs": 8.55,
+        "secs": 6.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -226,30 +225,53 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 3.26,
+        "secs": 1.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Cannot resolve caller name(Person:D: ); none of these signatures matches:",
-        "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 10.88,
+        "first_failure": "and the author-id of the post is the one we expected",
+        "nok": 1,
+        "ok": 8,
+        "plan": 9,
+        "secs": 6.12,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/09-alternate-relation-modules.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 14.09,
+        "secs": 7.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 1 -",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 8.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/10-join.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -258,21 +280,21 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Unknown function: rel1",
+        "first_failure": "No such method 'transpose' for string '*'",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.25,
+        "secs": 3.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/10-join.rakutest",
+      "path": "t/100-concurrent-query-projections.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 4.39,
+        "ok": 4,
+        "plan": 4,
+        "secs": 13.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -285,30 +307,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.9,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/100-concurrent-query-projections.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 31.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Unknown function: rel1",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 12.58,
+        "secs": 7.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -318,7 +317,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 11.19,
+        "secs": 6.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -331,7 +330,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 8.06,
+        "secs": 4.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -341,7 +340,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 3.35,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -350,11 +349,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Unknown function: rel1",
+        "first_failure": "No such method 'elems' for invocant of type 'Mu'",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 8.22,
+        "secs": 5.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -364,7 +363,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 4.19,
+        "secs": 1.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -373,11 +372,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'save' for invocant of type 'Seq'. Did you mean any of",
+        "first_failure": "falling back (to mute this message, please define the $*RED-FALLBACK variable): Unknown function: ast-value",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 7.31,
+        "secs": 4.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -387,53 +386,53 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.77,
+        "secs": 1.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Cannot resolve caller infix:<(|)>(Array:D, Array:D); none of these signatures matches",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "The object is-a 'M::ResultSeq'",
+        "nok": 1,
+        "ok": 3,
         "plan": 18,
-        "secs": 8.56,
+        "secs": 10.48,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/14-union.rakutest",
       "raku": {
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 2.79,
+        "secs": 2.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Cannot resolve caller prefix:<?>(Foo::ResultSeq:D); none of these signatures matches",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.32,
+        "first_failure": "not ok 1 -",
+        "nok": 1,
+        "ok": 1,
+        "plan": 2,
+        "secs": 4.42,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/15-result-seq-bool.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.02,
+        "secs": 1.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -442,11 +441,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'columns' for invocant of type",
+        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 0,
-        "ok": 0,
+        "ok": 8,
         "plan": null,
-        "secs": 6.28,
+        "secs": 7.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -456,30 +455,29 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 2.48,
+        "secs": 2.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'columns' for invocant of type",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.25,
+        "ok": 1,
+        "plan": 1,
+        "secs": 6.41,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/17-pp.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.77,
+        "secs": 4.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -488,11 +486,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller postfix:<++>(Any:D); none of these signatures matches",
+        "first_failure": "X::Assignment::RO: cannot assign through .name on non-instance",
         "nok": 0,
-        "ok": 0,
+        "ok": 32,
         "plan": 34,
-        "secs": 4.11,
+        "secs": 5.0,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -511,11 +509,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller name(Foo:D: ); none of these signatures matches:",
+        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.38,
+        "secs": 5.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -525,30 +523,29 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 3.83,
+        "secs": 4.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller id(Bla:D: ); none of these signatures matches:",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.9,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.03,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/20-new-with-id.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.26,
+        "secs": 1.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -558,10 +555,10 @@
       "cmp": "regression",
       "mutsu": {
         "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
-        "nok": 1,
-        "ok": 3,
+        "nok": 0,
+        "ok": 17,
         "plan": null,
-        "secs": 3.68,
+        "secs": 7.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -571,7 +568,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 6.28,
+        "secs": 6.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -580,11 +577,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller name(MyModel:D: ); none of these signatures matches:",
+        "first_failure": "No such method 'transpose' for string 'a name'",
         "nok": 0,
-        "ok": 0,
+        "ok": 2,
         "plan": null,
-        "secs": 4.07,
+        "secs": 4.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -594,99 +591,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.65,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller database(Str:D); Routine does not have any candidates.  Is only the proto defined?",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.15,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/23-metamodel-model.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 66,
-        "plan": 66,
-        "secs": 2.76,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller a(Bla:D: ); none of these signatures matches:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 6.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/24-grep-no-AND-OR.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.94,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller value(Writable:D: ); none of these signatures matches:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.21,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/25-is-rw.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.68,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller bla(Bla:D: ); none of these signatures matches:",
-        "nok": 3,
-        "ok": 0,
-        "plan": null,
-        "secs": 5.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/26-classify.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 27,
-        "plan": 27,
-        "secs": 3.84,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -699,7 +604,98 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.46,
+        "secs": 86.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/23-metamodel-model.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 66,
+        "plan": 66,
+        "secs": 2.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 2 -",
+        "nok": 1,
+        "ok": 2,
+        "plan": 3,
+        "secs": 7.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/24-grep-no-AND-OR.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 2.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 4.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/25-is-rw.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller Int(Red::AST::Function:D: ); none of these signatures matches:",
+        "nok": 7,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/26-classify.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 3.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.91,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -709,7 +705,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.44,
+        "secs": 2.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -718,37 +714,36 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller prefix:<++>(Any:U); none of these signatures matches",
+        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 1,
-        "plan": 29,
-        "secs": 5.21,
+        "ok": 0,
+        "plan": null,
+        "secs": 240.06,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "timeout"
       },
       "path": "t/28-events.rakutest",
       "raku": {
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 2.92,
+        "secs": 2.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller foo(Foo:D: ); none of these signatures matches:",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 6.79,
+        "ok": 3,
+        "plan": 3,
+        "secs": 7.84,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/29-result-seq-pick.rakutest",
       "raku": {
@@ -764,11 +759,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'save' for invocant of type 'Seq'. Did you mean any of",
+        "first_failure": "falling back (to mute this message, please define the $*RED-FALLBACK variable): Unknown function: ast-value",
         "nok": 0,
-        "ok": 0,
+        "ok": 3,
         "plan": null,
-        "secs": 5.01,
+        "secs": 5.99,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -778,7 +773,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 2.81,
+        "secs": 2.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -787,11 +782,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "X::TypeCheck::Argument: Type check failed for cache: expected Bool, got List",
+        "first_failure": "falling back (to mute this message, please define the $*RED-FALLBACK variable): No such method 'bli-id' for invocant of type '(bla_ble)'",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.22,
+        "secs": 8.77,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -801,7 +796,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.16,
+        "secs": 2.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -810,11 +805,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
+        "first_failure": "No such method 'as' for invocant of type",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.45,
+        "secs": 11.02,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -824,7 +819,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.24,
+        "secs": 2.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -833,11 +828,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Unknown function: rel1",
+        "first_failure": "Original error: X::DBDish::DBError.new(driver-name => \"DBDish::SQLite\", native-message => \"no such table: ble_1\", code => 1, why => \"Error\")",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.55,
+        "secs": 5.89,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -847,30 +842,30 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.87,
+        "secs": 1.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Cannot resolve caller val(Bla:D: ); none of these signatures matches:",
-        "nok": 0,
+        "first_failure": "not ok 1 -",
+        "nok": 16,
         "ok": 0,
-        "plan": null,
-        "secs": 4.32,
+        "plan": 16,
+        "secs": 7.68,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/34-ast-generic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 2.89,
+        "secs": 2.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -879,11 +874,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller id(Bla:D: ); none of these signatures matches:",
+        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": null,
-        "secs": 4.78,
+        "secs": 7.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -893,7 +888,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 2.78,
+        "secs": 2.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -902,11 +897,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "No such method 'closed' for invocant of type 'Whatever'. Did you mean",
+        "nok": 1,
+        "ok": 1,
         "plan": null,
-        "secs": 4.25,
+        "secs": 5.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -916,7 +911,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.87,
+        "secs": 1.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -925,11 +920,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller num1(Bla:D: ); none of these signatures matches:",
+        "first_failure": "falling back (to mute this message, please define the $*RED-FALLBACK variable): No such method 'transpose' for string 'bla'",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": 6,
-        "secs": 4.37,
+        "secs": 5.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -939,7 +934,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.0,
+        "secs": 1.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -948,21 +943,21 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
+        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.92,
+        "secs": 240.0,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "timeout"
       },
       "path": "t/38-equal.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 16.92,
+        "secs": 16.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -975,7 +970,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.78,
+        "secs": 7.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -985,7 +980,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 9.89,
+        "secs": 9.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -998,7 +993,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.7,
+        "secs": 4.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1008,7 +1003,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.51,
+        "secs": 2.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1017,11 +1012,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
-        "nok": 0,
+        "first_failure": "Red::Column<24704>    ok 2 -",
+        "nok": 1,
         "ok": 0,
         "plan": null,
-        "secs": 3.62,
+        "secs": 6.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1031,23 +1026,22 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.96,
+        "secs": 1.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.71,
+        "ok": 4,
+        "plan": 4,
+        "secs": 5.02,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/42-create-table.rakutest",
       "raku": {
@@ -1061,23 +1055,23 @@
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.7,
+        "first_failure": "The object is-a 'Bla'",
+        "nok": 100,
+        "ok": 1,
+        "plan": 101,
+        "secs": 60.54,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/43-prefetch.rakutest",
       "raku": {
         "nok": 0,
         "ok": 101,
         "plan": 101,
-        "secs": 4.41,
+        "secs": 4.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1090,7 +1084,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 3.12,
+        "secs": 3.1,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -1100,7 +1094,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.86,
+        "secs": 1.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1113,7 +1107,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 5.24,
+        "secs": 5.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1123,30 +1117,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 2.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller inflate(Red::Driver::SQLite:D: Str:D, :to(Mu)); none of these signatures matches:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/46-rw.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 20,
-        "plan": 20,
-        "secs": 1.75,
+        "secs": 2.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1159,7 +1130,30 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.31,
+        "secs": 4.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/46-rw.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 1.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1169,7 +1163,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 7.23,
+        "secs": 7.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1178,11 +1172,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller inflate(Red::Driver::SQLite:D: Str:D, :to(Mu)); none of these signatures matches:",
+        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.37,
+        "secs": 7.18,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1192,7 +1186,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.44,
+        "secs": 2.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1204,7 +1198,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 3.75,
+        "secs": 3.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1214,7 +1208,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.52,
+        "secs": 1.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1226,7 +1220,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.06,
+        "secs": 4.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1245,11 +1239,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'create' for invocant of type 'Seq'. Did you mean",
+        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.36,
+        "secs": 4.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1259,30 +1253,29 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 2.76,
+        "secs": 2.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller prefix:<?>(Failure:D); none of these signatures matches",
         "nok": 0,
-        "ok": 10,
-        "plan": null,
-        "secs": 3.77,
+        "ok": 20,
+        "plan": 20,
+        "secs": 7.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/52-schema.rakutest",
       "raku": {
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 3.49,
+        "secs": 3.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1294,7 +1287,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.99,
+        "secs": 3.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1304,7 +1297,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.32,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1313,11 +1306,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller inflate(Red::Driver::SQLite:D: Str:D, :to(Mu)); none of these signatures matches:",
+        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.99,
+        "secs": 5.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1349,30 +1342,30 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 0.47,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'add-relationship' for invocant of type",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.57,
+        "first_failure": "not ok 11 -",
+        "nok": 5,
+        "ok": 19,
+        "plan": 24,
+        "secs": 5.98,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/56-refreshable.rakutest",
       "raku": {
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 2.69,
+        "secs": 2.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1384,7 +1377,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.88,
+        "secs": 2.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1394,7 +1387,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.08,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1403,11 +1396,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Unknown function: rel1",
+        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.93,
+        "secs": 5.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1417,7 +1410,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.24,
+        "secs": 2.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1429,7 +1422,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 5.25,
+        "secs": 5.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1439,23 +1432,22 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 4.56,
+        "secs": 4.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller id(BarMixin:D: ); none of these signatures matches:",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.14,
+        "ok": 2,
+        "plan": 2,
+        "secs": 4.87,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/60-runtime-role.rakutest",
       "raku": {
@@ -1471,11 +1463,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "X::TypeCheck::Argument: Type check failed for cache: expected Bool, got List",
+        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 0,
-        "ok": 0,
+        "ok": 2,
         "plan": null,
-        "secs": 5.15,
+        "secs": 8.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1485,76 +1477,73 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 2.29,
+        "secs": 2.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.98,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.98,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/62-date-coercion.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.77,
+        "secs": 1.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Deflator and inflator don't die",
-        "nok": 1,
-        "ok": 0,
-        "plan": 1,
-        "secs": 4.45,
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 4.78,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/63-inflate-deflate.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.66,
+        "secs": 1.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Continue working for calling it on type object",
-        "nok": 1,
-        "ok": 1,
+        "nok": 0,
+        "ok": 2,
         "plan": 2,
-        "secs": 4.03,
+        "secs": 4.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/64-create-on-defined-obj.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.58,
+        "secs": 1.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1567,7 +1556,7 @@
         "nok": 1,
         "ok": 0,
         "plan": null,
-        "secs": 3.05,
+        "secs": 3.19,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1577,7 +1566,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.01,
+        "secs": 2.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1590,7 +1579,7 @@
         "nok": 3,
         "ok": 0,
         "plan": 3,
-        "secs": 4.35,
+        "secs": 5.02,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -1600,7 +1589,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.94,
+        "secs": 3.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1609,11 +1598,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'add-relationship' for invocant of type",
+        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": null,
-        "secs": 3.49,
+        "secs": 5.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1623,7 +1612,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.0,
+        "secs": 1.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1636,7 +1625,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 4.34,
+        "secs": 5.6,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -1646,30 +1635,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 6.63,
+        "secs": 6.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller inflate(Red::Driver::SQLite:D: Int:D, :to(Mu)); none of these signatures matches:",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.71,
+        "ok": 6,
+        "plan": 6,
+        "secs": 5.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/69-array-columns.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.7,
+        "secs": 1.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1678,11 +1666,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller prefix:<++>(Any:U); none of these signatures matches",
+        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 2,
         "ok": 4,
         "plan": null,
-        "secs": 4.24,
+        "secs": 5.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1692,7 +1680,29 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.04,
+        "secs": 2.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 5.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/71-conflicting-column-attribute.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1705,30 +1715,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.89,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/71-conflicting-column-attribute.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.81,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller prefix:<++>(Any:U); none of these signatures matches",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.53,
+        "secs": 5.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1738,7 +1725,7 @@
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 3.33,
+        "secs": 3.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1747,11 +1734,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "not ok 1 -",
-        "nok": 4,
-        "ok": 0,
-        "plan": 4,
-        "secs": 3.77,
+        "first_failure": "not ok 5 -",
+        "nok": 3,
+        "ok": 4,
+        "plan": 7,
+        "secs": 5.05,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -1761,30 +1748,29 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 6.51,
+        "secs": 6.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "not ok 1 -",
-        "nok": 1,
-        "ok": 0,
-        "plan": 1,
-        "secs": 2.85,
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 2.94,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/74-enum-reassign.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.27,
+        "secs": 1.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1806,7 +1792,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.72,
+        "secs": 3.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1819,7 +1805,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.75,
+        "secs": 46.69,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1829,53 +1815,51 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.75,
+        "secs": 1.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.29,
+        "ok": 5,
+        "plan": 5,
+        "secs": 8.37,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/77-red-type.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.09,
+        "secs": 2.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
-        "nok": 2,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.28,
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 6.95,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/78-datetime-function.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 2.21,
+        "secs": 2.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1888,7 +1872,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.04,
+        "secs": 4.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1898,7 +1882,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.58,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1907,11 +1891,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "not ok 1 -",
-        "nok": 28,
-        "ok": 0,
-        "plan": 28,
-        "secs": 7.18,
+        "first_failure": "2024-02-29T12:34:56.123456Z == 2024-02-29T12:34:56.123456Z",
+        "nok": 2,
+        "ok": 54,
+        "plan": 56,
+        "secs": 9.46,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -1921,7 +1905,7 @@
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 2.65,
+        "secs": 2.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1933,7 +1917,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 4.21,
+        "secs": 4.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1943,30 +1927,30 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.62,
+        "secs": 1.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 5.45,
+        "first_failure": "not ok 2 -",
+        "nok": 2,
+        "ok": 1,
+        "plan": 3,
+        "secs": 11.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/82-emakei.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.36,
+        "secs": 2.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1975,11 +1959,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "X::TypeCheck::Argument: Type check failed for cache: expected Bool, got List",
+        "first_failure": "No such method 'as' for invocant of type",
         "nok": 2,
         "ok": 0,
         "plan": null,
-        "secs": 5.74,
+        "secs": 6.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1989,7 +1973,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 4.1,
+        "secs": 4.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1998,11 +1982,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Unknown function: rel1",
+        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.53,
+        "secs": 6.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2012,7 +1996,29 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 4.12,
+        "secs": 4.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 6.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/85-string-funcs.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 3.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2025,30 +2031,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.21,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/85-string-funcs.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 3.38,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Unknown function: rel1",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 5.31,
+        "secs": 5.72,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2058,7 +2041,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.99,
+        "secs": 3.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2067,11 +2050,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
+        "first_failure": "Unknown function: ast-value",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.16,
+        "secs": 5.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2081,7 +2064,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 8.69,
+        "secs": 8.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2090,11 +2073,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
+        "first_failure": "X::TypeCheck::Assignment with no message",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": null,
-        "secs": 5.7,
+        "secs": 12.02,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2104,7 +2087,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 9.6,
+        "secs": 10.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2117,7 +2100,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.14,
+        "secs": 10.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2127,7 +2110,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 5.15,
+        "secs": 5.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2137,11 +2120,11 @@
       "cmp": "no_baseline",
       "path": "t/90-pg-test-runner.rakutest",
       "raku": {
-        "first_failure": "Failed to remove the file '/tmp/red-pg-runner-2-858710': Failed to delete file: read-only file system",
+        "first_failure": "Failed to remove the file '/tmp/red-pg-runner-2-378662': Failed to delete file: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.75,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2154,7 +2137,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.38,
+        "secs": 8.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2164,53 +2147,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 9.11,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller prefix:<!>(Any:D); none of these signatures matches",
-        "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 7.81,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/97-indexes.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 13,
-        "plan": 13,
-        "secs": 6.51,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller postfix:<++>(Int:D); none of these signatures matches",
-        "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 4.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/98-savepoints.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 2.74,
+        "secs": 9.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2221,9 +2158,55 @@
       "mutsu": {
         "first_failure": "In 'PQunescapeBytea' routine declaration - Not an accepted NativeCall type",
         "nok": 0,
-        "ok": 0,
+        "ok": 5,
         "plan": null,
-        "secs": 4.43,
+        "secs": 12.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/97-indexes.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 7.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Nested transactions see outer writes and execute once",
+        "nok": 3,
+        "ok": 5,
+        "plan": 8,
+        "secs": 14.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/98-savepoints.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 2.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'exception' for invocant of type 'Any'",
+        "nok": 2,
+        "ok": 10,
+        "plan": null,
+        "secs": 15.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2233,7 +2216,7 @@
         "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 5.63,
+        "secs": 5.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2375,10 +2358,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-22",
+    "date": "2026-10-23",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "9746fdb1",
+    "mutsu_commit": "439101ad",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -2393,9 +2376,9 @@
   "totals": {
     "baseline_assertions": 1225,
     "baseline_files": 96,
-    "mutsu_assertions": 72,
-    "parity_files": 9,
-    "regressed_files": 87
+    "mutsu_assertions": 391,
+    "parity_files": 26,
+    "regressed_files": 70
   },
   "version": "0.2.7"
 }

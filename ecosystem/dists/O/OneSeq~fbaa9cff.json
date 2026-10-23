@@ -12,23 +12,23 @@
   "dist": "OneSeq",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": ">>> works",
-        "nok": 6,
-        "ok": 12,
+        "first_failure": "Two terms in a row",
+        "nok": 0,
+        "ok": 18,
         "plan": 21,
-        "secs": 0.17,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 5.03,
+        "secs": 6.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,10 +40,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-22",
+    "date": "2026-10-23",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "9746fdb1",
+    "mutsu_commit": "439101ad",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -58,7 +58,7 @@
   "totals": {
     "baseline_assertions": 21,
     "baseline_files": 1,
-    "mutsu_assertions": 12,
+    "mutsu_assertions": 18,
     "parity_files": 0,
     "regressed_files": 1
   },

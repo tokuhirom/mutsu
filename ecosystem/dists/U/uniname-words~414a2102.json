@@ -11,16 +11,40 @@
     "unresolved": []
   },
   "dist": "uniname-words",
-  "files": [],
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "did we get something actually",
+        "nok": 1,
+        "ok": 0,
+        "plan": 21,
+        "secs": 18.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 16.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "uniname-words": "This type (Array) does not support positional operations"
+    "uniname-words": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-22",
+    "date": "2026-10-23",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "9746fdb1",
+    "mutsu_commit": "439101ad",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -31,13 +55,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/U/NI/UNINAMEWORDS/c95c10c0b41e63c9627033782e278a5162be1e1b.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 21,
+    "baseline_files": 1,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "10.0.16"
 }

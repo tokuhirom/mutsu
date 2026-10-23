@@ -30,11 +30,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'columns' for invocant of type",
-        "nok": 0,
+        "first_failure": "No such method 'is-on-db' for invocant of type",
+        "nok": 2,
         "ok": 0,
         "plan": null,
-        "secs": 7.94,
+        "secs": 10.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -44,7 +44,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 110.14,
+        "secs": 82.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -53,11 +53,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Unknown function: rel1",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "No such method 'title' for invocant of type 'Post::ResultSeq'",
+        "nok": 4,
+        "ok": 16,
         "plan": null,
-        "secs": 10.2,
+        "secs": 16.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -67,7 +67,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 3.7,
+        "secs": 3.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,7 +79,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.75,
+        "secs": 4.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -89,7 +89,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.17,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -101,10 +101,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-22",
+    "date": "2026-10-23",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "9746fdb1",
+    "mutsu_commit": "439101ad",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -119,7 +119,7 @@
   "totals": {
     "baseline_assertions": 31,
     "baseline_files": 3,
-    "mutsu_assertions": 3,
+    "mutsu_assertions": 19,
     "parity_files": 1,
     "regressed_files": 2
   },
