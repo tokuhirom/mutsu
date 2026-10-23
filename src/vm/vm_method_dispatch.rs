@@ -2387,7 +2387,7 @@ impl Interpreter {
             let shadows_visible_key = env.contains_key_sym(crate::symbol::wk::self_())
                 || env.contains_key_sym(crate::symbol::wk::class_decl())
                 || env.contains_key_sym(crate::symbol::wk::role_decl());
-            if shadows_visible_key {
+            if shadows_visible_key || std::env::var_os("MUTSU_KEEP_KEYS").is_some() {
                 // 3 fixed keys below (`self`, `__ANON_STATE#`, `?CLASS`) plus
                 // one per bound parameter -- see `Env::reserve`.
                 env.reserve(3 + param_values.len());
