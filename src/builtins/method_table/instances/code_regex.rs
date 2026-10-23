@@ -24,8 +24,10 @@ pub(super) fn is_regex(target: &Value) -> bool {
 // Cost: O(1).
 pub(super) fn answer(target: &Value, method: &str) -> Answer {
     let value = match method {
-        "multi" | "is_dispatcher" | "yada" | "rw" | "is-implementation-detail" => Value::FALSE,
-        "dispatcher" | "dispatchees" => Value::NIL,
+        "multi" | "is_dispatcher" | "yada" | "rw" | "is-implementation-detail" | "onlystar" => {
+            Value::FALSE
+        }
+        "dispatcher" | "dispatchees" | "soft" => Value::NIL,
         "package" => Value::package(crate::symbol::Symbol::intern("Mu")),
         "candidates" => Value::array(vec![target.clone()]),
         "prec" => Value::hash(ValueMap::default()),
@@ -33,4 +35,25 @@ pub(super) fn answer(target: &Value, method: &str) -> Answer {
         _ => return None,
     };
     Some(Ok(value))
+}
+
+/// `Regex.cando(\capture)`: a regex takes exactly one positional argument (its
+/// invocant), so the capture fits it, and so the answer is the regex, only
+/// then; named arguments do not count.
+// Cost: O(a), a = arguments of the capture.
+pub(super) fn cando(target: &Value, args: &[Value]) -> Value {
+    let positional = args
+        .first()
+        .map(|capture| {
+            crate::runtime::Interpreter::capture_to_call_args(capture)
+                .iter()
+                .filter(|a| !a.is_string_pair_value())
+                .count()
+        })
+        .unwrap_or(0);
+    if positional == 1 {
+        Value::array(vec![target.clone()])
+    } else {
+        Value::array(Vec::new())
+    }
 }

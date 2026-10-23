@@ -181,6 +181,9 @@ fn by_kind(
             sub(interp, target, &data, method, args)
         }
         ValueView::Instance { .. } => interp.method_object_code_row(target, method, args),
+        _ if super::code_regex::is_regex(target) && method == "cando" => {
+            Some(Ok(super::code_regex::cando(target, &args)))
+        }
         _ if super::code_regex::is_regex(target) => super::code_regex::answer(target, method),
         _ => None,
     }
