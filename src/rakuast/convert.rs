@@ -3349,6 +3349,23 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 delimiter,
                 interpolates,
             } => super::word_quote::convert(*val, text, *delimiter, *interpolates),
+            Spelling::PrefixCall => {
+                let Expr::Unary { op, expr, .. } = &spelled.expr else {
+                    return Err(unsupported("prefix call spelling without its prefix"));
+                };
+                let name = match op {
+                    crate::token_kind::TokenKind::Bang => "not",
+                    crate::token_kind::TokenKind::Question => "so",
+                    _ => return Err(unsupported("prefix call spelling of an unknown prefix")),
+                };
+                Ok(RakuAstNode {
+                    class: RakuAstClass::CallName,
+                    fields: vec![
+                        node_field(Some("name"), name_from_identifier(name)),
+                        node_field(Some("args"), arg_list(std::slice::from_ref(&**expr))?),
+                    ],
+                })
+            }
             Spelling::NegatedInfix => {
                 let Expr::Unary {
                     op: crate::token_kind::TokenKind::Bang,
@@ -4874,6 +4891,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 return signature_block_node(body);
             }
             if declarator.is_routine() {
+                // A placeholder in the body of a routine with a signature of its
+                // own (`sub () { $^x }`) is a compile-time error in rakudo, which
+                // raises it while building the tree.
+                if let Some(exception) =
+                    crate::parser::placeholder_signature_exception(body, param_defs)
+                {
+                    return Err(RuntimeError::from_exception_value(exception));
+                }
                 // `sub ($x) { }` / `method ($x) { }` — an anonymous *routine*,
                 // not a block. raku renders it as a nameless `RakuAST::Sub`
                 // whose parameters carry the implicit
@@ -5470,7 +5495,7 @@ pub(super) fn label_fields(label: &Option<String>) -> Vec<RakuAstField> {
         Some(name) => {
             let label_node = RakuAstNode {
                 class: RakuAstClass::Label,
-                fields: vec![leaf_field(Some("name"), Value::str(name.clone()))],
+                fields: vec![leaf_field(None, Value::str(name.clone()))],
             };
             vec![RakuAstField {
                 name: Some("labels"),
@@ -5934,12 +5959,41 @@ fn class_traits(
     hidden_parents: &[String],
 ) -> Result<Vec<Value>, RuntimeError> {
     let mut traits = Vec::new();
+    let does_node = |role: &str| -> Result<Value, RuntimeError> {
+        Ok(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::TraitDoes,
+            fields: vec![node_field(None, parent_type_node(role, parent_args)?)],
+        })))
+    };
+    let hides_node = |hidden: &str| -> Result<Value, RuntimeError> {
+        Ok(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::TraitHides,
+            fields: vec![node_field(None, parent_type_node(hidden, parent_args)?)],
+        })))
+    };
+    // `parents` is the general composed-type list in the order the header
+    // wrote it: `is P`, `does R` and `hides H` interleave there, and rakudo
+    // keeps that order in `traits` (`class C hides A is B` lists the `hides`
+    // first, measured on 2026.09).
+    let mut seen_does = Vec::new();
+    let mut seen_hides = Vec::new();
     for parent in parents {
         // A `does R` role is recorded in BOTH lists (`parents` is the general
-        // composed-type list the dispatcher reads), so skip the ones that are
-        // really role composition or they would render twice; a parent it
-        // `hides` is in both too, and renders as a `Trait::Hides`.
-        if does_parents.iter().any(|r| r == parent) || hidden_parents.iter().any(|h| h == parent) {
+        // composed-type list the dispatcher reads), so it renders where it was
+        // written as a `Trait::Does`; a parent it `hides` is in both too, and
+        // renders as a `Trait::Hides`.
+        if does_parents.iter().any(|r| r == parent) {
+            if !seen_does.contains(&parent) {
+                seen_does.push(parent);
+                traits.push(does_node(parent)?);
+            }
+            continue;
+        }
+        if hidden_parents.iter().any(|h| h == parent) {
+            if !seen_hides.contains(&parent) {
+                seen_hides.push(parent);
+                traits.push(hides_node(parent)?);
+            }
             continue;
         }
         // `is NAME` names a parent only when NAME is a type; the parser keeps
@@ -5958,11 +6012,11 @@ fn class_traits(
             fields: vec![field],
         })));
     }
+    // Composed roles and hidden parents the header list does not carry.
     for role in does_parents {
-        traits.push(Value::rakuast(Box::new(RakuAstNode {
-            class: RakuAstClass::TraitDoes,
-            fields: vec![node_field(None, parent_type_node(role, parent_args)?)],
-        })));
+        if !seen_does.contains(&role) {
+            traits.push(does_node(role)?);
+        }
     }
     if is_rw {
         traits.push(Value::rakuast(Box::new(RakuAstNode {
@@ -5977,10 +6031,9 @@ fn class_traits(
         })));
     }
     for hidden in hidden_parents {
-        traits.push(Value::rakuast(Box::new(RakuAstNode {
-            class: RakuAstClass::TraitHides,
-            fields: vec![node_field(None, parent_type_node(hidden, parent_args)?)],
-        })));
+        if !seen_hides.contains(&hidden) {
+            traits.push(hides_node(hidden)?);
+        }
     }
     Ok(traits)
 }

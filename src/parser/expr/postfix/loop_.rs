@@ -430,11 +430,14 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         let (r, _) = parse_char(r, ')')?;
         return Ok((
             r,
-            Expr::Unary {
-                op: TokenKind::Bang,
-                expr: Box::new(expr),
-                word: false,
-            },
+            Expr::spelled(
+                Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(expr),
+                    word: false,
+                },
+                || crate::ast::spelled::Spelling::PrefixCall,
+            ),
         ));
     }
     // so(expr) — tight-binding form: so followed by ( without space
@@ -447,11 +450,14 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         let (r, _) = parse_char(r, ')')?;
         return Ok((
             r,
-            Expr::Unary {
-                op: TokenKind::Question,
-                expr: Box::new(expr),
-                word: false,
-            },
+            Expr::spelled(
+                Expr::Unary {
+                    op: TokenKind::Question,
+                    expr: Box::new(expr),
+                    word: false,
+                },
+                || crate::ast::spelled::Spelling::PrefixCall,
+            ),
         ));
     }
     // A bareword followed by `=>` is a pair key, whatever else the word means:

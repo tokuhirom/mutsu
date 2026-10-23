@@ -592,6 +592,19 @@ pub(crate) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
     Ok(())
 }
 
+/// The `X::Signature::Placeholder` exception value for a routine whose body
+/// uses a placeholder its explicit signature cannot take, for callers outside
+/// the parser (the RakuAST conversion raises it while building the tree).
+// Cost: O(n), n = size of the body.
+pub(crate) fn placeholder_signature_exception(
+    body: &[Stmt],
+    param_defs: &[ParamDef],
+) -> Option<Value> {
+    placeholder_overrides_signature_error(body, param_defs)
+        .and_then(|error| error.exception)
+        .map(|exception| *exception)
+}
+
 /// If a routine body uses a placeholder variable (`$^x`, `@_`, `$:named`, ...)
 /// that is not captured by a nested signature-capable block, build the fatal
 /// `X::Signature::Placeholder` error. The placeholder is reported with its

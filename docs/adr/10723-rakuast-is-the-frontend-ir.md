@@ -2099,3 +2099,33 @@ The 46 passing files and the three fixed ones are added to
 `ci/rakuast-frontend-passing.txt`. `t/oo/construct/buildplan-built-bind.t` still
 differs; it belongs to #14559.
 
+### 6.108 S10: whitelisted roast files that differed under the frontend (2026-10-23)
+
+The survey §6.107 left for the TAP comparison: every `roast-whitelist.txt` file run
+under `MUTSU_FUDGE=1 MUTSU_RAKUAST=1` on a release build. 17 failed, 4 of them
+(`file-tests`, `filetest`, `eof`, `IO-Socket-Async`) fail on the ordinary frontend in
+this container too; the other 13 came down to these causes, now fixed:
+
+- `not(EXPR)` / `so(EXPR)` is a call of the sub in rakudo (`Call::Name`); the parser
+  folds it into the prefix, and `ApplyPrefix(!, ApplyInfix)` then read as a negated
+  chain link. A parse that keeps spellings wraps it in `Spelling::PrefixCall`, which
+  renders the `Call::Name`.
+- A chain whose last link is a regex smartmatch (`0 == 0 ~~ /0/`) is one chain; only a
+  regex link followed by another link ends it.
+- A negated infix lowers to the parser's `!(left OP right)`, so `!=:=` sees the operand
+  expressions and a priming `*` is found (`* !< 3`).
+- A `my \term:<x> = INIT` initializer declares no term (`e` was read as shadowed).
+- `True` / `False` are shadowed per statement list (`constant True = 42` in a block).
+- `Any` lowers to the type-object literal the parser folds it to.
+- `Seq.from-loop(:label(L))` accepts a `Label` value; `Label.new("L")` holds its name
+  positionally (the local expectations that had `name => "L"` are corrected).
+- A single-quoted regex atom keeps its single quotes when re-spelled (a double-quoted
+  spelling interpolated `&sin(3)`); `<&Pkg::name>` parses as a qualified callee.
+- Class traits render in written order across `is` / `does` / `hides`.
+- A placeholder under an explicit routine signature (`sub () { $^x }`) raises
+  `X::Signature::Placeholder` while the tree is built, as rakudo does.
+- The parser's sink warning looks through `Expr::Spelled` (`<42i>`).
+
+The contract is `t/rakuast/rakuast-roast-tap-cohort.t`, which passes on rakudo and on
+both frontends.
+

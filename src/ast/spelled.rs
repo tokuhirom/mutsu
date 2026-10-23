@@ -63,6 +63,9 @@ pub(crate) enum Spelling {
         /// Whether unquoted text interpolates (`qqww`/angle quotes, unlike `Qww`).
         interpolates: bool,
     },
+    /// `not(EXPR)` / `so(EXPR)`: the tight call form, which the parser folds
+    /// into the prefix `!` / `?` but RakuAST keeps as a `Call::Name` of the sub.
+    PrefixCall,
     /// `a !< b` / `a !eq b`: the parser evaluates this as `!(a < b)` but
     /// RakuAST keeps the `MetaInfix::Negate` at the infix application.
     NegatedInfix,

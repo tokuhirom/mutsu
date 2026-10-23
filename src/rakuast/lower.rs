@@ -62,6 +62,7 @@ pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
 pub(super) fn lower_stmts(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     // Operators the list declares are scoped to it.
     let _operators = super::infix_func::enter_scope();
+    let _keywords = super::shadowed_terms::enter_scope();
     match node.class {
         RakuAstClass::CompUnit => lower_stmt_list(named_child(node, "statement-list")?),
         _ => super::anon_state::with_frame(|| lower_stmt_list(node)),
@@ -102,6 +103,7 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
                 }
                 let child = child_node(&f.value)?;
                 super::infix_func::note_declaration(child);
+                super::shadowed_terms::note_keyword_declaration(child);
                 if let Some(line) = super::origin::line_of(child) {
                     stmts.push(Stmt::SetLine(line, crate::ast::SrcSpan::NONE));
                 }
@@ -3518,7 +3520,7 @@ pub(super) fn named_child_or_positional(node: &RakuAstNode) -> Result<&RakuAstNo
 // Cost: O(1).
 pub(super) fn term_identifier_expr(name: &str) -> Expr {
     match name {
-        "True" | "False" => {
+        "True" | "False" if !super::shadowed_terms::is_keyword_shadowed(name) => {
             let value = Value::truth(name == "True");
             // In a unit that imported through a run-time `sub EXPORT` hook the
             // parser keeps the keyword shadowable (#9047); so does lowering.
@@ -5039,6 +5041,11 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::TypeSimple => match simple_type_name(node, node)?.as_str() {
             "Nil" if !super::shadowed_terms::declares_package("Nil") => {
                 Ok(Expr::Literal(Value::NIL))
+            }
+            // `Any` is the type-object literal the parser folds it to (a call
+            // argument `A(Any)` is a coercion only for a type object).
+            "Any" if !super::shadowed_terms::declares_package("Any") => {
+                Ok(Expr::Literal(Value::package(crate::symbol::wk::any())))
             }
             name => Ok(Expr::BareWord(name.to_string())),
         },

@@ -19,7 +19,7 @@ impl Interpreter {
         for arg in &args {
             if let ValueView::Pair(name, value) = arg.view() {
                 if name == "label" {
-                    label = Some(value.to_string_value());
+                    label = Some(loop_label_name(value));
                     continue;
                 }
                 if name == "repeat" {
@@ -31,7 +31,7 @@ impl Interpreter {
             if let ValueView::ValuePair(name, value) = arg.view() {
                 if let ValueView::Str(key) = name.view() {
                     if key.as_str() == "label" {
-                        label = Some(value.to_string_value());
+                        label = Some(loop_label_name(value));
                         continue;
                     }
                     if key.as_str() == "repeat" {
@@ -126,4 +126,12 @@ impl Interpreter {
 
         Ok(Value::seq(items))
     }
+}
+
+/// The loop label a `:label(...)` argument names: the label's name for a
+/// `Label` value (`:label(L)` once `L` resolved to the label term), else its
+/// string form (the bareword the parser keeps).
+// Cost: O(1).
+fn loop_label_name(value: &Value) -> String {
+    crate::value::label::label_name(value).unwrap_or_else(|| value.to_string_value())
 }
