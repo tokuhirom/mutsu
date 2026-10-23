@@ -109,6 +109,7 @@ pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut
             custom_traits,
             is_export: _,
             export_tags: _,
+            ..
         } => {
             if let Some(e) = name_expr {
                 v.visit_expr_mut(e);

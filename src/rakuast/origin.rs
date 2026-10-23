@@ -75,6 +75,20 @@ pub(super) fn trace_of(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
 // Cost: O(1) for ASCII text, O(log n) otherwise, n = characters of the unit.
 pub(super) fn set(node: &mut RakuAstNode, line: i64, span: crate::ast::SrcSpan) {
     node.origin = super::NodeOrigin(Some(super::unit_source::origin_value(line, span)));
+    // A `Statement::Expression` with no statement modifier was written as just
+    // its expression, which therefore has the statement's range (a `Sub`, a
+    // `Class`, a `VarDeclaration`, a call) unless the parser placed it itself.
+    if node.class == super::RakuAstClass::StatementExpression
+        && let [field] = node.fields.as_mut_slice()
+        && field.name == Some("expression")
+        && let RakuAstFieldValue::Node(held) = &mut field.value
+        && let ValueView::RakuAst(expression) = held.view()
+        && expression.origin.0.is_none()
+    {
+        let mut expression = RakuAstNode::clone(expression);
+        set_span(&mut expression, span);
+        *held = Value::rakuast(Box::new(expression));
+    }
 }
 
 /// The line an `origin` field value records: the `line` an `Origin` carries, or

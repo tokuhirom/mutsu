@@ -264,6 +264,7 @@ pub(crate) fn sub_decl_body(
     supersede: bool,
     allow_main_semicolon_decl: bool,
 ) -> PResult<'_, Stmt> {
+    let name_start = input;
     let (rest, name, name_expr) = if input.starts_with("::") {
         let (rest, (name, expr)) = parse_indirect_decl_name(input)?;
         (rest, name, Some(expr))
@@ -292,13 +293,16 @@ pub(crate) fn sub_decl_body(
         super::super::simple::register_user_callable_term_symbol(&name);
         (rest, name, None)
     };
+    let name_span = crate::parser::primary::source_span(name_start, rest);
     let (rest, _) = ws(rest)?;
 
     // Parse params
     let has_explicit_signature = rest.starts_with('(');
+    let mut signature_start = None;
     let (rest, (params, mut param_defs, return_type)) = if has_explicit_signature {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
+        signature_start = Some(r);
         let (r, (pd, rt)) = parse_param_list_with_return(r)?;
         validate_signature_params(&pd)?;
         reject_invocant_in_sub(&pd)?;
@@ -386,6 +390,7 @@ pub(crate) fn sub_decl_body(
             return Ok((
                 rest,
                 Stmt::SubDecl {
+                    spans: Default::default(),
                     name: Symbol::intern(&name),
                     name_expr,
                     params,
@@ -431,6 +436,7 @@ pub(crate) fn sub_decl_body(
         return Ok((
             rest,
             Stmt::SubDecl {
+                spans: Default::default(),
                 name: Symbol::intern(&name),
                 name_expr,
                 params,
@@ -477,6 +483,7 @@ pub(crate) fn sub_decl_body(
             return Ok((
                 rest,
                 Stmt::SubDecl {
+                    spans: Default::default(),
                     name: Symbol::intern(&name),
                     name_expr,
                     params,
@@ -500,6 +507,7 @@ pub(crate) fn sub_decl_body(
         return Err(PError::expected("sub body '{ ... }'"));
     }
     let slurpy_scope = super::outer_slurpy::enter_routine_body(&param_defs, false);
+    let brace = rest;
     let (rest, mut body) = if super::any_sigilless(&param_defs)
         || super::any_callable_param(&param_defs)
         || super::has_type_capture(&param_defs)
@@ -554,7 +562,9 @@ pub(crate) fn sub_decl_body(
     crate::ast::does_target::mark_does_targets(&name, &mut param_defs, &body);
     crate::ast::routine_trait::attach(&mut body, traits.source_traits);
     let sub_name_sym = Symbol::intern(&name);
+    let spans = super::routine_spans(name_span, signature_start, &param_defs, brace, rest, &body);
     let sub_decl = Stmt::SubDecl {
+        spans,
         name: sub_name_sym,
         name_expr,
         params,

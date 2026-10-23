@@ -193,6 +193,7 @@ pub(crate) fn walk_param<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, p: &'ast Para
         shape_constraints,
         block_param: _,
         code: _,
+        ..
     } = p;
     v.visit_name(name, NameKind::Param);
     if let Some(e) = default {

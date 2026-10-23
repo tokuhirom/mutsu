@@ -167,7 +167,7 @@ impl Interpreter {
                 if !method_params.iter().any(|p| p == "%_") {
                     method_params.push("%_".to_string());
                 }
-                let mut method_param_defs = vec![crate::ast::ParamDef { trait_meta: Default::default(),
+                let mut method_param_defs = vec![crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
                     type_capture: None,
                     name: "self".to_string(),
                     default: None,
@@ -200,7 +200,7 @@ impl Interpreter {
                         .cloned(),
                 );
                 if !method_param_defs.iter().any(|p| p.name == "%_") {
-                    method_param_defs.push(crate::ast::ParamDef { trait_meta: Default::default(),
+                    method_param_defs.push(crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
                         type_capture: None,
                         name: "%_".to_string(),
                         default: None,

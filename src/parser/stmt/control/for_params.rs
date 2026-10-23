@@ -76,6 +76,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             let (r, _) = skip_pointy_return_type(r)?;
             let unpack_name = FOR_UNPACK.to_string();
             let unpack_def = ParamDef {
+                spans: Default::default(),
                 trait_meta: Default::default(),
                 type_capture: None,
                 name: unpack_name.clone(),
@@ -154,6 +155,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             let (r, _) = skip_pointy_return_type(r)?;
             let unpack_name = FOR_UNPACK_ARRAY.to_string();
             let unpack_def = ParamDef {
+                spans: Default::default(),
                 trait_meta: Default::default(),
                 type_capture: None,
                 name: unpack_name.clone(),
@@ -412,6 +414,7 @@ fn parse_destructuring_or_plain_param(input: &str) -> PResult<'_, ParamDef> {
     Ok((
         r,
         ParamDef {
+            spans: Default::default(),
             trait_meta: Default::default(),
             type_capture: None,
             name,
@@ -513,6 +516,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             rest,
             ParamDef {
+                spans: Default::default(),
                 trait_meta: Default::default(),
                 type_capture: None,
                 name,
@@ -609,6 +613,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     Ok((
         rest,
         ParamDef {
+            spans: Default::default(),
             trait_meta: Default::default(),
             type_capture: None,
             name: param_name,

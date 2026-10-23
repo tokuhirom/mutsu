@@ -1217,6 +1217,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             is_test_assertion,
             supersede,
             custom_traits,
+            spans,
             ..
         } => {
             // Phase 2 slice 7 covers the plain named `sub NAME (params) { body }`
@@ -1264,6 +1265,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
             )?;
+            super::routine_origins::apply(&mut node, spans.as_deref(), param_defs);
             super::routine_source::mark_legacy_sub_forms(
                 &mut node,
                 signature_alternates,
@@ -1315,6 +1317,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             custom_traits,
             is_export,
             export_tags,
+            spans,
             ..
         } => {
             // Plain `method NAME (params) { body }` and `submethod NAME (…) { … }`,
@@ -1366,6 +1369,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
             )?;
+            super::routine_origins::apply(&mut node, spans.as_deref(), param_defs);
             super::symbolic_deref::replace_declarator_name(&mut node, name_expr.as_ref())?;
             let source_traits = super::routine_source::apply(&mut node, body)?;
             let flags = routine_traits::IsTraits {

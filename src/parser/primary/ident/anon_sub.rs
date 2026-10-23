@@ -5,6 +5,7 @@ use crate::parser::primary::misc::parse_block_body_routine_with_params;
 
 pub(crate) fn invocant_param_def() -> crate::ast::ParamDef {
     crate::ast::ParamDef {
+        spans: Default::default(),
         trait_meta: Default::default(),
         type_capture: None,
         name: "self".to_string(),

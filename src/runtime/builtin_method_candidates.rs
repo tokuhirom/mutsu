@@ -82,7 +82,7 @@ fn is_core_owner(owner: &str) -> bool {
 /// A parameter with every field at its blank value.
 // Cost: O(1).
 fn blank_param(name: &str) -> ParamDef {
-    ParamDef {
+    ParamDef { spans: Default::default(),
         trait_meta: Default::default(),
         type_capture: None,
         name: name.to_string(),

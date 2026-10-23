@@ -23,7 +23,7 @@ pub(in crate::runtime) fn native_method_shim(
     let (params, param_defs, call_args) = if has_param {
         (
             vec!["v".to_string()],
-            vec![crate::ast::ParamDef { trait_meta: Default::default(),
+            vec![crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
                 type_capture: None,
                 name: "v".to_string(),
                 default: None,
