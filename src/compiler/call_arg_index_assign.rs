@@ -1,6 +1,28 @@
 use super::*;
 
 impl Compiler {
+    /// The assignment inside a parenthesised assignment argument
+    /// (`f(($x -= 2))`). The parser keeps the written parentheses as
+    /// `Expr::Grouped` so `.AST` can render them, but the argument machinery
+    /// (an `is rw` parameter binding the assigned container) keys on the bare
+    /// assignment, which `(...)` does not change.
+    // Cost: O(1).
+    pub(super) fn peel_assign_parens(arg: &Expr) -> &Expr {
+        match arg {
+            Expr::Grouped(inner)
+                if matches!(
+                    inner.as_ref(),
+                    Expr::AssignExpr { .. }
+                        | Expr::IndexAssign { .. }
+                        | Expr::CompoundAssign { .. }
+                ) =>
+            {
+                inner
+            }
+            other => other,
+        }
+    }
+
     /// `f(@a[1] = v)` / `f(%h<k><j> = v)`: an indexed assignment passed as a
     /// call argument. In Raku the assignment yields the element's own
     /// container, so an `is rw` parameter binds the caller's storage (Path::Map's
@@ -23,7 +45,7 @@ impl Compiler {
             index,
             is_positional,
             ..
-        } = arg
+        } = Self::peel_assign_parens(arg)
         else {
             return None;
         };
@@ -54,7 +76,7 @@ impl Compiler {
     /// they have no per-argument `VarRef` of their own for the assignment result.
     // Cost: O(d), d = subscript chain depth.
     pub(super) fn assign_arg_element(arg: &Expr) -> Option<Expr> {
-        match arg {
+        match Self::peel_assign_parens(arg) {
             Expr::AssignExpr {
                 name,
                 is_bind: false,
