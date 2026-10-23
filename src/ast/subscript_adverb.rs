@@ -450,9 +450,20 @@ pub(crate) fn subscript_adverb_expr_with_cond(
         Expr::HashVar(name) => Expr::Literal(Value::str(format!("%{}", name))),
         _ => Expr::Literal(Value::NIL),
     };
+    // `%h{|@keys}:kv`: a slipped index is the flattened key list a plain
+    // `%h{@keys}` slice already is. Left as `|EXPR` it would be spread across
+    // the call's own arguments, shifting the adverb name out of place.
+    let index = match *index {
+        Expr::Unary {
+            op: crate::token_kind::TokenKind::Pipe,
+            expr,
+            ..
+        } => *expr,
+        other => other,
+    };
     let mut args = vec![
         *target,
-        *index,
+        index,
         Expr::Literal(Value::str(adverb.to_string())),
         var_name,
     ];
