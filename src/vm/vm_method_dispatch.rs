@@ -2376,21 +2376,35 @@ impl Interpreter {
         // class's own lexicals and the method body is inside their scope.
         self.inject_class_body_statics(owner_class);
         if skip_env_setup {
+            // ADR-14633 slice 2: the frame's record (pushed below with the
+            // routine frame) answers `self`, `__ANON_STATE#`, `?CLASS` and
+            // `?ROLE`, so the frame writes none of the four keys -- unless
+            // an env key of one of those names is visible from here (a caller
+            // that still writes its keys, a class body, a closure's lexical
+            // `self`): an env-first reader would find that key instead of
+            // this call's, so this frame shadows it exactly as before.
             let env = self.env_mut();
-            // 3 fixed keys below (`self`, `__ANON_STATE#`, `?CLASS`) plus
-            // one per bound parameter -- see `Env::reserve`.
-            env.reserve(3 + param_values.len());
-            env.insert_sym(crate::symbol::wk::self_(), base.clone());
-            env.insert_sym(crate::symbol::wk::anon_state(), base.clone());
-            env.insert_sym(crate::symbol::wk::class_decl(), class_val.clone());
-            // `$_` is the rooted frame's own (`env::routine_owned`).
-            if let Some(ref role_name) = role_context {
-                env.insert_sym(
-                    crate::symbol::wk::role_decl(),
-                    Value::package(crate::symbol::Symbol::intern(role_name)),
-                );
+            let shadows_visible_key = env.contains_key_sym(crate::symbol::wk::self_())
+                || env.contains_key_sym(crate::symbol::wk::class_decl())
+                || env.contains_key_sym(crate::symbol::wk::role_decl());
+            if shadows_visible_key {
+                // 3 fixed keys below (`self`, `__ANON_STATE#`, `?CLASS`) plus
+                // one per bound parameter -- see `Env::reserve`.
+                env.reserve(3 + param_values.len());
+                env.insert_sym(crate::symbol::wk::self_(), base.clone());
+                env.insert_sym(crate::symbol::wk::anon_state(), base.clone());
+                env.insert_sym(crate::symbol::wk::class_decl(), class_val.clone());
+                // `$_` is the rooted frame's own (`env::routine_owned`).
+                if let Some(ref role_name) = role_context {
+                    env.insert_sym(
+                        crate::symbol::wk::role_decl(),
+                        Value::package(crate::symbol::Symbol::intern(role_name)),
+                    );
+                } else {
+                    env.remove_sym(crate::symbol::wk::role_decl());
+                }
             } else {
-                env.remove_sym(crate::symbol::wk::role_decl());
+                env.reserve(param_values.len());
             }
             Self::insert_fast_param_values(env, &param_values);
         } else {

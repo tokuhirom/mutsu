@@ -500,9 +500,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let invocant = self
-            .env
-            .get("self")
-            .cloned()
+            .env_self_value()
             .unwrap_or_else(|| frame_invocant.clone());
         match method_name {
             "BUILDALL" | "POPULATE" => crate::builtins::method_table::invoke_base(
@@ -1362,9 +1360,7 @@ impl Interpreter {
                 let base_invocant = if came_from_wrapper {
                     frame.invocant.clone()
                 } else {
-                    self.env
-                        .get("self")
-                        .cloned()
+                    self.env_self_value()
                         .unwrap_or_else(|| frame.invocant.clone())
                 };
                 // `callwith`'s args are invocant-INCLUSIVE (element 0 is the
@@ -1774,7 +1770,7 @@ impl Interpreter {
                     .samewith_context_stack
                     .last()
                     .is_some_and(|ctx| ctx.name == "new");
-            if in_new && let Some(invocant) = self.env.get("self").cloned() {
+            if in_new && let Some(invocant) = self.env_self_value() {
                 let call_args = match override_args {
                     Some(args) => args,
                     None => self

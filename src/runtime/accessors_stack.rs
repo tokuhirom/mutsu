@@ -537,24 +537,16 @@ impl Interpreter {
     /// invocant, `?CLASS` and `?ROLE` of the running method call
     /// (ADR-14633 §2.1).
     // Cost: O(1).
-    // TODO(ADR-14633 slice 2): no reader uses the record yet. The env keys it
-    // mirrors are still rebound mid-frame by ~20 helpers (role mixins, grammar
-    // actions, attribute defaults) and by closure calls that push no record,
-    // so answering `self` from it before those become scoped helpers would
-    // change answers.
-    #[allow(dead_code)]
     #[inline]
     pub(crate) fn frame_fixtures(&self) -> Option<&super::routine_stack::FrameFixtures> {
         self.routine_stack.top_fixtures()
     }
 
-    /// The fixture rule's answer for a fixed name (`self`, `__ANON_STATE#`,
-    /// `?CLASS`, `?ROLE`): what the innermost method frame's record says the
-    /// env key holds, `None` when no record answers. `?ROLE` answers
-    /// `Some(None)`-as-absent through `None` too, since an absent role is an
-    /// absent env key.
+    /// What the innermost method frame's record says a fixed name (`self`,
+    /// `__ANON_STATE#`, `?CLASS`, `?ROLE`) holds, `None` when no record
+    /// answers or the name is not a fixed one. An absent role is `None`, as
+    /// an absent `?ROLE` env key is.
     // Cost: O(1).
-    #[allow(dead_code)] // TODO(ADR-14633 slice 2): see `frame_fixtures`.
     pub(crate) fn frame_fixture_value(&self, sym: Symbol) -> Option<Value> {
         let fixtures = self.frame_fixtures()?;
         if sym == crate::symbol::wk::self_() || sym == crate::symbol::wk::anon_state() {
@@ -566,6 +558,27 @@ impl Interpreter {
         } else {
             None
         }
+    }
+
+    /// The value of a fixed name as the running code sees it: an env key
+    /// first (a closure's lexical `self`, a helper's temporary rebind, a
+    /// frame that still writes its keys), else the innermost method frame's
+    /// record. A method frame that wrote no keys (ADR-14633 slice 2) is only
+    /// answered by the record, which is correct because such a frame is only
+    /// entered when no env key of a fixed name is visible from it.
+    // Cost: O(c) env chain probe, c = env chain depth, then O(1).
+    pub(crate) fn env_or_fixture_sym(&self, sym: Symbol) -> Option<Value> {
+        match self.env.get_sym(sym) {
+            Some(v) => Some(v.clone()),
+            None => self.frame_fixture_value(sym),
+        }
+    }
+
+    /// [`Self::env_or_fixture_sym`] for the invocant, `self`.
+    // Cost: as `env_or_fixture_sym`.
+    #[inline]
+    pub(crate) fn env_self_value(&self) -> Option<Value> {
+        self.env_or_fixture_sym(crate::symbol::wk::self_())
     }
 
     pub(crate) fn pop_routine(&mut self) {

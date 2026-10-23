@@ -39,7 +39,7 @@ impl Interpreter {
                 return Some(v);
             }
         }
-        self.env().get("self").cloned()
+        self.env_self_value()
     }
 
     /// Replace the top-of-stack plain attribute read with the attribute's own

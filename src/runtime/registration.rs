@@ -674,7 +674,8 @@ impl Interpreter {
         // An `our constant` in a class body lives under the class-scoped key,
         // so look under the calling package and under the lexical `self`'s
         // class (the calling package can be an enclosing class).
-        let self_class = match self.env().get("self").map(Value::view) {
+        let self_value = self.env_self_value();
+        let self_class = match self_value.as_ref().map(Value::view) {
             Some(ValueView::Instance { class_name, .. }) => Some(class_name.resolve()),
             _ => None,
         };

@@ -132,7 +132,8 @@ impl Interpreter {
     /// is pulled later, outside the method; Trie).
     // Cost: O(1).
     fn lexical_self_class(&self) -> Option<Symbol> {
-        match self.env.get("self").map(Value::view) {
+        let self_value = self.env_self_value();
+        match self_value.as_ref().map(Value::view) {
             Some(ValueView::Instance { class_name, .. }) => Some(class_name),
             Some(ValueView::Package(name)) => Some(name),
             Some(ValueView::Proxy {

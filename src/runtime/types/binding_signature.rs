@@ -1025,7 +1025,7 @@ impl Interpreter {
             // The legacy binding path: a single pointy-block parameter
             // (`-> $self { }`) arrives as a bare name with no `ParamDef`.
             || (param_defs.is_empty() && crate::ast::param_names_declare_self_lexical(params));
-        if declares_self && let Some(bound) = self.env.get("self").cloned() {
+        if declares_self && let Some(bound) = self.env_self_value() {
             self.env.insert(crate::env::LEX_SELF.to_string(), bound);
         }
         result
@@ -1280,10 +1280,8 @@ impl Interpreter {
         let mut invocant_captures = invocant_captures.peekable();
         if invocant_captures.peek().is_some()
             && let Some(invocant_value) = self
-                .env
-                .get_sym(crate::symbol::wk::self_())
-                .cloned()
-                .or_else(|| self.env.get_sym(crate::symbol::wk::class_decl()).cloned())
+                .env_or_fixture_sym(crate::symbol::wk::self_())
+                .or_else(|| self.env_or_fixture_sym(crate::symbol::wk::class_decl()))
         {
             for captured_name in invocant_captures {
                 self.bind_type_capture(captured_name, &invocant_value);
