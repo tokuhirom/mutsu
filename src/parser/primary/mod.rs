@@ -606,6 +606,12 @@ pub(in crate::parser) fn note_origin(input: &str, rest: &str, expr: &Expr) {
 }
 
 pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
+    let (rest, expr) = primary_term(input)?;
+    note_origin(input, rest, &expr);
+    Ok((rest, expr))
+}
+
+fn primary_term(input: &str) -> PResult<'_, Expr> {
     let _nesting = crate::parser::NestingGuard::enter(input)?;
     if let Some(cached) = PRIMARY_MEMO.get(input) {
         return cached;
