@@ -3266,6 +3266,15 @@ impl Expr {
     // Cost: O(1).
     pub(crate) fn postfix_operand(&self) -> &Expr {
         match self {
+            // A parenthesised positional pair (`(a => 1).List`) carries its
+            // parentheses inside the `PositionalPair` marker; that is the level
+            // raku drops.
+            Expr::PositionalPair(inner) if matches!(inner.as_ref(), Expr::Grouped(_)) => {
+                match inner.as_ref() {
+                    Expr::Grouped(pair) => pair,
+                    _ => unreachable!("guarded above"),
+                }
+            }
             Expr::Grouped(inner)
                 if !matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty())
                     && !inner.is_modified_statement()
