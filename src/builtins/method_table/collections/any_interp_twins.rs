@@ -158,6 +158,13 @@ pub(super) static ROWS: &[MethodRow] = &[
             .into_iter()
             .filter(|arg| !arg.is_string_pair_value())
             .collect();
+        // `Any.tail(n)` is `self.list.tail(n)`: an instance (a `CArray`, say)
+        // counts from the end of its own list, not of itself.
+        if matches!(target.view(), ValueView::Instance { .. } | ValueView::Mixin(..))
+            && let Some(answer) = via_self_list_args(interp, &target, "tail", counts.clone())
+        {
+            return Some(answer);
+        }
         Some(interp.dispatch_tail(target, &counts))
     }),
     // `head(&callable)` / `head(*)` of a finite list (§9.186).
@@ -188,7 +195,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     twin!("reverse", TWIN_NULLARY, |interp, target, _args| {
         // A type object is left to the rows that answer or refuse it
         // (`Supply.reverse` must die).
-        if !matches!(target.view(), ValueView::Instance { .. }) {
+        if !matches!(target.view(), ValueView::Instance { .. } | ValueView::Mixin(..)) {
             return None;
         }
         via_self_list(interp, &target, "reverse")
@@ -242,6 +249,17 @@ fn via_self_list(
     target: &Value,
     method: &str,
 ) -> Option<Result<Value, RuntimeError>> {
+    via_self_list_args(interp, target, method, Vec::new())
+}
+
+/// [`via_self_list`] for a method that takes arguments (`.tail(2)`).
+// Cost: O(1) plus the two calls'.
+fn via_self_list_args(
+    interp: &mut Interpreter,
+    target: &Value,
+    method: &str,
+    args: Vec<Value>,
+) -> Option<Result<Value, RuntimeError>> {
     let list = match interp.call_method_with_values(target.clone(), "list", Vec::new()) {
         Ok(list) => list,
         Err(e) => return Some(Err(e)),
@@ -249,5 +267,5 @@ fn via_self_list(
     if matches!(list.view(), ValueView::Instance { .. }) {
         return None;
     }
-    Some(interp.call_method_with_values(list, method, Vec::new()))
+    Some(interp.call_method_with_values(list, method, args))
 }
