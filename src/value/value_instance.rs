@@ -533,6 +533,11 @@ impl InstanceAttrs {
         let mut guard = write_attrs(self.cell());
         match guard.get_mut(key) {
             Some(slot) => {
+                // A `Proxy`-bound attribute (`$!a := Proxy.new(...)`) IS its own
+                // container: wrapping it in a Scalar cell would hide its STORE.
+                if slot.is_proxy_value() {
+                    return slot.clone();
+                }
                 // An itemized cell is a `$obj.w = @src` VALUE share (Slice 2e,
                 // `vm/vm_attr_share.rs`) that the source variable holds too, not
                 // the attribute's own Scalar. Give the attribute a Scalar cell
