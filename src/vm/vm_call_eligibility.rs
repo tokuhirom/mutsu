@@ -680,27 +680,6 @@ impl Interpreter {
         false
     }
 
-    /// True when a `Seq`/`LazyList` argument meets a method that has a
-    /// non-slurpy `@` parameter. Only the full binder
-    /// (`check_and_coerce_param_type`) binds such an argument the way Rakudo
-    /// does, through `.cache` (the shared `SeqBody` is kept re-readable and
-    /// `@c.WHAT` is `List`); the cached fast method path binds the Seq itself,
-    /// so the callee's first consuming method (`@c.map`) found it spent.
-    // Cost: O(a + p), a = argument count, p = parameter count.
-    pub(super) fn method_binds_seq_into_array_param(
-        method_def: &crate::runtime::MethodDef,
-        args: &[Value],
-    ) -> bool {
-        args.iter().any(|a| {
-            matches!(
-                a.unwrap_varref().view(),
-                ValueView::Seq(..) | ValueView::LazyList(..)
-            )
-        }) && method_def.param_defs.iter().any(|pd| {
-            !pd.is_invocant && !pd.slurpy && !pd.double_slurpy && pd.name.starts_with('@')
-        })
-    }
-
     /// A plain readonly scalar (`$`) parameter is stored sigil-less in
     /// `ParamDef::name` (e.g. `$n` -> `"n"`), unlike `@`/`%`/`&` params which
     /// keep their sigil. Detect it by a leading identifier char, excluding the

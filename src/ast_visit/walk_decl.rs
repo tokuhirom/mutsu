@@ -121,6 +121,7 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
             custom_traits,
             is_export: _,
             export_tags,
+            ..
         } => {
             v.visit_name(name.as_str(), NameKind::Decl);
             if let Some(e) = name_expr {

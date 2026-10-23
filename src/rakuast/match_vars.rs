@@ -25,6 +25,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 // Cost: O(|name|).
 pub(super) fn convert(name: &str) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::VarNamedCapture,
         fields: vec![
             node_field(None, word_quote(name)),
@@ -82,6 +83,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 // Cost: O(1).
 fn positional(index: i64) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::VarPositionalCapture,
         fields: vec![leaf_field(None, Value::int(index))],
     }

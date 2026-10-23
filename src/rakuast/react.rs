@@ -44,6 +44,7 @@ pub(super) fn convert_react(body: &[Stmt], blorst: bool) -> Result<RakuAstNode, 
         (true, _) => return Err(super::convert::unsupported("react with a statement body")),
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementPrefixReact,
         fields: vec![node_field(None, blorst)],
     })
@@ -84,6 +85,7 @@ pub(super) fn convert_whenever(
     // three flags ahead of the body.
     let block = if params.is_empty() && param_defs.is_empty() {
         RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::Block,
             fields: vec![
                 true_field("implicit-topic"),
@@ -96,6 +98,7 @@ pub(super) fn convert_whenever(
         convert_expr(&whenever_block(params, param_defs, body))?
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementWhenever,
         fields: vec![
             node_field(Some("trigger"), convert_expr(supply)?),
@@ -124,6 +127,7 @@ pub(super) fn supply_record(args: &[Expr]) -> Option<&[Stmt]> {
 // Cost: O(n), n = size of the body.
 pub(super) fn convert_supply(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementPrefixSupply,
         fields: vec![node_field(None, block_node(body)?)],
     })
@@ -142,6 +146,7 @@ pub(super) fn lower_supply(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 /// `done`, as the bare call rakudo parses it to.
 pub(super) fn convert_done() -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::CallNameWithoutParentheses,
         fields: vec![node_field(Some("name"), name_from_identifier("done"))],
     }

@@ -94,6 +94,7 @@ pub(super) fn convert(
         nodes.push(Value::rakuast(Box::new(convert_expr(operand)?)));
     }
     let feed = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Feed,
         fields: vec![super::convert::leaf_field(
             None,
@@ -101,6 +102,7 @@ pub(super) fn convert(
         )],
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyListInfix,
         fields: vec![
             node_field(Some("infix"), feed),

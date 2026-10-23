@@ -165,11 +165,6 @@ impl TopicState {
 pub(crate) struct ForParamRestore {
     pub(crate) name: String,
     pub(crate) saved: Option<Value>,
-    /// Whether `saved` came from this frame's own env tier. A value only the
-    /// parent chain supplied (the caller's `$p`) is not this frame's to write
-    /// back: restoring it as an own entry made it look like a write of this
-    /// frame, and the frame merge carried it into the caller (#14671).
-    pub(crate) saved_in_overlay: bool,
     /// `Some` when the loop param shares a compile-time local slot with an
     /// enclosing binding of the same bare name (`my \x = 10; for ... -> \x
     /// { }`), so the restore must write the saved value back through that slot
@@ -180,7 +175,7 @@ pub(crate) struct ForParamRestore {
     /// the body: the alias's prior binding, restored with the parameter's.
     /// Left bound, it replaced a captured outer `$b` for the rest of the
     /// enclosing closure, and a frame merge carried it into the caller (#13377).
-    pub(crate) alias: Option<(String, Option<Value>, bool)>,
+    pub(crate) alias: Option<(String, Option<Value>)>,
 }
 
 /// The bare alias a placeholder loop parameter binds next to itself (`^b` →

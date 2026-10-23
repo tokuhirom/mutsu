@@ -24,6 +24,7 @@ pub(super) fn convert(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
     let mut traits = Vec::with_capacity(phasers.len());
     for (kind, body) in phasers {
         traits.push(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TraitWill,
             fields: vec![
                 leaf_field(

@@ -28,15 +28,18 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, R
     let symbol = symbol.as_str()?.to_string();
     Some((|| {
         let prefix = RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::Prefix,
             fields: vec![leaf_field(None, Value::str(symbol))],
         };
         Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyPrefix,
             fields: vec![
                 node_field(
                     Some("prefix"),
                     RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::MetaPrefixHyper,
                         fields: vec![node_field(None, prefix)],
                     },

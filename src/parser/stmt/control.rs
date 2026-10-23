@@ -428,7 +428,7 @@ pub(crate) use for_params::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
 mod given_when;
 mod labeled_loop;
 mod loop_repeat;
-mod parsed_block;
+pub(crate) mod parsed_block;
 pub(crate) use parsed_block::{finish, parsed_block};
 mod pointy_param;
 mod react;

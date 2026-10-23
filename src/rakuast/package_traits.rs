@@ -63,7 +63,11 @@ pub(super) fn construct(name: &str, args: &[Value]) -> Option<Result<Value, Runt
             name: Some("body"),
             value: RakuAstFieldValue::Node(body),
         });
-        Ok(Value::rakuast(Box::new(RakuAstNode { class, fields })))
+        Ok(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
+            class,
+            fields,
+        })))
     })())
 }
 

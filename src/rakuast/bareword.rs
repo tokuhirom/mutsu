@@ -489,6 +489,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
     // `self` -> `Term::Self`, a node with no fields.
     if name == "self" {
         return Some(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TermSelf,
             fields: Vec::new(),
         });
@@ -585,6 +586,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
     match core_term_names::kind(name) {
         Some(core_term_names::TermKind::Enum) => {
             return Some(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::TermEnum,
                 fields: vec![leaf_field(None, Value::str(name.to_string()))],
             });
@@ -599,18 +601,21 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
         && !crate::qualified::is_qualified_str(constant)
     {
         return Some(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::NqpConst,
             fields: vec![leaf_field(None, Value::str(constant.to_string()))],
         });
     }
     if let Some(op) = super::convert::nqp_op(name) {
         return Some(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::Nqp,
             fields: vec![leaf_field(None, Value::str(op.to_string()))],
         });
     }
     if CORE_BARE_CALLS.contains(&name) {
         return Some(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::CallNameWithoutParentheses,
             fields: vec![node_field(Some("name"), name_from_identifier(name))],
         });
@@ -623,6 +628,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
 /// one (`M::foo`).
 fn call_name(name: &str) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: if crate::qualified::is_qualified_str(name) {
             RakuAstClass::CallName
         } else {
@@ -634,6 +640,7 @@ fn call_name(name: &str) -> RakuAstNode {
 
 fn term_name(name: &str) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TermName,
         fields: vec![node_field(None, name_from_identifier(name))],
     }
@@ -642,6 +649,7 @@ fn term_name(name: &str) -> RakuAstNode {
 /// A bare simple type `Int` -> `Type::Simple(Name.from-identifier("Int"))`.
 pub(super) fn simple_type_node(t: &str) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TypeSimple,
         fields: vec![node_field(None, name_from_identifier(t))],
     }

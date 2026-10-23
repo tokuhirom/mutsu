@@ -99,35 +99,12 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         // For `@`/`%` attributes the constraint applies to the elements, not to
         // the container being stored; those checks live at the call sites.
-        if attr_sigil != '$' {
+        if attr_sigil != '$' || value.is_nil() {
             return Ok(value);
         }
         let Some(type_constraint) = self.get_attr_type_constraint(class_name, attr) else {
-            if value.is_nil() {
-                return Ok(value);
-            }
             return self.check_attr_store_where(class_name, attr, value);
         };
-        // The declared `:D` / `:U` smiley is part of the constraint a store
-        // enforces. `Nil` resets the attribute, which a `:D` one cannot hold.
-        let type_constraint = self.attribute_reported_constraint(class_name, attr, &type_constraint);
-        if value.is_nil() {
-            // `is default(...)` is what `Nil` resets to; only without one is the
-            // reset to the (undefined) type object refused.
-            if self.is_definite_constraint(&type_constraint)
-                && self
-                    .class_attribute_default_with_role_fallback(class_name, attr)
-                    .is_none()
-            {
-                let nominal = self.nominal_type_object_name_for_constraint(&type_constraint);
-                return Err(crate::runtime::utils::definite_type_check_assignment_error(
-                    &format!("$!{}", attr),
-                    &type_constraint,
-                    &Value::package(Symbol::intern(&nominal)),
-                ));
-            }
-            return Ok(value);
-        }
         if self.type_matches_value(&type_constraint, &value)
             || self.is_container_subclass(&type_constraint)
         {

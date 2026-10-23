@@ -7,7 +7,7 @@ use crate::value::Value;
 /// call-binding path actually look at for this test. Mirrors
 /// `parser::stmt::sub_param::helpers::make_param`.
 fn scalar_param(name: &str) -> crate::ast::ParamDef {
-    crate::ast::ParamDef { trait_meta: Default::default(),
+    crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
         type_capture: None,
         name: name.to_string(),
         default: None,

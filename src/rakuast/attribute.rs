@@ -75,6 +75,7 @@ fn trait_is(name: &str, argument: Option<RakuAstNode>) -> Value {
         fields.push(node_field(Some("argument"), argument));
     }
     Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TraitIs,
         fields,
     }))
@@ -84,6 +85,7 @@ fn trait_is(name: &str, argument: Option<RakuAstNode>) -> Value {
 fn trait_is_name_or_type(name: &str) -> Value {
     if super::decl_traits::is_container_type(name) {
         return Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TraitIs,
             fields: vec![node_field(
                 Some("type"),
@@ -141,6 +143,7 @@ impl AttributeTraits {
                         .as_deref()
                         .ok_or_else(|| unsupported("attribute `is TYPE` without a type"))?;
                     Value::rakuast(Box::new(RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::TraitIs,
                         fields: vec![node_field(
                             Some("type"),
@@ -158,6 +161,7 @@ impl AttributeTraits {
                             Some(argument) => trait_is(name, Some(trait_argument(argument)?)),
                         },
                         "does" => Value::rakuast(Box::new(RakuAstNode {
+                            origin: Default::default(),
                             class: RakuAstClass::TraitDoes,
                             fields: vec![node_field(None, super::bareword::simple_type_node(name))],
                         })),
@@ -169,6 +173,7 @@ impl AttributeTraits {
                                 is_raw: false,
                                 ..
                             }) => Value::rakuast(Box::new(RakuAstNode {
+                                origin: Default::default(),
                                 class: RakuAstClass::TraitWill,
                                 fields: vec![
                                     super::convert::leaf_field(
@@ -191,6 +196,7 @@ impl AttributeTraits {
                         .next()
                         .ok_or_else(|| unsupported("attribute `handles` spelling not kept"))?;
                     Value::rakuast(Box::new(RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::TraitHandles,
                         fields: vec![node_field(None, convert_handles_term(term)?)],
                     }))

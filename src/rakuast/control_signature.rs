@@ -90,7 +90,11 @@ pub(super) fn construct(
                 });
             }
         }
-        Ok(Value::rakuast(Box::new(RakuAstNode { class, fields })))
+        Ok(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
+            class,
+            fields,
+        })))
     })())
 }
 
@@ -129,6 +133,7 @@ pub(super) fn convert(form: &SourceForm) -> Result<RakuAstNode, RuntimeError> {
         node_field(Some("body"), pointy_block(param_defs, body, None)?),
     ]);
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: match kind {
             ControlPointyKind::While => RakuAstClass::StatementLoopWhile,
             ControlPointyKind::Until => RakuAstClass::StatementLoopUntil,

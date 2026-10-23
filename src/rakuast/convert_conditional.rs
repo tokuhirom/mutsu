@@ -12,6 +12,7 @@ pub(super) fn declaration_modifier_node(
     statement.fields.push(node_field(
         Some("condition-modifier"),
         RakuAstNode {
+            origin: Default::default(),
             class: match kind {
                 DeclarationModifier::If => RakuAstClass::StatementModifierIf,
                 DeclarationModifier::Unless => RakuAstClass::StatementModifierUnless,
@@ -60,6 +61,7 @@ pub(super) fn with_block_node(
                 return Err(unsupported("`without` with an else branch"));
             }
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::StatementWithout,
                 fields: vec![condition, node_field(Some("body"), block)],
             })
@@ -68,6 +70,7 @@ pub(super) fn with_block_node(
             let mut fields = vec![condition, node_field(Some("then"), block)];
             fields.extend(conditional_chain_fields(else_branch)?);
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::StatementWith,
                 fields,
             })
@@ -105,6 +108,7 @@ pub(super) fn orwith_node(cond: &Expr, then_branch: &[Stmt]) -> Result<RakuAstNo
         None => with_pointy_block(then_branch)?,
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementOrwith,
         fields: vec![
             node_field(
@@ -240,6 +244,7 @@ pub(super) fn elsif_node(
     binding_var: &Option<String>,
 ) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementElsif,
         fields: vec![
             node_field(Some("condition"), convert_expr(cond)?),

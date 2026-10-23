@@ -19,6 +19,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) fn words_value(text: &str) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::QuotedString,
         fields: vec![
             RakuAstField {
@@ -31,6 +32,7 @@ pub(super) fn words_value(text: &str) -> RakuAstNode {
             RakuAstField {
                 name: Some("segments"),
                 value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::StrLiteral,
                     fields: vec![leaf_field(None, Value::str(text.to_string()))],
                 }))]),
@@ -70,6 +72,7 @@ pub(super) fn apply(node: &RakuAstNode, header: &Header) -> Result<RakuAstNode, 
                 value => node_field(Some("value"), super::convert::convert_expr(value)?),
             };
             pairs.push(Value::rakuast(Box::new(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ColonPairValue,
                 fields: vec![leaf_field(Some("key"), Value::str(key.clone())), value],
             })));

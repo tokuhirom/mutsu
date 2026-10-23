@@ -404,34 +404,6 @@ impl Interpreter {
         }
     }
 
-    /// The `of`-type constraint of the container the scalar attribute `name`
-    /// of the current `self` is bound to (`$!val := $container`, or a clone of
-    /// an attribute's `auto_viv_container`): a store through the attribute
-    /// writes that container, so it enforces the container's own type, not the
-    /// attribute's declared one (`has Mu $!val`).
-    // Cost: O(m) as `with_self_attr`, plus one attribute probe.
-    pub(crate) fn self_attr_bound_cell_constraint(&self, name: &str) -> Option<String> {
-        if name.starts_with(['@', '%']) {
-            return None;
-        }
-        let (bare, is_private) = Self::attr_twigil_base(name)?;
-        let self_val = self.get_env_self()?;
-        self.with_self_attr(
-            &self_val,
-            None,
-            crate::symbol::Symbol::intern(bare),
-            is_private,
-            '$',
-            |_, map, key| match map.get(key.as_str()).map(Value::view) {
-                Some(ValueView::ContainerRef(cell)) => {
-                    crate::value::lookup_container_constraint(&cell)
-                }
-                _ => None,
-            },
-        )
-        .flatten()
-    }
-
     /// Resolve the attribute `(bare, is_private, sigil)` against `self_val`'s
     /// live cells for the running method -- a role method on a Mixin looks in
     /// the Mixin's role cell first, then everything falls through to the

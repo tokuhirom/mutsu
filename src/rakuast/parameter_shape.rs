@@ -22,6 +22,7 @@ pub(super) fn convert(pd: &ParamDef) -> Result<Option<RakuAstNode>, RuntimeError
             operands.push(Value::rakuast(Box::new(convert_expr(dim)?)));
         }
         RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyListInfix,
             fields: vec![
                 node_field(Some("infix"), plain_infix(",")),
@@ -35,6 +36,7 @@ pub(super) fn convert(pd: &ParamDef) -> Result<Option<RakuAstNode>, RuntimeError
     let list = apply_method(dims, "list", None);
     let topic_shape = apply_method(
         RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::VarLexical,
             fields: vec![leaf_field(Some("name"), Value::str("$_".to_string()))],
         },
@@ -45,14 +47,17 @@ pub(super) fn convert(pd: &ParamDef) -> Result<Option<RakuAstNode>, RuntimeError
     let predicate = apply_method(accepts, "Bool", None);
     let statement = statement_expression(predicate);
     let statements = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementList,
         fields: vec![node_field(None, statement)],
     };
     let body = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Blockoid,
         fields: vec![node_field(None, statements)],
     };
     Ok(Some(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Block,
         fields: vec![node_field(Some("body"), body)],
     }))
@@ -64,18 +69,21 @@ fn apply_method(operand: RakuAstNode, name: &str, arg: Option<RakuAstNode>) -> R
         args.push(node_field(None, arg));
     }
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyPostfix,
         fields: vec![
             node_field(Some("operand"), operand),
             node_field(
                 Some("postfix"),
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::CallMethod,
                     fields: vec![
                         node_field(Some("name"), name_from_identifier(name)),
                         node_field(
                             Some("args"),
                             RakuAstNode {
+                                origin: Default::default(),
                                 class: RakuAstClass::ArgList,
                                 fields: args,
                             },

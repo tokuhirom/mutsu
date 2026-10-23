@@ -15,6 +15,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 fn prefix_op(operator: &str) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Prefix,
         fields: vec![leaf_field(None, Value::str(operator.to_string()))],
     }
@@ -22,6 +23,7 @@ fn prefix_op(operator: &str) -> RakuAstNode {
 
 fn postfix_op(operator: &str) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Postfix,
         fields: vec![leaf_field(
             Some("operator"),
@@ -37,6 +39,7 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, R
     let atomic = atomic_op::recognize(name, args)?;
     Some((|| match atomic {
         Atomic::Fetch(var) => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyPrefix,
             fields: vec![
                 node_field(Some("prefix"), prefix_op("⚛")),
@@ -47,6 +50,7 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, R
             ],
         }),
         Atomic::Store(var, value) => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
                 node_field(Some("left"), convert_expr(&temporize::variable_expr(var))?),
@@ -59,6 +63,7 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, R
             operator,
             operand,
         } => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyPrefix,
             fields: vec![
                 node_field(Some("prefix"), prefix_op(operator)),
@@ -70,6 +75,7 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, R
             operator,
             operand,
         } => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyPostfix,
             fields: vec![
                 node_field(Some("operand"), postfix_operand(operand)?),
@@ -81,6 +87,7 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, R
             left,
             right,
         } => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
                 node_field(Some("left"), convert_expr(left)?),

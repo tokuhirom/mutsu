@@ -193,6 +193,7 @@ pub(super) fn convert(atom: &CharClassAtom) -> RakuAstNode {
         });
     }
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::RegexCharClass(kind),
         fields,
     }
@@ -286,6 +287,7 @@ pub(super) fn construct(
         ))));
     }
     Some(Ok(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::RegexCharClass(kind),
         fields,
     }))))

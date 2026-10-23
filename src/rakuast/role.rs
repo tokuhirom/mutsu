@@ -91,6 +91,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
         let name = name.resolve();
         if name == "__mutsu_role_hidden__" {
             traits.push(Value::rakuast(Box::new(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::TraitIs,
                 fields: vec![node_field(
                     Some("name"),
@@ -110,6 +111,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
                     return Err(unsupported("role hides marker does not match its parent"));
                 }
                 traits.push(Value::rakuast(Box::new(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::TraitHides,
                     fields: vec![node_field(None, build_type_node(&name)?)],
                 })));
@@ -124,11 +126,13 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
         };
         traits.push(Value::rakuast(Box::new(if *from_is {
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::TraitIs,
                 fields: vec![node_field(Some("type"), type_node)],
             }
         } else {
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::TraitDoes,
                 fields: vec![node_field(None, type_node)],
             }
@@ -181,6 +185,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     fields.push(node_field(
         Some("body"),
         RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RoleBody,
             fields: vec![node_field(Some("body"), blockoid(&body)?)],
         },
@@ -192,6 +197,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
         ));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Role,
         fields,
     })
@@ -325,6 +331,7 @@ pub(super) fn also_statement(
     args: Option<&[crate::ast::Expr]>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let does = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TraitDoes,
         fields: vec![node_field(
             None,
@@ -336,6 +343,7 @@ pub(super) fn also_statement(
         )],
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementAlso,
         fields: vec![RakuAstField {
             name: Some("traits"),
@@ -466,6 +474,7 @@ pub(super) fn with_leading_statements(
 // Cost: O(k), k = length of the parent's spelling.
 pub(super) fn also_is_statement(trait_node: Value) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementAlso,
         fields: vec![RakuAstField {
             name: Some("traits"),

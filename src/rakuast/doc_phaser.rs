@@ -17,6 +17,7 @@ const SOURCE_DOC_PHASER: &str = "source-doc-phaser";
 pub(super) fn convert(inner: &Stmt) -> Result<RakuAstNode, RuntimeError> {
     let original = convert_stmt(inner)?.ok_or_else(|| unsupported("DOC phaser body"))?;
     let nil = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TermName,
         fields: vec![node_field(None, name_from_identifier("Nil"))],
     };

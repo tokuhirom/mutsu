@@ -2843,20 +2843,6 @@ impl Env {
         self.remove_sym(Symbol::intern(key))
     }
 
-    /// Drop this tier's own entry for `key` so that whatever the parent chain
-    /// or base tier holds shows through again. Unlike [`Self::remove_sym`]
-    /// there is no tombstone: the name stays visible, it just is no longer
-    /// shadowed by (and no longer a write of) this frame.
-    // Cost: O(1) expected.
-    pub fn unshadow_sym(&mut self, key: Symbol) {
-        if !self.inner.contains_key(&key) {
-            return;
-        }
-        self.note_frame_write(key);
-        self.cow_mut().remove(&key);
-        self.untombstone(key);
-    }
-
     pub fn remove_sym(&mut self, key: Symbol) -> Option<Value> {
         if key == file_key() {
             // Flat: the key is gone. Scoped: the tombstone below stops the

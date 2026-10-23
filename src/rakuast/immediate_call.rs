@@ -25,6 +25,7 @@ pub(super) fn convert(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> 
             .ok_or_else(|| super::convert::unsupported("immediately called sub"))?;
         // raku omits `args` for an argument-less call, as for `$f()`.
         let mut call = RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::CallTerm,
             fields: Vec::new(),
         };
@@ -32,6 +33,7 @@ pub(super) fn convert(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> 
             call.fields.push(node_field(Some("args"), arg_list(args)?));
         }
         Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyPostfix,
             fields: vec![
                 node_field(Some("operand"), routine),

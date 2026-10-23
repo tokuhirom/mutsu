@@ -29,6 +29,7 @@ impl Compiler {
         let esc = self.escaping_position;
         let cc_idx = self.add_closure_code_baked(compiled, esc);
         let idx = self.code.add_stmt(Stmt::SubDecl {
+            spans: Default::default(),
             name: Symbol::intern(""),
             name_expr: None,
             params,

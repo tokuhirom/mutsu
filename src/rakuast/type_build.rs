@@ -64,6 +64,7 @@ pub(super) fn build_type_node_at(t: &str, depth: usize) -> Result<RakuAstNode, R
     }
     if let Some(base) = t.strip_suffix(":_") {
         return Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TypeAnyDefinedness,
             fields: vec![node_field(
                 Some("base-type"),
@@ -73,6 +74,7 @@ pub(super) fn build_type_node_at(t: &str, depth: usize) -> Result<RakuAstNode, R
     }
     if let Some(base) = t.strip_suffix(":D").or_else(|| t.strip_suffix(":U")) {
         return Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TypeDefinedness,
             fields: vec![
                 node_field(Some("base-type"), build_type_node_at(base, depth + 1)?),
@@ -99,6 +101,7 @@ pub(super) fn build_type_node_at(t: &str, depth: usize) -> Result<RakuAstNode, R
             ));
         }
         return Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TypeCoercion,
             fields,
         });

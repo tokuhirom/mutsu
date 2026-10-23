@@ -125,6 +125,7 @@ pub(super) fn parameterized_type_node_at(
                     return Err(unsupported("ambiguous type capture argument spelling"));
                 }
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::TypeSimple,
                     fields: vec![node_field(
                         None,
@@ -161,12 +162,14 @@ pub(super) fn parameterized_type_node_at(
         node_fields.push(node_field(
             Some("args"),
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ArgList,
                 fields,
             },
         ));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TypeParameterized,
         fields: node_fields,
     })

@@ -554,6 +554,7 @@ impl CompiledMethodDecl {
             custom_traits,
             is_export,
             export_tags,
+            ..
         } = stmt
         else {
             unreachable!("CompiledMethodDecl::from_stmt called on a non-MethodDecl statement");
@@ -5396,6 +5397,7 @@ pub(crate) fn body_uses_return_rw(stmts: &[Stmt]) -> bool {
 
 fn implicit_legacy_param(name: &str) -> ParamDef {
     ParamDef {
+        spans: Default::default(),
         trait_meta: Default::default(),
         type_capture: None,
         name: name.to_string(),

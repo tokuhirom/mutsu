@@ -29,13 +29,18 @@ fn positional(value: Value) -> RakuAstField {
 }
 
 fn node(class: RakuAstClass, fields: Vec<RakuAstField>) -> Value {
-    Value::rakuast(Box::new(RakuAstNode { class, fields }))
+    Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    }))
 }
 
 /// The `Assertion::CharClass` node for a tree assertion.
 // Cost: O(n), n = total number of entries.
 pub(super) fn convert(elements: &[CharClassElement]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::RegexAssertionCharClass,
         fields: elements
             .iter()
@@ -102,6 +107,7 @@ fn convert_predicate(predicate: &PropertyPredicate) -> Result<Value, RuntimeErro
                 return Err(super::convert::unsupported("property predicate"));
             }
             let semilist = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::SemiList,
                 fields: vec![positional(Value::rakuast(Box::new(
                     super::convert::statement_expression(value),

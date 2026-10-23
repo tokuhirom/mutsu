@@ -28,6 +28,7 @@ pub(super) fn bare_statement_node(inner: &Expr) -> Result<RakuAstNode, RuntimeEr
         let statement = super::convert::convert_stmt(stmt)?
             .ok_or_else(|| super::convert::unsupported("an empty `do` statement"))?;
         return Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::StatementPrefixDo,
             fields: vec![super::convert::node_field(None, statement)],
         });

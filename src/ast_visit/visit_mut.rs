@@ -78,6 +78,7 @@ pub(crate) fn walk_param_mut<V: VisitMut + ?Sized>(v: &mut V, p: &mut ParamDef) 
         shape_constraints,
         block_param: _,
         code,
+        ..
     } = p;
     if let Some(e) = default {
         v.visit_expr_mut(e);
