@@ -156,6 +156,7 @@ pub(crate) const BUILTIN_INHERITABLE_TYPES: &[&str] = &[
     "StrDistance",
     "Submethod",
     "Uni",
+    "ValueObjAt",
     // The rest of the metamodel HOW family. `Metamodel::ClassHOW`,
     // `::GrammarHOW` and `::ParametricRoleHOW` are in `BUILTIN_PARENT_TYPES`
     // above because a subclass of those three also needs the metamodel
