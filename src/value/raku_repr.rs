@@ -258,7 +258,8 @@ fn raku_raw_repr(v: &Value) -> Option<String> {
 pub(crate) fn needs_raku_dispatch(v: &Value) -> bool {
     match v.view() {
         ValueView::Instance { class_name, .. } => {
-            !(v.is_match_instance() || crate::value::AttrMap::is_objat_class_name(class_name.as_str()))
+            !(v.is_match_instance()
+                || crate::value::AttrMap::is_objat_class_name(class_name.as_str()))
         }
         ValueView::CustomType(_) | ValueView::CustomTypeInstance(_) => true,
         // A Code leaf needs dispatch for the same reason it does on the gist
