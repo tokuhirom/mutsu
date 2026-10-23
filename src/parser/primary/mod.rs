@@ -372,6 +372,20 @@ pub(in crate::parser) fn current_line_number(input: &str) -> i64 {
 /// outside the source (text only a leaked buffer holds).
 // Cost: O(h + w), h = leaked heredoc regions, w = trailing whitespace, `;` and comments.
 pub(in crate::parser) fn statement_span(start: &str, end: &str) -> crate::ast::SrcSpan {
+    trimmed_span(start, end, true)
+}
+
+/// The span a term parsed from `start` up to `end` occupies: as
+/// [`statement_span`], but a trailing `;` is the term's own (`q;a;`).
+// Cost: O(h + w), h = leaked heredoc regions, w = trailing whitespace and comments.
+pub(in crate::parser) fn term_span(start: &str, end: &str) -> crate::ast::SrcSpan {
+    trimmed_span(start, end, false)
+}
+
+/// `start..end` in the original source without the whitespace (and, with
+/// `semicolons`, the `;`) and the recorded comment runs at its end.
+// Cost: O(h + w), h = leaked heredoc regions, w = text trimmed.
+fn trimmed_span(start: &str, end: &str, semicolons: bool) -> crate::ast::SrcSpan {
     use crate::ast::SrcSpan;
     let (Some(from), Some(to)) = (source_offset(start), source_offset(end)) else {
         return SrcSpan::NONE;
@@ -391,7 +405,7 @@ pub(in crate::parser) fn statement_span(start: &str, end: &str) -> crate::ast::S
             ))
         };
         let text = full.get(from..to)?;
-        // Step back over whitespace, `;` and the comment runs `ws` recorded.
+        // Step back over whitespace, `;` (when asked) and the comment runs `ws` recorded.
         let mut len = text.len();
         loop {
             if let Some(start) = trivia_runs::start_of_run_ending_at(origin.ptr + from + len)
@@ -400,7 +414,8 @@ pub(in crate::parser) fn statement_span(start: &str, end: &str) -> crate::ast::S
                 len = start - origin.ptr - from;
                 continue;
             }
-            let trimmed = text[..len].trim_end_matches(|c: char| c.is_whitespace() || c == ';');
+            let trimmed = text[..len]
+                .trim_end_matches(|c: char| c.is_whitespace() || (semicolons && c == ';'));
             if trimmed.len() == len {
                 break;
             }
@@ -643,7 +658,7 @@ pub(in crate::parser) use regex::parse_call_arg_list;
 // `expr`.
 pub(in crate::parser) fn note_origin(input: &str, rest: &str, expr: &Expr) {
     if crate::ast::spelled::keeping() {
-        crate::parser::term_origins::note(expr, source_span(input, rest));
+        crate::parser::term_origins::note(expr, term_span(input, rest));
     }
 }
 

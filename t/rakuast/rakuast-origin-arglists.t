@@ -7,7 +7,7 @@ use Test;
 # an empty `Signature` right after its arrow (ADR-10723 Stage 2). Ranges
 # measured on rakudo 2026.09.
 
-plan 14;
+plan 15;
 
 # Each visited node of `$src` whose class is in `@classes`, with its range.
 sub nodes(Str $src, *@classes) {
@@ -56,3 +56,6 @@ is nodes('class A { method m { self!p }; method !p { } }', 'Call::PrivateMethod'
     'a private method call';
 is nodes('my $p = -> { 1 }; for 1 -> { }', 'Signature'), 'Signature 10..10, Signature 26..26',
     'an empty pointy block has an empty signature after its arrow';
+is nodes('sub r($x) { $x }; r( my @a = 1, 2 );', 'ArgList', 'VarDeclaration::Simple'),
+    'VarDeclaration::Simple 6..8, ArgList 21..33, VarDeclaration::Simple 21..33',
+    'a declaration argument stops at its last token';
