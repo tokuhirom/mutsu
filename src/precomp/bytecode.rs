@@ -54,6 +54,8 @@ pub(crate) struct CompileContext {
 #[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct CompileLatches {
     pub(crate) reflective_name_access: bool,
+    /// The non-`EVAL` part of `reflective_name_access` (#14337).
+    pub(crate) non_eval_reflective: bool,
     pub(crate) dispatcher: bool,
 }
 
