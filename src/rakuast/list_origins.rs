@@ -154,7 +154,7 @@ pub(super) fn inside(
 pub(super) fn semilist(list: &mut RakuAstNode, at: (usize, usize)) {
     if !matches!(
         list.class,
-        RakuAstClass::SemiList | RakuAstClass::StatementSequence
+        RakuAstClass::SemiList | RakuAstClass::StatementSequence | RakuAstClass::StatementList
     ) {
         return;
     }

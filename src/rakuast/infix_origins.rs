@@ -30,6 +30,7 @@ pub(super) fn derive(node: &mut RakuAstNode) {
             super::list_origins::postcircumfix(node);
             super::operator_origins::derive(node);
         }
+        RakuAstClass::QuotedString => super::string_origins::interpolated(node),
         _ => super::operator_origins::derive(node),
     }
 }
