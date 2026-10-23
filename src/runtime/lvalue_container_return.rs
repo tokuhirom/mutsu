@@ -40,6 +40,12 @@ impl Interpreter {
                 Some(self.store_proxy_lvalue(container, value).map(|_| container.clone()))
             }
             ValueView::ContainerRef(cell) => {
+                // An attribute cell around a bound Proxy (`$!a := Proxy.new(...)`):
+                // the Proxy is the container, so assigning runs its STORE.
+                let held = cell.lock().unwrap().clone();
+                if held.is_proxy_value() {
+                    return Some(self.store_proxy_lvalue(&held, value).map(|_| held));
+                }
                 // A promoted typed element carries its constraint on the cell
                 // (`array_slot_ref` / `hash_slot_ref`), so `tel() = "nope"` on
                 // a `my Int @typed` element is rejected here, as `@typed[0] =

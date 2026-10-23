@@ -1021,6 +1021,32 @@ impl Interpreter {
         // shares, so `f(42) = 9` reported success and dropped the write.
         // Handing the plain value back instead lets `assign_through_rw_result`
         // refuse with `X::Assignment::RO`, the way Rakudo does.
+        // A variable bound to a `Proxy` (`my $p := Proxy.new(...)`) IS that
+        // container; boxing it would hide its STORE from the caller.
+        // GetGlobal already FETCHed it for a captured (outer) variable, so look
+        // the binding up by name too.
+        let slot_hint = val.varref_slot();
+        let bound_proxy = Some(inner.clone())
+            .filter(Value::is_proxy_value)
+            .or_else(|| {
+                slot_hint
+                    .and_then(|hint| self.locals.get(hint as usize))
+                    .filter(|_| {
+                        slot_hint.is_some_and(|hint| {
+                            code.locals.get(hint as usize) == Some(&source_name)
+                        })
+                    })
+                    .filter(|slot_val| slot_val.is_proxy_value())
+                    .cloned()
+            })
+            .or_else(|| {
+                self.get_env_with_main_alias(&source_name)
+                    .filter(Value::is_proxy_value)
+            });
+        if let Some(proxy) = bound_proxy {
+            self.stack.push(proxy);
+            return;
+        }
         if self.name_is_readonly_binding(&source_name) {
             self.stack.push(inner.into_deref());
             return;
@@ -1043,7 +1069,6 @@ impl Interpreter {
         // parameter bound to a `$` argument holding a Hash (`f($h)`, #11077)
         // carries the caller's Scalar there, and `return-rw $p` must hand out
         // that container, not the aggregate inside it.
-        let slot_hint = val.varref_slot();
         if let Some(hint) = slot_hint
             && let Some(slot_val) = self.locals.get(hint as usize)
             && slot_val.is_container_ref()

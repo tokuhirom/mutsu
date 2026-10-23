@@ -132,13 +132,19 @@ impl Interpreter {
     ) -> Option<Value> {
         let attr = attr.to_string();
         let base = self.frame_self_value(code)?;
-        let ValueView::Instance {
-            attributes,
-            class_name,
-            ..
-        } = base.view()
-        else {
-            return None;
+        // A `Proxy` subclass instance keeps its `$!attr` storage in the same
+        // shared cell an ordinary instance carries.
+        let (attributes, class_name) = match base.view() {
+            ValueView::Instance {
+                attributes,
+                class_name,
+                ..
+            } => (attributes.clone(), class_name),
+            ValueView::Proxy {
+                subclass: Some((class_name, attributes)),
+                ..
+            } => (attributes.clone(), *class_name),
+            _ => return None,
         };
         // Public `has $.v` stores under `v`; private-only `has $!v` under `v!`.
         let priv_key = format!("{}!", attr);
@@ -160,7 +166,7 @@ impl Interpreter {
             return None;
         }
         let cn = class_name.resolve();
-        let cell_val = attributes.promote_attr_to_container(key.as_str());
+        let cell_val = attributes.promote_attr_to_rw_result(key.as_str());
         // A typed attribute's constraint travels with the cell, so a write
         // through the returned container type-checks exactly like `$obj.v = x`.
         if let ValueView::ContainerRef(cell) = cell_val.view()
