@@ -187,6 +187,22 @@ impl Expr {
     }
 }
 
+impl Expr {
+    /// The term itself, without the origin a `.AST` parse attaches around
+    /// it once the unit is parsed (ADR-10723 Stage 2, `parser::term_origins`).
+    // Cost: O(d), d = nested origin wrappers.
+    pub(crate) fn unpositioned_mut(&mut self) -> &mut Expr {
+        if !matches!(self, Expr::Spelled(spelled) if matches!(spelled.spelling, Spelling::Origin(_)))
+        {
+            return self;
+        }
+        match self {
+            Expr::Spelled(spelled) => spelled.expr.unpositioned_mut(),
+            _ => unreachable!("checked above"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,21 +261,5 @@ mod tests {
             Expr::spelled(words(), || unreachable!()),
             Expr::ArrayLiteral(_)
         ));
-    }
-}
-
-impl Expr {
-    /// The term itself, without the origin a `.AST` parse attaches around
-    /// it once the unit is parsed (ADR-10723 Stage 2, `parser::term_origins`).
-    // Cost: O(d), d = nested origin wrappers.
-    pub(crate) fn unpositioned_mut(&mut self) -> &mut Expr {
-        if !matches!(self, Expr::Spelled(spelled) if matches!(spelled.spelling, Spelling::Origin(_)))
-        {
-            return self;
-        }
-        match self {
-            Expr::Spelled(spelled) => spelled.expr.unpositioned_mut(),
-            _ => unreachable!("checked above"),
-        }
     }
 }
