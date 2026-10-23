@@ -76,6 +76,28 @@ impl Interpreter {
         None
     }
 
+    /// `assuming` of a regex value: a `Sub` named `assumed.` that calls the
+    /// regex with the assumed arguments (it has no routine name to
+    /// re-dispatch by, so the regex rides as the callee marker).
+    // Cost: O(a), a = assumed arguments.
+    pub(crate) fn regex_assuming(
+        &mut self,
+        target: &Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let wrapper = self
+            .routine_handle_assuming(target, "assumed.", "GLOBAL", "assuming", args, true)
+            .expect("`assuming` always builds a wrapper")?;
+        let ValueView::Sub(data) = wrapper.view() else {
+            unreachable!("assuming wrapper must be a Sub");
+        };
+        let mut data = (**data).clone();
+        data.env.remove("__mutsu_routine_name");
+        data.env
+            .insert_sym(crate::symbol::wk::assuming_callee_marker(), target.clone());
+        Ok(Value::sub_value(crate::gc::Gc::new(data)))
+    }
+
     /// `assuming` of a `Sub`: a primed copy, or a `Failure` when the assumed
     /// arguments cannot bind.
     // Cost: O(a + p), a = assumed arguments, p = parameters.
