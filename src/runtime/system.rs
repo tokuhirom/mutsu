@@ -78,6 +78,7 @@ impl Interpreter {
         self.check_eval_undeclared_trusts(stmts)?;
         self.check_eval_undeclared_type_args(stmts)?;
         self.check_eval_undeclared_vars(stmts)?;
+        self.check_eval_outer_binds(stmts)?;
         self.check_eval_undeclared_names(stmts)?;
         self.check_eval_undeclared_routines(stmts)?;
         Self::check_eval_routine_magicals(stmts)?;
