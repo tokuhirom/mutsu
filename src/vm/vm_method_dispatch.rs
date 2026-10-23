@@ -1640,6 +1640,20 @@ impl Interpreter {
                     // binding for the same-named attribute and written into the
                     // receiver's cell on exit — `Graph.directed-graph()`
                     // corrupting the graph it was cloning from (#9007).
+                    // A scalar `!x` / `.x` slot holding a cell is NOT evidence of a
+                    // `:=` bind: the frame boxes the seeded slot whenever the
+                    // attribute is the target of a mutating call
+                    // (`$!current.pull-one`) or an `is rw` argument, and that
+                    // cell is a copy disconnected from the instance. A real
+                    // `$!x := $y` seats its cell in the instance when it runs
+                    // (`mirror_attr_local_to_cell`), so adopting the slot here
+                    // could only undo a rebind a nested call made meanwhile
+                    // (#14663). Aggregates (`@!x`, `%!x`) share their container
+                    // with the instance, and the bare sigilless form below has
+                    // no mirror, so those keep this recovery.
+                    if matches!(rank, 1 | 2) {
+                        continue;
+                    }
                     if rank == 0
                         && !(code.locals.iter().any(|n| n == bare)
                             && !crate::ast::param_defs_declare_lexical(param_defs, bare)
