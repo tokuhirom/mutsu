@@ -67,17 +67,8 @@ impl Compiler {
         let (then_branch, else_branch) = if is_statement_modifier {
             (then_branch, else_branch)
         } else {
-            let wrap = |branch: &[Stmt]| {
-                super::body_scans::declares_dynamic_local(branch).then(|| {
-                    vec![Stmt::Expr(Expr::DoBlock {
-                        body: branch.to_vec(),
-                        label: None,
-                        origin: crate::ast::DoBlockOrigin::SourceBlock,
-                    })]
-                })
-            };
-            then_block = wrap(then_branch);
-            else_block = wrap(else_branch);
+            then_block = super::body_scans::scope_dynamic_branch(then_branch);
+            else_block = super::body_scans::scope_dynamic_branch(else_branch);
             (
                 then_block.as_deref().unwrap_or(then_branch),
                 else_block.as_deref().unwrap_or(else_branch),

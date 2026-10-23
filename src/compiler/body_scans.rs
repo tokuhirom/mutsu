@@ -318,6 +318,20 @@ pub(super) fn declares_dynamic_local(stmts: &[Stmt]) -> bool {
     scan.found
 }
 
+/// A branch that declares a dynamic `my $*x` of its own, wrapped as a real
+/// `do { ... }` block so the declaration ends with the branch; `None` for a
+/// branch that declares none.
+// Cost: O(n), n = size of the part of `stmts` in the branch's own scope.
+pub(super) fn scope_dynamic_branch(stmts: &[Stmt]) -> Option<Vec<Stmt>> {
+    declares_dynamic_local(stmts).then(|| {
+        vec![Stmt::Expr(Expr::DoBlock {
+            body: stmts.to_vec(),
+            label: None,
+            origin: crate::ast::DoBlockOrigin::SourceBlock,
+        })]
+    })
+}
+
 /// Whether a body declares a lexically scoped type (`my class`, `my package`,
 /// `my role`) in its own scope, ignoring `my` variables.
 // Cost: O(n), n = size of the part of `stmts` in the body's own scope.
