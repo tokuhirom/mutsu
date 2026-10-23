@@ -47,7 +47,7 @@ impl Interpreter {
         {
             return None;
         }
-        if code.mirrors_all_locals()
+        if crate::opcode::reflective_name_access_possible()
             || self.threads.shared_vars_active
             || !self.threads.thread_decl_in_flight.is_empty()
             || !self.lexicals.hoist_pending_cells.is_empty()

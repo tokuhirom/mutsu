@@ -488,7 +488,7 @@ impl Interpreter {
         // readonly frame restores it on return, so the unmark (and its journal
         // replay on every call from inside a caller's `for`) is skipped there
         // (#12526).
-        if cf.code.is_routine && (cf.code.reads_topic || cf.code.mirrors_all_locals()) {
+        if cf.code.is_routine && (cf.code.reads_topic || cf.code.mirrors_all_params()) {
             self.unmark_readonly_topic();
         }
         // Bind params to slots. Also write the param into the overlay when a
@@ -497,7 +497,7 @@ impl Interpreter {
         // handler treats a `Nil` slot as possibly-undeclared and verifies via
         // env.contains_key). The overlay write is born-owned (no caller-env fork)
         // and is dropped on return, so no per-param save/restore is needed.
-        let write_all_params = cf.code.mirrors_all_locals();
+        let write_all_params = cf.code.mirrors_all_params();
         // Type-check the constrained parameters FIRST, against the arguments as
         // they still sit untouched on the stack. Running the checks up front is
         // what lets the bind loop below move each argument out of its stack slot

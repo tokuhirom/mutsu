@@ -27,11 +27,28 @@ use crate::value::{Value, ValueView};
 /// write -- an over-set is conservative, never wrong.
 static REFLECTIVE_NAME_ACCESS_SEEN: AtomicBool = AtomicBool::new(false);
 
+/// The part of [`REFLECTIVE_NAME_ACCESS_SEEN`] that is not an `EVAL`: set by
+/// the ops that can read *another* frame's lexical (`CALLER::`, symbolic
+/// dereference, pseudo-stashes, ...). An `EVAL` resolves names in the scope it
+/// is written in (and its enclosing scopes), so a routine's parameters need the
+/// env write only when this latch is set or the routine's own chunk (or one
+/// nested in it) holds the `EVAL` (#14337). Stores of plain locals keep using
+/// the broader latch: an `EVAL` nested in a closure or routine reads the
+/// enclosing chunks' locals, which no per-chunk flag of theirs records.
+static NON_EVAL_REFLECTIVE_SEEN: AtomicBool = AtomicBool::new(false);
+
 /// True if any compiled code may read a caller frame's lexical by dynamic name.
 /// See [`REFLECTIVE_NAME_ACCESS_SEEN`].
 #[inline]
 pub(crate) fn reflective_name_access_possible() -> bool {
     REFLECTIVE_NAME_ACCESS_SEEN.load(Ordering::Relaxed)
+}
+
+/// True if any compiled code may read another frame's lexical by name (the
+/// non-`EVAL` part of [`reflective_name_access_possible`]).
+#[inline]
+pub(crate) fn non_eval_reflective_possible() -> bool {
+    NON_EVAL_REFLECTIVE_SEEN.load(Ordering::Relaxed)
 }
 
 /// Process-global latch: set once any compiled chunk anywhere in the program
@@ -71,9 +88,12 @@ pub(crate) fn sorted_by_name(set: impl IntoIterator<Item = Symbol>) -> Vec<Symbo
 /// Set both compile-time latches as a compile that set them would have: what a
 /// load served from the compiled-bytecode cache replays (ADR-11756 §2.2).
 // Cost: O(1).
-pub(crate) fn replay_compile_latches(reflective: bool, dispatcher: bool) {
+pub(crate) fn replay_compile_latches(reflective: bool, non_eval_reflective: bool, dispatcher: bool) {
     if reflective {
         REFLECTIVE_NAME_ACCESS_SEEN.store(true, Ordering::Relaxed);
+    }
+    if non_eval_reflective {
+        NON_EVAL_REFLECTIVE_SEEN.store(true, Ordering::Relaxed);
     }
     if dispatcher {
         DISPATCHER_SEEN.store(true, Ordering::Relaxed);
@@ -9808,17 +9828,16 @@ impl CompiledCode {
         )
     }
 
-    /// Whether this chunk's locals must all be mirrored into `env` by name:
-    /// the process-global latch (a reflective op that can reach another
-    /// frame's lexical), or this chunk (or a closure/routine nested in it)
-    /// itself looks one up by a runtime string (`EVAL`, ...). An `EVAL` in an
-    /// unrelated routine -- as in every program that loads `Test` -- reaches
-    /// only its own lexical scope, so it does not make this chunk's
-    /// parameters and stores pay the env write (#14337).
+    /// Whether this routine's parameters must all be mirrored into `env` by
+    /// name: a reflective op that can reach another frame's lexical exists
+    /// somewhere, or this chunk (or a closure nested in it) looks one up by a
+    /// runtime string (`EVAL`, ...). An `EVAL` in an unrelated routine -- as in
+    /// every program that loads `JSON::Fast` -- does not make this routine's
+    /// parameters pay the env write (#14337).
     // Cost: O(1).
     #[inline]
-    pub(crate) fn mirrors_all_locals(&self) -> bool {
-        reflective_name_access_possible() || self.needs_reflective_capture
+    pub(crate) fn mirrors_all_params(&self) -> bool {
+        NON_EVAL_REFLECTIVE_SEEN.load(Ordering::Relaxed) || self.needs_reflective_capture
     }
 
     pub(crate) fn scan_reflective_name_access(&mut self) {
@@ -9901,8 +9920,11 @@ impl CompiledCode {
             own_reflective = true;
             latch_reflective = true;
         }
-        if latch_reflective {
+        if own_reflective {
             REFLECTIVE_NAME_ACCESS_SEEN.store(true, Ordering::Relaxed);
+        }
+        if latch_reflective {
+            NON_EVAL_REFLECTIVE_SEEN.store(true, Ordering::Relaxed);
         }
         // The spellings that name a lexical by string, as opposed to running
         // a stashed body against the live env (see `static_name_lookup`).

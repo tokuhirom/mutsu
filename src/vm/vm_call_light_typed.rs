@@ -184,7 +184,7 @@ impl Interpreter {
         // access anywhere / closure capture via needs_env_sync) or when the
         // value is `Nil` (the GetLocal handler treats a `Nil` slot as
         // possibly-undeclared and verifies via env.contains_key).
-        let write_all_params = cf.code.mirrors_all_locals();
+        let write_all_params = cf.code.mirrors_all_params();
         let mut positional_idx = 0usize;
         let mut bind_err: Option<RuntimeError> = None;
         'bind: for (i, pb) in plan.params.iter().enumerate() {
