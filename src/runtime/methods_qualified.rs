@@ -1154,6 +1154,15 @@ impl Interpreter {
                     result
                 }));
             }
+            // A qualified call naming a builtin metamodel ancestor
+            // (`self.Metamodel::ClassHOW::compose($type)` in a user HOW's
+            // `compose`) on a HOW the program mixed a role into
+            // (`$type.HOW does R`): the native ClassHOW implementation, exactly
+            // as for the unmixed instance. Falling through re-entered the
+            // overriding method.
+            if Self::is_metamodel_class_name(qualifier) && Self::is_classhow_method(actual_method) {
+                return Some(self.dispatch_classhow_method(actual_method, args));
+            }
             // Last resort: qualifier is a native builtin ancestor of the mixin's
             // inner instance (e.g. `self.IO::Path::slurp` where `self` is a
             // run-time mixin over an `is IO::Path` instance). Dispatch to the
