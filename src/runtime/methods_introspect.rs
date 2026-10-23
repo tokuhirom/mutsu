@@ -576,13 +576,6 @@ impl Interpreter {
                 && !self.registry().enum_types.contains_key(&type_name)
                 && !self.registry().subsets.contains_key(&type_name)
                 && !crate::runtime::Interpreter::is_builtin_type(&type_name)
-                // A class whose declaration is running (its traits see it as
-                // `$*PACKAGE`, bound by `bind_trait_package`) is not published yet, but a sibling `P::U` made the
-                // namespace `P` exist: it is still a class, not an implicit package.
-                && !matches!(
-                    self.get_dynamic_var("*PACKAGE").as_ref().map(Value::view),
-                    Ok(ValueView::Package(p)) if p.resolve() == type_name
-                )
                 && self.package_namespace_exists(&type_name)
             {
                 // A package created implicitly rather than declared: `my $foo::bar

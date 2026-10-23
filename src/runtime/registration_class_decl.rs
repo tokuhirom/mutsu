@@ -185,6 +185,12 @@ impl Interpreter {
         // authoritative for accessor resolution (undeclared `.name` -> NotFound).
         crate::runtime::cow_table_mut(&mut self.types.user_declared_classes)
             .insert(name.to_string());
+        // Loading a child module can vivify this namespace before the class
+        // is declared. The class uses its own HOW from here on, including for
+        // the `$*PACKAGE.HOW` its method traits see while the body registers.
+        if self.registry().package_kinds.get(name) == Some(&crate::ast::PackageKind::Package) {
+            self.registry_mut().package_kinds.remove(name);
+        }
         let ClassDeclModifiers {
             class_is_rw,
             is_hidden,
@@ -505,11 +511,6 @@ impl Interpreter {
         crate::runtime::cow_table_mut(&mut self.module.class_declaring_units)
             .insert(name.to_string(), declaring_unit);
         self.install_class_exporthow(name, &final_parents)?;
-        // Loading a child module can vivify this namespace before the class
-        // is published. The completed class uses its own HOW.
-        if self.registry().package_kinds.get(name) == Some(&crate::ast::PackageKind::Package) {
-            self.registry_mut().package_kinds.remove(name);
-        }
         Ok(deferred_custom_traits)
     }
 }
