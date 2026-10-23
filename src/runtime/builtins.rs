@@ -1346,6 +1346,12 @@ impl Interpreter {
             "__mutsu_native_posref_fetch" | "__mutsu_native_posref_store" => self
                 .try_native_pos_ref_routine(name, &args)
                 .unwrap_or_else(|| Err(RuntimeError::new(format!("Unknown function: {name}")))),
+            // The FETCH/STORE of a native attribute reference to a CStruct
+            // field (#14744).
+            // Cost: O(f) (one layout lookup, one field read or write).
+            "__mutsu_native_attrref_fetch" | "__mutsu_native_attrref_store" => self
+                .try_native_attr_ref_routine(name, &args)
+                .unwrap_or_else(|| Err(RuntimeError::new(format!("Unknown function: {name}")))),
             // The FETCH/STORE of a native lexical reference (#11498).
             // Cost: O(1) (one cell read or write).
             "__mutsu_native_lexref_fetch" | "__mutsu_native_lexref_store" => self
