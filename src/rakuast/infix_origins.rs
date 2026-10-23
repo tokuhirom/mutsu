@@ -38,6 +38,12 @@ pub(super) fn derive(node: &mut RakuAstNode) {
             super::operator_origins::derive(node);
         }
         RakuAstClass::QuotedString => super::string_origins::interpolated(node),
+        RakuAstClass::QuotedRegex | RakuAstClass::QuotedRegexRx => {
+            super::regex_origins::quoted(node)
+        }
+        RakuAstClass::TokenDeclaration
+        | RakuAstClass::RuleDeclaration
+        | RakuAstClass::RegexDeclaration => super::regex_origins::declaration(node),
         RakuAstClass::Block
         | RakuAstClass::Sub
         | RakuAstClass::PointyBlock
