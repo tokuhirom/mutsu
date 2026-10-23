@@ -791,19 +791,14 @@ impl Interpreter {
     /// "works fine when re-entrant") recurse until the stack overflowed.
     ///
     /// Free for the overwhelmingly common state-free `CompiledCode`: one
-    /// `is_empty` test. The scan is over `state_locals`, which holds a handful
-    /// of entries at most.
+    /// `is_empty` test. Otherwise one hash probe on the chunk's op-scan index,
+    /// however many `state` declarations the chunk holds (#11347).
     pub(crate) fn publish_state_local(&mut self, code: &CompiledCode, slot: u32) {
         if code.state_locals.is_empty() {
             return;
         }
         let slot = slot as usize;
-        let Some(key) = code
-            .state_locals
-            .iter()
-            .find(|(s, _)| *s == slot)
-            .map(|(_, k)| *k)
-        else {
+        let Some(key) = code.state_key_for_slot(slot) else {
             return;
         };
         let Some(val) = self.locals.get(slot).cloned() else {

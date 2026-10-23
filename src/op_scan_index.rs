@@ -41,6 +41,9 @@ pub(crate) struct OpScanIndex {
     /// by ip, so the state locals initialised in a range are a binary search
     /// plus the matches rather than a walk over all of `state_locals`.
     state_inits_by_ip: Box<[(usize, u32)]>,
+    /// `slot` -> the key of the FIRST `state_locals` entry for it, as
+    /// `publish_state_local` looks it up on every write to a local.
+    state_key_by_slot: FxHashMap<usize, Symbol>,
     /// The ip of each `BlockScope` / `BlockLocalScope` op -> the facts of the
     /// range it scopes.
     block_facts: FxHashMap<usize, BlockRangeFacts>,
@@ -154,10 +157,15 @@ impl OpScanIndex {
             .flat_map(|(i, ips)| ips.iter().map(move |&ip| (ip, i as u32)))
             .collect();
         state_inits_by_ip.sort_unstable();
+        let mut state_key_by_slot: FxHashMap<usize, Symbol> = FxHashMap::default();
+        for (slot, key) in &code.state_locals {
+            state_key_by_slot.entry(*slot).or_insert(*key);
+        }
         Self {
             ops_len: code.ops.len(),
             label_targets,
             duplicate_label,
+            state_key_by_slot,
             state_inits_by_ip: state_inits_by_ip.into_boxed_slice(),
             state_init_ips: state_init_ips
                 .into_iter()
@@ -212,6 +220,22 @@ impl CompiledCode {
         {
             Some(facts) => std::borrow::Cow::Borrowed(facts),
             None => std::borrow::Cow::Owned(BlockRangeFacts::scan(self, op_ip + 1, end)),
+        }
+    }
+
+    /// The key of the first `state_locals` entry for `slot`: what a write to a
+    /// local publishes under (`publish_state_local`). A hash probe instead of
+    /// a walk over every state local of the chunk on every local write (#11347).
+    // Cost: O(1) amortized (one O(p) index build per chunk); a stale index
+    // walks `state_locals`, O(t).
+    pub(crate) fn state_key_for_slot(&self, slot: usize) -> Option<Symbol> {
+        match self.op_scan_index() {
+            Some(idx) => idx.state_key_by_slot.get(&slot).copied(),
+            None => self
+                .state_locals
+                .iter()
+                .find(|(s, _)| *s == slot)
+                .map(|(_, k)| *k),
         }
     }
 
