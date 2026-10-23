@@ -3,7 +3,7 @@ use Test;
 # Terms carry the origin the parser read them from (ADR-10723 Stage 2,
 # expression families). Ranges measured on rakudo 2026.09.
 
-plan 11;
+plan 16;
 
 sub range($node) { with $node.origin { "{.from}..{.to}" } else { 'none' } }
 
@@ -50,6 +50,32 @@ is range(@args[1]), '43..46', 'a string argument';
     is range(@args[0]), '22..23', 'the first argument of an imported listop';
     is @args[1].origin.source.original-line(@args[1].origin.from), 4,
         'the second argument is on its own line';
+}
+
+# --- equal terms in one statement, and a closure's own statement ------------
+{
+    my @a = q:to/END/.AST.statements;
+    my $x = 1;
+    say $x + $x, { $x }, $x;
+    END
+    my @args = @a[1].expression.args.args;
+    is (range(@args[0].left), range(@args[0].right)).join(' '), '15..17 20..22',
+        'two equal variables in one statement take their own ranges';
+    is range(@args[1].body.statement-list.statements[0].expression), '26..28',
+        'a variable in a closure takes the range in the closure';
+    is range(@args[2]), '32..34', 'the same variable after the closure';
+}
+
+# --- terms the parser keeps a spelling for -------------------------------------
+{
+    my @a = q:to/END/.AST.statements;
+    my $h = q:to/STOP/;
+    abc
+    STOP
+    say <a b>;
+    END
+    is range(@a[0].expression.initializer.expression), '8..18', 'a heredoc';
+    is range(@a[1].expression.args.args[0]), '33..38', 'a word list';
 }
 
 # --- a hand-built or evaluated tree is unaffected --------------------------
