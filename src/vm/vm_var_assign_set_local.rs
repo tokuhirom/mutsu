@@ -2954,7 +2954,23 @@ impl Interpreter {
                     // `WrapVarRef` of a mainline lexical carries the raw cell):
                     // bind to the container behind it, as `source_cell` does.
                     (ValueView::ContainerRef(_), _) => Self::innermost_container(val.clone()),
-                    (_, Some(arc)) => Value::container_ref(arc),
+                    (_, Some(arc)) => {
+                        // A cell the source was boxed into without its declared
+                        // type (promoted before the type was recorded) gets it
+                        // here, so a write through the new alias is checked.
+                        if crate::value::lookup_container_constraint(&arc).is_none()
+                            && !resolved_source.starts_with(['@', '%', '&'])
+                            && let Some(ty) = self.var_type_constraint(&resolved_source)
+                        {
+                            let display = if resolved_source.starts_with('$') {
+                                resolved_source.clone()
+                            } else {
+                                format!("${}", resolved_source)
+                            };
+                            crate::value::register_container_constraint_named(&arc, &ty, &display);
+                        }
+                        Value::container_ref(arc)
+                    }
                     _ => {
                         // A freshly minted cell must inherit the SOURCE
                         // variable's declared `of`-type: from here on the cell,
