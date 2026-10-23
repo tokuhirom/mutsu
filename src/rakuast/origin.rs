@@ -87,6 +87,7 @@ pub(super) fn set(node: &mut RakuAstNode, line: i64, span: crate::ast::SrcSpan) 
     {
         let mut expression = RakuAstNode::clone(expression);
         set_span(&mut expression, span);
+        super::infix_origins::derive(&mut expression);
         *held = Value::rakuast(Box::new(expression));
     }
 }
