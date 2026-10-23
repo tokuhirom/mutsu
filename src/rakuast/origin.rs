@@ -225,11 +225,10 @@ pub(super) fn unit_list_span(stmts: &[Stmt], source: &str) -> crate::ast::SrcSpa
 /// segment is left alone.
 // Cost: O(n), n = length of the quote's source.
 pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
-    if node.class != super::RakuAstClass::QuotedString
-        || node.fields.iter().any(|f| f.name == Some("processors"))
-    {
+    if node.class != super::RakuAstClass::QuotedString {
         return;
     }
+    let words = node.fields.iter().any(|f| f.name == Some("processors"));
     let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("segments")) else {
         return;
     };
@@ -246,6 +245,17 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         return;
     }
     let inside = super::unit_source::with_text(span, |written| {
+        if words {
+            // A word quote keeps the raw text between its brackets.
+            let (open, close) = word_brackets(written)?;
+            let inner = written.get(open..written.len().checked_sub(close)?)?;
+            return (super::infix_origins::leaf_text(text)? == inner).then(|| {
+                crate::ast::SrcSpan::new(
+                    span.from as usize + open,
+                    span.from as usize + written.len() - close,
+                )
+            });
+        }
         let (open, delimiter) = written
             .char_indices()
             .find(|(_, c)| !(c.is_alphanumeric() || matches!(c, ':' | '_')))?;
@@ -259,6 +269,106 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         let mut text = RakuAstNode::clone(text);
         set_span(&mut text, inside);
         *only = Value::rakuast(Box::new(text));
+    }
+}
+
+/// Give the one `ColonPair::True` among `subscript`'s `colonpairs` the range
+/// `at`, when the text there is `:` and its name.
+// Cost: O(n), n = length of the adverb's source.
+pub(super) fn adverb_true(subscript: &mut RakuAstNode, at: crate::ast::SrcSpan) {
+    let Some(field) = subscript
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("colonpairs"))
+    else {
+        return;
+    };
+    let RakuAstFieldValue::List(items) = &mut field.value else {
+        return;
+    };
+    let [only] = items.as_mut_slice() else {
+        return;
+    };
+    let ValueView::RakuAst(pair) = only.view() else {
+        return;
+    };
+    if pair.class != super::RakuAstClass::ColonPairTrue {
+        return;
+    }
+    let Some(name) = super::infix_origins::leaf_text(pair) else {
+        return;
+    };
+    let written = super::unit_source::with_text(at, |t| Some(t == format!(":{name}")));
+    if written == Some(true) {
+        let mut pair = RakuAstNode::clone(pair);
+        set_span(&mut pair, at);
+        *only = Value::rakuast(Box::new(pair));
+    }
+}
+
+/// The byte length of the opening bracket of a word subscript written
+/// `<...>`, `<<...>>` or `«...»`, and its closing bracket.
+// Cost: O(1).
+pub(super) fn word_brackets_open(text: &str) -> Option<(usize, &'static str)> {
+    if text.starts_with("<<") {
+        Some((2, ">>"))
+    } else if text.starts_with('<') {
+        Some((1, ">"))
+    } else if text.starts_with('\u{ab}') {
+        Some(('\u{ab}'.len_utf8(), "\u{bb}"))
+    } else {
+        None
+    }
+}
+
+/// Give a word quote (`QuotedString` over one `StrLiteral`) and its text the
+/// range `inner` between the brackets, when the text is exactly what is
+/// written there.
+// Cost: O(n), n = length of `inner`.
+pub(super) fn word_quote_inner(quote: &mut RakuAstNode, inner: crate::ast::SrcSpan) {
+    let written = super::unit_source::with_text(inner, |t| Some(t.to_string()));
+    let matches = quote
+        .fields
+        .iter()
+        .find(|f| f.name == Some("segments"))
+        .and_then(|f| match &f.value {
+            RakuAstFieldValue::List(items) => match items.as_slice() {
+                [only] => match only.view() {
+                    ValueView::RakuAst(text) => super::infix_origins::leaf_text(text),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        });
+    if quote.class != super::RakuAstClass::QuotedString || written.is_none() || written != matches
+    {
+        return;
+    }
+    set_span(quote, inner);
+    if let Some(field) = quote.fields.iter_mut().find(|f| f.name == Some("segments"))
+        && let RakuAstFieldValue::List(items) = &mut field.value
+        && let [only] = items.as_mut_slice()
+        && let ValueView::RakuAst(text) = only.view()
+    {
+        let mut text = RakuAstNode::clone(text);
+        set_span(&mut text, inner);
+        *only = Value::rakuast(Box::new(text));
+    }
+}
+
+/// The byte lengths of the opening and closing brackets of a word quote
+/// written as `<...>`, `<<...>>` or `«...»`.
+// Cost: O(1).
+pub(super) fn word_brackets(written: &str) -> Option<(usize, usize)> {
+    if written.len() >= 4 && written.starts_with("<<") && written.ends_with(">>") {
+        Some((2, 2))
+    } else if written.len() >= 2 && written.starts_with('<') && written.ends_with('>') {
+        Some((1, 1))
+    } else if written.starts_with('\u{ab}') && written.ends_with('\u{bb}') {
+        Some(('\u{ab}'.len_utf8(), '\u{bb}'.len_utf8()))
+    } else {
+        None
     }
 }
 

@@ -118,6 +118,7 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
     let brackets = match subscript.class {
         RakuAstClass::PostcircumfixArrayIndex => ('[', ']'),
         RakuAstClass::PostcircumfixHashIndex => ('{', '}'),
+        RakuAstClass::PostcircumfixLiteralHashIndex => return literal_hash_index(node, from, to),
         _ => return,
     };
     if subscript.origin.0.is_some() {
@@ -129,6 +130,40 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
     with_child(node, "postfix", |subscript| {
         super::origin::set_span(subscript, SrcSpan::new(from, to));
         with_child(subscript, "index", |list| semilist(list, inside));
+    });
+}
+
+/// `%h<a b>` / `%h<<a>>` / `%h«a»`: the subscript runs from the operand's end
+/// to the application's (its adverbs included), and its word quote is the text
+/// between the brackets, kept raw.
+// Cost: O(n), n = length of the subscript's source.
+fn literal_hash_index(node: &mut RakuAstNode, from: usize, to: usize) {
+    let Some(subscript) = child(node, "postfix") else {
+        return;
+    };
+    if subscript.origin.0.is_some() {
+        return;
+    }
+    let inner = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+        let (open, close) = super::origin::word_brackets_open(text)?;
+        let end = open + text.get(open..)?.find(close)?;
+        // What follows the closing bracket is the subscript's adverbs.
+        let rest = text.get(end + close.len()..)?;
+        (rest.is_empty() || rest.starts_with(':'))
+            .then_some((from + open, from + end, rest.len()))
+    });
+    let Some((inner_from, inner_to, adverbs)) = inner else {
+        return;
+    };
+    with_child(node, "postfix", |subscript| {
+        super::origin::set_span(subscript, SrcSpan::new(from, to));
+        // A single `:name` adverb is the text after the closing bracket.
+        if adverbs > 0 {
+            super::origin::adverb_true(subscript, SrcSpan::new(to - adverbs, to));
+        }
+        with_child(subscript, "index", |quote| {
+            super::origin::word_quote_inner(quote, SrcSpan::new(inner_from, inner_to))
+        });
     });
 }
 
