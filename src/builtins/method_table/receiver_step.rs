@@ -383,8 +383,8 @@ pub(crate) fn mixin_step(target: &Value, method_sym: Symbol) -> Option<MixinStep
     {
         // A type object renamed by `.^set_name` renders by that name.
         let composed = mixins
-            .get("__mutsu_type_name__")
-            .map(Value::to_string_value)
+            .type_name()
+            .map(|name| name.to_string())
             .unwrap_or_else(|| crate::value::what_type_name(target));
         let rendered = if method == "gist" {
             format!("({composed})")

@@ -104,8 +104,8 @@ impl Interpreter {
         mixins: &crate::value::MixinOverrides,
     ) -> Result<String, RuntimeError> {
         let overrides = self.mixin_instance_composition_overrides(inner, mixins)?;
-        Ok(match overrides.get("__mutsu_type_name__") {
-            Some(renamed) => renamed.to_string_value(),
+        Ok(match overrides.type_name() {
+            Some(renamed) => renamed.to_string(),
             None => crate::value::types::what_type_name(target),
         })
     }

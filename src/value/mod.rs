@@ -142,10 +142,17 @@ pub(crate) fn proxy_subclass_attrs(class_name: Symbol, attributes: AttrMap) -> P
 /// role state. `Clone` is the composition-copy operation: it copies the marker
 /// map and deep-copies the role cell. Ordinary `Value` cloning only clones the
 /// containing `Gc<MixinOverrides>`, and therefore aliases both fields.
+///
+/// `type_name` is what `.^set_name` gave this composition (ADR-0060). It is
+/// written through every alias, and the composition-keyed node it lives on is
+/// shared by every thread spawned after the node was made, so it sits behind
+/// its own lock rather than in `overrides`, which readers walk unlocked
+/// (#14765). See `mixin_type_name.rs`.
 #[derive(Debug)]
 pub(crate) struct MixinOverrides {
     overrides: ValueMap,
     attributes: Gc<InstanceAttrs>,
+    type_name: RwLock<Option<Arc<str>>>,
 }
 
 impl MixinOverrides {
@@ -159,6 +166,7 @@ impl MixinOverrides {
         Self {
             overrides,
             attributes: Gc::new(InstanceAttrs::role_storage(attributes)),
+            type_name: RwLock::new(None),
         }
     }
 
@@ -189,6 +197,7 @@ impl MixinOverrides {
         Self {
             overrides: self.overrides.clone(),
             attributes: earlier.attributes.clone(),
+            type_name: RwLock::new(self.type_name()),
         }
     }
 
@@ -379,6 +388,7 @@ impl Clone for MixinOverrides {
         Self {
             overrides: self.overrides.clone(),
             attributes,
+            type_name: RwLock::new(self.type_name()),
         }
     }
 }
@@ -412,8 +422,9 @@ fn deep_clone_mixin_value(value: &Value) -> Value {
 impl PartialEq for MixinOverrides {
     fn eq(&self, other: &Self) -> bool {
         // Mutable role state is not composition metadata. Equality and type
-        // identity retain their pre-cell semantics.
-        self.overrides == other.overrides
+        // identity retain their pre-cell semantics. The `.^set_name` name was
+        // an `overrides` entry before it got its own lock, and still counts.
+        self.overrides == other.overrides && self.type_name() == other.type_name()
     }
 }
 
@@ -609,6 +620,7 @@ pub(crate) mod match_view;
 pub(crate) mod which_id;
 pub(crate) use match_lazy::MatchNode;
 mod mix_weight;
+mod mixin_type_name;
 /// NaN-boxed 8-byte representation core (3b-1 step B): the packed word that
 /// IS the `Value` storage. The only module that knows the bit layout.
 mod nanbox;

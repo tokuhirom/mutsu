@@ -451,9 +451,7 @@ fn role_mixin_suffix_entry(mixins: &crate::value::MixinOverrides, role_name: &st
 ///
 /// Deliberately EXCLUDES: `__mutsu_attr__*` (per-instance role-attribute
 /// values — two differently-initialized instances of the same role must
-/// still share one `.WHAT`), `__mutsu_type_name__` (the mutable
-/// `.^set_name` target — state ON the cache entry this key looks up, not
-/// part of the key itself), `__mutsu_role_seq__*` (a per-application-order
+/// still share one `.WHAT`), `__mutsu_role_seq__*` (a per-application-order
 /// bookkeeping stamp that differs even between two instances of the exact
 /// same composition — including it in the key was tried and broke
 /// `roast/S14-roles/instantiation.t`'s punned-role identity invariant, see
@@ -662,9 +660,9 @@ pub(crate) fn has_role_composition(mixins: &MixinOverrides) -> bool {
 /// `Gc` pointer.
 ///
 /// Drops per-instance data: `__mutsu_attr__*` (role-attribute values),
-/// `__mutsu_role_seq__*` (per-application-order bookkeeping),
-/// `__mutsu_type_name__` (the mutable `.^set_name` target — written later,
-/// in place, onto the cache entry itself), and any other bookkeeping key.
+/// `__mutsu_role_seq__*` (per-application-order bookkeeping), and any other
+/// bookkeeping key. (The `.^set_name` name is not in the map at all: it is
+/// `MixinOverrides::type_name`, written later onto the cache entry itself.)
 pub(crate) fn filter_composition_markers(mixins: &MixinOverrides) -> ValueMap {
     mixins
         .iter()
