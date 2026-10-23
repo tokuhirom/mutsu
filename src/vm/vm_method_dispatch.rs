@@ -2384,7 +2384,15 @@ impl Interpreter {
         // this frame shadows it exactly as before. A closure created in the
         // frame takes the names it reads from the record into its capture
         // (`materialize_frame_self_into_capture`).
-        let shadows_visible_key = {
+        // A body that declares a routine, class or role captures the env its
+        // declaration runs in by another path than a closure creation (a
+        // named `sub` called after the method returned reads `self` from it),
+        // so such a method keeps writing its keys.
+        let declares_scopes = !cc.sub_decl_plans.is_empty()
+            || !cc.decl_plans.is_empty()
+            || !cc.class_decl_plans.is_empty()
+            || !cc.role_decl_plans.is_empty();
+        let shadows_visible_key = declares_scopes || {
             let env = self.env();
             env.contains_key_sym(crate::symbol::wk::self_())
                 || env.contains_key_sym(crate::symbol::wk::class_decl())
