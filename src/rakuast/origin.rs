@@ -284,19 +284,28 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     if node.class != RakuAstClass::ApplyPostfix || !span.is_some() {
         return;
     }
-    let Some(operand_end) = node
+    let operand = node
         .fields
         .iter()
         .find(|f| f.name == Some("operand"))
         .and_then(|f| match &f.value {
             RakuAstFieldValue::Node(v) => match v.view() {
-                ValueView::RakuAst(operand) => origin_end(operand),
+                ValueView::RakuAst(operand) => Some(RakuAstNode::clone(operand)),
                 _ => None,
             },
             _ => None,
-        })
-        .and_then(super::unit_source::byte_of)
-    else {
+        });
+    let operand_end = match &operand {
+        // The curried `*` of `*.abs` has no origin of its own (Rakudo gives
+        // none); the call starts right after it.
+        Some(arg) if arg.class == RakuAstClass::WhateverCodeArgument => {
+            super::unit_source::with_text(span, |text| text.starts_with('*').then_some(()))
+                .map(|()| span.from + 1)
+        }
+        Some(operand) => origin_end(operand).and_then(super::unit_source::byte_of),
+        None => None,
+    };
+    let Some(operand_end) = operand_end else {
         return;
     };
     let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("postfix")) else {
