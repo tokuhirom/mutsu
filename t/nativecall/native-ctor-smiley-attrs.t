@@ -49,10 +49,9 @@ dies-ok { Child.new(:id(Int)) }, 'inherited :D attr rejects undefined';
 class CTweak { has Int:D $.x = 1; submethod TWEAK { $!x = 100 } }
 is CTweak.new.x, 100, ':D attr with a TWEAK that keeps it defined';
 
-# A TWEAK that violates a :D attr is NOT re-checked (matches the interpreter
-# baseline, which relies on an assignment-time check mutsu does not perform).
+# A TWEAK that stores a type object into a :D attr dies at the assignment, as in Rakudo.
 class CTweakBad { has Int:D $.x = 1; submethod TWEAK { $!x = Int } }
-lives-ok { CTweakBad.new }, 'TWEAK violating a :D attr is not re-checked (baseline parity)';
+dies-ok { CTweakBad.new }, 'TWEAK violating a :D attr dies at the assignment';
 
 class CBuild { has Int:D $.x = 1; submethod BUILD(:$y = 5) { $!x = $y } }
 is CBuild.new(:y(8)).x, 8, ':D attr with a BUILD that keeps it defined';

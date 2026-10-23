@@ -1820,11 +1820,13 @@ impl Interpreter {
     ) -> crate::runtime::topic_state::ForParamRestore {
         let alias = crate::runtime::topic_state::placeholder_alias(name).map(|alias| {
             let saved = self.env().get(&alias).cloned();
-            (alias, saved)
+            let in_overlay = self.env().overlay_get_sym(Symbol::intern(&alias)).is_some();
+            (alias, saved, in_overlay)
         });
         crate::runtime::topic_state::ForParamRestore {
             name: name.to_string(),
             saved: self.env().get(name).cloned(),
+            saved_in_overlay: self.env().overlay_get_sym(Symbol::intern(name)).is_some(),
             colliding_slot,
             alias,
         }
@@ -1839,6 +1841,7 @@ impl Interpreter {
         let crate::runtime::topic_state::ForParamRestore {
             name,
             saved,
+            saved_in_overlay,
             colliding_slot,
             alias,
         } = entry;
@@ -1847,11 +1850,16 @@ impl Interpreter {
         {
             self.locals[slot as usize] = saved.clone().unwrap_or(Value::NIL);
         }
-        for (name, saved) in std::iter::once((name, saved)).chain(alias) {
+        for (name, saved, in_overlay) in
+            std::iter::once((name, saved, saved_in_overlay)).chain(alias)
+        {
             match saved {
-                Some(v) => {
+                Some(v) if in_overlay => {
                     self.env_mut().insert(name, v);
                 }
+                // The binding the loop shadowed belongs to an enclosing frame:
+                // let it show through again rather than copying it into this one.
+                Some(_) => self.env_mut().unshadow_sym(Symbol::intern(&name)),
                 None => {
                     self.env_mut().remove(&name);
                 }
