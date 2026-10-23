@@ -469,13 +469,18 @@ impl Interpreter {
         // would see the stale `my`-decl seed (Any) instead of the live Blob/Map —
         // and an immutable-container element assignment would silently NOT throw.
         // Seed env from the authoritative slot before the handler runs.
-        self.seed_env_from_scalar_slot(code, eff_slot, &var_name);
         let place = self.store_place(
             code,
             target_slot,
             sigilless_alias_target.is_some(),
             &var_name,
         );
+        // A `Slot` store reads and writes the slot itself (ADR-14632), so only
+        // a `Named` store (an aliased, undeclared or cross-thread target) has an
+        // env mirror to refresh.
+        if matches!(place, StorePlace::Named) {
+            self.seed_env_from_scalar_slot(code, eff_slot, &var_name);
+        }
         self.check_store_place(place, &var_name);
         // Pre-compute fill value for native typed arrays (e.g. int->0, num->0e0, str->"")
         // Must be done before mutable borrows to avoid borrow conflicts.
@@ -3565,6 +3570,10 @@ impl Interpreter {
     /// does — returned before that refresh, leaving the caller's `%h` reading
     /// `Nil`: the failed assignment destroyed the variable. Restore the slot on
     /// the error path too, so a refusal changes nothing.
+    ///
+    /// Kept for the nested-store ops, which resolve their root by name and
+    /// invalidate its slot (a `Named` shape; the single-subscript store takes
+    /// its container from the slot and needs no such repair).
     fn restore_nested_store_local(&mut self, code: &CompiledCode, name_idx: u32) {
         let var_name = Self::const_str(code, name_idx).to_string();
         if let Some(slot) = self.find_local_slot(code, &var_name)

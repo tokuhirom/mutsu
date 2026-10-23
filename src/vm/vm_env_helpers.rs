@@ -3165,6 +3165,10 @@ impl Interpreter {
     /// (`unit_lexicals`) answered in place of the routine's own `my %seen`,
     /// so the store went to the module's container, or nowhere. The twin of
     /// `with_package_lexical_seeded`.
+    ///
+    /// Still needed for a `Named` shape: a module routine's key store into its
+    /// own `my %seen` resolves by name even though the routine declares the
+    /// local (`t/modules/module-routine-element-store-shadowed-file-lexical.t`).
     // Cost: O(d) plus the store, d = the frame's env tiers; O(1) when no
     // compunit has file-scope lexicals.
     pub(super) fn with_own_container_seeded<T>(
