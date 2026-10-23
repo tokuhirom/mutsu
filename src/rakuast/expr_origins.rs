@@ -136,7 +136,7 @@ pub(super) fn strip(stmts: &mut [Stmt]) -> Scope {
 }
 
 /// Where the term `expr` was written, when a stripped unit holds it: by its
-/// slot, or, for a copy the conversion made, by the first unclaimed range of a
+/// slot, or, for a copy the conversion made, by the one unclaimed range of a
 /// term with the same shape in the statement being converted.
 // Cost: O(1) for a slot, O(n + c) otherwise, n = size of `expr`, c = ranges
 // of terms with its shape.
@@ -149,18 +149,24 @@ pub(super) fn of(expr: &Expr) -> Option<SrcSpan> {
         let (print, span) = match table.by_slot.remove(&(expr as *const Expr as usize)) {
             Some(found) => found,
             None => {
-                // A copy takes the range of a term of its own statement,
-                // never one written elsewhere in the unit.
+                // A copy takes the range of the one unclaimed term of its
+                // shape in its own statement; with several, which one it
+                // copies cannot be told, and a term written elsewhere in the
+                // unit is never one it copies.
                 let statement = STATEMENT.with(|c| c.get());
                 if !statement.is_some() {
                     return None;
                 }
                 let print = fingerprint(expr);
-                let span = *table
+                let mut inside = table
                     .by_print
                     .get(&print)?
                     .iter()
-                    .find(|s| statement.from <= s.from && s.to <= statement.to)?;
+                    .filter(|s| statement.from <= s.from && s.to <= statement.to);
+                let span = *inside.next()?;
+                if inside.next().is_some() {
+                    return None;
+                }
                 (print, span)
             }
         };
