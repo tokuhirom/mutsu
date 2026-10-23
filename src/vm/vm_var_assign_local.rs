@@ -252,6 +252,13 @@ impl Interpreter {
             val = def.clone();
         } else if val.is_nil()
             && !name.starts_with(['@', '%', '&'])
+            // A scalar attribute bound to a `:D` container cannot reset to the
+            // container's type object: the `Nil` is refused below.
+            && !(name.len() > 1
+                && name.starts_with(['!', '.'])
+                && self
+                    .self_attr_bound_cell_constraint(name)
+                    .is_some_and(|tc| self.is_definite_constraint(&tc)))
             && let Some(def) = Self::container_cell_default(&self.locals[idx])
         {
             // An alias of another container: its default, carried on the cell,
@@ -270,9 +277,10 @@ impl Interpreter {
         // Expression-context counterpart of the `SetLocal` attribute check: a
         // scalar attribute's declared type comes from the class registry, not
         // from the name-keyed constraint map (see `scalar_attr_type_constraint`).
-        let attr_constraint = (!val.is_nil())
-            .then(|| self.scalar_attr_type_constraint(name))
-            .flatten();
+        let attr_constraint = self
+            .scalar_attr_type_constraint(name)
+            .or_else(|| self.self_attr_bound_cell_constraint(name))
+            .filter(|tc| !val.is_nil() || self.is_definite_constraint(tc));
         if let Some(constraint) = self
             .slot_type_constraint(code, idx, name, code.local_sym(idx))
             .or(attr_constraint)
@@ -284,7 +292,16 @@ impl Interpreter {
                     // Assigning Nil to a typed variable resets it to the type object
                     let nominal =
                         loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
-                    val = Value::package(Symbol::intern(&nominal));
+                    let reset_value = Value::package(Symbol::intern(&nominal));
+                    // ... which a `:D` constraint cannot hold.
+                    if self.is_definite_constraint(&constraint) {
+                        return Err(runtime::utils::definite_type_check_assignment_error(
+                            name,
+                            &constraint,
+                            &reset_value,
+                        ));
+                    }
+                    val = reset_value;
                 }
             } else if !self.type_matches_value(&constraint, &val) {
                 return Err(self.type_check_assignment_failure(name, &constraint, &val));
