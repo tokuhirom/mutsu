@@ -116,6 +116,11 @@ CASES=(
     'map callback vs frame locals|1000|1|LOCALS my $s = 0;|for ^20 { $s += (1..2000).map({ $_ + 1 }).elems }'
     # #10780: a lazy `for` pulls one element per iteration; each pull copies
     # only that element, not the whole reified prefix.
+    # #10919: pulling n elements one at a time through an adaptor over a lazy
+    # pipe reads the source's cache, not a fresh copy of the prefix produced so
+    # far.
+    'lazy .map.rotor(1) indexed at NN|2000|2||my $s = (1..*).map(*+1).rotor(1); my $v = $s[NN];'
+    'lazy .map array shifted NN times|2000|2||my @a = (1..*).map(*+1); @a.shift for ^NN;'
     'for over lazy .map pipe, NN iterations|20000|2||for (1..*).map(*+0) { last if $_ > NN }'
     'for over lazy gather, NN iterations|20000|2||for gather { my $i = 0; loop { take $i++ } } { last if $_ > NN }'
     'for over closure sequence, NN iterations|20000|2||for (1, 2, * + 1 ... *) { last if $_ > NN }'
