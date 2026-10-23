@@ -371,7 +371,22 @@ impl Interpreter {
                     )
                     .or_else(|| self.env.get(param_name))
                     .cloned()
-                    .unwrap_or(Value::NIL);
+                    .filter(|v| {
+                        !(v.is_nil()
+                            && selected
+                                .type_param_defs
+                                .get(i)
+                                .is_some_and(|pd| pd.name.starts_with('&')))
+                    })
+                    .unwrap_or_else(|| match selected.type_param_defs.get(i) {
+                        // An unsupplied `&cb?` is the `Callable` type object
+                        // (as for a sub), so the role can pass it on to a
+                        // parameterisation of itself.
+                        Some(pd) if pd.name.starts_with('&') => {
+                            Self::missing_optional_param_value(pd)
+                        }
+                        _ => Value::NIL,
+                    });
                 resolved.push(value);
             }
             self.exit_readonly_frame(readonly_mark);
