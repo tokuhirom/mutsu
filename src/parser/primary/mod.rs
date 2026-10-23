@@ -598,7 +598,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
     let (rest, expr) = primary_term(input)?;
     // A parse the RakuAST conversion reads keeps where each term was written
     // (ADR-10723 Stage 2).
-    if crate::ast::spelled::keeping() && !matches!(&expr, Expr::Spelled(s) if matches!(s.spelling, crate::ast::spelled::Spelling::Origin(_))) {
+    if crate::ast::spelled::keeping() && origin_family(&expr) {
         let span = source_span(input, rest);
         if span.is_some() {
             return Ok((
@@ -611,6 +611,16 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         }
     }
     Ok((rest, expr))
+}
+
+/// Whether `expr` is a term of a family that records its origin.
+// Cost: O(1).
+fn origin_family(expr: &Expr) -> bool {
+    matches!(std::env::var("MUTSU_ORIGIN_FAMILY").as_deref(), Ok(f) if match f {
+        "literal" => matches!(expr, Expr::Literal(_) | Expr::LiteralSrc(..)),
+        "var" => matches!(expr, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::CodeVar(_)),
+        _ => false,
+    })
 }
 
 fn primary_term(input: &str) -> PResult<'_, Expr> {
