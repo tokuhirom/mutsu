@@ -3339,14 +3339,14 @@ fn signature_bind_node(signature: &Expr, rhs: &Expr) -> Result<RakuAstNode, Runt
 }
 
 pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let Some(span) = super::expr_origins::of(expr) else {
-        return convert_expr_at(expr);
-    };
-    // A term the parser placed (ADR-10723 Stage 2).
     let mut node = convert_expr_at(expr)?;
-    origin::set_span(&mut node, span);
-    origin::quoted_text(&mut node, span);
-    origin::postfix_call(&mut node, span);
+    // A term the parser placed (ADR-10723 Stage 2).
+    if let Some(span) = super::expr_origins::of(expr) {
+        origin::set_span(&mut node, span);
+        origin::quoted_text(&mut node, span);
+        origin::postfix_call(&mut node, span);
+    }
+    super::infix_origins::derive(&mut node);
     Ok(node)
 }
 
@@ -7063,7 +7063,7 @@ fn convert_chained_compare(
 ) -> Result<RakuAstNode, RuntimeError> {
     let mut node = convert_expr(&operands[0])?;
     for (i, (op, negated)) in ops.iter().enumerate() {
-        let infix = RakuAstNode {
+        let mut infix = RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
@@ -7072,6 +7072,7 @@ fn convert_chained_compare(
                 node_field(Some("right"), convert_expr(&operands[i + 1])?),
             ],
         };
+        super::infix_origins::derive(&mut infix);
         node = if *negated {
             RakuAstNode {
                 origin: Default::default(),

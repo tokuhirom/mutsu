@@ -252,7 +252,13 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
                     value: RakuAstFieldValue::Node(value),
                 })
                 .collect();
-            let mut out = vec![infix, rakuast(RakuAstClass::ArgList, args)];
+            // Rakudo's `ArgList` of an infix application spans it.
+            let arg_list = Value::rakuast(Box::new(RakuAstNode {
+                class: RakuAstClass::ArgList,
+                fields: args,
+                origin: node.origin.clone(),
+            }));
+            let mut out = vec![infix, arg_list];
             out.extend(
                 node.fields
                     .iter()
