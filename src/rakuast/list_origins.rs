@@ -135,7 +135,11 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
 /// The range inside `open ... close` written at `from..to`, without the
 /// whitespace at either end (empty right after `open` when blank).
 // Cost: O(n), n = to - from.
-fn inside(from: usize, to: usize, (open, close): (char, char)) -> Option<(usize, usize)> {
+pub(super) fn inside(
+    from: usize,
+    to: usize,
+    (open, close): (char, char),
+) -> Option<(usize, usize)> {
     super::unit_source::with_text(SrcSpan::new(from, to), |text| {
         let body = text.strip_prefix(open)?.strip_suffix(close)?;
         let trimmed = body.trim_start();
@@ -147,8 +151,11 @@ fn inside(from: usize, to: usize, (open, close): (char, char)) -> Option<(usize,
 /// Give a `SemiList` the range `at`, and each `Statement::Expression` in it
 /// the range of its expression.
 // Cost: O(s), s = statements.
-fn semilist(list: &mut RakuAstNode, at: (usize, usize)) {
-    if list.class != RakuAstClass::SemiList {
+pub(super) fn semilist(list: &mut RakuAstNode, at: (usize, usize)) {
+    if !matches!(
+        list.class,
+        RakuAstClass::SemiList | RakuAstClass::StatementSequence
+    ) {
         return;
     }
     super::origin::set_span(list, SrcSpan::new(at.0, at.1));
