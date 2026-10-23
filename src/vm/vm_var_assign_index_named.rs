@@ -4063,7 +4063,10 @@ impl Interpreter {
         let root_needs_viv = match self.env().get(&var_name) {
             None => true,
             // Undefined == `Nil` or a type object, matching `.defined`.
-            Some(v) => matches!(v.view(), ValueView::Nil | ValueView::Package(_)),
+            Some(v) => {
+                let v = v.deref_container().descalarize().clone();
+                matches!(v.view(), ValueView::Nil | ValueView::Package(_))
+            }
         };
         if root_needs_viv {
             // Array if the inner subscript was positional (`[...]`), otherwise
@@ -4087,6 +4090,19 @@ impl Interpreter {
             } else {
                 init.itemize_for_element_store()
             };
+            // The walk below goes through the root `env_root_descended_mut_tracked`
+            // resolves, which is not always the env entry (a file-scope lexical's
+            // unit slot, a capture cell): vivify an undefined one there too, as
+            // the same node, so the store lands where the variable is read
+            // (#14647).
+            if let Some(root) = self.env_root_descended_mut(&var_name)
+                && matches!(
+                    root.deref_container().descalarize().view(),
+                    ValueView::Nil | ValueView::Package(_)
+                )
+            {
+                *root = init.clone();
+            }
             self.env_mut().insert(var_name.clone(), init);
         }
 
@@ -5574,11 +5590,19 @@ impl Interpreter {
                         }
                         // Autovivify the root itself if needed
                         binding_creates_path = true;
-                        if is_positional {
-                            *cur = Value::real_array(Vec::new());
+                        let fresh = if is_positional {
+                            Value::real_array(Vec::new())
                         } else {
-                            *cur = Value::hash(ValueMap::default());
-                        }
+                            Value::hash(ValueMap::default())
+                        };
+                        // A container vivified into a `$` variable is held by
+                        // its Scalar (`$x.raku` is `${...}`), as in the
+                        // two-level op.
+                        *cur = if level == 0 && !var_name.starts_with(['@', '%']) {
+                            fresh.itemize_for_element_store()
+                        } else {
+                            fresh
+                        };
                         // Retry this level
                         if let Some(next) =
                             cur.with_array_mut(|arr_arc, _| -> Result<*mut Value, RuntimeError> {
