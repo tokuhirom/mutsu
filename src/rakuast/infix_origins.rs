@@ -26,8 +26,12 @@ pub(super) fn derive(node: &mut RakuAstNode) {
         RakuAstClass::CircumfixParentheses | RakuAstClass::CircumfixArrayComposer => {
             super::list_origins::circumfix(node)
         }
-        RakuAstClass::ApplyPostfix => super::list_origins::postcircumfix(node),
-        _ => {}
+        RakuAstClass::ApplyPostfix => {
+            super::list_origins::postcircumfix(node);
+            super::operator_origins::derive(node);
+        }
+        RakuAstClass::QuotedString => super::string_origins::interpolated(node),
+        _ => super::operator_origins::derive(node),
     }
 }
 

@@ -65,6 +65,7 @@ mod name_parts;
 mod named_param;
 mod nesting;
 mod nf_quote;
+mod operator_origins;
 mod origin;
 mod package_header;
 mod package_traits;
@@ -103,6 +104,7 @@ mod source_identifier;
 #[cfg(test)]
 mod source_identifier_tests;
 mod star_lvalue;
+mod string_origins;
 mod subclass;
 mod subscript_adverb;
 mod substitution;
