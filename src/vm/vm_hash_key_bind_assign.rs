@@ -187,11 +187,19 @@ impl Interpreter {
     ///
     // Cost: O(1) (one flag load in the common program; else one env probe and
     // one element read).
-    pub(crate) fn array_element_is_readonly_bound(&self, var_name: &str, idx: &Value) -> bool {
+    pub(crate) fn array_element_is_readonly_bound(
+        &self,
+        place: StorePlace,
+        var_name: &str,
+        idx: &Value,
+    ) -> bool {
         if !crate::value::readonly_cells_possible() || !var_name.starts_with('@') {
             return false;
         }
-        let Some(container) = self.env().get(var_name).map(Value::deref_container) else {
+        let Some(container) = self
+            .place_env_get(place, var_name)
+            .map(Value::deref_container)
+        else {
             return false;
         };
         let ValueView::Array(items, _) = container.view() else {
@@ -219,11 +227,19 @@ impl Interpreter {
     ///
     // Cost: O(1) (one flag load in the common program; else one env probe and
     // one hash probe).
-    pub(crate) fn hash_element_is_readonly_bound(&self, var_name: &str, idx: &Value) -> bool {
+    pub(crate) fn hash_element_is_readonly_bound(
+        &self,
+        place: StorePlace,
+        var_name: &str,
+        idx: &Value,
+    ) -> bool {
         if !crate::value::readonly_cells_possible() || !var_name.starts_with('%') {
             return false;
         }
-        let Some(container) = self.env().get(var_name).map(Value::deref_container) else {
+        let Some(container) = self
+            .place_env_get(place, var_name)
+            .map(Value::deref_container)
+        else {
             return false;
         };
         let ValueView::Hash(map) = container.view() else {
