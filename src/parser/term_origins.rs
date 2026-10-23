@@ -65,11 +65,62 @@ pub(crate) fn begin(keep: bool) -> Recording {
     Recording { previous }
 }
 
-// Cost: O(n), n = size of `expr`.
+/// A term's structural fingerprint, read through `Expr::WhateverCurry`
+/// markers: the whole-unit pass that places them (`whatever_curry::mark`)
+/// runs between the parser noting a term and [`attach`] finding it again, so
+/// a term holding a `*` (`.map(* + 1)`) must fingerprint the same with or
+/// without them.
+// Cost: O(n), n = size of `expr` (twice when it holds a marker).
 fn fingerprint(expr: &Expr) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    expr.hash(&mut hasher);
+    if HasMarker::in_expr(expr) {
+        let mut plain = expr.clone();
+        Uncurry.visit_expr_mut(&mut plain);
+        plain.hash(&mut hasher);
+    } else {
+        expr.hash(&mut hasher);
+    }
     hasher.finish()
+}
+
+/// Whether an expression holds a `WhateverCurry` marker.
+struct HasMarker(bool);
+
+impl HasMarker {
+    // Cost: O(n), n = size of `expr`.
+    fn in_expr(expr: &Expr) -> bool {
+        let mut found = HasMarker(false);
+        crate::ast_visit::Visit::visit_expr(&mut found, expr);
+        found.0
+    }
+}
+
+impl<'ast> crate::ast_visit::Visit<'ast> for HasMarker {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        if self.0 {
+            return;
+        }
+        if matches!(expr, Expr::WhateverCurry(_)) {
+            self.0 = true;
+            return;
+        }
+        crate::ast_visit::walk_expr(self, expr);
+    }
+}
+
+/// Takes the `WhateverCurry` markers out of an expression.
+struct Uncurry;
+
+impl VisitMut for Uncurry {
+    fn visit_expr_mut(&mut self, expr: &mut Expr) {
+        while matches!(expr, Expr::WhateverCurry(_)) {
+            let Expr::WhateverCurry(inner) = std::mem::replace(expr, Expr::Whatever) else {
+                unreachable!("matched above");
+            };
+            *expr = *inner;
+        }
+        crate::ast_visit::walk_expr_mut(self, expr);
+    }
 }
 
 /// Note that the parser read `expr` from `span`.
