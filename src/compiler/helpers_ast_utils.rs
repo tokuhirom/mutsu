@@ -87,66 +87,61 @@ impl Compiler {
         Expr::Literal(Value::package(crate::symbol::wk::any()))
     }
 
-    /// Check if a method call is a known mutating method on an indexed target
-    /// (e.g., `%hash<key>.push(4)` or `@array[0].push(5)`).
+    /// Whether a mutating method on a subscript still takes the name-based
+    /// `IndexElemAutoviv` path (`$!attr{k}.push(1)`, `$*dyn<k>.push(1)`): a
+    /// scalar the subscript chain cannot box into a cell by name. Every other
+    /// root hands the method a location (`IndexInvocantRef { vivify }`, ADR-13823),
+    /// and `pop`/`shift`/`splice` never vivify, so they are plain method calls.
+    // Cost: O(d), d = subscript depth of the chain.
+    // TODO: vivify attribute, dynamic and package scalars through their binding
+    // too, then retire the name-based path.
     pub(super) fn is_mutating_method_on_index(
         &self,
         target: &Expr,
         method_name: &crate::symbol::Symbol,
     ) -> bool {
         let method = method_name.resolve();
-        let is_mutating = matches!(
-            method.as_str(),
-            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
-        );
-        if !is_mutating {
+        if !crate::builtins::method_table::vivifies_undefined_receiver(method.as_str())
+            || matches!(method.as_str(), "ASSIGN-KEY" | "BIND-KEY")
+        {
             return false;
         }
-        if let Expr::Index {
+        let Expr::Index {
             target: idx_target, ..
         } = target
-        {
-            // The push family on an `@array` / `%hash` element takes the
-            // subscript receiver producer (`IndexInvocantRef { vivify }`), which
-            // vivifies an undefined element through its location (ADR-13823).
-            // A scalar base (`$lookup{$k}.push(..)` over an undefined `$lookup`)
-            // has no container to hold a location until it is itself vivified,
-            // so it keeps the name-based path.
-            // TODO: vivify an undefined scalar base through its binding too.
-            let vivifies_via_location =
-                matches!(method.as_str(), "push" | "unshift" | "append" | "prepend")
-                    && matches!(idx_target.as_ref(), Expr::ArrayVar(_) | Expr::HashVar(_));
-            !vivifies_via_location && self.postfix_index_name(idx_target).is_some()
-        } else {
-            false
+        else {
+            return false;
+        };
+        // Chains deeper than one level have their own entry.
+        if matches!(idx_target.as_ref(), Expr::Index { .. }) {
+            return false;
         }
+        !self.vivifying_chain_root_supported(idx_target)
+            && self.postfix_index_name(idx_target).is_some()
     }
 
-    /// Check if a method call is a mutating method on a *nested* Index target
-    /// (e.g. `%h<a><b>.push(...)` where the immediate target is Index and its
-    /// inner target is also an Index). The single-level case is already handled
-    /// by `is_mutating_method_on_index`.
+    /// [`Self::is_mutating_method_on_index`] for a *nested* subscript target
+    /// (`$!attr<a><b>.push(..)`).
+    // Cost: O(d), d = subscript depth of the chain.
     pub(super) fn is_nested_mutating_method_on_index(
+        &self,
         target: &Expr,
         method_name: &crate::symbol::Symbol,
     ) -> bool {
         let method = method_name.resolve();
-        let is_mutating = matches!(
-            method.as_str(),
-            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
-        );
-        if !is_mutating {
+        if !crate::builtins::method_table::vivifies_undefined_receiver(method.as_str())
+            || matches!(method.as_str(), "ASSIGN-KEY" | "BIND-KEY")
+        {
             return false;
         }
-        // Only match nested Index (Index whose target is another Index)
-        if let Expr::Index {
+        let Expr::Index {
             target: idx_target, ..
         } = target
-        {
-            matches!(idx_target.as_ref(), Expr::Index { .. })
-        } else {
-            false
-        }
+        else {
+            return false;
+        };
+        matches!(idx_target.as_ref(), Expr::Index { .. })
+            && !self.vivifying_chain_root_supported(idx_target)
     }
 
     /// Extract the variable name from a DoStmt(VarDecl { .. }) expression,
