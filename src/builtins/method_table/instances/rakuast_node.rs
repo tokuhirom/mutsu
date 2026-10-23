@@ -226,7 +226,9 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
     use crate::rakuast::{RakuAstClass, RakuAstField};
     let node_value = |name: &str| {
         node.fields.iter().find_map(|f| match &f.value {
-            RakuAstFieldValue::Node(v) if f.name == Some(name) && crate::rakuast::is_node_value(v) => {
+            RakuAstFieldValue::Node(v)
+                if f.name == Some(name) && crate::rakuast::is_node_value(v) =>
+            {
                 Some(v.clone())
             }
             _ => None,
@@ -264,11 +266,11 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
             );
             Some(out)
         }
-        RakuAstClass::ParameterTargetVar => Some(vec![
-            node_value("declaration").unwrap_or_else(|| {
+        RakuAstClass::ParameterTargetVar => {
+            Some(vec![node_value("declaration").unwrap_or_else(|| {
                 rakuast(RakuAstClass::VarDeclarationSimple, Vec::new())
-            }),
-        ]),
+            })])
+        }
         RakuAstClass::VarDeclarationSimple => {
             let mut rest = node.clone();
             rest.fields.retain(|f| f.name != Some("desigilname"));
@@ -302,7 +304,8 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
             let mut param = node.clone();
             for field in &mut param.fields {
                 if field.name == Some("target") {
-                    field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(new_target.clone())));
+                    field.value =
+                        RakuAstFieldValue::Node(Value::rakuast(Box::new(new_target.clone())));
                 }
             }
             Some(field_children(&param))
