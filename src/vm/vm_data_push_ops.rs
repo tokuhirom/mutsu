@@ -532,7 +532,14 @@ impl Interpreter {
         decl: StoreDecl<'_>,
         name: &str,
     ) -> Option<String> {
-        let target = self.env().get(name).cloned().unwrap_or(Value::NIL);
+        // A declared local keeps its container in its slot; the env mirror of a
+        // scalar-held one (`my $a := array[uint8].new`) can lag behind it.
+        let target = decl
+            .and_then(|(_, idx)| self.locals.get(idx))
+            .filter(|slot_val| !slot_val.is_nil())
+            .cloned()
+            .or_else(|| self.env().get(name).cloned())
+            .unwrap_or(Value::NIL);
         let constraint = self.element_constraint_for_decl(decl, name, &target)?;
         (crate::runtime::native_types::is_native_int_type(&constraint) || constraint == "num32")
             .then_some(constraint)
