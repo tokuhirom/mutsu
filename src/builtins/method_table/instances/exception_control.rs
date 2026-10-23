@@ -38,6 +38,18 @@ pub(super) static ROWS: &[MethodRow] = &[
     control!("Exception", "throw", |interp, target, _, _| raise(
         interp, target, "throw"
     )),
+    // `throw(Backtrace $bt?)`: the backtrace to throw with.
+    // Cost: O(1) plus the throw, as `Interpreter::exception_control`.
+    MethodRow {
+        owner: "Exception",
+        name: "throw",
+        arity: 1,
+        handler: Handler::Interp(|interp, target, args, _| {
+            Some(interp.exception_throw_with_backtrace(target, &args[0]))
+        }),
+        flags: CONTROL,
+        named: &[],
+    },
     control!("Exception", "rethrow", |interp, target, _, _| raise(
         interp, target, "rethrow"
     )),
