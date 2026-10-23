@@ -118,10 +118,7 @@ fn clauses(text: &str, base: usize) -> Vec<Clause> {
     use crate::source_comments::trivia_len;
     let mut out = Vec::new();
     let mut at = 0;
-    loop {
-        let Some(gap) = trivia_len(&text[at..]) else {
-            break;
-        };
+    while let Some(gap) = trivia_len(&text[at..]) {
         at += gap;
         let rest = &text[at..];
         let Some((keyword, class)) = [
