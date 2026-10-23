@@ -93,6 +93,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             is_test_assertion: _,
             supersede: _,
             custom_traits,
+            ..
         } => {
             if let Some(e) = name_expr {
                 v.visit_expr_mut(e);

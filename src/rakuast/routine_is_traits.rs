@@ -93,6 +93,7 @@ impl IsTraits {
         }
         if let Some((kind, reference)) = &self.precedence {
             let variable = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::VarLexical,
                 fields: vec![leaf_field(None, Value::str(reference.clone()))],
             };
@@ -155,10 +156,12 @@ fn is_operator_reference(reference: &str) -> bool {
 /// `(NODE)` as a trait argument, for a node already converted.
 fn paren_around(node: RakuAstNode) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::CircumfixParentheses,
         fields: vec![node_field(
             None,
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::SemiList,
                 fields: vec![node_field(None, statement_expression(node))],
             },

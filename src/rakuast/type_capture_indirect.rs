@@ -24,10 +24,12 @@ pub(super) fn capture_node(name: &str) -> Result<RakuAstNode, RuntimeError> {
     let expr = crate::parser::parse_adverb_argument(inner)
         .ok_or_else(|| unsupported("indirect type capture the converter cannot reparse"))?;
     let part = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
         fields: vec![node_field(None, convert_expr(&expr)?)],
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TypeCapture,
         fields: vec![node_field(
             None,

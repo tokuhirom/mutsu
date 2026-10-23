@@ -4,7 +4,11 @@ use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::value::Value;
 
 fn node(class: RakuAstClass, fields: Vec<RakuAstField>) -> Value {
-    Value::rakuast(Box::new(RakuAstNode { class, fields }))
+    Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    }))
 }
 
 fn positional(value: Value) -> RakuAstField {

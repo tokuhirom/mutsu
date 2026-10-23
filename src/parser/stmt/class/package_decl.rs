@@ -189,6 +189,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             with_meta_stmts(
                 meta_stmts,
                 Stmt::ClassDecl {
+                    spans: Default::default(),
                     name: Symbol::intern(&name),
                     name_expr: None,
                     parents,
@@ -347,6 +348,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             with_meta_stmts(
                 meta_stmts,
                 Stmt::RoleDecl {
+                    spans: Default::default(),
                     name: Symbol::intern(&name),
                     header_order,
                     type_params,
@@ -425,6 +427,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             with_meta_stmts(
                 meta_stmts,
                 Stmt::ClassDecl {
+                    spans: Default::default(),
                     name: Symbol::intern(&name),
                     name_expr: None,
                     parents,

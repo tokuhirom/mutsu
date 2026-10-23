@@ -525,6 +525,19 @@ pub(crate) struct Registry {
     /// `apply_pending_role_attribute_traits`.
     pub(crate) role_attribute_pending_traits:
         HashMap<(String, String), crate::opcode::CompiledAttrDecl>,
+    /// The custom traits a role attribute was last recorded with: (role, attr) ->
+    /// their rendering. A second role declaration under the same name (sibling
+    /// scopes each declaring `my role R`) with different traits is a new
+    /// declaration, not a re-registration, and must not reuse the first one's
+    /// applied meta-object.
+    pub(crate) role_attribute_trait_fingerprints: HashMap<(String, String), String>,
+    /// A *parameterized* role attribute's custom traits: (`RoleDef::role_id`,
+    /// attr) -> its compiled declaration. Unlike `role_attribute_pending_traits`
+    /// these run at every composition, with the role's type parameters bound,
+    /// on the composing class's attribute (Rakudo specializes the role body
+    /// per consumer).
+    pub(crate) param_role_attribute_traits:
+        HashMap<(u64, String), crate::opcode::CompiledAttrDecl>,
     /// Sub-level `proto`s a role body has already registered: (role,
     /// routine name). A role's body re-runs at every composition, but its
     /// `proto sub f(|) {*}` declares one routine for the role — registering

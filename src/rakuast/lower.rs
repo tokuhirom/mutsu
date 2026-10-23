@@ -1448,6 +1448,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         false => None,
     };
     Ok(head.finish(Stmt::ClassDecl {
+        spans: Default::default(),
         name: crate::symbol::Symbol::intern(&head.name),
         name_expr,
         parents,
@@ -1618,6 +1619,7 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         parents.insert(0, "Grammar".to_string());
     }
     Ok(head.finish(Stmt::ClassDecl {
+        spans: Default::default(),
         name: crate::symbol::Symbol::intern(&head.name),
         name_expr: None,
         parents,
@@ -1916,6 +1918,7 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let handles = super::routine_source::handle_specs(&body).ok_or_else(|| unsupported(node))?;
     crate::ast::does_target::mark_does_targets(&name, &mut param_defs, &body);
     Ok(Stmt::MethodDecl {
+        spans: Default::default(),
         value_prototype: None,
         name: crate::symbol::Symbol::intern(&name),
         name_expr,
@@ -2430,6 +2433,7 @@ pub(super) const ANONYMOUS_CAPTURE: &str = "_capture";
 /// A default positional (required, non-slurpy, untyped) `ParamDef` for `name`.
 pub(super) fn positional_param(name: &str) -> ParamDef {
     ParamDef {
+        spans: Default::default(),
         trait_meta: Default::default(),
         type_capture: None,
         name: name.to_string(),

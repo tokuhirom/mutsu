@@ -73,6 +73,7 @@ pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError>
             .find(|f| f.name == Some("body"))
             .ok_or_else(|| unsupported("proto without a body"))?;
         field.value = super::RakuAstFieldValue::Node(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::OnlyStar,
             fields: Vec::new(),
         })));

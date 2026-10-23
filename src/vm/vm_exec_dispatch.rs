@@ -3761,6 +3761,11 @@ impl Interpreter {
                 self.exec_attr_container_ref_op(code, *name_idx);
                 *ip += 1;
             }
+            // Cost: O(a + m), a = the class's attributes, m = its MRO length.
+            OpCode::PublicRwAttrContainerRef(name_idx) => {
+                self.exec_public_rw_attr_container_ref_op(code, *name_idx)?;
+                *ip += 1;
+            }
             // Cost: O(1) (attribute map probes).
             OpCode::ResolveAttrRwCandidate(name_idx) => {
                 self.exec_resolve_attr_rw_candidate_op(code, *name_idx);
@@ -6051,40 +6056,39 @@ impl Interpreter {
                 name_idx,
                 is_positional,
                 index_first,
-                target_slot,
                 concat_append,
                 element_share,
             } => {
-                let appended_in_place = *concat_append
-                    && self.exec_index_concat_append_op(
-                        code,
-                        *name_idx,
-                        *is_positional,
-                        *target_slot,
-                    )?;
-                if !appended_in_place {
-                    if *index_first && self.stack.len() >= 2 {
-                        let top = self.stack.len() - 1;
-                        self.stack.swap(top, top - 1);
-                    }
-                    let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                    let depth = self.stack.len();
-                    if let Err(err) = self.exec_index_assign_expr_named_op(
-                        code,
-                        *name_idx,
-                        *is_positional,
-                        *target_slot,
-                        *element_share,
-                    ) {
-                        // A refused store a handler may resume (#14153) leaves
-                        // the stack as before the op's two operands.
-                        if err.element_store_resume().is_some() {
-                            self.stack.truncate(depth.saturating_sub(2));
-                        }
-                        return Err(err);
-                    }
-                    self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
-                }
+                self.exec_index_assign_store(
+                    code,
+                    *name_idx,
+                    None,
+                    *is_positional,
+                    *index_first,
+                    *concat_append,
+                    *element_share,
+                )?;
+                *ip += 1;
+            }
+            // Cost: as `IndexAssignExprNamed`'s; the store reads the slot
+            // instead of resolving the name when the code declares it.
+            OpCode::IndexAssignLocal {
+                slot,
+                name_idx,
+                is_positional,
+                index_first,
+                concat_append,
+                element_share,
+            } => {
+                self.exec_index_assign_store(
+                    code,
+                    *name_idx,
+                    Some(*slot),
+                    *is_positional,
+                    *index_first,
+                    *concat_append,
+                    *element_share,
+                )?;
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.

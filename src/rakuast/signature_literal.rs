@@ -8,7 +8,11 @@ use crate::ast::{Expr, SignatureVar};
 use crate::value::{RuntimeError, Value};
 
 fn node(class: C, fields: Vec<RakuAstField>) -> RakuAstNode {
-    RakuAstNode { class, fields }
+    RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    }
 }
 
 // Cost: O(1).

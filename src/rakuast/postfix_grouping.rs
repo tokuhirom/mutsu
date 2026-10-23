@@ -34,6 +34,7 @@ pub(super) fn convert(operand: &Expr, postfix: RakuAstNode) -> Result<RakuAstNod
         });
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyPostfix,
         fields,
     })

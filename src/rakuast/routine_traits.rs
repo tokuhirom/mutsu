@@ -57,6 +57,7 @@ pub(super) fn trait_is(name: &str, argument: Option<RakuAstNode>) -> RakuAstNode
         fields.push(node_field(Some("argument"), argument));
     }
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TraitIs,
         fields,
     }
@@ -76,6 +77,7 @@ pub(super) fn trait_is_type(
         fields.push(node_field(Some("argument"), argument));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TraitIs,
         fields,
     })
@@ -92,6 +94,7 @@ pub(super) fn is_type_trait_name(name: &str) -> bool {
 
 fn colon_pair_true(tag: &str) -> Value {
     Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ColonPairTrue,
         fields: vec![leaf_field(None, Value::str(tag.to_string()))],
     }))
@@ -112,11 +115,13 @@ pub(super) fn explicit_export_argument(tags: &[String]) -> Option<RakuAstNode> {
             _ => unreachable!("colon_pair_true builds a node"),
         },
         _ => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyListInfix,
             fields: vec![
                 node_field(
                     Some("infix"),
                     RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::Infix,
                         fields: vec![leaf_field(None, Value::str_from(","))],
                     },
@@ -131,10 +136,12 @@ pub(super) fn explicit_export_argument(tags: &[String]) -> Option<RakuAstNode> {
         },
     };
     let semilist = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::SemiList,
         fields: vec![node_field(None, statement_expression(expression))],
     };
     Some(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::CircumfixParentheses,
         fields: vec![node_field(None, semilist)],
     })

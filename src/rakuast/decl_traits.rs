@@ -98,6 +98,7 @@ pub(super) fn convert(
                 )
             };
             items.push(Value::rakuast(Box::new(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::TraitIs,
                 fields: vec![field],
             })));
@@ -112,6 +113,7 @@ pub(super) fn convert(
             other => super::attribute::paren_argument(other)?,
         };
         items.push(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TraitIs,
             fields: vec![
                 node_field(
@@ -149,6 +151,7 @@ pub(super) fn insert(decl: &mut RakuAstNode, items: Vec<Value>) {
 /// flag rather than as a `custom_traits` entry.
 pub(super) fn dynamic_trait() -> Value {
     Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TraitIs,
         fields: vec![node_field(Some("name"), name_from_identifier(DYNAMIC))],
     }))
@@ -250,6 +253,7 @@ pub(super) fn class_custom_traits(
             fields.push(node_field(Some("argument"), argument));
         }
         items.push(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TraitIs,
             fields,
         })));

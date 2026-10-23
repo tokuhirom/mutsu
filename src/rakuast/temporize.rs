@@ -22,11 +22,13 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// `ApplyPrefix(Prefix "temp" | "let", operand)`.
 fn prefix_node(is_temp: bool, operand: RakuAstNode) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyPrefix,
         fields: vec![
             node_field(
                 Some("prefix"),
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::Prefix,
                     fields: vec![leaf_field(
                         None,
@@ -97,6 +99,7 @@ pub(super) fn convert_method_assign(
 ) -> Result<RakuAstNode, RuntimeError> {
     let target = if is_attribute {
         RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::VarAttributePublic,
             fields: vec![leaf_field(
                 Some("name"),
@@ -199,6 +202,7 @@ fn with_left(node: &RakuAstNode, left: &RakuAstNode) -> RakuAstNode {
         .collect();
     fields.insert(0, node_field(Some("left"), left.clone()));
     RakuAstNode {
+        origin: Default::default(),
         class: node.class,
         fields,
     }

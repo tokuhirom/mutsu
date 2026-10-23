@@ -70,6 +70,7 @@ pub(super) fn convert(body: &[Stmt]) -> Result<Option<RakuAstNode>, RuntimeError
         spelling: *spelling,
     })?;
     let call = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::MetaPostfixHyper,
         fields: vec![node_field(
             None,
@@ -77,12 +78,14 @@ pub(super) fn convert(body: &[Stmt]) -> Result<Option<RakuAstNode>, RuntimeError
         )],
     };
     Ok(Some(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyDottyInfix,
         fields: vec![
             node_field(Some("left"), left),
             node_field(
                 Some("infix"),
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::DottyInfixCallAssign,
                     fields: Vec::new(),
                 },

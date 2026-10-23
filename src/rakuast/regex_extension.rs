@@ -25,6 +25,7 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
             }
             fields.push(node_field(Some("assertion"), regex_node(assertion)?));
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::RegexAssertionLookahead,
                 fields,
             }
@@ -39,11 +40,13 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
                 },
             );
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::RegexQuote,
                 fields: vec![node_field(None, quoted)],
             }
         }
         RegexExtension::Tilde { goal, expr } => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexNested,
             fields: vec![
                 node_field(None, regex_node(goal)?),
@@ -56,6 +59,7 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
                 return Err(unsupported("regex statement"));
             };
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::RegexStatement,
                 fields: vec![
                     node_field(None, statement),
@@ -64,18 +68,22 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
             }
         }
         RegexExtension::BackReferenceNamed(name) => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexBackReferenceNamed,
             fields: vec![leaf_field(None, Value::str(name.clone()))],
         },
         RegexExtension::BackReferencePositional(index) => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexBackReferencePositional,
             fields: vec![leaf_field(None, Value::int(i64::from(*index)))],
         },
         RegexExtension::Recurse => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexAssertionRecurse,
             fields: Vec::new(),
         },
         RegexExtension::BacktrackModified { atom, backtrack } => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexBacktrackModifiedAtom,
             fields: vec![
                 node_field(Some("atom"), regex_node(atom)?),
@@ -98,6 +106,7 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
         } => {
             let class = contextualizer_class(*sigil)?;
             let sequence = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::StatementSequence,
                 fields: block_statements(&code.body)?
                     .into_iter()
@@ -105,12 +114,14 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
                     .collect(),
             };
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::RegexInterpolation,
                 fields: vec![
                     leaf_field(Some("sequential"), Value::truth(*sequential)),
                     node_field(
                         Some("var"),
                         RakuAstNode {
+                            origin: Default::default(),
                             class,
                             fields: vec![node_field(None, sequence)],
                         },
@@ -124,12 +135,14 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
             name,
             sequential,
         } => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexInterpolation,
             fields: vec![
                 leaf_field(Some("sequential"), Value::truth(*sequential)),
                 node_field(
                     Some("var"),
                     RakuAstNode {
+                        origin: Default::default(),
                         class: contextualizer_class(*sigil)?,
                         fields: vec![node_field(None, var_lexical("$", name))],
                     },
@@ -137,6 +150,7 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
             ],
         },
         RegexExtension::Placeholder { name, sequential } => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexInterpolation,
             fields: vec![
                 leaf_field(Some("sequential"), Value::truth(*sequential)),
@@ -151,12 +165,14 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
             ],
         },
         RegexExtension::AnonymousInterpolation { sequential } => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexInterpolation,
             fields: vec![
                 leaf_field(Some("sequential"), Value::truth(*sequential)),
                 node_field(
                     Some("var"),
                     RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::VarDeclarationAnonymous,
                         fields: vec![
                             leaf_field(Some("scope"), Value::str_from("state")),
@@ -167,6 +183,7 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
             ],
         },
         RegexExtension::Alias { alias, assertion } => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexAssertionAlias,
             fields: vec![
                 leaf_field(Some("name"), Value::str(alias.clone())),
@@ -176,9 +193,16 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
         RegexExtension::VariableAlias {
             name,
             sequential,
+            array,
+            gaps,
             regex,
-        } => super::regex_variable_alias::convert(name, *sequential, regex)?,
+        } => super::regex_variable_alias::convert(
+            (name, *sequential, *array),
+            gaps.as_deref().map_or(("", ""), |g| (&g.0[..], &g.1[..])),
+            regex,
+        )?,
         RegexExtension::NamedRegexArg { name, regex_arg } => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexAssertionNamedRegexArg,
             fields: vec![
                 node_field(Some("name"), name_from_identifier(name)),
@@ -186,6 +210,7 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
             ],
         },
         RegexExtension::InterpolatedQuote { source, expr } => RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexQuote,
             fields: vec![
                 node_field(None, convert_expr(expr)?),
@@ -210,6 +235,7 @@ fn contextualizer_class(sigil: char) -> Result<RakuAstClass, RuntimeError> {
 // Cost: O(n), n = size of the operands.
 fn branches(class: RakuAstClass, operands: &[RegexNode]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class,
         fields: operands
             .iter()

@@ -64,6 +64,7 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
         fields.push(field("where", constraint));
     }
     Ok(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::VarDeclarationSimple,
         fields,
     })))
@@ -91,6 +92,7 @@ pub(super) fn construct_anonymous(args: &[Value]) -> Result<Value, RuntimeError>
     }
     push_initializer(&mut fields, args, CONSTRUCTOR)?;
     Ok(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::VarDeclarationAnonymous,
         fields,
     })))

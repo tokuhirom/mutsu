@@ -554,6 +554,7 @@ fn every_variant_roundtrips_losslessly() {
             codes: Value::real_array(vec![Value::int(97), Value::int(98), Value::int(99)]),
         })),
         ValueRepr::RakuAst(Box::new(crate::rakuast::RakuAstNode {
+            origin: Default::default(),
             class: crate::rakuast::RakuAstClass::IntLiteral,
             fields: vec![crate::rakuast::RakuAstField {
                 name: None,

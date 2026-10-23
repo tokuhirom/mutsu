@@ -176,6 +176,10 @@ pub(crate) struct ParamDef {
     /// signature. Code that rewrites one of those expressions must reset it.
     #[serde(default)]
     pub(crate) code: ParamCode,
+    /// Where the parameter was written (ADR-10723 Stage 2); not part of its
+    /// identity.
+    #[serde(default)]
+    pub(crate) spans: parsed::ParamSpans,
 }
 
 /// The bytecode for a parameter's signature-time expressions, compiled once in
@@ -368,6 +372,7 @@ impl ParamDef {
     // Cost: O(|name|).
     pub(crate) fn sigilless_term(name: &str) -> Self {
         ParamDef {
+            spans: Default::default(),
             trait_meta: Default::default(),
             type_capture: None,
             name: name.to_string(),
@@ -2211,6 +2216,10 @@ pub(crate) enum Stmt {
         supersede: bool,
         /// Custom `is` traits (non-builtin trait names like `me'd`) with optional argument expression
         custom_traits: Vec<(String, Option<Expr>)>,
+        /// Where the name, signature and block were written (ADR-10723
+        /// Stage 2); `None` for a declaration nobody wrote.
+        #[serde(default)]
+        spans: Option<Box<parsed::RoutineSpans>>,
     },
     TokenDecl {
         name: Symbol,
@@ -2646,6 +2655,10 @@ pub(crate) enum Stmt {
         /// introduce them.
         #[serde(default)]
         body_parents: Vec<String>,
+        /// Where the name and block were written (ADR-10723 Stage 2); `None`
+        /// for a declaration nobody wrote.
+        #[serde(default)]
+        spans: Option<Box<parsed::PackageSpans>>,
     },
     HasDecl {
         name: Symbol,
@@ -2773,6 +2786,10 @@ pub(crate) enum Stmt {
         /// methods are made available as their sub-form (e.g. operator subs).
         is_export: bool,
         export_tags: Vec<String>,
+        /// Where the name, signature and block were written (ADR-10723
+        /// Stage 2); `None` for a declaration nobody wrote.
+        #[serde(default)]
+        spans: Option<Box<parsed::RoutineSpans>>,
     },
     RoleDecl {
         name: Symbol,
@@ -2795,6 +2812,10 @@ pub(crate) enum Stmt {
         /// (ADR-0047 P1, #9894). 0 means "no stable site".
         #[serde(with = "crate::ast::decl_id_serde")]
         decl_id: u64,
+        /// Where the name and block were written (ADR-10723 Stage 2); `None`
+        /// for a declaration nobody wrote.
+        #[serde(default)]
+        spans: Option<Box<parsed::PackageSpans>>,
     },
     DoesDecl {
         name: Symbol,
@@ -3020,6 +3041,12 @@ impl Hash for SrcSpan {
     fn hash<H: Hasher>(&self, _state: &mut H) {}
 }
 
+impl Default for SrcSpan {
+    fn default() -> Self {
+        SrcSpan::NONE
+    }
+}
+
 impl Stmt {
     /// A statement that exists for the program's diagnostics, not for what it
     /// computes: a source-line marker or a `use trace` hook. Code that
@@ -3239,6 +3266,15 @@ impl Expr {
     // Cost: O(1).
     pub(crate) fn postfix_operand(&self) -> &Expr {
         match self {
+            // A parenthesised positional pair (`(a => 1).List`) carries its
+            // parentheses inside the `PositionalPair` marker; that is the level
+            // raku drops.
+            Expr::PositionalPair(inner) if matches!(inner.as_ref(), Expr::Grouped(_)) => {
+                match inner.as_ref() {
+                    Expr::Grouped(pair) => pair,
+                    _ => unreachable!("guarded above"),
+                }
+            }
             Expr::Grouped(inner)
                 if !matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty())
                     && !inner.is_modified_statement()
@@ -3362,6 +3398,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
             let param_defs = legacy_params
                 .iter()
                 .map(|name| ParamDef {
+                    spans: Default::default(),
                     trait_meta: Default::default(),
                     type_capture: None,
                     name: name.clone(),
@@ -3417,6 +3454,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                 // Named placeholders use `:` twigil: $:f, @:f, %:f
                 let is_named = name.contains(':');
                 ParamDef {
+                    spans: Default::default(),
                     trait_meta: Default::default(),
                     type_capture: None,
                     name: name.clone(),
@@ -3448,6 +3486,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
         if uses_hash_underscore {
             params.push("%_".to_string());
             param_defs.push(ParamDef {
+                spans: Default::default(),
                 trait_meta: Default::default(),
                 type_capture: None,
                 name: "%_".to_string(),

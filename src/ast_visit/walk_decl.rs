@@ -11,6 +11,7 @@ use crate::ast::Stmt;
 pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt) {
     match s {
         Stmt::ClassDecl {
+            spans: _,
             name,
             name_expr,
             parents,
@@ -121,6 +122,7 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
             custom_traits,
             is_export: _,
             export_tags,
+            ..
         } => {
             v.visit_name(name.as_str(), NameKind::Decl);
             if let Some(e) = name_expr {
@@ -137,6 +139,7 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
             super::walk_stmts(v, body);
         }
         Stmt::RoleDecl {
+            spans: _,
             name,
             header_order: _,
             type_params,

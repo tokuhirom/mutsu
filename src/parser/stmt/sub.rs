@@ -16,6 +16,7 @@ mod outer_slurpy;
 mod param_list;
 mod param_validate;
 mod return_type;
+mod routine_spans;
 mod sub_decl;
 mod sub_name;
 mod trait_type;
@@ -32,6 +33,7 @@ pub(super) use param_validate::{
     literal_value_from_expr, validate_param_trait, validate_param_trait_pub,
     validate_signature_params,
 };
+pub(crate) use routine_spans::{package_spans, routine_spans};
 
 // Sub name / operator name parsing (sub_name.rs, op_name.rs).
 pub(crate) use op_name::parse_bracket_op_name;

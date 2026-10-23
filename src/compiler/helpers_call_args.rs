@@ -883,6 +883,39 @@ impl Compiler {
             // not a source resolved by name later (#13941).
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             self.code.emit(OpCode::WrapPackageVarRef { name_idx });
+        } else if is_bind_target
+            && let Expr::Var(name) = arg
+            && let Some((bare, true)) = crate::value::attr_twigil_base(name)
+            && crate::value::attr_twigil_sigil(name).unwrap_or('$') == '$'
+        {
+            // `my $p := $!attr` aliases the attribute's OWN container, the one
+            // `self` holds. A method frame reads `$!attr` out of a seeded local
+            // slot, so tagging that slot (`WrapVarRef`) would box a cell that is
+            // disconnected from the instance and that the method's exit would
+            // later seat over the attribute, undoing a `:=` rebind a nested call
+            // made meanwhile (#14663). Promote the instance's slot instead.
+            let name_idx = self.code.add_constant(Value::str(bare.to_string()));
+            self.code.emit(OpCode::AttrContainerRef(name_idx));
+        } else if is_bind_target
+            && let Expr::Var(name) = arg
+            && Self::is_dot_twigil_scalar(name)
+        {
+            // `my $p := $.w` is `self.w`: a public accessor hands back the
+            // attribute's container only when it is `is rw`, otherwise the
+            // bind keeps a copy. The `.w` local is a by-name alias of the
+            // attribute, so tagging it (`WrapVarRef`) would alias a non-rw
+            // attribute too (#14689). Promote the cell only for `is rw`.
+            let attr = name.strip_prefix('.').expect("dot twigil");
+            let attr_idx = self.code.add_constant(Value::str(attr.to_string()));
+            self.code.emit(OpCode::PublicRwAttrContainerRef(attr_idx));
+            // Either the attribute's cell (`is rw`) or a plain value: tag it
+            // as a bind so a copy lands in a fresh, assignable variable.
+            let tmp = format!("__mutsu_bind_accessor_ref_{}", self.code.constants.len());
+            let name_idx = self.code.add_constant(Value::str(tmp));
+            self.code.emit(OpCode::WrapVarRef {
+                name_idx,
+                slot: u32::MAX,
+            });
         } else if is_call_arg && self.is_readonly_param_operand(arg) {
             // A readonly `$` parameter is a value, not a container: tagging it
             // would let an `is rw` parameter bind it and write into this frame

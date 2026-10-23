@@ -61,6 +61,7 @@ pub(super) fn convert_use(
             && let ValueView::Str(text) = version.view()
         {
             return Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::StatementLanguageVersion,
                 fields: vec![leaf_field(None, Value::version_from_str(&text))],
             });
@@ -108,6 +109,7 @@ pub(super) fn convert_use(
         pragma_node(module)
     } else {
         RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::StatementUse,
             fields: vec![node_field(
                 Some("module-name"),
@@ -254,6 +256,7 @@ fn lower_source_if(node: &RakuAstNode) -> Result<(Option<Expr>, Vec<String>), Ru
 /// `need MODULE;` -> `Statement::Need(module-names => (Name,))`.
 pub(super) fn convert_need(module: &str) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementNeed,
         fields: vec![RakuAstField {
             name: Some("module-names"),
@@ -277,6 +280,7 @@ pub(super) fn convert_require(args: &[Expr]) -> Result<Option<RakuAstNode>, Runt
         return Ok(None);
     };
     let mut node = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementRequire,
         fields: vec![node_field(
             Some("module-name"),
@@ -322,6 +326,7 @@ pub(super) fn lower_require(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 /// statement's `argument`.
 pub(super) fn convert_import(module: &str, tags: &[String]) -> RakuAstNode {
     let mut node = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementImport,
         fields: vec![node_field(
             Some("module-name"),
@@ -343,6 +348,7 @@ pub(super) fn convert_no(module: &str) -> RakuAstNode {
 
 fn pragma_node(name: &str) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Pragma,
         fields: vec![leaf_field(Some("name"), Value::str(name.to_string()))],
     }
@@ -357,6 +363,7 @@ fn name_with_from(module: &str, language: &str) -> RakuAstNode {
     name.fields.push(RakuAstField {
         name: Some("colonpairs"),
         value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ColonPairValue,
             fields: vec![
                 leaf_field(Some("key"), Value::str("from".to_string())),
@@ -419,6 +426,7 @@ fn tag_argument(tags: &[String]) -> Option<RakuAstNode> {
         [] => None,
         [tag] => Some(colonpair_true(tag)),
         tags => Some(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyListInfix,
             fields: vec![
                 node_field(Some("infix"), plain_infix(",")),
@@ -437,6 +445,7 @@ fn tag_argument(tags: &[String]) -> Option<RakuAstNode> {
 
 fn colonpair_true(tag: &str) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ColonPairTrue,
         fields: vec![leaf_field(None, Value::str(tag.to_string()))],
     }

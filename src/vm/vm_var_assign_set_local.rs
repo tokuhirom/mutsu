@@ -2145,7 +2145,17 @@ impl Interpreter {
             && !scalar_bind
             && !is_vardecl
             && matches!(self.locals[idx].view(), ValueView::Proxy { storer, .. } if !storer.is_nil());
-        if !val.is_nil() || stores_into_proxy {
+        // A scalar attribute bound to a `:D` container cannot reset to the
+        // container's type object: the `Nil` is refused by the check below.
+        let nil_into_definite_attr_cell = val.is_nil()
+            && !is_bind
+            && !is_rebind
+            && !is_vardecl
+            && name_is_attr_twigil(&code.locals[idx])
+            && self
+                .self_attr_bound_cell_constraint(&code.locals[idx])
+                .is_some_and(|tc| self.is_definite_constraint(&tc));
+        if !val.is_nil() || stores_into_proxy || nil_into_definite_attr_cell {
         } else if !is_bind
             && !is_rebind
             && !is_vardecl
@@ -2246,12 +2256,19 @@ impl Interpreter {
         let declared_view = declared.as_ref().map(Value::view);
         let attr_constraint = match declared_view {
             Some(_) => None,
-            None => (!is_bind && !val.is_nil())
+            None => (!is_bind)
                 .then(|| {
                     let sym = name_sym.unwrap_or_else(|| crate::symbol::Symbol::intern(name));
-                    self.scalar_attr_type_constraint_sym(name, sym)
+                    self.scalar_attr_type_constraint_sym(name, sym).or_else(|| {
+                        // The container a bound attribute holds is the store's
+                        // target; a rebind replaces it and is not checked.
+                        (!is_rebind && !scalar_bind)
+                            .then(|| self.self_attr_bound_cell_constraint(name))
+                            .flatten()
+                    })
                 })
-                .flatten(),
+                .flatten()
+                .filter(|tc| !val.is_nil() || self.is_definite_constraint(tc)),
         };
         let constraint: Option<&str> = match &declared_view {
             Some(ValueView::Str(tc)) => Some(tc.as_str()),
@@ -2937,7 +2954,23 @@ impl Interpreter {
                     // `WrapVarRef` of a mainline lexical carries the raw cell):
                     // bind to the container behind it, as `source_cell` does.
                     (ValueView::ContainerRef(_), _) => Self::innermost_container(val.clone()),
-                    (_, Some(arc)) => Value::container_ref(arc),
+                    (_, Some(arc)) => {
+                        // A cell the source was boxed into without its declared
+                        // type (promoted before the type was recorded) gets it
+                        // here, so a write through the new alias is checked.
+                        if crate::value::lookup_container_constraint(&arc).is_none()
+                            && !resolved_source.starts_with(['@', '%', '&'])
+                            && let Some(ty) = self.var_type_constraint(&resolved_source)
+                        {
+                            let display = if resolved_source.starts_with('$') {
+                                resolved_source.clone()
+                            } else {
+                                format!("${}", resolved_source)
+                            };
+                            crate::value::register_container_constraint_named(&arc, &ty, &display);
+                        }
+                        Value::container_ref(arc)
+                    }
                     _ => {
                         // A freshly minted cell must inherit the SOURCE
                         // variable's declared `of`-type: from here on the cell,
@@ -3968,4 +4001,8 @@ impl Interpreter {
         }
         r
     }
+}
+
+fn name_is_attr_twigil(name: &str) -> bool {
+    name.len() > 1 && name.starts_with(['!', '.'])
 }

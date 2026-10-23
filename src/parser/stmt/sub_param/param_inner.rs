@@ -14,7 +14,96 @@ pub(crate) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         p.traits.retain(|t| t != "required");
     }
     crate::parser::decl_doc::attach_param(input, rest, &p);
+    p.spans = param_spans(input, rest, &p);
     Ok((rest, p))
+}
+
+/// Where the parameter `p`, read from `input` up to `rest`, was written: all
+/// of it, and its target variable (ADR-10723 Stage 2).
+// Cost: O(n), n = length of the parameter's source.
+fn param_spans(input: &str, rest: &str, p: &ParamDef) -> crate::ast::parsed::ParamSpans {
+    let text = input[..input.len() - rest.len()].trim_end();
+    let param = crate::parser::primary::source_span(input, &input[text.len()..]);
+    let target = target_offset(text, p).map_or(crate::ast::SrcSpan::NONE, |(at, len)| {
+        crate::parser::primary::source_span(&input[at..], &input[at + len..])
+    });
+    let type_ = p
+        .type_constraint
+        .as_deref()
+        .and_then(|tc| text.find(tc).map(|at| (at, tc.len())))
+        .map_or(crate::ast::SrcSpan::NONE, |(at, len)| {
+            crate::parser::primary::source_span(&input[at..], &input[at + len..])
+        });
+    let span_of =
+        |at: usize, end: usize| crate::parser::primary::source_span(&input[at..], &input[end..]);
+    let mut from = 0;
+    let traits = p
+        .traits
+        .iter()
+        .map(|name| match is_trait_offset(text, from, name) {
+            Some((at, name_at)) => {
+                from = name_at + name.len();
+                crate::ast::parsed::TraitSpans {
+                    whole: span_of(at, from),
+                    name: span_of(name_at, from),
+                }
+            }
+            None => crate::ast::parsed::TraitSpans::default(),
+        })
+        .collect();
+    crate::ast::parsed::ParamSpans {
+        param,
+        target,
+        type_,
+        traits,
+    }
+}
+
+/// Where `is NAME` is written in `text` at or after `from`: the offsets of the
+/// `is` and of the name.
+// Cost: O(n), n = length of `text`.
+fn is_trait_offset(text: &str, from: usize, name: &str) -> Option<(usize, usize)> {
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'';
+    let mut cursor = from;
+    while let Some(found) = text[cursor..].find("is") {
+        let at = cursor + found;
+        cursor = at + 2;
+        if text[..at].ends_with(is_ident) {
+            continue;
+        }
+        let after = &text[at + 2..];
+        let name_at = at + 2 + (after.len() - after.trim_start().len());
+        if name_at > at + 2
+            && text[name_at..].starts_with(name)
+            && !text[name_at + name.len()..].starts_with(is_ident)
+        {
+            return Some((at, name_at));
+        }
+    }
+    None
+}
+
+/// The offset and length of `p`'s variable in its source `text`.
+// Cost: O(n), n = length of `text`.
+fn target_offset(text: &str, p: &ParamDef) -> Option<(usize, usize)> {
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'';
+    let (needle, skip) = if p.sigilless {
+        (format!("\\{}", p.name), 1)
+    } else if p.name.starts_with(['$', '@', '%', '&']) {
+        (p.name.clone(), 0)
+    } else {
+        (format!("${}", p.name), 0)
+    };
+    let mut from = 0;
+    while let Some(at) = text[from..].find(&needle) {
+        let at = from + at;
+        let end = at + needle.len();
+        if !text[end..].starts_with(is_ident) {
+            return Some((at + skip, needle.len() - skip));
+        }
+        from = end;
+    }
+    None
 }
 
 /// A nominal type may be followed by a **type capture** of the same parameter:

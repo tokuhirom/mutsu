@@ -42,6 +42,7 @@ pub(super) fn enum_term_node(
     match form {
         EnumVariantForm::Words => word_term(variants, "words"),
         EnumVariantForm::EmptyWords(raw) => Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::QuotedString,
             fields: vec![
                 RakuAstField {
@@ -77,10 +78,12 @@ fn computed_term(body: &Expr) -> Result<RakuAstNode, RuntimeError> {
 
 fn parenthesized(expr: RakuAstNode) -> RakuAstNode {
     let semilist = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::SemiList,
         fields: vec![node_field(None, statement_expression(expr))],
     };
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::CircumfixParentheses,
         fields: vec![node_field(None, semilist)],
     }
@@ -113,6 +116,7 @@ fn word_term(
             segments.push(str_literal(std::mem::take(&mut text)));
         }
         let pair = RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ColonPairValue,
             fields: vec![
                 leaf_field(Some("key"), Value::str(name.clone())),
@@ -120,6 +124,7 @@ fn word_term(
             ],
         };
         segments.push(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::QuoteWordsAtom,
             fields: vec![node_field(None, pair)],
         })));
@@ -128,6 +133,7 @@ fn word_term(
         segments.push(str_literal(text));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::QuotedString,
         fields: vec![
             RakuAstField {
@@ -147,6 +153,7 @@ fn word_term(
 
 fn str_literal(text: String) -> Value {
     Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StrLiteral,
         fields: vec![leaf_field(None, Value::str(text))],
     }))
@@ -156,10 +163,12 @@ fn str_literal(text: String) -> Value {
 fn pair_list_term(variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, RuntimeError> {
     if variants.is_empty() {
         return Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::CircumfixParentheses,
             fields: vec![node_field(
                 None,
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::SemiList,
                     fields: Vec::new(),
                 },
@@ -179,6 +188,7 @@ fn pair_list_term(variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, Ru
                 }
             };
             Ok(Value::rakuast(Box::new(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::FatArrow,
                 fields: vec![
                     leaf_field(Some("key"), Value::str(name.clone())),
@@ -188,6 +198,7 @@ fn pair_list_term(variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, Ru
         })
         .collect::<Result<Vec<_>, RuntimeError>>()?;
     let list = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyListInfix,
         fields: vec![
             node_field(Some("infix"), plain_infix(",")),

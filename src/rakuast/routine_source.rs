@@ -128,6 +128,7 @@ pub(super) fn apply(node: &mut RakuAstNode, body: &[Stmt]) -> Result<bool, Runti
                 }
             }
             RoutineTrait::Returns(ty) | RoutineTrait::Of(ty) => RakuAstNode {
+                origin: Default::default(),
                 class: if matches!(item, RoutineTrait::Returns(_)) {
                     RakuAstClass::TraitReturns
                 } else {
@@ -136,6 +137,7 @@ pub(super) fn apply(node: &mut RakuAstNode, body: &[Stmt]) -> Result<bool, Runti
                 fields: vec![node_field(None, return_constraint_node(ty)?)],
             },
             RoutineTrait::Handles(term) => RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::TraitHandles,
                 fields: vec![node_field(None, super::convert::convert_expr(term)?)],
             },
@@ -332,6 +334,7 @@ pub(super) fn routine_node(
             _ => RakuAstClass::TraitReturns,
         };
         let trait_node = RakuAstNode {
+            origin: Default::default(),
             class: trait_class,
             fields: vec![node_field(None, return_constraint_node(t)?)],
         };
@@ -341,5 +344,9 @@ pub(super) fn routine_node(
         });
     }
     fields.push(node_field(Some("body"), blockoid(body)?));
-    Ok(RakuAstNode { class, fields })
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    })
 }

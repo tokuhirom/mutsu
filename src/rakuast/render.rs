@@ -22,6 +22,7 @@ fn render_node_body(node: &RakuAstNode, indent: usize) -> String {
     // `*` value.
     if node.class == RakuAstClass::WhateverCodeArgument {
         let shown = RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TermWhatever,
             fields: node.fields.clone(),
         };

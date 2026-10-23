@@ -76,30 +76,60 @@ impl Parser {
     }
 
     /// `$name=ATOM` right after the interpolated `$name`: an alias to a
-    /// variable rather than to a capture. Only the unspaced spelling is
-    /// modelled, so the rebuilt text is the text that was written (whitespace
-    /// around `=` is significant under `:sigspace`); any other spelling keeps
-    /// the plain interpolation and leaves the `=` to the caller.
+    /// variable rather than to a capture. Whitespace around the `=` is part of
+    /// the alias (`$name = ATOM` is the same alias in rakudo) and is kept as
+    /// written, so the rebuilt text is the text that was written; anything
+    /// that is not an alias keeps the plain interpolation and leaves the `=`
+    /// to the caller.
     // Cost: O(n), n = source consumed by the alias and its atom.
     pub(super) fn parse_variable_alias(
         &mut self,
         name: String,
         sequential: bool,
+        array: bool,
     ) -> Option<RegexNode> {
+        let plain = |name: String| {
+            Some(if array {
+                RegexNode::ArrayInterpolation { name, sequential }
+            } else {
+                RegexNode::Interpolation { name, sequential }
+            })
+        };
         let start = self.pos;
-        if self.chars.get(self.pos) != Some(&'=')
+        let mut at = self.pos;
+        while self.chars.get(at).is_some_and(|ch| ch.is_whitespace()) {
+            at += 1;
+        }
+        let gap_before: String = self.chars[start..at].iter().collect();
+        if self.chars.get(at) != Some(&'=')
             || self
                 .chars
-                .get(self.pos + 1)
-                .is_none_or(|next| next.is_whitespace() || *next == '=')
+                .get(at + 1)
+                .is_some_and(|next| *next == '=' || *next == '~')
         {
-            return Some(RegexNode::Interpolation { name, sequential });
+            return plain(name);
         }
-        self.pos += 1;
+        let mut after = at + 1;
+        while self.chars.get(after).is_some_and(|ch| ch.is_whitespace()) {
+            after += 1;
+        }
+        // Nothing to alias (`$x =` at the end of a group or alternative).
+        if self
+            .chars
+            .get(after)
+            .is_none_or(|next| matches!(next, ')' | ']' | '|' | '&' | '>'))
+        {
+            return plain(name);
+        }
+        let gap_after: String = self.chars[at + 1..after].iter().collect();
+        self.pos = after;
         let alias = self.parse_alias_target(|regex| {
             RegexNode::Extension(RegexExtension::VariableAlias {
                 name: name.clone(),
                 sequential,
+                array,
+                gaps: (!gap_before.is_empty() || !gap_after.is_empty())
+                    .then(|| Box::new((gap_before, gap_after))),
                 regex,
             })
         });

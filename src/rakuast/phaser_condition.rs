@@ -54,12 +54,14 @@ pub(super) fn convert(
         let block = block_node(body)?;
         if is_pre {
             statement_expression(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ApplyPostfix,
                 fields: vec![
                     node_field(Some("operand"), block),
                     node_field(
                         Some("postfix"),
                         RakuAstNode {
+                            origin: Default::default(),
                             class: RakuAstClass::CallTerm,
                             fields: Vec::new(),
                         },
@@ -78,6 +80,7 @@ pub(super) fn convert(
         node
     };
     Ok(Some(statement_expression(RakuAstNode {
+        origin: Default::default(),
         class,
         fields: vec![
             node_field(None, positional),

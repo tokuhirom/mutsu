@@ -50,6 +50,64 @@ pub(crate) struct BlockSpans {
     pub(crate) list: SrcSpan,
 }
 
+/// Where a routine declaration (`Sub`, `Method`, `Submethod`) was written,
+/// below the statement it is: its name, its signature and its block. Kept on
+/// `Stmt::SubDecl` / `Stmt::MethodDecl`, which already hold what the source
+/// wrote, so the declaration is its own typed node (ADR-10723 §4).
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct RoutineSpans {
+    /// The declared name (`foo`, `p` of `!p`).
+    pub(crate) name: SrcSpan,
+    /// From the first parameter to the end of the last; an empty `( )` sits at
+    /// its `)`, and a routine with no parentheses has none.
+    pub(crate) signature: SrcSpan,
+    pub(crate) block: BlockSpans,
+    /// The traits written after the signature, in source order, one per
+    /// trait the `.AST` parse records (`ast::routine_trait`).
+    #[serde(default)]
+    pub(crate) traits: Vec<TraitSpans>,
+}
+
+/// Where a trait was written (`is copy`, `returns Int`): all of it, and the
+/// name or type it names.
+#[derive(Debug, Clone, Copy, Default, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TraitSpans {
+    pub(crate) whole: SrcSpan,
+    pub(crate) name: SrcSpan,
+}
+
+/// Where a package declaration (`class`, `grammar`, `role`) was written
+/// below its statement: its name and its block.
+#[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PackageSpans {
+    pub(crate) name: SrcSpan,
+    pub(crate) block: BlockSpans,
+}
+
+/// Where a parameter was written: all of it (type, traits and default
+/// included) and its target variable.
+///
+/// Like `SrcSpan`'s `Hash`, its `Debug` leaves the positions out: the runtime
+/// still tells two signatures apart by their `Debug` text in places (a forward
+/// declaration and its definition, a role's re-registered method), and a
+/// signature is the same wherever it was written.
+#[derive(Clone, Default, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ParamSpans {
+    pub(crate) param: SrcSpan,
+    pub(crate) target: SrcSpan,
+    /// The nominal type, smiley included (`Int:D`).
+    pub(crate) type_: SrcSpan,
+    /// The `is` traits, in the order of `ParamDef::traits`.
+    #[serde(default)]
+    pub(crate) traits: Vec<TraitSpans>,
+}
+
+impl std::fmt::Debug for ParamSpans {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ParamSpans")
+    }
+}
+
 /// Which loop a [`LoopStmt`] is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum LoopKind {

@@ -48,6 +48,7 @@ pub(super) fn split(
         .collect();
     Ok(Some((
         RakuAstNode {
+            origin: Default::default(),
             class: node.class,
             fields,
         },

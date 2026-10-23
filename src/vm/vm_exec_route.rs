@@ -112,6 +112,7 @@ impl Interpreter {
             | OpCode::NumLt
             | OpCode::NumNe
             | OpCode::NumNeNative(..)
+            | OpCode::PublicRwAttrContainerRef(..)
             | OpCode::ResolveAttrRwCandidate(..)
             | OpCode::StashVarDeclInit
             | OpCode::WrapScalar
@@ -276,6 +277,7 @@ impl Interpreter {
             OpCode::IndexAssignDeepNested { .. }
             | OpCode::IndexAssignExprNamed { .. }
             | OpCode::IndexAssignExprNested { .. }
+            | OpCode::IndexAssignLocal { .. }
             | OpCode::IndexAssignPseudoStashKeyed { .. }
             | OpCode::IndexAssignPseudoStashNamed { .. }
             | OpCode::IndexElemAutoviv { .. }

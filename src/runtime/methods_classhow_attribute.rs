@@ -153,6 +153,21 @@ impl Interpreter {
             })
             .map(|t| self.resolve_type_name_for_owner(owner, t))
             .map(|t| self.lexical_type_storage_name(t));
+        // A type parameter of a composed parametric role (`has T $.attr` in
+        // `role R[::T]`, class `does R[Bar]`) reports the argument it is bound
+        // to for this class.
+        let raw_type_name = raw_type_name.map(|t| {
+            let bound = self
+                .registry()
+                .class_role_param_bindings
+                .get(owner)
+                .and_then(|bindings| bindings.get(&t))
+                .and_then(|v| match v.view() {
+                    ValueView::Package(name) => Some(name.as_str().to_string()),
+                    _ => None,
+                });
+            bound.unwrap_or(t)
+        });
         // `has Int:D %.h`: the element type keeps its smiley (`Associative[Int:D]`).
         let raw_type_name = match raw_type_name {
             Some(t) if matches!(sigil, '@' | '%') => {
@@ -277,6 +292,13 @@ impl Interpreter {
                         false,
                     ),
                 };
+                // Rakudo's `Attribute.build` hands out a `Method` (it takes the
+                // object being built as its invocant).
+                let mut build_env = self.env().clone();
+                build_env.insert(
+                    "__mutsu_callable_type".to_string(),
+                    Value::str_from("Method"),
+                );
                 let sub_data = crate::value::SubData {
                     package: Symbol::intern("GLOBAL"),
                     name: Symbol::intern("<attribute-build>"),
@@ -285,7 +307,7 @@ impl Interpreter {
                     body: std::sync::Arc::new(body),
                     is_rw: false,
                     is_raw: false,
-                    env: self.env().clone(),
+                    env: build_env,
                     assumed_positional: Vec::new(),
                     assumed_named: ValueMap::default(),
                     id: crate::value::next_instance_id(),

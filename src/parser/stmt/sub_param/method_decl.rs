@@ -105,6 +105,7 @@ fn method_decl_body_with_my(
     } else {
         (rest, false)
     };
+    let name_start = rest;
     let (rest, name, name_expr) = if rest.starts_with("::") {
         let (rest, (name, expr)) = super::super::sub::parse_indirect_decl_name(rest)?;
         let name = if is_meta { format!("^{}", name) } else { name };
@@ -114,11 +115,14 @@ fn method_decl_body_with_my(
         let name = if is_meta { format!("^{}", name) } else { name };
         (rest, name, None)
     };
+    let name_span = crate::parser::primary::source_span(name_start, rest);
     let (rest, _) = ws(rest)?;
 
+    let mut signature_start = None;
     let (rest, (params, param_defs, param_return_type)) = if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
+        signature_start = Some(r);
         let (r, (pd, rt)) = super::super::sub::parse_param_list_with_return(r)?;
         super::super::sub::validate_signature_params(&pd)?;
         // In BUILD/TWEAK submethods, reject $.x (public accessor twigil) parameters
@@ -150,6 +154,7 @@ fn method_decl_body_with_my(
     let (rest, traits) = super::super::sub::parse_sub_traits(rest)?;
     let return_type = traits.return_type.or(param_return_type);
     let slurpy_scope = super::super::sub::enter_routine_body(&param_defs, true);
+    let brace = rest;
     let (rest, mut body) = if param_defs.iter().any(|p| p.sigilless)
         || super::super::sub::has_type_capture(&param_defs)
     {
@@ -189,9 +194,19 @@ fn method_decl_body_with_my(
     let mut param_defs = param_defs;
     crate::ast::does_target::mark_does_targets(&name, &mut param_defs, &body);
     crate::ast::routine_trait::attach(&mut body, traits.source_traits);
+    let spans = super::super::sub::routine_spans(
+        name_span,
+        signature_start,
+        &param_defs,
+        traits.source_spans,
+        brace,
+        rest,
+        &body,
+    );
     Ok((
         rest,
         Stmt::MethodDecl {
+            spans,
             value_prototype: None,
             name: Symbol::intern(&name),
             name_expr,

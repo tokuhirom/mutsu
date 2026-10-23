@@ -28,6 +28,7 @@ pub(super) fn construct_role_body(args: &[Value]) -> Result<Value, RuntimeError>
     let body = named_arg(args, "body").unwrap_or_else(super::empty_blockoid);
     require_rakuast_class(&body, RakuAstClass::Blockoid, "RakuAST::RoleBody.new")?;
     Ok(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::RoleBody,
         fields: vec![field("body", body)],
     })))
@@ -82,7 +83,11 @@ fn construct_as(args: &[Value], class: RakuAstClass) -> Result<Value, RuntimeErr
         require_rakuast_class(&signature, RakuAstClass::Signature, "RakuAST::Role.new")?;
         fields.push(field("parameterization", signature));
     }
-    Ok(Value::rakuast(Box::new(RakuAstNode { class, fields })))
+    Ok(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    })))
 }
 
 fn field(name: &'static str, value: Value) -> RakuAstField {

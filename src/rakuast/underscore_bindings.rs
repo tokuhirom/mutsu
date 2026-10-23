@@ -258,11 +258,13 @@ mod tests {
     #[test]
     fn declaration_scan_bounds_model_nesting() {
         let mut node = RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::VarDeclarationPlaceholderSlurpyHash,
             fields: Vec::new(),
         };
         for _ in 0..128 {
             node = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::StatementExpression,
                 fields: vec![node_field(Some("expression"), node)],
             };

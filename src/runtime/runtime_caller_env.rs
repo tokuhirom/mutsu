@@ -160,6 +160,40 @@ impl Interpreter {
             .map(|entry| Value::int(entry.line))
     }
 
+    /// The routine `name` in the lexical scope of the calling routines, nearest
+    /// caller first: a `sub` its unit or enclosing package declares, or one its
+    /// unit's top-level `use`s imported. `outers_only` (`CALLERS::OUTERS::`)
+    /// leaves out the program's mainline, whose declarations and imports are in
+    /// its own pad and not in a scope outside it.
+    // Cost: O(f * (s + p)), f = routine frames, s = import sets of a frame's
+    // unit, p = enclosing packages of the frame.
+    pub(crate) fn caller_scope_routine(&self, name: &str, outers_only: bool) -> Option<Value> {
+        let name_sym = Symbol::intern(name);
+        let in_scope = |package: Symbol, unit: Symbol| -> Option<Value> {
+            crate::qualified::package_ancestors(package)
+                .chain(std::iter::once(Symbol::intern("GLOBAL")))
+                .find_map(|pkg| {
+                    let def = self
+                        .registry()
+                        .function_def(crate::qualified::qualified(pkg, name_sym))?;
+                    (self.unit_of_declaring_file(def.source_file.as_deref()) == unit)
+                        .then(|| self.sub_value_from_function_def((*def).clone()))
+                })
+                .or_else(|| self.unit_import_routine(unit, name))
+        };
+        // The innermost routine frame is the one reading `CALLERS::`.
+        let callers = self.routine_stack.len().saturating_sub(1);
+        self.routine_stack[..callers]
+            .iter()
+            .rev()
+            .find_map(|frame| in_scope(frame.package, self.unit_of_source_sym(frame.def_file)))
+            .or_else(|| {
+                (!outers_only)
+                    .then(|| in_scope(Symbol::intern("GLOBAL"), crate::runtime::main_unit()))
+                    .flatten()
+            })
+    }
+
     /// Look up a variable through the $CALLER:: chain.
     /// `depth` is the number of CALLER:: levels (1 for $CALLER::x, 2 for $CALLER::CALLER::x).
     /// `name` is the bare variable name without sigil (e.g. "a" for $a).
@@ -227,6 +261,13 @@ impl Interpreter {
         }
         let stack_len = self.caller_env_stack.len();
         if depth == 0 || depth > stack_len {
+            // The program's mainline has no caller pad to walk, but its scope
+            // still holds the routines it declares and imports.
+            if depth > 0 && name.starts_with('&') {
+                return Ok(self
+                    .caller_scope_routine(&name[1..], false)
+                    .unwrap_or(Value::NIL));
+            }
             return Ok(Value::NIL);
         }
         // caller_env_stack[stack_len - depth] is the depth-th caller (depth 1 =
@@ -244,6 +285,11 @@ impl Interpreter {
             }
         }
         if is_routine {
+            // A routine in a caller's lexical scope: declared by its file or
+            // package, or bound in its unit's import sets rather than its pad.
+            if let Some(found) = self.caller_scope_routine(&name[1..], false) {
+                return Ok(found);
+            }
             return Ok(self.resolve_code_var(&name[1..]));
         }
         Ok(Value::NIL)

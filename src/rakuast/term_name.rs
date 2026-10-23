@@ -11,6 +11,7 @@ use crate::value::RuntimeError;
 /// without changing the public constructor shape or reloading a module.
 pub(super) fn imported(name: &str) -> RakuAstNode {
     let mut node = super::bareword::convert(name).unwrap_or_else(|| RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TermName,
         fields: vec![node_field(None, name_from_identifier(name))],
     });

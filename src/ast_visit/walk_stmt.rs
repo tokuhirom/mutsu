@@ -106,6 +106,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             is_test_assertion: _,
             supersede: _,
             custom_traits,
+            ..
         } => {
             v.visit_name(name.as_str(), NameKind::SubDecl);
             if let Some(e) = name_expr {

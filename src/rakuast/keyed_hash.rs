@@ -64,6 +64,7 @@ pub(super) fn split<'a>(
 // Cost: O(f), f = fields of `decl`.
 pub(super) fn insert_shape(decl: &mut RakuAstNode, key: &str) -> Result<(), RuntimeError> {
     let shape = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::SemiList,
         fields: super::type_args::type_sources(key, ';')
             .map(|key| {
@@ -131,6 +132,7 @@ pub(super) fn insert_subset_shape(
         value: super::RakuAstFieldValue::Node(Value::str(source.to_string())),
     });
     let shape = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::SemiList,
         fields: vec![node_field(None, statement_expression(subset))],
     };
@@ -159,6 +161,7 @@ pub(super) fn insert_dimensions(
         })
         .collect::<Result<Vec<_>, RuntimeError>>()?;
     let shape = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::SemiList,
         fields: statements,
     };

@@ -170,6 +170,7 @@ pub(super) fn named_parameter(
         fields.push(node_field(
             Some("target"),
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ParameterTargetVar,
                 fields: vec![super::convert::leaf_field(
                     Some("name"),
@@ -192,6 +193,7 @@ pub(super) fn named_parameter(
         fields.push(node_field(Some("where"), convert_expr(w)?));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Parameter,
         fields,
     })
@@ -275,6 +277,7 @@ pub(super) fn is_anonymous_named(node: &RakuAstNode) -> bool {
 /// outermost level says whether the parameter as a whole is required).
 fn bare_level(name: &str, named: bool, like: &ParamDef) -> ParamDef {
     ParamDef {
+        spans: Default::default(),
         trait_meta: Default::default(),
         name: name.to_string(),
         default: None,

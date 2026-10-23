@@ -34,6 +34,7 @@ pub(super) fn convert(pd: &ParamDef, value: &Value) -> Result<RakuAstNode, Runti
         value_type(value).ok_or_else(|| unsupported("literal-value parameter of another kind"))?;
     let type_name = pd.type_constraint.as_deref().unwrap_or(inferred);
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Parameter,
         fields: vec![
             node_field(Some("type"), build_type_node(type_name)?),

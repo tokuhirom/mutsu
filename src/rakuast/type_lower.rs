@@ -261,6 +261,7 @@ mod tests {
         let mut node = super::super::bareword::simple_type_node("Int");
         for _ in 0..super::super::type_build::MAX_TYPE_DEPTH {
             node = RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::TypeCoercion,
                 fields: vec![super::super::convert::node_field(Some("base-type"), node)],
             };

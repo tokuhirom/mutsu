@@ -63,7 +63,11 @@ pub(super) fn with_body(
         });
     }
     fields.push(node_field(Some("body"), body));
-    Ok(RakuAstNode { class, fields })
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    })
 }
 
 const SOURCE: &str = "declaration-source";
