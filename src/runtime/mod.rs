@@ -1601,6 +1601,11 @@ pub(crate) struct RoutineFrame {
     /// (`Interpreter::active_unit_lexical_bucket`, #13613), where
     /// `Interpreter::current_code` names whatever nested code runs right now.
     pub code: usize,
+    /// The index plus one of this frame's [`routine_stack::FrameFixtures`]
+    /// record (the invocant, `?CLASS` and `?ROLE` of a method call), or `0`
+    /// for a frame without one. Valid only while the frame is on the stack:
+    /// a view that outlives it must clone the record (ADR-14633 §2.1).
+    pub fixtures: u32,
 }
 
 /// Hands out *blocks* of routine-invocation ids, not individual ones.

@@ -1584,7 +1584,9 @@ impl Interpreter {
     /// so the 19 `self` readers pay nothing for the name.
     #[inline]
     pub(crate) fn get_env_self(&self) -> Option<Value> {
-        self.get_env_with_main_alias_sym("self", crate::symbol::wk::self_())
+        let value = self.get_env_with_main_alias_sym("self", crate::symbol::wk::self_());
+        self.debug_assert_fixture_agrees(crate::symbol::wk::self_(), value.as_ref());
+        value
     }
 
     /// [`Self::get_env_with_main_alias`] for a caller that already holds

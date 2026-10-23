@@ -225,6 +225,7 @@ impl Interpreter {
             && let Some(v) = self.env().get_sym(crate::symbol::wk::self_())
         {
             let v = v.clone();
+            self.debug_assert_fixture_agrees(crate::symbol::wk::self_(), Some(&v));
             self.stack.push(v);
             return Ok(());
         }

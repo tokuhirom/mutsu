@@ -23,8 +23,21 @@
 //! pays for rendering it (#9172).
 
 use super::RoutineFrame;
+use crate::symbol::Symbol;
+use crate::value::Value;
 use std::cell::RefCell;
 use std::sync::Arc;
+
+/// The fixed per-call names of a method frame (ADR-14633 §2.1): the invocant
+/// (`self` and `__ANON_STATE#`, one value for both names), `?CLASS` and
+/// `?ROLE`. Kept beside the frame rather than in it so [`RoutineFrame`] stays
+/// `Copy`: a frame points at its record by [`RoutineFrame::fixtures`].
+#[derive(Clone, Debug)]
+pub(crate) struct FrameFixtures {
+    pub(crate) invocant: Value,
+    pub(crate) class: Symbol,
+    pub(crate) role: Option<Symbol>,
+}
 
 /// One frame of an immutable stack snapshot, linked to the frame below it.
 /// Snapshots taken at different depths share their common prefix.
@@ -72,6 +85,12 @@ pub(crate) struct RoutineStack {
     /// Maintained by the three mutators below, which are the only ways the
     /// `Vec` can change — see the module comment.
     lexical_package_frames: usize,
+    /// The records of the frames that have one, innermost last. A frame's
+    /// [`RoutineFrame::fixtures`] is its entry's index plus one. Like the
+    /// count above this lives here so `pop`/`truncate` -- the only ways the
+    /// frames change -- cut it back with them and no call site can leave a
+    /// record behind its frame.
+    fixtures: Vec<FrameFixtures>,
     /// Snapshot nodes for a prefix of `frames`: `nodes[i]` is the node of
     /// `frames[i]`, linked to `nodes[i - 1]`. Built on demand by
     /// [`Self::snapshot`] and cut back by `pop`/`truncate`, so it never runs
@@ -91,14 +110,49 @@ impl RoutineStack {
     }
 
     pub(crate) fn push(&mut self, frame: RoutineFrame) {
+        debug_assert_eq!(frame.fixtures, 0, "a frame with a record goes through push_with_fixtures");
         if frame.lexical_package.is_some() {
             self.lexical_package_frames += 1;
         }
         self.frames.push(frame);
     }
 
+    /// Push a frame together with its fixture record, which the frame then
+    /// names through [`RoutineFrame::fixtures`].
+    // Cost: O(1) amortized.
+    pub(crate) fn push_with_fixtures(&mut self, mut frame: RoutineFrame, fixtures: FrameFixtures) {
+        self.fixtures.push(fixtures);
+        frame.fixtures = self.fixtures.len() as u32;
+        if frame.lexical_package.is_some() {
+            self.lexical_package_frames += 1;
+        }
+        self.frames.push(frame);
+    }
+
+    /// The record of the innermost frame that has one (the fixture rule of
+    /// ADR-14633 §2.1).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn top_fixtures(&self) -> Option<&FrameFixtures> {
+        self.fixtures.last()
+    }
+
+    /// Replace the innermost frame in place, keeping its fixture record.
+    // Cost: O(1).
+    pub(crate) fn replace_top(&mut self, frame: RoutineFrame) {
+        if let Some(top) = self.frames.last_mut() {
+            debug_assert_eq!(top.fixtures, frame.fixtures);
+            debug_assert_eq!(top.lexical_package.is_some(), frame.lexical_package.is_some());
+            *top = frame;
+            self.cut_nodes_to(self.frames.len() - 1);
+        }
+    }
+
     pub(crate) fn pop(&mut self) -> Option<RoutineFrame> {
         let frame = self.frames.pop()?;
+        if frame.fixtures != 0 {
+            self.fixtures.truncate(frame.fixtures as usize - 1);
+        }
         self.cut_nodes();
         if frame.lexical_package.is_some() {
             self.lexical_package_frames -= 1;
@@ -119,6 +173,11 @@ impl RoutineStack {
             .filter(|f| f.lexical_package.is_some())
             .count();
         self.lexical_package_frames -= dropped;
+        // The dropped frames' records start at the first dropped frame that
+        // has one.
+        if let Some(first) = self.frames[len..].iter().find(|f| f.fixtures != 0) {
+            self.fixtures.truncate(first.fixtures as usize - 1);
+        }
         self.frames.truncate(len);
         self.cut_nodes();
     }
@@ -126,9 +185,14 @@ impl RoutineStack {
     /// Drop the snapshot nodes of frames that are no longer live.
     #[inline]
     fn cut_nodes(&mut self) {
+        self.cut_nodes_to(self.frames.len());
+    }
+
+    #[inline]
+    fn cut_nodes_to(&mut self, len: usize) {
         let nodes = self.nodes.get_mut();
-        if nodes.len() > self.frames.len() {
-            nodes.truncate(self.frames.len());
+        if nodes.len() > len {
+            nodes.truncate(len);
         }
     }
 
@@ -185,6 +249,7 @@ mod tests {
             invocation_id: 0,
             callable_id: 0,
             code: 0,
+            fixtures: 0,
         }
     }
 
