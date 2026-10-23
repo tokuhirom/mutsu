@@ -35,6 +35,22 @@ pub(super) fn derive(node: &mut RakuAstNode) {
             super::operator_origins::derive(node);
         }
         RakuAstClass::QuotedString => super::string_origins::interpolated(node),
+        RakuAstClass::Block
+        | RakuAstClass::Sub
+        | RakuAstClass::PointyBlock
+        | RakuAstClass::StatementPrefixDo
+        | RakuAstClass::StatementPrefixTry
+        | RakuAstClass::StatementPrefixGather
+        | RakuAstClass::StatementPrefixStart
+        | RakuAstClass::StatementPrefixQuietly
+        | RakuAstClass::StatementPrefixSink
+        | RakuAstClass::StatementPrefixLazy
+        | RakuAstClass::StatementPrefixHyper
+        | RakuAstClass::StatementPrefixRace
+        | RakuAstClass::StatementPrefixEager
+        | RakuAstClass::StatementPrefixOnce
+        | RakuAstClass::StatementPrefixReact
+        | RakuAstClass::StatementPrefixSupply => super::expr_block_origins::derive(node),
         _ => super::operator_origins::derive(node),
     }
 }
