@@ -4,7 +4,8 @@
   decision of [ADR-0011](0011-rakuast-model-layer-and-phasing.md). The §4 questions stay gates
   before Stage 2; the source-position question is decided (2026-10-22); the representation
   question and the Stage 2 mechanism are decided (user decision 2026-10-23, §4: typed parser
-  nodes, with the uniform node as their view).
+  nodes, with the uniform node as their view), and so is the expression-term origin amendment
+  to the source-position decision (user decision 2026-10-23, §4).
 - **Date**: 2026-10-02
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#10723](https://github.com/tokuhirom/mutsu/issues/10723). Roadmap:
@@ -288,6 +289,59 @@ before the flip, not after.
   Rejected: extending the line-valued field to every node (`.from` / `.to` would keep a
   meaning Rakudo does not give them, and no columns); a per-unit side table from node identity
   to range (hand-built nodes, `EVAL($ast)` and tree rewrites lose the mapping).
+
+  **Amendment (user decision 2026-10-23, [#11413](https://github.com/tokuhirom/mutsu/issues/11413)):
+  origins of expression terms are noted while parsing and attached after the parse, in
+  `keep_spelling` parses only. An attached origin is exact or absent, never a guess.** This
+  narrows two bullets above ("the parser records the range when it builds a node"; "no second,
+  `.AST`-only position-recording mode") for the expression families, where "the typed node is
+  that `Expr` plus its positions" has no `Expr` field to hold the positions. What the two
+  bullets protect is kept as two rules: a range comes from the input the parser actually
+  consumed for the term, never from a reconstruction, and the executing tree and its cost do not
+  change.
+  - **Why not a field on `Expr`.** The parser decides a great deal by the shape of a term it has
+    just read (is it a variable, a pair, a `*`, a call it may rewrite?), in hundreds of
+    `matches!`. A term that carries its range as it is built, whether as a wrapper or as a
+    member of every variant, has to be looked through by every one of them. Measured: wrapping
+    terms as they are parsed broke 900–1300 of the 8451 `scripts/rakuast-frontend.sh` files,
+    each in a different shape check. A span member on every `Expr` variant is the same change
+    spread over every constructor and match arm, and grows the executing tree. A check that
+    forgets to look through such a wrapper also makes the `.AST` tree run differently from the
+    executing one, a divergence that would never be finished.
+  - **The mechanism.** A parse that keeps spelling notes, for each term it reads (a primary, a
+    postfix expression), the range and a structural fingerprint of the term
+    (`parser::term_origins`). When the unit is finished, after its post-parse passes, the notes
+    are attached as `Expr::Spelled` wrappers with `Spelling::Origin`. Nothing in the parser sees
+    them. `convert` takes them off before it matches shapes and gives each node its range in the
+    `origin` member of `RakuAstNode` (which takes no part in node equality).
+  - **Exact or absent.** A note belongs to the innermost statement whose range holds it. Within
+    one statement, the k-th term of a fingerprint in source order takes the k-th noted range of
+    that fingerprint, only when that fingerprint has no more notes than terms there. Every term
+    the parser read left a note, so:
+    - *More notes than terms* means a note no term owns: an alternative the parser tried and
+      abandoned. Which note is the stray one cannot be told, so that fingerprint gets no origin
+      in that statement.
+    - *Fewer notes than terms* means terms the parser made rather than read. One kind is a copy a
+      desugaring made (`$x += 1` keeps `$x` twice); it spells the same source text, so either
+      copy's range is right. The other is a synthesized term (the call-site line literal of a
+      `Test` call, the `Nil` of `my $x`). The RakuAST view does not render it, so a range it
+      takes is never shown, and the term it took the range from shows none.
+
+    An attached range must also lie inside the range of the nearest enclosing term that has one.
+    A term the parser rewrote into another shape has no matching note and gets no origin, like a
+    node built by `convert`. Measured on 260 `t/` and roast files, every literal and variable
+    origin spells its node (0 of 4405 checked differ), and origins number 29,963 against the
+    first-match rule's 29,856.
+  - **Only in `keep_spelling` parses.** An executing parse lowers each term as it builds it and
+    has no node to hold a range, and lines in executing code still come from `Stmt::SetLine`.
+    Noting costs one hash of each term, so an executing parse notes nothing. The ranges come
+    from the same parser code in both kinds of parse; only whether they are kept differs. The
+    same `keep_spelling`-only shape is already how ADR-12199 keeps spellings
+    (`Expr::Spelled`). The note table is per parse and is dropped at `attach`. The per-unit side
+    table rejected above (node identity → range, kept for the unit's life) is not reintroduced.
+  - **It is a bridge.** When a family gets a typed node (`Expr::Ast`, the mechanism above) that
+    records its range as it is built, that family's notes are dropped. The end state is the
+    typed node.
 - **Where compile-time knowledge lives.** The parser currently resolves some names while parsing
   (declared types, imported operators, slang modes). In Rakudo that is RakuAST's resolver and
   BEGIN-time logic. Whether mutsu keeps it in the parser or moves it into `lower` is decided per
