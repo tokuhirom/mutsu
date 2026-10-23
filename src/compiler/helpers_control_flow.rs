@@ -710,8 +710,8 @@ impl Compiler {
         // A value-position branch (`do if`/`do with`) is a block too: its own
         // `my` declarations (dynamic ones included) must not outlive it, exactly
         // as in the statement position (`compile_block_local_branch`).
-        let scope_idx = (!is_statement_modifier && Self::branch_declares_block_local(stmts))
-            .then(|| {
+        let scope_idx =
+            (!is_statement_modifier && Self::branch_declares_block_local(stmts)).then(|| {
                 self.code.emit(OpCode::BlockLocalScope {
                     body_end: 0,
                     succeed_boundary: true,

@@ -68,14 +68,13 @@ impl Compiler {
             (then_branch, else_branch)
         } else {
             let wrap = |branch: &[Stmt]| {
-                super::body_scans::declares_dynamic_local(branch)
-                    .then(|| {
-                        vec![Stmt::Expr(Expr::DoBlock {
-                            body: branch.to_vec(),
-                            label: None,
-                            origin: crate::ast::DoBlockOrigin::SourceBlock,
-                        })]
-                    })
+                super::body_scans::declares_dynamic_local(branch).then(|| {
+                    vec![Stmt::Expr(Expr::DoBlock {
+                        body: branch.to_vec(),
+                        label: None,
+                        origin: crate::ast::DoBlockOrigin::SourceBlock,
+                    })]
+                })
             };
             then_block = wrap(then_branch);
             else_block = wrap(else_branch);
