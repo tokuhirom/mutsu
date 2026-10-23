@@ -546,6 +546,15 @@ pub(in crate::runtime) fn extract_named_from_unpack_target(
     if let Some(v) = named.get(lookup_name) {
         return Some(v.clone());
     }
+    // A Capture or a Hash carries its named entries in its map: a name it does
+    // not hold is absent, not a method of the container (`Bool :$cache` must
+    // not read `Capture.cache`).
+    if matches!(
+        value.view(),
+        ValueView::Capture { .. } | ValueView::Hash(..)
+    ) {
+        return None;
+    }
     interpreter
         .call_method_with_values(value.clone(), name, Vec::new())
         .ok()
