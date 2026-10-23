@@ -54,7 +54,8 @@ pub(crate) fn if_stmt(input: &str) -> PResult<'_, Stmt> {
         clauses,
         else_block,
     };
-    let stmt = super::parsed_block::finish(node).map_err(PError::from_typed)?;
+    let stmt = super::parsed_block::finish(crate::ast::parsed::ParsedStmt::Conditional(node))
+        .map_err(PError::from_typed)?;
     Ok((rest, stmt))
 }
 
@@ -254,7 +255,7 @@ pub(crate) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
         clauses: Vec::new(),
         else_block: None,
     };
-    let stmt = super::parsed_block::finish(node)
+    let stmt = super::parsed_block::finish(crate::ast::parsed::ParsedStmt::Conditional(node))
         .map_err(|error| PError::fatal(error.message.into_owned()))?;
     Ok((rest, stmt))
 }

@@ -3257,10 +3257,11 @@ impl Expr {
     pub(crate) fn is_bare_loop_term(&self) -> bool {
         matches!(
             self,
-            Expr::DoStmt(stmt) if matches!(
-                stmt.as_ref(),
-                Stmt::While { is_bare_term: true, .. } | Stmt::Loop { is_bare_term: true, .. }
-            )
+            Expr::DoStmt(stmt) if match stmt.as_ref() {
+                Stmt::While { is_bare_term, .. } | Stmt::Loop { is_bare_term, .. } => *is_bare_term,
+                Stmt::Ast(node) => node.is_bare_loop_term(),
+                _ => false,
+            }
         )
     }
 
