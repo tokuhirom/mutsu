@@ -2590,6 +2590,10 @@ pub(crate) enum Stmt {
         roles: Vec<String>,
         /// Language version active when this enum was declared (e.g., "6.c", "6.d", "6.e")
         language_version: String,
+        /// Where the name was written (ADR-10723 Stage 2); `None` for a
+        /// declaration nobody wrote.
+        #[serde(default)]
+        spans: Option<Box<parsed::TypeDeclSpans>>,
     },
     ClassDecl {
         name: Symbol,
@@ -2881,6 +2885,10 @@ pub(crate) enum Stmt {
         /// (ADR-0047 P1). 0 means "no stable site" (a synthesized node).
         #[serde(with = "crate::ast::decl_id_serde")]
         decl_id: u64,
+        /// Where the name and the `of` trait were written (ADR-10723
+        /// Stage 2); `None` for a declaration nobody wrote.
+        #[serde(default)]
+        spans: Option<Box<parsed::TypeDeclSpans>>,
     },
     Phaser {
         kind: PhaserKind,

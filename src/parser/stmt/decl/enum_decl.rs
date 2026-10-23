@@ -186,6 +186,7 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
     Ok((
         rest,
         Stmt::EnumDecl {
+            spans: Default::default(),
             name: Symbol::intern(""),
             variants,
             variant_form,
@@ -364,6 +365,10 @@ pub(super) fn parse_enum_decl_body_with_type(
 ) -> PResult<'_, Stmt> {
     let (rest, name_str) = qualified_ident(input)?;
     let name = Symbol::intern(&name_str);
+    let spans = Some(Box::new(crate::ast::parsed::TypeDeclSpans {
+        name: crate::parser::primary::source_span(input, rest),
+        ..Default::default()
+    }));
     // An enum's *name* is a type, exactly like a class or role name. Register
     // it as one so a bareword `Day` (or the `Day::Mon` value spelling, whose
     // head must resolve to the enum type) is recognized as declared — the
@@ -431,6 +436,7 @@ pub(super) fn parse_enum_decl_body_with_type(
                 return Ok((
                     r,
                     Stmt::EnumDecl {
+                        spans,
                         name,
                         variants: vec![("__DYNAMIC__".to_string(), Some(body))],
                         variant_form: EnumVariantForm::Computed,
@@ -460,6 +466,7 @@ pub(super) fn parse_enum_decl_body_with_type(
     Ok((
         rest,
         Stmt::EnumDecl {
+            spans,
             name,
             variants,
             variant_form,

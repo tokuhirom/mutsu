@@ -333,6 +333,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             v.visit_stmt(stmt);
         }
         Stmt::EnumDecl {
+            spans: _,
             name,
             variants,
             variant_form: _,
@@ -382,6 +383,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             super::walk_stmts(v, body);
         }
         Stmt::SubsetDecl {
+            spans: _,
             name,
             base,
             base_is_explicit: _,

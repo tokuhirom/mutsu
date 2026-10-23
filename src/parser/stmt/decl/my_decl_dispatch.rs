@@ -119,6 +119,7 @@ pub(super) fn try_keyword_dispatch(
             return Ok(Some((
                 r,
                 Stmt::SubsetDecl {
+                    spans: Default::default(),
                     name: Symbol::intern(&name),
                     base: routine_type,
                     // `my Str subset MyStr` writes the base type as a prefix,
