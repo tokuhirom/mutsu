@@ -154,12 +154,6 @@ impl Interpreter {
             {
                 return Ok(obj_attrs.promote_attr_to_container(key));
             }
-            // A plain Proxy bound there is handed out inside a cell, so a
-            // sigilless parameter bound to it assigns through the cell to its
-            // STORE. A Proxy subclass stays bare: its type is observable.
-            if matches!(value.view(), ValueView::Proxy { subclass: None, .. }) {
-                return Ok(value.into_container_ref());
-            }
             return Ok(value);
         }
         // An attribute has no value on a type object.

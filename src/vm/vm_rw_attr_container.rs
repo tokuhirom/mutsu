@@ -232,7 +232,7 @@ impl Interpreter {
             return None;
         }
         let type_constraint = self.rw_accessor_type_constraint(class_name, method)?;
-        let cell_val = attributes.promote_attr_to_rw_result(key.as_str());
+        let cell_val = attributes.promote_attr_to_container(key.as_str());
         // A typed rw attribute's constraint travels with the cell, so a later
         // write through the container (`$ref = v`, `f() = v`) type-checks
         // exactly like `$obj.x = v` does.
