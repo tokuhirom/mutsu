@@ -30,8 +30,6 @@ fn type_operand_name(v: &Value) -> Option<String> {
     match v.view() {
         ValueView::Package(n) => Some(n.resolve()),
         ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-        // `CArray[T]` / `Pointer[T]` are mixin type objects over the base class.
-        ValueView::Mixin(inner, _) => type_operand_name(inner),
         _ => None,
     }
 }
@@ -221,7 +219,13 @@ impl Interpreter {
     /// the native provider's `__mutsu_nativesizeof`.
     // Cost: O(f), f = fields of a CStruct type; O(1) otherwise.
     pub(crate) fn native_sizeof_value(&mut self, arg: &Value) -> Result<Value, RuntimeError> {
-        let Some(type_name) = type_operand_name(arg) else {
+        // `CArray[T]` / `Pointer[T]` are mixin type objects over the base class,
+        // which carries the size.
+        let operand = match arg.view() {
+            ValueView::Mixin(inner, _) => inner.as_ref().clone(),
+            _ => arg.clone(),
+        };
+        let Some(type_name) = type_operand_name(&operand) else {
             return Err(RuntimeError::new(
                 "nativesizeof() expects a native type or a native object",
             ));
