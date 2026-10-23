@@ -19,11 +19,14 @@ thread_local! {
         const { RefCell::new(None) };
 }
 
-/// The unit offset of `input`, for a unit that records statement attempts:
-/// where a copy of the text starting at `input` would have to record its own
-/// attempts. Follows a lent list, so it also works inside a nested fragment.
+/// The unit offset of `input`: where a copy of the text starting at `input`
+/// would have to record its own statement attempts and source positions.
+/// Follows a lent list or span base, so it also works inside a nested
+/// fragment.
 pub(in crate::parser) fn unit_offset(input: &str) -> Option<usize> {
-    attempt_offset(input).map(|(_, offset)| offset)
+    attempt_offset(input)
+        .map(|(_, offset)| offset)
+        .or_else(|| super::unit_offset_of(input))
 }
 
 /// The unit offset of `copy`, a copy of a stretch of `region` (the unit's own

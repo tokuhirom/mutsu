@@ -5,7 +5,7 @@ use Test;
 # statement to the `;` after its last, whitespace and comments before each
 # `;` included (ADR-10723 Stage 2). Ranges measured on rakudo 2026.09.
 
-plan 14;
+plan 15;
 
 # The ranges of the statement lists and statements of `$src`, in walk order.
 sub lists(Str $src) {
@@ -62,3 +62,9 @@ is "# c\nsay 1 ;  # x\n".AST.origin.from ~ '..' ~ "# c\nsay 1 ;  # x\n".AST.orig
 is lists("say 1; say 2 # y\n;\n"),
     'Statement::Expression 0..5, Statement::Expression 7..12',
     'a comment between a statement and its terminator';
+
+# A regex code block is parsed from a copy of its text, which records the
+# unit's positions, not the copy's.
+is lists("my \$c = 0;\nsay 'ab' ~~ / a \{ \$c++; } b /;").split(', ').grep(*.starts-with('Statement::')).join(', '),
+    'Statement::Expression 0..9, Statement::Expression 11..40, Statement::Expression 29..33',
+    'a statement inside a regex code block';
