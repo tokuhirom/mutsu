@@ -68,14 +68,16 @@ fn contents_node(pairs: &[(String, Option<Expr>)]) -> Result<Option<RakuAstNode>
             });
             continue;
         };
-        fatarrows.push(RakuAstNode {
+        let mut pair = RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::FatArrow,
             fields: vec![
                 leaf_field(Some("key"), Value::str(key.clone())),
                 node_field(Some("value"), convert_expr(value)?),
             ],
-        });
+        };
+        super::infix_origins::derive(&mut pair);
+        fatarrows.push(pair);
     }
     if fatarrows.len() <= 1 {
         return Ok(fatarrows.pop());
@@ -84,7 +86,7 @@ fn contents_node(pairs: &[(String, Option<Expr>)]) -> Result<Option<RakuAstNode>
         .into_iter()
         .map(|n| Value::rakuast(Box::new(n)))
         .collect();
-    Ok(Some(RakuAstNode {
+    let mut list = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ApplyListInfix,
         fields: vec![
@@ -94,7 +96,9 @@ fn contents_node(pairs: &[(String, Option<Expr>)]) -> Result<Option<RakuAstNode>
                 value: RakuAstFieldValue::List(operands),
             },
         ],
-    }))
+    };
+    super::infix_origins::derive(&mut list);
+    Ok(Some(list))
 }
 
 /// `Circumfix::HashComposer` -> a composer-spelled [`Expr::Hash`] or an
