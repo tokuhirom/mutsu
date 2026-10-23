@@ -149,6 +149,9 @@ pub(super) static ROWS: &[MethodRow] = &[
 /// `Routine.yada`.
 // Cost: as `Interpreter::code_yada`.
 fn yada(interp: &mut Interpreter, target: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
+    if super::code_regex::is_regex(target) {
+        return super::code_regex::answer(target, "yada");
+    }
     interp.code_yada(target).map(Ok)
 }
 
@@ -178,31 +181,7 @@ fn by_kind(
             sub(interp, target, &data, method, args)
         }
         ValueView::Instance { .. } => interp.method_object_code_row(target, method, args),
+        _ if super::code_regex::is_regex(target) => super::code_regex::answer(target, method),
         _ => None,
     }
-}
-
-/// The rows a method object (`.^lookup`, `.^find_method`, `.^methods`)
-/// answers: these and `Code.set_name`.
-const METHOD_OBJECT_ROWS: [&str; 5] = ["wrap", "unwrap", "assuming", "cando", "set_name"];
-
-/// The answer of a `Routine`/`Code` row for a method object, or `None` for a
-/// method no such row answers. An instance of a code class is not a `Code`
-/// value: its other `Code` methods (`of`, `name`, `signature`) read the
-/// object's own attributes in the method-call fallback, so only these rows are
-/// tried.
-// Cost: O(n), n = 5 names, plus the row's own cost.
-pub(crate) fn method_object_answer(
-    interp: &mut Interpreter,
-    target: &Value,
-    method: &str,
-    args: &[Value],
-) -> Answer {
-    if !METHOD_OBJECT_ROWS.contains(&method) || !matches!(target.view(), ValueView::Instance { .. })
-    {
-        return None;
-    }
-    crate::builtins::method_table::invoke_owner(interp, &["Routine", "Code"], method, args, || {
-        target.clone()
-    })
 }

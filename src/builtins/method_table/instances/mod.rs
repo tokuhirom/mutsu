@@ -25,8 +25,10 @@ use narrow_row;
 
 pub(crate) mod backtrace;
 pub(crate) mod code;
+pub(crate) mod code_class;
 pub(crate) mod code_accepts;
 pub(crate) mod code_methods;
+pub(crate) mod code_regex;
 pub(crate) mod collation;
 pub(crate) mod compunit;
 pub(crate) mod compunit_repo;
