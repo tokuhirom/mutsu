@@ -1806,15 +1806,6 @@ impl Interpreter {
             }
         }
 
-        if let Some(callable) = self.env.get(&format!("&{}", method)).cloned()
-            && matches!(
-                callable.view(),
-                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-            )
-        {
-            return self.call_sub_value(callable, args);
-        }
-
         // The `Code` rows of a regex and the `Routine` rows of a code-class
         // instance (`.^methods`' `Method` objects), found by their owner
         // (ADR-12523, ADR-11276 §9.121).

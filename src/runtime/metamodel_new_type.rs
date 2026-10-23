@@ -40,7 +40,8 @@ impl Interpreter {
         // A second type minted under a name an earlier `new_type` used is a
         // different type that merely shares the name (Red builds a fresh
         // `Model.new_type(:name($self.^name))` while `$self` is still in use).
-        let already_composed = self.registry().composed_classes.contains(&name);
+        let already_composed = self.registry().composed_classes.contains(&name)
+            || self.registry().classes.contains_key(&name);
         let name = if self.registry_mut().minted_type_names.insert(name.clone()) && !already_composed
         {
             name
