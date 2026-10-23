@@ -3552,10 +3552,18 @@ impl Compiler {
     /// frame. A sigilless, `is rw` or `is raw` one is the caller's container,
     /// whose constraint applies: it is not declared here.
     pub(super) fn note_param_declaration(&mut self, pd: &crate::ast::ParamDef) {
+        let name = pd.storage_name();
         if pd.sigilless || pd.traits.iter().any(|t| t == "rw" || t == "raw") {
+            // The caller's container constrains a store through it, and the
+            // binder carries that constraint into this frame. The slot is still
+            // this routine's own variable, so a store asks only this frame for
+            // the record, never the frames that called it: a caller's
+            // same-named `Pair $v` must not constrain this `$v is rw`.
+            if Self::is_simple_scalar_store_name(&name) {
+                self.code.note_declared_local(&name);
+            }
             return;
         }
-        let name = pd.storage_name();
         if pd.type_constraint.is_none() && pd.type_capture.is_none() {
             self.note_untyped_local_declaration(&name);
         } else if Self::is_simple_scalar_store_name(&name) {
