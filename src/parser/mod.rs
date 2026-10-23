@@ -42,7 +42,6 @@ pub(crate) use stmt::class::{
     declare_how_marker, export_type_marker, push_also_is_parent,
 };
 pub(crate) use stmt::control::placeholder_loop_params;
-pub(crate) use stmt::sub::placeholder_signature_exception;
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
 pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) use stmt::modifier::for_modifier_loop_params;
@@ -52,6 +51,7 @@ pub(crate) use stmt::simple::{
     CanonicalScans, ExportedVar, canonical_export_scans, scanned_exported_types,
     scanned_exported_vars, scanned_exported_vars_complete, scanned_hook_type_keys,
 };
+pub(crate) use stmt::sub::placeholder_signature_exception;
 pub(crate) use stmt::sub::{INDIRECT_DECL_NAME, op_prec_trait};
 
 /// Lowered RakuAST blocks need the same lexical user-sub view the parser had
