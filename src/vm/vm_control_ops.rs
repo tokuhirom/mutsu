@@ -201,6 +201,17 @@ impl Interpreter {
     /// gave a shadowing declaration a fresh slot, so the slot half is isolated;
     /// any outer slot sharing the name re-syncs from the restored env on next read.
     pub(super) fn pop_loop_local_scope(&mut self, code: &CompiledCode) {
+        // `readonly_vars` is keyed by bare name: a `my $x := value` in the
+        // body marked that name readonly, which must not outlive the body and
+        // refuse a later assignment to an enclosing `my $x`. A bare block
+        // drops the marks of its declarations the same way
+        // (`exec_block_scope_op`).
+        if let Some(declared) = self.topic_state.loop_local_vars.last() {
+            let declared: Vec<Symbol> = declared.iter().copied().collect();
+            for sym in declared {
+                self.unmark_readonly_sym(sym);
+            }
+        }
         self.topic_state.loop_local_vars.pop();
         self.topic_state.active_loop_param_names.pop();
         self.topic_state.active_loop_rw_param_names.pop();
