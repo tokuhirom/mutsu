@@ -91,6 +91,7 @@ pub(super) fn bare_phaser_statement(phaser: &Stmt) -> Result<Option<RakuAstNode>
     let unwrapped;
     let phaser = match phaser {
         Stmt::Phaser {
+            spans: _,
             kind,
             body,
             condition,
@@ -106,6 +107,7 @@ pub(super) fn bare_phaser_statement(phaser: &Stmt) -> Result<Option<RakuAstNode>
                 unreachable!("just matched");
             };
             unwrapped = Stmt::Phaser {
+                spans: Default::default(),
                 kind: kind.clone(),
                 body: inner.clone(),
                 condition: *condition,

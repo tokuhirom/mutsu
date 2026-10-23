@@ -446,6 +446,7 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     // taken here, where the source is still in hand.
     let condition_src = rest;
     let bare = !rest.starts_with('{');
+    let brace = rest;
     let (rest, body) = if rest.starts_with('{') {
         block(rest)?
     } else {
@@ -491,7 +492,14 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     // (ADR-11756 §2.3).
     let end_index = (matches!(kind, PhaserKind::End) && !crate::anon_names::in_content_unit())
         .then(crate::ast::next_end_phaser_index);
+    // Where its block was written (ADR-10723 Stage 2).
+    let spans = (!bare).then(|| {
+        Box::new(crate::parser::stmt::control::parsed_block::block_spans(
+            brace, brace, rest, &body,
+        ))
+    });
     let phaser = Stmt::Phaser {
+        spans,
         kind,
         body,
         condition,

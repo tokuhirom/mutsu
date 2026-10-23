@@ -98,7 +98,7 @@ pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
 /// Give a `Block` over a `Blockoid` over a `StatementList` the three origins
 /// in `spans`.
 // Cost: O(1).
-fn block_origins(block: &mut RakuAstNode, spans: BlockSpans) {
+pub(super) fn block_origins(block: &mut RakuAstNode, spans: BlockSpans) {
     super::origin::set_span(block, spans.span);
     with_child(block, "body", |blockoid| {
         super::origin::set_span(blockoid, spans.blockoid);

@@ -321,7 +321,7 @@ impl Mover<'_> {
                 decl: enclosing.decl,
             }];
         }
-        self.moved.phasers.push(Stmt::Phaser {
+        self.moved.phasers.push(Stmt::Phaser { spans: Default::default(),
             kind,
             body: inner,
             condition: None,

@@ -83,6 +83,7 @@ mod tests {
 
     fn phaser() -> Stmt {
         Stmt::Phaser {
+            spans: Default::default(),
             kind: PhaserKind::Leave,
             body: Vec::new(),
             condition: None,

@@ -537,7 +537,7 @@ impl Interpreter {
                 .into_iter()
                 .map(|s| {
                     if let Stmt::Block(body) = s {
-                        Stmt::Phaser {
+                        Stmt::Phaser { spans: Default::default(),
                             kind: crate::ast::PhaserKind::Enter,
                             body,
                             condition: None,

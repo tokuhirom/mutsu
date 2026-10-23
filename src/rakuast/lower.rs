@@ -1356,6 +1356,7 @@ fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let kind = phaser_kind(node)?;
     let body = super::bare_prefix::lower_phaser_body(&kind, named_child_or_positional(node)?)?;
     Ok(Stmt::Phaser {
+        spans: Default::default(),
         kind,
         body,
         condition: None,

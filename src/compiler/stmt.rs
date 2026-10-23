@@ -3993,6 +3993,7 @@ impl Compiler {
                 // against the phaser slot `end_phasers` already installed
                 // for this declaration.
                 let end_stmt = Stmt::Phaser {
+                    spans: Default::default(),
                     kind: PhaserKind::End,
                     body: body.clone(),
                     condition: None,

@@ -659,7 +659,7 @@ fn partition_will_begin(inner: Vec<Stmt>, prologue: &mut Vec<Stmt>, rest: &mut V
     let mut later = Vec::new();
     for member in members {
         match member {
-            Stmt::Phaser {
+            Stmt::Phaser { spans: _,
                 kind: PhaserKind::Begin,
                 mut body,
                 condition,
@@ -668,7 +668,7 @@ fn partition_will_begin(inner: Vec<Stmt>, prologue: &mut Vec<Stmt>, rest: &mut V
                 if let [Stmt::Given { topic, .. }] = body.as_mut_slice() {
                     *topic = Expr::Var(name.clone());
                 }
-                prologue.push(Stmt::Phaser {
+                prologue.push(Stmt::Phaser { spans: Default::default(),
                     kind: PhaserKind::Begin,
                     body,
                     condition,

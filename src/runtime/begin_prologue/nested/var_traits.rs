@@ -164,7 +164,7 @@ fn entry_phasers(name: &str, site: &str) -> Vec<Stmt> {
                 body.push(Stmt::Expr(Expr::Literal(crate::value::Value::TRUE)));
                 crate::symbol::Symbol::intern("{ ... }")
             });
-            Stmt::Phaser {
+            Stmt::Phaser { spans: Default::default(),
                 kind: kind.clone(),
                 body,
                 condition,
@@ -249,7 +249,7 @@ pub(crate) fn lift_unit_var_traits(stmts: &mut Vec<Stmt>) {
             custom_traits.retain(|(t, _)| t.starts_with("__"));
         }
         out.push(decl);
-        out.push(Stmt::Phaser {
+        out.push(Stmt::Phaser { spans: Default::default(),
             kind: PhaserKind::Begin,
             body: trait_body(&name, &applied, &site, "Block"),
             condition: None,

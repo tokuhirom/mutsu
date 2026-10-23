@@ -343,6 +343,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             }
         }
         Stmt::Phaser {
+            spans: _,
             kind: _,
             body,
             condition: _,

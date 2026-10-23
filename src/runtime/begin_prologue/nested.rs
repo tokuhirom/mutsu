@@ -388,7 +388,7 @@ impl Walker<'_> {
             } else {
                 &mut self.lifted.effects
             };
-            effects.push(Stmt::Phaser {
+            effects.push(Stmt::Phaser { spans: Default::default(),
                 kind: PhaserKind::Begin,
                 body,
                 condition: None,
@@ -396,7 +396,7 @@ impl Walker<'_> {
             });
         } else {
             let body = self.run_in_packages(inner);
-            self.lifted.phasers.push(Stmt::Phaser {
+            self.lifted.phasers.push(Stmt::Phaser { spans: Default::default(),
                 kind: kind.clone(),
                 body,
                 condition: None,
