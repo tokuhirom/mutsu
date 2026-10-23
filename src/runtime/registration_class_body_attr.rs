@@ -423,6 +423,9 @@ impl Interpreter {
                 &tc.replace("::?CLASS", cx.name),
                 cx.attr_type_aliases,
             );
+            // A class imported under its short name resolves to the class it
+            // names here, in the declaring scope that maps the spelling.
+            let resolved_tc = self.lexical_type_storage_name(resolved_tc);
             cx.class_def
                 .attribute_types
                 .insert(attr_name_str.clone(), resolved_tc);
