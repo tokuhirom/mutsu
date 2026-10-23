@@ -89,7 +89,7 @@ impl Interpreter {
         }
         for entry in &self.topic_state.for_param_restore_stack {
             visit_opt(visitor, &entry.saved);
-            if let Some((_, v)) = &entry.alias {
+            if let Some((_, v, _)) = &entry.alias {
                 visit_opt(visitor, v);
             }
         }
