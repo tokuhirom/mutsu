@@ -246,7 +246,10 @@ pub(crate) fn role_mixin_suffix(mixins: &MixinOverrides) -> Option<String> {
 /// for display, which turns an anonymous role's key into `<anon|N>`; a lookup
 /// in the role registry needs the key itself.
 // Cost: O(r log r), r = roles composed into the mixin.
-pub(crate) fn mixin_role_keys_applied_last_first(mixins: &MixinOverrides, base: &str) -> Vec<String> {
+pub(crate) fn mixin_role_keys_applied_last_first(
+    mixins: &MixinOverrides,
+    base: &str,
+) -> Vec<String> {
     let mut entries: Vec<(i64, String)> = mixins
         .keys()
         .filter_map(|k| k.strip_prefix("__mutsu_role__"))
