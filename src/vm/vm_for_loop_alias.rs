@@ -168,6 +168,11 @@ impl Interpreter {
         if !aliasing_param || spec.loop_var_wraps_element || spec.kv_mode || container_reversed {
             return ForElementAlias::None;
         }
+        // The body cannot observe the alias (#14495): the plain value bind,
+        // whose writeback is a no-op for an unchanged topic, is enough.
+        if param_name.is_none() && !spec.do_writeback && spec.topic_alias_unobservable {
+            return ForElementAlias::None;
+        }
         let Some(source) = container_binding else {
             return ForElementAlias::None;
         };
