@@ -725,7 +725,7 @@ fn raku_value_array(items: &[Value], kind: ArrayKind, v: &Value) -> String {
 // Both walks have to see the same "currently rendering" stack, or a cycle that
 // crosses from one to the other recurses forever.
 thread_local! {
-    static SEEN_HASH_PTRS: std::cell::RefCell<Vec<(usize, String)>> = const { std::cell::RefCell::new(Vec::new()) };
+    static SEEN_HASH_PTRS: std::cell::RefCell<crate::value::ancestor_stack::AncestorStack<String>> = std::cell::RefCell::new(crate::value::ancestor_stack::AncestorStack::new());
     static HASH_CYCLE_FOUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
@@ -741,18 +741,13 @@ pub(crate) fn hash_cycle_var_name(ptr: usize) -> String {
 /// `Ok(is_top)` says whether this is the outermost hash of the walk, i.e. the
 /// node that carries the `((my %Hash_x) = ...)` preamble.
 pub(crate) fn hash_cycle_enter(ptr: usize) -> Result<bool, String> {
-    let seen = SEEN_HASH_PTRS.with(|seen| {
-        seen.borrow()
-            .iter()
-            .find(|(p, _)| *p == ptr)
-            .map(|(_, name)| name.clone())
-    });
+    let seen = SEEN_HASH_PTRS.with(|seen| seen.borrow().get(ptr).cloned());
     if let Some(name) = seen {
         HASH_CYCLE_FOUND.with(|f| f.set(true));
         return Err(name);
     }
     let is_top = SEEN_HASH_PTRS.with(|seen| seen.borrow().is_empty());
-    SEEN_HASH_PTRS.with(|seen| seen.borrow_mut().push((ptr, hash_cycle_var_name(ptr))));
+    SEEN_HASH_PTRS.with(|seen| seen.borrow_mut().push(ptr, hash_cycle_var_name(ptr)));
     if is_top {
         HASH_CYCLE_FOUND.with(|f| f.set(false));
     }
@@ -763,10 +758,7 @@ pub(crate) fn hash_cycle_enter(ptr: usize) -> Result<bool, String> {
 pub(crate) fn hash_cycle_exit(ptr: usize) -> bool {
     let had_cycle = HASH_CYCLE_FOUND.with(|f| f.get());
     SEEN_HASH_PTRS.with(|seen| {
-        let mut s = seen.borrow_mut();
-        if let Some(pos) = s.iter().rposition(|(p, _)| *p == ptr) {
-            s.remove(pos);
-        }
+        seen.borrow_mut().pop(ptr);
     });
     had_cycle
 }
@@ -815,7 +807,7 @@ fn raku_value_node(v: &Value) -> String {
     // that we're currently rendering. If we encounter the same pointer
     // again, emit a placeholder instead of recursing infinitely.
     thread_local! {
-        static SEEN_PTRS: std::cell::RefCell<Vec<(usize, String)>> = const { std::cell::RefCell::new(Vec::new()) };
+        static SEEN_PTRS: std::cell::RefCell<crate::value::ancestor_stack::AncestorStack<String>> = std::cell::RefCell::new(crate::value::ancestor_stack::AncestorStack::new());
         static ARRAY_CYCLE_FOUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     }
     // A leaf the interpreter already rendered for us (see `RAKU_RAW_KEY`).
@@ -842,18 +834,13 @@ fn raku_value_node(v: &Value) -> String {
             let ptr = crate::gc::Gc::as_ptr(&items) as usize;
             let var_name = format!("@Array_{}", ptr);
             // Check for cycle
-            let cycle_var = SEEN_PTRS.with(|seen| {
-                seen.borrow()
-                    .iter()
-                    .find(|(p, _)| *p == ptr)
-                    .map(|(_, name)| name.clone())
-            });
+            let cycle_var = SEEN_PTRS.with(|seen| seen.borrow().get(ptr).cloned());
             if let Some(name) = cycle_var {
                 ARRAY_CYCLE_FOUND.with(|f| f.set(true));
                 return name;
             }
             let is_top = SEEN_PTRS.with(|seen| seen.borrow().is_empty());
-            SEEN_PTRS.with(|seen| seen.borrow_mut().push((ptr, var_name.clone())));
+            SEEN_PTRS.with(|seen| seen.borrow_mut().push(ptr, var_name.clone()));
             if is_top {
                 ARRAY_CYCLE_FOUND.with(|f| f.set(false));
             }
@@ -862,10 +849,7 @@ fn raku_value_node(v: &Value) -> String {
             let result = raku_value_array(&items.items_with_default(), kind, v);
             let had_cycle = ARRAY_CYCLE_FOUND.with(|f| f.get());
             SEEN_PTRS.with(|seen| {
-                let mut s = seen.borrow_mut();
-                if let Some(pos) = s.iter().rposition(|(p, _)| *p == ptr) {
-                    s.remove(pos);
-                }
+                seen.borrow_mut().pop(ptr);
             });
             if is_top && had_cycle {
                 format!("((my {}) = {})", var_name, result)
