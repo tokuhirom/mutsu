@@ -26,6 +26,8 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
     // A `#|` comment documents the declaration at the token this call stops
     // at; tell the declarator-doc table where that is once it is known.
     let mut saw_leading_doc = false;
+    // Whether a comment or Pod was consumed, for the statement-end lookup.
+    let mut saw_comment = false;
     loop {
         // Try whitespace
         let (r, matched) = take_while_opt(rest, |c| c.is_whitespace());
@@ -37,6 +39,7 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
         // Try declarator doc comments (#|{...} / #={...}), embedded comments,
         // or plain line comments.
         if r.starts_with('#') {
+            saw_comment = true;
             if let Some(after) = skip_declarator_doc_comment(r) {
                 saw_leading_doc |= super::decl_doc::note_comment(r, after, true);
                 let consumed = &r[..r.len() - after.len()];
@@ -120,6 +123,7 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
                 Ok((r, _)) => {
                     rest = r;
                     at_line_start = true;
+                    saw_comment = true;
                     continue;
                 }
                 // A fatal Pod error (e.g. `=begin` without an identifier) must
@@ -132,6 +136,9 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
     }
     if saw_leading_doc {
         super::decl_doc::note_next_token(rest);
+    }
+    if saw_comment {
+        super::primary::trivia_runs::note(input, rest);
     }
     Ok((rest, ()))
 }
