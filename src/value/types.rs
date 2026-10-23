@@ -474,7 +474,13 @@ pub(crate) fn mixin_composition_key(base_type_name: &str, mixins: &MixinOverride
                     ValueView::Array(items, _) => items
                         .items()
                         .iter()
-                        .map(what_type_name)
+                        .map(|item| match item.view() {
+                            // A type argument is identified by its type; a
+                            // *value* argument (`R[1]` vs `R[2]`) by its value
+                            // too, or both compositions would share one node.
+                            ValueView::Package(_) => what_type_name(item),
+                            _ => format!("{}={}", what_type_name(item), item.to_string_value()),
+                        })
                         .collect::<Vec<_>>()
                         .join(","),
                     _ => v.to_string_value(),
