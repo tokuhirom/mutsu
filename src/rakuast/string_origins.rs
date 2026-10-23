@@ -73,10 +73,7 @@ pub(super) fn interpolated(node: &mut RakuAstNode) {
 /// quotes with other adverbs are not handled.
 // Cost: O(n), n = length of `text`.
 fn body(text: &str) -> Option<(usize, usize)> {
-    let (prefix, rest) = match text.find(|c: char| !c.is_alphanumeric()) {
-        Some(at) => text.split_at(at),
-        None => return None,
-    };
+    let (prefix, rest) = text.split_at(text.find(|c: char| !c.is_alphanumeric())?);
     if !matches!(prefix, "" | "qq") {
         return None;
     }
