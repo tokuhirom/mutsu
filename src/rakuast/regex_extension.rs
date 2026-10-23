@@ -193,8 +193,14 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
         RegexExtension::VariableAlias {
             name,
             sequential,
+            array,
+            gaps,
             regex,
-        } => super::regex_variable_alias::convert(name, *sequential, regex)?,
+        } => super::regex_variable_alias::convert(
+            (name, *sequential, *array),
+            gaps.as_deref().map_or(("", ""), |g| (&g.0[..], &g.1[..])),
+            regex,
+        )?,
         RegexExtension::NamedRegexArg { name, regex_arg } => RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::RegexAssertionNamedRegexArg,

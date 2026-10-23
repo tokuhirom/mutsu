@@ -91,6 +91,7 @@ mod role_header;
 mod routine_ctor;
 mod routine_is_traits;
 mod routine_lower;
+mod routine_origins;
 mod routine_source;
 mod routine_traits;
 mod shadowed_terms;
@@ -1758,7 +1759,8 @@ pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
     // The origins of the tree index this text (ADR-10723 §4).
     let _source = unit_source::Scope::enter(source);
     let _origins = expr_origins::strip(&mut stmts);
-    let node = convert::statement_list(&stmts)?;
+    let mut node = convert::statement_list(&stmts)?;
+    origin::set_span(&mut node, origin::unit_list_span(&stmts, source));
     Ok(Value::rakuast(Box::new(node)))
 }
 

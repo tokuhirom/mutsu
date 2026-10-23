@@ -134,10 +134,28 @@ impl Interpreter {
             for cls in mro.iter() {
                 let qualified = crate::qualified::qualified(*cls, tc_sym).as_str();
                 if self.registry().classes.contains_key(qualified) {
-                    return Some(qualified.to_string());
+                    return Some(self.with_attr_smiley(&mro, bare, qualified));
                 }
             }
         }
-        Some(tc)
+        Some(self.with_attr_smiley(&mro, bare, &tc))
+    }
+
+    /// `tc` with the `:D` / `:U` smiley the attribute was declared with, so a
+    /// store enforces definiteness (`has Int:D $.n; $!n = Nil` dies).
+    // Cost: O(d), d = ancestors in `mro`.
+    fn with_attr_smiley(&self, mro: &[Symbol], bare: &str, tc: &str) -> String {
+        let smiley = mro.iter().find_map(|cls| {
+            self.registry()
+                .classes
+                .get(cls.as_str())
+                .and_then(|cd| cd.attribute_smileys.get(bare))
+                .filter(|s| matches!(s.as_str(), "D" | "U"))
+                .cloned()
+        });
+        match smiley {
+            Some(smiley) => Self::join_constraint_smiley(tc, &smiley),
+            None => tc.to_string(),
+        }
     }
 }

@@ -42,6 +42,7 @@ pub(super) fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_traits.precedence.as_ref(),
     ));
     Ok(Stmt::SubDecl {
+        spans: Default::default(),
         name: crate::symbol::Symbol::intern(&name),
         name_expr,
         params,

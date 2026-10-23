@@ -2698,6 +2698,7 @@ t/modules/anon-type-name-in-package.t
 t/modules/attr-default-closure-module-imports.t
 t/modules/attr-default-closure-package.t
 t/modules/attr-default-declaring-package-scope.t
+t/modules/attr-default-reads-module-imported-constant.t
 t/modules/attribute-package.t
 t/modules/attribute-trait-imported-into-module-sibling-class.t
 t/modules/attribute-trait-sees-dynamic-package.t
@@ -2962,6 +2963,7 @@ t/modules/import-export/imported-postcircumfix-slice-adverbs-unit.t
 t/modules/import-export/imported-postcircumfix-slice-adverbs.t
 t/modules/import-export/imported-proto-builtin-name-code-value.t
 t/modules/import-export/imported-proto-shadows-outer-sub.t
+t/modules/import-export/imported-routine-default-resolves-in-its-own-package.t
 t/modules/import-export/imported-routine-where-clause-is-checked.t
 t/modules/import-export/imported-statement-call-leaves-no-value.t
 t/modules/import-export/imported-sub-can-be-shadowed.t
@@ -3247,6 +3249,7 @@ t/modules/module-unit-use-binds-in-pad.t
 t/modules/module-use-hook-adds-family-candidates.t
 t/modules/module-warning-location-misattributed.t
 t/modules/modules-core-dist-meta-auth.t
+t/modules/multi-candidate-where-reads-module-file-constant.t
 t/modules/multi-method-where-module-scope.t
 t/modules/multi-rank-resolves-type-in-declaring-package.t
 t/modules/my-class-in-package-stays-private.t
@@ -3386,6 +3389,7 @@ t/nativecall/any-base-native-deferral.t
 t/nativecall/array-pos-native.t
 t/nativecall/atomic-int-native-target.t
 t/nativecall/atomic-ops-native-dispatch.t
+t/nativecall/attribute-parameterized-carray-type.t
 t/nativecall/augment-native-deferral.t
 t/nativecall/augment-native-lever-a-methods.t
 t/nativecall/bind-native-type.t
@@ -3451,6 +3455,7 @@ t/nativecall/map-native-rw.t
 t/nativecall/missing-optional-native-int-param-defaults-zero.t
 t/nativecall/mixin-native-deferral.t
 t/nativecall/mixin-native-method-delegation.t
+t/nativecall/multi-method-native-param-boxed-arg.t
 t/nativecall/multi-trait-mod-in-module-above-nativecall-importer.t
 t/nativecall/native-aggregate-ctor.t
 t/nativecall/native-alias-imported-constant-default.t
@@ -3661,6 +3666,7 @@ t/nativecall/subset-shadows-native-width-container-store.t
 t/nativecall/subst-native.t
 t/nativecall/substr-eq-native.t
 t/nativecall/substr-native-layer.t
+t/nativecall/supply-native-shim-ignores-caller-lexicals.t
 t/nativecall/systemic-can-sees-native-methods.t
 t/nativecall/test-fn-native-dispatch.t
 t/nativecall/trir-native-num-param-rejects-int.t
@@ -3696,6 +3702,7 @@ t/oo/attribute/attr-accessor-slot.t
 t/oo/attribute/attr-alias-arg-not-adopted-as-bind.t
 t/oo/attribute/attr-array-drops-source-element-type.t
 t/oo/attribute/attr-array-hash-whole-assign.t
+t/oo/attribute/attr-bind-alias-keeps-nested-rebind.t
 t/oo/attribute/attr-bind-list.t
 t/oo/attribute/attr-bind-local-visible-to-accessor.t
 t/oo/attribute/attr-bind-reconcile-many-attrs.t
@@ -3943,6 +3950,7 @@ t/oo/class/class-in-routine-lexical-capture.t
 t/oo/class/class-is-rw.t
 t/oo/class/class-level-attrs.t
 t/oo/class/class-named-failure-shadows-core.t
+t/oo/class/class-nested-compound-name-x-shadows-core-namespace.t
 t/oo/class/class-pseudo-type-param.t
 t/oo/class/class-redeclaration.t
 t/oo/class/class-scoped-enum-member-alias.t
@@ -5080,6 +5088,7 @@ t/oo/trait/nested-var-trait-initializer-declaration-phase.t
 t/oo/trait/param-trait-mixin-persists.t
 t/oo/trait/param-trait-word-quote-arg.t
 t/oo/trait/parameter-trait-mixin-per-declaration.t
+t/oo/trait/parameter-trait-mod-on-method-signature.t
 t/oo/trait/proto-method-trait-is-dispatcher.t
 t/oo/trait/routine-qualified-type-trait.t
 t/oo/trait/runtime-trait-persistence.t
@@ -5376,6 +5385,8 @@ t/rakuast/rakuast-object-hash.t
 t/rakuast/rakuast-obsolete-interpolation.t
 t/rakuast/rakuast-operator-name-colonpairs.t
 t/rakuast/rakuast-operators.t
+t/rakuast/rakuast-origin-block-statements.t
+t/rakuast/rakuast-origin-conditional.t
 t/rakuast/rakuast-origin-ranges.t
 t/rakuast/rakuast-outer-slurpy-bindings.t
 t/rakuast/rakuast-package-indirect-lookup.t
@@ -5449,6 +5460,7 @@ t/rakuast/rakuast-regex-stored-interpolation.t
 t/rakuast/rakuast-regex-sym-adverb.t
 t/rakuast/rakuast-regex-symbolic-subrule.t
 t/rakuast/rakuast-regex-tree-gaps.t
+t/rakuast/rakuast-regex-variable-alias-gap.t
 t/rakuast/rakuast-regex-variable-alias.t
 t/rakuast/rakuast-regex-word-list-escapes.t
 t/rakuast/rakuast-regex.t
@@ -5965,6 +5977,7 @@ t/regex/regex-unicode-single-quotes.t
 t/regex/regex-unspace.t
 t/regex/regex-value-identity.t
 t/regex/regex-value-interp-parse-memo.t
+t/regex/regex-variable-alias-drops-atom.t
 t/regex/regex-walk-residue-compiled.t
 t/regex/regex-wb-assertion.t
 t/regex/regex-word-boundary.t
@@ -6153,6 +6166,7 @@ t/routines/call/captured-outer-cell-sharing.t
 t/routines/call/captured-outer-container-cell-sharing.t
 t/routines/call/captured-outer-pair-container-alias.t
 t/routines/call/captured-scalar-array-share-shadow.t
+t/routines/call/captured-scalar-chained-store.t
 t/routines/call/captured-scalar-element-autoviv.t
 t/routines/call/cas-captured-lexical-coherence.t
 t/routines/call/code-capture-clone-rows.t
@@ -7386,6 +7400,7 @@ t/types/coercion/typed-our-constraint-other-access-paths.t
 t/types/coercion/typed-scalar-store-constraint-paths.t
 t/types/coercion/typed-var-assignment.t
 t/types/coercion/typed-variable-typecheck-message.t
+t/types/coercion/typed-whole-container-assign-own-slot.t
 t/types/coercion/uint-coercion-failure.t
 t/types/coercion/user-which-identity.t
 t/types/coercion/zero-denominator-rat-string-coercion.t
@@ -8171,6 +8186,7 @@ t/vm/scope/dynamic-var-written-by-callee-through-cell.t
 t/vm/scope/dynamic-var.t
 t/vm/scope/dynamic-vars-base-tier.t
 t/vm/scope/escaped-our-sub-lexical-write.t
+t/vm/scope/eval-bind-outer-lexical.t
 t/vm/scope/eval-block-hook-import-my-stash.t
 t/vm/scope/eval-dot-form-caller-lexicals.t
 t/vm/scope/eval-my-shadows-caller-lexical.t

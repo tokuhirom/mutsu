@@ -173,6 +173,7 @@ pub(crate) fn def_is_plain_positional(pd: &ParamDef) -> bool {
         // The compiled `where` / default / shape chunks; their source
         // expressions are refused below.
         code: _,
+        spans: _,
     } = pd;
     !named
         && !named_alias

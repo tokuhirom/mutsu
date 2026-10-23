@@ -1307,6 +1307,9 @@ impl Interpreter {
                         // the refusal names it: "Cannot modify an immutable Str
                         // (is baz)", or the type object when it holds none.
                         let held = attributes.get_attribute_value(Symbol::intern(method));
+                        // An attribute bound to a Proxy hands back what the
+                        // Proxy FETCHes.
+                        let held = self.fetch_proxy_for_store(held)?;
                         return Err(match held.view() {
                             ValueView::Nil | ValueView::Package(_) => {
                                 let type_name = match held.view() {

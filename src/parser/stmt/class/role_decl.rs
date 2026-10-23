@@ -199,6 +199,7 @@ pub(crate) fn parse_optional_role_type_params(
             {
                 params.push(name.clone());
                 param_defs.push(ParamDef {
+                    spans: Default::default(),
                     trait_meta: Default::default(),
                     type_capture: None,
                     name,
@@ -239,6 +240,7 @@ pub(crate) fn parse_optional_role_type_params(
                 {
                     params.push(name.clone());
                     param_defs.push(ParamDef {
+                        spans: Default::default(),
                         trait_meta: Default::default(),
                         type_capture: None,
                         name: format!("__type_capture__{}", name),

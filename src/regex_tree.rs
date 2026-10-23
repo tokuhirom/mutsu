@@ -2122,7 +2122,7 @@ impl Parser {
             return Some(RegexNode::Interpolation { name, sequential });
         }
         let name = self.parse_twigil_variable_name()?;
-        self.parse_variable_alias(name, sequential)
+        self.parse_variable_alias(name, sequential, false)
     }
 
     fn parse_array_interpolation(&mut self, sequential: bool) -> Option<RegexNode> {
@@ -2144,7 +2144,7 @@ impl Parser {
         }
         self.pos += 1; // '@'
         let name = self.parse_twigil_variable_name()?;
-        Some(RegexNode::ArrayInterpolation { name, sequential })
+        self.parse_variable_alias(name, sequential, true)
     }
 
     /// A variable name after its sigil, with an optional dynamic `*` twigil

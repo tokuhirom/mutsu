@@ -979,6 +979,22 @@ impl Interpreter {
         });
         let lazy_source =
             self.reify_lazy_array_slot(var_name, code.const_sym(name_idx), touched_index)?;
+        // The store's own slot held the same lazy list: it takes the reified
+        // prefix too, since a store into a declared local mutates the slot
+        // (ADR-14632), and the restore below rebuilds the list in both.
+        let lazy_slot = lazy_source.as_ref().and_then(|ll| {
+            let slot = target_slot? as usize;
+            let holds_it = matches!(
+                self.locals.get(slot).map(Value::view),
+                Some(ValueView::LazyList(held)) if crate::gc::Gc::ptr_eq(&held, ll)
+            );
+            holds_it.then_some(slot)
+        });
+        if let Some(slot) = lazy_slot
+            && let Some(reified) = self.env().get(var_name).cloned()
+        {
+            self.locals[slot] = reified;
+        }
         let result = self.exec_index_assign_expr_named_op_seeded_inner(
             code,
             name_idx,
@@ -987,7 +1003,18 @@ impl Interpreter {
             element_share,
         );
         if let Some(ll) = lazy_source {
+            if let Some(slot) = lazy_slot
+                && matches!(self.locals[slot].view(), ValueView::Array(..))
+            {
+                let mutated = self.locals[slot].clone();
+                self.env_mut().insert(var_name.to_string(), mutated);
+            }
             self.restore_lazy_array_slot(code, var_name, ll);
+            if let Some(slot) = lazy_slot
+                && let Some(restored) = self.env().get(var_name).cloned()
+            {
+                self.locals[slot] = restored;
+            }
         }
         result
     }

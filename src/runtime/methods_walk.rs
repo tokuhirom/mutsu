@@ -708,7 +708,7 @@ fn builtin_type_has_method(type_name: &str, method: &str) -> bool {
 /// Build a minimal `ParamDef` for a WALK candidate closure: a single positional
 /// `$name`, or a slurpy `*@name` when `slurpy` is true.
 fn walk_param(name: &str, slurpy: bool) -> crate::ast::ParamDef {
-    crate::ast::ParamDef { trait_meta: Default::default(),
+    crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
         type_capture: None,
         name: name.to_string(),
         default: None,

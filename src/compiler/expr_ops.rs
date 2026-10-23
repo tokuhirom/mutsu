@@ -312,14 +312,16 @@ impl Compiler {
                         let target_slot = self.local_map.get(&name).copied();
                         self.compile_expr(index);
                         let name_idx = self.code.add_constant(Value::str(name));
-                        self.code.emit(OpCode::IndexAssignExprNamed {
+                        self.emit_index_assign_named(
                             name_idx,
-                            is_positional: *is_positional,
-                            index_first: false,
                             target_slot,
-                            concat_append: false,
-                            element_share: false,
-                        });
+                            expr_index_assign_emit::IndexAssignFlags {
+                                is_positional: *is_positional,
+                                index_first: false,
+                                concat_append: false,
+                                element_share: false,
+                            },
+                        );
                     }
                     // For complex targets without a simple name, leave result on stack.
                 }

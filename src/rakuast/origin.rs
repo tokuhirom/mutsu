@@ -75,6 +75,20 @@ pub(super) fn trace_of(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
 // Cost: O(1) for ASCII text, O(log n) otherwise, n = characters of the unit.
 pub(super) fn set(node: &mut RakuAstNode, line: i64, span: crate::ast::SrcSpan) {
     node.origin = super::NodeOrigin(Some(super::unit_source::origin_value(line, span)));
+    // A `Statement::Expression` with no statement modifier was written as just
+    // its expression, which therefore has the statement's range (a `Sub`, a
+    // `Class`, a `VarDeclaration`, a call) unless the parser placed it itself.
+    if node.class == super::RakuAstClass::StatementExpression
+        && let [field] = node.fields.as_mut_slice()
+        && field.name == Some("expression")
+        && let RakuAstFieldValue::Node(held) = &mut field.value
+        && let ValueView::RakuAst(expression) = held.view()
+        && expression.origin.0.is_none()
+    {
+        let mut expression = RakuAstNode::clone(expression);
+        set_span(&mut expression, span);
+        *held = Value::rakuast(Box::new(expression));
+    }
 }
 
 /// The line an `origin` field value records: the `line` an `Origin` carries, or
@@ -177,4 +191,25 @@ pub(super) fn set_span(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     if node.origin.0.is_none() {
         node.origin = super::NodeOrigin(super::unit_source::span_origin_value(span));
     }
+}
+
+/// The range of a unit's top-level `StatementList`: from the start of its
+/// first statement to the end of its last, the `;` terminators that directly
+/// follow it included, as for a block's statements.
+// Cost: O(s + k), s = top-level statements, k = terminators skipped.
+pub(super) fn unit_list_span(stmts: &[Stmt], source: &str) -> crate::ast::SrcSpan {
+    let mut spans = stmts.iter().filter_map(|stmt| match stmt {
+        Stmt::SetLine(_, span) if span.is_some() => Some(*span),
+        _ => None,
+    });
+    let Some(first) = spans.next() else {
+        return crate::ast::SrcSpan::NONE;
+    };
+    let last = spans.next_back().unwrap_or(first);
+    let end = last.to as usize;
+    let skipped = source
+        .as_bytes()
+        .get(end..)
+        .map_or(0, |tail| tail.iter().take_while(|&&b| b == b';').count());
+    crate::ast::SrcSpan::new(first.from as usize, end + skipped)
 }
