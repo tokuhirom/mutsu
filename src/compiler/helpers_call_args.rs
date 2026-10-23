@@ -896,6 +896,25 @@ impl Compiler {
             // made meanwhile (#14663). Promote the instance's slot instead.
             let name_idx = self.code.add_constant(Value::str(bare.to_string()));
             self.code.emit(OpCode::AttrContainerRef(name_idx));
+        } else if is_bind_target
+            && let Expr::Var(name) = arg
+            && Self::is_dot_twigil_scalar(name)
+        {
+            // `my $p := $.w` is `self.w`: a public accessor hands back the
+            // attribute's container only when it is `is rw`, otherwise the
+            // bind keeps a copy. The `.w` local is a by-name alias of the
+            // attribute, so tagging it (`WrapVarRef`) would alias a non-rw
+            // attribute too (#14689). Ask the accessor call instead, as a
+            // `:=` to a method-call RHS does.
+            self.insert_accessor_ref_marker_past_itemize();
+            // Either the attribute's cell (`is rw`) or a plain value: tag it
+            // as a bind so a copy lands in a fresh, assignable variable.
+            let tmp = format!("__mutsu_bind_accessor_ref_{}", self.code.constants.len());
+            let name_idx = self.code.add_constant(Value::str(tmp));
+            self.code.emit(OpCode::WrapVarRef {
+                name_idx,
+                slot: u32::MAX,
+            });
         } else if is_call_arg && self.is_readonly_param_operand(arg) {
             // A readonly `$` parameter is a value, not a container: tagging it
             // would let an `is rw` parameter bind it and write into this frame
@@ -1299,6 +1318,31 @@ impl Compiler {
                 ..
             } if args.is_empty()
         ) || matches!(arg, Expr::Var(name) if crate::value::attr_twigil_base(name).is_some())
+    }
+
+    /// [`Self::mark_trailing_method_call_as_accessor_ref`] for a tail that a
+    /// scalar read also itemized (`$.w` compiles to `self.w` then `Itemize`).
+    // Cost: O(1), the scan stops at the first non-wrapper op.
+    pub(super) fn insert_accessor_ref_marker_past_itemize(&mut self) {
+        let mut i = self.code.ops.len();
+        while i > 0
+            && matches!(
+                self.code.ops[i - 1],
+                OpCode::Itemize | OpCode::ContainerizePair | OpCode::Decont
+            )
+        {
+            i -= 1;
+        }
+        if i > 0
+            && matches!(
+                self.code.ops[i - 1],
+                OpCode::CallMethod { .. } | OpCode::CallMethodMut { .. }
+            )
+        {
+            let line = self.code.op_lines[i - 1];
+            self.code.ops.insert(i - 1, OpCode::MarkAccessorRefContext);
+            self.code.op_lines.insert(i - 1, line);
+        }
     }
 
     pub(super) fn insert_accessor_ref_marker(&mut self, marker: OpCode) {
