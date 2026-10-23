@@ -927,12 +927,7 @@ mod tests {
         let (rest, args) = parse_stmt_call_args("(@d = 1,3 Z 2,4), \"desc\";").unwrap();
         assert_eq!(rest, ";");
         match &args[0] {
-            CallArg::Positional(Expr::Grouped(inner))
-                if matches!(inner.as_ref(), Expr::AssignExpr { .. }) =>
-            {
-                let Expr::AssignExpr { name, expr, .. } = inner.as_ref() else {
-                    unreachable!("guarded above")
-                };
+            CallArg::Positional(Expr::AssignExpr { name, expr, .. }) => {
                 assert_eq!(name, "@d");
                 match expr.as_ref() {
                     Expr::MetaOp {
