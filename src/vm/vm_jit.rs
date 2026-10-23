@@ -289,8 +289,13 @@ pub(crate) fn try_enter(
         unsafe { std::mem::transmute::<usize, JitEntryFn>(entry as usize) }
     };
     crate::vm::vm_stats::record_jit_entry();
+    // The native body (and the frames it enters) leaves `current_code` at its
+    // own chunk, which may be dropped once this returns; hand the caller's
+    // address back so Rust code after the call never reads a dangling frame.
+    let caller_code = interp.current_code;
     interp.current_code = code as *const CompiledCode as usize;
     let status = unsafe { f(interp, code, compiled_fns) };
+    interp.current_code = caller_code;
     #[cfg(feature = "alloc-stats")]
     crate::alloc_stats::clear_current_line();
     match status {
@@ -403,8 +408,13 @@ pub(crate) fn try_enter_range(
             entry_poll,
         );
     }
+    // The native body (and the frames it enters) leaves `current_code` at its
+    // own chunk, which may be dropped once this returns; hand the caller's
+    // address back so Rust code after the call never reads a dangling frame.
+    let caller_code = interp.current_code;
     interp.current_code = code as *const CompiledCode as usize;
     let status = unsafe { f(interp, code, compiled_fns) };
+    interp.current_code = caller_code;
     match status {
         JIT_STATUS_ERR => {
             let e = interp

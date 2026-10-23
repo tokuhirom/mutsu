@@ -341,6 +341,7 @@ impl Interpreter {
 
         // Restore everything above on every exit, a Rust panic in the body
         // included (as the positional light call does).
+        let frame_caller_code = self.current_code;
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut ip = 0;
             let polls = crate::vm::vm_poll::DispatchPolls::current();
@@ -360,6 +361,7 @@ impl Interpreter {
             }
             Ok(())
         }));
+        self.current_code = frame_caller_code;
         let result = match outcome {
             Ok(Ok(())) if self.stack.len() > saved_stack_depth => {
                 Ok(self.stack.pop().unwrap_or(Value::NIL))

@@ -1327,6 +1327,7 @@ impl Interpreter {
         // with no explicit return) instead of leaking them into the caller.
         let mut handled_let_saves = false;
         let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let frame_caller_code = self.current_code;
         while ip < cc.ops.len() {
             // JIT entry (ADR-0004 J2): same hook as vm_call_named_inner.rs — at
             // body start, run the whole body natively when the chunk is hot and
@@ -1473,6 +1474,7 @@ impl Interpreter {
                 break;
             }
         }
+        self.current_code = frame_caller_code;
 
         // Explicit drop (not left to fall out of scope) to restore
         // `current_package` here, at exactly the point the old manual
