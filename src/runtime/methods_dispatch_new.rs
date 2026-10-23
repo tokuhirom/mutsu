@@ -294,7 +294,10 @@ impl Interpreter {
                 Some(args) => Value::parametric_role(Symbol::intern(&role_name), args),
                 None => Value::package(Symbol::intern(&role_name)),
             };
-            result = self.eval_does_values(result, role)?;
+            // The instance is the fresh `Base` this construction made, so the
+            // role is composed into it (a rebless into the mixin class, which
+            // runs the mixin class's own BUILDPLAN), not into a copy.
+            result = self.eval_does_values_mutating(result, role)?;
         }
         Ok(result)
     }

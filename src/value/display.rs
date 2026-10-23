@@ -92,6 +92,14 @@ pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
     if let Some(base) = name.strip_suffix(":_") {
         return std::borrow::Cow::Owned(user_facing_type_name(base).into_owned());
     }
+    // A mixin class (`C+{R,__ANON_ROLE_0__}`) names its roles inside braces:
+    // each is demangled on its own.
+    if name.contains("+{") && (name.contains('\u{0}') || name.contains("__ANON_")) {
+        let display = mixin_class_user_facing_name(name);
+        if display != name {
+            return std::borrow::Cow::Owned(display);
+        }
+    }
     if !name.contains('\u{0}') {
         // Fast path: nothing mangled anywhere, no allocation needed.
         if let Some(display) = anon_type_display_name(name) {
@@ -1389,4 +1397,30 @@ impl Value {
             VersionPart::Str(s.to_string())
         }
     }
+}
+
+/// [`user_facing_type_name`] of a mixin class name: the base and every role of
+/// each `+{...}` group are demangled separately.
+// Cost: O(n), n = the name's length.
+fn mixin_class_user_facing_name(key: &str) -> String {
+    let mut out = String::new();
+    let mut rest = key;
+    while let Some(at) = rest.find("+{") {
+        out.push_str(&user_facing_type_name(&rest[..at]));
+        let after = &rest[at + 2..];
+        let Some(close) = after.find('}') else {
+            out.push_str(&rest[at..]);
+            return out;
+        };
+        out.push_str("+{");
+        let roles: Vec<String> = after[..close]
+            .split(',')
+            .map(|role| user_facing_type_name(role).into_owned())
+            .collect();
+        out.push_str(&roles.join(","));
+        out.push('}');
+        rest = &after[close + 1..];
+    }
+    out.push_str(&user_facing_type_name(rest));
+    out
 }
