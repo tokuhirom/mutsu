@@ -288,6 +288,38 @@ before the flip, not after.
   Rejected: extending the line-valued field to every node (`.from` / `.to` would keep a
   meaning Rakudo does not give them, and no columns); a per-unit side table from node identity
   to range (hand-built nodes, `EVAL($ast)` and tree rewrites lose the mapping).
+
+  **Proposed amendment (2026-10-23, [#11413](https://github.com/tokuhirom/mutsu/issues/11413)):
+  origins of expression terms are noted while parsing and attached after the parse, in
+  `keep_spelling` parses only.** This narrows two bullets above ("the parser records the range
+  when it builds a node"; "no second, `.AST`-only position-recording mode") for the expression
+  families, where "the typed node is that `Expr` plus its positions" has no `Expr` field to hold
+  the positions.
+  - **Why not a field on `Expr`.** The parser decides a great deal by the shape of a term it has
+    just read (is it a variable, a pair, a `*`, a call it may rewrite?), in hundreds of
+    `matches!`. A term that carries its range as it is built, whether as a wrapper or as a
+    member of every variant, has to be looked through by every one of them. Measured: wrapping
+    terms as they are parsed broke 900–1300 of the 8451 `scripts/rakuast-frontend.sh` files,
+    each in a different shape check. A span member on every `Expr` variant is the same change
+    spread over every constructor and match arm, and grows the executing tree.
+  - **The mechanism.** A parse that keeps spelling notes, for each term it reads (a primary, a
+    postfix expression), the range and a structural fingerprint of the term
+    (`parser::term_origins`). When the unit is finished, after its post-parse passes, the
+    notes are attached to the terms with the same fingerprint, in source order and within the
+    statement each was written in, as `Expr::Spelled` wrappers with `Spelling::Origin`. Nothing
+    in the parser sees them. `convert` takes them off before it matches shapes and gives each
+    node its range in the `origin` member of `RakuAstNode` (which takes no part in node
+    equality). A term the parser rewrote into another shape has no matching note and gets no
+    origin, like a node built by `convert` today.
+  - **Only in `keep_spelling` parses.** An executing parse lowers each term as it builds it and
+    has no node to hold a range, and lines in executing code still come from `Stmt::SetLine`.
+    Noting costs one hash of each term, so an executing parse notes nothing. The ranges come
+    from the same parser code in both kinds of parse; only whether they are kept differs. This
+    is the `.AST`-only recording that the bullet above rules out, accepted for expression terms
+    until a family gets a typed node (`Expr::Ast`) that records its range as it is built,
+    when that family's notes are dropped. The note table is per parse and is dropped at
+    `attach`; the per-unit side table rejected above (node identity → range, kept for the
+    unit's life) is not reintroduced.
 - **Where compile-time knowledge lives.** The parser currently resolves some names while parsing
   (declared types, imported operators, slang modes). In Rakudo that is RakuAST's resolver and
   BEGIN-time logic. Whether mutsu keeps it in the parser or moves it into `lower` is decided per
