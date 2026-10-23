@@ -3642,8 +3642,10 @@ impl Interpreter {
                             // its exit writeback: the parameter keeps its own
                             // cell and copies back to the caller's `$_`, with
                             // no alias (the callee's `_` is its own topic).
-                            let topic_writeback = source_name == "_"
-                                && rw_bindings.iter().any(|(param, _)| *param == storage_name);
+                            let topic_writeback = rw_bindings
+                                .iter()
+                                .any(|(param, _)| *param == storage_name)
+                                && (source_name == "_" || self.env.get(&resolved_source).is_none());
                             if topic_writeback {
                                 self.env.remove_sym(alias_key);
                                 self.env.insert_sym_noting(readonly_key, Value::FALSE);
