@@ -15,6 +15,7 @@
 #   CLASSES a linear chain of NN classes C0..C<NN> (C0 has `method m {1}`)
 #   STMTS   NN copies of `$s++;` (a big block that declares no locals)
 #   SUBS    NN generated `sub rsI { I }` declarations (a big routine registry)
+#   STATES  NN generated `state $stI = I;` declarations (many state locals in the chunk)
 #
 # The cases back the `Rakudo: O(..) -- see #NNNN` annotations on the
 # `exec_one_dispatch` arms (src/vm/vm_exec_dispatch.rs) and their handlers;
@@ -109,6 +110,9 @@ CASES=(
     # Run this one with MUTSU_JIT=off: with the JIT on, the one-time cranelift
     # compile of the enlarged chunk lands inside the timed body.
     'ResetStateLocals vs loop body size|500|1|my $never = 0; my $s = 0;|for ^20000 { for ^1 { state $x = 1; $s += $x; if $never { STMTS } } }'
+    # #11347: a loop's per-iteration state sync visits the state locals of its own
+    # body, not those of the whole chunk.
+    'for iteration vs chunk state locals|1000|1|STATES my $c;|for ^20000 { $c = -> { 1 } }'
     'map callback vs frame locals|1000|1|LOCALS my $s = 0;|for ^20 { $s += (1..2000).map({ $_ + 1 }).elems }'
     # #10780: a lazy `for` pulls one element per iteration; each pull copies
     # only that element, not the whole reified prefix.
@@ -121,6 +125,12 @@ CASES=(
 gen_locals() {
     local n=$1 i out=""
     for ((i = 0; i < n; i++)); do out+="my \$lv$i = $i; "; done
+    printf '%s' "$out"
+}
+
+gen_states() {
+    local n=$1 i out=""
+    for ((i = 0; i < n; i++)); do out+="state \$st$i = $i; "; done
     printf '%s' "$out"
 }
 
@@ -145,6 +155,7 @@ gen_classes() {
 time_case() {
     local setup=$1 body=$2 n=$3 f="$TMPDIR_CX/case.raku"
     setup=${setup//LOCALS/$(gen_locals "$n")}
+    setup=${setup//STATES/$(gen_states "$n")}
     setup=${setup//CLASSES/$(gen_classes "$n")}
     setup=${setup//SUBS/$(gen_subs "$n")}
     setup=${setup//NN/$n}
