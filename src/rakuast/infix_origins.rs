@@ -277,8 +277,9 @@ pub(super) fn with_child_at(
 }
 
 /// `name(args)` / `name args`: the `Name` is the identifier the call starts
-/// with, the `ArgList` the inside of its parentheses, or the range from its
-/// first argument to its last.
+/// with, the `ArgList` its arguments, in parentheses
+/// ([`super::call_origins::parenthesized`]) or from its first argument to its
+/// last.
 // Cost: O(n + a), n = length of the call's source, a = its arguments.
 fn call_name(node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
@@ -302,7 +303,10 @@ fn call_name(node: &mut RakuAstNode) {
     }
     let name_end = from + name.len();
     let args = if parens {
-        Some((name_end + 1, to - 1))
+        super::call_origins::parenthesized(child(node, "args"), SrcSpan::new(name_end + 1, to - 1))
+    } else if child(node, "args").is_none() {
+        // A bare `foo`: Rakudo's empty `ArgList` sits right after the name.
+        (name_end == to).then_some((to, to))
     } else {
         child(node, "args").and_then(|list| {
             let first = child_at(list, 0).and_then(byte_range)?;
@@ -317,6 +321,7 @@ fn call_name(node: &mut RakuAstNode) {
         super::origin::set_span(n, SrcSpan::new(from, name_end))
     });
     if let Some((args_from, args_to)) = args {
+        super::empty_fields::set_span(node, "args", SrcSpan::new(args_from, args_to));
         with_child(node, "args", |list| {
             super::origin::set_span(list, SrcSpan::new(args_from, args_to))
         });

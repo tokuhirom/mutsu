@@ -3344,7 +3344,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     if let Some(span) = super::expr_origins::of(expr) {
         origin::set_span(&mut node, span);
         origin::quoted_text(&mut node, span);
-        origin::postfix_call(&mut node, span);
+        super::call_origins::postfix_call(&mut node, span);
     }
     super::infix_origins::derive(&mut node);
     Ok(node)
@@ -3376,7 +3376,7 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 let mut node = convert_expr(&spelled.expr)?;
                 origin::set_span(&mut node, *span);
                 origin::quoted_text(&mut node, *span);
-                origin::postfix_call(&mut node, *span);
+                super::call_origins::postfix_call(&mut node, *span);
                 Ok(node)
             }
             Spelling::SourceIdentifier => written_identifier(&spelled.expr),

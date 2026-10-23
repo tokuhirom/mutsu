@@ -157,6 +157,10 @@ fn original_line(target: &Value, args: &[Value]) -> Option<Result<Value, Runtime
 /// name, a number) and the hidden `origin` are not nodes.
 // Cost: O(f + c), f = fields of `node`, c = child nodes listed in them.
 pub(super) fn children(node: &RakuAstNode) -> Vec<Value> {
+    // A field Rakudo fills with an empty node is visited too.
+    if let Some(filled) = crate::rakuast::empty_fields::materialized(node) {
+        return children(&filled);
+    }
     if let Some(shaped) = rakudo_shaped_children(node) {
         return shaped;
     }

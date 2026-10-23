@@ -120,13 +120,29 @@ fn pointy_block(node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
-    let Some(signature) = super::infix_origins::child(node, "signature") else {
-        return;
+    let parameters = match super::infix_origins::child(node, "signature") {
+        Some(signature) if signature.fields.is_empty() => Some(Vec::new()),
+        Some(signature) => super::signature_decl_origins::parameters(signature),
+        None => Some(Vec::new()),
     };
-    let Some(parameters) = super::signature_decl_origins::parameters(signature) else {
+    let Some(parameters) = parameters else {
         return;
     };
     if parameters.is_empty() {
+        // `-> { ... }`: the empty `Signature` sits right after the arrow.
+        let brace = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+            let rest = text.strip_prefix("->")?;
+            let body = rest.trim_start();
+            body.starts_with('{')
+                .then(|| from + 2 + (rest.len() - body.len()))
+        });
+        if let Some(brace) = brace {
+            super::empty_fields::set_span(node, "signature", SrcSpan::new(from + 2, from + 2));
+            with_child(node, "signature", |signature| {
+                super::origin::set_span(signature, SrcSpan::new(from + 2, from + 2))
+            });
+            blockoid(node, brace, to);
+        }
         return;
     }
     let placed = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
