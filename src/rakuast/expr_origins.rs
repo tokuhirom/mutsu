@@ -28,6 +28,33 @@ struct Table {
 
 thread_local! {
     static ORIGINS: RefCell<Table> = RefCell::new(Table::default());
+    /// The range of the statement being converted: a copy the conversion
+    /// made of a term is a copy of a term of that statement.
+    static STATEMENT: std::cell::Cell<SrcSpan> = const { std::cell::Cell::new(SrcSpan::NONE) };
+}
+
+/// While alive, the statement written at the range it was entered with is
+/// the one being converted (see [`of`]).
+pub(super) struct InStatement(Option<SrcSpan>);
+
+impl InStatement {
+    /// Enter the statement written at `span`; with no range, the enclosing
+    /// statement stays the one being converted.
+    // Cost: O(1).
+    pub(super) fn enter(span: Option<SrcSpan>) -> InStatement {
+        InStatement(
+            span.filter(|s| s.is_some())
+                .map(|s| STATEMENT.with(|c| c.replace(s))),
+        )
+    }
+}
+
+impl Drop for InStatement {
+    fn drop(&mut self) {
+        if let Some(previous) = self.0 {
+            STATEMENT.with(|c| c.set(previous));
+        }
+    }
 }
 
 /// While alive, the ranges [`strip`] took off a unit answer [`of`].
@@ -110,7 +137,7 @@ pub(super) fn strip(stmts: &mut [Stmt]) -> Scope {
 
 /// Where the term `expr` was written, when a stripped unit holds it: by its
 /// slot, or, for a copy the conversion made, by the first unclaimed range of a
-/// term with the same shape.
+/// term with the same shape in the statement being converted.
 // Cost: O(1) for a slot, O(n + c) otherwise, n = size of `expr`, c = ranges
 // of terms with its shape.
 pub(super) fn of(expr: &Expr) -> Option<SrcSpan> {
@@ -122,8 +149,18 @@ pub(super) fn of(expr: &Expr) -> Option<SrcSpan> {
         let (print, span) = match table.by_slot.remove(&(expr as *const Expr as usize)) {
             Some(found) => found,
             None => {
+                // A copy takes the range of a term of its own statement,
+                // never one written elsewhere in the unit.
+                let statement = STATEMENT.with(|c| c.get());
+                if !statement.is_some() {
+                    return None;
+                }
                 let print = fingerprint(expr);
-                let span = *table.by_print.get(&print)?.first()?;
+                let span = *table
+                    .by_print
+                    .get(&print)?
+                    .iter()
+                    .find(|s| statement.from <= s.from && s.to <= statement.to)?;
                 (print, span)
             }
         };

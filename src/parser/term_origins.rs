@@ -152,6 +152,7 @@ pub(crate) fn attach(stmts: &mut [Stmt]) {
     let mut walk = Walk {
         mode: Mode::Collect,
         statement: SrcSpan::NONE,
+        list_statement: SrcSpan::NONE,
         terms: Vec::new(),
         statements: Vec::new(),
         next: 0,
@@ -166,6 +167,7 @@ pub(crate) fn attach(stmts: &mut [Stmt]) {
     // Pass 2: the same walk, attaching.
     walk.mode = Mode::Attach;
     walk.statement = SrcSpan::NONE;
+    walk.list_statement = SrcSpan::NONE;
     walk.ranges = ranges;
     crate::ast_visit::walk_stmts_mut(&mut walk, stmts);
 }
@@ -256,6 +258,10 @@ struct Walk {
     mode: Mode,
     /// The range of the statement being walked.
     statement: SrcSpan,
+    /// The range of the statement whose list is being walked: what a
+    /// statement no `SetLine` marker precedes belongs to (a statement the
+    /// parser added, such as a copy of an attribute's default).
+    list_statement: SrcSpan,
     /// Pass 1's output: each term's statement and fingerprint.
     terms: Vec<(SrcSpan, u64)>,
     /// Pass 1's output: every statement range seen.
@@ -287,9 +293,11 @@ impl Walk {
 
 impl VisitMut for Walk {
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
-        let outer = self.statement;
+        let (outer, outer_list) = (self.statement, self.list_statement);
+        self.list_statement = outer;
         crate::ast_visit::walk_stmts_mut(self, body);
         self.statement = outer;
+        self.list_statement = outer_list;
     }
 
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
@@ -301,6 +309,10 @@ impl VisitMut for Walk {
                 self.statements.push(*span);
             }
         }
+        // A `SetLine` marker places the one statement after it (its trace
+        // hooks aside): what follows that statement without a marker of its
+        // own belongs to the enclosing statement, not to the marked one.
+        let placed = !stmt.is_marker();
         // A statement modifier is written after the statement it modifies,
         // while the tree holds its condition first: visit in source order, so
         // that equal terms (`say $x if $x`) take their ranges in the order
@@ -344,6 +356,9 @@ impl VisitMut for Walk {
                 self.visit_expr_mut(cond);
             }
             _ => crate::ast_visit::walk_stmt_mut(self, stmt),
+        }
+        if placed {
+            self.statement = self.list_statement;
         }
     }
 

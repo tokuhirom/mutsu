@@ -75,6 +75,13 @@ fn list_origins(node: &mut RakuAstNode, field: &str, spans: &[TraitSpans]) {
 /// block's origins.
 // Cost: O(f), f = fields of the nodes on the path.
 pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
+    // `class C is export { }`: the declaration opens the block that also
+    // registers its export.
+    if let Stmt::SyntheticBlock(inner) = stmt
+        && let Some(decl @ (Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. })) = inner.first()
+    {
+        return package_origins(statement, decl);
+    }
     if let Stmt::EnumDecl { spans, .. } | Stmt::SubsetDecl { spans, .. } = stmt {
         if let Some(spans) = spans.as_deref() {
             type_decl_origins(statement, spans);
@@ -98,6 +105,16 @@ pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
             super::origin::set_span(name, spans.name)
         });
         with_child(decl, "body", |body| block_origins(body, block));
+        // The traits are written between the name and the block.
+        if spans.name.is_some() && spans.block.blockoid.is_some() {
+            super::package_trait_origins::apply(
+                decl,
+                crate::ast::SrcSpan::new(
+                    spans.name.to as usize,
+                    spans.block.blockoid.from as usize,
+                ),
+            );
+        }
     });
 }
 
@@ -211,7 +228,7 @@ pub(super) fn parameter(
 /// (`Type::Definedness` over `Type::Simple` over `Name`), the range the type
 /// was written at.
 // Cost: O(d), d = nesting of the type nodes.
-fn type_origin(ty: &mut RakuAstNode, span: crate::ast::SrcSpan) {
+pub(super) fn type_origin(ty: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     if !span.is_some() || ty.origin.0.is_some() {
         return;
     }
