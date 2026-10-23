@@ -91,6 +91,9 @@ pub(crate) struct TypeDeclSpans {
     pub(crate) name: SrcSpan,
     /// `of TYPE` (a subset's base type as written); none when not written.
     pub(crate) of: TraitSpans,
+    /// `is export` on a subset; none when not written.
+    #[serde(default)]
+    pub(crate) export: TraitSpans,
 }
 
 /// Where a parameter was written: all of it (type, traits and default

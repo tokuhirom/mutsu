@@ -102,7 +102,8 @@ pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
 }
 
 /// Give the `Type::Enum` / `Type::Subset` `statement` declares its name's
-/// origin, and a subset's `Trait::Of` the origin of its `of TYPE`.
+/// origin, and a subset's `Trait::Of` / `Trait::Is` (`is export`, the only
+/// `is` trait a subset keeps) the origins of its `of TYPE` / `is export`.
 // Cost: O(f + t), f = fields of the declaration, t = its traits.
 fn type_decl_origins(statement: &mut RakuAstNode, spans: &TypeDeclSpans) {
     with_child(statement, "expression", |decl| {
@@ -116,16 +117,20 @@ fn type_decl_origins(statement: &mut RakuAstNode, spans: &TypeDeclSpans) {
             return;
         };
         for value in traits.iter_mut() {
-            if let ValueView::RakuAst(node) = value.view()
-                && node.class == RakuAstClass::TraitOf
-            {
-                let mut node = RakuAstNode::clone(node);
-                super::origin::set_span(&mut node, spans.of.whole);
-                if let Some(first) = node.fields.first_mut() {
-                    with_value(&mut first.value, |ty| type_origin(ty, spans.of.name));
-                }
-                *value = Value::rakuast(Box::new(node));
+            let ValueView::RakuAst(node) = value.view() else {
+                continue;
+            };
+            let at = match node.class {
+                RakuAstClass::TraitOf => spans.of,
+                RakuAstClass::TraitIs => spans.export,
+                _ => continue,
+            };
+            let mut node = RakuAstNode::clone(node);
+            super::origin::set_span(&mut node, at.whole);
+            if let Some(first) = node.fields.first_mut() {
+                with_value(&mut first.value, |named| type_origin(named, at.name));
             }
+            *value = Value::rakuast(Box::new(node));
         }
     });
 }

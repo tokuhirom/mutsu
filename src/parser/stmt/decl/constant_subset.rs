@@ -343,11 +343,18 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
             continue;
         }
         if let Some(r) = keyword("is", rest) {
+            let is_start = rest;
             let (r, _) = ws1(r)?;
+            let name_start = r;
             let (r, trait_name) = ident(r)?;
             if trait_name == "export" {
                 is_export = true;
                 let (r2, tags) = parse_export_trait_tags(r)?;
+                let end = &is_start[is_start[..is_start.len() - r2.len()].trim_end().len()..];
+                spans.export = crate::ast::parsed::TraitSpans {
+                    whole: crate::parser::primary::source_span(is_start, end),
+                    name: crate::parser::primary::source_span(name_start, r),
+                };
                 if tags.is_empty() {
                     if !export_tags.iter().any(|t| t == "DEFAULT") {
                         export_tags.push("DEFAULT".to_string());
