@@ -456,6 +456,35 @@ impl Compiler {
         }
     }
 
+    /// Run `compile` (which compiles the call argument `arg`) with the
+    /// lexical-slot request for an inline scalar declaration passed as that
+    /// argument (`f(my $x = 5)`, `f((my $x = 5))`, `nqp::isle_i((my int $c =
+    /// ...), 92)`): the declaration takes a real local slot, like the
+    /// statement form. The written parentheses do not change it. Without the
+    /// slot every later read and write of the name is an env operation
+    /// (~6 by-name operations per evaluation of `(my int $code = ...)`,
+    /// #14774).
+    pub(super) fn with_call_arg_decl_slot<R>(
+        &mut self,
+        arg: &Expr,
+        compile: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let decl_arg = match arg {
+            Expr::Grouped(inner) if matches!(inner.as_ref(), Expr::DoStmt(_)) => inner.as_ref(),
+            other => other,
+        };
+        let call_arg_decl = Self::method_arg_decl_slot_name(decl_arg)
+            .filter(|name| !self.promoted_expr_decl_names.contains(name));
+        let inserted = call_arg_decl
+            .as_ref()
+            .is_some_and(|name| self.call_arg_decl_slots.insert(name.clone()));
+        let result = compile(self);
+        if inserted && let Some(name) = call_arg_decl.as_ref() {
+            self.call_arg_decl_slots.remove(name);
+        }
+        result
+    }
+
     pub(super) fn compile_method_arg_with_escape(&mut self, arg: &Expr, escaping: bool) {
         let arg = Self::peel_assign_parens(arg);
         // A method argument is normally passed to the callee, not stored in the

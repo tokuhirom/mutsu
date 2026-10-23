@@ -530,9 +530,23 @@ impl InstanceAttrs {
     /// accessor result container identity: writes through the accessor and reads
     /// through the bound alias observe the same slot.
     pub(crate) fn promote_attr_to_container<K: AttrKey + Copy>(&self, key: K) -> Value {
+        self.promote_attr_inner(key, false)
+    }
+
+    /// [`Self::promote_attr_to_container`] for an `is rw` accessor result: a
+    /// `Proxy`-bound attribute (`$!a := Proxy.new(...)`) IS its own container,
+    /// so it is handed back as is -- a Scalar cell around it would hide its STORE.
+    pub(crate) fn promote_attr_to_rw_result<K: AttrKey + Copy>(&self, key: K) -> Value {
+        self.promote_attr_inner(key, true)
+    }
+
+    fn promote_attr_inner<K: AttrKey + Copy>(&self, key: K, keep_proxy: bool) -> Value {
         let mut guard = write_attrs(self.cell());
         match guard.get_mut(key) {
             Some(slot) => {
+                if keep_proxy && slot.is_proxy_value() {
+                    return slot.clone();
+                }
                 // An itemized cell is a `$obj.w = @src` VALUE share (Slice 2e,
                 // `vm/vm_attr_share.rs`) that the source variable holds too, not
                 // the attribute's own Scalar. Give the attribute a Scalar cell

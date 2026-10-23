@@ -635,6 +635,8 @@ impl Interpreter {
                         class_name.resolve()
                     )));
                 }
+                let was_proxy = delegate.clone().deref_container().is_proxy_value();
+                let delegate = self.fetch_proxy_delegate(delegate)?;
                 // Determine sigil for temp var based on delegate type
                 let sigil = match delegate.view() {
                     ValueView::Array(..) => "@",
@@ -659,7 +661,8 @@ impl Interpreter {
                 // Read back the potentially-updated delegate
                 let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::NIL);
                 self.env.remove(&temp_var);
-                if !is_method_based {
+                // A Proxy attribute keeps its Proxy: the fetched value is not stored back.
+                if !is_method_based && !was_proxy {
                     // Write the updated delegate back into the frontend's live cell.
                     let mut updated = attributes.to_map();
                     updated.insert(attr_key.to_string(), updated_delegate);

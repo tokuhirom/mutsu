@@ -1,6 +1,6 @@
 use Test;
 
-plan 9;
+plan 11;
 
 # A scalar bound to the implicit topic of `for @a` keeps the element's own
 # container, so later writes to the element are visible through it (#14758).
@@ -73,4 +73,18 @@ plan 9;
     for @g -> \p { $b := p if p == 2 }
     @g[1] = 20;
     is $b, 20, 'bind of a sigilless parameter aliases the element';
+}
+
+# A sigilless declaration over the parameter keeps the cell too (#14797).
+{
+    my @h = 1, 2;
+    my $e;
+    for @h -> \p { my \q = p; $e := q }
+    @h[1] = 5;
+    is $e, 5, '`my \q = p` aliases the element';
+    my @k = 1, 2;
+    my $f;
+    for @k -> \p { my \q := p; $f := q }
+    @k[1] = 5;
+    is $f, 5, '`my \q := p` aliases the element';
 }

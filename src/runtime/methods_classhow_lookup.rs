@@ -82,6 +82,17 @@ impl Interpreter {
                     Some(role_name),
                 ));
             }
+            // The type object of `Class.^mixin(R)` has a mixin class that owns
+            // the role's attribute accessors, which `role.methods` lacks.
+            if let Some(mixin_class) = self.mixin_class_of_type_object(invocant)
+                && let Some(found) = self.classhow_lookup_impl(
+                    &Value::package(Symbol::intern(&mixin_class)),
+                    method_name,
+                    include_ancestor_submethods,
+                )
+            {
+                return Some(found);
+            }
             return self.classhow_lookup_impl(inner, method_name, include_ancestor_submethods);
         }
         let (class_name, class_name_str) = match invocant.view() {

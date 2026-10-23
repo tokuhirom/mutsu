@@ -1679,6 +1679,31 @@ impl Interpreter {
             )));
         }
         if let Some((attr_name, attr_sigil)) = rw_attr_target {
+            // An attribute bound to a `Proxy` (`$!a := Proxy.new(...)`) is the
+            // container the method hands back: assigning stores through it.
+            if attr_sigil == '$'
+                && method_args.is_empty()
+                && let Some(proxy) = {
+                    let map = attributes.as_map();
+                    map.get(attr_name.as_str())
+                        .or_else(|| map.get(format!("{attr_name}!").as_str()))
+                        .map(|held| match held.view() {
+                            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+                            _ => held.clone(),
+                        })
+                        .filter(Value::is_proxy_value)
+                }
+            {
+                let updated_attrs = attributes.to_map();
+                return self.proxy_store(
+                    &proxy,
+                    target_var,
+                    class_name,
+                    &updated_attrs,
+                    &attributes,
+                    value,
+                );
+            }
             // An `is rw` method whose body is a bare `$!attr` IS that
             // attribute's accessor, so its store obeys the same type constraint
             // the generated accessor enforces.

@@ -81,7 +81,7 @@ impl Interpreter {
     /// the `Symbol::intern` they imply), which cost ~3k instructions against
     /// ~0.9k for `$n += 1` (#14370). Declines (`Ok(false)`, nothing consumed)
     /// for every shape the full path treats specially: a non-`Int` slot or an
-    /// `i64` overflow, a typed lexical, and every metadata lane the plain
+    /// `i64` overflow, a typed lexical whose store is not the identity, and every metadata lane the plain
     /// scalar store consults (`set_local_scalar_fast_metadata_clear_except_type`).
     /// A readonly operand still raises the full path's error.
     // Cost: O(1).
@@ -105,8 +105,25 @@ impl Interpreter {
         let name = Self::const_str(code, name_idx);
         if code.locals.get(slot).is_none_or(|local| local != name)
             || !self.locals[slot].is_plain_scalar_store_slot()
-            || Self::slot_type_constraint_possible(code, slot)
             || !self.set_local_scalar_fast_metadata_clear_except_type(code, slot)
+        {
+            return Ok(false);
+        }
+        // A typed lexical qualifies when the typed store would be the identity
+        // for the stepped value: `my int $i` keeps an in-range `Int` as it is
+        // (a step that leaves the i64 range was declined above, since a native
+        // `int` wraps where an untyped scalar promotes).
+        // The slot's own declaration (`DeclaredConstraint`, baked at compile
+        // time) answers for `int`/`int64` without the program-wide subset gate
+        // of `native_typed_store_is_identity`: a `subset` cannot redirect the
+        // native name `int`, and any subset at all (JSON::Fast has some) would
+        // otherwise send every `++$i` of a `my int $i` down the full path.
+        if Self::slot_type_constraint_possible(code, slot)
+            && !matches!(
+                code.declared_constraint(slot),
+                crate::binding_desc::DeclaredConstraint::NativeInt
+            )
+            && !self.native_typed_store_is_identity(code, slot, &Value::int(new))
         {
             return Ok(false);
         }

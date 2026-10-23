@@ -1734,6 +1734,18 @@ impl Compiler {
                                 OpCode::GetHookExport { set_idx, name_idx }
                             }
                         });
+                    } else if sigilless_bind_vardecl
+                        && let Expr::BareWord(src) = expr
+                        && self
+                            .for_param_names
+                            .iter()
+                            .any(|p| p.strip_prefix('\\') == Some(src.as_str()))
+                        && !self.local_map.contains_key(src.as_str())
+                    {
+                        // `my \q = p` over a sigilless `for` parameter: `q` is the
+                        // element's own cell, like `$x := p` (#14797).
+                        let src_idx = self.code.add_constant(Value::str(format!("\\{src}")));
+                        self.code.emit(OpCode::GetCallTempRaw(src_idx));
                     } else {
                         self.compile_call_arg(expr);
                     }
