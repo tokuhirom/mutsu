@@ -4,7 +4,7 @@ use Test;
 # `++`/`--` of a plain slot-held Int steps the slot directly (#14370). Every
 # shape the generic by-name path treats specially must still take it.
 
-plan 20;
+plan 25;
 
 my $n = 5;
 is $n++, 5, 'postfix ++ returns the old value';
@@ -69,3 +69,16 @@ my $y = 1;
     is $y, 101, 'an inner variable steps without touching the outer one';
 }
 is $y, 1, 'the outer variable is untouched';
+
+my int $ni = 5;
+is $ni++, 5, 'a native int slot: postfix ++ returns the old value';
+is ++$ni, 7, '... prefix ++ the new value';
+my int32 $n32 = 2147483647;
+$n32++;
+is $n32, -2147483648, 'an int32 slot wraps at its own width';
+my uint8 $u8 = 255;
+$u8++;
+is $u8, 0, 'a uint8 slot wraps to zero';
+my int $nk = 0;
+$nk++ for ^1000;
+is $nk, 1000, 'a native int counter in a hot loop';
