@@ -12,6 +12,7 @@ impl Interpreter {
     /// `raw` unchanged.
     pub(super) fn array_container_writethrough_value(
         &mut self,
+        decl: StoreDecl<'_>,
         name: &str,
         raw: Value,
         old: &Value,
@@ -33,13 +34,13 @@ impl Interpreter {
         } else {
             crate::runtime::coerce_to_array(raw)
         };
-        val = self.coerce_typed_container_assignment(name, val, false)?;
+        val = self.coerce_typed_container_assignment(decl, name, val, false)?;
         // Prefer a declared constraint (`my int @a`); otherwise inherit the type
         // identity of the container currently held by the shared cell. A bound
         // typed array (`for @testing -> @a { @a = ... }`, `my @b := @a`) has no
         // `var_type_constraint` on the alias name — its `array[T]` identity lives
         // in the cell's embedded metadata, which a whole reassignment must keep.
-        let info = if let Some(value_type) = loan_env!(self, var_type_constraint(name)) {
+        let info = if let Some(value_type) = self.decl_type_constraint(decl, name) {
             Some(crate::runtime::ContainerTypeInfo {
                 declared_type: if crate::runtime::native_types::is_native_array_element_type(
                     &value_type,
@@ -93,6 +94,7 @@ impl Interpreter {
     /// unchanged.
     pub(super) fn hash_container_writethrough_value(
         &mut self,
+        decl: StoreDecl<'_>,
         name: &str,
         raw: Value,
         old: &Value,
@@ -100,17 +102,17 @@ impl Interpreter {
         if !name.starts_with('%') || !matches!(raw.view(), ValueView::Hash(..)) {
             return Ok(raw);
         }
-        let mut val = self.coerce_typed_container_assignment(name, raw, false)?;
+        let mut val = self.coerce_typed_container_assignment(decl, name, raw, false)?;
         // Prefer a declared constraint (`my Int %a{Any}`); otherwise inherit
         // the type identity of the container currently held by the shared
         // cell. A bound/aliased object hash has no `var_type_constraint` on
         // the alias name — its key/value-type identity lives in the cell's
         // embedded metadata, which a whole reassignment must keep.
-        let info = if let Some(value_type) = loan_env!(self, var_type_constraint(name)) {
+        let info = if let Some(value_type) = self.decl_type_constraint(decl, name) {
             Some(crate::runtime::ContainerTypeInfo {
                 declared_type: None,
                 value_type,
-                key_type: loan_env!(self, var_hash_key_constraint(name)),
+                key_type: self.decl_hash_key_constraint(decl, name),
             })
         } else {
             self.container_type_metadata(old)
@@ -202,6 +204,7 @@ impl Interpreter {
 
     pub(super) fn coerce_typed_container_assignment(
         &mut self,
+        decl: StoreDecl<'_>,
         var_name: &str,
         value: Value,
         explicit_initializer: bool,
@@ -246,13 +249,13 @@ impl Interpreter {
         if var_name.starts_with('@')
             && let ValueView::LazyList(ll) = value.view()
             && ll.is_genuinely_lazy()
-            && let Some(constraint) = loan_env!(self, var_type_constraint(var_name))
+            && let Some(constraint) = self.decl_type_constraint(decl, var_name)
             && crate::runtime::native_types::is_native_array_element_type(&constraint)
         {
             return Err(native_array_lazy_init_error(&constraint));
         }
         if var_name.starts_with('@')
-            && let Some(constraint) = loan_env!(self, var_type_constraint(var_name))
+            && let Some(constraint) = self.decl_type_constraint(decl, var_name)
             && let ValueView::Array(items, kind) = value.view()
         {
             // Native typed arrays cannot store lazy sequences
@@ -287,8 +290,8 @@ impl Interpreter {
             // (coercion creates a new Arc, losing the registration).
             let saved_original_keys =
                 runtime::utils::hash_original_keys_snapshot(&Value::hash_with_data(map.clone()));
-            let value_constraint = loan_env!(self, var_type_constraint(var_name));
-            let key_constraint = loan_env!(self, var_hash_key_constraint(var_name));
+            let value_constraint = self.decl_type_constraint(decl, var_name);
+            let key_constraint = self.decl_hash_key_constraint(decl, var_name);
             let mut coerced_map = crate::value::user_key_map::with_capacity(map.len());
             // For an object hash (`my Int %h{Int}`) whose key type is not the
             // default `Str`, record the reconstructed typed key alongside the

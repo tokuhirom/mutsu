@@ -133,7 +133,8 @@ impl Interpreter {
             return Ok(());
         }
         let mut val = if name.starts_with('%') {
-            self.coerce_hash_var_value(name, raw_val)?
+            let decl = self.local_store_decl(code, idx);
+            self.coerce_hash_var_value(decl, name, raw_val)?
         } else if name.starts_with('@') {
             let mut assigned = if let ValueView::LazyList(list) = raw_val.view() {
                 // Mirror the SetLocal `@`-assign arm: an unreifiable lazy list
@@ -258,7 +259,8 @@ impl Interpreter {
             val = def;
         }
         if name.starts_with('@') || name.starts_with('%') {
-            val = self.coerce_typed_container_assignment(name, val, false)?;
+            let decl = self.local_store_decl(code, idx);
+            val = self.coerce_typed_container_assignment(decl, name, val, false)?;
             // An attribute twigil's element type lives in the class registry,
             // which the name-keyed coercion above cannot see.
             let name = name.clone();
@@ -394,10 +396,11 @@ impl Interpreter {
             let arc = arc.clone();
             let name = name.clone();
             let old = arc.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let decl = self.local_store_decl(code, idx);
             let written = if name.starts_with('%') {
-                self.hash_container_writethrough_value(&name, val, &old)?
+                self.hash_container_writethrough_value(decl, &name, val, &old)?
             } else {
-                self.array_container_writethrough_value(&name, val, &old)?
+                self.array_container_writethrough_value(decl, &name, val, &old)?
             };
             let written = self.coerce_container_cell_store(&arc, written)?;
             Self::cell_store_preserving_container_identity(&name, &arc, &written);

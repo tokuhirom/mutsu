@@ -346,6 +346,8 @@ mod vm_shaped_receiver;
 mod vm_shared_array_lane;
 mod vm_slot_type_constraint;
 pub(crate) use vm_slot_type_constraint::StoreDecl;
+mod vm_store_place;
+pub(crate) use vm_store_place::StorePlace;
 mod vm_unit_cell_shadow;
 mod vm_unit_hidden;
 pub(crate) mod vm_unit_lexical_meta_lanes;

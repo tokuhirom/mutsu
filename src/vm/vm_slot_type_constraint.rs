@@ -39,6 +39,13 @@ impl Interpreter {
         (!aliased && idx < self.locals.len() && code.declares_slot(idx)).then_some((code, idx))
     }
 
+    /// [`Self::store_decl`] for a store that addresses `code`'s slot `idx`
+    /// itself (`SetLocal`, `AssignExprLocal`): no alias can redirect it.
+    // Cost: O(1).
+    pub(super) fn local_store_decl<'a>(&self, code: &'a CompiledCode, idx: usize) -> StoreDecl<'a> {
+        (idx < self.locals.len() && code.declares_slot(idx)).then_some((code, idx))
+    }
+
     /// The value constraint a store into `name` checks against: the declaring
     /// slot's record when the store holds one, else the by-name record.
     // Cost: O(1) for a held slot declared untyped; else the record probe,
