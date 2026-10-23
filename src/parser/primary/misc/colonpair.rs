@@ -490,6 +490,16 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             "$" => crate::ast::scalar_var_expr(full_var_name),
             "@" => Expr::ArrayVar(full_var_name),
             "%" => Expr::HashVar(full_var_name),
+            // `:&.name` reads the accessor of a `has &.name` attribute, exactly
+            // as the term `&.name` does (see `code_var`).
+            "&" if twigil == "." => Expr::MethodCall {
+                target: Box::new(Expr::BareWord("self".to_string())),
+                name: Symbol::intern(var_name),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+                sugar: false,
+            },
             "&" => Expr::CodeVar(full_var_name),
             _ => unreachable!(),
         };

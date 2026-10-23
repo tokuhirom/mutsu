@@ -3478,6 +3478,25 @@ impl Compiler {
                     // statement pops it, a final one is the routine's value.
                     self.compile_implicit_try(body);
                 } else {
+                    // A `my $*x` of a `given`/`with` body shadows the enclosing
+                    // dynamic binding for the body only, and the branch scope's
+                    // shadow-only restore does not take it back: run such a body
+                    // as a real block (a pointy or `is copy` topic keeps its own
+                    // binding shape, so it is left alone).
+                    let scoped_body;
+                    let body: &Vec<Stmt> = if !*is_statement_modifier
+                        && !has_pointy_topic_binding
+                        && super::body_scans::declares_dynamic_local(body)
+                    {
+                        scoped_body = vec![Stmt::Expr(Expr::DoBlock {
+                            body: body.clone(),
+                            label: None,
+                            origin: crate::ast::DoBlockOrigin::SourceBlock,
+                        })];
+                        &scoped_body
+                    } else {
+                        body
+                    };
                     for (i, s) in body.iter().enumerate() {
                         let is_last = i == body.len() - 1;
                         self.rw_tail_branch = rw_branch

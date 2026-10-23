@@ -238,11 +238,22 @@ impl Interpreter {
                 ValueView::Str(name) => name.to_string(),
                 _ => return Ok(Value::NIL),
             };
+            // `$attr does Role` makes a mixin value: the Attribute proper is its
+            // inner instance, and the whole mixin is what `.^attributes` must
+            // hand back (Red's `.grep(Red::Attr::Column)` depends on it).
+            let attr_value = match args[1].view() {
+                ValueView::Mixin(inner, _) => inner.as_ref().clone(),
+                _ => args[1].clone(),
+            };
+            // A synthesized `Attribute+{Role}` class marks a mixed-in attribute.
+            let attr_is_mixin = matches!(args[1].view(), ValueView::Mixin(..))
+                || matches!(attr_value.view(), ValueView::Instance { class_name, .. }
+                    if class_name.as_str().contains('+'));
             if let ValueView::Instance {
                 class_name: attr_class,
                 attributes: attr_attrs,
                 ..
-            } = args[1].view()
+            } = attr_value.view()
                 && crate::value::attribute_class::is_attribute_class(attr_class)
             {
                 let attr_name_raw = attr_attrs
@@ -295,8 +306,13 @@ impl Interpreter {
                         default_is_trait: false,
                     });
                     if let Some(tc) = type_constraint {
-                        class_def.attribute_types.insert(bare_name, tc);
+                        class_def.attribute_types.insert(bare_name.clone(), tc);
                     }
+                }
+                if attr_is_mixin {
+                    self.registry_mut()
+                        .class_attribute_trait_objects
+                        .insert((class_name.clone(), bare_name), args[1].clone());
                 }
                 // Attribute set changed — drop cached construction plans.
                 self.caches.native_ctor_plan_cache.clear();
