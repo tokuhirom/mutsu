@@ -792,6 +792,43 @@ impl Interpreter {
     /// Collect all methods named `method_name` across the MRO of `target`.
     /// Returns a list of callable Sub values, one per class in the MRO that
     /// defines the method. This implements `.can(method-name)`.
+    /// Whether `^can` must not see `method_name` on `target` yet: the class is
+    /// not composed, and every candidate of that name it has came from
+    /// `^add_multi_method` (rakudo holds those until `compose`), with no
+    /// inherited method of the name behind them.
+    // Cost: O(d), d = the class's MRO depth.
+    fn can_hides_pending_multi(&mut self, target: &Value, method_name: &str) -> bool {
+        if self.registry().pending_multi_methods.is_empty() {
+            return false;
+        }
+        let class = match target.view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            _ => return false,
+        };
+        if !self
+            .registry()
+            .pending_multi_methods
+            .contains(&(class.clone(), method_name.to_string()))
+        {
+            return false;
+        }
+        let owner = Symbol::intern(&class);
+        let name = Symbol::intern(method_name);
+        if self
+            .registry()
+            .user_methods(owner, name)
+            .is_some_and(|defs| defs.iter().any(|def| !def.is_multi))
+        {
+            return false;
+        }
+        let mro = self.class_mro(&class);
+        let inherited: Vec<String> = mro.iter().skip(1).map(|c| c.resolve()).collect();
+        !inherited
+            .iter()
+            .any(|parent| self.resolve_method_with_owner(parent, method_name, &[]).is_some())
+    }
+
     pub(crate) fn collect_can_methods(&mut self, target: &Value, method_name: &str) -> Vec<Value> {
         if method_name == "DEPRECATED"
             && let ValueView::Instance {
@@ -807,6 +844,9 @@ impl Interpreter {
                 Symbol::intern("DEPRECATED"),
                 false,
             )];
+        }
+        if self.can_hides_pending_multi(target, method_name) {
+            return Vec::new();
         }
         // A Mixin (`but`/`does`, or a trait handler's `$routine does Role`) has
         // no entry of its own in the class registry, so the generic MRO walk
