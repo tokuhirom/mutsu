@@ -406,16 +406,14 @@ fn past_parens(span: crate::ast::SrcSpan, operand_from: usize, end: u32) -> u32 
     let Some(opened) = opened.filter(|k| *k > 0) else {
         return end;
     };
-    let closed = super::unit_source::with_text(
-        crate::ast::SrcSpan::new(end_at, span.to as usize),
-        |t| {
+    let closed =
+        super::unit_source::with_text(crate::ast::SrcSpan::new(end_at, span.to as usize), |t| {
             let mut rest = t;
             for _ in 0..opened {
                 rest = rest.trim_start().strip_prefix(')')?;
             }
             Some(t.len() - rest.len())
-        },
-    );
+        });
     closed.map_or(end, |len| end + len as u32)
 }
 
@@ -487,8 +485,9 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
                 .unwrap_or(after_op.len());
             // `.name: args`: a single trailing colon is the argument list's
             // introducer, not part of the name.
-            let colon_form = after_op[..name_len].ends_with(':')
-                && !after_op[..name_len].ends_with("::")
+            let colon_form = after_op[..name_len]
+                .strip_suffix(':')
+                .is_some_and(|stem| !stem.ends_with(':'))
                 && after_op[name_len..].starts_with(char::is_whitespace);
             if colon_form {
                 name_len -= 1;

@@ -29,8 +29,8 @@ pub(super) fn derive(node: &mut RakuAstNode) {
 /// trigger to the end of the statement.
 // Cost: O(n + s), n = length of the statement's source, s = its statements.
 pub(super) fn whenever(statement: &mut RakuAstNode, span: SrcSpan) {
-    let Some((_, trigger_end)) = super::infix_origins::child(statement, "trigger")
-        .and_then(byte_range)
+    let Some((_, trigger_end)) =
+        super::infix_origins::child(statement, "trigger").and_then(byte_range)
     else {
         return;
     };
@@ -184,7 +184,9 @@ fn blockoid(node: &mut RakuAstNode, at: usize, to: usize) {
     with_child(node, "body", |blockoid| {
         super::origin::set_span(blockoid, SrcSpan::new(at, to));
         if let Some(inside) = inside {
-            with_child_at(blockoid, 0, |list| super::list_origins::semilist(list, inside));
+            with_child_at(blockoid, 0, |list| {
+                super::list_origins::semilist(list, inside)
+            });
         }
     });
 }
