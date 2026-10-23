@@ -206,7 +206,9 @@ mod tests {
     #[test]
     fn pure_scalar_bodies_are_unobservable() {
         assert!(unobservable("my $n = 0; for @a { $n += $_ }"));
-        assert!(unobservable("my $n = 0; for @a { $n = $n + $_ * 2 if $_ > 1 }"));
+        assert!(unobservable(
+            "my $n = 0; for @a { $n = $n + $_ * 2 if $_ > 1 }"
+        ));
         assert!(unobservable("for @a { my $y = $_ + 1; say $y }"));
         assert!(unobservable("my $c = 0; for @a { $c++ }"));
     }
