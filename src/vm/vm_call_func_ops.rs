@@ -1917,7 +1917,9 @@ impl Interpreter {
             },
             // A routine an import bound as a code object (a `proto`/`multi`
             // family) runs its `.wrap` chain, as the by-name call does.
-            CodeVarBinding::Bound(value) => CodeVarBinding::Bound(self.wrapped_bound_routine(value)),
+            CodeVarBinding::Bound(value) => {
+                CodeVarBinding::Bound(self.wrapped_bound_routine(value))
+            }
             other => other,
         };
         if let CodeVarBinding::Routine(def) = &binding
