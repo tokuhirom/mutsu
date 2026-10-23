@@ -442,6 +442,11 @@ pub(crate) struct ForLoopSpec {
     /// cannot tell the two apart -- the AST stores `\v` as plain `"v"` -- so
     /// the compiler records the distinction here.
     pub(crate) param_sigilless: bool,
+    /// The body provably cannot tell the implicit topic bound to an element's
+    /// own container from a copy of its value (`compiler::for_topic_alias`), so
+    /// a `for @a` over a real array skips promoting every element to a
+    /// `ContainerRef` cell (#14495).
+    pub(crate) topic_alias_unobservable: bool,
 }
 
 impl ForLoopSpec {

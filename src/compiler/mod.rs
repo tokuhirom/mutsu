@@ -1088,6 +1088,7 @@ pub(crate) mod control_block;
 mod control_block_placeholder;
 mod control_block_scope;
 mod control_for;
+mod for_topic_alias;
 mod control_for_tail;
 mod control_if;
 mod control_repeat;
