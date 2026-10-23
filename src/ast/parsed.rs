@@ -70,6 +70,8 @@ pub(crate) struct RoutineSpans {
 pub(crate) struct ParamSpans {
     pub(crate) param: SrcSpan,
     pub(crate) target: SrcSpan,
+    /// The nominal type, smiley included (`Int:D`).
+    pub(crate) type_: SrcSpan,
 }
 
 /// Which loop a [`LoopStmt`] is.

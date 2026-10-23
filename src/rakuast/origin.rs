@@ -192,3 +192,24 @@ pub(super) fn set_span(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         node.origin = super::NodeOrigin(super::unit_source::span_origin_value(span));
     }
 }
+
+/// The range of a unit's top-level `StatementList`: from the start of its
+/// first statement to the end of its last, the `;` terminators that directly
+/// follow it included, as for a block's statements.
+// Cost: O(s + k), s = top-level statements, k = terminators skipped.
+pub(super) fn unit_list_span(stmts: &[Stmt], source: &str) -> crate::ast::SrcSpan {
+    let mut spans = stmts.iter().filter_map(|stmt| match stmt {
+        Stmt::SetLine(_, span) if span.is_some() => Some(*span),
+        _ => None,
+    });
+    let Some(first) = spans.next() else {
+        return crate::ast::SrcSpan::NONE;
+    };
+    let last = spans.next_back().unwrap_or(first);
+    let end = last.to as usize;
+    let skipped = source
+        .as_bytes()
+        .get(end..)
+        .map_or(0, |tail| tail.iter().take_while(|&&b| b == b';').count());
+    crate::ast::SrcSpan::new(first.from as usize, end + skipped)
+}

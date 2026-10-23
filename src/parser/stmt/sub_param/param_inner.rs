@@ -27,7 +27,18 @@ fn param_spans(input: &str, rest: &str, p: &ParamDef) -> crate::ast::parsed::Par
     let target = target_offset(text, p).map_or(crate::ast::SrcSpan::NONE, |(at, len)| {
         crate::parser::primary::source_span(&input[at..], &input[at + len..])
     });
-    crate::ast::parsed::ParamSpans { param, target }
+    let type_ = p
+        .type_constraint
+        .as_deref()
+        .and_then(|tc| text.find(tc).map(|at| (at, tc.len())))
+        .map_or(crate::ast::SrcSpan::NONE, |(at, len)| {
+            crate::parser::primary::source_span(&input[at..], &input[at + len..])
+        });
+    crate::ast::parsed::ParamSpans {
+        param,
+        target,
+        type_,
+    }
 }
 
 /// The offset and length of `p`'s variable in its source `text`.

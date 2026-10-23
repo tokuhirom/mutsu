@@ -2,7 +2,7 @@
 //! `Signature` and `Parameter`s, its `Blockoid` and `StatementList`, from the
 //! positions the parser recorded on `Stmt::SubDecl` / `Stmt::MethodDecl`.
 
-use super::{RakuAstFieldValue, RakuAstNode};
+use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::ParamDef;
 use crate::ast::parsed::RoutineSpans;
 use crate::value::{Value, ValueView};
@@ -14,7 +14,9 @@ pub(super) fn apply(node: &mut RakuAstNode, spans: Option<&RoutineSpans>, params
     let Some(spans) = spans else {
         return;
     };
-    with_child(node, "name", |name| super::origin::set_span(name, spans.name));
+    with_child(node, "name", |name| {
+        super::origin::set_span(name, spans.name)
+    });
     with_child(node, "signature", |signature| {
         super::origin::set_span(signature, spans.signature);
         parameters(signature, params);
@@ -53,9 +55,36 @@ pub(super) fn parameters(signature: &mut RakuAstNode, params: &[ParamDef]) {
         let mut node = RakuAstNode::clone(node);
         super::origin::set_span(&mut node, param.spans.param);
         with_child(&mut node, "target", |target| {
-            super::origin::set_span(target, param.spans.target)
+            super::origin::set_span(target, param.spans.target);
+            // `\x`: a `ParameterTarget::Term` over the term's `Name`.
+            if target.class == RakuAstClass::ParameterTargetTerm
+                && let Some(field) = target.fields.first_mut()
+            {
+                with_value(&mut field.value, |name| {
+                    super::origin::set_span(name, param.spans.target)
+                });
+            }
         });
+        with_child(&mut node, "type", |ty| type_origin(ty, param.spans.type_));
         *value = Value::rakuast(Box::new(node));
+    }
+}
+
+/// Give a parameter's type, and the type and name nodes it wraps
+/// (`Type::Definedness` over `Type::Simple` over `Name`), the range the type
+/// was written at.
+// Cost: O(d), d = nesting of the type nodes.
+fn type_origin(ty: &mut RakuAstNode, span: crate::ast::SrcSpan) {
+    if !span.is_some() || ty.origin.0.is_some() {
+        return;
+    }
+    super::origin::set_span(ty, span);
+    if matches!(
+        ty.class,
+        RakuAstClass::TypeDefinedness | RakuAstClass::TypeSimple
+    ) && let Some(field) = ty.fields.first_mut()
+    {
+        with_value(&mut field.value, |inner| type_origin(inner, span));
     }
 }
 
