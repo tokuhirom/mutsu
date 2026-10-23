@@ -12,6 +12,7 @@ use crate::ast::Stmt;
 pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
     match s {
         Stmt::ClassDecl {
+            spans: _,
             name: _,
             name_expr,
             parents: _,
@@ -122,6 +123,7 @@ pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut
             v.visit_stmts_mut(body);
         }
         Stmt::RoleDecl {
+            spans: _,
             name: _,
             header_order: _,
             type_params: _,

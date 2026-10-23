@@ -309,7 +309,9 @@ pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
 pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a, Stmt> {
     let rest = keyword(kw, input).ok_or_else(|| PError::expected("role declaration"))?;
     let (rest, _) = ws1(rest)?;
+    let name_start = rest;
     let (rest, name) = qualified_ident(rest)?;
+    let name_span = crate::parser::primary::source_span(name_start, rest);
     check_pseudo_package_in_decl(&name)?;
     let (mut rest, (mut type_params, mut type_param_defs)) = parse_optional_role_type_params(rest)?;
     // Parse optional type adverbs (:ver<...>, :auth<...>, :api<...>)
@@ -357,7 +359,9 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
         .filter(|pd| pd.sigilless)
         .map(|pd| pd.name.as_str())
         .collect();
+    let brace = rest;
     let (rest, mut body) = package_body_block_with_terms(rest, &sigilless_terms)?;
+    let spans = crate::parser::stmt::sub::package_spans(name_span, brace, rest, &body);
     crate::parser::stmt::nested_block_methods::hoist(&mut body);
     // Handle `also is rw;` in the role body
     body.retain(|stmt| {
@@ -421,6 +425,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
         custom_traits.push(marker);
     }
     let role_stmt = Stmt::RoleDecl {
+        spans,
         name: Symbol::intern(&name),
         header_order,
         type_params,

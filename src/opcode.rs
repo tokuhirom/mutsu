@@ -12925,6 +12925,7 @@ impl CompiledCode {
         deferred_body_ops: Vec<DeferredBodyOp>,
     ) -> u32 {
         let Stmt::RoleDecl {
+            spans: _,
             name,
             header_order: _,
             type_params,

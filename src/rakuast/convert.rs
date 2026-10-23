@@ -96,6 +96,7 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
         // unit in the declaration's body; the parser leaves it beside it.
         if let Some(unit) = unit_package_taking(stmt, &stmts[at + 1..]) {
             if let Some(mut node) = convert_stmt(&unit)? {
+                super::routine_origins::package(&mut node, &unit);
                 if let Some(field) = trace.take().and_then(origin::trace_field) {
                     node.fields.push(field);
                 }
@@ -126,6 +127,7 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
             continue;
         }
         if let Some(mut node) = convert_stmt(stmt)? {
+            super::routine_origins::package(&mut node, stmt);
             if let Some(field) = trace.take().and_then(origin::trace_field) {
                 node.fields.push(field);
             }

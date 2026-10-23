@@ -204,7 +204,9 @@ pub(crate) fn grammar_decl_my(input: &str, is_lexical: bool) -> PResult<'_, Stmt
 fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
     let rest = keyword("grammar", input).ok_or_else(|| PError::expected("grammar declaration"))?;
     let (rest, _) = ws1(rest)?;
+    let name_start = rest;
     let (rest, name) = qualified_ident(rest)?;
+    let name_span = crate::parser::primary::source_span(name_start, rest);
     check_pseudo_package_in_decl(&name)?;
     // Consume optional type adverbs (`:ver<...>`, etc.) on the grammar name
     // before the `is`/`does` parent clauses (e.g. `grammar Foo:ver<1> is Bar`).
@@ -282,6 +284,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
         let _pkg = super::super::simple::push_package_path(&name);
         package_body_block(r)?
     };
+    let spans = crate::parser::stmt::sub::package_spans(name_span, r, rest, &body);
     crate::parser::stmt::nested_block_methods::hoist(&mut body);
     // A `grammar G { also is Base; }` body carries its parent the same way a
     // `class` body does; without this extraction the bare `is(also, Base)`
@@ -310,6 +313,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
         custom_traits.push(super::class_decl::export_type_marker(&export_tags));
     }
     let grammar_stmt = Stmt::ClassDecl {
+        spans,
         name: Symbol::intern(&name),
         name_expr: None,
         parents,

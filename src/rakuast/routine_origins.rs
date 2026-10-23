@@ -1,10 +1,11 @@
-//! Origins below a routine declaration (ADR-10723 Stage 2): its `Name`, its
-//! `Signature` and `Parameter`s, its `Blockoid` and `StatementList`, from the
-//! positions the parser recorded on `Stmt::SubDecl` / `Stmt::MethodDecl`.
+//! Origins below a routine or package declaration (ADR-10723 Stage 2): its
+//! `Name`, a routine's `Signature` and `Parameter`s, and its `Block` /
+//! `Blockoid` / `StatementList`, from the positions the parser recorded on
+//! `Stmt::SubDecl` / `Stmt::MethodDecl` / `Stmt::ClassDecl` / `Stmt::RoleDecl`.
 
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
-use crate::ast::ParamDef;
-use crate::ast::parsed::RoutineSpans;
+use crate::ast::parsed::{BlockSpans, RoutineSpans};
+use crate::ast::{ParamDef, Stmt};
 use crate::value::{Value, ValueView};
 
 /// Give the parts of `node` (a `Sub`, `Method` or `Submethod` built from
@@ -26,6 +27,46 @@ pub(super) fn apply(node: &mut RakuAstNode, spans: Option<&RoutineSpans>, params
         if let Some(field) = blockoid.fields.first_mut() {
             with_value(&mut field.value, |list| {
                 super::origin::set_span(list, spans.block.list)
+            });
+        }
+    });
+}
+
+/// Give the package `statement` declares (a `Class`, `Grammar` or `Role`
+/// under the `Statement::Expression` converted from `stmt`) its name's and
+/// block's origins.
+// Cost: O(f), f = fields of the nodes on the path.
+pub(super) fn package(statement: &mut RakuAstNode, stmt: &Stmt) {
+    let (Stmt::ClassDecl { spans, .. } | Stmt::RoleDecl { spans, .. }) = stmt else {
+        return;
+    };
+    let Some(spans) = spans.as_deref() else {
+        return;
+    };
+    let mut block = spans.block;
+    // A role's body is the block its type parameters belong to, and Rakudo
+    // starts it at the role's name (`R[::T] { }`).
+    if matches!(stmt, Stmt::RoleDecl { .. }) && spans.name.is_some() && block.span.is_some() {
+        block.span = crate::ast::SrcSpan::new(spans.name.from as usize, block.span.to as usize);
+    }
+    with_child(statement, "expression", |package| {
+        with_child(package, "name", |name| {
+            super::origin::set_span(name, spans.name)
+        });
+        with_child(package, "body", |body| block_origins(body, block));
+    });
+}
+
+/// Give a `Block` over a `Blockoid` over a `StatementList` the three origins
+/// in `spans`.
+// Cost: O(1).
+fn block_origins(block: &mut RakuAstNode, spans: BlockSpans) {
+    super::origin::set_span(block, spans.span);
+    with_child(block, "body", |blockoid| {
+        super::origin::set_span(blockoid, spans.blockoid);
+        if let Some(field) = blockoid.fields.first_mut() {
+            with_value(&mut field.value, |list| {
+                super::origin::set_span(list, spans.list)
             });
         }
     });

@@ -64,6 +64,14 @@ pub(crate) struct RoutineSpans {
     pub(crate) block: BlockSpans,
 }
 
+/// Where a package declaration (`class`, `grammar`, `role`) was written
+/// below its statement: its name and its block.
+#[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PackageSpans {
+    pub(crate) name: SrcSpan,
+    pub(crate) block: BlockSpans,
+}
+
 /// Where a parameter was written: all of it (type, traits and default
 /// included) and its target variable.
 ///

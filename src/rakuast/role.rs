@@ -310,6 +310,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         Err(_) => Vec::new(),
     };
     Ok(head.finish(Stmt::RoleDecl {
+        spans: Default::default(),
         name: Symbol::intern(&head.name),
         header_order: super::role_header::lower_order(node)?,
         type_params: crate::parser::role_type_param_names(&type_param_defs),

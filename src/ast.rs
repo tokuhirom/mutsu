@@ -2655,6 +2655,10 @@ pub(crate) enum Stmt {
         /// introduce them.
         #[serde(default)]
         body_parents: Vec<String>,
+        /// Where the name and block were written (ADR-10723 Stage 2); `None`
+        /// for a declaration nobody wrote.
+        #[serde(default)]
+        spans: Option<Box<parsed::PackageSpans>>,
     },
     HasDecl {
         name: Symbol,
@@ -2808,6 +2812,10 @@ pub(crate) enum Stmt {
         /// (ADR-0047 P1, #9894). 0 means "no stable site".
         #[serde(with = "crate::ast::decl_id_serde")]
         decl_id: u64,
+        /// Where the name and block were written (ADR-10723 Stage 2); `None`
+        /// for a declaration nobody wrote.
+        #[serde(default)]
+        spans: Option<Box<parsed::PackageSpans>>,
     },
     DoesDecl {
         name: Symbol,
