@@ -153,6 +153,21 @@ impl Interpreter {
             })
             .map(|t| self.resolve_type_name_for_owner(owner, t))
             .map(|t| self.lexical_type_storage_name(t));
+        // A type parameter of a composed parametric role (`has T $.attr` in
+        // `role R[::T]`, class `does R[Bar]`) reports the argument it is bound
+        // to for this class.
+        let raw_type_name = raw_type_name.map(|t| {
+            let bound = self
+                .registry()
+                .class_role_param_bindings
+                .get(owner)
+                .and_then(|bindings| bindings.get(&t))
+                .and_then(|v| match v.view() {
+                    ValueView::Package(name) => Some(name.as_str().to_string()),
+                    _ => None,
+                });
+            bound.unwrap_or(t)
+        });
         // `has Int:D %.h`: the element type keeps its smiley (`Associative[Int:D]`).
         let raw_type_name = match raw_type_name {
             Some(t) if matches!(sigil, '@' | '%') => {

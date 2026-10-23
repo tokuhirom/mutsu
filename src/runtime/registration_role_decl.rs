@@ -365,16 +365,34 @@ impl Interpreter {
         decl: &crate::opcode::CompiledAttrDecl,
         attr_name: &str,
     ) {
-        if !cx.type_params.is_empty()
-            || decl
-                .unknown_traits
-                .iter()
-                .all(|(kind, _, _)| kind == "does")
+        if decl
+            .unknown_traits
+            .iter()
+            .all(|(kind, _, _)| kind == "does")
         {
+            return;
+        }
+        if !cx.type_params.is_empty() {
+            // A trait argument may name a type parameter that is only bound
+            // per composition: applied by the composition itself.
+            self.registry_mut()
+                .param_role_attribute_traits
+                .insert((cx.role_def.role_id, attr_name.to_string()), decl.clone());
             return;
         }
         let key = (cx.name.to_string(), attr_name.to_string());
         let mut registry = self.registry_mut();
+        // A different declaration under the same name (sibling scopes each
+        // declaring `my role R`) starts over; the first one's applied
+        // meta-object is not this attribute's.
+        let fingerprint = format!("{:?}", decl.unknown_traits);
+        if registry
+            .role_attribute_trait_fingerprints
+            .insert(key.clone(), fingerprint.clone())
+            .is_some_and(|previous| previous != fingerprint)
+        {
+            registry.class_attribute_trait_objects.remove(&key);
+        }
         // A re-registration (hoisted shell, then the real declaration) of a
         // role whose traits already ran must not run them twice.
         if !registry.class_attribute_trait_objects.contains_key(&key) {
