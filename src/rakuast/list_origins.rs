@@ -38,7 +38,7 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
     let Some(ranges) = ranges.filter(|r| r.len() >= 2) else {
         return;
     };
-    // Each gap holds exactly the operator, between whitespace.
+    // Each gap holds exactly the operator, between whitespace and comments.
     let mut last_op = None;
     for pair in ranges.windows(2) {
         let ((_, end), (start, _)) = (pair[0], pair[1]);
@@ -46,8 +46,10 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
             return;
         }
         let at = super::unit_source::with_text(SrcSpan::new(end, start), |gap| {
-            let after = gap.trim_start();
-            (after.trim_end() == op).then_some(end + (gap.len() - after.len()))
+            use crate::source_comments::trivia_len;
+            let lead = trivia_len(gap)?;
+            let after = gap[lead..].strip_prefix(op.as_str())?;
+            (trivia_len(after)? == after.len()).then_some(end + lead)
         });
         let Some(at) = at else {
             return;
@@ -56,11 +58,14 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
     }
     let (from, mut to) = (ranges[0].0, ranges[ranges.len() - 1].1);
     // A trailing `,` belongs to the list: no tighter operator ends at a `,`.
-    if op == ","
-        && let Some(comma) = trailing_comma(to)
-    {
-        last_op = Some(comma);
-        to = comma + 1;
+    if op == "," {
+        let Some(comma) = trailing_comma(to) else {
+            return;
+        };
+        if let Some(comma) = comma {
+            last_op = Some(comma);
+            to = comma + 1;
+        }
     }
     let Some(op_at) = last_op else {
         return;
@@ -71,19 +76,15 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
     });
 }
 
-/// The byte offset of a `,` that follows `at` after whitespace.
-// Cost: O(w), w = whitespace skipped.
-fn trailing_comma(at: usize) -> Option<usize> {
-    let mut end = at;
-    loop {
-        let next =
-            super::unit_source::with_text(SrcSpan::new(end, end + 1), |c| Some(c.to_string()))?;
-        match next.as_str() {
-            "," => return Some(end),
-            " " | "\t" | "\n" | "\r" => end += 1,
-            _ => return None,
-        }
-    }
+/// The byte offset of a `,` that follows `at` after whitespace and
+/// comments: `Some(None)` when something else follows, `None` when the text
+/// after `at` cannot be read ([`crate::source_comments::trivia_len`]).
+// Cost: O(w), w = whitespace and comments skipped.
+fn trailing_comma(at: usize) -> Option<Option<usize>> {
+    super::unit_source::with_text_from(at, |text| {
+        let gap = crate::source_comments::trivia_len(text)?;
+        Some(text[gap..].starts_with(',').then_some(at + gap))
+    })
 }
 
 /// `( ... )` / `[ ... ]`: the `SemiList` is the text inside the brackets.

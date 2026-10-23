@@ -82,7 +82,7 @@ is %by<PointyBlock>[2], '248..260', 'and its pointy block argument';
 
 is %by<PointyBlock>[3], '306..322', 'the pointy block of a whenever';
 
-# A comment inside a block could start its statement list later than the text
-# does, so mutsu leaves the list absent (Rakudo has 281..282).
+# A comment inside a block is skipped: the statement list starts at its
+# first statement.
 is %by<Blockoid>[10], '273..284', 'a block with a comment keeps its blockoid';
-is %by<StatementList>[10], 'none', 'but has no statement list range';
+is %by<StatementList>[10], '281..282', 'and its statement list starts after the comment';
