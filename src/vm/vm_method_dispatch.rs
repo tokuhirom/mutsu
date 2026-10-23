@@ -2392,7 +2392,7 @@ impl Interpreter {
             || !cc.decl_plans.is_empty()
             || !cc.class_decl_plans.is_empty()
             || !cc.role_decl_plans.is_empty();
-        let shadows_visible_key = declares_scopes || {
+        let shadows_visible_key = declares_scopes || std::env::var_os("MUTSU_KEEP_KEYS").is_some() || {
             let env = self.env();
             env.contains_key_sym(crate::symbol::wk::self_())
                 || env.contains_key_sym(crate::symbol::wk::class_decl())
