@@ -75,13 +75,12 @@ impl Interpreter {
         let mut switched = *top;
         switched.def_file = Some(file);
         switched.lexical_package = self.lexical_package_for_frame(Some(file));
-        let original = self.routine_stack.pop();
-        self.routine_stack.push(switched);
+        // Replaced in place and put back, so a method frame keeps the record
+        // it names (popping it would cut the record off the stack).
+        let original = *top;
+        self.routine_stack.replace_top(switched);
         let result = f(self);
-        self.routine_stack.pop();
-        if let Some(original) = original {
-            self.routine_stack.push(original);
-        }
+        self.routine_stack.replace_top(original);
         result
     }
 }
