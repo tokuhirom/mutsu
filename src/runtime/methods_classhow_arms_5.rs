@@ -68,6 +68,11 @@ impl Interpreter {
                     Symbol::intern(&method_name),
                     def,
                 );
+                if !self.registry().composed_classes.contains(&class_name) {
+                    self.registry_mut()
+                        .pending_multi_methods
+                        .insert((class_name.clone(), method_name.clone()));
+                }
                 self.caches.native_ctor_plan_cache.clear();
                 return Ok(Value::NIL);
             }
@@ -134,6 +139,9 @@ impl Interpreter {
             self.registry_mut()
                 .composed_classes
                 .insert(class_name.clone());
+            self.registry_mut()
+                .pending_multi_methods
+                .retain(|(class, _)| class != &class_name);
             // This is the native step a custom `compose` hook's
             // `callsame` reaches: from here on the class's auto-generated
             // accessors count as installed (`classes_composing_accessors`).

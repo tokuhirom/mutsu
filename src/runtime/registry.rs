@@ -416,6 +416,10 @@ pub(crate) struct Registry {
     /// separately from `mro`: the C3 order is available while registration is
     /// still in progress, before Rakudo's compose protocol has completed.
     pub(crate) composed_classes: std::collections::HashSet<String>,
+    /// `(class, method)` pairs a `^add_multi_method` added to a class that is not
+    /// composed yet. Rakudo keeps those candidates in `multi_methods_to_incorporate`
+    /// until `compose`, so `^can` does not see them before then.
+    pub(crate) pending_multi_methods: std::collections::HashSet<(String, String)>,
     /// Classes whose HOW `compose` hook already ran through an attribute
     /// trait's deferred compose (`run_pending_attr_composes`); consumed by
     /// `queue_trait_how_compose` so the hook is not queued a second time.
