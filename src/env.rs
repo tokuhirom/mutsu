@@ -2402,7 +2402,11 @@ impl Env {
         if stats::enabled() {
             stats::record_chain_walk(self, key);
         }
-        self.get_sym_walk(key)
+        let r = self.get_sym_walk(key);
+        if r.is_none() && key.as_str() == "self" && std::env::var_os("MUTSU_DBG_SELF_MISS").is_some() {
+            eprintln!("SELF MISS\n{}", std::backtrace::Backtrace::force_capture());
+        }
+        r
     }
 
     /// [`Self::get_sym`] without the never-an-env-key filter — the walk itself.
