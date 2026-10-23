@@ -302,7 +302,11 @@ fn get_value(i: &mut Interpreter, target: &Value, args: &[Value], _named: Named<
 /// `Attribute.set_value($obj, $value)`.
 // Cost: O(1).
 fn set_value(i: &mut Interpreter, target: &Value, args: &[Value], _named: Named<'_>) -> Answer {
+    // `set_value` BINDS its value argument (`Mu \value`): a scalar variable
+    // naming a container (`Mu $v is raw`, an aliased parameter) is bound as
+    // that container, so later writes through the attribute reach it.
+    let bound = i.container_of_arg_source(1).unwrap_or_else(|| args[1].clone());
     with_meta(target, |meta| {
-        i.attribute_meta_set_value(meta, &args[0], &args[1])
+        i.attribute_meta_set_value(meta, &args[0], &bound)
     })
 }
