@@ -18,6 +18,9 @@
 //! out: the iteration order of a map (a `HashMap` yields its entries in an
 //! order its random seed picks, so entries are combined order-independently),
 //! and an object id ([`ProcessLocalId`]), which is allocated per process.
+//! A source position (`ast::SrcSpan`) is left out too: like its `Hash`, it
+//! says where a value was written, not what it is, so two identical
+//! declarations written at different places hash the same.
 
 use serde::ser::{self, Serialize};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -27,7 +30,10 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 /// deterministic, just less specific.
 // Cost: O(n), n = size of the value.
 pub(crate) fn stable_hash_into<T: Serialize + ?Sized>(value: &T, hasher: &mut DefaultHasher) {
-    let _ = value.serialize(&mut StableHasher { hasher });
+    let _ = value.serialize(&mut StableHasher {
+        hasher,
+        in_span: false,
+    });
 }
 
 /// The stable hash of `value` on its own.
@@ -47,8 +53,13 @@ pub(crate) struct ProcessLocalId(pub(crate) u64);
 
 const PROCESS_LOCAL_ID: &str = "ProcessLocalId";
 
+/// The serde name of `ast::SrcSpan`, whose fields are not hashed.
+const SRC_SPAN: &str = "SrcSpan";
+
 struct StableHasher<'a> {
     hasher: &'a mut DefaultHasher,
+    /// Inside a `SrcSpan` (a struct of plain numbers, so it never nests).
+    in_span: bool,
 }
 
 #[derive(Debug)]
@@ -225,7 +236,11 @@ impl<'a, 'b> ser::Serializer for &'b mut StableHasher<'a> {
             entry: None,
         })
     }
-    fn serialize_struct(self, _name: &'static str, len: usize) -> Result<Self, Refused> {
+    fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self, Refused> {
+        if name == SRC_SPAN {
+            self.in_span = true;
+            return Ok(self);
+        }
         len.hash(self.hasher);
         Ok(self)
     }
@@ -301,13 +316,19 @@ impl<'b> ser::SerializeMap for MapHasher<'b> {
     type Error = Refused;
     fn serialize_key<T: Serialize + ?Sized>(&mut self, key: &T) -> Done {
         let mut entry = DefaultHasher::new();
-        key.serialize(&mut StableHasher { hasher: &mut entry })?;
+        key.serialize(&mut StableHasher {
+            hasher: &mut entry,
+            in_span: false,
+        })?;
         self.entry = Some(entry);
         Ok(())
     }
     fn serialize_value<T: Serialize + ?Sized>(&mut self, value: &T) -> Done {
         let mut entry = self.entry.take().unwrap_or_default();
-        let result = value.serialize(&mut StableHasher { hasher: &mut entry });
+        let result = value.serialize(&mut StableHasher {
+            hasher: &mut entry,
+            in_span: false,
+        });
         self.sum = self.sum.wrapping_add(entry.finish());
         result
     }
@@ -321,9 +342,13 @@ impl<'a, 'b> ser::SerializeStruct for &'b mut StableHasher<'a> {
     type Ok = ();
     type Error = Refused;
     fn serialize_field<T: Serialize + ?Sized>(&mut self, _key: &'static str, value: &T) -> Done {
+        if self.in_span {
+            return Ok(());
+        }
         value.serialize(&mut **self)
     }
     fn end(self) -> Done {
+        self.in_span = false;
         Ok(())
     }
 }
@@ -363,6 +388,19 @@ mod tests {
         let mut c = a.clone();
         c.insert(3, 0);
         assert_ne!(stable_hash(&a), stable_hash(&c));
+    }
+
+    #[test]
+    fn source_positions_are_skipped() {
+        use crate::ast::SrcSpan;
+        assert_eq!(
+            stable_hash(&("x", SrcSpan::new(1, 4), 7)),
+            stable_hash(&("x", SrcSpan::new(30, 90), 7))
+        );
+        assert_ne!(
+            stable_hash(&("x", SrcSpan::new(1, 4), 7)),
+            stable_hash(&("x", SrcSpan::new(1, 4), 8))
+        );
     }
 
     #[test]
