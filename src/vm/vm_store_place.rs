@@ -7,11 +7,12 @@
 //! `EVAL`'d or symbolic name, a dynamic, an attribute) is
 //! [`StorePlace::Named`].
 //!
-//! The store body still resolves a `Slot` place's container by name. Before
-//! that flips, `MUTSU_STORE_PLACE_CHECK=1` compares, at every store with a
-//! `Slot` place, the container the slot holds with the one the by-name
-//! resolution reaches, and reports each disagreement on stderr: it names a
-//! writer that replaced one copy of the binding and not the other (§2.4).
+//! A `Slot` store mutates the slot and keeps the env mirror pointing at the
+//! same container (§2.3); it never reads the mirror.
+//! `MUTSU_STORE_PLACE_CHECK=1` compares, at every store with a `Slot` place,
+//! the container the slot holds with the one the by-name resolution reaches,
+//! and reports each disagreement on stderr: it names a writer that replaced
+//! one copy of the binding and not the other (§2.4).
 //! `MUTSU_STORE_PLACE_CHECK=all` also reports every store that agrees.
 //! The check covers the stores that reach these bodies; the element-store
 //! fast lanes (`vm_var_assign_element_fast`, `_hash_fast`, `_nested_fast`)
@@ -142,64 +143,101 @@ impl Interpreter {
     }
 
     // The store body's container accesses (ADR-14632 §2.2). Each one takes the
-    // place so the body names no lookup itself; a `Slot` place still resolves
-    // by name until §4's flip, so every method answers exactly what the
-    // by-name call it replaces answered.
+    // place so the body names no lookup itself. A `Slot` place reads and
+    // mutates the slot; a write that replaces its container also updates the
+    // env mirror, so the by-name readers that remain see it (§2.3). A `Named`
+    // place answers what the by-name call it replaced answered.
 
-    /// The env binding of the store's target, as `self.env().get(name)`.
-    // Cost: O(d), d = the env tiers walked.
-    pub(super) fn place_env_get(&self, _place: StorePlace, name: &str) -> Option<&Value> {
-        self.env().get(name)
+    /// The store's target as stored: the slot of a `Slot` place, else
+    /// `self.env().get(name)`.
+    // Cost: O(1) for a `Slot` place; else O(d), d = the env tiers walked.
+    pub(super) fn place_env_get(&self, place: StorePlace, name: &str) -> Option<&Value> {
+        match place {
+            StorePlace::Slot { slot } => self.locals.get(slot),
+            StorePlace::Named => self.env().get(name),
+        }
     }
 
-    /// Whether the env binds the store's target, as `env().contains_key`.
-    // Cost: O(d), d = the env tiers walked.
-    pub(super) fn place_env_bound(&self, _place: StorePlace, name: &str) -> bool {
-        self.env().contains_key(name)
+    /// Whether the store's target is bound: always for a declared slot, else
+    /// `env().contains_key`.
+    // Cost: O(1) for a `Slot` place; else O(d), d = the env tiers walked.
+    pub(super) fn place_env_bound(&self, place: StorePlace, name: &str) -> bool {
+        match place {
+            StorePlace::Slot { .. } => true,
+            StorePlace::Named => self.env().contains_key(name),
+        }
     }
 
-    /// The store's target through the read precedence
-    /// (`get_env_with_main_alias`: unit lexical, `our` mirror, env).
-    // Cost: O(d), d = the env tiers walked, plus the store probes.
-    pub(super) fn place_get(&self, _place: StorePlace, name: &str) -> Option<Value> {
-        self.get_env_with_main_alias(name)
+    /// The store's target: the slot of a `Slot` place, else through the read
+    /// precedence (`get_env_with_main_alias`: unit lexical, `our` mirror, env).
+    // Cost: O(1) for a `Slot` place; else O(d), d = the env tiers walked,
+    // plus the store probes.
+    pub(super) fn place_get(&self, place: StorePlace, name: &str) -> Option<Value> {
+        match place {
+            StorePlace::Slot { slot } => self.locals.get(slot).cloned(),
+            StorePlace::Named => self.get_env_with_main_alias(name),
+        }
     }
 
-    /// The store's target, mutably, in the running frame's env.
-    // Cost: O(d), d = the env tiers walked (a parent tier's entry is copied
-    // into the running one).
+    /// The store's target, mutably: the slot of a `Slot` place, else the
+    /// running frame's env entry.
+    // Cost: O(1) for a `Slot` place; else O(d), d = the env tiers walked (a
+    // parent tier's entry is copied into the running one).
     pub(super) fn place_env_get_mut(
         &mut self,
-        _place: StorePlace,
+        place: StorePlace,
         name: &str,
     ) -> Option<&mut Value> {
-        self.env_mut().get_mut(name)
+        match place {
+            StorePlace::Slot { slot } => self.locals.get_mut(slot),
+            StorePlace::Named => self.env_mut().get_mut(name),
+        }
     }
 
-    /// Bind the store's target in the running frame's env.
+    /// Replace the store's target with `value`, binding it in the running
+    /// frame's env (and the slot of a `Slot` place).
     // Cost: O(1) expected.
-    pub(super) fn place_env_insert(&mut self, _place: StorePlace, name: &str, value: Value) {
+    pub(super) fn place_env_insert(&mut self, place: StorePlace, name: &str, value: Value) {
+        if let StorePlace::Slot { slot } = place {
+            self.locals[slot] = value.clone();
+        }
         self.env_mut().insert(name.to_string(), value);
     }
 
-    /// Write the store's target through the write precedence
-    /// (`set_env_with_main_alias`).
+    /// Replace the store's target with `value` through the write precedence
+    /// (`set_env_with_main_alias`), and in the slot of a `Slot` place.
     // Cost: O(d), d = the env tiers walked, plus the store probes.
-    pub(super) fn place_set(&mut self, _place: StorePlace, name: &str, value: Value) {
+    pub(super) fn place_set(&mut self, place: StorePlace, name: &str, value: Value) {
+        if let StorePlace::Slot { slot } = place {
+            self.locals[slot] = value.clone();
+        }
         self.set_env_with_main_alias(name, value);
     }
 
-    /// The container the store mutates, through its binding cell
-    /// (`env_root_descended_mut_tracked`); `cell_addr` reports the outermost
-    /// cell stepped through.
-    // Cost: O(d + c), d = the env tiers walked, c = cells descended.
+    /// The container the store mutates, through its binding cell: the slot of
+    /// a `Slot` place, else `env_root_descended_mut_tracked`'s precedence.
+    /// `cell_addr` reports the outermost cell stepped through.
+    // Cost: O(c) for a `Slot` place, c = cells descended; else
+    // O(d + c), d = the env tiers walked.
     pub(super) fn place_root_mut_tracked(
         &mut self,
-        _place: StorePlace,
+        place: StorePlace,
         name: &str,
         cell_addr: &mut Option<usize>,
     ) -> Option<&mut Value> {
-        self.env_root_descended_mut_tracked(name, cell_addr)
+        match place {
+            StorePlace::Slot { slot } => {
+                let root = self.locals.get_mut(slot)? as *mut Value;
+                // SAFETY: `root` points into `self.locals`, which nothing else
+                // borrows while the returned reference is held; a descended
+                // pointer points into a cell the slot keeps alive (see
+                // `descend_container_ref`).
+                let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
+                // SAFETY: `descended` was derived from `root` just above.
+                Some(unsafe { &mut *descended })
+            }
+            StorePlace::Named => self.env_root_descended_mut_tracked(name, cell_addr),
+        }
     }
 
     /// [`Self::place_root_mut_tracked`] without the cell report.
@@ -208,15 +246,37 @@ impl Interpreter {
         self.place_root_mut_tracked(place, name, &mut None)
     }
 
-    // The dual store's reconciliation (ADR-14632 §1.2). The body keeps the
-    // container in the env and copies it to and from the slot around a store;
-    // for a `Slot` place these become no-ops at the flip, where the slot is
-    // the home and the env only a write-only mirror.
+    /// Point the env mirror of a `Slot` place's variable at the slot's value
+    /// when it holds another one (§2.3): a store that rebuilt the container
+    /// left the mirror on the old node. A cell in the slot is shared with the
+    /// mirror already, and a name the env does not bind has no mirror.
+    // Cost: O(d), d = the env tiers walked, plus the store probes on a write.
+    fn mirror_slot_to_env(&mut self, slot: usize, name: &str) {
+        let value = self.locals[slot].clone();
+        if value.is_container_ref() {
+            return;
+        }
+        let same = match (self.env().get(name).map(Value::view), value.view()) {
+            (None, _) => return,
+            (Some(ValueView::Array(a, _)), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(&a, &b),
+            (Some(ValueView::Hash(a)), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(&a, &b),
+            _ => false,
+        };
+        if !same {
+            self.set_env_with_main_alias(name, value);
+        }
+    }
+
+    // The dual store's reconciliation (ADR-14632 §1.2). For a `Named` place
+    // the body keeps the container in the env and copies it to and from the
+    // slot around a store. For a `Slot` place the slot is the home: nothing is
+    // copied into it, and after the store the env mirror is pointed at it.
 
     /// Before the store: when the env holds no live container for `name`
     /// (unbound, or a hoisted `Nil` / type-object placeholder), mirror the
     /// slot's value into it, so the store does not autovivify over a container
-    /// that lives only in the slot (`my %s is SetHash = <a>`).
+    /// that lives only in the slot (`my %s is SetHash = <a>`). Nothing for a
+    /// `Slot` place, whose store works on the slot.
     // Cost: O(d), d = the env tiers walked, plus the slot search when the
     // store holds no slot (O(1) expected).
     pub(super) fn place_pull_slot(
@@ -226,6 +286,9 @@ impl Interpreter {
         slot_hint: Option<u32>,
         name: &str,
     ) {
+        if let StorePlace::Slot { .. } = place {
+            return;
+        }
         let env_needs_slot_pull = match self.place_env_get(place, name).map(Value::view) {
             None => true,
             Some(ValueView::Nil) | Some(ValueView::Package(_)) => true,
@@ -243,7 +306,8 @@ impl Interpreter {
         }
     }
 
-    /// After the store: copy the env's container for `name` into its slot.
+    /// After the store: copy the env's container for `name` into its slot;
+    /// for a `Slot` place, point the env mirror at the slot's container.
     // Cost: O(d), d = the env tiers walked, plus the slot search when the
     // store holds no slot (O(1) expected).
     pub(super) fn place_sync_slot(
@@ -253,6 +317,10 @@ impl Interpreter {
         slot_hint: Option<u32>,
         name: &str,
     ) {
+        if let StorePlace::Slot { slot } = place {
+            self.mirror_slot_to_env(slot, name);
+            return;
+        }
         if let Some(slot) = self.resolve_local_slot(code, slot_hint, name)
             && let Some(updated) = self.place_env_get(place, name).cloned()
         {
@@ -261,31 +329,40 @@ impl Interpreter {
     }
 
     /// After the store: write `value` into `name`'s slot
-    /// (`write_local_slot_or_name`).
+    /// (`write_local_slot_or_name`), and for a `Slot` place the env mirror.
     // Cost: O(1) with a slot hint; else the slot search, O(1) expected.
     pub(super) fn place_write_slot(
         &mut self,
-        _place: StorePlace,
+        place: StorePlace,
         code: &CompiledCode,
         slot_hint: Option<u32>,
         name: &str,
         value: Value,
     ) {
+        if let StorePlace::Slot { slot } = place {
+            self.locals[slot] = value;
+            self.mirror_slot_to_env(slot, name);
+            return;
+        }
         self.write_local_slot_or_name(code, slot_hint, name, value);
     }
 
     /// Before a chained store mutates the env's container: drop the slot's
     /// copy of it when `release` says so, so the container's node is held
     /// once and `Gc::make_mut` mutates it in place instead of cloning it.
-    /// The store's closing [`Self::place_sync_slot`] puts it back.
+    /// The store's closing [`Self::place_sync_slot`] puts it back. Nothing
+    /// for a `Slot` place, whose store mutates the slot's own node.
     // Cost: O(1) expected (the slot search).
     pub(super) fn place_release_slot_copy(
         &mut self,
-        _place: StorePlace,
+        place: StorePlace,
         code: &CompiledCode,
         name: &str,
         release: impl Fn(&Value) -> bool,
     ) {
+        if let StorePlace::Slot { .. } = place {
+            return;
+        }
         if let Some(slot) = self.find_local_slot(code, name)
             && release(&self.locals[slot])
         {
