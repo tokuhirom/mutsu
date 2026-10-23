@@ -244,33 +244,3 @@ mod tests {
         ));
     }
 }
-
-impl Expr {
-    /// The term itself, without the origin a `.AST` parse records around it
-    /// (ADR-10723 Stage 2). A parse-time decision about what a term *is*
-    /// looks through the position.
-    // Cost: O(d), d = nested origin wrappers (normally 0 or 1).
-    pub(crate) fn unpositioned(&self) -> &Expr {
-        let mut expr = self;
-        while let Expr::Spelled(spelled) = expr
-            && matches!(spelled.spelling, Spelling::Origin(_))
-        {
-            expr = &spelled.expr;
-        }
-        expr
-    }
-
-    /// [`Expr::unpositioned`], by value.
-    // Cost: O(d), d = nested origin wrappers.
-    pub(crate) fn into_unpositioned(self) -> Expr {
-        let mut expr = self;
-        loop {
-            match expr {
-                Expr::Spelled(spelled) if matches!(spelled.spelling, Spelling::Origin(_)) => {
-                    expr = spelled.expr;
-                }
-                other => return other,
-            }
-        }
-    }
-}

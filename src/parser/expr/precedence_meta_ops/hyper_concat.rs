@@ -26,7 +26,7 @@ use super::meta_bracket::block_newline_terminates;
 /// declaration here would run it twice. Such a leaf stands in as a scalar
 /// placeholder, which is exactly what a freshly declared scalar contributes.
 fn hyper_assign_shape(target: &Expr) -> Expr {
-    match target.unpositioned() {
+    match target {
         Expr::Grouped(inner) => hyper_assign_shape(inner),
         Expr::ArrayLiteral(items) => {
             Expr::ArrayLiteral(items.iter().map(hyper_assign_shape).collect())

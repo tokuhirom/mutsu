@@ -241,7 +241,7 @@ pub(crate) fn negate_literal_value(value: &Value) -> Option<Value> {
 }
 
 pub(crate) fn literal_value_from_expr(expr: &Expr) -> Option<Value> {
-    match expr.unpositioned() {
+    match expr {
         Expr::Literal(v) => Some(v.clone()),
         Expr::Unary { op, expr, .. } => {
             let inner = literal_value_from_expr(expr)?;

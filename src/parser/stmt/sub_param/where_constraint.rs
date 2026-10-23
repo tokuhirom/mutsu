@@ -185,7 +185,7 @@ fn stmt_leads_with_whatever(stmt: &Stmt) -> bool {
 /// vs the accepted `{ $_ > * }`, also `AnonSubParams`, but whose leftmost leaf is
 /// the genuine `$_` (`Var("_")`), not a `__wc_N` placeholder.
 fn expr_leads_with_whatever(expr: &Expr) -> bool {
-    match expr.unpositioned() {
+    match expr {
         Expr::Whatever | Expr::HyperWhatever => true,
         // A curried whatever placeholder reached as the leftmost leaf. Only
         // reachable pre-ADR-0033 (a build_closure-substituted body); kept as a

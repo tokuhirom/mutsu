@@ -220,7 +220,7 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
 /// path below cannot spell, so they go through the nested-lvalue lowering.
 // Cost: O(1).
 fn is_compound_elem_container(target: &Expr) -> bool {
-    matches!(target.unpositioned(), Expr::Index { .. } | Expr::Grouped(_))
+    matches!(target, Expr::Index { .. } | Expr::Grouped(_))
 }
 
 /// Parse a variable from `undefine(...)` or `undefine $var` inside a `temp` context.
@@ -291,7 +291,7 @@ fn temp_declaration_stmt(input: &str) -> Option<PResult<'_, Stmt>> {
 /// `self` — spelled `self` or as the `$.attr` invocant carrier, which the
 /// parser leaves as the collapsed anonymous-state name `__ANON_STATE#`.
 fn temp_method_invocant_name(invocant: &Expr) -> Option<String> {
-    match invocant.unpositioned() {
+    match invocant {
         Expr::Var(name) if name == "__ANON_STATE#" => Some("self".to_string()),
         Expr::Var(name) => Some(name.clone()),
         Expr::BareWord(name) if name == "self" => Some("self".to_string()),

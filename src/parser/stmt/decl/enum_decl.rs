@@ -70,7 +70,7 @@ pub(crate) fn enum_value_names(variants: &[(String, Option<Expr>)]) -> Vec<Strin
 }
 
 fn collect_literal_enum_value_names(expr: &Expr, out: &mut Vec<String>) {
-    match expr.unpositioned().peel_parens() {
+    match expr.peel_parens() {
         Expr::Literal(value) | Expr::LiteralSrc(value, _) => {
             if let Some(name) = value.as_str()
                 && !out.iter().any(|existing| existing == name)
@@ -301,7 +301,7 @@ fn parse_paren_enum_body(input: &str) -> PResult<'_, Expr> {
 /// `None` means the element is not a plain name / `name => value` pair, so the
 /// whole body has to stay a computed (`__DYNAMIC__`) expression.
 fn enum_variant_from_expr(expr: Expr) -> Option<(String, Option<Expr>)> {
-    match expr.into_unpositioned() {
+    match expr {
         // A *bare identifier* inside the parenthesised `(...)` enum body is a
         // term reference, not an autoquoted key (only the `<...>` word-list form
         // autoquotes). If it is not a declared symbol it is X::Undeclared — so
@@ -322,10 +322,10 @@ fn enum_variant_from_expr(expr: Expr) -> Option<(String, Option<Expr>)> {
             op: crate::token_kind::TokenKind::FatArrow,
             right,
             ..
-        } => match (*left).into_unpositioned() {
+        } => match *left {
             Expr::Literal(lit) if lit.as_str().is_some() => {
                 let name = lit.as_str().unwrap().to_string();
-                let value_expr = match (*right).into_unpositioned() {
+                let value_expr = match *right {
                     Expr::Literal(rl) if matches!(rl.view(), ValueView::Bool(true)) => None,
                     other => Some(other),
                 };

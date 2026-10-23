@@ -80,7 +80,7 @@ pub(super) fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, va
 }
 
 pub(super) fn bind_source_name(expr: &Expr) -> Option<String> {
-    match expr.unpositioned() {
+    match expr {
         Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.container_var_key(),
         // For indexed expressions like @a[1], encode as "@a\x00idx\x001"
         // so that binding can track the specific array/hash element.
@@ -135,7 +135,7 @@ pub(crate) fn index_bind_expr(
 }
 
 pub(crate) fn bind_source_metadata_expr(rhs: &Expr) -> Expr {
-    match rhs.unpositioned() {
+    match rhs {
         Expr::ArrayLiteral(items) => Expr::ArrayLiteral(
             items
                 .iter()

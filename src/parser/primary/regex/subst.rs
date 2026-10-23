@@ -108,7 +108,7 @@ pub(crate) fn subst_compound_thunk(op: &str, rhs: Expr) -> Expr {
 /// The written `EXPR` of a [`subst_compound_thunk`].
 // Cost: O(1).
 pub(crate) fn subst_compound_rhs(thunk: &Expr) -> Option<&Expr> {
-    match thunk.unpositioned() {
+    match thunk {
         Expr::Binary { right, .. } => Some(right),
         Expr::Call { args, .. } if args.len() == 2 => Some(&args[1]),
         _ => None,

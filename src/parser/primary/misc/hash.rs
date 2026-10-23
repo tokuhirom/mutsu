@@ -218,7 +218,7 @@ fn hash_key_from_expr(expr: Expr) -> Result<String, PError> {
 }
 
 fn hash_pair_from_expr(expr: &Expr) -> Result<Option<(String, Expr)>, PError> {
-    match expr.unpositioned() {
+    match expr {
         Expr::Binary {
             left,
             op: crate::token_kind::TokenKind::FatArrow,

@@ -440,7 +440,7 @@ pub(crate) fn try_parse_exists_adverb(input: &str, target: Expr) -> Option<(&str
 }
 
 pub(crate) fn supports_postfix_call_adverbs(expr: &Expr) -> bool {
-    match expr.unpositioned() {
+    match expr {
         Expr::Call { name, .. } => {
             let n = name.resolve();
             !n.starts_with("__mutsu_subscript_adverb") && !n.starts_with("__mutsu_multidim")

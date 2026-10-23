@@ -102,7 +102,7 @@ pub(crate) fn null_regex_error() -> PError {
 }
 
 pub(crate) fn expr_is_bare_ident(expr: &Expr, ident: &str) -> bool {
-    matches!(expr.unpositioned(), Expr::Var(name) | Expr::BareWord(name) if name == ident)
+    matches!(expr, Expr::Var(name) | Expr::BareWord(name) if name == ident)
 }
 
 pub(crate) fn stmt_is_also_is_rw(stmt: &Stmt) -> bool {

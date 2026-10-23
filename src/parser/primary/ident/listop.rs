@@ -442,7 +442,7 @@ pub(crate) fn colon_starts_colonpair(at_colon: &str) -> bool {
 /// start of another colonpair, never an invocant colon.
 pub(crate) fn expr_is_colonpair(expr: &Expr) -> bool {
     matches!(
-        expr.unpositioned(),
+        expr,
         Expr::Binary {
             op: crate::token_kind::TokenKind::FatArrow,
             ..

@@ -3,7 +3,7 @@ use crate::parser::primary::misc::colonpair_expr;
 
 pub(crate) fn is_assignment_expr(expr: &Expr) -> bool {
     matches!(
-        expr.unpositioned(),
+        expr,
         Expr::AssignExpr { .. }
             | Expr::CompoundAssign { .. }
             | Expr::IndexAssign { .. }

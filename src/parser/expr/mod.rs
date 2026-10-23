@@ -702,12 +702,12 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
 }
 
 fn is_bind_index_value(value: &Expr) -> bool {
-    matches!(value.unpositioned(), Expr::Call { name, args, .. }
+    matches!(value, Expr::Call { name, args, .. }
         if name.resolve() == "__mutsu_bind_index_value" && args.len() == 2)
 }
 
 fn is_indexed_bind(expr: &Expr) -> bool {
-    matches!(expr.unpositioned(), Expr::IndexAssign { value, .. } if is_bind_index_value(value))
+    matches!(expr, Expr::IndexAssign { value, .. } if is_bind_index_value(value))
 }
 
 fn reassociated_fat_arrow_pair(left: Expr, value: Expr) -> Expr {

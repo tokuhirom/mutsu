@@ -232,7 +232,7 @@ pub(crate) fn delete_flag() -> Expr {
 /// The deleting form of a single-dimension subscript's read, `read` being
 /// the subscript itself, its `:exists` node or its value-adverb call.
 pub(crate) fn deleting(read: &Expr, delete_first: bool) -> Expr {
-    match read.unpositioned() {
+    match read {
         Expr::Exists { .. } => apply_delete_to_exists(read.clone(), delete_first),
         Expr::Call { name, args, .. } if *name == SUBSCRIPT_ADVERB_FN => {
             let mut args = args.clone();
@@ -492,11 +492,11 @@ const VALUE_ADVERBS: [(&str, &str, &str); 4] = [
 ];
 
 fn is_bool_literal(expr: &Expr, want: bool) -> bool {
-    matches!(expr.unpositioned(), Expr::Literal(v) if matches!(v.view(), ValueView::Bool(b) if b == want))
+    matches!(expr, Expr::Literal(v) if matches!(v.view(), ValueView::Bool(b) if b == want))
 }
 
 fn is_int_literal(expr: &Expr, want: i64) -> bool {
-    matches!(expr.unpositioned(), Expr::Literal(v) if matches!(v.view(), ValueView::Int(i) if i == want))
+    matches!(expr, Expr::Literal(v) if matches!(v.view(), ValueView::Int(i) if i == want))
 }
 
 /// A value adverb's runtime mode and condition, as the parser reads its

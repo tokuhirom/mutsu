@@ -269,7 +269,7 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
 /// phasers-as-expressions).
 // Cost: O(1).
 pub(crate) fn placeholder_body_kind_expr(expr: &Expr) -> PlaceholderBodyKind {
-    match expr.unpositioned() {
+    match expr {
         // A WhateverCode (`*`-derived) closure owns only its `*`-derived
         // params, not `$^name` placeholders, which belong to the nearest
         // enclosing *explicit* block — so it is transparent here.

@@ -17,7 +17,7 @@ use crate::ast_visit::{Visit, walk_stmt, walk_stmts};
 // Cost: O(1).
 pub(crate) fn is_code_object(e: &Expr) -> bool {
     matches!(
-        e.unpositioned(),
+        e,
         Expr::Lambda { .. } | Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Block(_)
     )
 }

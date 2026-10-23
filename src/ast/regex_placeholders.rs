@@ -27,7 +27,7 @@ pub(crate) struct RegexPlaceholders {
 /// The pattern source a regex literal expression carries, if `expr` is one.
 // Cost: O(1).
 pub(crate) fn regex_literal_source(expr: &Expr) -> Option<String> {
-    match expr.unpositioned() {
+    match expr {
         Expr::Literal(value)
         | Expr::MatchRegex(value)
         | Expr::RegexLiteral { value, .. }

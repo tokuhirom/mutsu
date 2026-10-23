@@ -261,7 +261,7 @@ fn is_modifier_body(body: &[Stmt]) -> bool {
 /// Warn for an expression evaluated in sink context. Comma lists distribute the
 /// sink to each element.
 fn warn_expr_sink(expr: &Expr, nil_hint: bool, line: i64) {
-    match expr.unpositioned() {
+    match expr {
         Expr::Grouped(inner) => warn_expr_sink(inner, nil_hint, line),
         Expr::DoBlock {
             body,
@@ -314,7 +314,7 @@ fn emit(desc: String, nil_hint: bool, line: i64) {
 /// Returns the description (the "X" in "Useless use of X in sink context") if
 /// `expr` is a pure, side-effect-free value/expression, otherwise `None`.
 fn describe_useless(expr: &Expr) -> Option<String> {
-    match expr.unpositioned() {
+    match expr {
         Expr::Grouped(inner) => describe_useless(inner),
         Expr::PositionalPair(inner) => describe_useless(inner),
         Expr::Literal(v) => describe_literal(v),
@@ -407,7 +407,7 @@ fn describe_literal_with_src(v: &Value, src: &str) -> Option<String> {
 /// Approximate the source text of a useless expression for the "in expression"
 /// part of an operator warning.
 fn render_source(expr: &Expr) -> Option<String> {
-    match expr.unpositioned() {
+    match expr {
         Expr::Grouped(inner) | Expr::PositionalPair(inner) => render_source(inner),
         Expr::Literal(lit) => match lit.view() {
             ValueView::Str(s) => Some((**s).clone()),

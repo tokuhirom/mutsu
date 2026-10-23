@@ -213,7 +213,7 @@ pub(crate) fn wrap_last_stmt_with_unary(stmts: &mut [Stmt], op: TokenKind) {
 /// `@a»{...}` (parsed as a hyper `AT-KEY` call) is a subscript too: taurus
 /// chains `>>.{0..4}` newline `.grep(...)`.
 pub(in crate::parser) fn is_subscript_expr(expr: &Expr) -> bool {
-    match expr.unpositioned() {
+    match expr {
         Expr::Index { .. } | Expr::MultiDimIndex { .. } | Expr::ZenSlice(_) => true,
         Expr::HyperMethodCall { name, .. } => {
             matches!(name.as_str(), "AT-KEY" | "postcircumfix:<{ }>")

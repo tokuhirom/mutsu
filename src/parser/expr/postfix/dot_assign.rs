@@ -7,7 +7,7 @@ use crate::parser::primary::{colonpair_expr, parse_call_arg_list, primary};
 use crate::symbol::Symbol;
 
 pub(crate) fn atomic_var_name(expr: &Expr) -> Option<String> {
-    match expr.unpositioned() {
+    match expr {
         Expr::Var(name) => Some(name.clone()),
         _ => None,
     }
@@ -18,7 +18,7 @@ pub(crate) fn atomic_var_name(expr: &Expr) -> Option<String> {
 /// (`atomic-fetch-inc(@a[0])`), which the compiler lowers onto the element's
 /// atomic cell (#11812).
 pub(crate) fn is_atomic_elem_target(expr: &Expr) -> bool {
-    matches!(expr.unpositioned(), Expr::Index { target, .. }
+    matches!(expr, Expr::Index { target, .. }
         if target.container_var_key().is_some_and(|k| k.starts_with(['@', '%'])))
 }
 
