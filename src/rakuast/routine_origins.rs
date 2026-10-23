@@ -36,7 +36,7 @@ pub(super) fn apply(node: &mut RakuAstNode, spans: Option<&RoutineSpans>, params
 /// under the `Statement::Expression` converted from `stmt`) its name's and
 /// block's origins.
 // Cost: O(f), f = fields of the nodes on the path.
-pub(super) fn package(statement: &mut RakuAstNode, stmt: &Stmt) {
+pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
     let (Stmt::ClassDecl { spans, .. } | Stmt::RoleDecl { spans, .. }) = stmt else {
         return;
     };
@@ -49,11 +49,11 @@ pub(super) fn package(statement: &mut RakuAstNode, stmt: &Stmt) {
     if matches!(stmt, Stmt::RoleDecl { .. }) && spans.name.is_some() && block.span.is_some() {
         block.span = crate::ast::SrcSpan::new(spans.name.from as usize, block.span.to as usize);
     }
-    with_child(statement, "expression", |package| {
-        with_child(package, "name", |name| {
+    with_child(statement, "expression", |decl| {
+        with_child(decl, "name", |name| {
             super::origin::set_span(name, spans.name)
         });
-        with_child(package, "body", |body| block_origins(body, block));
+        with_child(decl, "body", |body| block_origins(body, block));
     });
 }
 
