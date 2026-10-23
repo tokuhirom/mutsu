@@ -286,9 +286,9 @@ impl Interpreter {
     pub(crate) fn set_top_routine_callable_id(&mut self, id: u64) {
         // A pushed frame is never modified in place (the stack caches
         // snapshot nodes over it), so replace it.
-        if let Some(mut frame) = self.routine_stack.pop() {
+        if let Some(mut frame) = self.routine_stack.last().copied() {
             frame.callable_id = id;
-            self.routine_stack.push(frame);
+            self.routine_stack.replace_top(frame);
         }
     }
 
@@ -365,6 +365,7 @@ impl Interpreter {
             invocation_id,
             callable_id: 0,
             code,
+            fixtures: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -378,7 +379,8 @@ impl Interpreter {
     /// method frame to the dynamically-scoped `?FILE`, which had already
     /// reverted to the main script by the time the method ran.
     /// `callable_id` is the per-invocation `__mutsu_callable_id` the method
-    /// body runs under (see `RoutineFrame::callable_id`).
+    /// body runs under (see `RoutineFrame::callable_id`). `fixtures` is the
+    /// frame's invocant / `?CLASS` / `?ROLE` record (ADR-14633).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn push_method_routine_with_location(
         &mut self,
@@ -391,6 +393,7 @@ impl Interpreter {
         is_submethod: bool,
         is_hidden_from_backtrace: bool,
         callable_id: u64,
+        fixtures: super::routine_stack::FrameFixtures,
     ) {
         let invocation_id = self.take_invocation_id();
         let frame = super::RoutineFrame {
@@ -408,9 +411,10 @@ impl Interpreter {
             invocation_id,
             callable_id,
             code: 0,
+            fixtures: 0,
         };
         self.record_profile_routine_frame(&frame);
-        self.routine_stack.push(frame);
+        self.routine_stack.push_with_fixtures(frame, fixtures);
     }
 
     /// Push a block/closure routine frame. `def_file` is the file the block's
@@ -469,6 +473,7 @@ impl Interpreter {
             invocation_id,
             callable_id: 0,
             code: 0,
+            fixtures: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -526,6 +531,41 @@ impl Interpreter {
             unit = parent;
         }
         def_file.and_then(|file| self.module.module_source_packages.get(&file).copied())
+    }
+
+    /// The fixture record of the innermost routine frame that has one: the
+    /// invocant, `?CLASS` and `?ROLE` of the running method call
+    /// (ADR-14633 §2.1).
+    // Cost: O(1).
+    // TODO(ADR-14633 slice 2): no reader uses the record yet. The env keys it
+    // mirrors are still rebound mid-frame by ~20 helpers (role mixins, grammar
+    // actions, attribute defaults) and by closure calls that push no record,
+    // so answering `self` from it before those become scoped helpers would
+    // change answers.
+    #[allow(dead_code)]
+    #[inline]
+    pub(crate) fn frame_fixtures(&self) -> Option<&super::routine_stack::FrameFixtures> {
+        self.routine_stack.top_fixtures()
+    }
+
+    /// The fixture rule's answer for a fixed name (`self`, `__ANON_STATE#`,
+    /// `?CLASS`, `?ROLE`): what the innermost method frame's record says the
+    /// env key holds, `None` when no record answers. `?ROLE` answers
+    /// `Some(None)`-as-absent through `None` too, since an absent role is an
+    /// absent env key.
+    // Cost: O(1).
+    #[allow(dead_code)] // TODO(ADR-14633 slice 2): see `frame_fixtures`.
+    pub(crate) fn frame_fixture_value(&self, sym: Symbol) -> Option<Value> {
+        let fixtures = self.frame_fixtures()?;
+        if sym == crate::symbol::wk::self_() || sym == crate::symbol::wk::anon_state() {
+            Some(fixtures.invocant.clone())
+        } else if sym == crate::symbol::wk::class_decl() {
+            Some(Value::package(fixtures.class))
+        } else if sym == crate::symbol::wk::role_decl() {
+            fixtures.role.map(Value::package)
+        } else {
+            None
+        }
     }
 
     pub(crate) fn pop_routine(&mut self) {
@@ -1340,6 +1380,7 @@ mod call_site_file_tests {
             invocation_id: 1,
             callable_id: 0,
             code: 0,
+            fixtures: 0,
         }
     }
 
