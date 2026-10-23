@@ -275,8 +275,8 @@ impl Interpreter {
             | OpCode::TagElementSourcePath { .. } => self.exec_ops_group_09(code, ip, compiled_fns),
             OpCode::IndexAssignDeepNested { .. }
             | OpCode::IndexAssignExprNamed { .. }
-            | OpCode::IndexAssignLocal { .. }
             | OpCode::IndexAssignExprNested { .. }
+            | OpCode::IndexAssignLocal { .. }
             | OpCode::IndexAssignPseudoStashKeyed { .. }
             | OpCode::IndexAssignPseudoStashNamed { .. }
             | OpCode::IndexElemAutoviv { .. }
