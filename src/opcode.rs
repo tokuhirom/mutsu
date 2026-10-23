@@ -1600,6 +1600,13 @@ pub(crate) enum OpCode {
     /// instance invocant or the slot is aggregate-shaped (an `@`/`%` value is
     /// already a shared container and has its own accessor path).
     AttrContainerRef(u32),
+    /// `my $p := $.w`: replaces the top-of-stack accessor read with `self`'s
+    /// attribute cell only when `w` is a public `is rw` attribute (the cell
+    /// `self.w` would hand back), and leaves the value untouched otherwise, so
+    /// binding a plain public attribute keeps a copy (#14689). Operand: the
+    /// constant-pool index of the bare attribute name.
+    // Cost: O(a + m), a = the class's attributes, m = its MRO length.
+    PublicRwAttrContainerRef(u32),
     /// Follows the plain [`Self::GetLocal`] read of a `$!attr`/`$.attr`
     /// positional call argument, honoring a pending [`Self::MarkRwArgRefContext`]
     /// / [`Self::MarkRwArgRefContextCallee`] the same way [`Self::AttrContainerRef`]

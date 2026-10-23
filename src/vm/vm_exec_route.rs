@@ -112,6 +112,7 @@ impl Interpreter {
             | OpCode::NumLt
             | OpCode::NumNe
             | OpCode::NumNeNative(..)
+            | OpCode::PublicRwAttrContainerRef(..)
             | OpCode::ResolveAttrRwCandidate(..)
             | OpCode::StashVarDeclInit
             | OpCode::WrapScalar

@@ -59,6 +59,36 @@ impl Interpreter {
         self.stack.push(cell_val);
     }
 
+    /// [`crate::opcode::OpCode::PublicRwAttrContainerRef`]'s handler.
+    // Cost: O(a + m), a = the class's attributes, m = its MRO length.
+    pub(super) fn exec_public_rw_attr_container_ref_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), crate::value::RuntimeError> {
+        // A user accessor that returns a `Proxy` hands back its own container:
+        // the bind FETCHes it and aliases no attribute.
+        if self.stack.last().is_some_and(Value::is_proxy_value) {
+            let proxy = self.stack.pop().unwrap_or(Value::NIL);
+            let fetched = self.fetch_proxy_operand(proxy)?;
+            self.stack.push(fetched);
+            return Ok(());
+        }
+        let attr = Self::const_str(code, name_idx).to_string();
+        let Some(base) = self.frame_self_value(code) else {
+            return Ok(());
+        };
+        let ValueView::Instance { class_name, .. } = base.view() else {
+            return Ok(());
+        };
+        let cn = class_name.resolve();
+        if let Some(cell_val) = self.rw_accessor_container(&base, &cn, &attr) {
+            self.stack.pop();
+            self.stack.push(cell_val);
+        }
+        Ok(())
+    }
+
     /// [`crate::opcode::OpCode::ResolveAttrRwCandidate`]'s handler: follows the
     /// plain `GetLocal` read of a `$!attr`/`$.attr` positional call argument,
     /// honoring a pending `accessor_ref_pending` marker (see
