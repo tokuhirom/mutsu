@@ -1586,13 +1586,47 @@ impl Interpreter {
             // snapshot, and a stale copy of a mutable lexical is worse than a miss).
             // A file without `unit` keys its bucket by the compunit, its
             // source path, which no package name can collide with.
+            // A file-scope `my constant` of a file without `unit` is also read
+            // by name from a method an `augment` installs (its body is compiled
+            // from the raw AST at run time, so it has no slot of this
+            // compunit to capture), which only the unit store gives an
+            // env-independent read. Copies, as for a `unit` file's constants
+            // above: `module_scope_names` keeps the value too.
+            let file_scope_constants: Vec<(String, Value)> = if unit_name.is_none() {
+                facts
+                    .my_constant_names
+                    .iter()
+                    .filter_map(|name| {
+                        module_scope_names
+                            .get(name)
+                            .map(|value| (name.clone(), value.clone()))
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             let lexical_bucket = unit_name.clone().or_else(|| {
-                (!unit_lex_names.is_empty()).then(|| {
+                (!unit_lex_names.is_empty() || !file_scope_constants.is_empty()).then(|| {
                     crate::runtime::cow_table_mut(&mut self.lexicals.compunit_lexical_units)
                         .insert(module_unit_for_loading_stack);
                     module_unit_for_loading_stack.resolve()
                 })
             });
+            if unit_name.is_none()
+                && let Some(unit) = lexical_bucket.as_deref()
+            {
+                for (name, value) in file_scope_constants {
+                    let cell = if value.is_container_ref() {
+                        value
+                    } else {
+                        value.into_container_ref()
+                    };
+                    self.unit_lexicals_cow_mut()
+                        .entry(unit.to_string())
+                        .or_default()
+                        .insert(name, cell);
+                }
+            }
             if let Some(unit) = lexical_bucket.as_deref()
                 && !unit_lex_names.is_empty()
             {
