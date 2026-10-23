@@ -570,7 +570,6 @@ impl Interpreter {
     pub(crate) fn env_or_fixture_sym(&self, sym: Symbol) -> Option<Value> {
         match self.env.get_sym(sym) {
             Some(v) => Some(v.clone()),
-            None if std::env::var_os("MUTSU_NO_ENVSELF").is_some() => None,
             None => self.frame_fixture_value(sym),
         }
     }
