@@ -5093,7 +5093,7 @@ pub(super) fn postfix_operand(operand: &Expr) -> Result<RakuAstNode, RuntimeErro
     if let Expr::PositionalPair(inner) = operand
         && let Expr::Grouped(pair) = inner.as_ref()
     {
-        return convert_expr(&Expr::PositionalPair(pair.clone()));
+        return convert_expr(pair);
     }
     convert_expr(operand.postfix_operand())
 }
