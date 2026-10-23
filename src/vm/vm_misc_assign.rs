@@ -940,7 +940,12 @@ impl Interpreter {
             && let Some(cell) = self.outer_store_lexical_cell(code, sym)
         {
             value = cell;
-        } else if code.container_ref_capture_syms.contains(&sym)
+        } else if (code.container_ref_capture_syms.contains(&sym)
+            // The implicit topic of a `for @a` loop is the element's own cell
+            // (ADR-0045); `$x := $_` must bind that cell, not its value (#14758).
+            // Only a scalar bind takes it: any other WrapVarRef (`take $_`,
+            // a call argument) passes the value.
+            || (sym.as_str() == "_" && self.scalar_bind_context().get()))
             && let Some(captured) = self.env().get_sym(sym)
             && captured.is_container_ref()
         {
