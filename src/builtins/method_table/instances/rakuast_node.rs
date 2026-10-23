@@ -280,7 +280,7 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
         }
         RakuAstClass::ParameterTargetVar => {
             Some(vec![node_value("declaration").unwrap_or_else(|| {
-                rakuast(RakuAstClass::VarDeclarationSimple, Vec::new(), &node.origin)
+                rakuast(target_declaration(node), Vec::new(), &node.origin)
             })])
         }
         RakuAstClass::VarDeclarationSimple => {
@@ -302,7 +302,7 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
                 return None;
             }
             let declaration = rakuast(
-                RakuAstClass::VarDeclarationSimple,
+                target_declaration(target_node),
                 vec![RakuAstField {
                     name: Some("type"),
                     value: RakuAstFieldValue::Node(explicit_type),
@@ -324,6 +324,22 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
             Some(field_children(&param))
         }
         _ => None,
+    }
+}
+
+/// The class of the declaration a `ParameterTarget::Var` visits: an
+/// anonymous target (`$`, `@`) declares no name.
+// Cost: O(f), f = fields of `target`.
+fn target_declaration(target: &RakuAstNode) -> crate::rakuast::RakuAstClass {
+    let anonymous = target.fields.iter().any(|f| {
+        f.name == Some("name")
+            && matches!(&f.value, RakuAstFieldValue::Node(name)
+                if matches!(name.view(), ValueView::Str(s) if matches!(s.as_str(), "$" | "@" | "%" | "&")))
+    });
+    if anonymous {
+        crate::rakuast::RakuAstClass::VarDeclarationAnonymous
+    } else {
+        crate::rakuast::RakuAstClass::VarDeclarationSimple
     }
 }
 

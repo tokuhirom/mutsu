@@ -212,7 +212,13 @@ fn parameter(var: &SignatureVar, is_binding: bool) -> Result<RakuAstNode, Runtim
         RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::ParameterTargetVar,
-            fields: vec![leaf_field(Some("name"), Value::str(var.spelling()))],
+            fields: vec![leaf_field(
+                Some("name"),
+                Value::str(match anonymous_sigil(&var.name) {
+                    Some(sigil) => sigil.to_string(),
+                    None => var.spelling(),
+                }),
+            )],
         }
     };
     let mut fields = Vec::new();
@@ -481,9 +487,34 @@ fn lower_parameter(param: &RakuAstNode) -> Result<SignatureVar, RuntimeError> {
     }
     if var.sigilless {
         var.name = spelling;
+    } else if let Some(internal) = anonymous_name(&spelling) {
+        var.name = internal.to_string();
     } else {
         var.name = SignatureVar::plain(&spelling).name;
     }
     var.is_slurpy = slurpy;
     Ok(var)
+}
+
+/// The bare sigil an anonymous element (`my ($, @) = ...`) is written as,
+/// for the parser's internal name of it.
+// Cost: O(1).
+fn anonymous_sigil(name: &str) -> Option<&'static str> {
+    match name {
+        super::convert::ANONYMOUS_SCALAR_PARAM => Some("$"),
+        super::convert::ANONYMOUS_ARRAY_PARAM => Some("@"),
+        super::convert::ANONYMOUS_HASH_PARAM => Some("%"),
+        _ => None,
+    }
+}
+
+/// The parser's internal name of the anonymous element written as `sigil`.
+// Cost: O(1).
+fn anonymous_name(sigil: &str) -> Option<&'static str> {
+    match sigil {
+        "$" => Some(super::convert::ANONYMOUS_SCALAR_PARAM),
+        "@" => Some(super::convert::ANONYMOUS_ARRAY_PARAM),
+        "%" => Some(super::convert::ANONYMOUS_HASH_PARAM),
+        _ => None,
+    }
 }

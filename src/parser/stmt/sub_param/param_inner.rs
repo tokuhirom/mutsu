@@ -87,6 +87,9 @@ fn is_trait_offset(text: &str, from: usize, name: &str) -> Option<(usize, usize)
 // Cost: O(n), n = length of `text`.
 fn target_offset(text: &str, p: &ParamDef) -> Option<(usize, usize)> {
     let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'';
+    if super::helpers::is_anonymous_sigil_param(p) || is_anonymous_name(&p.name) {
+        return anonymous_target_offset(text, &p.name);
+    }
     let (needle, skip) = if p.sigilless {
         (format!("\\{}", p.name), 1)
     } else if p.name.starts_with(['$', '@', '%', '&']) {
@@ -104,6 +107,37 @@ fn target_offset(text: &str, p: &ParamDef) -> Option<(usize, usize)> {
         from = end;
     }
     None
+}
+
+/// Whether `name` is the parser's name for an anonymous `$` / `@` / `%` /
+/// `&` parameter, with or without its sigil.
+// Cost: O(1).
+fn is_anonymous_name(name: &str) -> bool {
+    matches!(
+        name.trim_start_matches(['@', '%', '&']),
+        "__ANON_STATE#" | "__ANON_ARRAY__" | "__ANON_HASH__" | "__ANON_CODE__"
+    )
+}
+
+/// Where the bare sigil of an anonymous parameter is written in `text`: its
+/// first sigil not followed by a name (an optional twigil-like `?` / `!`
+/// marker after it is the parameter's, not a name's).
+// Cost: O(n), n = length of `text`.
+fn anonymous_target_offset(text: &str, name: &str) -> Option<(usize, usize)> {
+    let sigil = match name.trim_start_matches(['@', '%', '&']) {
+        "__ANON_STATE#" => '$',
+        "__ANON_ARRAY__" => '@',
+        "__ANON_HASH__" => '%',
+        "__ANON_CODE__" => '&',
+        _ => return None,
+    };
+    let starts_name = |c: char| c.is_alphanumeric() || c == '_';
+    let at = text.find(sigil)?;
+    let after = &text[at + 1..];
+    let after = after
+        .strip_prefix(['?', '!', '*', '.', '^'])
+        .unwrap_or(after);
+    (!after.starts_with(starts_name) && !after.starts_with(['<', '('])).then_some((at, 1))
 }
 
 /// A nominal type may be followed by a **type capture** of the same parameter:
