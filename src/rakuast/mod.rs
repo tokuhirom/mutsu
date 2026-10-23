@@ -19,10 +19,10 @@ mod class_constructor;
 mod composition_source;
 mod compound_stmt;
 mod conditional_lower;
-mod conditional_view;
 mod constructor_positional;
 mod contextualizer;
 mod control_signature;
+mod parsed_view;
 mod trait_is_constructor;
 use constructor_positional::single_positional_class;
 mod convert;
@@ -1724,13 +1724,14 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementLanguageVersion,
 ];
 
-/// Lower a conditional the parser built (ADR-10723 Stage 2): the one
-/// desugaring of the family, shared with `EVAL` of a hand-built node.
-// Cost: O(n), n = size of the conditional.
-pub(crate) fn lower_conditional_node(
-    node: crate::ast::parsed::Conditional,
+/// Lower a construct the parser built in its RakuAST shape (ADR-10723
+/// Stage 2): the one lowering of its family, shared with `EVAL` of a
+/// hand-built node.
+// Cost: O(n), n = size of the construct.
+pub(crate) fn lower_parsed_stmt(
+    node: crate::ast::parsed::ParsedStmt,
 ) -> Result<crate::ast::Stmt, RuntimeError> {
-    conditional_lower::lower(node)
+    conditional_lower::lower_parsed(node)
 }
 
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.

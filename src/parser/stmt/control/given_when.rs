@@ -7,27 +7,23 @@ pub(crate) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, topic) = parse_comma_or_expr(rest)?;
     let (rest, _) = ws(rest)?;
     // Check for pointy block: given EXPR -> $param { ... }
-    let (rest, pointy_param) = if let Some(r) = rest.strip_prefix("->") {
+    let start = rest;
+    let (rest, params) = if let Some(r) = rest.strip_prefix("->") {
         let (r, _) = ws(r)?;
         let (r, pd) = parse_pointy_param(r)?;
         let (r, _) = ws(r)?;
-        (r, Some(pd))
+        let params = crate::ast::parsed::BlockParams::Topic {
+            name: Some(pd.name.clone()),
+            def: Some(Box::new(pd)),
+        };
+        (r, params)
     } else {
-        (rest, None)
+        (rest, crate::ast::parsed::BlockParams::None)
     };
-    let (rest, mut body) = block_with_pointy_params(rest, pointy_param.as_slice())?;
-    if let Some(pd) = pointy_param {
-        body = given_pointy_body(pd, body);
-    }
-    Ok((
-        rest,
-        Stmt::Given {
-            topic,
-            body,
-            is_statement_modifier: false,
-            with_kind: None,
-        },
-    ))
+    let (rest, block) = super::parsed_block::parsed_block(start, rest, params)?;
+    let stmt = super::parsed_block::finish(crate::ast::parsed::ParsedStmt::Given { topic, block })
+        .map_err(PError::from_typed)?;
+    Ok((rest, stmt))
 }
 
 /// The body of `given EXPR -> PARAM { BODY }` after the parser's expansion: the
@@ -127,15 +123,14 @@ pub(crate) fn when_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         return Err(gobbled_block_error(name, rest.len()));
     }
-    let (rest, body) = block(rest)?;
-    Ok((
-        rest,
-        Stmt::When {
-            cond,
-            body,
-            is_statement_modifier: false,
-        },
-    ))
+    let (rest, block) =
+        super::parsed_block::parsed_block(rest, rest, crate::ast::parsed::BlockParams::None)?;
+    let stmt = super::parsed_block::finish(crate::ast::parsed::ParsedStmt::When {
+        condition: cond,
+        block,
+    })
+    .map_err(PError::from_typed)?;
+    Ok((rest, stmt))
 }
 
 /// Whether a bareword `when` matcher names something the parser already knows,
@@ -266,6 +261,9 @@ fn gobbled_block_error(name: &str, remaining_len: usize) -> PError {
 pub(crate) fn default_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("default", input).ok_or_else(|| PError::expected("default statement"))?;
     let (rest, _) = ws(rest)?;
-    let (rest, body) = block(rest)?;
-    Ok((rest, Stmt::Default(body)))
+    let (rest, block) =
+        super::parsed_block::parsed_block(rest, rest, crate::ast::parsed::BlockParams::None)?;
+    let stmt = super::parsed_block::finish(crate::ast::parsed::ParsedStmt::Default(block))
+        .map_err(PError::from_typed)?;
+    Ok((rest, stmt))
 }

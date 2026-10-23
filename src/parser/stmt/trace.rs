@@ -312,7 +312,9 @@ fn folds_away(stmt: &Stmt) -> bool {
     // A conditional a `.AST` parse keeps in its RakuAST shape (ADR-10723
     // Stage 2) folds the same as the `if` it lowers to.
     if let Stmt::Ast(node) = stmt {
-        let crate::ast::parsed::ParsedStmt::Conditional(c) = node.as_ref();
+        let crate::ast::parsed::ParsedStmt::Conditional(c) = node.as_ref() else {
+            return false;
+        };
         use crate::ast::parsed::ConditionalKind;
         let truth = match c.kind {
             ConditionalKind::If => constant_truth(&c.condition),

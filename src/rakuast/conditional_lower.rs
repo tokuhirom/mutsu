@@ -8,10 +8,64 @@
 //! with a topicalized body, each `elsif` / `orwith` nested in the `else` of the
 //! clause before it, and a pointy block's parameters bound to the tested value.
 
-use crate::ast::parsed::{BlockParams, ClauseKind, Conditional, ConditionalKind, ParsedBlock};
+use crate::ast::parsed::{
+    BlockParams, ClauseKind, Conditional, ConditionalKind, ParsedBlock, ParsedStmt,
+};
 use crate::ast::{Expr, ParamDef, Stmt, WithBlockKind};
 use crate::parser::{ElseClause, IfChainClause};
 use crate::value::RuntimeError;
+
+/// Lower a construct of a migrated statement family to the statement the
+/// compiler runs.
+// Cost: O(n), n = size of the construct (each block body is moved once).
+pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
+    match node {
+        ParsedStmt::Conditional(c) => lower(c),
+        ParsedStmt::Given { topic, block } => {
+            let body = match block.params {
+                BlockParams::Topic { def: Some(def), .. } => {
+                    crate::parser::given_pointy_body(*def, block.body)
+                }
+                _ => block.body,
+            };
+            Ok(Stmt::Given {
+                topic,
+                body,
+                is_statement_modifier: false,
+                with_kind: None,
+            })
+        }
+        ParsedStmt::When { condition, block } => Ok(Stmt::When {
+            cond: condition,
+            body: block.body,
+            is_statement_modifier: false,
+        }),
+        ParsedStmt::Default(block) => Ok(Stmt::Default(block.body)),
+        ParsedStmt::BareBlock(block) => Ok(Stmt::Block(block.body)),
+        ParsedStmt::Loop(l) => lower_loop(l),
+        ParsedStmt::For { stmt, .. } => Ok(*stmt),
+        ParsedStmt::WhileLoop(w) => {
+            let defs = match w.block.params {
+                BlockParams::None => None,
+                BlockParams::Topic { def, .. } => Some(def.into_iter().map(|d| *d).collect()),
+                BlockParams::List(defs) => Some(defs),
+            };
+            let mut stmt = crate::parser::loop_pointy_clause(
+                w.condition,
+                defs,
+                w.block.body,
+                w.until,
+                w.label,
+            )?;
+            if w.bare_term
+                && let Stmt::While { is_bare_term, .. } = &mut stmt
+            {
+                *is_bare_term = true;
+            }
+            Ok(stmt)
+        }
+    }
+}
 
 /// Lower `node` to the statement the compiler runs.
 // Cost: O(n), n = size of the conditional (each block body is moved once).
@@ -182,4 +236,50 @@ fn topic_param(params: &BlockParams) -> Result<(Option<String>, Option<ParamDef>
             )),
         },
     }
+}
+
+/// `loop` keeps its header; `repeat` holds its pointy parameter in the loop's
+/// `init` and runs `until` as `while` over a negated condition.
+// Cost: O(1) (the parts are moved).
+fn lower_loop(l: crate::ast::parsed::LoopStmt) -> Result<Stmt, RuntimeError> {
+    use crate::ast::parsed::LoopKind;
+    if l.kind == LoopKind::Loop {
+        return Ok(Stmt::Loop {
+            init: l.init,
+            cond: l.condition,
+            step: l.step,
+            body: l.block.body,
+            repeat: false,
+            label: l.label,
+            is_until: false,
+            is_bare_term: l.bare_term,
+        });
+    }
+    let until = l.kind == LoopKind::RepeatUntil;
+    let param = match l.block.params {
+        BlockParams::Topic { name, .. } => name,
+        _ => None,
+    };
+    let (init, step) = crate::parser::repeat_param_clause(param);
+    let cond = l.condition.map(|cond| {
+        if until {
+            Expr::Unary {
+                op: crate::token_kind::TokenKind::Bang,
+                expr: Box::new(cond),
+                word: false,
+            }
+        } else {
+            cond
+        }
+    });
+    Ok(Stmt::Loop {
+        init,
+        cond,
+        step,
+        body: l.block.body,
+        repeat: true,
+        label: l.label,
+        is_until: until,
+        is_bare_term: l.bare_term,
+    })
 }

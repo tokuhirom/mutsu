@@ -5,6 +5,7 @@
 //! table instead of re-deriving the descend-or-stop decision.
 
 use super::{Expr, Stmt};
+use crate::ast::parsed::ParsedStmt;
 
 /// ADR-0048 D2: how much of a construct's own argument supply a `$^name`
 /// placeholder inside it can see.
@@ -137,7 +138,27 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
             is_statement_modifier: true,
             ..
         } => PlaceholderBodyKind::Transparent,
-        Stmt::If { .. } | Stmt::Ast(_) => PlaceholderBodyKind::Signature(ArgSupply::Condition),
+        Stmt::If { .. } => PlaceholderBodyKind::Signature(ArgSupply::Condition),
+        // A construct kept in its RakuAST shape (ADR-10723 Stage 2) classifies
+        // as the statement it lowers to.
+        Stmt::Ast(node) => match node.as_ref() {
+            ParsedStmt::Conditional(_) | ParsedStmt::WhileLoop(_) => {
+                PlaceholderBodyKind::Signature(ArgSupply::Condition)
+            }
+            ParsedStmt::Given { .. } => PlaceholderBodyKind::Signature(ArgSupply::Topic),
+            ParsedStmt::When { .. } | ParsedStmt::BareBlock(_) => {
+                PlaceholderBodyKind::Signature(ArgSupply::None)
+            }
+            ParsedStmt::Default(_) => PlaceholderBodyKind::NoSignature,
+            ParsedStmt::For { stmt, .. } => placeholder_body_kind(stmt),
+            ParsedStmt::Loop(l) => match l.kind {
+                crate::ast::parsed::LoopKind::Loop => PlaceholderBodyKind::NoSignature,
+                crate::ast::parsed::LoopKind::RepeatWhile
+                | crate::ast::parsed::LoopKind::RepeatUntil => {
+                    PlaceholderBodyKind::Signature(ArgSupply::ConditionAfterFirstPass)
+                }
+            },
+        },
         // ADR-0048 D4/Phase 4: a `while`/`until` BLOCK is a real Block that
         // the loop invokes with the *raw* (un-boolified) condition value on
         // every pass — `while 42 { $^c }` prints 42, `until False { $^c }`

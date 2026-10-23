@@ -20,6 +20,71 @@ use super::{Expr, ParamDef, SrcSpan, Stmt};
 pub(crate) enum ParsedStmt {
     /// `if` / `unless` / `with` / `without` and their clause chain.
     Conditional(Conditional),
+    /// `given TOPIC BLOCK` (`Statement::Given`); the block's topic parameter,
+    /// if any, is `BlockParams::Topic`.
+    Given { topic: Expr, block: ParsedBlock },
+    /// `when MATCHER BLOCK` (`Statement::When`).
+    When { condition: Expr, block: ParsedBlock },
+    /// `default BLOCK` (`Statement::Default`).
+    Default(ParsedBlock),
+    /// `while COND BLOCK` / `until COND BLOCK` (`Statement::Loop::While` /
+    /// `::Until`).
+    WhileLoop(WhileLoop),
+    /// A bare `{ ... }` statement (`Statement::Expression` over a `Block`).
+    BareBlock(ParsedBlock),
+    /// `loop`, C-style or bare, and `repeat ... while` / `until`
+    /// (`Statement::Loop`, `::Loop::RepeatWhile` / `::RepeatUntil`).
+    Loop(LoopStmt),
+    /// `for LIST BLOCK` (`Statement::For`). `Stmt::For` already keeps what
+    /// the source wrote, so the node is that statement plus the positions of
+    /// its block.
+    For { stmt: Box<Stmt>, block: BlockSpans },
+}
+
+/// Where a block was written: the block (from `->` when pointy), its braces and
+/// its statements. See [`ParsedBlock`].
+#[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BlockSpans {
+    pub(crate) span: SrcSpan,
+    pub(crate) blockoid: SrcSpan,
+    pub(crate) list: SrcSpan,
+}
+
+/// Which loop a [`LoopStmt`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum LoopKind {
+    /// `loop { }` / `loop (init; cond; step) { }`.
+    Loop,
+    RepeatWhile,
+    RepeatUntil,
+}
+
+/// `loop` / `repeat`. A `repeat` keeps its condition as written (no `!` for
+/// `until`) and its pointy parameter as the block's `BlockParams::Topic`.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct LoopStmt {
+    pub(crate) kind: LoopKind,
+    pub(crate) init: Option<Box<Stmt>>,
+    pub(crate) condition: Option<Expr>,
+    pub(crate) step: Option<Expr>,
+    pub(crate) block: ParsedBlock,
+    pub(crate) label: Option<String>,
+    /// Written as a term without `do` (`(while COND { ... })`); see
+    /// `Stmt::While::is_bare_term`.
+    pub(crate) bare_term: bool,
+}
+
+/// `while` / `until` with its optional label.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WhileLoop {
+    pub(crate) until: bool,
+    /// The condition as written: no `!` for `until`.
+    pub(crate) condition: Expr,
+    pub(crate) block: ParsedBlock,
+    pub(crate) label: Option<String>,
+    /// Written as a term without `do` (`(while COND { ... })`); see
+    /// `Stmt::While::is_bare_term`.
+    pub(crate) bare_term: bool,
 }
 
 /// Which keyword opened a conditional statement.
@@ -90,4 +155,90 @@ pub(crate) struct ParsedBlock {
     /// The statements: from the first statement to the end of the last one,
     /// its `;` included; empty just after `{` when there is none.
     pub(crate) list: SrcSpan,
+}
+
+impl ParsedStmt {
+    /// The statement a node of a family whose internal form is already its
+    /// source form wraps (`for`): passes treat the node as that statement.
+    // Cost: O(1).
+    pub(crate) fn inner_stmt(&self) -> Option<&Stmt> {
+        match self {
+            ParsedStmt::For { stmt, .. } => Some(stmt),
+            _ => None,
+        }
+    }
+
+    /// Whether this is a `while` / `until` / `loop` / `repeat` written as a
+    /// term without a `do`.
+    // Cost: O(1).
+    pub(crate) fn is_bare_loop_term(&self) -> bool {
+        match self {
+            ParsedStmt::WhileLoop(w) => w.bare_term,
+            ParsedStmt::Loop(l) => l.bare_term,
+            _ => false,
+        }
+    }
+
+    /// Record that this loop is written as a term without a `do`.
+    // Cost: O(1).
+    pub(crate) fn mark_bare_loop_term(&mut self) {
+        match self {
+            ParsedStmt::WhileLoop(w) => w.bare_term = true,
+            ParsedStmt::Loop(l) => l.bare_term = true,
+            _ => {}
+        }
+    }
+
+    /// The expressions that run in the enclosing scope: every condition, topic
+    /// and matcher (none for a node with an [`inner_stmt`](Self::inner_stmt)).
+    // Cost: O(c), c = clauses.
+    pub(crate) fn headers(&self) -> Vec<&Expr> {
+        match self {
+            ParsedStmt::Conditional(c) => std::iter::once(&c.condition)
+                .chain(c.clauses.iter().map(|clause| &clause.condition))
+                .collect(),
+            ParsedStmt::Given { topic, .. } => vec![topic],
+            ParsedStmt::When { condition, .. } => vec![condition],
+            ParsedStmt::WhileLoop(w) => vec![&w.condition],
+            ParsedStmt::Loop(l) => l.condition.iter().chain(l.step.iter()).collect(),
+            ParsedStmt::For { .. } => Vec::new(),
+            ParsedStmt::Default(_) | ParsedStmt::BareBlock(_) => Vec::new(),
+        }
+    }
+
+    /// Every block, in source order.
+    // Cost: O(c), c = clauses.
+    pub(crate) fn blocks(&self) -> Vec<&ParsedBlock> {
+        match self {
+            ParsedStmt::Conditional(c) => std::iter::once(&c.then)
+                .chain(c.clauses.iter().map(|clause| &clause.then))
+                .chain(c.else_block.iter())
+                .collect(),
+            ParsedStmt::Given { block, .. }
+            | ParsedStmt::When { block, .. }
+            | ParsedStmt::Default(block)
+            | ParsedStmt::BareBlock(block) => vec![block],
+            ParsedStmt::WhileLoop(w) => vec![&w.block],
+            ParsedStmt::Loop(l) => vec![&l.block],
+            ParsedStmt::For { .. } => Vec::new(),
+        }
+    }
+}
+
+impl ParsedBlock {
+    /// Where the block was written.
+    // Cost: O(1).
+    pub(crate) fn spans(&self) -> BlockSpans {
+        BlockSpans {
+            span: self.span,
+            blockoid: self.blockoid,
+            list: self.list,
+        }
+    }
+
+    /// Whether the block was written with `->`.
+    // Cost: O(1).
+    pub(crate) fn is_pointy(&self) -> bool {
+        !matches!(self.params, BlockParams::None)
+    }
 }

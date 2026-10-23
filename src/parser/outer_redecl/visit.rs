@@ -128,16 +128,43 @@ impl VisitMut for Ctx {
             }
             // A conditional kept in its RakuAST shape (ADR-10723 Stage 2):
             // each clause's block is a scope of its own.
+            // A C-style loop's `init` declarations share the loop's scope.
+            Stmt::Ast(node) if matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::Loop(_)) => {
+                self.scoped(Vec::new(), |c| crate::ast_visit::walk_parsed_mut(c, node))
+            }
             Stmt::Ast(node) => {
-                let crate::ast::parsed::ParsedStmt::Conditional(c) = node.as_mut();
-                self.visit_expr_mut(&mut c.condition);
-                self.scoped(Vec::new(), |v| v.visit_stmts_mut(&mut c.then.body));
-                for clause in &mut c.clauses {
-                    self.visit_expr_mut(&mut clause.condition);
-                    self.scoped(Vec::new(), |v| v.visit_stmts_mut(&mut clause.then.body));
-                }
-                if let Some(block) = &mut c.else_block {
-                    self.scoped(Vec::new(), |v| v.visit_stmts_mut(&mut block.body));
+                use crate::ast::parsed::ParsedStmt;
+                match node.as_mut() {
+                    ParsedStmt::Conditional(c) => {
+                        self.visit_expr_mut(&mut c.condition);
+                        self.scoped(Vec::new(), |v| v.visit_stmts_mut(&mut c.then.body));
+                        for clause in &mut c.clauses {
+                            self.visit_expr_mut(&mut clause.condition);
+                            self.scoped(Vec::new(), |v| {
+                                v.visit_stmts_mut(&mut clause.then.body)
+                            });
+                        }
+                        if let Some(block) = &mut c.else_block {
+                            self.scoped(Vec::new(), |v| v.visit_stmts_mut(&mut block.body));
+                        }
+                    }
+                    ParsedStmt::Given { topic: e, block }
+                    | ParsedStmt::When {
+                        condition: e,
+                        block,
+                    } => {
+                        self.visit_expr_mut(e);
+                        self.scoped(Vec::new(), |v| v.visit_stmts_mut(&mut block.body));
+                    }
+                    ParsedStmt::WhileLoop(w) => {
+                        self.visit_expr_mut(&mut w.condition);
+                        self.scoped(Vec::new(), |v| v.visit_stmts_mut(&mut w.block.body));
+                    }
+                    ParsedStmt::Default(block) | ParsedStmt::BareBlock(block) => {
+                        self.scoped(Vec::new(), |v| v.visit_stmts_mut(&mut block.body));
+                    }
+                    ParsedStmt::Loop(_) => unreachable!("handled by the arm above"),
+                    ParsedStmt::For { stmt, .. } => self.visit_stmt_mut(stmt),
                 }
             }
             Stmt::If {

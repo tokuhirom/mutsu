@@ -2794,9 +2794,10 @@ fn stash_angle_index(symbol: &str) -> Expr {
 /// Record that a `while` / `until` / `loop` / `repeat` statement stands as a
 /// term without a `do` in front of it (`(while COND { ... })`).
 fn mark_bare_term(stmt: &mut crate::ast::Stmt) {
-    if let crate::ast::Stmt::While { is_bare_term, .. }
-    | crate::ast::Stmt::Loop { is_bare_term, .. } = stmt
-    {
-        *is_bare_term = true;
+    match stmt {
+        crate::ast::Stmt::While { is_bare_term, .. }
+        | crate::ast::Stmt::Loop { is_bare_term, .. } => *is_bare_term = true,
+        crate::ast::Stmt::Ast(node) => node.mark_bare_loop_term(),
+        _ => {}
     }
 }

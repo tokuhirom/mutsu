@@ -657,13 +657,18 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
         }
         return parse_statement_modifier(rest, Stmt::Expr(expr));
     }
-    let (rest, body) = block(input)?;
+    let (rest, block) = crate::parser::stmt::control::parsed_block(
+        input,
+        input,
+        crate::ast::parsed::BlockParams::None,
+    )?;
+    let body = &block.body;
     // A bare `{ *-curry }` statement is rakudo's "Malformed double closure"
     // just as much as one in expression position (`my $f = { *.abs }`) — the
     // block-as-statement path reaches a different parser, so the check has to
     // be repeated here. Control-flow blocks (`if 1 { * + 1 }`) go through
     // `block()` from elsewhere and stay legal, matching rakudo.
-    if let Some(err) = crate::parser::primary::misc::double_closure_error(&body) {
+    if let Some(err) = crate::parser::primary::misc::double_closure_error(body) {
         return Err(err);
     }
     let (r_ws, _) = ws(rest)?;
@@ -679,7 +684,7 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
         // Use AnonSub so the block compiles as a closure value, not inline code.
         // Handles `{ ... }.method(...)` and `{ ... }()` (immediate closure call).
         let block_expr = Expr::AnonSub {
-            body,
+            body: block.body,
             is_rw: false,
             is_raw: false,
             is_block: true,
@@ -712,7 +717,16 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
     if !ws_before_next.contains('\n') && starts_with_infix_operand_marker(r_ws) {
         return Err(PError::expected("statement (block is an infix operand)"));
     }
-    parse_statement_modifier(rest, Stmt::Block(body))
+    // Without a statement modifier the block is a statement of its own, built
+    // in its RakuAST shape (ADR-10723 Stage 2).
+    let (after, stmt) = parse_statement_modifier(rest, Stmt::Block(Vec::new()))?;
+    if matches!(&stmt, Stmt::Block(body) if body.is_empty()) {
+        let stmt =
+            crate::parser::stmt::control::finish(crate::ast::parsed::ParsedStmt::BareBlock(block))
+                .map_err(PError::from_typed)?;
+        return Ok((after, stmt));
+    }
+    parse_statement_modifier(rest, Stmt::Block(block.body))
 }
 
 /// Known function names that get Stmt::Call treatment at statement level.

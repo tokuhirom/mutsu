@@ -44,29 +44,29 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         }
         let (r, iterable) = parse_comma_or_expr(r)?;
         let (r, _) = ws(r)?;
+        let block_start = r;
         let (r, (param, param_def, params, params_def, rw_block, explicit_zero_params)) =
             parse_for_params(r)?;
         let (r, _) = ws(r)?;
         let block_input = r;
         let (r, body) = block(r)?;
         let uses_block_magic = block_input[..block_input.len() - r.len()].contains("&?BLOCK");
-        return Ok((
-            r,
-            Stmt::For {
-                iterable,
-                param,
-                param_def: Box::new(param_def),
-                params,
-                params_def,
-                body,
-                label: Some(label),
-                mode: crate::ast::ForMode::Normal,
-                rw_block,
-                explicit_zero_params,
-                is_statement_modifier: false,
-                uses_block_magic,
-            },
-        ));
+        let spans = super::parsed_block::block_spans(block_start, block_input, r, &body);
+        let stmt = Stmt::For {
+            iterable,
+            param,
+            param_def: Box::new(param_def),
+            params,
+            params_def,
+            body,
+            label: Some(label),
+            mode: crate::ast::ForMode::Normal,
+            rw_block,
+            explicit_zero_params,
+            is_statement_modifier: false,
+            uses_block_magic,
+        };
+        return Ok((r, super::parsed_block::finish_for(stmt, spans)));
     }
     if keyword("while", rest).is_some() {
         return super::while_until::parse_loop(rest, false, Some(label));
@@ -79,6 +79,10 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         // { ... }` header and the infinite `loop { ... }` form are handled, then
         // stamp the label onto the returned loop node.
         let (r, stmt) = loop_stmt(rest)?;
+        let stmt = match label_kept_loop(stmt, &label) {
+            Ok(kept) => return Ok((r, kept)),
+            Err(stmt) => stmt,
+        };
         if let Stmt::Loop {
             init,
             cond,
@@ -111,6 +115,10 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         // `repeat { ... } while/until` forms are handled, then stamp the
         // label onto the returned loop node.
         let (r, stmt) = repeat_stmt(rest)?;
+        let stmt = match label_kept_loop(stmt, &label) {
+            Ok(kept) => return Ok((r, kept)),
+            Err(stmt) => stmt,
+        };
         if let Stmt::Loop {
             init,
             cond,
@@ -197,4 +205,20 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
             stmt: Box::new(stmt),
         },
     ))
+}
+
+/// `stmt` with `label` stamped on when it is a `loop` / `repeat` a `.AST`
+/// parse keeps in its RakuAST shape (ADR-10723 Stage 2); `stmt` itself back
+/// otherwise.
+// Cost: O(1).
+fn label_kept_loop(stmt: Stmt, label: &str) -> Result<Stmt, Stmt> {
+    match stmt {
+        Stmt::Ast(mut node) => {
+            if let crate::ast::parsed::ParsedStmt::Loop(l) = node.as_mut() {
+                l.label = Some(label.to_string());
+            }
+            Ok(Stmt::Ast(node))
+        }
+        other => Err(other),
+    }
 }

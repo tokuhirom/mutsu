@@ -154,7 +154,23 @@ fn original_line(target: &Value, args: &[Value]) -> Option<Result<Value, Runtime
 // Cost: O(f + c), f = fields of `node`, c = child nodes listed in them.
 pub(super) fn children(node: &RakuAstNode) -> Vec<Value> {
     let mut out = Vec::new();
-    for field in &node.fields {
+    // Rakudo's loops visit their condition before the body, whatever order the
+    // constructor takes them in (`repeat { } while COND` has `body` first).
+    let repeat = matches!(
+        node.class,
+        crate::rakuast::RakuAstClass::StatementLoopRepeatWhile
+            | crate::rakuast::RakuAstClass::StatementLoopRepeatUntil
+    );
+    let fields: Vec<_> = if repeat {
+        let (condition, rest): (Vec<_>, Vec<_>) = node
+            .fields
+            .iter()
+            .partition(|f| f.name == Some("condition"));
+        condition.into_iter().chain(rest).collect()
+    } else {
+        node.fields.iter().collect()
+    };
+    for field in fields {
         match &field.value {
             RakuAstFieldValue::Node(v) if crate::rakuast::is_node_value(v) => {
                 out.push(v.clone());

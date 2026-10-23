@@ -2,7 +2,8 @@ use super::super::control_signature;
 use super::*;
 use crate::ast::SrcSpan;
 use crate::ast::parsed::{
-    BlockParams, ClauseKind, Conditional, ConditionalClause, ConditionalKind, ParsedBlock,
+    BlockParams, ClauseKind, Conditional, ConditionalClause, ConditionalKind, LoopKind, LoopStmt,
+    ParsedBlock, ParsedStmt, WhileLoop,
 };
 
 /// Lower a `Statement::If` / `::Unless` / `::With` / `::Without` node: read it
@@ -108,4 +109,90 @@ fn read_block(block: &RakuAstNode, topic: bool) -> Result<ParsedBlock, RuntimeEr
         blockoid: SrcSpan::NONE,
         list: SrcSpan::NONE,
     })
+}
+
+/// Lower `given` / `when` / `default` and the `while` / `until` / `loop` /
+/// `repeat` loops: read the node into the [`ParsedStmt`] the parser builds for
+/// the same source and lower that (ADR-10723 Stage 2).
+// Cost: O(n), n = size of the statement.
+pub(super) fn lower_block_statement(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    super::super::conditional_lower::lower_parsed(read_block_statement(node)?)
+}
+
+// Cost: O(n), n = size of the statement.
+fn read_block_statement(node: &RakuAstNode) -> Result<ParsedStmt, RuntimeError> {
+    let body = || named_child(node, "body");
+    Ok(match node.class {
+        RakuAstClass::StatementGiven => ParsedStmt::Given {
+            topic: lower_expr(named_child(node, "source")?)?,
+            block: read_block(body()?, true)?,
+        },
+        RakuAstClass::StatementWhen => ParsedStmt::When {
+            condition: lower_expr(named_child(node, "condition")?)?,
+            block: read_block(body()?, false)?,
+        },
+        RakuAstClass::StatementDefault => ParsedStmt::Default(read_block(body()?, false)?),
+        RakuAstClass::StatementLoopWhile | RakuAstClass::StatementLoopUntil => {
+            ParsedStmt::WhileLoop(WhileLoop {
+                until: node.class == RakuAstClass::StatementLoopUntil,
+                condition: lower_expr(named_child(node, "condition")?)?,
+                block: read_block(body()?, true)?,
+                label: node_label(node)?,
+                bare_term: false,
+            })
+        }
+        RakuAstClass::StatementLoopRepeatWhile | RakuAstClass::StatementLoopRepeatUntil => {
+            ParsedStmt::Loop(LoopStmt {
+                kind: if node.class == RakuAstClass::StatementLoopRepeatUntil {
+                    LoopKind::RepeatUntil
+                } else {
+                    LoopKind::RepeatWhile
+                },
+                init: None,
+                condition: Some(lower_expr(named_child(node, "condition")?)?),
+                step: None,
+                block: read_block(body()?, true)?,
+                label: node_label(node)?,
+                bare_term: false,
+            })
+        }
+        RakuAstClass::StatementLoop => ParsedStmt::Loop(LoopStmt {
+            kind: LoopKind::Loop,
+            init: match node.fields.iter().any(|f| f.name == Some("setup")) {
+                true => Some(Box::new(lower_stmt_inner(named_child(node, "setup")?)?)),
+                false => None,
+            },
+            condition: match node.fields.iter().any(|f| f.name == Some("condition")) {
+                true => Some(lower_expr(named_child(node, "condition")?)?),
+                false => None,
+            },
+            step: match node.fields.iter().any(|f| f.name == Some("increment")) {
+                true => Some(loop_increment(named_child(node, "increment")?)?),
+                false => None,
+            },
+            block: read_block(body()?, false)?,
+            label: node_label(node)?,
+            bare_term: false,
+        }),
+        _ => return Err(unsupported(node)),
+    })
+}
+
+/// A C-style loop's increment: a comma list of expressions runs them in turn,
+/// as the parser's `do` block of the written expressions does.
+// Cost: O(n), n = size of the increment.
+fn loop_increment(increment: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    if increment.class == RakuAstClass::ApplyListInfix
+        && matches!(positional_leaf(named_child(increment, "infix")?)?.view(), ValueView::Str(op) if op.as_str() == ",")
+    {
+        let mut statements = Vec::new();
+        for operand in list_field(increment, "operands")? {
+            let ValueView::RakuAst(operand) = operand.view() else {
+                return Err(unsupported(increment));
+            };
+            statements.push(Stmt::Expr(lower_expr(operand)?));
+        }
+        return Ok(Expr::desugar_block(statements));
+    }
+    lower_expr(increment)
 }
