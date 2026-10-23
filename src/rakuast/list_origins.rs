@@ -149,8 +149,7 @@ fn literal_hash_index(node: &mut RakuAstNode, from: usize, to: usize) {
         let end = open + text.get(open..)?.find(close)?;
         // What follows the closing bracket is the subscript's adverbs.
         let rest = text.get(end + close.len()..)?;
-        (rest.is_empty() || rest.starts_with(':'))
-            .then_some((from + open, from + end, rest.len()))
+        (rest.is_empty() || rest.starts_with(':')).then_some((from + open, from + end, rest.len()))
     });
     let Some((inner_from, inner_to, adverbs)) = inner else {
         return;

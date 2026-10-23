@@ -341,8 +341,7 @@ pub(super) fn word_quote_inner(quote: &mut RakuAstNode, inner: crate::ast::SrcSp
             },
             _ => None,
         });
-    if quote.class != super::RakuAstClass::QuotedString || written.is_none() || written != matches
-    {
+    if quote.class != super::RakuAstClass::QuotedString || written.is_none() || written != matches {
         return;
     }
     set_span(quote, inner);
