@@ -6,6 +6,34 @@
 
 use super::*;
 
+/// The names a loop body (or branch body) declares with `my`, plus the subset
+/// that carried no readonly mark when the body first declared them.
+///
+/// `readonly_vars` is keyed by bare name, so a `my $x := value` in the body
+/// marks `x` readonly for an enclosing `my $x` too. On scope exit
+/// `pop_loop_local_scope` drops the marks of `readonly_free` only: a name the
+/// enclosing scope already had readonly (a bound literal, a parameter) keeps
+/// its mark. Derefs to the plain name set every other consumer reads.
+#[derive(Default)]
+pub(crate) struct LoopLocals {
+    names: NameSet,
+    /// Declared names that were not readonly at their first declaration.
+    pub(crate) readonly_free: NameSet,
+}
+
+impl std::ops::Deref for LoopLocals {
+    type Target = NameSet;
+    fn deref(&self) -> &NameSet {
+        &self.names
+    }
+}
+
+impl std::ops::DerefMut for LoopLocals {
+    fn deref_mut(&mut self) -> &mut NameSet {
+        &mut self.names
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct TopicState {
     /// `Box<Cell<bool>>`-backed (not a plain `bool`, and not a bare `Cell`):
@@ -101,7 +129,7 @@ pub(crate) struct TopicState {
     /// `exec_block_local_scope_op` (`None` until then) and consumed by
     /// `exec_given_op`'s writeback.
     pub(crate) given_pointy_captured: Vec<Option<Value>>,
-    pub(crate) loop_local_vars: ScopeStack<NameSet>,
+    pub(crate) loop_local_vars: ScopeStack<LoopLocals>,
     /// Names currently bound as for-loop parameters in this frame chain, one
     /// set per active loop (ADR-0023). Bare names (no `$` sigil), matching
     /// env keys. Consulted by `block_captured_scalars` only; never persisted.

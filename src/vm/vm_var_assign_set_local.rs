@@ -3984,8 +3984,14 @@ impl Interpreter {
         }
         // Track loop-body declarations so a closure created in the body can mark
         // this name as a per-iteration `owned_capture` (see Interpreter::loop_local_vars).
-        if let Some(set) = self.topic_state.loop_local_vars.last_mut() {
-            set.insert(name_sym);
+        // The first declaration also records whether the name was readonly
+        // already, so the scope exit drops only the mark this body adds.
+        let readonly_now = self.is_readonly_sym(name_sym);
+        if let Some(set) = self.topic_state.loop_local_vars.last_mut()
+            && set.insert(name_sym)
+            && !readonly_now
+        {
+            set.readonly_free.insert(name_sym);
         }
     }
 
