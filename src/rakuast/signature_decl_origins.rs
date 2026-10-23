@@ -40,7 +40,10 @@ pub(super) fn declaration(node: &mut RakuAstNode) {
         let open = text.find('(')?;
         // Only scope declarators come before the parentheses.
         let head = text[..open].trim_end();
-        if head.is_empty() || !head.split_whitespace().all(|w| w.chars().all(char::is_alphabetic))
+        if head.is_empty()
+            || !head
+                .split_whitespace()
+                .all(|w| w.chars().all(char::is_alphabetic))
         {
             return None;
         }
