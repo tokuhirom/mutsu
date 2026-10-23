@@ -83,7 +83,7 @@ fn fingerprint(expr: &Expr) -> u64 {
     hasher.finish()
 }
 
-/// Whether an expression holds a `WhateverCurry` marker.
+/// Whether an expression holds a `WhateverCurry` marker or a curried `*`.
 struct HasMarker(bool);
 
 impl HasMarker {
@@ -100,7 +100,7 @@ impl<'ast> crate::ast_visit::Visit<'ast> for HasMarker {
         if self.0 {
             return;
         }
-        if matches!(expr, Expr::WhateverCurry(_)) {
+        if matches!(expr, Expr::WhateverCurry(_) | Expr::WhateverArg) {
             self.0 = true;
             return;
         }
@@ -108,7 +108,8 @@ impl<'ast> crate::ast_visit::Visit<'ast> for HasMarker {
     }
 }
 
-/// Takes the `WhateverCurry` markers out of an expression.
+/// Takes the `WhateverCurry` markers out of an expression, and turns the
+/// `WhateverArg`s they curry back into the `*` the parser read.
 struct Uncurry;
 
 impl VisitMut for Uncurry {
@@ -118,6 +119,10 @@ impl VisitMut for Uncurry {
                 unreachable!("matched above");
             };
             *expr = *inner;
+        }
+        // The pass also turns the `*` it curries into its argument.
+        if matches!(expr, Expr::WhateverArg) {
+            *expr = Expr::Whatever;
         }
         crate::ast_visit::walk_expr_mut(self, expr);
     }
