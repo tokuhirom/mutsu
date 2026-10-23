@@ -81,7 +81,8 @@ fn read(text: &str, base: usize, variable: &str) -> Option<Parts> {
             .find_map(|smiley| written.strip_suffix(smiley))
             .filter(|stem| !stem.ends_with(':'))
             .map_or(written.len(), str::len);
-        if word == 0 || written.ends_with("::") {
+        // A word ending in `:` (a stash name, a colon form) is not a type.
+        if word == 0 || written.ends_with(':') {
             return None;
         }
         type_at = Some((base + at, base + at + word, base + at + name_len));

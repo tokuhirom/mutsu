@@ -77,11 +77,17 @@ fn list_origins(node: &mut RakuAstNode, field: &str, spans: &[TraitSpans]) {
 pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
     // `class C is export { }`: the declaration opens the block that also
     // registers its export.
-    if let Stmt::SyntheticBlock(inner) = stmt
-        && let Some(decl @ (Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. })) = inner.first()
-    {
-        return package_origins(statement, decl);
-    }
+    let stmt = match stmt {
+        Stmt::SyntheticBlock(inner)
+            if matches!(
+                inner.first(),
+                Some(Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. })
+            ) =>
+        {
+            &inner[0]
+        }
+        _ => stmt,
+    };
     if let Stmt::EnumDecl { spans, .. } | Stmt::SubsetDecl { spans, .. } = stmt {
         if let Some(spans) = spans.as_deref() {
             type_decl_origins(statement, spans);
