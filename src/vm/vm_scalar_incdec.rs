@@ -61,6 +61,11 @@ impl Interpreter {
         slot: Option<u32>,
         k: IncDec,
     ) -> Result<(), RuntimeError> {
+        if let Some(slot) = slot
+            && self.exec_scalar_incdec_slot_fast(code, name_idx, slot as usize, k)?
+        {
+            return Ok(());
+        }
         let attr_name = Self::const_str(code, name_idx).to_string();
         self.sync_attr_local_from_cell_by_name(code, &attr_name);
         let r = self.exec_scalar_incdec_inner(code, name_idx, slot, k);
@@ -68,6 +73,65 @@ impl Interpreter {
             self.mirror_attr_local_to_cell_by_name(code, &attr_name);
         }
         r
+    }
+
+    /// `++`/`--` of a plain, untyped, slot-held `Int` scalar: step the slot in
+    /// place, exactly as the store half of the full path would, without the
+    /// by-name cascade (attribute sync, alias-chain, `our`/package lookups and
+    /// the `Symbol::intern` they imply), which cost ~3k instructions against
+    /// ~0.9k for `$n += 1` (#14370). Declines (`Ok(false)`, nothing consumed)
+    /// for every shape the full path treats specially: a non-`Int` slot or an
+    /// `i64` overflow, a typed lexical, and every metadata lane the plain
+    /// scalar store consults (`set_local_scalar_fast_metadata_clear_except_type`).
+    /// A readonly operand still raises the full path's error.
+    // Cost: O(1).
+    fn exec_scalar_incdec_slot_fast(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        slot: usize,
+        k: IncDec,
+    ) -> Result<bool, RuntimeError> {
+        let Some(ValueView::Int(old)) = self.locals.get(slot).map(Value::view) else {
+            return Ok(false);
+        };
+        let Some(new) = (if k.increment {
+            old.checked_add(1)
+        } else {
+            old.checked_sub(1)
+        }) else {
+            return Ok(false);
+        };
+        let name = Self::const_str(code, name_idx);
+        if code.locals.get(slot).is_none_or(|local| local != name)
+            || !self.locals[slot].is_plain_scalar_store_slot()
+            || Self::slot_type_constraint_possible(code, slot)
+            || !self.set_local_scalar_fast_metadata_clear_except_type(code, slot)
+        {
+            return Ok(false);
+        }
+        let name_sym = code.const_sym(name_idx);
+        // A shared cell or Proxy parked in env under this name is what the
+        // slot would adopt and step through.
+        if self
+            .env()
+            .get_for(name, Some(name_sym))
+            .is_some_and(|v| v.is_container_ref() || v.is_proxy_value())
+        {
+            return Ok(false);
+        }
+        self.check_named_incdec_readonly(code, name, name_sym, k.routine_name())?;
+        let new_value = Value::int(new);
+        self.locals[slot] = new_value.clone();
+        if code.needs_env_sync.get(slot).copied().unwrap_or(true)
+            || crate::opcode::reflective_name_access_possible()
+        {
+            let name = code.locals[slot].clone();
+            self.set_env_plain_lexical(&name, Some(name_sym), new_value.clone());
+        }
+        self.stack
+            .push(if k.prefix { new_value } else { Value::int(old) });
+        Ok(true)
     }
 
     fn exec_scalar_incdec_inner(

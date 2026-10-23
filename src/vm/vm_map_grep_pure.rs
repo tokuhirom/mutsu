@@ -93,22 +93,55 @@ impl Interpreter {
 /// The most elements a pure Int callback runs ahead of its consumer.
 const PURE_BATCH_MAX: usize = 4096;
 
+/// A callback that is `$_ OP constant` over an Int: the admitted operator and
+/// its Int literal.
+#[derive(Clone, Copy)]
+pub(super) enum PureIntOp {
+    Add(i64),
+    Sub(i64),
+    Mul(i64),
+    /// `$_ %% constant`, constant != 0.
+    DivisibleBy(i64),
+}
+
+impl PureIntOp {
+    /// The callback's value for the Int `elem`, as the built-in operator
+    /// computes it. `None` when `elem` is not a plain Int or the result leaves
+    /// the i64 range (the caller then runs the real callback, which promotes
+    /// to a BigInt).
+    // Cost: O(1).
+    pub(super) fn apply(self, elem: &Value) -> Option<Value> {
+        let x = elem.as_int()?;
+        match self {
+            Self::Add(c) => x.checked_add(c).map(Value::int),
+            Self::Sub(c) => x.checked_sub(c).map(Value::int),
+            Self::Mul(c) => x.checked_mul(c).map(Value::int),
+            // c != 0 by construction; `i64::MIN %% -1` is the one overflow.
+            Self::DivisibleBy(c) => x.checked_rem(c).map(|r| Value::truth(r == 0)),
+        }
+    }
+}
+
 /// Admit a simple binary expression of the current topic and an Int literal.
 /// Each admitted opcode has no user callback when both operands are native
 /// integers; `%%` also requires a nonzero divisor to avoid a Failure value.
 // Cost: O(b), b = callback bytecode length.
 fn pure_int_topic_expression(func: Option<&Value>) -> bool {
-    let Some(ValueView::Sub(data)) = func.map(Value::view) else {
-        return false;
+    pure_int_topic_op(func).is_some()
+}
+
+/// [`pure_int_topic_expression`], keeping the operator and its constant.
+// Cost: O(b), b = callback bytecode length.
+pub(super) fn pure_int_topic_op(func: Option<&Value>) -> Option<PureIntOp> {
+    let ValueView::Sub(data) = func.map(Value::view)? else {
+        return None;
     };
     if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
-        return false;
+        return None;
     }
-    let Some(code) = &data.compiled_code else {
-        return false;
-    };
+    let code = data.compiled_code.as_ref()?;
     let [first, OpCode::LoadConst(value_idx), operator] = code.ops.as_slice() else {
-        return false;
+        return None;
     };
     // The topic is read either as the dynamic `$_` of a bare block, or as the
     // one parameter of a WhateverCode (`*+1`), which keeps `_` as its param.
@@ -131,12 +164,16 @@ fn pure_int_topic_expression(func: Option<&Value>) -> bool {
         false
     };
     if !reads_topic {
-        return false;
+        return None;
     }
-    let Some(ValueView::Int(constant)) = code.constants.get(*value_idx as usize).map(Value::view)
-    else {
-        return false;
+    let ValueView::Int(constant) = code.constants.get(*value_idx as usize).map(Value::view)? else {
+        return None;
     };
-    matches!(operator, OpCode::Add | OpCode::Sub | OpCode::Mul)
-        || matches!(operator, OpCode::DivisibleBy) && constant != 0
+    match operator {
+        OpCode::Add => Some(PureIntOp::Add(constant)),
+        OpCode::Sub => Some(PureIntOp::Sub(constant)),
+        OpCode::Mul => Some(PureIntOp::Mul(constant)),
+        OpCode::DivisibleBy if constant != 0 => Some(PureIntOp::DivisibleBy(constant)),
+        _ => None,
+    }
 }
