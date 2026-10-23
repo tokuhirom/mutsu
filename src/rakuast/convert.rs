@@ -4894,8 +4894,10 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 // A placeholder in the body of a routine with a signature of its
                 // own (`sub () { $^x }`) is a compile-time error in rakudo, which
                 // raises it while building the tree.
-                if let Some(exception) =
-                    crate::parser::placeholder_signature_exception(body, param_defs)
+                // (`%_` / `@_` are implicit in a method, never a placeholder.)
+                if matches!(declarator, crate::ast::RoutineDeclarator::Sub)
+                    && let Some(exception) =
+                        crate::parser::placeholder_signature_exception(body, param_defs)
                 {
                     return Err(RuntimeError::from_exception_value(exception));
                 }

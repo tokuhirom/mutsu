@@ -3075,6 +3075,24 @@ fn lower_named_call(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             _ => {}
         }
     }
+    // `not(...)` / `so(...)` with one argument is the parser's prefix operator
+    // (its argument is evaluated once, in boolean context), not a sub call.
+    if matches!(name.as_str(), "not" | "so")
+        && args.len() == 1
+        && !super::declared_routines::is_declared(&name)
+        && !super::declared_routines::is_user_call(node)
+    {
+        let op = if name == "not" {
+            crate::token_kind::TokenKind::Bang
+        } else {
+            crate::token_kind::TokenKind::Question
+        };
+        return Ok(Expr::Unary {
+            op,
+            expr: Box::new(args.remove(0)),
+            word: false,
+        });
+    }
     if let Some(line) = super::origin::current_line() {
         if args.is_empty() && super::declared_routines::is_declared(&name) {
             args.push(crate::parser::callsite_line_arg(line));
