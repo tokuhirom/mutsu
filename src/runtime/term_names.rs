@@ -62,9 +62,14 @@ impl Interpreter {
             return None;
         }
         key_sym.with_str(|key| {
-            self.module_imported_lexical(key)
-                .or_else(|| self.module_scope_lexical(key))
-                .cloned()
+            // A term the running routine's own compunit imported at its top
+            // level (`use M` binding `constant C`) was moved into the
+            // compunit's lexicals when the load ended; a frame that is not a
+            // routine call -- a class attribute's default -- finds it there.
+            self.unit_lexical_slot(key, Some(key_sym))
+                .map(Value::deref_container)
+                .or_else(|| self.module_imported_lexical(key).cloned())
+                .or_else(|| self.module_scope_lexical(key).cloned())
                 // A package block's own `my constant`, kept for its routines in
                 // `package_lexicals` once the block has exited.
                 .or_else(|| self.package_chain_var_fallback(key_sym))
