@@ -18,10 +18,10 @@ class H {
     method plus(+@ret where .all ~~ Ast) { "m ok {@ret.elems}" }
     method star(*@ret where .all ~~ Ast) { "m ok {@ret.elems}" }
     method plain(+@ret) { @ret[0].^name }
-    multi method pick(+@ret where .all ~~ Ast) { "multi {@ret.elems}" }
-    multi method pick(|) { "other" }
+    multi method choose(+@ret where .all ~~ Ast) { "multi {@ret.elems}" }
+    multi method choose(|) { "other" }
 }
 is H.new.plus(prox), 'm ok 1', 'method: +@ret where';
 is H.new.star(prox), 'm ok 1', 'method: *@ret where';
 is H.new.plain(prox), 'Col', 'method: body sees the fetched value';
-is H.new.pick(prox), 'multi 1', 'multi method candidate selection sees the value';
+is H.new.choose(prox), 'multi 1', 'multi method candidate selection sees the value';
