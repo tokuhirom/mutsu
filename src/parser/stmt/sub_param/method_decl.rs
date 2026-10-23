@@ -198,6 +198,7 @@ fn method_decl_body_with_my(
         name_span,
         signature_start,
         &param_defs,
+        traits.source_spans,
         brace,
         rest,
         &body,

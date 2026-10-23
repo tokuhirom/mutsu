@@ -34,11 +34,53 @@ fn param_spans(input: &str, rest: &str, p: &ParamDef) -> crate::ast::parsed::Par
         .map_or(crate::ast::SrcSpan::NONE, |(at, len)| {
             crate::parser::primary::source_span(&input[at..], &input[at + len..])
         });
+    let span_of =
+        |at: usize, end: usize| crate::parser::primary::source_span(&input[at..], &input[end..]);
+    let mut from = 0;
+    let traits = p
+        .traits
+        .iter()
+        .map(|name| match is_trait_offset(text, from, name) {
+            Some((at, name_at)) => {
+                from = name_at + name.len();
+                crate::ast::parsed::TraitSpans {
+                    whole: span_of(at, from),
+                    name: span_of(name_at, from),
+                }
+            }
+            None => crate::ast::parsed::TraitSpans::default(),
+        })
+        .collect();
     crate::ast::parsed::ParamSpans {
         param,
         target,
         type_,
+        traits,
     }
+}
+
+/// Where `is NAME` is written in `text` at or after `from`: the offsets of the
+/// `is` and of the name.
+// Cost: O(n), n = length of `text`.
+fn is_trait_offset(text: &str, from: usize, name: &str) -> Option<(usize, usize)> {
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'';
+    let mut cursor = from;
+    while let Some(found) = text[cursor..].find("is") {
+        let at = cursor + found;
+        cursor = at + 2;
+        if text[..at].ends_with(is_ident) {
+            continue;
+        }
+        let after = &text[at + 2..];
+        let name_at = at + 2 + (after.len() - after.trim_start().len());
+        if name_at > at + 2
+            && text[name_at..].starts_with(name)
+            && !text[name_at + name.len()..].starts_with(is_ident)
+        {
+            return Some((at, name_at));
+        }
+    }
+    None
 }
 
 /// The offset and length of `p`'s variable in its source `text`.

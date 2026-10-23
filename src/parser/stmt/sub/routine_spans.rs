@@ -1,17 +1,18 @@
 //! Where a routine declaration was written below its statement (ADR-10723
 //! Stage 2): its name, its signature and its block.
 
-use crate::ast::parsed::{PackageSpans, RoutineSpans};
+use crate::ast::parsed::{PackageSpans, RoutineSpans, TraitSpans};
 use crate::ast::{ParamDef, SrcSpan, Stmt};
 
 /// The positions of a routine whose name is at `name`, whose parameters (when
 /// it has parentheses) start at `signature_start`, and whose `{` is at `brace`,
-/// its source ending at `rest`.
+/// its source ending at `rest`; `traits` are where its traits were written.
 // Cost: O(s), s = statements of `body`.
 pub(crate) fn routine_spans(
     name: SrcSpan,
     signature_start: Option<&str>,
     params: &[ParamDef],
+    traits: Vec<TraitSpans>,
     brace: &str,
     rest: &str,
     body: &[Stmt],
@@ -26,6 +27,7 @@ pub(crate) fn routine_spans(
         name,
         signature,
         block,
+        traits,
     }))
 }
 

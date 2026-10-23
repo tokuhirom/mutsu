@@ -34,6 +34,8 @@ fn parse_qualified_trait_name(input: &str) -> PResult<'_, &str> {
 /// Result of parsing sub traits.
 pub(crate) struct SubTraits {
     pub source_traits: Vec<crate::ast::routine_trait::RoutineTrait>,
+    /// Where each of `source_traits` was written (ADR-10723 Stage 2).
+    pub source_spans: Vec<crate::ast::parsed::TraitSpans>,
     pub is_export: bool,
     pub export_tags: Vec<String>,
     pub is_test_assertion: bool,
@@ -70,13 +72,24 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut seen_traits: Vec<String> = Vec::new();
     let mut precedence_trait: Option<(String, String)> = None;
     let mut handles: Vec<crate::ast::HandleSpec> = Vec::new();
+    let mut source_spans = Vec::new();
+    let mut trait_start: Option<&str> = None;
     loop {
+        // The traits the previous round recorded were written from its start
+        // up to here.
+        if let Some(start) = trait_start {
+            while source_spans.len() < source_traits.len() {
+                source_spans.push(trait_spans(start, input));
+            }
+        }
         let (r, _) = ws(input)?;
+        trait_start = Some(r);
         if r.starts_with('{') || r.is_empty() {
             return Ok((
                 r,
                 SubTraits {
                     source_traits,
+                    source_spans,
                     is_export,
                     export_tags,
                     is_test_assertion,
@@ -408,6 +421,7 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             r,
             SubTraits {
                 source_traits,
+                source_spans,
                 is_export,
                 export_tags,
                 is_test_assertion,
@@ -481,4 +495,27 @@ pub(crate) fn invocant_not_allowed_error() -> PError {
         attrs,
     );
     PError::fatal_with_exception(msg, Box::new(ex))
+}
+
+/// Where the trait written from `start` up to `end` is (`returns Int`,
+/// `is export(:x)`), and the name or type it names: the word after its
+/// keyword.
+// Cost: O(n), n = length of the trait's source.
+fn trait_spans(start: &str, end: &str) -> crate::ast::parsed::TraitSpans {
+    let text = start[..start.len().saturating_sub(end.len())].trim_end();
+    let whole = crate::parser::primary::source_span(start, &start[text.len()..]);
+    let keyword_len = text
+        .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))
+        .unwrap_or(text.len());
+    let after = &text[keyword_len..];
+    let name_at = keyword_len + (after.len() - after.trim_start().len());
+    let name_len = text[name_at..]
+        .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '\'' | ':')))
+        .unwrap_or(text.len() - name_at);
+    let name = if name_at > keyword_len && name_len > 0 {
+        crate::parser::primary::source_span(&start[name_at..], &start[name_at + name_len..])
+    } else {
+        crate::ast::SrcSpan::NONE
+    };
+    crate::ast::parsed::TraitSpans { whole, name }
 }

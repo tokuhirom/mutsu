@@ -54,7 +54,7 @@ pub(crate) struct BlockSpans {
 /// below the statement it is: its name, its signature and its block. Kept on
 /// `Stmt::SubDecl` / `Stmt::MethodDecl`, which already hold what the source
 /// wrote, so the declaration is its own typed node (ADR-10723 §4).
-#[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct RoutineSpans {
     /// The declared name (`foo`, `p` of `!p`).
     pub(crate) name: SrcSpan,
@@ -62,6 +62,18 @@ pub(crate) struct RoutineSpans {
     /// its `)`, and a routine with no parentheses has none.
     pub(crate) signature: SrcSpan,
     pub(crate) block: BlockSpans,
+    /// The traits written after the signature, in source order, one per
+    /// trait the `.AST` parse records (`ast::routine_trait`).
+    #[serde(default)]
+    pub(crate) traits: Vec<TraitSpans>,
+}
+
+/// Where a trait was written (`is copy`, `returns Int`): all of it, and the
+/// name or type it names.
+#[derive(Debug, Clone, Copy, Default, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TraitSpans {
+    pub(crate) whole: SrcSpan,
+    pub(crate) name: SrcSpan,
 }
 
 /// Where a package declaration (`class`, `grammar`, `role`) was written
@@ -79,12 +91,15 @@ pub(crate) struct PackageSpans {
 /// still tells two signatures apart by their `Debug` text in places (a forward
 /// declaration and its definition, a role's re-registered method), and a
 /// signature is the same wherever it was written.
-#[derive(Clone, Copy, Default, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Default, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ParamSpans {
     pub(crate) param: SrcSpan,
     pub(crate) target: SrcSpan,
     /// The nominal type, smiley included (`Int:D`).
     pub(crate) type_: SrcSpan,
+    /// The `is` traits, in the order of `ParamDef::traits`.
+    #[serde(default)]
+    pub(crate) traits: Vec<TraitSpans>,
 }
 
 impl std::fmt::Debug for ParamSpans {
