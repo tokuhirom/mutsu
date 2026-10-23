@@ -9,6 +9,18 @@ use crate::value::Value;
 
 use super::{ident, is_stmt_modifier_keyword, try_parse_assign_expr};
 
+/// `try_parse_assign_expr` consumes the parentheses of `(... = ...)` and returns
+/// the bare assignment; record that they were written, like every other
+/// parenthesised argument.
+// Cost: O(1).
+pub(in crate::parser) fn keep_written_parens(input: &str, assign: Expr) -> Expr {
+    if input.starts_with('(') && !matches!(assign, Expr::Grouped(_)) {
+        Expr::Grouped(Box::new(assign))
+    } else {
+        assign
+    }
+}
+
 fn regroup_assign_expr_metaop_rhs(expr: Expr) -> Expr {
     // Handle Grouped(AssignExpr{...}) from parenthesized assignments
     if let Expr::Grouped(inner) = expr {
@@ -829,13 +841,8 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
             && !expr_consumes_more
             && (!rest_ws.starts_with("=>") || rest_ws.starts_with("==>"))
         {
-            let mut assign_expr = regroup_assign_expr_metaop_rhs(assign_expr);
-            // `try_parse_assign_expr` consumes the parentheses of `(... = ...)`
-            // and returns the bare assignment; record that they were written,
-            // like every other parenthesised argument.
-            if input.starts_with('(') && !matches!(assign_expr, Expr::Grouped(_)) {
-                assign_expr = Expr::Grouped(Box::new(assign_expr));
-            }
+            let assign_expr =
+                keep_written_parens(input, regroup_assign_expr_metaop_rhs(assign_expr));
             return Ok((
                 rest,
                 CallArg::Positional(crate::parser::expr::wrap_finished_expr(assign_expr)),
