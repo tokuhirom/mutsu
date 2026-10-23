@@ -267,6 +267,19 @@ impl Interpreter {
         Ok(())
     }
 
+    /// One argument of a sigiled slurpy (`*@a`, `+@a`) as the Array stores it:
+    /// read through its container, and a `Proxy` (the result of an `is rw`
+    /// method call) is fetched, so a `where` clause on the slurpy and the body
+    /// see the value and not the Proxy.
+    // Cost: O(1) plus the FETCH of a Proxy.
+    fn slurpy_item(&mut self, value: Value) -> Value {
+        let value = value.into_deref();
+        if value.is_proxy_value() {
+            return self.auto_fetch_proxy(&value).unwrap_or(value);
+        }
+        value
+    }
+
     /// Evaluate a positional parameter's `where` post-constraint against the
     /// value the parameter is about to bind.
     ///
@@ -1829,7 +1842,7 @@ impl Interpreter {
                     // the caller's element container: reading through any
                     // `ContainerRef` cell here is what keeps `-> +@l { @l }(@x)[0]
                     // =:= @x[0]` False (rakudo).
-                    Value::real_array(items.into_iter().map(Value::into_deref).collect())
+                    Value::real_array(items.into_iter().map(|v| self.slurpy_item(v)).collect())
                 };
                 if pd.sigilless {
                     // Sigilless single-argument rule slurpy (`+foo`): bind a
@@ -2361,7 +2374,7 @@ impl Interpreter {
                             true,
                         )
                     } else {
-                        Value::real_array(items.into_iter().map(Value::into_deref).collect())
+                        Value::real_array(items.into_iter().map(|v| self.slurpy_item(v)).collect())
                     };
                     if !pd.name.is_empty() {
                         let key = if pd.name.starts_with('@') {
