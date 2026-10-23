@@ -86,8 +86,13 @@ impl Interpreter {
     /// when `name` is that type's short name bound in the current scope:
     /// `.type` must be the type object itself (`=== P`, with its attributes),
     /// not a fresh package of the bare spelling (JSON::Unmarshal's
-    /// `$attr.type.^attributes` saw an empty list).
-    // Cost: O(1), one env probe.
+    /// `$attr.type.^attributes` saw an empty list). A class another module
+    /// exported and this scope imported under its short name
+    /// (`use A::ES` binds `JsonLineParser` to `A::ES::JsonLineParser`) is
+    /// named by its full name too: the scope that maps the short spelling is
+    /// the declaring module's, which the code that later checks a value
+    /// against the attribute (a `.new` from another unit) does not see.
+    // Cost: O(1), a few env probes.
     pub(crate) fn lexical_type_storage_name(&self, name: String) -> String {
         if let Some(bound) = self.env().get(&name)
             && let ValueView::Package(sym) = bound.view()
@@ -96,6 +101,15 @@ impl Interpreter {
             if storage != name && storage.split('\u{0}').next() == Some(name.as_str()) {
                 return storage.to_string();
             }
+        }
+        if !name.contains([':', '[', '(', '{', ' '])
+            && let Some(term) = self.imported_type_term(&name)
+            && let ValueView::Package(sym) = term.view()
+            && sym.as_str() != name
+            && crate::qualified::unqualified_part(sym).as_str() == name
+            && self.registry().classes.contains_key(sym.as_str())
+        {
+            return sym.resolve().to_string();
         }
         name
     }
