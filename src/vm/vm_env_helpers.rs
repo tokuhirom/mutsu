@@ -3156,52 +3156,6 @@ impl Interpreter {
                 .is_some()
     }
 
-    /// Run the name-keyed element store `store` with the running frame
-    /// binding its own `@`/`%` local `name_idx` (held in `slot`, the slot the
-    /// compiler resolved the name to) in its env, when the frame binds none,
-    /// and move the stored container back into the slot afterwards. The
-    /// store resolves its container by name, and without the binding a
-    /// same-named file-scope variable of the routine's compunit
-    /// (`unit_lexicals`) answered in place of the routine's own `my %seen`,
-    /// so the store went to the module's container, or nowhere. The twin of
-    /// `with_package_lexical_seeded`.
-    // Cost: O(d) plus the store, d = the frame's env tiers; O(1) when no
-    // compunit has file-scope lexicals.
-    pub(super) fn with_own_container_seeded<T>(
-        &mut self,
-        code: &CompiledCode,
-        name_idx: u32,
-        slot: Option<u32>,
-        store: impl FnOnce(&mut Self) -> T,
-    ) -> T {
-        let seed = if self.lexicals.unit_lexicals.is_empty() {
-            None
-        } else {
-            let name = Self::const_str(code, name_idx);
-            slot.map(|s| s as usize)
-                .filter(|&s| {
-                    name.starts_with(['@', '%'])
-                        && code.locals.get(s).map(String::as_str) == Some(name)
-                })
-                .filter(|&s| self.env().get_sym_in_frame(code.locals_sym[s]).is_none())
-                .and_then(|s| {
-                    let container = self.locals.get(s)?;
-                    matches!(container.view(), ValueView::Array(..) | ValueView::Hash(_))
-                        .then(|| (s, container.clone()))
-                })
-        };
-        let Some((slot, container)) = seed else {
-            return store(self);
-        };
-        let sym = code.locals_sym[slot];
-        self.env_mut().insert_sym(sym, container);
-        let result = store(self);
-        if let Some(stored) = self.env_mut().remove_sym(sym) {
-            self.locals[slot] = stored;
-        }
-        result
-    }
-
     pub(super) fn locals_get_by_name(&self, code: &CompiledCode, name: &str) -> Option<Value> {
         self.find_local_slot(code, name)
             .map(|slot| self.locals[slot].clone())
