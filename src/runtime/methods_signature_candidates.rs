@@ -67,7 +67,7 @@ impl Interpreter {
         false
     }
 
-    pub(super) fn capture_to_call_args(value: &Value) -> Vec<Value> {
+    pub(crate) fn capture_to_call_args(value: &Value) -> Vec<Value> {
         match value.view() {
             ValueView::Capture { positional, named } => {
                 // A positional Pair travels as the positional (`ValuePair`)

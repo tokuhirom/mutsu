@@ -36,6 +36,42 @@ impl Interpreter {
         }
     }
 
+    /// `Routine.onlystar`: whether the routine is a `proto` whose body is the
+    /// onlystar `{*}`. A `&name` handle names a user proto when the registry
+    /// holds one (its body decides) and a built-in routine otherwise, which
+    /// Rakudo declares as a proto of its candidates (True). A `Sub` is one only
+    /// when it is the dispatcher of a multi and its body is `{*}`.
+    // Cost: O(c), c = multi candidates (the proto lookup).
+    pub(crate) fn routine_onlystar(&mut self, target: &Value) -> Option<Value> {
+        match target.view() {
+            ValueView::Routine { name, package, .. } => {
+                let (name, package) = (name.resolve(), package.resolve());
+                let qualified = crate::qualified::qualified_text(&package, &name)
+                    .as_str()
+                    .to_string();
+                let proto = self
+                    .resolve_proto_function(&qualified)
+                    .or_else(|| self.resolve_proto_function_with_alias(&name).map(|(_, def)| def));
+                Some(Value::truth(proto.is_none_or(|def| {
+                    super::dispatch_proto_rewrite::is_only_star_block(&def.body)
+                })))
+            }
+            ValueView::Sub(data) => {
+                let dispatcher = self
+                    .routine_is_dispatcher(target)
+                    .is_some_and(|v| v.truthy());
+                // The proto's own body is `{*}` (the onlystar term, or the bare
+                // `*` the registry's copy keeps), or empty.
+                let only_star = data.body.is_empty()
+                    || super::dispatch_proto_rewrite::is_only_star_block(&data.body)
+                    || matches!(data.body.as_slice(),
+                        [crate::ast::Stmt::Expr(e)] if e.is_onlystar_dispatch());
+                Some(Value::truth(dispatcher && only_star))
+            }
+            _ => None,
+        }
+    }
+
     /// `Routine.multi`: whether the routine is one candidate of a multi. A
     /// `Routine` handle names the dispatcher, which is not.
     // Cost: O(1).

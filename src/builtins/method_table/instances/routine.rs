@@ -12,7 +12,7 @@
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
 use crate::runtime::Interpreter;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 type Answer = Option<Result<Value, RuntimeError>>;
 
@@ -34,6 +34,8 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("dispatcher", dispatcher),
     row!("multi", multi),
     row!("package", package),
+    row!("onlystar", onlystar),
+    row!("soft", soft),
 ];
 
 /// `Routine.is_dispatcher`.
@@ -70,4 +72,23 @@ fn package(i: &mut Interpreter, t: &Value, _args: &[Value], _named: Named<'_>) -
         return super::code_regex::answer(t, "package");
     }
     i.routine_package(t).map(Ok)
+}
+
+/// `Routine.onlystar`: whether the routine is a `proto` whose body is `{*}`.
+/// A built-in routine is a proto of its multi candidates, so it answers True.
+// Cost: O(c), c = multi candidates (the proto lookup).
+fn onlystar(i: &mut Interpreter, t: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
+    if super::code_regex::is_regex(t) {
+        return super::code_regex::answer(t, "onlystar");
+    }
+    i.routine_onlystar(t).map(Ok)
+}
+
+/// `Routine.soft`: Rakudo answers `Nil` for every routine here.
+// Cost: O(1).
+fn soft(_i: &mut Interpreter, t: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
+    if super::code_regex::is_regex(t) {
+        return super::code_regex::answer(t, "soft");
+    }
+    matches!(t.view(), ValueView::Sub(_) | ValueView::Routine { .. }).then(|| Ok(Value::NIL))
 }

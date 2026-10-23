@@ -4,7 +4,7 @@ use Test;
 # `.^can` and the dispatch agree for every built-in code class.
 
 my @methods = <multi dispatcher is_dispatcher package candidates yada
-               is-implementation-detail arity count of>;
+               is-implementation-detail arity count of onlystar soft>;
 
 my $wc = * + 1;
 my @values =
