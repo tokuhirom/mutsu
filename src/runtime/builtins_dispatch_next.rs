@@ -1360,7 +1360,11 @@ impl Interpreter {
                 let base_invocant = if came_from_wrapper {
                     frame.invocant.clone()
                 } else {
-                    self.env_self_value()
+                    // The dispatch frame's own invocant is the fallback, so a
+                    // frame without an env `self` needs no record lookup.
+                    self.env
+                        .get_sym(crate::symbol::wk::self_())
+                        .cloned()
                         .unwrap_or_else(|| frame.invocant.clone())
                 };
                 // `callwith`'s args are invocant-INCLUSIVE (element 0 is the
