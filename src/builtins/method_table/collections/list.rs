@@ -410,6 +410,20 @@ pub(crate) fn tail(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
             };
             Some(Ok(Value::seq(values)))
         }
+        // An instance that does not decompose (a `CArray`, whose elements are
+        // its own `list`) reads as one element, itself; `Any.tail(n)` is
+        // `self.list.tail(n)`, which the interpreter answers.
+        ValueView::Instance { .. } | ValueView::Mixin(..)
+            if runtime::with_receiver_items(target, |items| {
+                items.len() == 1
+                    && matches!(
+                        items[0].view(),
+                        ValueView::Instance { .. } | ValueView::Mixin(..)
+                    )
+            }) =>
+        {
+            None
+        }
         _ => Some(Ok(Value::seq(runtime::with_receiver_items(
             target,
             |items| items[items.len().saturating_sub(n)..].to_vec(),
