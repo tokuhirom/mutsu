@@ -5460,6 +5460,7 @@ t/rakuast/rakuast-regex-stored-interpolation.t
 t/rakuast/rakuast-regex-sym-adverb.t
 t/rakuast/rakuast-regex-symbolic-subrule.t
 t/rakuast/rakuast-regex-tree-gaps.t
+t/rakuast/rakuast-regex-variable-alias-gap.t
 t/rakuast/rakuast-regex-variable-alias.t
 t/rakuast/rakuast-regex-word-list-escapes.t
 t/rakuast/rakuast-regex.t
@@ -5976,6 +5977,7 @@ t/regex/regex-unicode-single-quotes.t
 t/regex/regex-unspace.t
 t/regex/regex-value-identity.t
 t/regex/regex-value-interp-parse-memo.t
+t/regex/regex-variable-alias-drops-atom.t
 t/regex/regex-walk-residue-compiled.t
 t/regex/regex-wb-assertion.t
 t/regex/regex-word-boundary.t
