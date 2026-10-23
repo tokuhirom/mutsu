@@ -428,6 +428,8 @@ pub(crate) use for_params::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
 mod given_when;
 mod labeled_loop;
 mod loop_repeat;
+mod parsed_block;
+pub(crate) use parsed_block::{finish, parsed_block};
 mod pointy_param;
 mod react;
 pub(in crate::parser::stmt) mod source_body;
@@ -435,7 +437,6 @@ mod while_until;
 mod with_stmt;
 
 // Re-exports preserving each function's original visibility (all `pub(super)`).
-pub(crate) use conditional_binding::else_pointy_clause;
 pub(crate) use conditional_binding::if_pointy_clause;
 pub(crate) use conditionals::unless_clause;
 pub(super) use conditionals::{if_stmt, unless_stmt};
@@ -462,4 +463,5 @@ pub(crate) use with_stmt::with_then_branch;
 // are also called from `with_stmt` (for `orwith` elsif-chain lowering). Bumped
 // to `pub(crate)` in `conditionals` and re-exported here so `with_stmt` reaches
 // them via `use super::*`.
-pub(in crate::parser) use conditionals::{lower_if_chain, parse_elsif_chain};
+pub(in crate::parser) use conditionals::parse_elsif_chain;
+pub(crate) use conditionals::{ElseClause, IfChainClause, lower_if_chain};

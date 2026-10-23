@@ -3455,9 +3455,6 @@ pub(crate) enum OpCode {
         is_positional: bool,
         /// §1.4 shadow-slot (same contract as `IndexAssignExprNamed`).
         target_slot: Option<u32>,
-        /// True for push/append/unshift/prepend (Raku autovivifies);
-        /// false for pop/shift/splice (Raku dies without growing).
-        autoviv: bool,
         /// Autovivify a missing element to an empty Hash instead of an
         /// empty Array. Used for the *intermediate* levels of a nested
         /// subscript chain (`%h<a><b>.push`): the fresh container's kind

@@ -349,10 +349,9 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
         list_field(node, ADVERBS).unwrap_or_default()
     };
     if !adverbs.is_empty() {
-        // The adverbs go to the outermost call, as the parser attaches them.
-        if !is_declared(&name) {
-            return Some(Err(unsupported(node)));
-        }
+        // The adverbs go to the outermost call, as the parser attaches them. A
+        // core operator is called too: it declares no named parameter, so the
+        // call is rejected at run time exactly as on the ordinary frontend.
         return Some(fold(node, name).and_then(|mut call| {
             if let Expr::InfixFunc { right, .. } = &mut call {
                 for adverb in adverbs {
@@ -394,12 +393,6 @@ fn fold(node: &RakuAstNode, name: String) -> Result<Expr, RuntimeError> {
     let rest: Vec<Expr> = items.collect();
     if rest.is_empty() {
         return Err(unsupported(node));
-    }
-    // The junction operators the parser nests to the left (the compiler
-    // flattens them); any other list-associative operator holds its operands
-    // in one node.
-    if matches!(name.as_str(), "|" | "&" | "^") {
-        return Ok(rest.into_iter().fold(first, |acc, r| call(acc, vec![r])));
     }
     Ok(call(first, rest))
 }

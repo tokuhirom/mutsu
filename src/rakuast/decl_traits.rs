@@ -46,9 +46,14 @@ pub(super) fn is_rendered(name: &str, arg: &Option<Expr>) -> bool {
 /// its own `trait_mod:<is>` (`is marked`, `is checked(5)`), as opposed to an
 /// internal marker or a type spelling.
 fn is_custom_name(name: &str) -> bool {
-    !name.starts_with("__")
-        && !name.is_empty()
-        && name
+    // A user trait spelled like a parser marker (`is __x`) is recorded under
+    // an escape prefix (`ast::escape_user_trait`); only an unescaped `__` name
+    // is a marker.
+    let bare = crate::ast::unescape_user_trait(name);
+    let escaped = bare.len() != name.len();
+    (escaped || !bare.starts_with("__"))
+        && !bare.is_empty()
+        && bare
             .chars()
             .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
 }
@@ -87,7 +92,10 @@ pub(super) fn convert(
             let field = if is_container_type(name) {
                 node_field(Some("type"), type_node(name)?)
             } else {
-                node_field(Some("name"), name_from_identifier(name))
+                node_field(
+                    Some("name"),
+                    name_from_identifier(crate::ast::unescape_user_trait(name)),
+                )
             };
             items.push(Value::rakuast(Box::new(RakuAstNode {
                 class: RakuAstClass::TraitIs,
@@ -106,7 +114,10 @@ pub(super) fn convert(
         items.push(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::TraitIs,
             fields: vec![
-                node_field(Some("name"), name_from_identifier(name)),
+                node_field(
+                    Some("name"),
+                    name_from_identifier(crate::ast::unescape_user_trait(name)),
+                ),
                 node_field(Some("argument"), argument),
             ],
         })));
@@ -182,6 +193,9 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<(CustomTraits, bool), RuntimeE
             ValueView::Str(s) => s.to_string(),
             _ => return Err(refuse()),
         };
+        // A name that looks like a parser marker is a user trait here, kept
+        // under its escape prefix.
+        let name = crate::ast::escape_user_trait(&name).into_owned();
         if !is_custom_name(&name) && name != DEFAULT {
             return Err(refuse());
         }

@@ -910,7 +910,7 @@ impl Compiler {
                 modifier,
                 quoted,
                 ..
-            } if Self::is_nested_mutating_method_on_index(target, name) => {
+            } if self.is_nested_mutating_method_on_index(target, name) => {
                 self.compile_expr_nested_method_on_index(target, name, args, modifier, *quoted);
             }
             // `lazy for ITERABLE { BODY }` => MakeGather wrapping the for loop

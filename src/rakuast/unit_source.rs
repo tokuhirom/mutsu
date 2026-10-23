@@ -150,3 +150,26 @@ pub(super) fn origin_value(line: i64, span: SrcSpan) -> Value {
     }
     Value::make_instance(Symbol::intern("RakuAST::Origin"), attrs)
 }
+
+/// The `RakuAST::Origin` of a node below the statement level that occupies
+/// `span`, when the unit's source is known: such a node's origin is only ever
+/// read through `.origin`, and a round trip that has no source never asks.
+// Cost: O(log n), n = lines (plus characters for non-ASCII text) of the unit.
+pub(super) fn span_origin_value(span: SrcSpan) -> Option<Value> {
+    if !span.is_some() {
+        return None;
+    }
+    let unit = CURRENT.with(|c| c.borrow().clone())?;
+    let from = unit.char_of(span.from);
+    let to = unit.char_of(span.to);
+    let line = unit.line_starts.partition_point(|&start| start <= from) as i64;
+    let mut attrs = HashMap::new();
+    attrs.insert(LINE_ATTR.to_string(), Value::int(line));
+    attrs.insert("from".to_string(), Value::int(from));
+    attrs.insert("to".to_string(), Value::int(to));
+    attrs.insert("source".to_string(), unit.source.clone());
+    Some(Value::make_instance(
+        Symbol::intern("RakuAST::Origin"),
+        attrs,
+    ))
+}

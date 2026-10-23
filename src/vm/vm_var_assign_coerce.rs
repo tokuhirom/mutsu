@@ -291,8 +291,8 @@ impl Interpreter {
     /// constraint, or an explicit `Str` one. A bare type-object key coerces to
     /// "" (with the string-context warning) only for these; an object hash
     /// (`%h{Any}`, `%h{Int}`, ...) keeps its keys distinct.
-    fn is_str_keyed_hash_var(&self, name: &str) -> bool {
-        match self.var_hash_key_constraint(name) {
+    fn is_str_keyed_hash_var(&self, decl: StoreDecl<'_>, name: &str) -> bool {
+        match self.decl_hash_key_constraint(decl, name) {
             None => true,
             Some(kc) => {
                 let (base, _) = crate::runtime::types::strip_type_smiley(&kc);
@@ -335,6 +335,7 @@ impl Interpreter {
 
     pub(super) fn coerce_hash_var_value(
         &mut self,
+        decl: StoreDecl<'_>,
         name: &str,
         value: Value,
     ) -> Result<Value, RuntimeError> {
@@ -372,7 +373,7 @@ impl Interpreter {
         // store or the trait application tagged it last.
         if let Some(constraint) = current
             .as_ref()
-            .and_then(|v| self.element_constraint_for(name, v))
+            .and_then(|v| self.element_constraint_for_decl(decl, name, v))
             .or_else(|| {
                 current
                     .as_ref()
@@ -441,7 +442,7 @@ impl Interpreter {
             let coerced = self.try_compiled_method_or_interpret(value, coercer, vec![])?;
             return Ok(self.quanthash_store_preserving_identity(name, coerced));
         }
-        if let Some(constraint) = loan_env!(self, var_type_constraint(name))
+        if let Some(constraint) = self.decl_type_constraint(decl, name)
             && constraint.starts_with("SetHash")
         {
             let result = runtime::utils::coerce_value_to_quanthash(&value);
@@ -459,7 +460,7 @@ impl Interpreter {
         // must NOT run there — it would collapse distinct type-object keys to a
         // single "" and drop the object-hash key entirely.
         let build_items = |this: &mut Self, items: Vec<Value>| {
-            if this.is_str_keyed_hash_var(name) {
+            if this.is_str_keyed_hash_var(decl, name) {
                 this.build_hash_from_items_warning(items)
             } else {
                 runtime::utils::build_hash_from_items(items)

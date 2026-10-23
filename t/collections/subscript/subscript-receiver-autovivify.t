@@ -5,7 +5,7 @@ use Test;
 # element's location, for any base expression (#13823). Expected values are
 # the `raku` output.
 
-plan 22;
+plan 34;
 
 {
     my @a;
@@ -104,4 +104,45 @@ plan 22;
     %o{$k}.append(2);
     is %o.keys.map(*.^name).join(','), 'Key', 'an object hash keeps the key object of a vivified entry';
     is %o.values.raku, '($[1, 2],).Seq', 'and grows the stored Array';
+}
+{
+    my $s;
+    $s<k>.push(2);
+    is $s.raku, '${:k($[2])}', 'push on an element of an undefined scalar';
+    my $t;
+    $t<a><b>.push(4);
+    is $t.raku, '${:a(${:b($[4])})}', 'push through two levels of an undefined scalar';
+    my $u = {};
+    $u<a>.push(5);
+    is $u.raku, '${:a($[5])}', 'push on an element of a scalar holding a Hash';
+}
+{
+    my @n;
+    @n[1][2].push(3);
+    is @n.raku, '[Any, [Any, Any, [3]]]', 'push through two positional levels';
+    my @o;
+    @o[0]<k>.push(1);
+    is @o.raku, '[{:k($[1])},]', 'a positional level over an associative one';
+    my %p;
+    %p<a>[1].push(1);
+    is %p.raku, '{:a($[Any, [1]])}', 'an associative level over a positional one';
+}
+{
+    my $cnt;
+    my sub g { $cnt{"k"}.push(1) }
+    g();
+    is $cnt.raku, '${:k($[1])}', 'a scalar captured by a named sub is vivified';
+}
+{
+    my %h = a => [1, 2, 3];
+    is %h<a>.pop, 3, 'pop on an existing element';
+    is %h<a>.shift, 1, 'shift on an existing element';
+    is %h<a>.splice(0, 1).join(','), '2', 'splice on an existing element';
+}
+{
+    sub g { Any }
+    throws-like { g().push(1) }, X::Assignment::RO, 'a call result has nowhere to vivify';
+    class R { has $.ro }
+    my $r = R.new;
+    throws-like { $r.ro.push(1) }, X::Assignment::RO, 'a read-only accessor value cannot be vivified';
 }

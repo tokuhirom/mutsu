@@ -978,6 +978,11 @@ impl Compiler {
             // A record for the RakuAST layer (`ast::signature_decl`); the
             // expansion that follows it is the code.
             Stmt::SourceForm(_) => {}
+            // Only a parse whose tree the RakuAST conversion reads keeps a
+            // parser node; every other parse lowers it where it is built.
+            Stmt::Ast(_) => {
+                debug_assert!(false, "Stmt::Ast reached the compiler");
+            }
             Stmt::NestedTypeShells(shells) => {
                 for shell in shells {
                     self.emit_nested_type_shell(shell);

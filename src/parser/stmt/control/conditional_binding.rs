@@ -64,16 +64,6 @@ fn next_if_bind_tmp_name() -> String {
     format!("$__mutsu_if_bind_{tmp_idx}")
 }
 
-pub(super) fn lower_if_clause_binding(
-    binding_params: Option<Vec<ParamDef>>,
-    then_branch: Vec<Stmt>,
-) -> Result<(Option<String>, Vec<Stmt>), crate::value::RuntimeError> {
-    let Some(param_defs) = binding_params else {
-        return Ok((None, then_branch));
-    };
-    if_pointy_clause(param_defs, then_branch)
-}
-
 /// The expansion of `if COND -> PARAMS { BODY }`: the `binding_var` the
 /// compiler binds the condition to, and the then-branch, which opens with a
 /// [`crate::ast::SourceForm::IfPointy`] record of the parameters and body as
@@ -209,23 +199,6 @@ pub(super) fn lower_else_binding(
         body.insert(0, record);
     }
     Ok(body)
-}
-
-/// Bind an else signature to the last condition's saved value.
-// Cost: O(n), n = size of the signature and body.
-pub(crate) fn else_pointy_clause(
-    binding: &mut Option<String>,
-    params: Vec<ParamDef>,
-    body: Vec<Stmt>,
-) -> Result<Vec<Stmt>, crate::value::RuntimeError> {
-    let source = binding.get_or_insert_with(next_if_bind_tmp_name);
-    lower_else_binding(
-        source,
-        ElseClause {
-            binding_params: Some(params),
-            body,
-        },
-    )
 }
 
 fn expand_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt> {

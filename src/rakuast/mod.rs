@@ -18,9 +18,11 @@ mod chain;
 mod class_constructor;
 mod composition_source;
 mod compound_stmt;
+mod conditional_lower;
 mod constructor_positional;
 mod contextualizer;
 mod control_signature;
+mod parsed_view;
 mod trait_is_constructor;
 use constructor_positional::single_positional_class;
 mod convert;
@@ -1722,6 +1724,16 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementImport,
     RakuAstClass::StatementLanguageVersion,
 ];
+
+/// Lower a construct the parser built in its RakuAST shape (ADR-10723
+/// Stage 2): the one lowering of its family, shared with `EVAL` of a
+/// hand-built node.
+// Cost: O(n), n = size of the construct.
+pub(crate) fn lower_parsed_stmt(
+    node: crate::ast::parsed::ParsedStmt,
+) -> Result<crate::ast::Stmt, RuntimeError> {
+    conditional_lower::lower_parsed(node)
+}
 
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
 pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
@@ -3437,8 +3449,10 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     if let Some(child) = regex_extension::nested_accessor(node, method) {
         return Some(child);
     }
-    // Only a statement node records where it began; every other node (and a
-    // hand-built one) has no origin, which reads as `Nil` so `with` skips it.
+    // A statement records where it began, and so does a node of a family the
+    // parser builds in its RakuAST shape (ADR-10723 Stage 2); every other node
+    // (and a hand-built one) has no origin, which reads as `Nil` so `with`
+    // skips it.
     if method == "origin" {
         return Some(origin::origin_of(node).unwrap_or(Value::NIL));
     }
@@ -3471,6 +3485,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         let items = node
             .fields
             .iter()
+            .filter(|f| !origin::is_origin(f))
             .map(|f| field_to_value(&f.value))
             .collect();
         return Some(Value::array(items));

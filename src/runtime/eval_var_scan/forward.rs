@@ -49,6 +49,8 @@ pub(in crate::runtime) fn first_var_used_before_unit_declares(
             lenient: false,
             bail: false,
         }),
+        bind_mode: false,
+        outer_bind: None,
         found: None,
     };
     walk_stmts(&mut scan, stmts);

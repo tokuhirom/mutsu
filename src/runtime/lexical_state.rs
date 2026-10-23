@@ -184,6 +184,13 @@ pub(crate) struct LexicalState {
     /// frame's declaring file does (`Interpreter::compunit_lexical_bucket`,
     /// ADR-12529 §3, slice 24). Empty unless such a module was loaded.
     pub(crate) compunit_lexical_units: std::sync::Arc<rustc_hash::FxHashSet<Symbol>>,
+    /// The compunit and routine-stack depth of a multi candidate being
+    /// matched (`Interpreter::with_candidate_scope`). Its `where` clauses run
+    /// before any frame of the candidate exists, so the running frame is the
+    /// caller's; while the stack is still that deep, a package-less module
+    /// file's lexical is read from this unit instead of the caller's
+    /// (`Interpreter::running_compunit_lexical_unit`).
+    pub(crate) candidate_scope_unit: Option<(Symbol, usize)>,
     /// Bumped by [`Interpreter::unit_lexicals_cow_mut`] and
     /// [`Interpreter::package_lexicals_cow_mut`], the funnels through which
     /// `unit_lexicals` and `package_lexicals` are mutated. TRIR's per-routine
@@ -450,6 +457,7 @@ impl LexicalState {
             unit_lexicals: std::sync::Arc::new(PackageLexicals::default()),
             unit_lexical_meta_lanes: std::sync::Arc::new(PackageLexicals::default()),
             compunit_lexical_units: Default::default(),
+            candidate_scope_unit: None,
             mainline_lexical_subs: Default::default(),
             lexsub_free_aliases: Default::default(),
             lexsub_latest_cells: Default::default(),
@@ -510,6 +518,7 @@ impl LexicalState {
             unit_lexicals: self.unit_lexicals.clone(),
             unit_lexical_meta_lanes: self.unit_lexical_meta_lanes.clone(),
             compunit_lexical_units: self.compunit_lexical_units.clone(),
+            candidate_scope_unit: None,
             mainline_lexical_subs: self.mainline_lexical_subs.clone(),
             lexsub_free_aliases: self.lexsub_free_aliases.clone(),
             lexsub_latest_cells: self.lexsub_latest_cells.clone(),

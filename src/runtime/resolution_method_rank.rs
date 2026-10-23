@@ -242,6 +242,21 @@ impl Interpreter {
         if all_matches.len() <= 1 {
             return all_matches.into_iter().next();
         }
+        // A method call boxes every argument, and a native parameter (`int`,
+        // `uint`, `num`, `str`) takes a boxed argument only as a fallback:
+        // rakudo's dispatcher tries the candidates a boxed argument fits
+        // first (`multi method m(int $v)` against `multi method m(Int:D $v)`
+        // answers the `Int` one for `m(5)`), so a native-parameter candidate
+        // is only a rival of the others when nothing else matched.
+        if all_matches
+            .iter()
+            .any(|(_, def)| !Self::has_native_positional_param(def))
+        {
+            all_matches.retain(|(_, def)| !Self::has_native_positional_param(def));
+            if all_matches.len() <= 1 {
+                return all_matches.into_iter().next();
+            }
+        }
         let mut ranks: Vec<MultiRank> = all_matches
             .iter()
             .enumerate()
@@ -362,6 +377,20 @@ impl Interpreter {
             self.dispatch.dispatch_ambiguous = true;
         }
         Some(all_matches.swap_remove(winner))
+    }
+
+    /// Whether `def` declares a positional parameter of a native type
+    /// (`int`, `uint32`, `num`, `str`, ...).
+    // Cost: O(p), p = parameters of the candidate.
+    fn has_native_positional_param(def: &MethodDef) -> bool {
+        def.param_defs.iter().any(|p| {
+            !p.is_invocant
+                && !p.named
+                && p.type_constraint.as_deref().is_some_and(|tc| {
+                    let base = tc.strip_suffix(":D").or_else(|| tc.strip_suffix(":U")).unwrap_or(tc);
+                    crate::native_types::native_family(base).is_some()
+                })
+        })
     }
 
     /// The declaration order of match `index` (the MRO-ordered match list),

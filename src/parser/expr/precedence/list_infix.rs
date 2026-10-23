@@ -31,8 +31,44 @@ fn binary_token_op_str(op: &crate::token_kind::TokenKind) -> Option<&'static str
         TokenKind::Percent => "%",
         TokenKind::StarStar => "**",
         TokenKind::Tilde => "~",
+        TokenKind::Ampersand => "&",
+        TokenKind::Pipe => "|",
+        TokenKind::Caret => "^",
         _ => return None,
     })
+}
+
+/// The leftmost operand and the following operands of a left-nested chain of
+/// the junction operator `op`, in source order. A parenthesized operand is a
+/// different expression and stays one operand.
+// Cost: O(n), n = operands of the chain.
+fn flatten_junction_chain(
+    op: &crate::token_kind::TokenKind,
+    mut left: Box<Expr>,
+) -> (Box<Expr>, Vec<Expr>) {
+    let mut rest = Vec::new();
+    while let Expr::Binary {
+        left: inner_left,
+        op: inner_op,
+        right: inner_right,
+        ..
+    } = *left
+    {
+        if inner_op != *op {
+            // Not part of the chain: put it back.
+            left = Box::new(Expr::Binary {
+                left: inner_left,
+                op: inner_op,
+                right: inner_right,
+                form: Default::default(),
+            });
+            break;
+        }
+        rest.push(*inner_right);
+        left = inner_left;
+    }
+    rest.reverse();
+    (left, rest)
 }
 
 /// A trailing colonpair adverb after a full expression binds to the
@@ -40,10 +76,11 @@ fn binary_token_op_str(op: &crate::token_kind::TokenKind) -> Option<&'static str
 /// the preceding topmost operator — `1 + 2 - 3 :adv` adverbs `-`, and the
 /// right-associative `1 ** 2 ** 3 :adv` adverbs the leftmost/outermost `**`).
 /// Only user-defined operators can accept named arguments, so attachment is
-/// limited to a `Binary` whose token op has a user `infix:<op>` declaration in
-/// scope (rewritten to `InfixFunc`) and to an existing `InfixFunc`; anything
+/// limited to a `Binary` whose token is an operator with a spelling
+/// (rewritten to `InfixFunc`, a routine call that a core operator then rejects:
+/// it declares no named parameter) and to an existing `InfixFunc`; anything
 /// else leaves the colonpair unconsumed.
-pub(super) fn attach_trailing_adverbs<'a>(
+pub(crate) fn attach_trailing_adverbs<'a>(
     input: &'a str,
     left: &mut Expr,
 ) -> Result<&'a str, PError> {
@@ -59,8 +96,7 @@ pub(super) fn attach_trailing_adverbs<'a>(
             break;
         }
         let attachable = match &*left {
-            Expr::Binary { op, .. } => binary_token_op_str(op)
-                .is_some_and(crate::parser::stmt::simple::is_user_defined_infix),
+            Expr::Binary { op, .. } => binary_token_op_str(op).is_some(),
             Expr::InfixFunc { .. } => true,
             _ => false,
         };
@@ -82,10 +118,25 @@ pub(super) fn attach_trailing_adverbs<'a>(
                     unreachable!()
                 };
                 let name = binary_token_op_str(&op).expect("checked above").to_string();
+                // The junction operators are list-associative: `1 | 2 | 3 :x`
+                // is one call over every operand, so the chain the parser
+                // nested to the left is folded back into it.
+                let (bl, mut operands) = if matches!(
+                    op,
+                    crate::token_kind::TokenKind::Ampersand
+                        | crate::token_kind::TokenKind::Pipe
+                        | crate::token_kind::TokenKind::Caret
+                ) {
+                    flatten_junction_chain(&op, bl)
+                } else {
+                    (bl, Vec::new())
+                };
+                operands.push(*right);
+                operands.push(adverb);
                 *left = Expr::InfixFunc {
                     name,
                     left: bl,
-                    right: vec![*right, adverb],
+                    right: operands,
                     modifier: None,
                 };
             }
@@ -143,6 +194,8 @@ pub(crate) fn sequence_only_expr(input: &str) -> PResult<'_, Expr> {
         }
         break;
     }
+    // `say 1 + 2 :adverb`: the adverb belongs to the operator, not to `say`.
+    rest = attach_trailing_adverbs(rest, &mut left)?;
     Ok((rest, left))
 }
 

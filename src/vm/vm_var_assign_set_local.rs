@@ -1681,7 +1681,8 @@ impl Interpreter {
                 // Non-Associative Instance objects get .Map called for coercion.
                 self.coerce_constant_hash_value(name, raw_popped)?
             } else {
-                self.coerce_hash_var_value(name, raw_popped)?
+                let decl = self.local_store_decl(code, idx);
+                self.coerce_hash_var_value(decl, name, raw_popped)?
             }
         } else if name.starts_with('@') {
             if is_bind {
@@ -2198,7 +2199,9 @@ impl Interpreter {
         // just embedded. A `constant %h = <a b>` must render as `Map.new(...)`,
         // and the coercion above already produced the final value.
         if !is_bind && !is_constant && (name.starts_with('@') || name.starts_with('%')) {
-            val = self.coerce_typed_container_assignment(name, val, has_explicit_initializer)?;
+            let decl = self.local_store_decl(code, idx);
+            val =
+                self.coerce_typed_container_assignment(decl, name, val, has_explicit_initializer)?;
             // An attribute twigil's element type lives in the class registry,
             // which the name-keyed coercion above cannot see (`has Str @!c;
             // @!c = @x` as a statement lands here).
@@ -3144,10 +3147,11 @@ impl Interpreter {
                     // bypassed by this early return, so it must be applied here.
                     let name = name.clone();
                     let old = arc.load();
+                    let decl = self.local_store_decl(code, idx);
                     val = if name.starts_with('%') {
-                        self.hash_container_writethrough_value(&name, val, &old)?
+                        self.hash_container_writethrough_value(decl, &name, val, &old)?
                     } else {
-                        self.array_container_writethrough_value(&name, val, &old)?
+                        self.array_container_writethrough_value(decl, &name, val, &old)?
                     };
                     val = self.coerce_container_cell_store(&arc, val)?;
                     // Write back into the EXISTING backing `Gc` (instead of

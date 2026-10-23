@@ -27,7 +27,6 @@ impl Interpreter {
         name_idx: u32,
         is_positional: bool,
         target_slot: Option<u32>,
-        autoviv: bool,
         viv_hash: bool,
     ) -> Result<(), RuntimeError> {
         let key = self.stack.pop().unwrap_or(Value::NIL);
@@ -47,7 +46,6 @@ impl Interpreter {
                     name_idx,
                     is_positional,
                     target_slot,
-                    autoviv,
                     viv_hash,
                 )?;
                 elems.push(self.stack.pop().unwrap_or(Value::NIL));
@@ -76,7 +74,7 @@ impl Interpreter {
                     "List" | "Seq" | "Slip" | "Range" | "Hash" | "Map" | "Buf" | "Blob"
                 )
             });
-        if missing && autoviv {
+        if missing {
             // Store a fresh empty Array (or Hash, for the intermediate level
             // of a nested chain whose next subscript is associative) into the
             // element (same machinery as `@a[i] = []`), then re-read from the

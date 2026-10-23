@@ -342,11 +342,11 @@ pub(crate) use expr::precedence::{
 pub(crate) use expr::precedence_meta_ops::lower_hyper_assignment as hyper_assignment_expr;
 pub(crate) use stmt::assign::callable_lvalue_assign_expr;
 pub(crate) use stmt::assign::paren_list_assign_expr;
-pub(crate) use stmt::control::else_pointy_clause;
 pub(crate) use stmt::control::loop_pointy_clause;
 pub(crate) use stmt::control::repeat_param_clause;
 pub(crate) use stmt::control::{
-    given_pointy_body, if_pointy_clause, unless_clause, with_then_branch,
+    ElseClause, IfChainClause, given_pointy_body, if_pointy_clause, lower_if_chain, unless_clause,
+    with_then_branch,
 };
 pub(crate) use stmt::simple::{fold_use_lib_path, use_lib_args};
 pub(crate) use stmt::simple_expr_stmt::lvalue::{index_bind_expr, method_lvalue_target_name};

@@ -149,14 +149,12 @@ impl Interpreter {
         // The `where` clauses and defaults of the signature were compiled in
         // the method's declaring compunit, so a type that unit imported (a
         // module's own role, ADR-11136) must resolve here whoever calls.
-        let saved_unit = def.source_file.as_deref().map(|file| {
-            let unit = self.unit_of_source(Some(file));
-            std::mem::replace(&mut self.current_unit, unit)
-        });
-        let args_match = self.method_args_match(arg_values, &def.param_defs);
-        if let Some(saved_unit) = saved_unit {
-            self.current_unit = saved_unit;
-        }
+        let args_match = match def.source_file.as_deref() {
+            Some(file) => self.with_candidate_unit(file, |this| {
+                this.method_args_match(arg_values, &def.param_defs)
+            }),
+            None => self.method_args_match(arg_values, &def.param_defs),
+        };
         if def.param_defs.iter().any(|p| p.where_constraint.is_some()) {
             // A `where` clause is user code: its writes to *dynamic* variables
             // are observable side effects (`multi method f($ where { $*checked

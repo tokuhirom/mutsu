@@ -152,19 +152,43 @@ fn original_line(target: &Value, args: &[Value]) -> Option<Result<Value, Runtime
 }
 
 /// The child nodes of `node`, in field order: every field value that is itself
-/// a RakuAST node, and every such element of a list field. Leaf payloads (a
+/// a RakuAST node, and every such element of a list field (a conditional's
+/// `elsifs` clauses contribute their own children). Leaf payloads (a
 /// name, a number) and the hidden `origin` are not nodes.
 // Cost: O(f + c), f = fields of `node`, c = child nodes listed in them.
 pub(super) fn children(node: &RakuAstNode) -> Vec<Value> {
     let mut out = Vec::new();
-    for field in node
+    // Rakudo's loops visit their condition before the body, whatever order the
+    // constructor takes them in (`repeat { } while COND` has `body` first).
+    let repeat = matches!(
+        node.class,
+        crate::rakuast::RakuAstClass::StatementLoopRepeatWhile
+            | crate::rakuast::RakuAstClass::StatementLoopRepeatUntil
+    );
+    let visited = node
         .fields
         .iter()
-        .filter(|field| !crate::rakuast::is_unvisited_field(node, field))
-    {
+        .filter(|field| !crate::rakuast::is_unvisited_field(node, field));
+    let fields: Vec<_> = if repeat {
+        let (condition, rest): (Vec<_>, Vec<_>) =
+            visited.partition(|f| f.name == Some("condition"));
+        condition.into_iter().chain(rest).collect()
+    } else {
+        visited.collect()
+    };
+    for field in fields {
         match &field.value {
             RakuAstFieldValue::Node(v) if crate::rakuast::is_node_value(v) => {
                 out.push(v.clone());
+            }
+            // Rakudo's conditionals visit each `elsif` / `orwith` clause's
+            // condition and block directly, never the clause node itself.
+            RakuAstFieldValue::List(items) if field.name == Some("elsifs") => {
+                for item in items {
+                    if let ValueView::RakuAst(clause) = item.view() {
+                        out.extend(children(clause));
+                    }
+                }
             }
             RakuAstFieldValue::List(items) => out.extend(
                 items

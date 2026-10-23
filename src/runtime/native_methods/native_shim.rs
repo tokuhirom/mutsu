@@ -10,6 +10,9 @@
 use crate::runtime::*;
 use crate::symbol::Symbol;
 
+/// The captured-env name the shim's body reads its instance from.
+const SHIM_INSTANCE: &str = "native_shim_instance";
+
 /// Build the shim: `-> $v { instance.method_name($v) }` when `has_param`,
 /// otherwise `{ instance.method_name() }`.
 pub(in crate::runtime) fn native_method_shim(
@@ -51,13 +54,24 @@ pub(in crate::runtime) fn native_method_shim(
     } else {
         (Vec::new(), Vec::new(), Vec::new())
     };
+    // The instance rides in the shim's captured env, not in the body, so the
+    // body is the same for every shim of one `(method_name, has_param)` and is
+    // compiled once (`synthesized_closure_code`).
     let body = vec![crate::ast::Stmt::Expr(crate::ast::Expr::MethodCall {
-        target: Box::new(crate::ast::Expr::Literal(instance)),
+        target: Box::new(crate::ast::Expr::Var(SHIM_INSTANCE.to_string())),
         name: Symbol::intern(method_name),
         args: call_args,
         modifier: None,
         quoted: false, sugar: false,
     })];
+    let (code, fns) = crate::runtime::synthesized_closure_code(
+        &format!("shim:{method_name}:{has_param}"),
+        &params,
+        &param_defs,
+        &body,
+    );
+    let mut env = Env::new();
+    env.insert(SHIM_INSTANCE.to_string(), instance);
     Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
         package: Symbol::intern("GLOBAL"),
         name: Symbol::intern(""),
@@ -66,15 +80,15 @@ pub(in crate::runtime) fn native_method_shim(
         body: std::sync::Arc::new(body),
         is_rw: false,
         is_raw: false,
-        env: Env::new(),
+        env,
         assumed_positional: Vec::new(),
         assumed_named: ValueMap::default(),
         id: crate::value::next_instance_id(),
         is_direct_code: false,
         empty_sig: false,
         is_bare_block: true,
-        compiled_code: None,
-        compiled_fns: None,
+        compiled_code: Some(code),
+        compiled_fns: Some(fns),
         compiled_routine: None,
         is_decl_expr_thunk: false,
         deprecated_message: None,

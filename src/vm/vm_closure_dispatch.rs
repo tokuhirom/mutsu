@@ -715,6 +715,15 @@ impl Interpreter {
         // authoritative from its creating frame. Same overwrite-install as
         // `authoritative_free_vars` above — a never-written, lexically-authoritative
         // value that a same-named caller lexical must not shadow.
+        // `data.authoritative_captures` is installed like `authoritative_free_vars`
+        // above. #14573's ablation found the whole-capture loop does NOT subsume
+        // it: removing this install fails
+        // `t/concurrency/supply/supply-block-reinstantiated.t`,
+        // `supply-block-captured-lexical.t`,
+        // `supply-whenever-container-parameter-capture.t` and
+        // `whenever-callback-recompile-semantics.t` -- a `supply`/`whenever`
+        // callback runs in a frame whose `Env` the whole-capture loop does not
+        // reach.
         for sym in &data.authoritative_captures {
             if let Some(val) = data.env.get_sym(*sym).cloned() {
                 self.env_mut().insert_sym(*sym, val);
@@ -852,6 +861,13 @@ impl Interpreter {
             // it is a readonly item binding with no caller container behind it.
             Vec::new()
         } else {
+            // A routine's parameter defaults are written in its own package: a
+            // name there (an enum its module declares, `HashAlg(dflt())`)
+            // resolves from it, whichever package the caller imported the
+            // routine into.
+            let _default_package_guard = (cc.is_routine
+                && !crate::qualified::is_global_package(data.package))
+            .then(|| self.enter_package_guarded_sym(data.package));
             match loan_env!(
                 self,
                 // `param_name_syms.params` is `data.params` interned once per

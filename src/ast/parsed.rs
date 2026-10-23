@@ -1,0 +1,278 @@
+//! Construct families the parser builds in their RakuAST shape
+//! (ADR-10723 Stage 2, §4 "Typed nodes vs. the uniform `RakuAstNode`").
+//!
+//! A migrated family's parse function builds a typed node shaped like the
+//! RakuAST node (`Statement::If` keeps its condition, its `then` block, its
+//! `elsif`/`orwith` clauses and its `else` block) and records the source
+//! positions Rakudo gives those nodes. Children of a family that has not
+//! migrated yet stay ordinary `Expr`/`Stmt` values.
+//!
+//! An executing parse hands the node to `rakuast::lower` where it is built, so
+//! the compiler and every analysis see the tree they always saw. A parse whose
+//! tree only the RakuAST conversion reads (`ast::spelled::keeping`) keeps the
+//! node in [`Stmt::Ast`]; `.AST` renders it, positions included, and the
+//! `MUTSU_RAKUAST` round trip lowers it through the same function.
+
+use super::{Expr, ParamDef, SrcSpan, Stmt};
+
+/// A statement-level construct kept in its RakuAST shape.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum ParsedStmt {
+    /// `if` / `unless` / `with` / `without` and their clause chain.
+    Conditional(Conditional),
+    /// `given TOPIC BLOCK` (`Statement::Given`); the block's topic parameter,
+    /// if any, is `BlockParams::Topic`.
+    Given { topic: Expr, block: ParsedBlock },
+    /// `when MATCHER BLOCK` (`Statement::When`).
+    When { condition: Expr, block: ParsedBlock },
+    /// `default BLOCK` (`Statement::Default`).
+    Default(ParsedBlock),
+    /// `while COND BLOCK` / `until COND BLOCK` (`Statement::Loop::While` /
+    /// `::Until`).
+    WhileLoop(WhileLoop),
+    /// A bare `{ ... }` statement (`Statement::Expression` over a `Block`).
+    BareBlock(ParsedBlock),
+    /// `loop`, C-style or bare, and `repeat ... while` / `until`
+    /// (`Statement::Loop`, `::Loop::RepeatWhile` / `::RepeatUntil`).
+    Loop(LoopStmt),
+    /// `for LIST BLOCK` (`Statement::For`). `Stmt::For` already keeps what
+    /// the source wrote, so the node is that statement plus the positions of
+    /// its block.
+    For { stmt: Box<Stmt>, block: BlockSpans },
+}
+
+/// Where a block was written: the block (from `->` when pointy), its braces and
+/// its statements. See [`ParsedBlock`].
+#[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BlockSpans {
+    pub(crate) span: SrcSpan,
+    pub(crate) blockoid: SrcSpan,
+    pub(crate) list: SrcSpan,
+}
+
+/// Which loop a [`LoopStmt`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum LoopKind {
+    /// `loop { }` / `loop (init; cond; step) { }`.
+    Loop,
+    RepeatWhile,
+    RepeatUntil,
+}
+
+/// `loop` / `repeat`. A `repeat` keeps its condition as written (no `!` for
+/// `until`) and its pointy parameter as the block's `BlockParams::Topic`.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct LoopStmt {
+    pub(crate) kind: LoopKind,
+    pub(crate) init: Option<Box<Stmt>>,
+    pub(crate) condition: Option<Expr>,
+    pub(crate) step: Option<Expr>,
+    pub(crate) block: ParsedBlock,
+    pub(crate) label: Option<String>,
+    /// Written as a term without `do` (`(while COND { ... })`); see
+    /// `Stmt::While::is_bare_term`.
+    pub(crate) bare_term: bool,
+}
+
+/// `while` / `until` with its optional label.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WhileLoop {
+    pub(crate) until: bool,
+    /// The condition as written: no `!` for `until`.
+    pub(crate) condition: Expr,
+    pub(crate) block: ParsedBlock,
+    pub(crate) label: Option<String>,
+    /// Written as a term without `do` (`(while COND { ... })`); see
+    /// `Stmt::While::is_bare_term`.
+    pub(crate) bare_term: bool,
+}
+
+/// Which keyword opened a conditional statement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum ConditionalKind {
+    If,
+    Unless,
+    With,
+    Without,
+}
+
+/// Which keyword opened a continuation clause.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum ClauseKind {
+    Elsif,
+    Orwith,
+}
+
+/// `Statement::If` / `::Unless` / `::With` / `::Without`.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Conditional {
+    pub(crate) kind: ConditionalKind,
+    /// The condition as written: no `!` for `unless`, no `.defined` test for
+    /// `with`.
+    pub(crate) condition: Expr,
+    /// The `then` block (`body` for `unless` / `without`).
+    pub(crate) then: ParsedBlock,
+    /// The `elsif` / `orwith` clauses, in source order.
+    pub(crate) clauses: Vec<ConditionalClause>,
+    /// The `else` block.
+    pub(crate) else_block: Option<ParsedBlock>,
+}
+
+/// `Statement::Elsif` / `Statement::Orwith`.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ConditionalClause {
+    pub(crate) kind: ClauseKind,
+    pub(crate) condition: Expr,
+    pub(crate) then: ParsedBlock,
+}
+
+/// The parameters written in front of a block, as the parser read them.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum BlockParams {
+    /// A plain `{ ... }`.
+    None,
+    /// `-> PARAMS { ... }` after `if` / `elsif` / `else` / `unless`: the
+    /// parameter list (empty for `-> { }`).
+    List(Vec<ParamDef>),
+    /// `-> PARAM { ... }` after `with` / `orwith` / `without`, or after the
+    /// `else` of a `with` with no clauses: the single topic parameter (both
+    /// `None` for `-> { }`).
+    Topic {
+        name: Option<String>,
+        def: Option<Box<ParamDef>>,
+    },
+}
+
+/// A `Block` / `PointyBlock` with its `Blockoid` and `StatementList`.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ParsedBlock {
+    pub(crate) params: BlockParams,
+    pub(crate) body: Vec<Stmt>,
+    /// The whole block: from `{`, or from `->` for a pointy block, through `}`.
+    pub(crate) span: SrcSpan,
+    /// The braces, `{` through `}` (the `Blockoid`).
+    pub(crate) blockoid: SrcSpan,
+    /// The statements: from the first statement to the end of the last one,
+    /// its `;` included; empty just after `{` when there is none.
+    pub(crate) list: SrcSpan,
+}
+
+impl ParsedStmt {
+    /// The statement a node of a family whose internal form is already its
+    /// source form wraps (`for`): passes treat the node as that statement.
+    // Cost: O(1).
+    pub(crate) fn inner_stmt(&self) -> Option<&Stmt> {
+        match self {
+            ParsedStmt::For { stmt, .. } => Some(stmt),
+            _ => None,
+        }
+    }
+
+    /// Whether this is a `while` / `until` / `loop` / `repeat` written as a
+    /// term without a `do`.
+    // Cost: O(1).
+    pub(crate) fn is_bare_loop_term(&self) -> bool {
+        match self {
+            ParsedStmt::WhileLoop(w) => w.bare_term,
+            ParsedStmt::Loop(l) => l.bare_term,
+            _ => false,
+        }
+    }
+
+    /// Record that this loop is written as a term without a `do`.
+    // Cost: O(1).
+    pub(crate) fn mark_bare_loop_term(&mut self) {
+        match self {
+            ParsedStmt::WhileLoop(w) => w.bare_term = true,
+            ParsedStmt::Loop(l) => l.bare_term = true,
+            _ => {}
+        }
+    }
+
+    /// [`ParsedStmt::inner_stmt`], mutably.
+    // Cost: O(1).
+    pub(crate) fn inner_stmt_mut(&mut self) -> Option<&mut Stmt> {
+        match self {
+            ParsedStmt::For { stmt, .. } => Some(stmt),
+            _ => None,
+        }
+    }
+
+    /// The expressions that run in the enclosing scope: every condition, topic
+    /// and matcher (none for a node with an [`inner_stmt`](Self::inner_stmt)).
+    // Cost: O(c), c = clauses.
+    pub(crate) fn headers(&self) -> Vec<&Expr> {
+        match self {
+            ParsedStmt::Conditional(c) => std::iter::once(&c.condition)
+                .chain(c.clauses.iter().map(|clause| &clause.condition))
+                .collect(),
+            ParsedStmt::Given { topic, .. } => vec![topic],
+            ParsedStmt::When { condition, .. } => vec![condition],
+            ParsedStmt::WhileLoop(w) => vec![&w.condition],
+            ParsedStmt::Loop(l) => l.condition.iter().chain(l.step.iter()).collect(),
+            ParsedStmt::For { .. } => Vec::new(),
+            ParsedStmt::Default(_) | ParsedStmt::BareBlock(_) => Vec::new(),
+        }
+    }
+
+    /// Every block, in source order.
+    // Cost: O(c), c = clauses.
+    pub(crate) fn blocks(&self) -> Vec<&ParsedBlock> {
+        match self {
+            ParsedStmt::Conditional(c) => std::iter::once(&c.then)
+                .chain(c.clauses.iter().map(|clause| &clause.then))
+                .chain(c.else_block.iter())
+                .collect(),
+            ParsedStmt::Given { block, .. }
+            | ParsedStmt::When { block, .. }
+            | ParsedStmt::Default(block)
+            | ParsedStmt::BareBlock(block) => vec![block],
+            ParsedStmt::WhileLoop(w) => vec![&w.block],
+            ParsedStmt::Loop(l) => vec![&l.block],
+            ParsedStmt::For { .. } => Vec::new(),
+        }
+    }
+}
+
+impl ParsedBlock {
+    /// Where the block was written.
+    // Cost: O(1).
+    pub(crate) fn spans(&self) -> BlockSpans {
+        BlockSpans {
+            span: self.span,
+            blockoid: self.blockoid,
+            list: self.list,
+        }
+    }
+
+    /// Whether the block was written with `->`.
+    // Cost: O(1).
+    pub(crate) fn is_pointy(&self) -> bool {
+        !matches!(self.params, BlockParams::None)
+    }
+}
+
+impl Stmt {
+    /// The statement passes treat this one as: the wrapped statement of a
+    /// node whose internal form is already its source form (`for`), else
+    /// `self`.
+    // Cost: O(1).
+    pub(crate) fn peel_parsed(&self) -> &Stmt {
+        match self {
+            Stmt::Ast(node) => node.inner_stmt().unwrap_or(self),
+            other => other,
+        }
+    }
+
+    /// [`Stmt::peel_parsed`], mutably.
+    // Cost: O(1).
+    pub(crate) fn peel_parsed_mut(&mut self) -> &mut Stmt {
+        if !matches!(self, Stmt::Ast(node) if node.inner_stmt().is_some()) {
+            return self;
+        }
+        match self {
+            Stmt::Ast(node) => node.inner_stmt_mut().expect("checked above"),
+            _ => unreachable!("checked above"),
+        }
+    }
+}

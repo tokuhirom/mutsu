@@ -1,7 +1,7 @@
 use v6.d;
 use Test;
 
-plan 8;
+plan 10;
 
 # A user infix candidate is ranked against the core one parameter by
 # parameter (rakudo's is_narrower), for an operand with a role mixed in.
@@ -24,3 +24,5 @@ is cell('U', 'Int'), 'Ambiguous', 'an unrelated role type with the same second t
 is cell('U', 'Rational'), '3', 'unrelated role, wider second parameter: core wins';
 is cell('Any', 'Int'), '3', 'wider first parameter: core wins';
 is cell('Mu', 'Numeric'), '3', 'wider in both: core wins';
+is cell('Cool', 'Int'), '3', 'Cool is wider than Rational: core wins';
+is cell('Numeric', 'Int'), '3', 'Numeric is wider than Rational: core wins';

@@ -7,37 +7,12 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         .or_else(|| keyword("without", input))
         .ok_or_else(|| PError::expected("with/without statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond_expr) = condition_expr(rest)?;
+    let (rest, condition) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
+    // An optional pointy block: -> $param { ... }, -> \param { ... }, or
+    // -> (SIGNATURE) { ... } (sub-signature destructuring).
+    let (rest, then) = super::conditionals::topic_clause_block(rest, None)?;
 
-    // Check for optional pointy block: -> $param { ... }, -> \param { ... },
-    // or -> (SIGNATURE) { ... } (sub-signature destructuring)
-    let (rest, param_name, param_def) = if rest.starts_with("->") || rest.starts_with("<->") {
-        let (r, (param, param_def, _params, _params_def, _rw_block, _explicit_zero)) =
-            parse_for_params(rest)?;
-        (r, param, param_def)
-    } else {
-        (rest, None, None)
-    };
-
-    let (rest, body) = block_with_pointy_params(rest, param_def.as_slice())?;
-
-    // Use a temp variable in the condition to evaluate cond_expr exactly once.
-    // This is important for expressions like `Failure.new` where evaluating
-    // twice would create two distinct objects, and the `.defined` call on the
-    // condition would not mark the same instance that `$_` receives.
-    let tmp_name = crate::with_desugar::next_tmp_name();
-    let tmp_var = Expr::Var(tmp_name.clone());
-
-    let with_body = with_then_branch(&cond_expr, &tmp_var, &param_name, &param_def, body)
-        .map_err(PError::from_typed)?;
-
-    // Build the condition as (my $tmp = cond_expr).defined() (or
-    // !(my $tmp = cond_expr).defined() for without). The DoStmt(VarDecl)
-    // evaluates cond_expr once, declares $tmp in the current scope, and
-    // returns the value. Then .defined() checks it. The body uses $tmp
-    // for topicalization instead of re-evaluating cond_expr.
-    let cond = crate::with_desugar::defined_condition(is_without, &tmp_name, cond_expr);
     // Parse orwith / else chains
     let rest_before_ws = rest;
     let (rest, _) = ws(rest)?;
@@ -53,57 +28,39 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         }
     }
 
-    let (rest, else_branch) = if keyword("orwith", rest).is_some()
-        || keyword("elsif", rest).is_some()
-    {
-        // Delegate the whole `orwith`/`elsif` continuation — including *multiple*
-        // `orwith` clauses and a trailing `else` — to the shared if-chain parser.
-        // It loops over every `orwith`/`elsif` (the old hand-rolled branch here
-        // consumed only a single `orwith`, so `with … orwith … orwith … else …`
-        // left the second `orwith` as an "Undeclared routine") and already
-        // topicalizes each `orwith` body / the `else` via `given`.
-        let (r, (chain_clauses, else_clause)) = parse_elsif_chain(rest)?;
-        let chain_stmt = lower_if_chain(chain_clauses, else_clause).map_err(PError::from_typed)?;
-        (r, vec![chain_stmt])
-    } else if keyword("else", rest).is_some() {
-        let r = keyword("else", rest).unwrap();
-        let (r, _) = ws(r)?;
-        let (r, param, def) = if r.starts_with("->") || r.starts_with("<->") {
-            let (r, (param, def, params, _, _, _)) = parse_for_params(r)?;
-            if !params.is_empty() {
-                return Err(PError::expected_at("single else pointy parameter", r));
-            }
-            (r, param, def)
+    let (rest, clauses, else_block) =
+        if keyword("orwith", rest).is_some() || keyword("elsif", rest).is_some() {
+            // The whole `orwith`/`elsif` continuation — *multiple* `orwith`
+            // clauses and a trailing `else` included — is the shared if-chain
+            // parser's.
+            let (r, (clauses, else_block)) = parse_elsif_chain(rest)?;
+            (r, clauses, else_block)
+        } else if let Some(r) = keyword("else", rest) {
+            let (r, _) = ws(r)?;
+            let (r, block) =
+                super::conditionals::topic_clause_block(r, Some("single else pointy parameter"))?;
+            (r, Vec::new(), Some(block))
         } else {
-            (r, None, None)
+            // No orwith/else found — don't consume whitespace/newlines past the
+            // closing brace, so the caller sees the statement boundary correctly
+            // (e.g. `do with X { ... }\nsay ...` should not absorb `say`).
+            (rest_before_ws, Vec::new(), None)
         };
-        let (r, body) = block_with_pointy_params(r, def.as_slice())?;
-        let else_body =
-            with_then_branch(&tmp_var, &tmp_var, &param, &def, body).map_err(PError::from_typed)?;
-        (r, else_body)
-    } else {
-        // No orwith/else found — don't consume whitespace/newlines past the
-        // closing brace, so the caller sees the statement boundary correctly
-        // (e.g. `do with X { ... }\nsay ...` should not absorb `say`).
-        (rest_before_ws, Vec::new())
-    };
 
-    Ok((
-        rest,
-        Stmt::If {
-            cond,
-            then_branch: with_body,
-            else_branch,
-            binding_var: None,
-            is_statement_modifier: false,
-            is_unless: false,
-            with_kind: Some(if is_without {
-                WithBlockKind::Without
-            } else {
-                WithBlockKind::With
-            }),
+    let node = crate::ast::parsed::Conditional {
+        kind: if is_without {
+            crate::ast::parsed::ConditionalKind::Without
+        } else {
+            crate::ast::parsed::ConditionalKind::With
         },
-    ))
+        condition,
+        then,
+        clauses,
+        else_block,
+    };
+    let stmt = super::parsed_block::finish(crate::ast::parsed::ParsedStmt::Conditional(node))
+        .map_err(PError::from_typed)?;
+    Ok((rest, stmt))
 }
 
 /// The then-branch of `with COND [-> PARAM] { BODY }`: the topicalization and
