@@ -184,7 +184,8 @@ impl Interpreter {
             return Ok(false);
         }
         // A user `infix:<~>` candidate must see the operands (#13791).
-        if crate::opcode::reflective_name_access_possible() || self.user_infix_override("infix:<~>") {
+        if crate::opcode::reflective_name_access_possible() || self.user_infix_override("infix:<~>")
+        {
             return Ok(false);
         }
         let mirrored = code.needs_env_sync.get(idx).copied().unwrap_or(true);

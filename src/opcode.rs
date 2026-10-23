@@ -88,7 +88,11 @@ pub(crate) fn sorted_by_name(set: impl IntoIterator<Item = Symbol>) -> Vec<Symbo
 /// Set both compile-time latches as a compile that set them would have: what a
 /// load served from the compiled-bytecode cache replays (ADR-11756 §2.2).
 // Cost: O(1).
-pub(crate) fn replay_compile_latches(reflective: bool, non_eval_reflective: bool, dispatcher: bool) {
+pub(crate) fn replay_compile_latches(
+    reflective: bool,
+    non_eval_reflective: bool,
+    dispatcher: bool,
+) {
     if reflective {
         REFLECTIVE_NAME_ACCESS_SEEN.store(true, Ordering::Relaxed);
     }
