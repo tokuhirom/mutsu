@@ -31,7 +31,13 @@ pub(super) fn interpolated(node: &mut RakuAstNode) {
     let RakuAstFieldValue::List(segments) = &mut field.value else {
         return;
     };
-    if segments.len() < 2 {
+    // A single literal segment is placed by `quoted_text`; a single
+    // interpolation is placed here.
+    let single_literal = matches!(
+        segments.as_slice(),
+        [only] if matches!(only.view(), ValueView::RakuAst(n) if n.class == RakuAstClass::StrLiteral)
+    );
+    if segments.is_empty() || single_literal {
         return;
     }
     let mut cursor = start;
@@ -57,6 +63,7 @@ pub(super) fn interpolated(node: &mut RakuAstNode) {
                 variable_at(&segment, cursor, end)
             }
             RakuAstClass::Block => block_at(&mut segment, cursor, end),
+            RakuAstClass::ApplyPostfix => postfix_at(&mut segment, cursor, end),
             _ => None,
         };
         let Some((at, next)) = placed else {
@@ -111,6 +118,7 @@ fn written_start(next: &RakuAstNode, cursor: usize, end: usize) -> Option<usize>
             leaf_text(next)?
         }
         RakuAstClass::Block => "{".to_string(),
+        RakuAstClass::ApplyPostfix => leaf_text(interpolated_variable(next)?)?,
         _ => return None,
     };
     super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
@@ -195,4 +203,87 @@ fn block_at(block: &mut RakuAstNode, cursor: usize, end: usize) -> Option<(usize
         })
     });
     Some((cursor, close + 1))
+}
+
+/// The variable an interpolated postfix application (`@x[0]`, `%h<a>`,
+/// `@x.elems()`) is applied to.
+// Cost: O(f), f = fields of `node`.
+fn interpolated_variable(node: &RakuAstNode) -> Option<&RakuAstNode> {
+    let operand = super::infix_origins::child(node, "operand")?;
+    matches!(
+        operand.class,
+        RakuAstClass::VarLexical | RakuAstClass::VarDynamic | RakuAstClass::VarAttribute
+    )
+    .then_some(operand)
+}
+
+/// The range of an interpolated `$x[...]` / `%h{...}` / `%h<...>` /
+/// `$x.name(...)` written at `cursor`, its variable's and, from those, its
+/// subscript's or method call's. A subscript or argument list holding a quote,
+/// a backslash or a comment, which could hide its closing bracket, is left
+/// alone.
+// Cost: O(n), n = length of the interpolation.
+fn postfix_at(segment: &mut RakuAstNode, cursor: usize, end: usize) -> Option<(usize, usize)> {
+    let name = leaf_text(interpolated_variable(segment)?)?;
+    let postfix = super::infix_origins::child(segment, "postfix")?.class;
+    let to = super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
+        let rest = text.strip_prefix(name.as_str())?;
+        let at = name.len();
+        let close = match postfix {
+            RakuAstClass::PostcircumfixArrayIndex => balanced(rest, '[', ']')?,
+            RakuAstClass::PostcircumfixHashIndex => balanced(rest, '{', '}')?,
+            RakuAstClass::PostcircumfixLiteralHashIndex => {
+                let inner = rest.strip_prefix('<')?;
+                if inner.starts_with('<') || inner.contains(['\\', '"', '\'']) {
+                    return None;
+                }
+                inner.find('>')? + 2
+            }
+            RakuAstClass::CallMethod => {
+                let method = rest.strip_prefix('.')?;
+                let name_len = method
+                    .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-')))
+                    .filter(|&n| n > 0)?;
+                1 + name_len + balanced(&method[name_len..], '(', ')')?
+            }
+            _ => return None,
+        };
+        Some(cursor + at + close)
+    })?;
+    super::origin::set_span(segment, SrcSpan::new(cursor, to));
+    super::infix_origins::with_child(segment, "operand", |var| {
+        super::origin::set_span(var, SrcSpan::new(cursor, cursor + name.len()))
+    });
+    if postfix == RakuAstClass::CallMethod {
+        let mut node = RakuAstNode::clone(segment);
+        super::call_origins::postfix_call(&mut node, SrcSpan::new(cursor, to));
+        *segment = node;
+    } else {
+        super::list_origins::postcircumfix(segment);
+    }
+    Some((cursor, to))
+}
+
+/// The length of the bracketed text `text` starts with, `open` to its
+/// matching `close`, when nothing inside could hide a bracket.
+// Cost: O(n), n = length of the bracketed text.
+fn balanced(text: &str, open: char, close: char) -> Option<usize> {
+    if !text.starts_with(open) {
+        return None;
+    }
+    let mut depth = 0usize;
+    for (at, c) in text.char_indices() {
+        match c {
+            '"' | '\'' | '\\' | '#' | '「' | '」' => return None,
+            c if c == open => depth += 1,
+            c if c == close => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(at + c.len_utf8());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }

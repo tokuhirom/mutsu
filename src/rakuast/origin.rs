@@ -277,40 +277,6 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     }
 }
 
-/// Give the one `ColonPair::True` among `subscript`'s `colonpairs` the range
-/// `at`, when the text there is `:` and its name.
-// Cost: O(n), n = length of the adverb's source.
-pub(super) fn adverb_true(subscript: &mut RakuAstNode, at: crate::ast::SrcSpan) {
-    let Some(field) = subscript
-        .fields
-        .iter_mut()
-        .find(|f| f.name == Some("colonpairs"))
-    else {
-        return;
-    };
-    let RakuAstFieldValue::List(items) = &mut field.value else {
-        return;
-    };
-    let [only] = items.as_mut_slice() else {
-        return;
-    };
-    let ValueView::RakuAst(pair) = only.view() else {
-        return;
-    };
-    if pair.class != super::RakuAstClass::ColonPairTrue {
-        return;
-    }
-    let Some(name) = super::infix_origins::leaf_text(pair) else {
-        return;
-    };
-    let written = super::unit_source::with_text(at, |t| Some(t == format!(":{name}")));
-    if written == Some(true) {
-        let mut pair = RakuAstNode::clone(pair);
-        set_span(&mut pair, at);
-        *only = Value::rakuast(Box::new(pair));
-    }
-}
-
 /// The byte length of the opening bracket of a word subscript written
 /// `<...>`, `<<...>>` or `«...»`, and its closing bracket.
 // Cost: O(1).
