@@ -157,6 +157,16 @@ fn original_line(target: &Value, args: &[Value]) -> Option<Result<Value, Runtime
 /// name, a number) and the hidden `origin` are not nodes.
 // Cost: O(f + c), f = fields of `node`, c = child nodes listed in them.
 pub(super) fn children(node: &RakuAstNode) -> Vec<Value> {
+    if let Some(shaped) = rakudo_shaped_children(node) {
+        return shaped;
+    }
+    field_children(node)
+}
+
+/// [`children`] for the nodes whose children are exactly their node-valued
+/// fields.
+// Cost: O(f + c), f = fields of `node`, c = child nodes listed in them.
+fn field_children(node: &RakuAstNode) -> Vec<Value> {
     let mut out = Vec::new();
     // Rakudo's loops visit their condition before the body, whatever order the
     // constructor takes them in (`repeat { } while COND` has `body` first).
@@ -200,6 +210,108 @@ pub(super) fn children(node: &RakuAstNode) -> Vec<Value> {
         }
     }
     out
+}
+
+/// Rakudo's `visit-children` shape for the three nodes whose children are not
+/// simply their field values (#14696):
+///
+/// - `ApplyInfix` visits its `Infix`, then an `ArgList` holding both operands
+///   (mutsu stores `left`, `infix`, `right`);
+/// - `ParameterTarget::Var` visits the `VarDeclaration::Simple` it declares,
+///   which carries the parameter's explicit type (the `Parameter` hands that
+///   down in a `declaration` field of the target it visits);
+/// - `VarDeclaration::Simple` visits no `desigilname`.
+// Cost: O(f), f = fields of `node`.
+fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
+    use crate::rakuast::{RakuAstClass, RakuAstField};
+    let node_value = |name: &str| {
+        node.fields.iter().find_map(|f| match &f.value {
+            RakuAstFieldValue::Node(v)
+                if f.name == Some(name) && crate::rakuast::is_node_value(v) =>
+            {
+                Some(v.clone())
+            }
+            _ => None,
+        })
+    };
+    let rakuast = |class, fields: Vec<RakuAstField>| {
+        Value::rakuast(Box::new(RakuAstNode {
+            class,
+            fields,
+            origin: Default::default(),
+        }))
+    };
+    match node.class {
+        RakuAstClass::ApplyInfix => {
+            let infix = node_value("infix")?;
+            let (left, right) = (node_value("left")?, node_value("right")?);
+            let args = [left, right]
+                .into_iter()
+                .map(|value| RakuAstField {
+                    name: None,
+                    value: RakuAstFieldValue::Node(value),
+                })
+                .collect();
+            let mut out = vec![infix, rakuast(RakuAstClass::ArgList, args)];
+            out.extend(
+                node.fields
+                    .iter()
+                    .filter(|f| f.name == Some("colonpairs"))
+                    .filter_map(|f| match &f.value {
+                        RakuAstFieldValue::List(items) => Some(items.iter().cloned()),
+                        _ => None,
+                    })
+                    .flatten()
+                    .filter(crate::rakuast::is_node_value),
+            );
+            Some(out)
+        }
+        RakuAstClass::ParameterTargetVar => {
+            Some(vec![node_value("declaration").unwrap_or_else(|| {
+                rakuast(RakuAstClass::VarDeclarationSimple, Vec::new())
+            })])
+        }
+        RakuAstClass::VarDeclarationSimple => {
+            let mut rest = node.clone();
+            rest.fields.retain(|f| f.name != Some("desigilname"));
+            Some(field_children(&rest))
+        }
+        RakuAstClass::Parameter => {
+            // An explicit type (a `Type::Simple`, not the implicit `Any`
+            // setting type) belongs to the declaration of the target too.
+            let explicit_type = node_value("type").filter(|t| {
+                matches!(t.view(), ValueView::RakuAst(n) if n.class == RakuAstClass::TypeSimple)
+            })?;
+            let target = node_value("target")?;
+            let ValueView::RakuAst(target_node) = target.view() else {
+                return None;
+            };
+            if target_node.class != RakuAstClass::ParameterTargetVar {
+                return None;
+            }
+            let declaration = rakuast(
+                RakuAstClass::VarDeclarationSimple,
+                vec![RakuAstField {
+                    name: Some("type"),
+                    value: RakuAstFieldValue::Node(explicit_type),
+                }],
+            );
+            let mut new_target = target_node.clone();
+            new_target.fields.push(RakuAstField {
+                name: Some("declaration"),
+                value: RakuAstFieldValue::Node(declaration),
+            });
+            let mut param = node.clone();
+            for field in &mut param.fields {
+                if field.name == Some("target") {
+                    field.value =
+                        RakuAstFieldValue::Node(Value::rakuast(Box::new(new_target.clone())));
+                }
+            }
+            Some(field_children(&param))
+        }
+        _ => None,
+    }
 }
 
 /// `visit-children(&callable)`: call `callable` once with each direct child.

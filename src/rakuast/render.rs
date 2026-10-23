@@ -278,6 +278,8 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
                 || super::type_call::is_marker(field)
                 || super::keyed_hash::is_source_marker(field)
                 || super::thunk::is_marker(field)
+                || node.class == RakuAstClass::ParameterTargetVar
+                    && field.name == Some("declaration")
                 || node.class == RakuAstClass::RegexNamedCapture && field.name == Some("array")
                 || node.class == RakuAstClass::Parameter && field.name == Some("array-shape")
                 || super::regex_code::is_source(node, field)
