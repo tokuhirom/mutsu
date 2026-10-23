@@ -176,12 +176,9 @@ pub(crate) struct ParamDef {
     /// signature. Code that rewrites one of those expressions must reset it.
     #[serde(default)]
     pub(crate) code: ParamCode,
-    /// Where the parameter was written (ADR-10723 Stage 2). Not part of its
-    /// identity: it is left out of the serialized form, which the stable
-    /// declaration fingerprints (`ast::stable_hash`) hash, so two identical
-    /// declarations written at different places stay the same declaration.
-    /// Only `.AST`, which parses afresh, reads it.
-    #[serde(skip)]
+    /// Where the parameter was written (ADR-10723 Stage 2); not part of its
+    /// identity.
+    #[serde(default)]
     pub(crate) spans: parsed::ParamSpans,
 }
 
@@ -2221,7 +2218,7 @@ pub(crate) enum Stmt {
         custom_traits: Vec<(String, Option<Expr>)>,
         /// Where the name, signature and block were written (ADR-10723
         /// Stage 2); `None` for a declaration nobody wrote.
-        #[serde(skip)]
+        #[serde(default)]
         spans: Option<Box<parsed::RoutineSpans>>,
     },
     TokenDecl {
@@ -2787,7 +2784,7 @@ pub(crate) enum Stmt {
         export_tags: Vec<String>,
         /// Where the name, signature and block were written (ADR-10723
         /// Stage 2); `None` for a declaration nobody wrote.
-        #[serde(skip)]
+        #[serde(default)]
         spans: Option<Box<parsed::RoutineSpans>>,
     },
     RoleDecl {
