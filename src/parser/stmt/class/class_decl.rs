@@ -484,6 +484,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
     reject_no_self_in_attr_where(&body)?;
     reject_no_twigil_attr_at_body_level(&body)?;
     let class_decl = Stmt::ClassDecl {
+        spans: Default::default(),
         name: Symbol::intern(&user_name),
         name_expr: None,
         parents,
@@ -542,6 +543,11 @@ pub(crate) fn class_decl_body_opt(
     } else {
         let (rest, name) = qualified_ident(input)?;
         (rest, name, None)
+    };
+    let name_span = if anonymous {
+        crate::ast::SrcSpan::NONE
+    } else {
+        crate::parser::primary::source_span(input.strip_prefix("::").unwrap_or(input), rest)
     };
     check_pseudo_package_in_decl(&name)?;
     let (rest, traits) = parse_declarator_traits(rest)?;
@@ -735,6 +741,7 @@ pub(crate) fn class_decl_body_opt(
         let _pkg = super::super::simple::push_package_path(&name);
         package_body_block(r)?
     };
+    let spans = crate::parser::stmt::sub::package_spans(name_span, r, rest, &body);
     crate::parser::stmt::nested_block_methods::hoist(&mut body);
     reject_no_self_in_subs(&body)?;
     reject_no_self_in_attr_where(&body)?;
@@ -799,6 +806,7 @@ pub(crate) fn class_decl_body_opt(
         }
     }
     let mut class_stmt = Stmt::ClassDecl {
+        spans,
         name: Symbol::intern(&name),
         name_expr,
         parents,

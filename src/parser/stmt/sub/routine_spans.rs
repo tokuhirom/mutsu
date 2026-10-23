@@ -1,7 +1,7 @@
 //! Where a routine declaration was written below its statement (ADR-10723
 //! Stage 2): its name, its signature and its block.
 
-use crate::ast::parsed::RoutineSpans;
+use crate::ast::parsed::{PackageSpans, RoutineSpans};
 use crate::ast::{ParamDef, SrcSpan, Stmt};
 
 /// The positions of a routine whose name is at `name`, whose parameters (when
@@ -42,4 +42,18 @@ fn signature_span(start: &str, params: &[ParamDef]) -> SrcSpan {
         (Some(first), Some(last)) => SrcSpan::new(first.from as usize, last.to as usize),
         _ => crate::parser::primary::source_span(start, start),
     }
+}
+
+/// The positions of a package declaration whose name is at `name` and whose
+/// `{` is at `brace`, its source ending at `rest`.
+// Cost: O(s), s = statements of `body`.
+pub(crate) fn package_spans(
+    name: SrcSpan,
+    brace: &str,
+    rest: &str,
+    body: &[Stmt],
+) -> Option<Box<PackageSpans>> {
+    let brace = brace.trim_start();
+    let block = crate::parser::stmt::control::parsed_block::block_spans(brace, brace, rest, body);
+    Some(Box::new(PackageSpans { name, block }))
 }

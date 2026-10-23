@@ -116,6 +116,7 @@ impl Compiler {
                     .map(|(k, v)| (qualify_parent(k), v.clone()))
                     .collect();
                 Stmt::ClassDecl {
+                    spans: Default::default(),
                     name: qualified_sym,
                     name_expr: name_expr.clone(),
                     parents: new_parents.clone(),
@@ -175,6 +176,7 @@ impl Compiler {
                 decl_id,
                 ..
             } => Stmt::RoleDecl {
+                spans: Default::default(),
                 name: qualified_sym,
                 header_order: header_order.clone(),
                 type_params: type_params.clone(),

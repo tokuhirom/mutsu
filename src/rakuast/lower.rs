@@ -1448,6 +1448,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         false => None,
     };
     Ok(head.finish(Stmt::ClassDecl {
+        spans: Default::default(),
         name: crate::symbol::Symbol::intern(&head.name),
         name_expr,
         parents,
@@ -1618,6 +1619,7 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         parents.insert(0, "Grammar".to_string());
     }
     Ok(head.finish(Stmt::ClassDecl {
+        spans: Default::default(),
         name: crate::symbol::Symbol::intern(&head.name),
         name_expr: None,
         parents,

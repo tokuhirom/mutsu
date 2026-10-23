@@ -132,6 +132,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
     Ok((
         rest,
         Expr::DoStmt(Box::new(Stmt::ClassDecl {
+            spans: Default::default(),
             name: Symbol::intern(&name),
             name_expr: None,
             parents,
@@ -248,6 +249,7 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
     Ok((
         rest,
         Expr::DoStmt(Box::new(Stmt::ClassDecl {
+            spans: Default::default(),
             name: Symbol::intern(&name),
             name_expr: None,
             parents,
@@ -310,6 +312,7 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
     Ok((
         rest,
         Expr::DoStmt(Box::new(Stmt::RoleDecl {
+            spans: Default::default(),
             header_order: Vec::new(),
             name: Symbol::intern(&name),
             type_params,
