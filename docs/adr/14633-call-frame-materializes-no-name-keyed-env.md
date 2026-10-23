@@ -1,6 +1,8 @@
 # ADR-14633: A routine or method call frame materializes no name-keyed `Env` unless a write by name asks for one
 
-- **Status**: Proposed (awaiting the maintainer's Accept)
+- **Status**: Accepted (user decision 2026-10-23; proposed 2026-10-22). Accepted with two
+  amendments made on review: the fixtures live on a parallel stack, not in `RoutineFrame`
+  (§2.1), and the new frame state is frame-core state under ADR-10779 (§2.3).
 - **Date**: 2026-10-22
 - **Issue**: [#14633](https://github.com/tokuhirom/mutsu/issues/14633), a child of
   [#12529](https://github.com/tokuhirom/mutsu/issues/12529). It carries the close
@@ -148,16 +150,43 @@ copy-on-first-write at the `Env` API, not by a static prediction of who will.**
 
 | key | home | readers |
 | --- | --- | --- |
-| `self`, `__ANON_STATE#` | a field of the routine frame record: `invocant: Value` (one value for both names) | compiled body: its slot, as now. Runtime helpers: `Interpreter::frame_invocant()`. Name lookup (`Env::get_sym(wk::self_())` and `GetGlobal self`): answered from the record by the fixture rule below |
-| `?CLASS` | `class: Symbol` on the record | `::?CLASS` constant or slot, as now; helpers: `frame_class()` |
-| `?ROLE` | `role: Option<Symbol>` on the record (no insert, no remove) | helpers: `frame_role()` |
+| `self`, `__ANON_STATE#` | the frame's fixture record: `invocant: Value` (one value for both names) | compiled body: its slot, as now. Runtime helpers: `Interpreter::frame_invocant()`. Name lookup (`Env::get_sym(wk::self_())` and `GetGlobal self`): answered from the record by the fixture rule below |
+| `?CLASS` | `class: Symbol` on the fixture record | `::?CLASS` constant or slot, as now; helpers: `frame_class()` |
+| `?ROLE` | `role: Option<Symbol>` on the fixture record (no insert, no remove) | helpers: `frame_role()` |
 | `$_`, `$/`, `$!` | unchanged: the frame root answers them (`env::routine_owned`) | unchanged |
 | `%_`, `@_` | a slot when `may_observe_named_slurpy` / the body mentions `@_`, never an env key; the bare-name lookup special case for `%_` goes | compiled body: slot |
 
-The record is the existing `RoutineFrame` (`accessors_stack.rs`): it is already pushed on
-every method call (`push_method_routine_with_location`, 77 Ir) and already carries
-`callable_id`, `package`, `name`. Adding three fields to it adds no push. A parallel stack
-is the alternative if `RoutineFrame`'s size turns out to matter (§5).
+**Where the fixture record lives (amended on acceptance, 2026-10-23).** Not in
+`RoutineFrame` itself. `RoutineFrame` (`src/runtime/mod.rs`) is `#[derive(Clone, Copy)]`:
+every field is a `Symbol`, an integer or a flag, and readers snapshot it by value
+(`runtime_caller_env.rs` copies it into each `CallFrameEntry`, `system_introspect.rs` into
+caller views). `Value` is `Clone` but not `Copy`, so an `invocant: Value` field would end
+`Copy` and turn every one of those snapshots into a reference-count increment and a drop.
+
+Instead the records form a parallel stack beside `routine_stack`:
+
+```
+struct FrameFixtures { invocant: Value, class: Symbol, role: Option<Symbol> }
+frame_fixtures: Vec<FrameFixtures>      // frame-core state, see §2.3
+```
+
+`RoutineFrame` gains one `Copy` field, `fixtures: u32`: the index of its entry plus one, or `0`
+for a frame without a record (sub frames, inlined blocks, class bodies). A method call pushes
+one entry next to the `RoutineFrame` push it already makes
+(`push_method_routine_with_location`, 77 Ir) and pops it in the same place. The cost per
+call is one `Vec` push of three words and one reference-count increment for the invocant;
+a sub call pays nothing. "The innermost routine frame that has a record" (the fixture rule
+below) is the top of `frame_fixtures`, an O(1) read.
+
+- **GC.** The entry's `Value` is a strong reference held from Rust, like the slot that holds
+  the same invocant today. Under the Bacon-Rajan collector (ADR-0001) such a reference is
+  external to every cycle, so it keeps the invocant alive for exactly the frame's lifetime
+  and needs no trace hook. Nothing else in the record is a `Value`.
+- **Snapshots do not hold indices past their frame.** An index is valid only while its
+  frame is on the stack. A reader that keeps a frame view beyond that (a `callframe`
+  object, a `CALLER::` view handed to Raku code, a thread spawn) clones the
+  `FrameFixtures` entry into the view when it builds the view, never the index.
+  `CallFrameEntry`, which is pushed and popped with its frame, may keep the index.
 
 **Fixture rule.** The four fixed names (`self`, `__ANON_STATE#`, `?CLASS`, `?ROLE`) are marked `Symbol::is_frame_fixture`, the same latch mechanism
 `Symbol::is_routine_owned` uses: the `Env` lookup learns from one flag read on its miss path
@@ -228,11 +257,24 @@ lazy mark.
 The empty-for-nearly-every-call containers become **one** lazily created side state:
 
 ```
-struct FrameSideState {          // Option<Box<..>> on the interpreter
+struct FrameSideState {          // frame_side: Option<Box<..>>, see below
     upvalues, local_bind_pairs, frame_authoritative, frame_owned,
     pending_caller_var_writeback, rw_param_rebinds,
 }
 ```
+
+**Where the new state lives (amended on acceptance, 2026-10-23).** `frame_side` and
+`frame_fixtures` (§2.1) are `Interpreter` fields of the `frame` subsystem. ADR-10779 D1 keeps
+the frame core (`env`, `locals`, `call_frames`, `routine_stack`, ...) on `Interpreter`
+itself, so they are not new subsystems' state. `make check-interp-fields` still applies.
+The slice that adds a field adds its name to `scripts/interp-fields.d/frame.txt`. Slice 5
+removes the six fields it absorbs from the files that list them today: `upvalues`,
+`frame_authoritative`, `frame_owned` and `rw_param_rebinds` from `frame.txt`,
+`local_bind_pairs` and `pending_caller_var_writeback` from `handoff.txt`. The net change is
+five fewer fields. Two of the six are `handoff` channels, values a caller leaves for a callee.
+The side state only changes where they are saved and restored across a call. Turning them
+into parameters (ADR-10779 D3, AGENTS.md's "a value passed from a caller to a callee is a
+parameter") is separate work that this ADR neither blocks nor does.
 
 `push_call_frame` stores the current `Option<Box<FrameSideState>>` in the call frame and
 installs `None`. A callee that needs any of the six allocates a fresh state on its first
@@ -305,8 +347,8 @@ Each slice passes the gate and is A/B measured per the `perf-tuning` skill on th
 repro (callgrind Ir, second run) plus the bench rows ADR-12529 §3 names; a slice that
 regresses a call row is fixed on its branch.
 
-1. **Records and the fixture rule.** Add `invocant`/`class`/`role` to the routine frame
-   record; keep writing the env keys; make the fixture rule answer from the record first
+1. **Records and the fixture rule.** Add the `frame_fixtures` stack and
+   `RoutineFrame::fixtures` (§2.1), listing the field in `frame.txt`; keep writing the env keys; make the fixture rule answer from the record first
    and assert equality in debug builds. No behavior change; proves the 35 readers.
 2. **Stop writing the keys.** The fast method path writes only the record; convert closure
    capture to the one `SubData` field; convert the class-body/role-composition writers to
@@ -331,9 +373,11 @@ regresses a call row is fixed on its branch.
   per-frame state that two nested lazy frames both set. The save/restore of the bits word on
   push/pop (§2.2) is what keeps them apart; a unit test over nesting depth 1..40 with a
   by-name write at each level is part of slice 4.
-- **`RoutineFrame` size.** Three more words per frame on a stack that already holds
-  `package`, `lexical_package`, `name`, `file`, `def_file`. If the push cost grows measurably
-  the record moves to a parallel `Vec<FrameFixtures>` pushed beside it.
+- **The fixture stack and its index.** Settled on acceptance (§2.1): the records are a
+  parallel `frame_fixtures` stack, so `RoutineFrame` stays `Copy` and grows by one `u32`. The
+  remaining risk is an index read after its frame popped. A debug assertion in the accessor
+  checks that the index is below the stack length. The snapshot rule of §2.1 is what keeps a
+  long-lived view from holding an index at all.
 - **Cross-thread.** `Interpreter::clone_for_thread` copies a materialized env; the fixture
   records of the spawning frame must be copied with it, since a `start`/`Thread` body
   closure reads its lexical `self`. Closures carry theirs (§2.1), so only a thread entry
