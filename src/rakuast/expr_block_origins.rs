@@ -163,30 +163,21 @@ fn brace_after_word(from: usize, to: usize) -> Option<usize> {
     })
 }
 
-/// Give `node`'s `body` (`Blockoid`) the range `at..to`, its `StatementList`
-/// the text inside the braces and the statements in it their expressions'
-/// ranges. A body whose inside holds a `#` (a comment could start the first
-/// statement later than the text does) or is blank keeps no list range.
+/// Give `node`'s `body` (`Blockoid`) the range `at..to` and its
+/// `StatementList` the range of the statements inside the braces
+/// ([`super::list_origins::statement_list`]).
 // Cost: O(n + s), n = length of the block's source, s = its statements.
 fn blockoid(node: &mut RakuAstNode, at: usize, to: usize) {
-    let shape = super::unit_source::with_text(SrcSpan::new(at, to), |text| {
-        (text.starts_with('{') && text.ends_with('}') && text.len() >= 2)
-            .then(|| text[1..text.len() - 1].contains('#'))
+    let braced = super::unit_source::with_text(SrcSpan::new(at, to), |text| {
+        (text.starts_with('{') && text.ends_with('}') && text.len() >= 2).then_some(())
     });
-    let Some(commented) = shape else {
+    if braced.is_none() {
         return;
-    };
-    let inside = if commented {
-        None
-    } else {
-        super::list_origins::inside(at, to, ('{', '}')).filter(|(a, b)| a < b)
-    };
+    }
     with_child(node, "body", |blockoid| {
         super::origin::set_span(blockoid, SrcSpan::new(at, to));
-        if let Some(inside) = inside {
-            with_child_at(blockoid, 0, |list| {
-                super::list_origins::semilist(list, inside)
-            });
-        }
+        with_child_at(blockoid, 0, |list| {
+            super::list_origins::statement_list(list, SrcSpan::new(at + 1, to - 1))
+        });
     });
 }

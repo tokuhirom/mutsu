@@ -66,28 +66,30 @@ pub(crate) fn finish_for(stmt: Stmt, block: BlockSpans) -> Stmt {
     stmt
 }
 
-/// The range of a block's statements: from the start of the first to the end
-/// of the last, its `;` terminators included. Rakudo places an empty list just
-/// after the `{`.
-// Cost: O(s), s = statements of `body`.
+/// The range of a block's statements (see
+/// [`crate::parser::primary::statement_list_range`]). Rakudo places an empty
+/// list just after the `{`.
+// Cost: O(s + n), s = statements of `body`, n = length of the text around them.
 fn statement_list_span(body: &[Stmt], blockoid: SrcSpan) -> SrcSpan {
     let mut spans = body.iter().filter_map(|stmt| match stmt {
         Stmt::SetLine(_, span) if span.is_some() => Some(*span),
         _ => None,
     });
     match spans.next() {
-        Some(first) => {
+        Some(first) if blockoid.is_some() => {
             let last = spans.next_back().unwrap_or(first);
-            crate::parser::primary::extend_over_semicolons(SrcSpan::new(
+            let inside = SrcSpan::new(blockoid.from as usize + 1, blockoid.to as usize - 1);
+            crate::parser::primary::statement_list_range(
                 first.from as usize,
                 last.to as usize,
-            ))
+                inside,
+            )
         }
         None if blockoid.is_some() && body.iter().all(Stmt::is_marker) => {
             let inside = blockoid.from as usize + 1;
             SrcSpan::new(inside, inside)
         }
-        None => SrcSpan::NONE,
+        _ => SrcSpan::NONE,
     }
 }
 

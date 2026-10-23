@@ -21,6 +21,7 @@ pub(in crate::parser) mod quote_adverbs;
 pub(crate) mod regex;
 mod source_regions;
 pub(in crate::parser) mod string;
+pub(in crate::parser) mod trivia_runs;
 pub(crate) mod var;
 pub(in crate::parser) use source_regions::{register_leaked_region_with_jump, source_tail};
 
@@ -144,6 +145,7 @@ pub(super) fn set_original_source(source: &str) {
     });
     fragment_attempts::adopt_lent_attempts();
     LEAKED_REGIONS.with(|r| r.borrow_mut().clear());
+    trivia_runs::clear();
 }
 
 /// The positions at which rakudo's `statement` rule is attempted in the unit
@@ -255,19 +257,25 @@ pub(in crate::parser) fn take_statement_numbering() -> Option<Vec<usize>> {
 pub(in crate::parser) struct SourceState {
     original: SourceOrigin,
     leaked: Vec<LeakedRegion>,
+    trivia: trivia_runs::TriviaRuns,
 }
 
 /// Snapshot the current source-location state.
 pub(in crate::parser) fn snapshot_source_state() -> SourceState {
     let original = ORIGINAL_SOURCE.with(|s| s.borrow().clone());
     let leaked = LEAKED_REGIONS.with(|r| r.borrow().clone());
-    SourceState { original, leaked }
+    SourceState {
+        original,
+        leaked,
+        trivia: trivia_runs::snapshot(),
+    }
 }
 
 /// Restore a previously-snapshotted source-location state.
 pub(in crate::parser) fn restore_source_state(state: SourceState) {
     ORIGINAL_SOURCE.with(|s| *s.borrow_mut() = state.original);
     LEAKED_REGIONS.with(|r| *r.borrow_mut() = state.leaked);
+    trivia_runs::restore(state.trivia);
 }
 
 /// The byte offset in the original source that the parser position `input`
@@ -359,9 +367,10 @@ pub(in crate::parser) fn current_line_number(input: &str) -> i64 {
 /// The span a statement parsed from `start` up to `end` occupies in the original
 /// source (ADR-10723 §4): from its first character to its last, the
 /// terminating `;` and the whitespace around it left out, as Rakudo's
-/// `RakuAST::Origin` ranges are. `SrcSpan::NONE` when either position is
+/// `RakuAST::Origin` ranges are, and so are the comments `ws` consumed after
+/// the last token ([`trivia_runs`]). `SrcSpan::NONE` when either position is
 /// outside the source (text only a leaked buffer holds).
-// Cost: O(h + w), h = leaked heredoc regions, w = trailing whitespace and `;`.
+// Cost: O(h + w), h = leaked heredoc regions, w = trailing whitespace, `;` and comments.
 pub(in crate::parser) fn statement_span(start: &str, end: &str) -> crate::ast::SrcSpan {
     use crate::ast::SrcSpan;
     let (Some(from), Some(to)) = (source_offset(start), source_offset(end)) else {
@@ -381,10 +390,23 @@ pub(in crate::parser) fn statement_span(start: &str, end: &str) -> crate::ast::S
                 origin.len,
             ))
         };
-        full.get(from..to).map(|t| {
-            t.trim_end_matches(|c: char| c.is_whitespace() || c == ';')
-                .len()
-        })
+        let text = full.get(from..to)?;
+        // Step back over whitespace, `;` and the comment runs `ws` recorded.
+        let mut len = text.len();
+        loop {
+            if let Some(start) = trivia_runs::start_of_run_ending_at(origin.ptr + from + len)
+                && start >= origin.ptr + from
+            {
+                len = start - origin.ptr - from;
+                continue;
+            }
+            let trimmed = text[..len].trim_end_matches(|c: char| c.is_whitespace() || c == ';');
+            if trimmed.len() == len {
+                break;
+            }
+            len = trimmed.len();
+        }
+        Some(len)
     });
     match text {
         Some(len) => SrcSpan::new(from, from + len),
@@ -403,25 +425,45 @@ pub(in crate::parser) fn source_span(start: &str, end: &str) -> crate::ast::SrcS
     }
 }
 
-/// `span` extended over the `;` terminators that directly follow it, as a
-/// RakuAST `StatementList`'s range ends after its last statement's `;`.
-// Cost: O(k), k = terminators skipped.
-pub(in crate::parser) fn extend_over_semicolons(span: crate::ast::SrcSpan) -> crate::ast::SrcSpan {
-    if !span.is_some() {
-        return span;
-    }
-    let skipped = ORIGINAL_SOURCE.with(|s| {
+/// The range of a block's statements, as a RakuAST `StatementList`'s: from
+/// `first` (where its first statement starts) to the end of its last
+/// statement (`last`) and the `;` terminators after it, the whitespace and
+/// comments before each `;` included. `inside` is the text between the
+/// braces; when anything but whitespace and comments surrounds the
+/// statements in it (Pod, a declarator comment, text the statements do not
+/// account for), the range is `SrcSpan::NONE`.
+// Cost: O(n), n = length of the text around the statements.
+pub(in crate::parser) fn statement_list_range(
+    first: usize,
+    last: usize,
+    inside: crate::ast::SrcSpan,
+) -> crate::ast::SrcSpan {
+    let range = ORIGINAL_SOURCE.with(|s| {
         let origin = s.borrow();
         if origin.ptr == 0 {
-            return 0;
+            return None;
         }
         // SAFETY: (ptr, len) was recorded from a live `&str` by
         // `set_original_source`; the slice is only read within `len`.
-        let full = unsafe { std::slice::from_raw_parts(origin.ptr as *const u8, origin.len) };
-        full.get(span.to as usize..)
-            .map_or(0, |tail| tail.iter().take_while(|&&b| b == b';').count())
+        let full = unsafe {
+            std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                origin.ptr as *const u8,
+                origin.len,
+            ))
+        };
+        let base = inside.from as usize;
+        let text = full.get(base..inside.to as usize)?;
+        let end = crate::source_comments::statement_list_end(
+            text,
+            first.checked_sub(base)?,
+            last.checked_sub(base)?,
+        )?;
+        Some(base + end)
     });
-    crate::ast::SrcSpan::new(span.from as usize, span.to as usize + skipped)
+    match range {
+        Some(to) => crate::ast::SrcSpan::new(first, to),
+        None => crate::ast::SrcSpan::NONE,
+    }
 }
 
 /// Reconstruct the `pre`/`post` source spans around an eject point, for the

@@ -179,19 +179,19 @@ fn block_at(block: &mut RakuAstNode, cursor: usize, end: usize) -> Option<(usize
         }
         None
     })?;
-    let (list_from, list_to) = super::list_origins::inside(cursor, close + 1, ('{', '}'))?;
+    let inside = super::list_origins::bracketed(cursor, close + 1, ('{', '}'))?;
     let whole = SrcSpan::new(cursor, close + 1);
     super::routine_origins::block_origins(
         block,
         crate::ast::parsed::BlockSpans {
             span: whole,
             blockoid: whole,
-            list: SrcSpan::new(list_from, list_to),
+            list: SrcSpan::NONE,
         },
     );
     super::infix_origins::with_child(block, "body", |blockoid| {
         super::infix_origins::with_child_at(blockoid, 0, |list| {
-            super::list_origins::semilist(list, (list_from, list_to))
+            super::list_origins::statement_list(list, inside)
         })
     });
     Some((cursor, close + 1))

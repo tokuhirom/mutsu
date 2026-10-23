@@ -202,9 +202,11 @@ pub(super) fn set_span(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
 }
 
 /// The range of a unit's top-level `StatementList`: from the start of its
-/// first statement to the end of its last, the `;` terminators that directly
-/// follow it included, as for a block's statements.
-// Cost: O(s + k), s = top-level statements, k = terminators skipped.
+/// first statement to the end of its last, the `;` terminators after it
+/// included, as for a block's statements. `SrcSpan::NONE` when anything but
+/// whitespace and comments surrounds the statements (Pod, which Rakudo keeps
+/// as nodes, or text no statement accounts for).
+// Cost: O(s + n), s = top-level statements, n = length of the text around them.
 pub(super) fn unit_list_span(stmts: &[Stmt], source: &str) -> crate::ast::SrcSpan {
     let mut spans = stmts.iter().filter_map(|stmt| match stmt {
         Stmt::SetLine(_, span) if span.is_some() => Some(*span),
@@ -214,12 +216,11 @@ pub(super) fn unit_list_span(stmts: &[Stmt], source: &str) -> crate::ast::SrcSpa
         return crate::ast::SrcSpan::NONE;
     };
     let last = spans.next_back().unwrap_or(first);
-    let end = last.to as usize;
-    let skipped = source
-        .as_bytes()
-        .get(end..)
-        .map_or(0, |tail| tail.iter().take_while(|&&b| b == b';').count());
-    crate::ast::SrcSpan::new(first.from as usize, end + skipped)
+    let (from, end) = (first.from as usize, last.to as usize);
+    match crate::source_comments::statement_list_end(source, from, end) {
+        Some(to) => crate::ast::SrcSpan::new(from, to),
+        None => crate::ast::SrcSpan::NONE,
+    }
 }
 
 /// Give the one `StrLiteral` of a quoted string written at `span` (`"abc"`,

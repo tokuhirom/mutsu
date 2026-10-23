@@ -189,6 +189,13 @@ pub(super) fn with_text<R>(span: SrcSpan, f: impl FnOnce(&str) -> Option<R>) -> 
     f(unit.text.get(span.from as usize..span.to as usize)?)
 }
 
+/// Run `f` on the current unit's source from byte `at` to its end.
+// Cost: O(1) plus `f`.
+pub(super) fn with_text_from<R>(at: usize, f: impl FnOnce(&str) -> Option<R>) -> Option<R> {
+    let unit = CURRENT.with(|c| c.borrow().clone())?;
+    f(unit.text.get(at..)?)
+}
+
 /// The byte offset of character offset `char` in the current unit's source,
 /// when the unit's source is known.
 // Cost: O(1).
