@@ -54,6 +54,7 @@ mod infix_origins;
 mod inherited_fields;
 mod keyed_hash;
 mod label_context;
+mod list_origins;
 mod literal_parameter;
 mod lower;
 mod match_vars;
