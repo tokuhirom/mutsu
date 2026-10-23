@@ -12,7 +12,9 @@ impl Compiler {
             Expr::Grouped(inner)
                 if matches!(
                     inner.as_ref(),
-                    Expr::AssignExpr { .. } | Expr::IndexAssign { .. }
+                    Expr::AssignExpr { .. }
+                        | Expr::IndexAssign { .. }
+                        | Expr::CompoundAssign { .. }
                 ) =>
             {
                 inner
