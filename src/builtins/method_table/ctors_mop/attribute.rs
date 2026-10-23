@@ -138,6 +138,13 @@ fn required(target: &Value, _args: &[Value]) -> Answer {
 // Cost: O(1).
 fn package(target: &Value, _args: &[Value]) -> Answer {
     with_meta(target, |meta| {
+        // `Attribute.new(:package(Foo))` records the type object itself: hand it
+        // back as is (its string form is the coercion-looking `(Foo)`).
+        if let Some(owner) = meta.as_map().get("__mutsu_attr_owner")
+            && matches!(owner.view(), ValueView::Package(_))
+        {
+            return Ok(owner.clone());
+        }
         let owner = fact_str(meta, "__mutsu_attr_owner").unwrap_or_else(|| "Any".to_string());
         Ok(Value::package(Symbol::intern(&owner)))
     })
