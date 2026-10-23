@@ -285,6 +285,7 @@ fn colonpair((key, value): &Adverb) -> Result<Value, RuntimeError> {
     };
     let node = match flag {
         Some(class) => RakuAstNode {
+            origin: Default::default(),
             class,
             fields: vec![leaf_field(None, Value::str(key.clone()))],
         },
@@ -464,7 +465,11 @@ pub(super) fn construct(class_name: &str, args: &[Value]) -> Option<Result<Value
                 value: RakuAstFieldValue::Node(assignee),
             });
         }
-        Ok(Value::rakuast(Box::new(RakuAstNode { class, fields })))
+        Ok(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
+            class,
+            fields,
+        })))
     };
     Some(build())
 }

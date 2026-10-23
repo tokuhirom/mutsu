@@ -132,6 +132,7 @@ pub(super) fn convert(
     }
     let infix = if is_flip_flop(name) {
         RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::FlipFlop,
             fields: vec![leaf_field(None, Value::str(name.to_string()))],
         }
@@ -155,6 +156,7 @@ pub(super) fn convert(
             });
         }
         return Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields,
         });
@@ -185,6 +187,7 @@ pub(super) fn convert(
         nodes.push(Value::rakuast(Box::new(convert_expr(operand)?)));
     }
     let mut node = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyListInfix,
         fields: vec![
             node_field(Some("infix"), infix),

@@ -104,6 +104,7 @@ fn replace_leftmost(node: &RakuAstNode, replacement: &RakuAstNode) -> RakuAstNod
         })
         .collect();
     RakuAstNode {
+        origin: Default::default(),
         class: node.class,
         fields,
     }
@@ -194,6 +195,7 @@ pub(super) fn convert_call_assign_list(stmt: &Stmt) -> Option<Result<RakuAstNode
             operands.push(Value::rakuast(Box::new(convert_expr(item)?)));
         }
         Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyListInfix,
             fields: vec![
                 node_field(Some("infix"), plain_infix(",")),
@@ -259,6 +261,7 @@ fn replace_leading(node: &RakuAstNode, replacement: &RakuAstNode) -> Option<Raku
         })
         .collect::<Option<Vec<_>>>()?;
     Some(RakuAstNode {
+        origin: Default::default(),
         class: node.class,
         fields,
     })

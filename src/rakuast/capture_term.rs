@@ -18,6 +18,7 @@ pub(super) fn convert(items: &[Expr], parenthesized: bool) -> Result<RakuAstNode
         _ => arg_list(items)?,
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TermCapture,
         fields: vec![node_field(None, source)],
     })

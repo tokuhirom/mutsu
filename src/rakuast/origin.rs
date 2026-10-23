@@ -27,8 +27,6 @@ thread_local! {
     static CURRENT_LINE: Cell<Option<i64>> = const { Cell::new(None) };
 }
 
-/// The hidden field's name.
-pub(super) const FIELD: &str = "origin";
 const TRACE_FIELD: &str = "source-trace";
 
 /// Keep a parsed statement's numbered trace hook on its RakuAST statement.
@@ -72,14 +70,11 @@ pub(super) fn trace_of(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
     }))
 }
 
-/// The `origin` field for a statement that began on `line` and occupies
-/// `span` of the unit's source.
+/// Give `node`, a statement that began on `line` and occupies `span` of the
+/// unit's source, its origin.
 // Cost: O(1) for ASCII text, O(log n) otherwise, n = characters of the unit.
-pub(super) fn field(line: i64, span: crate::ast::SrcSpan) -> RakuAstField {
-    RakuAstField {
-        name: Some(FIELD),
-        value: RakuAstFieldValue::Node(super::unit_source::origin_value(line, span)),
-    }
+pub(super) fn set(node: &mut RakuAstNode, line: i64, span: crate::ast::SrcSpan) {
+    node.origin = super::NodeOrigin(Some(super::unit_source::origin_value(line, span)));
 }
 
 /// The line an `origin` field value records: the `line` an `Origin` carries, or
@@ -102,14 +97,10 @@ fn line_in(value: &Value) -> Option<i64> {
     }
 }
 
-/// The `RakuAST::Origin` a statement node carries, if it has one.
-// Cost: O(f), f = fields of `node`.
+/// The `RakuAST::Origin` a node carries, if it has one.
+// Cost: O(1).
 pub(super) fn origin_of(node: &RakuAstNode) -> Option<Value> {
-    let field = node.fields.iter().find(|f| f.name == Some(FIELD))?;
-    let RakuAstFieldValue::Node(value) = &field.value else {
-        return None;
-    };
-    Some(value.clone())
+    node.origin.0.clone()
 }
 
 /// The hidden field a main-compunit `END` phaser carries: the source-order
@@ -142,16 +133,16 @@ pub(super) fn end_index_of(node: &RakuAstNode) -> Option<u32> {
 /// Whether `field` is the hidden origin or `END` number, which no renderer shows.
 // Cost: O(1).
 pub(super) fn is_origin(field: &RakuAstField) -> bool {
-    field.name == Some(FIELD) || field.name == Some(END_INDEX) || field.name == Some(TRACE_FIELD)
+    field.name == Some(END_INDEX) || field.name == Some(TRACE_FIELD)
 }
 
 /// The line `node`'s statement began on, when the node carries one.
 // Cost: O(f), f = fields of `node`.
 pub(super) fn line_of(node: &RakuAstNode) -> Option<i64> {
-    let field = node
-        .fields
-        .iter()
-        .find(|f| matches!(f.name, Some(FIELD) | Some(END_INDEX)))?;
+    if let Some(origin) = &node.origin.0 {
+        return line_in(origin);
+    }
+    let field = node.fields.iter().find(|f| f.name == Some(END_INDEX))?;
     let RakuAstFieldValue::Node(value) = &field.value else {
         return None;
     };
@@ -178,12 +169,12 @@ pub(super) fn current_line() -> Option<i64> {
     CURRENT_LINE.with(|c| c.get())
 }
 
-/// The `origin` field for a node below the statement level that the parser
-/// placed at `span` (ADR-10723 Stage 2), when the unit's source is known.
+/// Give `node`, below the statement level, the origin the parser recorded
+/// at `span` (ADR-10723 Stage 2), when the unit's source is known and the
+/// node has none yet.
 // Cost: O(log n), n = lines of the unit.
-pub(super) fn span_field(span: crate::ast::SrcSpan) -> Option<RakuAstField> {
-    Some(RakuAstField {
-        name: Some(FIELD),
-        value: RakuAstFieldValue::Node(super::unit_source::span_origin_value(span)?),
-    })
+pub(super) fn set_span(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
+    if node.origin.0.is_none() {
+        node.origin = super::NodeOrigin(super::unit_source::span_origin_value(span));
+    }
 }

@@ -71,6 +71,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError
     Some((|| {
         let regex = lower_regex_node(named_child(node, FIELD)?)?;
         let interpolation = RakuAstNode {
+            origin: Default::default(),
             class: node.class,
             fields: node
                 .fields

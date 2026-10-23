@@ -52,6 +52,7 @@ pub(super) fn convert(kind: ContextKind, inner: &Expr) -> Result<RakuAstNode, Ru
         other => sequence(Some(statement_expression(convert_expr(other)?))),
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: class_of(kind),
         fields: vec![node_field(None, target)],
     })
@@ -62,6 +63,7 @@ pub(super) fn convert(kind: ContextKind, inner: &Expr) -> Result<RakuAstNode, Ru
 // Cost: O(n), n = nodes of the contents.
 pub(super) fn convert_segment(contents: &Expr) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ContextualizerItem,
         fields: vec![node_field(
             None,
@@ -98,10 +100,12 @@ pub(super) fn convert_statements(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeE
         .map(|statement| node_field(None, statement))
         .collect();
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ContextualizerItem,
         fields: vec![node_field(
             None,
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::StatementSequence,
                 fields,
             },
@@ -111,6 +115,7 @@ pub(super) fn convert_statements(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeE
 
 fn sequence(statement: Option<RakuAstNode>) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementSequence,
         fields: statement.map(|s| node_field(None, s)).into_iter().collect(),
     }
@@ -223,6 +228,7 @@ pub(super) fn convert_itemize(inner: &Expr) -> Result<RakuAstNode, RuntimeError>
         return Err(super::convert::unsupported(&format!("Itemize({inner:?})")));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ContextualizerItem,
         fields: vec![node_field(None, convert_expr(inner)?)],
     })
@@ -234,6 +240,7 @@ pub(super) fn convert_itemize(inner: &Expr) -> Result<RakuAstNode, RuntimeError>
 // Cost: O(n), n = nodes of the composer.
 pub(super) fn convert_item_call(inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ContextualizerItem,
         fields: vec![node_field(None, convert_expr(inner)?)],
     })
@@ -247,6 +254,7 @@ pub(super) fn convert_item_call(inner: &Expr) -> Result<RakuAstNode, RuntimeErro
 // Cost: O(n), n = nodes of the term.
 pub(super) fn convert_list_call(inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ContextualizerList,
         fields: vec![node_field(None, convert_expr(inner)?)],
     })

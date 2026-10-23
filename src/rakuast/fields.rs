@@ -66,6 +66,7 @@ impl Absent {
             Absent::Zero => Value::int(0),
             Absent::Str(s) => Value::str(s.to_string()),
             Absent::EmptyNode(class) => Value::rakuast(Box::new(super::RakuAstNode {
+                origin: Default::default(),
                 class,
                 fields: Vec::new(),
             })),

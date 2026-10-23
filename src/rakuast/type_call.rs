@@ -38,6 +38,7 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Result<Option<RakuAstNode>, 
         return Ok(None);
     }
     let mut call_term = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::CallTerm,
         fields: Vec::new(),
     };
@@ -51,6 +52,7 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Result<Option<RakuAstNode>, 
         value: RakuAstFieldValue::Node(Value::TRUE),
     });
     Ok(Some(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyPostfix,
         fields: vec![
             node_field(Some("operand"), base),

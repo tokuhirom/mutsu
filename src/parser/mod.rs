@@ -161,6 +161,7 @@ pub(crate) fn expand_compound_assign_expr(
 }
 pub(crate) mod stmt_ending_brace;
 pub(crate) mod term_boundary;
+pub(crate) mod term_origins;
 mod whenever_scope;
 use std::sync::OnceLock;
 
@@ -950,6 +951,7 @@ fn parse_program_keeping(
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // A parse nested inside this one (a module load) sets its own.
     let _spelling = crate::ast::spelled::keep_spelling(keep_spelling);
+    let _origins = term_origins::begin(keep_spelling);
     // Re-entrant (a nested EVAL or module load parses from inside a running
     // program), which the claim-at-exit rule handles without a depth counter.
     let _region = crate::profile::enter(crate::profile::Region::Parse);
@@ -1045,6 +1047,10 @@ fn parse_program_keeping(
                     sink_warn::add_sink_warnings(&stmts);
                 }
                 decl_doc::finish_unit();
+                // Every decision the parser and its whole-unit passes make
+                // about the unit's terms is made: they can carry where they
+                // were written now.
+                term_origins::attach(&mut stmts);
                 Ok((stmts, finish_content))
             }
         }

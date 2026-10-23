@@ -108,6 +108,7 @@ fn substitution(
             fields.push(node_field(
                 Some("infix"),
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::Assignment,
                     fields: Vec::new(),
                 },
@@ -121,6 +122,7 @@ fn substitution(
             fields.push(node_field(
                 Some("infix"),
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::MetaInfixAssign,
                     fields: vec![node_field(None, plain_infix(op))],
                 },
@@ -134,6 +136,7 @@ fn substitution(
     fields.push(node_field(Some("pattern"), regex_node(&tree.body)?));
     fields.push(node_field(Some("replacement"), replacement));
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Substitution,
         fields,
     })
@@ -155,12 +158,14 @@ fn transliteration(
         &mut fields,
         adverbs.iter().map(|name| {
             Ok(RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ColonPairTrue,
                 fields: vec![leaf_field(None, Value::str(name.clone()))],
             })
         }),
     )?;
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Transliteration,
         fields,
     })
@@ -197,12 +202,14 @@ pub(super) fn adverb_node(adverb: &RegexAdverb) -> Result<RakuAstNode, RuntimeEr
             .parse::<i64>()
             .map_err(|_| unsupported_what("regex adverb count"))?;
         return Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ColonPairNumber,
             fields: vec![
                 leaf_field(Some("key"), Value::str(key.to_string())),
                 node_field(
                     Some("value"),
                     RakuAstNode {
+                        origin: Default::default(),
                         class: RakuAstClass::IntLiteral,
                         fields: vec![leaf_field(None, Value::int(count))],
                     },
@@ -212,6 +219,7 @@ pub(super) fn adverb_node(adverb: &RegexAdverb) -> Result<RakuAstNode, RuntimeEr
     }
     let Some(argument) = &adverb.argument else {
         return Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ColonPairTrue,
             fields: vec![leaf_field(None, Value::str(adverb.name.clone()))],
         });
@@ -224,16 +232,19 @@ pub(super) fn adverb_node(adverb: &RegexAdverb) -> Result<RakuAstNode, RuntimeEr
         return Err(unsupported_what("regex adverb argument"));
     }
     let semilist = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::SemiList,
         fields: vec![node_field(None, statement_expression(value))],
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ColonPairValue,
         fields: vec![
             leaf_field(Some("key"), Value::str(adverb.name.clone())),
             node_field(
                 Some("value"),
                 RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::CircumfixParentheses,
                     fields: vec![node_field(None, semilist)],
                 },

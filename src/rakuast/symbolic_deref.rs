@@ -26,6 +26,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// The `Name(Part::Empty, Part::Expression(EXPR))` of a dynamic lookup.
 pub(super) fn indirect_name(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let part = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
         fields: vec![node_field(None, convert_expr(expr)?)],
     };
@@ -39,6 +40,7 @@ pub(super) fn indirect_name(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
 // Cost: O(n), n = nodes of the name expression.
 pub(super) fn convert(sigil: &str, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::VarPackage,
         fields: vec![
             node_field(Some("name"), indirect_name(expr)?),
@@ -61,11 +63,13 @@ pub(super) fn convert_indirect_code(
         name_parts::leading_empty()
     });
     parts.push(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
         fields: vec![node_field(None, convert_expr(package)?)],
     })));
     parts.push(name_parts::simple_part(name));
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::VarPackage,
         fields: vec![
             node_field(Some("name"), name_parts::name_from_parts(parts)),
@@ -133,6 +137,7 @@ pub(super) fn convert_assign(
 // Cost: O(n), n = nodes of the expression and the value.
 pub(super) fn convert_type_assign(expr: &Expr, value: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let lookup = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::TermName,
         fields: vec![node_field(None, indirect_name(expr)?)],
     };
@@ -236,6 +241,7 @@ pub(super) fn convert_package_indirect(
         .map(name_parts::simple_part)
         .collect();
     parts.push(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::NamePartExpression,
         fields: vec![node_field(None, convert_expr(key)?)],
     })));
@@ -245,11 +251,13 @@ pub(super) fn convert_package_indirect(
         .is_some_and(is_lexical_pseudo_package);
     Ok(if lexical {
         RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TermName,
             fields: vec![node_field(None, name)],
         }
     } else {
         RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::CallName,
             fields: vec![node_field(Some("name"), name)],
         }

@@ -137,14 +137,17 @@ fn convert_assign(
         _ => return Err(unsupported_expr(&format!("{whole:?}"))),
     };
     let inner = RakuAstNode {
+        origin: Default::default(),
         class,
         fields: vec![node_field(None, plain_infix(base))],
     };
     let assign = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::MetaInfixAssign,
         fields: vec![node_field(None, inner)],
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
             node_field(Some("left"), convert_expr(left)?),
@@ -177,6 +180,7 @@ pub(super) fn convert(
         plain_infix(meta)
     } else {
         RakuAstNode {
+            origin: Default::default(),
             class,
             fields: vec![node_field(None, plain_infix(op))],
         }
@@ -184,6 +188,7 @@ pub(super) fn convert(
     let list = matches!(meta, "X" | "Z") || (meta == "R" && is_list_assoc(op));
     if !list {
         return Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
                 node_field(Some("left"), convert_expr(left)?),
@@ -199,6 +204,7 @@ pub(super) fn convert(
         nodes.push(Value::rakuast(Box::new(convert_expr(operand)?)));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyListInfix,
         fields: vec![
             node_field(Some("infix"), infix),
@@ -259,6 +265,7 @@ pub(super) fn convert_bracketed_assignment(
     let mut inner = plain_infix(op);
     if meta != "reduce" {
         inner = RakuAstNode {
+            origin: Default::default(),
             class: meta_class(meta)
                 .ok_or_else(|| unsupported_expr("unknown bracketed metaoperator"))?,
             fields: vec![node_field(None, inner)],
@@ -266,15 +273,18 @@ pub(super) fn convert_bracketed_assignment(
     }
     for _ in 0..depth {
         inner = RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::BracketedInfix,
             fields: vec![node_field(None, inner)],
         };
     }
     let assign = RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::MetaInfixAssign,
         fields: vec![node_field(None, inner)],
     };
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
             node_field(Some("left"), convert_expr(target)?),

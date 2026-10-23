@@ -45,6 +45,7 @@ pub(super) fn convert(
         }
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::RegexQuantifiedAtom,
         fields,
     })
@@ -89,7 +90,11 @@ fn quantifier_node(quantifier: &RegexQuantifier) -> Result<RakuAstNode, RuntimeE
     if let Some(backtrack) = quantifier.backtrack {
         fields.push(field("backtrack", backtrack_value(backtrack)));
     }
-    Ok(RakuAstNode { class, fields })
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    })
 }
 
 /// The `Backtrack::*` type object for a modifier.
@@ -301,7 +306,11 @@ fn construct_class(
             }
         }
     }
-    Ok(Value::rakuast(Box::new(RakuAstNode { class, fields })))
+    Ok(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields,
+    })))
 }
 
 /// The tree node of a separator converted back, for the lowerer.

@@ -43,10 +43,12 @@ pub(super) fn to_signature(attributes: &[Stmt]) -> Result<RakuAstNode, RuntimeEr
             )
         };
         let target = RakuAstNode {
+            origin: Default::default(),
             class: C::ParameterTargetVar,
             fields: vec![leaf_field(Some("name"), Value::str(spelling))],
         };
         parameters.push(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: C::Parameter,
             fields: vec![
                 node_field(Some("target"), target),
@@ -70,6 +72,7 @@ pub(super) fn to_signature(attributes: &[Stmt]) -> Result<RakuAstNode, RuntimeEr
     let mut fields = vec![node_field(
         Some("signature"),
         RakuAstNode {
+            origin: Default::default(),
             class: C::Signature,
             fields: signature_fields,
         },
@@ -83,6 +86,7 @@ pub(super) fn to_signature(attributes: &[Stmt]) -> Result<RakuAstNode, RuntimeEr
         value: RakuAstFieldValue::List(members),
     });
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: C::VarDeclarationSignature,
         fields,
     })

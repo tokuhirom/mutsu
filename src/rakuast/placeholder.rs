@@ -17,6 +17,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 // Cost: O(k), k = length of the name.
 pub(super) fn placeholder_node(class: RakuAstClass, sigil: &str, name: &str) -> RakuAstNode {
     RakuAstNode {
+        origin: Default::default(),
         class,
         fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
     }

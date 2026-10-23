@@ -18,11 +18,11 @@ mod chain;
 mod class_constructor;
 mod composition_source;
 mod compound_stmt;
-mod expr_origins;
 mod conditional_lower;
 mod constructor_positional;
 mod contextualizer;
 mod control_signature;
+mod expr_origins;
 mod parsed_view;
 mod trait_is_constructor;
 use constructor_positional::single_positional_class;
@@ -135,6 +135,22 @@ use crate::value::{RuntimeError, Value, ValueView};
 pub struct RakuAstNode {
     pub class: RakuAstClass,
     pub fields: Vec<RakuAstField>,
+    /// Where the parser read the node from (ADR-10723 §4): a member, not a
+    /// field, so it never shows in the constructor form and no code that
+    /// walks the fields sees it.
+    pub origin: NodeOrigin,
+}
+
+/// A node's `RakuAST::Origin`, or none (a hand-built node, a node `convert`
+/// made below the statement level). It takes no part in a node's equality:
+/// two trees that differ only in where they were written are the same tree.
+#[derive(Debug, Clone, Default)]
+pub struct NodeOrigin(pub Option<Value>);
+
+impl PartialEq for NodeOrigin {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1766,6 +1782,7 @@ pub fn str_dot_ast_compunit(source: &str) -> Result<Value, RuntimeError> {
     }
     let name = format!("{:016X}{:016X}{:08X}", words[0], words[1], words[2] as u32);
     Ok(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::CompUnit,
         fields: vec![
             RakuAstField {
@@ -1911,6 +1928,7 @@ pub fn construct(
             });
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: if heredoc {
                 RakuAstClass::Heredoc
             } else {
@@ -1934,6 +1952,7 @@ pub fn construct(
                 )
             })?;
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::TypeEnum,
             fields: vec![
                 RakuAstField {
@@ -1972,6 +1991,7 @@ pub fn construct(
             });
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class,
             fields,
         }))));
@@ -1994,6 +2014,7 @@ pub fn construct(
             })
             .collect::<Result<Vec<_>, RuntimeError>>()?;
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::Name,
             fields: vec![RakuAstField {
                 name: Some("parts"),
@@ -2016,6 +2037,7 @@ pub fn construct(
                     ));
                 };
                 Ok(Value::rakuast(Box::new(RakuAstNode {
+                    origin: Default::default(),
                     class: RakuAstClass::NamePartSimple,
                     fields: vec![RakuAstField {
                         name: None,
@@ -2025,6 +2047,7 @@ pub fn construct(
             })
             .collect::<Result<Vec<_>, RuntimeError>>()?;
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::Name,
             fields: vec![RakuAstField {
                 name: Some("parts"),
@@ -2037,6 +2060,7 @@ pub fn construct(
             require_any_rakuast(arg, "RakuAST::StatementList.new", "statements")?;
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::StatementList,
             fields: args
                 .iter()
@@ -2053,6 +2077,7 @@ pub fn construct(
             require_any_rakuast(arg, "RakuAST::ArgList.new", "arguments")?;
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ArgList,
             fields: args
                 .iter()
@@ -2069,6 +2094,7 @@ pub fn construct(
             require_any_rakuast(arg, "RakuAST::SemiList.new", "arguments")?;
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::SemiList,
             fields: args
                 .iter()
@@ -2094,6 +2120,7 @@ pub fn construct(
             ));
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::Pragma,
             fields: vec![RakuAstField {
                 name: Some("name"),
@@ -2113,6 +2140,7 @@ pub fn construct(
             "RakuAST::Blockoid.new",
         )?;
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::Blockoid,
             fields: vec![RakuAstField {
                 name: None,
@@ -2157,6 +2185,7 @@ pub fn construct(
             });
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::Signature,
             fields,
         }))));
@@ -2307,6 +2336,7 @@ pub fn construct(
             });
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::Parameter,
             fields,
         }))));
@@ -2350,6 +2380,7 @@ pub fn construct(
             require_regex_node(argument, class_name)?;
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class,
             fields: args
                 .iter()
@@ -2375,6 +2406,7 @@ pub fn construct(
             ));
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexInterpolation,
             fields: vec![
                 RakuAstField {
@@ -2440,6 +2472,7 @@ pub fn construct(
             value: RakuAstFieldValue::Node(regex),
         });
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexNamedCapture,
             fields,
         }))));
@@ -2470,6 +2503,7 @@ pub fn construct(
             });
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexAssertionNamed,
             fields,
         }))));
@@ -2516,6 +2550,7 @@ pub fn construct(
             });
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexAssertionNamedArgs,
             fields,
         }))));
@@ -2533,6 +2568,7 @@ pub fn construct(
         })?;
         require_simple_variable(&value, "RakuAST::ColonPair::Variable.new")?;
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ColonPairVariable,
             fields: vec![
                 RakuAstField {
@@ -2558,6 +2594,7 @@ pub fn construct(
             .ok_or_else(|| RuntimeError::new("RakuAST::ColonPair::Value.new requires `value`"))?;
         require_any_rakuast(&value, "RakuAST::ColonPair::Value.new", "value")?;
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::ColonPairValue,
             fields: vec![
                 RakuAstField {
@@ -2584,6 +2621,7 @@ pub fn construct(
             RuntimeError::new("RakuAST::Regex::Assertion::Alias.new requires `assertion`")
         })?;
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexAssertionAlias,
             fields: vec![
                 RakuAstField {
@@ -2617,6 +2655,7 @@ pub fn construct(
             ));
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexAssertionNamedRegexArg,
             fields: vec![
                 RakuAstField {
@@ -2669,6 +2708,7 @@ pub fn construct(
             value: RakuAstFieldValue::Node(assertion),
         });
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexAssertionLookahead,
             fields,
         }))));
@@ -2685,6 +2725,7 @@ pub fn construct(
             ));
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexAssertionInterpolatedVar,
             fields: vec![
                 RakuAstField {
@@ -2727,6 +2768,7 @@ pub fn construct(
             });
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexAssertionCallable,
             fields,
         }))));
@@ -2758,6 +2800,7 @@ pub fn construct(
             value: RakuAstFieldValue::Node(block),
         });
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexAssertionPredicateBlock,
             fields,
         }))));
@@ -2778,6 +2821,7 @@ pub fn construct(
             ));
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::RegexAssertionInterpolatedBlock,
             fields: vec![
                 RakuAstField {
@@ -2836,6 +2880,7 @@ pub fn construct(
             });
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::QuotedRegex,
             fields,
         }))));
@@ -2898,6 +2943,7 @@ pub fn construct(
             });
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class,
             fields,
         }))));
@@ -2909,6 +2955,7 @@ pub fn construct(
             )));
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class,
             fields: Vec::new(),
         }))));
@@ -2922,6 +2969,7 @@ pub fn construct(
             )));
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class,
             fields: vec![RakuAstField {
                 name: None,
@@ -2967,6 +3015,7 @@ pub fn construct(
             }
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::CircumfixHashComposer,
             fields,
         }))));
@@ -2999,6 +3048,7 @@ pub fn construct(
             }
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class,
             fields,
         }))));
@@ -3090,6 +3140,7 @@ pub fn construct(
             }
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
             class,
             fields,
         }))));
@@ -3099,10 +3150,12 @@ pub fn construct(
 
 fn empty_blockoid() -> Value {
     let statements = Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementList,
         fields: Vec::new(),
     }));
     Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Blockoid,
         fields: vec![RakuAstField {
             name: None,
@@ -3113,6 +3166,7 @@ fn empty_blockoid() -> Value {
 
 fn empty_block() -> Value {
     Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Block,
         fields: vec![RakuAstField {
             name: Some("body"),

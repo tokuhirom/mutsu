@@ -82,6 +82,7 @@ fn with_innermost_operand(
         fields.push(node_field(Some("operand"), replaced));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: chain.class,
         fields,
     })
@@ -147,6 +148,7 @@ pub(super) fn call_method(
     // no `dispatch` string.
     if modifier == Some('!') {
         return Ok(RakuAstNode {
+            origin: Default::default(),
             class: RakuAstClass::CallPrivateMethod,
             fields,
         });
@@ -156,6 +158,7 @@ pub(super) fn call_method(
         fields.push(leaf_field(Some("dispatch"), Value::str(format!(".{m}"))));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::CallMethod,
         fields,
     })

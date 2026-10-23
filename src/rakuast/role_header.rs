@@ -44,6 +44,7 @@ pub(super) fn construct(
         }
     }
     Some(Ok(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::StatementAlso,
         fields: vec![RakuAstField {
             name: Some("traits"),

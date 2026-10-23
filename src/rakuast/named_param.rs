@@ -170,6 +170,7 @@ pub(super) fn named_parameter(
         fields.push(node_field(
             Some("target"),
             RakuAstNode {
+                origin: Default::default(),
                 class: RakuAstClass::ParameterTargetVar,
                 fields: vec![super::convert::leaf_field(
                     Some("name"),
@@ -192,6 +193,7 @@ pub(super) fn named_parameter(
         fields.push(node_field(Some("where"), convert_expr(w)?));
     }
     Ok(RakuAstNode {
+        origin: Default::default(),
         class: RakuAstClass::Parameter,
         fields,
     })
