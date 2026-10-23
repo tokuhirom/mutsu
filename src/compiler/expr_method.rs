@@ -666,18 +666,21 @@ impl Compiler {
     /// `IndexElemAutoviv` path.
     // Cost: O(d), d = subscript depth of the chain.
     pub(super) fn vivifying_chain_root_supported(&self, base: &Expr) -> bool {
-        match base {
-            Expr::Index { target, index, .. } => {
-                !matches!(index.as_ref(), Expr::Whatever | Expr::HyperWhatever)
-                    && self.vivifying_chain_root_supported(target)
+        let mut base = base;
+        while let Expr::Index { target, index, .. } = base {
+            if matches!(index.as_ref(), Expr::Whatever | Expr::HyperWhatever) {
+                return false;
             }
+            base = target;
+        }
+        match base {
             Expr::ArrayVar(_) | Expr::HashVar(_) => true,
             Expr::Var(name) => Self::is_plain_lexical_name(name),
             Expr::BareWord(name) => {
                 self.sigilless_locals.contains(name.as_str())
                     || self.constant_vars_in_scope.contains(name.as_str())
             }
-            // A variable the chain cannot box by name.
+            // A value that is not a variable at all.
             Expr::MethodCall { .. } | Expr::Call { .. } | Expr::CallOn { .. } => true,
             _ => false,
         }
