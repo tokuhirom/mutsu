@@ -530,7 +530,7 @@ impl Compiler {
             self.code.uses_capture = true;
         }
         for (i, arg) in args.iter().enumerate() {
-            self.compile_expr(arg);
+            self.with_call_arg_decl_slot(arg, |c| c.compile_expr(arg));
             // `nqp::bindpos($list, $i, $var)` binds the variable's container
             // itself, so a later assignment to `$var` shows in the slot
             // (#12786): hand the op the shared cell, not the decontainerized
