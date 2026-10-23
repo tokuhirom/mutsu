@@ -4,7 +4,7 @@
 //! `Stmt::SubDecl` / `Stmt::MethodDecl` / `Stmt::ClassDecl` / `Stmt::RoleDecl`.
 
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
-use crate::ast::parsed::{BlockSpans, RoutineSpans};
+use crate::ast::parsed::{BlockSpans, RoutineSpans, TraitSpans};
 use crate::ast::{ParamDef, Stmt};
 use crate::value::{Value, ValueView};
 
@@ -30,6 +30,44 @@ pub(super) fn apply(node: &mut RakuAstNode, spans: Option<&RoutineSpans>, params
             });
         }
     });
+}
+
+/// Give the traits of `node` (a routine whose `traits` list was rebuilt from
+/// the `.AST` parse's trait records, one per record) the origins in `spans`:
+/// the trait, and the name or type it names.
+// Cost: O(t), t = traits.
+pub(super) fn traits(node: &mut RakuAstNode, spans: Option<&RoutineSpans>) {
+    let Some(spans) = spans else {
+        return;
+    };
+    list_origins(node, "traits", &spans.traits);
+}
+
+/// Give the trait nodes in `node`'s list field `field` the origins in `spans`,
+/// when there is one per trait.
+// Cost: O(t), t = traits.
+fn list_origins(node: &mut RakuAstNode, field: &str, spans: &[TraitSpans]) {
+    let Some(field) = node.fields.iter_mut().find(|f| f.name == Some(field)) else {
+        return;
+    };
+    let RakuAstFieldValue::List(nodes) = &mut field.value else {
+        return;
+    };
+    if nodes.len() != spans.len() {
+        return;
+    }
+    for (value, at) in nodes.iter_mut().zip(spans) {
+        let ValueView::RakuAst(trait_node) = value.view() else {
+            continue;
+        };
+        let mut trait_node = RakuAstNode::clone(trait_node);
+        super::origin::set_span(&mut trait_node, at.whole);
+        // The trait's name (`Trait::Is`) or type (`Trait::Returns`, `::Of`).
+        if let Some(first) = trait_node.fields.first_mut() {
+            with_value(&mut first.value, |named| type_origin(named, at.name));
+        }
+        *value = Value::rakuast(Box::new(trait_node));
+    }
 }
 
 /// Give the package `statement` declares (a `Class`, `Grammar` or `Role`
@@ -107,6 +145,7 @@ pub(super) fn parameters(signature: &mut RakuAstNode, params: &[ParamDef]) {
             }
         });
         with_child(&mut node, "type", |ty| type_origin(ty, param.spans.type_));
+        list_origins(&mut node, "traits", &param.spans.traits);
         *value = Value::rakuast(Box::new(node));
     }
 }

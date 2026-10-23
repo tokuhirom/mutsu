@@ -218,6 +218,7 @@ pub(crate) fn op_prec_trait(
 ) -> Option<(String, Option<Expr>)> {
     let mut traits = SubTraits {
         source_traits: Vec::new(),
+        source_spans: Vec::new(),
         is_export: false,
         export_tags: Vec::new(),
         is_test_assertion: false,
@@ -562,7 +563,15 @@ pub(crate) fn sub_decl_body(
     crate::ast::does_target::mark_does_targets(&name, &mut param_defs, &body);
     crate::ast::routine_trait::attach(&mut body, traits.source_traits);
     let sub_name_sym = Symbol::intern(&name);
-    let spans = super::routine_spans(name_span, signature_start, &param_defs, brace, rest, &body);
+    let spans = super::routine_spans(
+        name_span,
+        signature_start,
+        &param_defs,
+        traits.source_spans,
+        brace,
+        rest,
+        &body,
+    );
     let sub_decl = Stmt::SubDecl {
         spans,
         name: sub_name_sym,

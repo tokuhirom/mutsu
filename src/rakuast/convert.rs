@@ -1280,6 +1280,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     node.fields
                         .insert(0, leaf_field(Some("scope"), Value::str_from(scope)));
                 }
+                super::routine_origins::traits(&mut node, spans.as_deref());
                 return Ok(Some(statement_expression(node)));
             }
             let flags = routine_traits::IsTraits {
@@ -1297,6 +1298,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 node.fields
                     .insert(0, leaf_field(Some("scope"), Value::str_from(scope)));
             }
+            super::routine_origins::traits(&mut node, spans.as_deref());
             Ok(Some(statement_expression(node)))
         }
         Stmt::MethodDecl {
@@ -1406,6 +1408,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 node.fields
                     .insert(0, leaf_field(Some("scope"), Value::str_from(scope)));
             }
+            super::routine_origins::traits(&mut node, spans.as_deref());
             Ok(Some(statement_expression(node)))
         }
         Stmt::ClassDecl {
