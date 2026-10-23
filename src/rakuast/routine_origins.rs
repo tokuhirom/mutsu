@@ -4,7 +4,7 @@
 //! `Stmt::SubDecl` / `Stmt::MethodDecl` / `Stmt::ClassDecl` / `Stmt::RoleDecl`.
 
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
-use crate::ast::parsed::{BlockSpans, RoutineSpans, TraitSpans};
+use crate::ast::parsed::{BlockSpans, RoutineSpans, TraitSpans, TypeDeclSpans};
 use crate::ast::{ParamDef, Stmt};
 use crate::value::{Value, ValueView};
 
@@ -75,6 +75,12 @@ fn list_origins(node: &mut RakuAstNode, field: &str, spans: &[TraitSpans]) {
 /// block's origins.
 // Cost: O(f), f = fields of the nodes on the path.
 pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
+    if let Stmt::EnumDecl { spans, .. } | Stmt::SubsetDecl { spans, .. } = stmt {
+        if let Some(spans) = spans.as_deref() {
+            type_decl_origins(statement, spans);
+        }
+        return;
+    }
     let (Stmt::ClassDecl { spans, .. } | Stmt::RoleDecl { spans, .. }) = stmt else {
         return;
     };
@@ -92,6 +98,35 @@ pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
             super::origin::set_span(name, spans.name)
         });
         with_child(decl, "body", |body| block_origins(body, block));
+    });
+}
+
+/// Give the `Type::Enum` / `Type::Subset` `statement` declares its name's
+/// origin, and a subset's `Trait::Of` the origin of its `of TYPE`.
+// Cost: O(f + t), f = fields of the declaration, t = its traits.
+fn type_decl_origins(statement: &mut RakuAstNode, spans: &TypeDeclSpans) {
+    with_child(statement, "expression", |decl| {
+        with_child(decl, "name", |name| {
+            super::origin::set_span(name, spans.name)
+        });
+        let Some(field) = decl.fields.iter_mut().find(|f| f.name == Some("traits")) else {
+            return;
+        };
+        let RakuAstFieldValue::List(traits) = &mut field.value else {
+            return;
+        };
+        for value in traits.iter_mut() {
+            if let ValueView::RakuAst(node) = value.view()
+                && node.class == RakuAstClass::TraitOf
+            {
+                let mut node = RakuAstNode::clone(node);
+                super::origin::set_span(&mut node, spans.of.whole);
+                if let Some(first) = node.fields.first_mut() {
+                    with_value(&mut first.value, |ty| type_origin(ty, spans.of.name));
+                }
+                *value = Value::rakuast(Box::new(node));
+            }
+        }
     });
 }
 

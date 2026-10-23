@@ -84,6 +84,15 @@ pub(crate) struct PackageSpans {
     pub(crate) block: BlockSpans,
 }
 
+/// Where a type declaration that is not a package (`enum`, `subset`) was
+/// written below its statement: its name, and a subset's `of` trait.
+#[derive(Debug, Clone, Copy, Default, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TypeDeclSpans {
+    pub(crate) name: SrcSpan,
+    /// `of TYPE` (a subset's base type as written); none when not written.
+    pub(crate) of: TraitSpans,
+}
+
 /// Where a parameter was written: all of it (type, traits and default
 /// included) and its target variable.
 ///

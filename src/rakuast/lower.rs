@@ -1817,6 +1817,7 @@ fn lower_enum(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     };
     let (variants, variant_form) = super::enum_term::lower_enum_term(node)?;
     Ok(Stmt::EnumDecl {
+        spans: Default::default(),
         name: crate::symbol::Symbol::intern(&name),
         variants,
         variant_form,
@@ -1861,6 +1862,7 @@ fn lower_subset(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         }
     };
     Ok(Stmt::SubsetDecl {
+        spans: Default::default(),
         name: crate::symbol::Symbol::intern(&name),
         base,
         base_is_explicit,

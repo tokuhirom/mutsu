@@ -1711,6 +1711,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubsetDecl {
+            spans: _,
             name,
             base,
             predicate,
