@@ -278,7 +278,11 @@ fn prefix_expr_with_ws_dot(input: &str) -> PResult<'_, Expr> {
             return Ok((rest, expr));
         }
     }
-    postfix_expr_continue_from(input, rest, expr)
+    let (rest, expr) = postfix_expr_continue_from(input, rest, expr)?;
+    // A chain continued over whitespace (`(1, 2)\n  .map(...)`) is a term of
+    // its own, written from `input` (ADR-10723 Stage 2).
+    crate::parser::primary::note_origin(input, rest, &expr);
+    Ok((rest, expr))
 }
 
 /// Multiplication/division: * / % div mod gcd lcm

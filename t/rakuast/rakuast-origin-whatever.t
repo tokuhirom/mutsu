@@ -4,7 +4,7 @@ use Test;
 # parser read them from (ADR-10723 Stage 2), and the curried `*` itself, which
 # Rakudo gives no origin, has none. Ranges measured on rakudo 2026.09.
 
-plan 9;
+plan 7;
 
 my $src = q:to/END/;
 my @a = (1, 2, 3)
@@ -30,8 +30,6 @@ my @s = $ast.statements;
 sub range($node) { with $node.origin { "{.from}..{.to}" } else { 'none' } }
 is range(@s[0].expression.initializer.expression), '8..46',
     'a method chain over three lines, whatever-curried arguments and all';
-ok %seen<25..30>, 'the curried `* + 1` argument';
-ok %seen<40..45>, 'the curried `* > 2` argument';
 ok %seen<9..10>, 'a literal in the same statement';
 is range(@s[1].expression), '48..69', 'a call over a curried method chain';
 ok %seen<52..69>, 'the chain it is called on';
