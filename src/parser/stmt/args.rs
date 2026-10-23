@@ -829,7 +829,13 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
             && !expr_consumes_more
             && (!rest_ws.starts_with("=>") || rest_ws.starts_with("==>"))
         {
-            let assign_expr = regroup_assign_expr_metaop_rhs(assign_expr);
+            let mut assign_expr = regroup_assign_expr_metaop_rhs(assign_expr);
+            // `try_parse_assign_expr` consumes the parentheses of `(... = ...)`
+            // and returns the bare assignment; record that they were written,
+            // like every other parenthesised argument.
+            if input.starts_with('(') && !matches!(assign_expr, Expr::Grouped(_)) {
+                assign_expr = Expr::Grouped(Box::new(assign_expr));
+            }
             return Ok((
                 rest,
                 CallArg::Positional(crate::parser::expr::wrap_finished_expr(assign_expr)),
@@ -914,7 +920,12 @@ mod tests {
         let (rest, args) = parse_stmt_call_args("(@d = 1,3 Z 2,4), \"desc\";").unwrap();
         assert_eq!(rest, ";");
         match &args[0] {
-            CallArg::Positional(Expr::AssignExpr { name, expr, .. }) => {
+            CallArg::Positional(Expr::Grouped(inner))
+                if matches!(inner.as_ref(), Expr::AssignExpr { .. }) =>
+            {
+                let Expr::AssignExpr { name, expr, .. } = inner.as_ref() else {
+                    unreachable!("guarded above")
+                };
                 assert_eq!(name, "@d");
                 match expr.as_ref() {
                     Expr::MetaOp {
