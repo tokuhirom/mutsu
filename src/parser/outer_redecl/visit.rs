@@ -58,6 +58,8 @@ impl VisitMut for Ctx {
     }
 
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
+        // A `for` a `.AST` parse keeps in its RakuAST shape is that loop.
+        let stmt = stmt.peel_parsed_mut();
         match stmt {
             Stmt::SetLine(n, _) => self.line = *n,
             Stmt::VarDecl { .. } => walk_var_decl(stmt, true, self),
@@ -164,7 +166,7 @@ impl VisitMut for Ctx {
                         self.scoped(Vec::new(), |v| v.visit_stmts_mut(&mut block.body));
                     }
                     ParsedStmt::Loop(_) => unreachable!("handled by the arm above"),
-                    ParsedStmt::For { stmt, .. } => self.visit_stmt_mut(stmt),
+                    ParsedStmt::For { .. } => unreachable!("peeled above"),
                 }
             }
             Stmt::If {

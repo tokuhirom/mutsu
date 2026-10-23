@@ -63,7 +63,7 @@ pub(crate) fn is_scope_declaration(s: &Stmt) -> bool {
 /// statement has no header and is not walked.
 // Cost: O(n), n = size of the header.
 pub(crate) fn walk_control_header<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, stmt: &'ast Stmt) {
-    match stmt {
+    match stmt.peel_parsed() {
         Stmt::If { cond, .. }
         | Stmt::While { cond, .. }
         | Stmt::Given { topic: cond, .. }
@@ -72,11 +72,6 @@ pub(crate) fn walk_control_header<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, stmt
         Stmt::Whenever { supply, .. } => v.visit_expr(supply),
         // A conditional kept in its RakuAST shape (ADR-10723 Stage 2): every
         // clause's condition runs in the enclosing scope.
-        Stmt::Ast(node) if node.inner_stmt().is_some() => {
-            if let Some(stmt) = node.inner_stmt() {
-                walk_control_header(v, stmt);
-            }
-        }
         Stmt::Ast(node) => {
             if let crate::ast::parsed::ParsedStmt::Loop(l) = node.as_ref()
                 && let Some(init) = &l.init
@@ -113,11 +108,10 @@ pub(crate) fn walk_control_header<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, stmt
 /// all. Every other statement is walked in full.
 // Cost: O(n), n = size of the part of `stmt` that runs in the enclosing scope.
 pub(crate) fn walk_stmt_own_scope<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, stmt: &'ast Stmt) {
+    // A `for` a `.AST` parse keeps in its RakuAST shape is that loop.
+    let stmt = stmt.peel_parsed();
     match stmt {
-        Stmt::Ast(node) => match node.inner_stmt() {
-            Some(inner) => walk_stmt_own_scope(v, inner),
-            None => walk_control_header(v, stmt),
-        },
+        Stmt::Ast(_) => walk_control_header(v, stmt),
         Stmt::If {
             then_branch,
             else_branch,

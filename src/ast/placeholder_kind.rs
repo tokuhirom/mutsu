@@ -133,6 +133,8 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
     while let Stmt::Label { stmt: inner, .. } = stmt {
         stmt = inner;
     }
+    // A `for` a `.AST` parse keeps in its RakuAST shape is that loop.
+    let stmt = stmt.peel_parsed();
     match stmt {
         Stmt::If {
             is_statement_modifier: true,
@@ -150,7 +152,7 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
                 PlaceholderBodyKind::Signature(ArgSupply::None)
             }
             ParsedStmt::Default(_) => PlaceholderBodyKind::NoSignature,
-            ParsedStmt::For { stmt, .. } => placeholder_body_kind(stmt),
+            ParsedStmt::For { .. } => unreachable!("peeled above"),
             ParsedStmt::Loop(l) => match l.kind {
                 crate::ast::parsed::LoopKind::Loop => PlaceholderBodyKind::NoSignature,
                 crate::ast::parsed::LoopKind::RepeatWhile

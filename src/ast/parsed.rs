@@ -189,6 +189,15 @@ impl ParsedStmt {
         }
     }
 
+    /// [`ParsedStmt::inner_stmt`], mutably.
+    // Cost: O(1).
+    pub(crate) fn inner_stmt_mut(&mut self) -> Option<&mut Stmt> {
+        match self {
+            ParsedStmt::For { stmt, .. } => Some(stmt),
+            _ => None,
+        }
+    }
+
     /// The expressions that run in the enclosing scope: every condition, topic
     /// and matcher (none for a node with an [`inner_stmt`](Self::inner_stmt)).
     // Cost: O(c), c = clauses.
@@ -240,5 +249,30 @@ impl ParsedBlock {
     // Cost: O(1).
     pub(crate) fn is_pointy(&self) -> bool {
         !matches!(self.params, BlockParams::None)
+    }
+}
+
+impl Stmt {
+    /// The statement passes treat this one as: the wrapped statement of a
+    /// node whose internal form is already its source form (`for`), else
+    /// `self`.
+    // Cost: O(1).
+    pub(crate) fn peel_parsed(&self) -> &Stmt {
+        match self {
+            Stmt::Ast(node) => node.inner_stmt().unwrap_or(self),
+            other => other,
+        }
+    }
+
+    /// [`Stmt::peel_parsed`], mutably.
+    // Cost: O(1).
+    pub(crate) fn peel_parsed_mut(&mut self) -> &mut Stmt {
+        if !matches!(self, Stmt::Ast(node) if node.inner_stmt().is_some()) {
+            return self;
+        }
+        match self {
+            Stmt::Ast(node) => node.inner_stmt_mut().expect("checked above"),
+            _ => unreachable!("checked above"),
+        }
     }
 }

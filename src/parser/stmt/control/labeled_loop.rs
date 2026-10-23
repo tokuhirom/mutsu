@@ -78,11 +78,10 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         // Delegate to `loop_stmt` so both the C-style `loop (init; cond; step)
         // { ... }` header and the infinite `loop { ... }` form are handled, then
         // stamp the label onto the returned loop node.
-        let (r, stmt) = loop_stmt(rest)?;
-        let stmt = match label_kept_loop(stmt, &label) {
-            Ok(kept) => return Ok((r, kept)),
-            Err(stmt) => stmt,
-        };
+        let (r, mut stmt) = loop_stmt(rest)?;
+        if label_kept_loop(&mut stmt, &label) {
+            return Ok((r, stmt));
+        }
         if let Stmt::Loop {
             init,
             cond,
@@ -114,11 +113,10 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         // Delegate to `repeat_stmt` so both `repeat while/until` and
         // `repeat { ... } while/until` forms are handled, then stamp the
         // label onto the returned loop node.
-        let (r, stmt) = repeat_stmt(rest)?;
-        let stmt = match label_kept_loop(stmt, &label) {
-            Ok(kept) => return Ok((r, kept)),
-            Err(stmt) => stmt,
-        };
+        let (r, mut stmt) = repeat_stmt(rest)?;
+        if label_kept_loop(&mut stmt, &label) {
+            return Ok((r, stmt));
+        }
         if let Stmt::Loop {
             init,
             cond,
@@ -207,18 +205,15 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
     ))
 }
 
-/// `stmt` with `label` stamped on when it is a `loop` / `repeat` a `.AST`
-/// parse keeps in its RakuAST shape (ADR-10723 Stage 2); `stmt` itself back
-/// otherwise.
+/// Stamp `label` on `stmt` when it is a `loop` / `repeat` a `.AST` parse
+/// keeps in its RakuAST shape (ADR-10723 Stage 2); whether it was one.
 // Cost: O(1).
-fn label_kept_loop(stmt: Stmt, label: &str) -> Result<Stmt, Stmt> {
-    match stmt {
-        Stmt::Ast(mut node) => {
-            if let crate::ast::parsed::ParsedStmt::Loop(l) = node.as_mut() {
-                l.label = Some(label.to_string());
-            }
-            Ok(Stmt::Ast(node))
-        }
-        other => Err(other),
+fn label_kept_loop(stmt: &mut Stmt, label: &str) -> bool {
+    let Stmt::Ast(node) = stmt else {
+        return false;
+    };
+    if let crate::ast::parsed::ParsedStmt::Loop(l) = node.as_mut() {
+        l.label = Some(label.to_string());
     }
+    true
 }
