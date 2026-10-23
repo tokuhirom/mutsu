@@ -108,6 +108,7 @@ pub(crate) fn wrap_with_will_phasers(
             with_kind: None,
         }];
         stmts.push(Stmt::Phaser {
+            spans: Default::default(),
             kind,
             body: phaser_body,
             condition: None,

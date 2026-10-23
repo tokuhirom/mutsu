@@ -2910,6 +2910,10 @@ pub(crate) enum Stmt {
         /// nothing.
         #[serde(skip)]
         end_index: Option<u32>,
+        /// Where the phaser's block was written (ADR-10723 Stage 2); `None`
+        /// for a statement-form phaser or one nobody wrote.
+        #[serde(default)]
+        spans: Option<Box<parsed::BlockSpans>>,
     },
     ProtoDecl {
         name: Symbol,

@@ -78,7 +78,7 @@ pub(super) fn lift_nested_exports(stmts: &mut Vec<Stmt>) {
         }
         list.insert(
             index,
-            Stmt::Phaser {
+            Stmt::Phaser { spans: Default::default(),
                 kind: PhaserKind::Begin,
                 body: copies,
                 condition: None,

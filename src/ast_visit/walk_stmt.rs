@@ -400,6 +400,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             names(v, export_tags, NameKind::Module);
         }
         Stmt::Phaser {
+            spans: _,
             kind: _,
             body,
             // The condition's source text, kept only for the error message.

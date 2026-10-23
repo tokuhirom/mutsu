@@ -757,6 +757,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         // keeps a source-text `condition` for their exception message, so they
         // stay the boundary.
         Stmt::Phaser {
+            spans,
             kind,
             body,
             condition,
@@ -771,7 +772,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 Some(c) => c,
                 None => return Err(unsupported("PRE/POST phaser")),
             };
-            let mut fields = vec![node_field(None, block_node(body)?)];
+            let mut block = block_node(body)?;
+            if let Some(spans) = spans.as_deref() {
+                super::routine_origins::block_origins(&mut block, *spans);
+            }
+            let mut fields = vec![node_field(None, block)];
             // The source position of a main-compunit `END` (see `origin`).
             fields.extend(end_index.map(origin::end_index_field));
             Ok(Some(statement_expression(RakuAstNode {

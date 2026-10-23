@@ -382,7 +382,7 @@ fn reorder_at_level(
     stmts.extend(extra_begin);
     stmts.extend(early_consts);
     for body in check.iter().rev() {
-        stmts.push(Stmt::Phaser {
+        stmts.push(Stmt::Phaser { spans: Default::default(),
             kind: PhaserKind::Check,
             body: body.clone(),
             condition: None,
@@ -407,7 +407,7 @@ fn reorder_at_level(
     // mainline `$^x` to the compiler after reordering, bypassing
     // `emit_block_placeholder_die`.
     for body in &init {
-        stmts.push(Stmt::Phaser {
+        stmts.push(Stmt::Phaser { spans: Default::default(),
             kind: PhaserKind::Init,
             body: body.clone(),
             condition: None,

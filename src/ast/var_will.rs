@@ -72,6 +72,7 @@ pub(crate) fn recognize(stmt: &Stmt) -> Option<(&Stmt, Vec<WillPhaser<'_>>)> {
     let mut out = Vec::with_capacity(phasers.len());
     for phaser in phasers {
         let Stmt::Phaser {
+            spans: _,
             kind,
             body,
             condition: None,

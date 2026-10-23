@@ -116,6 +116,7 @@ pub(super) fn lower(node: &RakuAstNode, kind: PhaserKind) -> Result<Stmt, Runtim
         _ => vec![super::lower::lower_stmt(positional)?],
     };
     Ok(Stmt::Phaser {
+        spans: Default::default(),
         kind,
         body,
         condition,

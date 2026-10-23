@@ -418,6 +418,7 @@ impl Compiler {
                 // rvalue phaser is not a statement the pre-registration pass
                 // walks past, so it installs when execution reaches it.
                 let end_stmt = Stmt::Phaser {
+                    spans: Default::default(),
                     kind: crate::ast::PhaserKind::End,
                     body: body.to_vec(),
                     condition: None,

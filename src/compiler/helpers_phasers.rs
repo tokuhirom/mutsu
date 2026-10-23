@@ -650,6 +650,7 @@ impl Compiler {
                 where_constraint: None,
             }];
             hoisted.push(Stmt::Phaser {
+                spans: Default::default(),
                 kind: PhaserKind::Enter,
                 body,
                 condition: None,
