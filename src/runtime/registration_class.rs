@@ -374,10 +374,28 @@ pub(super) fn should_treat_role_arg_as_type_expr(input: &str) -> bool {
     {
         return false;
     }
+    // A type minted under an already used name (`new_type(:name<Foo>)` twice)
+    // is stored under `Foo\0<digits>`: a registry key, not source text.
+    if is_site_keyed_type_name(trimmed) {
+        return true;
+    }
     looks_like_type_arg_expr(trimmed)
         && (trimmed.contains(':')
             || trimmed.contains('(')
             || crate::qualified::is_qualified_str(trimmed))
+}
+
+/// Whether `name` is the storage key of a type that shares its name with an
+/// earlier one: the bare name, a NUL, then digits (`Foo\0123`).
+// Cost: O(|name|).
+fn is_site_keyed_type_name(name: &str) -> bool {
+    let Some((bare, id)) = name.split_once('\u{0}') else {
+        return false;
+    };
+    !id.is_empty()
+        && id.bytes().all(|b| b.is_ascii_digit())
+        && !bare.is_empty()
+        && looks_like_type_arg_expr(bare)
 }
 
 /// Substitute type parameters in a method definition.

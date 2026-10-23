@@ -37,6 +37,19 @@ impl Interpreter {
                 _ => None,
             })
             .unwrap_or_else(|| "Anon".to_string());
+        // A second type minted under a name an earlier `new_type` used is a
+        // different type that merely shares the name (Red builds a fresh
+        // `Model.new_type(:name($self.^name))` while `$self` is still in use).
+        let already_composed = self.registry().composed_classes.contains(&name);
+        let name = if self.registry_mut().minted_type_names.insert(name.clone()) && !already_composed
+        {
+            name
+        } else {
+            // Digits only, like a lexical declaration id, and far above the ids
+            // the declaration counter reaches, so the two never collide.
+            let n = crate::value::next_instance_id() as u64 | (1u64 << 40);
+            format!("{name}\u{0}{n}")
+        };
         // The builtin metamodel class this call ultimately goes through: the
         // receiver itself when it is one, else the first one on its MRO.
         let native_how = if how_class.starts_with("Metamodel::") {
