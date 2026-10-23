@@ -94,6 +94,7 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
         }
         // `unit module M;` / `unit package P;`: rakudo holds the rest of the
         // unit in the declaration's body; the parser leaves it beside it.
+        let _statement = super::expr_origins::InStatement::enter(line.map(|(_, span)| span));
         if let Some(unit) = unit_package_taking(stmt, &stmts[at + 1..]) {
             if let Some(mut node) = convert_stmt(&unit)? {
                 super::routine_origins::package_origins(&mut node, &unit);

@@ -286,6 +286,13 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
         RakuAstClass::VarDeclarationSimple => {
             let mut rest = node.clone();
             rest.fields.retain(|f| f.name != Some("desigilname"));
+            // Rakudo visits the traits after the initializer.
+            let (traits, mut fields): (Vec<_>, Vec<_>) = rest
+                .fields
+                .into_iter()
+                .partition(|f| f.name == Some("traits"));
+            fields.extend(traits);
+            rest.fields = fields;
             Some(field_children(&rest))
         }
         RakuAstClass::Parameter => {

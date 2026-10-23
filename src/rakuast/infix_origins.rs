@@ -21,7 +21,10 @@ pub(super) fn derive(node: &mut RakuAstNode) {
     match node.class {
         RakuAstClass::ApplyInfix => apply_infix(node),
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => call_name(node),
-        RakuAstClass::VarDeclarationSimple => initializer(node),
+        RakuAstClass::VarDeclarationSimple => {
+            initializer(node);
+            super::decl_origins::derive(node);
+        }
         RakuAstClass::VarDeclarationSignature => {
             initializer(node);
             super::signature_decl_origins::declaration(node);
