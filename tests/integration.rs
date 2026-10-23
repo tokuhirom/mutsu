@@ -63,3 +63,4 @@ mod statement_call_resolves_once;
 mod static_operator_intern_budget;
 mod token_body_compile_cache;
 mod unrelated_bind_keeps_local_read_fast_path;
+mod eval_in_unrelated_routine_no_env_copy;
