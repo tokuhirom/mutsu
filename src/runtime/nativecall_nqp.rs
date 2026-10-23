@@ -30,6 +30,8 @@ fn type_operand_name(v: &Value) -> Option<String> {
     match v.view() {
         ValueView::Package(n) => Some(n.resolve()),
         ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+        // `CArray[T]` / `Pointer[T]` are mixin type objects over the base class.
+        ValueView::Mixin(inner, _) => type_operand_name(&inner),
         _ => None,
     }
 }
