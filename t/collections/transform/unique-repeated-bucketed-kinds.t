@@ -4,7 +4,7 @@ use Test;
 # elements by identity (#9161); the answers must stay those of the `===`
 # scan, including across the pairs that look alike but are not identical.
 
-plan 20;
+plan 24;
 
 # --- Rat / FatRat ---------------------------------------------------------
 is-deeply (<1/2>, <1/2>, <3/4>, <2/4>).unique.List, (<1/2>, <3/4>).List, 'Rat unique, 2/4 is 1/2';
@@ -38,6 +38,14 @@ class Tagged {
 my @t = Tagged.new(tag => 'a'), Tagged.new(tag => 'b'), Tagged.new(tag => 'a');
 is @t.unique.elems, 2, 'user WHICH: equal WHICH values are one';
 is @t.repeated.elems, 1, 'user WHICH: the repeat is found';
+
+# --- containers: the same node, not an equal one ---------------------------
+my $arr = [1, 2];
+my $hsh = { a => 1 };
+is ($arr, $arr, [1, 2]).unique.elems, 2, 'an Array is === only to itself';
+is ($hsh, $hsh, { a => 1 }).unique.elems, 2, 'a Hash is === only to itself';
+is ($arr, $hsh, $arr, $hsh).repeated.elems, 2, 'containers of two kinds repeated';
+is ($arr, (1, 2), $arr).unique.elems, 2, 'an Array is not a List';
 
 # --- value classes keep their own rules -------------------------------------
 is (Date.new('2026-10-23'), Date.new('2026-10-23'), Date.new('2026-10-24')).unique.elems, 2,

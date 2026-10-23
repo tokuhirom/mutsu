@@ -17,6 +17,11 @@
 //!
 //! > two values that compare identical must never land in *different* buckets.
 //!
+//! Bucketed kinds: Int/BigInt, Str, Bool, Num, Rat, FatRat, Complex, Pair, Array,
+//! Hash, Date/DateTime and plain objects (by id, or by the `WHICH` a class
+//! overrides it with). Unbucketed kinds (Seq, Slip, Enum, Set/Bag/Mix, routines,
+//! Version, ObjAt, ...) keep the scan.
+//!
 //! That is why a kind with a cross-kind identity arm gets no bucket at all.
 //! `Package("int")` is `values_identical` to `Int(0)`, and a `Mixin` carrying
 //! only the read-only topic marker is transparent to its inner value, so both
@@ -128,6 +133,17 @@ fn identity_bucket(value: &Value) -> Option<u64> {
             8u8.hash(&mut hasher);
             identity_bucket(key)?.hash(&mut hasher);
         }
+        // Containers are `===` only when they are the same node. A `Seq` that
+        // reads as a List (`.cache`) can still be `eqv` to an Array, but a
+        // `Seq` has no bucket here and so is scanned against every candidate.
+        ValueView::Array(items, _) => {
+            11u8.hash(&mut hasher);
+            (crate::gc::Gc::as_ptr(&items) as usize).hash(&mut hasher);
+        }
+        ValueView::Hash(items) => {
+            12u8.hash(&mut hasher);
+            (crate::gc::Gc::as_ptr(&items) as usize).hash(&mut hasher);
+        }
         ValueView::Instance {
             class_name, id, ..
         } => {
@@ -135,11 +151,7 @@ fn identity_bucket(value: &Value) -> Option<u64> {
             // another rule than the instance id keep no bucket.
             let name = class_name.as_str();
             if is_stash_class_name(name)
-                || matches!(
-                    name,
-                    "Supply" | "IO::Special" | "ObjAt" | "ValueObjAt" | "IO::Handle" | "Date"
-                        | "DateTime"
-                )
+                || matches!(name, "Supply" | "IO::Special" | "ObjAt" | "ValueObjAt" | "IO::Handle")
                 || (name.starts_with("Perl6::Metamodel::") && name.ends_with("HOW"))
             {
                 return None;
@@ -155,6 +167,12 @@ fn identity_bucket(value: &Value) -> Option<u64> {
                 Some(which) => {
                     9u8.hash(&mut hasher);
                     which.hash(&mut hasher);
+                }
+                // Date and DateTime are value types: identical when their
+                // calendar value is, whichever object holds it.
+                None if matches!(name, "Date" | "DateTime") => {
+                    13u8.hash(&mut hasher);
+                    crate::value::which_key::value_which_key(value).hash(&mut hasher);
                 }
                 None => {
                     10u8.hash(&mut hasher);

@@ -111,7 +111,7 @@ impl Interpreter {
     /// eager methods and the lazy pipe stage (`PipeAdaptor::Distinct`, #9159)
     /// share, so the two cannot drift apart.
     ///
-    /// Cost: O(1) average (one `:as` call) for Int/BigInt/Str/Bool/Num keys
+    /// Cost: O(1) average (one `:as` call) for keys of a bucketed kind (see `IdentityIndex`)
     /// under `unique`/`repeated`, O(u) key comparisons for other kinds and
     /// O(u) comparator calls under `:with`, u = distinct keys seen so far;
     /// O(1) for `squish`.
@@ -177,8 +177,8 @@ impl Interpreter {
     }
 
     /// Cost: O(e) average plus one `:as` call per element, e = elements of the
-    /// invocant, when every key is an Int/BigInt/Str/Bool/Num; O(e * u) key
-    /// comparisons when keys are of any other kind (u = distinct keys; see
+    /// invocant, when every key is of a bucketed kind (see `IdentityIndex`); O(e * u) key
+    /// comparisons when keys are of an unbucketed kind (u = distinct keys; see
     /// `IdentityIndex`). `:with` is O(e * u) comparator calls, as in Rakudo.
     /// A lazy invocant is forced whole. Rakudo: O(e) without `:with` -- see #9161.
     pub(crate) fn dispatch_unique(
@@ -216,7 +216,7 @@ impl Interpreter {
     }
 
     /// Cost: same as `Interpreter::dispatch_unique`: O(e) average for
-    /// Int/BigInt/Str/Bool/Num keys, O(e * u) for any other kind, O(e * u)
+    /// bucketed keys, O(e * u) for an unbucketed kind, O(e * u)
     /// comparator calls under `:with`. Rakudo: O(e) without `:with` -- see #9161.
     pub(crate) fn dispatch_repeated(
         &mut self,
