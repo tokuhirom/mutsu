@@ -3,7 +3,8 @@
 - **Status**: Accepted (user decision 2026-10-22; proposed 2026-10-02). Supersedes the pipeline
   decision of [ADR-0011](0011-rakuast-model-layer-and-phasing.md). The §4 questions stay gates
   before Stage 2; the source-position question is decided (2026-10-22); the representation
-  question and the Stage 2 mechanism are Proposed (2026-10-23, §4).
+  question and the Stage 2 mechanism are decided (user decision 2026-10-23, §4: typed parser
+  nodes, with the uniform node as their view).
 - **Date**: 2026-10-02
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#10723](https://github.com/tokuhirom/mutsu/issues/10723). Roadmap:
@@ -207,9 +208,9 @@ before the flip, not after.
   Before Stage 2, measure parse-time cost on the compile-heavy cases and decide between keeping
   it, or a typed Rust tree with `Value::RakuAst` as a view over it.
 
-  **Proposed (2026-10-23, [#11413](https://github.com/tokuhirom/mutsu/issues/11413)): typed
-  parser nodes, with the uniform node as their view.** This also fixes the Stage 2 mechanism
-  that §2.2 left open.
+  **Decided (user decision 2026-10-23; proposed the same day,
+  [#11413](https://github.com/tokuhirom/mutsu/issues/11413)): typed parser nodes, with the
+  uniform node as their view.** This also fixes the Stage 2 mechanism that §2.2 left open.
   - **The parser builds a typed node per migrated construct family.** It is a Rust struct in
     `src/ast/parsed/` shaped like the RakuAST node (`Statement::If` has its condition, its
     `then` block, its `elsif`/`orwith` clauses and its `else` block). Its children that have
