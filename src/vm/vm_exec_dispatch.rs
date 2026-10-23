@@ -3761,6 +3761,11 @@ impl Interpreter {
                 self.exec_attr_container_ref_op(code, *name_idx);
                 *ip += 1;
             }
+            // Cost: O(a + m), a = the class's attributes, m = its MRO length.
+            OpCode::PublicRwAttrContainerRef(name_idx) => {
+                self.exec_public_rw_attr_container_ref_op(code, *name_idx)?;
+                *ip += 1;
+            }
             // Cost: O(1) (attribute map probes).
             OpCode::ResolveAttrRwCandidate(name_idx) => {
                 self.exec_resolve_attr_rw_candidate_op(code, *name_idx);

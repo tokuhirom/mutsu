@@ -79,6 +79,7 @@ impl Interpreter {
             | OpCode::Sub => self.exec_ops_group_03(code, ip, compiled_fns),
             OpCode::ApproxEq
             | OpCode::AttrContainerRef(..)
+            | OpCode::PublicRwAttrContainerRef(..)
             | OpCode::BoolCoerce
             | OpCode::CaptureRwArgCell
             | OpCode::CaptureVarCell
