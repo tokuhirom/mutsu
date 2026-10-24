@@ -169,6 +169,9 @@ impl VisitMut for Replacer<'_> {
             | Expr::HyperMethodCallDynamic { target, .. }
             | Expr::CallOn { target, .. }
             | Expr::Index { target, .. } => self.visit_expr_mut(target),
+            // A user-declared prefix/postfix operator application: its operand
+            // curries like a built-in unary's.
+            e if crate::parser::operator_call_operands(e).is_some() => walk_expr_mut(self, e),
             // Not a priming-scope operator: a `*` below it is not this
             // closure's placeholder.
             _ => {}
