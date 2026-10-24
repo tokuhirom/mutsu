@@ -338,6 +338,9 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     {
         return Some(super::zip_assign::lower(node));
     }
+    if super::cross_assign::is_cross_assignment(node) {
+        return Some(super::cross_assign::lower(node));
+    }
     if infix.class == RakuAstClass::MetaInfixAssign && node.class == RakuAstClass::ApplyInfix {
         return lower_assign(node, infix);
     }
