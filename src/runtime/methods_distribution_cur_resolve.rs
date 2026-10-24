@@ -69,6 +69,15 @@ impl Interpreter {
         &self,
         depspec: &Value,
     ) -> (String, Option<String>, Option<String>, Option<String>) {
+        // An `is CompUnit::DependencySpecification` subclass instance carries
+        // the native specification its arguments describe (#14850).
+        if let ValueView::Instance { attributes, .. } = depspec.view()
+            && let Some(payload) = attributes
+                .as_map()
+                .get(crate::builtins::native_base::DEPSPEC_PAYLOAD)
+        {
+            return self.extract_depspec_fields(payload);
+        }
         match depspec.view() {
             ValueView::Instance {
                 class_name,
@@ -158,6 +167,79 @@ impl Interpreter {
         true
     }
 
+    /// The `auth-matcher` / `version-matcher` / `api-matcher` an `is
+    /// CompUnit::DependencySpecification` subclass answers, which may be a
+    /// user override (Pakku::Spec's `:ver(* > 0.2)` selectors): a code object,
+    /// regex, range or junction the string matching of
+    /// [`Self::matches_depspec`] cannot express. `None` for a plain
+    /// specification.
+    // Cost: O(1) plus the three user method calls.
+    pub(crate) fn depspec_user_matchers(
+        &mut self,
+        depspec: &Value,
+    ) -> Result<Option<[Value; 3]>, RuntimeError> {
+        let ValueView::Instance { attributes, .. } = depspec.view() else {
+            return Ok(None);
+        };
+        if !attributes
+            .as_map()
+            .contains_key(crate::builtins::native_base::DEPSPEC_PAYLOAD)
+        {
+            return Ok(None);
+        }
+        let mut out = [Value::NIL, Value::NIL, Value::NIL];
+        for (slot, method) in ["auth-matcher", "version-matcher", "api-matcher"]
+            .into_iter()
+            .enumerate()
+        {
+            out[slot] = self.vm_call_method_with_values(depspec.clone(), method, Vec::new())?;
+        }
+        Ok(Some(out))
+    }
+
+    /// Whether the distribution `meta` passes the user-supplied matchers of
+    /// [`Self::depspec_user_matchers`]: each is smartmatched against the
+    /// distribution's auth / version / api, as Rakudo's
+    /// `CompUnit::DependencySpecification` consumers do. An unset matcher
+    /// (`True`) accepts everything.
+    // Cost: O(1) plus the smartmatches.
+    pub(crate) fn meta_passes_user_matchers(
+        &mut self,
+        meta: &Value,
+        matchers: &Option<[Value; 3]>,
+    ) -> bool {
+        let Some([auth, ver, api]) = matchers else {
+            return true;
+        };
+        let field = |key: &str| {
+            meta.hash_get_str(key)
+                .map(|v| v.to_string_value())
+                .unwrap_or_default()
+        };
+        let version_of = |text: String| {
+            Value::version_from_str(if text.is_empty() { "0" } else { text.trim_start_matches('v') })
+        };
+        let ver_text = meta
+            .hash_get_str("ver")
+            .or_else(|| meta.hash_get_str("version"))
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let checks = [
+            (auth, Value::str(field("auth"))),
+            (ver, version_of(ver_text)),
+            (api, version_of(field("api"))),
+        ];
+        for (matcher, subject) in checks {
+            if matcher.is_nil() || matches!(matcher.view(), ValueView::Bool(true)) {
+                continue;
+            }
+            if !self.smart_match_values(&subject, matcher) {
+                return false;
+            }
+        }
+        true
+    }
+
     /// A depspec's version/api matcher is smartmatched against the
     /// distribution's version, as in Rakudo (`$meta-ver ~~ Version.new($m)`):
     /// `0.3.5+` accepts any later version, `1.*` any 1.x, and a Bool `True`
@@ -173,12 +255,13 @@ impl Interpreter {
 
     /// Get candidates for a CompUnit::Repository::FileSystem.
     pub(crate) fn cur_fs_candidates(
-        &self,
+        &mut self,
         prefix: &str,
         depspec: &Value,
     ) -> Result<Value, RuntimeError> {
         let (short_name, auth_matcher, version_matcher, api_matcher) =
             self.extract_depspec_fields(depspec);
+        let user_matchers = self.depspec_user_matchers(depspec)?;
         if short_name.is_empty() {
             return Ok(Value::array(Vec::new()));
         }
@@ -202,13 +285,14 @@ impl Interpreter {
             })?;
             let meta = self.parse_json_to_value(&json_str)?;
             // Check depspec match using parent meta
-            if !Self::matches_depspec(
+            if !(Self::matches_depspec(
                 &meta,
                 &short_name,
                 &auth_matcher,
                 &version_matcher,
                 &api_matcher,
-            ) {
+            )
+            && self.meta_passes_user_matchers(&meta, &user_matchers)) {
                 return Ok(Value::array(Vec::new()));
             }
             // Build files hash using parent prefix (where resources/ lives)
@@ -270,13 +354,14 @@ impl Interpreter {
             return Ok(Value::array(Vec::new()));
         };
         let prefix = effective_prefix.as_str();
-        if !Self::matches_depspec(
+        if !(Self::matches_depspec(
             &meta,
             &short_name,
             &auth_matcher,
             &version_matcher,
             &api_matcher,
-        ) {
+        )
+            && self.meta_passes_user_matchers(&meta, &user_matchers)) {
             return Ok(Value::array(Vec::new()));
         }
         let files_hash = self.build_dist_files_hash(prefix, &meta);
@@ -301,12 +386,13 @@ impl Interpreter {
 
     /// Get candidates for a CompUnit::Repository::Installation.
     pub(crate) fn cur_inst_candidates(
-        &self,
+        &mut self,
         prefix: &str,
         depspec: &Value,
     ) -> Result<Value, RuntimeError> {
         let (short_name, auth_matcher, version_matcher, api_matcher) =
             self.extract_depspec_fields(depspec);
+        let user_matchers = self.depspec_user_matchers(depspec)?;
         if short_name.is_empty() {
             return Ok(Value::array(Vec::new()));
         }
@@ -328,13 +414,14 @@ impl Interpreter {
                 let Ok(meta) = self.parse_json_to_value(&json_str) else {
                     continue;
                 };
-                if !Self::matches_depspec(
+                if !(Self::matches_depspec(
                     &meta,
                     &short_name,
                     &auth_matcher,
                     &version_matcher,
                     &api_matcher,
-                ) {
+                )
+            && self.meta_passes_user_matchers(&meta, &user_matchers)) {
                     continue;
                 }
                 let dist_id = path

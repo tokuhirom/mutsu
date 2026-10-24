@@ -242,40 +242,8 @@ pub(crate) fn var_name(input: &str) -> PResult<'_, String> {
             return Err(e);
         }
         // Handle bare $ (anonymous variable) — no name after sigil
-        if let Ok((mut rest, mut name)) = qualified_ident(r) {
-            while rest.starts_with(':') && !rest.starts_with("::") {
-                let after_colon = &rest[1..];
-                // Key-less colon pair: `my $take-me:<home>` / `:«home»` / `:['home']`.
-                if let Some((canonical, r2)) =
-                    crate::parser::primary::var::parse_anon_adverb_value(after_colon)
-                {
-                    name.push(':');
-                    name.push_str(&canonical);
-                    rest = r2;
-                    continue;
-                }
-                if let Ok((r2, suffix)) = ident(after_colon) {
-                    name.push(':');
-                    name.push_str(&suffix);
-                    rest = r2;
-                    // Double colon after adverb is X::Syntax::Confused
-                    if rest.starts_with("::") {
-                        return Err(PError::fatal(
-                            "X::Syntax::Confused: Confused (double colon in variable adverb)"
-                                .to_string(),
-                        ));
-                    }
-                    // Parse adverb value: <...>, «...», [...], (...)
-                    if let Some((canonical, r3)) =
-                        crate::parser::primary::var::parse_adverb_value_pub(rest)
-                    {
-                        name.push_str(&canonical);
-                        rest = r3;
-                    }
-                } else {
-                    break;
-                }
-            }
+        if let Ok((rest, name)) = qualified_ident(r) {
+            let (rest, name) = declared_name_colonpairs(rest, name)?;
             let full = if twigil.is_empty() {
                 name
             } else {
@@ -305,4 +273,43 @@ pub(crate) fn var_name(input: &str) -> PResult<'_, String> {
     } else {
         Err(PError::expected("variable name"))
     }
+}
+
+/// The colonpairs of a declared variable's extended name (`:foo<g h>` of
+/// `my $today:foo<g h>`), appended to `name` in their canonical spelling, and
+/// the text after them.
+// Cost: O(n), n = length of the colonpairs.
+pub(crate) fn declared_name_colonpairs(mut rest: &str, mut name: String) -> PResult<'_, String> {
+    while rest.starts_with(':') && !rest.starts_with("::") {
+        let after_colon = &rest[1..];
+        // Key-less colon pair: `my $take-me:<home>` / `:«home»` / `:['home']`.
+        if let Some((canonical, r2)) =
+            crate::parser::primary::var::parse_anon_adverb_value(after_colon)
+        {
+            name.push(':');
+            name.push_str(&canonical);
+            rest = r2;
+            continue;
+        }
+        if let Ok((r2, suffix)) = ident(after_colon) {
+            name.push(':');
+            name.push_str(&suffix);
+            rest = r2;
+            // Double colon after adverb is X::Syntax::Confused
+            if rest.starts_with("::") {
+                return Err(PError::fatal(
+                    "X::Syntax::Confused: Confused (double colon in variable adverb)".to_string(),
+                ));
+            }
+            // Parse adverb value: <...>, «...», [...], (...)
+            if let Some((canonical, r3)) = crate::parser::primary::var::parse_adverb_value_pub(rest)
+            {
+                name.push_str(&canonical);
+                rest = r3;
+            }
+        } else {
+            break;
+        }
+    }
+    Ok((rest, name))
 }

@@ -2601,6 +2601,8 @@ fn var_decl_statement(
             || n == crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE
             // The argument of `is dynamic(ARG)`, rendered with the trait.
             || n == crate::ast::DYNAMIC_TRAIT_ARGUMENT
+            // The written colonpairs of the name, rendered in `desigilname`.
+            || n == crate::ast::NAME_COLONPAIRS
             || (is_binding && n == crate::ast::bind_decl::SCALAR_BIND)
             || (is_binding && n == crate::ast::bind_decl::CODE_BIND)
     };
@@ -2711,6 +2713,7 @@ fn var_decl_statement(
         traits.push(export);
     }
     decl_traits::insert(&mut decl, traits);
+    super::name_colonpairs::apply(&mut decl, custom_traits)?;
     // `where` is the declaration's last field, after the initializer.
     if let Some(constraint) = where_constraint {
         decl.fields

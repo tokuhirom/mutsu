@@ -336,6 +336,9 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
     // A bare sigil consumes exactly one byte; a source name always consumes
     // more, even when it is spelled like an anonymous binding's placeholder.
     let anonymous = declaration_name_input.len() - rest.len() == 1;
+    let written_colonpairs = crate::parser::written_name_colonpairs(
+        &declaration_name_input[..declaration_name_input.len() - rest.len()],
+    );
     let term_decl_name = if sigil == b'$' {
         format!("${name}")
     } else {
@@ -406,6 +409,12 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
         &mut hash_key_constraint,
     )?;
     state.anonymous = anonymous;
+    if let Some(written) = written_colonpairs.filter(|_| crate::ast::spelled::keeping()) {
+        state.custom_traits.push((
+            crate::ast::NAME_COLONPAIRS.to_string(),
+            Some(Expr::Literal(crate::value::Value::str(written.to_string()))),
+        ));
+    }
 
     // A colonpair adverb directly on a declaration (`my $x :a`) is illegal —
     // you can't adverb a variable. `:=` (bind) and `::` are not adverbs.
