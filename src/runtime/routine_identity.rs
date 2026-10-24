@@ -80,7 +80,12 @@ impl Interpreter {
             None => (*inner).clone(),
         };
         let composed = compose(self, view)?;
-        Ok(Self::store_composition(cell, composed, earlier.as_ref()))
+        let stored = Self::store_composition(cell, composed, earlier.as_ref());
+        // The composition lives in the def's cell, not in a registry table,
+        // so nothing else announces it: invalidate the memoized `.^lookup`
+        // answers, which were built before this composition (#14853).
+        self.registry_mut().bump_method_generation();
+        Ok(stored)
     }
 
     /// `value` as its routine currently is: `Mixin(inner Sub, composition)`

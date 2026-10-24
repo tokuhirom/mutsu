@@ -96,6 +96,7 @@ impl Interpreter {
         self.caches.native_lever_a_override_cache.clear();
         self.caches.resolved_seq_cache.clear();
         self.caches.dispatch_multi_candidate.clear();
+        self.caches.classhow_lookup_cache.clear();
         self.caches.deferral_build_context_free.clear();
         self.clear_private_zeroarg_method_cache();
     }
