@@ -307,6 +307,12 @@ struct SupplierRuntimeState {
     /// order it relative to buffered emits of sibling suppliers.
     terminal_seq: Option<u64>,
     pending_promises: Vec<SharedPromise>,
+    /// Watermark into `emitted` for a plain `Supplier`: when the last push sink
+    /// is unregistered (a `react` over it finished), what was emitted so far
+    /// was delivered to it, so a later sink must not replay it. Values emitted
+    /// while no sink existed yet (a producer racing ahead of the first
+    /// registration) are above it and still replay.
+    replay_from: usize,
     /// Watermark into `emitted` for `Supplier::Preserving`: values below it
     /// were already delivered to a tap (live dispatch or backlog replay);
     /// values at/above it are the buffered backlog the next tap must replay.
@@ -351,6 +357,7 @@ impl SupplierRuntimeState {
         self.terminal_seq = None;
         self.emitted.clear();
         self.emitted_seq.clear();
+        self.replay_from = 0;
     }
 
     /// Drop `waker_id`'s setup hold; the last one out runs a deferred reset.
@@ -456,7 +463,7 @@ pub(crate) fn supplier_sink_register(
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
         if replay {
-            for (i, v) in state.emitted.iter().enumerate() {
+            for (i, v) in state.emitted.iter().enumerate().skip(state.replay_from) {
                 let seq = state.emitted_seq.get(i).copied().unwrap_or(0);
                 waker.push_at(key, crate::value::waker::SinkEvent::Emit(v.clone()), seq);
             }
@@ -510,7 +517,7 @@ pub(crate) fn supplier_sinks_register_batch(
         for &(supplier_id, key) in regs {
             let sink_id = next_sink_id();
             let state = map.entry(supplier_id).or_default();
-            for (i, v) in state.emitted.iter().enumerate() {
+            for (i, v) in state.emitted.iter().enumerate().skip(state.replay_from) {
                 let seq = state.emitted_seq.get(i).copied().unwrap_or(0);
                 replay.push((seq, key, crate::value::waker::SinkEvent::Emit(v.clone())));
             }
@@ -558,7 +565,11 @@ pub(crate) fn supplier_sink_unregister(supplier_id: u64, sink_id: u64) {
     if let Ok(mut map) = supplier_state_map().lock()
         && let Some(state) = map.get_mut(&supplier_id)
     {
+        let had_sinks = !state.sinks.is_empty();
         state.sinks.retain(|s| s.sink_id != sink_id);
+        if had_sinks && state.sinks.is_empty() {
+            state.replay_from = state.emitted.len();
+        }
     }
 }
 
