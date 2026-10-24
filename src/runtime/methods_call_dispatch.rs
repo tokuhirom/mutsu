@@ -958,7 +958,8 @@ impl Interpreter {
                 super::methods_qualified::split_method_qualifier_last(method)
         {
             let qualifier = self.lexical_env_remap_name(qualifier);
-            let pushed = if self.is_role(&qualifier) {
+            let qualifier_is_role = self.is_role(&qualifier);
+            let pushed = if qualifier_is_role {
                 self.push_qualified_method_dispatch_frame(&qualifier, &args, target.clone())
             } else {
                 self.push_method_dispatch_frame(&qualifier, actual, &args, target.clone(), None)
@@ -966,6 +967,15 @@ impl Interpreter {
             let result = self.dispatch_qualified_method(&target, method, &args);
             if pushed {
                 self.pop_method_dispatch();
+            }
+            // `push_method_dispatch_frame` always pushes the samewith context
+            // (the frame itself is only built when a deferral builtin is named
+            // anywhere, `pushed`), so it is taken back whether or not a frame
+            // went on. A role's qualified frame pushes none. Left behind, a
+            // later `samewith` re-dispatched the qualified method (`Eq.new`
+            // after `self.Mu::new`) instead of its own routine.
+            if !qualifier_is_role {
+                self.pop_method_samewith_context();
             }
             if let Some(result) = result {
                 return result;
