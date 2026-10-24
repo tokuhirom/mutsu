@@ -1945,6 +1945,29 @@ impl Interpreter {
                     Some((source_name, inner, _)) => (inner.clone(), Some(source_name.resolve())),
                     None => (raw_val, None),
                 };
+                // ADR-0040's store boundary, Proxy half, as `SetLocal` applies it:
+                // `=` reads its RHS in value context, so a `Proxy` assigned into
+                // a variable is FETCHed before the typed-scalar check and the
+                // store. This arm is the writer when the variable is captured
+                // (`run({ $typed = $p })`), where it has no local slot. A `:=`
+                // bind installs the Proxy itself and stays exempt, and so does a
+                // compiler temporary (`__with_tmp_N`, ...): it is the slot a
+                // control construct parks its once-evaluated value in, not a
+                // user's `=`, and `with lv() { $_ = 'a' }` must bind the topic to
+                // the Proxy itself so the store reaches `STORE`.
+                let raw_val = if !raw_mode
+                    && !is_bind_ctx
+                    && !is_rebind
+                    && !was_scalar_bind
+                    && !was_param_raw_bind
+                    && !name
+                        .trim_start_matches(['$', '@', '%', '&'])
+                        .starts_with("__")
+                {
+                    self.fetch_proxy_for_store(raw_val)?
+                } else {
+                    raw_val
+                };
                 // A sigilless `\target` bound to a multi-dim slice lvalue
                 // distributes a statement assignment through its cells, as
                 // `SetLocal` does in the declaring frame: here a closure that
