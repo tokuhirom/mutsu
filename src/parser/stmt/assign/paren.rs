@@ -296,102 +296,25 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
     if let Some(expr) = subscript_adverb_lvalue_assign_expr(lhs.clone(), rhs.clone()) {
         return Ok((rest, expr));
     }
-    // `((c ?? $a !! $b) = 5)`: the typed assignment node, target as written.
-    if !is_atomic && crate::rakuast::is_callable_lvalue_assign_target(&lhs) {
+    if is_atomic {
+        let name = match lhs {
+            Expr::Var(name) => name,
+            Expr::ArrayVar(name) => format!("@{name}"),
+            Expr::HashVar(name) => format!("%{name}"),
+            Expr::BareWord(name) => crate::term_names::bareword_target_key(&name),
+            _ => return Err(PError::expected("atomic assignment expression")),
+        };
+        return Ok((rest, crate::ast::atomic_op::store_var(name, rhs)));
+    }
+    // The typed assignment node, target as written; its lowering owns the
+    // per-target dispatch (`rakuast::assign_lower`).
+    if crate::rakuast::is_expression_assign_target(&lhs)
+        || crate::rakuast::is_callable_lvalue_assign_target(&lhs)
+    {
         return Ok((rest, super::written_assignment(lhs, rhs)));
     }
-    let expr = match lhs {
-        Expr::Var(name) => Expr::AssignExpr {
-            name,
-            expr: Box::new(rhs),
-            is_bind: false,
-        },
-        Expr::ArrayVar(name) => Expr::AssignExpr {
-            name: format!("@{}", name),
-            expr: Box::new(rhs),
-            is_bind: false,
-        },
-        Expr::HashVar(name) => Expr::AssignExpr {
-            name: format!("%{}", name),
-            expr: Box::new(rhs),
-            is_bind: false,
-        },
-        Expr::Index {
-            target,
-            index,
-            is_positional,
-            spelling,
-            ..
-        } => Expr::IndexAssign {
-            target,
-            index,
-            value: Box::new(rhs),
-            is_positional,
-            spelling,
-        },
-        Expr::MultiDimIndex {
-            target,
-            dimensions,
-            is_positional,
-        } => Expr::MultiDimIndexAssign {
-            target,
-            dimensions,
-            value: Box::new(rhs),
-            is_positional,
-        },
-        Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier,
-            ..
-        } => {
-            if name == "AT-POS"
-                && args.len() == 1
-                && !matches!(target.as_ref(), Expr::Var(name) | Expr::BareWord(name) if name == "self")
-            {
-                Expr::IndexAssign {
-                    target,
-                    index: Box::new(args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL))),
-                    value: Box::new(rhs),
-                    is_positional: true,
-                    spelling: Default::default(),
-                }
-            } else {
-                let target_var_name =
-                    crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(
-                        &target,
-                    );
-                let method_name = if let Some(m @ ('!' | '^')) = modifier {
-                    format!("{m}{}", name.resolve())
-                } else {
-                    name.resolve()
-                };
-                method_lvalue_assign_expr(*target, target_var_name, method_name, args, rhs)
-            }
-        }
-        Expr::Call { name, args, .. } => named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
-        Expr::CallOn { target, args } => match *target {
-            Expr::ArrayLiteral(items) if args.is_empty() => paren_list_assign_expr(items, rhs),
-            target => callable_lvalue_assign_expr(target, args, rhs),
-        },
-        Expr::ArrayLiteral(items) => paren_list_assign_expr(items, rhs),
-        // A bareword target is a term, spelled by its term key (ADR-12441).
-        Expr::BareWord(name) => Expr::AssignExpr {
-            name: crate::term_names::bareword_target_key(&name),
-            expr: Box::new(rhs),
-            is_bind: false,
-        },
-        // Fallback for other lvalue expressions
-        other => callable_lvalue_assign_expr(other, Vec::new(), rhs),
-    };
-    if is_atomic {
-        if let Expr::AssignExpr { name, expr, .. } = expr {
-            return Ok((rest, crate::ast::atomic_op::store_var(name, *expr)));
-        }
-        return Err(PError::expected("atomic assignment expression"));
-    }
-    Ok((rest, expr))
+    // Fallback for other lvalue expressions
+    Ok((rest, callable_lvalue_assign_expr(lhs, Vec::new(), rhs)))
 }
 
 pub(crate) fn looks_like_parenthesized_assignment(input: &str) -> bool {
