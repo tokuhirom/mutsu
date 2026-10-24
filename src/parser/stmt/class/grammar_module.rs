@@ -335,7 +335,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
     };
     Ok((
         rest,
-        crate::ast::package_header::wrap(
+        crate::parser::stmt::control::parsed_block::finish_package_header(
             grammar_stmt,
             &name,
             crate::ast::package_header::Header {
@@ -386,7 +386,7 @@ pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     };
     Ok((
         rest,
-        crate::ast::package_header::wrap(
+        crate::parser::stmt::control::parsed_block::finish_package_header(
             package_stmt,
             &name,
             crate::ast::package_header::Header {

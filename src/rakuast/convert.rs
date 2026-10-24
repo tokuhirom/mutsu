@@ -584,19 +584,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         // `proceed` / `succeed` without arguments are bare calls as well.
         Stmt::Proceed => Ok(Some(statement_expression(control_call("proceed", &[])?))),
         Stmt::Succeed => Ok(Some(statement_expression(control_call("succeed", &[])?))),
-        // A package-like declaration with `:ver<..>` adverbs or `is export`.
-        Stmt::SyntheticBlock(_) if crate::ast::package_header::unwrap(stmt).is_some() => {
-            let (declaration, header) =
-                crate::ast::package_header::unwrap(stmt).expect("just checked");
-            let statement = convert_stmt(declaration)?
-                .ok_or_else(|| unsupported("a declaration with a header"))?;
-            let expression = expression_of(&statement)
-                .ok_or_else(|| unsupported("a declaration with a header"))?;
-            Ok(Some(statement_expression(super::package_header::apply(
-                &expression,
-                &header,
-            )?)))
-        }
         // `temp` / `let` over a variable, an element or a declaration.
         Stmt::Let { .. } => match super::temporize::convert(stmt) {
             Some(node) => Ok(Some(statement_expression(node?))),
@@ -7636,9 +7623,14 @@ fn is_injected_named_arg(arg: &Expr) -> bool {
 /// one). `None` for any other statement.
 // Cost: O(n), n = size of `rest` (it is cloned).
 fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
-    let (declaration, header) = match crate::ast::package_header::unwrap(stmt) {
-        Some((declaration, header)) => (declaration, header),
-        None => (stmt, crate::ast::package_header::Header::default()),
+    let (declaration, header) = match stmt {
+        Stmt::Ast(node) => match node.as_ref() {
+            crate::ast::parsed::ParsedStmt::PackageHeader { decl, header, .. } => {
+                (decl.as_ref(), header.clone())
+            }
+            _ => return None,
+        },
+        other => (other, crate::ast::package_header::Header::default()),
     };
     let Stmt::Package {
         name,
@@ -7662,9 +7654,14 @@ fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
         is_unit: true,
         is_my: *is_my,
     };
-    Some(crate::ast::package_header::wrap(
-        package,
-        &name.resolve(),
-        header,
-    ))
+    if header.adverbs.is_empty() && header.export_tags.is_none() {
+        return Some(package);
+    }
+    Some(Stmt::Ast(Box::new(
+        crate::ast::parsed::ParsedStmt::PackageHeader {
+            decl: Box::new(package),
+            name: name.resolve(),
+            header,
+        },
+    )))
 }

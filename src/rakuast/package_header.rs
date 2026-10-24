@@ -244,7 +244,11 @@ pub(super) fn lower_with_header(
     {
         custom_traits.push(crate::parser::export_type_marker(&tags));
     }
-    Ok(crate::ast::package_header::wrap(stmt, &name, header))
+    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::PackageHeader {
+        decl: Box::new(stmt),
+        name,
+        header,
+    })
 }
 
 /// The `is export` trait node of an enum or subset that is exported, from its

@@ -851,7 +851,7 @@ pub(crate) fn class_decl_body_opt(
     // would end right here.
     Ok((
         rest,
-        crate::ast::package_header::wrap(
+        crate::parser::stmt::control::parsed_block::finish_package_header(
             class_stmt,
             &name,
             crate::ast::package_header::Header {

@@ -22,6 +22,14 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         }
         return;
     }
+    if let ParsedStmt::PackageHeader { decl, header, .. } = node {
+        // The adverb values come before the declaration.
+        for (_, value) in &header.adverbs {
+            v.visit_expr(value);
+        }
+        super::walk_stmt(v, decl);
+        return;
+    }
     if let Some(stmt) = node.inner_stmt() {
         super::walk_stmt(v, stmt);
         return;
@@ -127,6 +135,12 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
             }
         }
         ParsedStmt::SigillessDecl(d) => v.visit_expr_mut(&mut d.expr),
+        ParsedStmt::PackageHeader { decl, header, .. } => {
+            for (_, value) in &mut header.adverbs {
+                v.visit_expr_mut(value);
+            }
+            super::walk_stmt_mut(v, decl);
+        }
         ParsedStmt::DeclTail { head, tail } => {
             super::walk_stmt_mut(v, head);
             v.visit_expr_mut(tail);
