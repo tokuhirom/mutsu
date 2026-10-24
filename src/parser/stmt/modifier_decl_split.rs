@@ -191,7 +191,10 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
     // is left untouched.
     let is_array = name.starts_with('@');
     let is_hash = name.starts_with('%');
-    let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+    // A `:=` declaration (`my $x := EXPR with $t`) carries its bound
+    // expression the way an `=` one carries its initializer.
+    let is_bind = custom_traits.iter().any(|(n, _)| n == "__scalar_bind");
+    let has_init = is_bind || custom_traits.iter().any(|(n, _)| n == "__has_initializer");
     let decl = Stmt::VarDecl {
         anonymous: *anonymous,
         name: name.clone(),
@@ -204,7 +207,7 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
         export_tags: export_tags.clone(),
         custom_traits: custom_traits
             .iter()
-            .filter(|(n, _)| n != "__has_initializer")
+            .filter(|(n, _)| n != "__has_initializer" && n != "__scalar_bind")
             .cloned()
             .collect(),
         where_constraint: where_constraint.clone(),
@@ -218,7 +221,11 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
         then_branch: vec![Stmt::Assign {
             name: name.clone(),
             expr: expr.clone(),
-            op: crate::ast::AssignOp::Assign,
+            op: if is_bind {
+                crate::ast::AssignOp::Bind
+            } else {
+                crate::ast::AssignOp::Assign
+            },
             target_is_sigilless: false,
         }],
         else_branch: Vec::new(),
