@@ -24,6 +24,12 @@ pub(crate) fn expand(head: Stmt, tail: Expr) -> Stmt {
 /// compound assignment of a variable, or a grouped declaration.
 // Cost: O(1).
 pub(crate) fn is_head(head: &Stmt) -> bool {
+    // `my Int $c .= new(), 5` is a different split (`convert_call_assign_list`).
+    if matches!(head, Stmt::VarDecl { expr: Expr::CompoundAssign { op, .. }, .. }
+        if op == super::method_assign_decl::DECL_INITIALIZER_OP)
+    {
+        return false;
+    }
     matches!(head, Stmt::VarDecl { .. } | Stmt::Assign { .. })
         || matches!(head, Stmt::Expr(Expr::CompoundAssign { target, .. }) if variable_name(target).is_some())
         || signature_declaration(head).is_some()

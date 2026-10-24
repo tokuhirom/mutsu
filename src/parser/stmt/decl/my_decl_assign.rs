@@ -205,7 +205,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 custom_traits: s.custom_traits.clone(),
                 where_constraint: s.where_constraint.clone(),
             };
-            let block = Stmt::SyntheticBlock(vec![decl, Stmt::Expr(call_expr)]);
+            let block = crate::parser::stmt::word_logical_split::tail_stmt(decl, call_expr);
             if s.apply_modifier {
                 return parse_statement_modifier(r2, block);
             }

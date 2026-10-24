@@ -380,7 +380,10 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
     };
     let stmt = decl_stmt_of(decl).map_err(PError::from_typed)?;
     match tail {
-        Some(tail) => Ok((rest, Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(tail)]))),
+        Some(tail) => Ok((
+            rest,
+            crate::parser::stmt::word_logical_split::tail_stmt(stmt, tail),
+        )),
         None => Ok((rest, stmt)),
     }
 }
