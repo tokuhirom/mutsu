@@ -298,11 +298,19 @@ fn for_modifier(iterable: Expr, stmt: Stmt) -> Stmt {
                     ..
                 },
             ) => (no_signature(), vec![call_with_topic(expr)]),
-            // A multi-/zero-/slurpy-param signature written as a pointy block
-            // or `sub (...) { ... }`: the closure's signature is the loop's, so
-            // the loop consumes N elements per iteration, as
-            // `for LIST -> SIG { ... }` does. The implicit-`@_` bare block
-            // (`{ @_ } for LIST`) is invoked one element at a time instead.
+            // A routine (`sub (...) { ... }`, `method (...) { ... }`) is a value
+            // like any other expression: the loop builds it once per element
+            // and calls nothing (rakudo 2026.09).
+            routine @ Stmt::Expr(Expr::AnonSubParams { declarator, .. })
+                if declarator.is_routine() =>
+            {
+                (no_signature(), vec![routine])
+            }
+            // A multi-/zero-/slurpy-param signature written as a pointy block:
+            // the block's signature is the loop's, so the loop consumes N
+            // elements per iteration, as `for LIST -> SIG { ... }` does. The
+            // implicit-`@_` bare block (`{ @_ } for LIST`) is invoked one
+            // element at a time instead.
             Stmt::Expr(Expr::AnonSubParams {
                 params,
                 param_defs,
