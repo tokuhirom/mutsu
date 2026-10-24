@@ -117,6 +117,8 @@ impl Interpreter {
             invocant: Some(Self::explicit_invocant_type(def).unwrap_or(owner)),
             tier: 0,
             tiered: false,
+            tier_bind_check: false,
+            arity_fits: true,
         }
     }
 

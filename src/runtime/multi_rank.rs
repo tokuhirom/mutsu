@@ -328,6 +328,16 @@ pub(crate) struct MultiRank {
     /// candidate set. Only then is an arity-incomparable pair left
     /// incomparable within a tier (see [`Self::is_narrower`]).
     pub(crate) tiered: bool,
+    /// Whether some candidate in this one's tier (matching the call or not)
+    /// carries a literal or a `where`/`subset` refinement. Rakudo resolves a
+    /// tier that holds such a candidate by trial binding, first declared
+    /// first, so a tie inside it is never `X::Multi::Ambiguous`. Set by
+    /// [`assign_tiers`].
+    pub(crate) tier_bind_check: bool,
+    /// Whether the call's positional argument count fits the candidate's
+    /// arity; a candidate that cannot take the call is not in the pool a tier
+    /// is trial-bound from ([`Self::tier_bind_check`]).
+    pub(crate) arity_fits: bool,
 }
 
 impl MultiRank {
@@ -605,6 +615,7 @@ pub(crate) fn assign_tiers<T>(
             let rank = rank(item);
             rank.tier = 0;
             rank.tiered = true;
+            rank.tier_bind_check = false;
         }
         return;
     }
@@ -657,10 +668,19 @@ pub(crate) fn assign_tiers<T>(
         left -= layer.len();
         tier += 1;
     }
+    let mut tier_has_bind_check = vec![false; tier as usize + 1];
+    for (r, t) in ranks.iter().zip(&tier_of) {
+        // A candidate whose parameter types cannot take the arguments at all
+        // (`Str $s where "x"` for an Int) is not in the trial-bind pool.
+        if r.arity_fits && !r.profile.unrelated && (r.nominal.0 > 0 || r.refinement[0] > 0) {
+            tier_has_bind_check[t.unwrap_or(0) as usize] = true;
+        }
+    }
     for (item, tier) in items.iter_mut().zip(tier_of) {
         let rank = rank(item);
         rank.tier = tier.unwrap_or(0);
         rank.tiered = true;
+        rank.tier_bind_check = tier_has_bind_check[rank.tier as usize];
     }
 }
 

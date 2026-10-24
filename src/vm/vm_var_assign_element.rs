@@ -1034,7 +1034,7 @@ impl Interpreter {
     /// spellings mean the same thing in Raku, so both must find the same
     /// mediating container here; reading only the outer layer made the `$p`
     /// spelling miss it and fall through to a store that replaced the binding.
-    pub(super) fn existing_element_container(
+    pub(crate) fn existing_element_container(
         target: &Value,
         index: &Value,
         is_positional: bool,

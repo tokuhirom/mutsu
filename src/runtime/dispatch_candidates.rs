@@ -113,6 +113,16 @@ impl Interpreter {
         // positional: `multi f($n)` is narrower
         // (`roast/S06-multi/subsignature.t`), `multi f(*@a)` is wider.
         let capture = def.param_defs.iter().any(|p| p.is_capture_subsignature());
+        let arity_fits = || {
+            let given = args
+                .iter()
+                .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+                .count();
+            let (count, required) = multi_rank::positional_arity(&params);
+            capture
+                || (given >= required
+                    && (given <= count || multi_rank::has_slurpy_positional(&params)))
+        };
         MultiRank {
             nominal: (literal, typed),
             distance,
@@ -134,6 +144,8 @@ impl Interpreter {
             invocant: None,
             tier: 0,
             tiered: false,
+            tier_bind_check: false,
+            arity_fits: arity_fits(),
         }
     }
 
@@ -414,6 +426,7 @@ impl Interpreter {
                 matches.push((key, def));
             }
         }
+        let tier_bind_check = matches.first().is_some_and(|(rank, _)| rank.tier_bind_check);
         let matches = match self.prune_incomparable_matches(name, args, matches) {
             Ok(matches) => matches,
             Err(err) => {
@@ -421,7 +434,14 @@ impl Interpreter {
                 return Err(err);
             }
         };
-        self.settle_ranked_matches(name, args, matches, threw, outer_where_exception)
+        self.settle_ranked_matches(
+            name,
+            args,
+            matches,
+            threw,
+            outer_where_exception,
+            tier_bind_check,
+        )
     }
 
     /// The second half of [`Self::bind_ranked_candidates`]: given the
@@ -438,6 +458,7 @@ impl Interpreter {
         mut matches: Vec<Arc<FunctionDef>>,
         threw: Option<(Arc<FunctionDef>, RuntimeError)>,
         outer_where_exception: Option<Box<RuntimeError>>,
+        tier_bind_check: bool,
     ) -> Resolved {
         if let Some((thrower, e)) = threw {
             // No candidate matched at all, or the thrower sorts at least as
@@ -536,7 +557,14 @@ impl Interpreter {
             //
             // A refined candidate (`where`, `subset`) is trial-bound the same
             // way: `multi g(UInt $x)` twice is not ambiguous either.
-            if multi_rank::needs_named_bind_check(&Self::dispatch_visible_params(&matches[0]))
+            //
+            // The same holds when any candidate of the winner's tier, bound or
+            // not, carries a literal or a `where`: rakudo trial-binds that
+            // tier in declaration order (`multi r($a, Additive, 0)` next to
+            // `multi r(Numeric:D, $, Numeric:D)` and `multi r(Numeric, $,
+            // Numeric)` resolves `r(2, '+', 3)` to the first, #13280).
+            if tier_bind_check
+                || multi_rank::needs_named_bind_check(&Self::dispatch_visible_params(&matches[0]))
                 || self.candidate_rank_key(&matches[0], args).refinement[0] > 0
             {
                 return Ok(Some(matches.remove(0)));
