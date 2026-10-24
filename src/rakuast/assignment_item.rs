@@ -110,10 +110,12 @@ fn children(node: &mut RakuAstNode) {
 }
 
 /// The variable terms the grammar's `variable` token reads: the
-/// `RakuAST::Var::*` family.
+/// `RakuAST::Var::*` family, and the placeholder parameters (`$^x`, `@_`) a
+/// block declares where it first reads them.
 // Cost: O(1).
 fn is_variable(class: RakuAstClass) -> bool {
-    class.printed_name().starts_with("RakuAST::Var::")
+    let name = class.printed_name();
+    name.starts_with("RakuAST::Var::") || name.starts_with("RakuAST::VarDeclaration::Placeholder::")
 }
 
 /// The sigil a variable node was written with: its `sigil` field, or the

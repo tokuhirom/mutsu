@@ -1407,6 +1407,13 @@ pub(crate) fn lower_expression_assign(node: crate::ast::parsed::Assign) -> crate
     assign_lower::lower_expression(node)
 }
 
+/// Lower an assignment written as a statement: the one lowering of the
+/// assignment family, shared with `EVAL` of a hand-built node.
+// Cost: O(n), n = size of the target and source.
+pub(crate) fn lower_statement_assign(node: crate::ast::parsed::Assign) -> crate::ast::Stmt {
+    assign_lower::lower_statement(node)
+}
+
 /// Lower a construct the parser built in its RakuAST shape (ADR-10723
 /// Stage 2): the one lowering of its family, shared with `EVAL` of a
 /// hand-built node.

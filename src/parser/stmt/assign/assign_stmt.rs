@@ -608,10 +608,14 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             let (after_ws, _) = ws(after_rhs)?;
             if after_ws.starts_with(',') && !after_ws.starts_with(",,") {
                 // `($x = rhs), <rest...>` — assign the first element, sink the rest.
-                let assign_expr = Expr::AssignExpr {
-                    name: name.clone(),
-                    expr: Box::new(rhs),
-                    is_bind: false,
+                let target = written_target(&var_expr);
+                let assign_expr = if keeps_written(&target) {
+                    super::written_assignment(target, rhs)
+                } else {
+                    crate::rakuast::lower_expression_assign(crate::ast::parsed::Assign {
+                        target,
+                        source: rhs,
+                    })
                 };
                 let mut items = vec![assign_expr];
                 let mut r = after_ws;
@@ -640,18 +644,8 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     )?;
                 return parse_statement_modifier(r, stmt);
             }
-            let stmt = Stmt::Assign {
-                name: name.clone(),
-                expr: rhs,
-                op: AssignOp::Assign,
-                target_is_sigilless: false,
-            };
             let (after_rhs, stmt) =
-                crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
-                    after_rhs,
-                    stmt,
-                    Expr::Var(name),
-                )?;
+                assignment_statement(after_rhs, written_target(&var_expr), rhs, Expr::Var(name))?;
             return parse_statement_modifier(after_rhs, stmt);
         }
 
@@ -668,17 +662,8 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             let stmt = Stmt::Expr(crate::ast::atomic_op::store_var(name, expr));
             return parse_statement_modifier(rest, stmt);
         }
-        let stmt = Stmt::Assign {
-            name: name.clone(),
-            expr,
-            op: AssignOp::Assign,
-            target_is_sigilless: false,
-        };
-        let (rest, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
-            rest,
-            stmt,
-            crate::parser::stmt::word_logical_split::seed_read_expr(&name),
-        )?;
+        let seed = crate::parser::stmt::word_logical_split::seed_read_expr(&name);
+        let (rest, stmt) = assignment_statement(rest, written_target(&var_expr), expr, seed)?;
         return parse_statement_modifier(rest, stmt);
     }
     // Binding (:= or ::=)
@@ -707,6 +692,58 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     Err(PError::expected("assignment"))
+}
+
+/// Whether a `.AST` parse keeps an assignment to `target` in its RakuAST
+/// shape. A double-underscore name (an anonymous variable's minted name, or a
+/// user's `$__c`) is spelled from the statement's source by the conversion's
+/// `Stmt::Assign` arm, which this target has not moved off yet (#14948).
+// Cost: O(1).
+fn keeps_written(target: &Expr) -> bool {
+    !matches!(
+        target,
+        Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name) | Expr::CodeVar(name)
+            if name.trim_start_matches(['&', '@', '%']).starts_with("__")
+    )
+}
+
+/// The variable an assignment statement names, as the expression grammar
+/// reads it: `&f` is a code variable.
+// Cost: O(|name|).
+fn written_target(var_expr: &Expr) -> Expr {
+    match var_expr {
+        Expr::Var(name) if name.starts_with('&') => Expr::CodeVar(name[1..].to_string()),
+        other => other.clone(),
+    }
+}
+
+/// `TARGET = SOURCE` as a statement, with a loose word-logical tail
+/// (`$x = 1 and say 2`). A `.AST` parse keeps it as the one expression
+/// rakudo has, `ApplyInfix(assignment, and, …)`; any other parse runs the
+/// assignment as a statement and the tail over a re-read of `seed`.
+// Cost: O(n), n = size of the target, source and tail.
+fn assignment_statement(rest: &str, target: Expr, source: Expr, seed: Expr) -> PResult<'_, Stmt> {
+    if !keeps_written(&target) {
+        let node = crate::ast::parsed::Assign { target, source };
+        return crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
+            rest,
+            crate::rakuast::lower_statement_assign(node),
+            seed,
+        );
+    }
+    if crate::ast::spelled::keeping() {
+        let (rest, expr) =
+            crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
+                rest,
+                super::written_assignment(target, source),
+            )?;
+        return Ok((rest, Stmt::Expr(expr)));
+    }
+    crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
+        rest,
+        super::written_assignment_stmt(target, source),
+        seed,
+    )
 }
 
 /// The statement `NAME .= meth`: the topic form for `$_`, otherwise the same
