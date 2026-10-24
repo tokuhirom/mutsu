@@ -155,6 +155,11 @@ impl Interpreter {
                 return Some(self.call_method_with_values(value.clone(), method, vec![]));
             }
         }
+        // A `does Sequence` instance under the mixin stringifies through its
+        // own iterator (`vm_sequence_role_delegate.rs`).
+        if self.is_iterator_sequence_instance(value) {
+            return self.try_sequence_role_delegate(value, Symbol::intern("Str"), &[]);
+        }
         None
     }
 
