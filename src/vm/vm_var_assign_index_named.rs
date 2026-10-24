@@ -2391,13 +2391,9 @@ impl Interpreter {
                 };
                 // A `$` alias of an object hash (`my $t := $obj.attr-hash`)
                 // carries no declared constraint of its own; the key type is
-                // embedded in the hash it holds.
-                // A `%` name keeps the declared-constraint rule (a destructured
-                // `%a is raw` parameter keys by display string), as `++` does.
+                // embedded in the hash it holds. So does a `%` name bound to
+                // one (`my %h := :{}`, no `{Mu}` on the declaration).
                 let key_constraint = key_constraint.or_else(|| {
-                    if var_name.starts_with('%') {
-                        return None;
-                    }
                     match index_target_deref.as_ref().map(Value::view) {
                         Some(ValueView::Hash(h)) => h.key_type.clone(),
                         _ => None,
