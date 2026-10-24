@@ -53,7 +53,7 @@ fn statement_prefix_type(class: RakuAstClass) -> Option<String> {
         return Some(phaser.to_uppercase());
     }
     let prefix = name.strip_prefix("RakuAST::StatementPrefix::")?;
-    (!prefix.contains("::")).then(|| prefix.to_lowercase())
+    (!crate::qualified::is_qualified_str(prefix)).then(|| prefix.to_lowercase())
 }
 
 /// The special-op method names a `Call::Method` compiles to a primitive op
