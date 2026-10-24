@@ -5,7 +5,7 @@ use L10N::Testish;
 
 # A generated L10N module registers its slang from EXPORT by calling
 # `$*LANG.define_slang`; it does not need to use Slangify itself.
-plan 12;
+plan 13;
 
 is (1 both 1), 1, 'a localized logical infix is parsed';
 is (6 quotient 3), 2, 'a localized multiplicative infix is parsed';
@@ -25,3 +25,8 @@ is q:worded<a b>.List, ('a', 'b'),
 mine @values = <x>;
 is (@values[0]:kvp).elems, 2,
     'a localized postcircumfix adverb is canonicalized';
+
+klass Cell { has $.v is writable; }
+mine $cell = Cell.new(v => 1);
+$cell.v = 5;
+is $cell.v, 5, 'a localized attribute trait (trait-is2ast) is canonicalized';

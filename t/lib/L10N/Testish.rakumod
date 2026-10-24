@@ -42,6 +42,17 @@ role L10N::Testish {
             $ast // RakuAST::Name.from-identifier($name)
         }
     }
+    method trait-is2ast {
+        my constant %mapping = "writable", "rw";
+        my $ast := self.ast;
+        my $name := $ast ?? $ast.simple-identifier !! self.Str;
+        if %mapping{$name} -> $original {
+            RakuAST::Name.from-identifier($original)
+        }
+        else {
+            $ast // RakuAST::Name.from-identifier($name)
+        }
+    }
     method adverb-pc2str {
         my constant %mapping = "kvp", "kv";
         %mapping{self.Str} // self.Str

@@ -558,6 +558,9 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         while let Some(r) = keyword("is", rest) {
             let (r, _) = ws1(r)?;
             let (r, trait_name) = ident(r)?;
+            // A localized trait word (`is lasīt-rakstīt`, an L10N role's
+            // `trait-is2ast` map) names the canonical trait.
+            let trait_name = crate::parser::stmt::simple::l10n_alias(&trait_name).unwrap_or(trait_name);
             // `is default` without its argument is a no-op, and so is no trait.
             let is_container_type = (sigil == b'@' || sigil == b'%')
                 && trait_name
