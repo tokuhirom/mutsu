@@ -43,7 +43,7 @@ pub(super) fn apply(
     let ValueView::RakuAst(name) = name.view() else {
         return Ok(());
     };
-    let Some(identifier) = identifier(&name) else {
+    let Some(identifier) = identifier(name) else {
         return Ok(());
     };
     let (_, canonical) = crate::parser::canonical_name_colonpairs(written, String::new());
@@ -99,7 +99,7 @@ pub(super) fn lower(name: &RakuAstNode) -> Option<Result<String, RuntimeError>> 
         let ValueView::RakuAst(pair) = pair.view() else {
             return Some(Err(unsupported()));
         };
-        match colonpair_source(&pair) {
+        match colonpair_source(pair) {
             Some(text) => source.push_str(&text),
             None => return Some(Err(unsupported())),
         }
@@ -136,7 +136,7 @@ fn colonpair_source(pair: &RakuAstNode) -> Option<String> {
             let ValueView::RakuAst(value) = value.view() else {
                 return None;
             };
-            Some(format!(":{}{}", key()?, value_source(&value)?))
+            Some(format!(":{}{}", key()?, value_source(value)?))
         }
         // A key-less colonpair is the quote alone.
         _ => Some(format!(":{}", value_source(pair)?)),
