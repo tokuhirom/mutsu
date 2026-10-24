@@ -121,6 +121,58 @@ pub(crate) fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, 
     while let Some((expr, after)) = try_parse_interp_hyper_subscript(input, &target) {
         (target, input) = (expr, after);
     }
+    // A hyper method call (`"@m>>.gist()"`, `"@m».gist()"`) interpolates like
+    // a plain one: only with parentheses on the chain's last call.
+    if let Some(after_hyper) = input
+        .strip_prefix(">>")
+        .or_else(|| input.strip_prefix('\u{bb}'))
+        && after_hyper.starts_with('.')
+        && !after_hyper.starts_with("..")
+    {
+        let mut hyper = true;
+        let (expr, after) = interp_method_chain(after_hyper, target.clone(), &mut hyper);
+        if hyper || std::ptr::eq(after, after_hyper) {
+            return (target, input);
+        }
+        return (expr, after);
+    }
+    interp_method_chain(input, target, &mut false)
+}
+
+/// The method call `name(args)` on `target`; the hyper form when `hyper` is
+/// set (the first call of a `>>.` chain), which it then clears.
+// Cost: O(1).
+fn chain_call(
+    target: Expr,
+    name: Symbol,
+    args: Vec<Expr>,
+    modifier: Option<char>,
+    quoted: bool,
+    hyper: &mut bool,
+) -> Expr {
+    if std::mem::take(hyper) {
+        Expr::HyperMethodCall {
+            target: Box::new(target),
+            name,
+            args,
+            modifier,
+            quoted,
+        }
+    } else {
+        Expr::MethodCall {
+            target: Box::new(target),
+            name,
+            args,
+            modifier,
+            quoted,
+            sugar: false,
+        }
+    }
+}
+
+/// The `.method(...)` chain of [`try_parse_interp_method_call`]; `hyper` makes
+/// its first call a hyper call.
+fn interp_method_chain<'a>(input: &'a str, target: Expr, hyper: &mut bool) -> (Expr, &'a str) {
     let mut expr = target;
     let mut rest = input;
     // Collect chain of .method parts; only commit if chain ends with parens
@@ -176,14 +228,14 @@ pub(crate) fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, 
                         // Flush any pending paren-less `.method` entries collected
                         // before this one (e.g. `.uc.&mööse()`) as zero-arg calls.
                         for (pending_name, quoted, modifier) in chain.drain(..) {
-                            expr = Expr::MethodCall {
-                                target: Box::new(expr),
-                                name: Symbol::intern(&pending_name),
-                                args: vec![],
+                            expr = chain_call(
+                                expr,
+                                Symbol::intern(&pending_name),
+                                vec![],
                                 modifier,
                                 quoted,
-                                sugar: false,
-                            };
+                                hyper,
+                            );
                         }
                         let args = if args_str.trim().is_empty() {
                             vec![]
@@ -330,14 +382,7 @@ pub(crate) fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, 
                     } else {
                         vec![]
                     };
-                    expr = Expr::MethodCall {
-                        target: Box::new(expr),
-                        name: Symbol::intern(name),
-                        args,
-                        modifier: *modifier,
-                        quoted: *quoted,
-                        sugar: false,
-                    };
+                    expr = chain_call(expr, Symbol::intern(name), args, *modifier, *quoted, hyper);
                 }
                 rest = after_parens;
                 chain.clear();
