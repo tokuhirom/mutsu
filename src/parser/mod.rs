@@ -410,8 +410,6 @@ pub(crate) use expr::precedence::{
 };
 pub(crate) use expr::precedence_meta_ops::lower_hyper_assignment as hyper_assignment_expr;
 pub(crate) use expr::precedence_meta_ops::negated_glyph_relation;
-pub(crate) use stmt::assign::callable_lvalue_assign_expr;
-pub(crate) use stmt::assign::paren_list_assign_expr;
 pub(crate) use stmt::assign::written_assignment;
 pub(crate) use stmt::control::loop_pointy_clause;
 pub(crate) use stmt::control::repeat_param_clause;

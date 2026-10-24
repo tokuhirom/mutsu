@@ -482,14 +482,11 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
         // a `Stmt::Assign`, not a general binary expression.
         RakuAstClass::ApplyInfix if infix_is_assignment(node) => {
-            let assign = match subscript_assign(node)? {
+            let assign = match super::symbolic_deref::lower_assign(node)? {
                 Some(assign) => Some(assign),
-                None => match method_call_assign(node)? {
+                None => match literal_assign(node)? {
                     Some(assign) => Some(assign),
-                    None => match call_assign(node)? {
-                        Some(assign) => Some(assign),
-                        None => expression_assign(node)?,
-                    },
+                    None => expression_assign(node)?,
                 },
             };
             match assign {
@@ -2647,105 +2644,12 @@ fn lower_assign_parts(node: &RakuAstNode) -> Result<(String, Expr), RuntimeError
     Ok((name, expr))
 }
 
-/// Lower `$x = EXPR` (statement position) to `Stmt::Assign`.
-/// `ApplyInfix(left => <subscript>, Assignment, right)` -- the form rakudo
-/// keeps for a `%h{…}` subscript -- as the parser's `IndexAssign`, or `None`
-/// when the left side is not a subscript.
-fn subscript_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
-    // `$::($n) = v` / `::($n) = v`.
-    if let Some(assign) = super::symbolic_deref::lower_assign(node)? {
-        return Ok(Some(assign));
-    }
-    let left = named_child(node, "left")?;
-    if left.class != RakuAstClass::ApplyPostfix {
-        return Ok(None);
-    }
-    let lowered = lower_expr(left)?;
-    // `@a[0;1] = v`.
-    if let Expr::MultiDimIndex {
-        target,
-        dimensions,
-        is_positional,
-    } = lowered
-    {
-        return Ok(Some(Expr::MultiDimIndexAssign {
-            target,
-            dimensions,
-            value: Box::new(lower_expr(named_child(node, "right")?)?),
-            is_positional,
-        }));
-    }
-    let Expr::Index {
-        target,
-        index,
-        is_positional,
-        spelling,
-    } = lowered
-    else {
-        return Ok(None);
-    };
-    Ok(Some(Expr::IndexAssign {
-        target,
-        index,
-        value: Box::new(lower_expr(named_child(node, "right")?)?),
-        is_positional,
-        spelling,
-    }))
-}
-
-/// `ApplyInfix(left => <method call>, Assignment, right)` -- an rw-accessor
-/// or other method-call lvalue (`$o.x = v`) -- through the parser's own
-/// `assign_to_target_expr`, or `None` when the left side is not a method call.
+/// `120 = 3`: an assignment to an immutable literal throws once the
+/// right-hand side has run; `None` for any other left side.
 // Cost: O(n), n = size of the node.
-fn method_call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+fn literal_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
     let left = named_child(node, "left")?;
-    if left.class != RakuAstClass::ApplyPostfix
-        || !named_child(left, "postfix").is_ok_and(is_method_call)
-    {
-        return Ok(None);
-    }
-    let target = lower_expr(left)?;
     if !matches!(
-        target,
-        Expr::MethodCall { .. } | Expr::DynamicMethodCall { .. }
-    ) {
-        return Ok(None);
-    }
-    let value = lower_expr(named_child(node, "right")?)?;
-    Ok(Some(crate::parser::assign_to_target_expr(target, value)))
-}
-
-/// `ApplyInfix(left => <call>, Assignment, right)` -- an rw routine or
-/// callable lvalue (`f(1) = v`, `$c(2) = v`) -- through the parser's own
-/// `assign_to_target_expr`, and an assignment to a parenthesised list
-/// (`($a, $b) = …`) through `paren_list_assign_expr`; `None` for any other
-/// left side.
-// Cost: O(n), n = size of the node.
-fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
-    let left = named_child(node, "left")?;
-    // `(LVALUES) = rhs`: an assignment to a parenthesised list.
-    if left.class == RakuAstClass::CircumfixParentheses {
-        let inner = match lower_expr(left)? {
-            Expr::Grouped(inner) => *inner,
-            other => other,
-        };
-        let value = lower_expr(named_child(node, "right")?)?;
-        return Ok(Some(match inner {
-            Expr::ArrayLiteral(items) => crate::parser::paren_list_assign_expr(items, value),
-            target @ Expr::DoStmt(_) if matches!(&target, Expr::DoStmt(stmt) if matches!(stmt.as_ref(), Stmt::VarDecl { .. })) => {
-                crate::parser::callable_lvalue_assign_expr(target, Vec::new(), value)
-            }
-            // `(COND ?? $a !! $b) = v`, `($a || $b) = v`, `nqp::op(..) = v`
-            // write through the selected lvalue at run time.
-            target @ (Expr::Ternary { .. } | Expr::Binary { .. } | Expr::Call { .. }) => {
-                crate::parser::callable_lvalue_assign_expr(target, Vec::new(), value)
-            }
-            _ => return Ok(None),
-        }));
-    }
-    // `120 = 3`: an assignment to an immutable literal throws once the
-    // right-hand side has run.
-    if matches!(
         left.class,
         RakuAstClass::IntLiteral
             | RakuAstClass::NumLiteral
@@ -2754,29 +2658,17 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
             | RakuAstClass::QuotedString
             | RakuAstClass::TermName
     ) {
-        let literal = match lower_expr(left)? {
-            Expr::LiteralSrc(value, _) => Expr::Literal(value),
-            other => other,
-        };
-        if matches!(literal, Expr::Literal(_)) {
-            let value = lower_expr(named_child(node, "right")?)?;
-            return Ok(Some(crate::parser::literal_assign_ro_expr(literal, value)));
-        }
-    }
-    // `nqp::atposref_i(@i, 0) = 5` writes through the op's result, as a
-    // call does.
-    let is_call = matches!(left.class, RakuAstClass::CallName | RakuAstClass::Nqp)
-        || (left.class == RakuAstClass::ApplyPostfix
-            && named_child(left, "postfix").is_ok_and(|p| p.class == RakuAstClass::CallTerm));
-    if !is_call {
         return Ok(None);
     }
-    let target = lower_expr(left)?;
-    if !matches!(target, Expr::Call { .. } | Expr::CallOn { .. }) {
+    let literal = match lower_expr(left)? {
+        Expr::LiteralSrc(value, _) => Expr::Literal(value),
+        other => other,
+    };
+    if !matches!(literal, Expr::Literal(_)) {
         return Ok(None);
     }
     let value = lower_expr(named_child(node, "right")?)?;
-    Ok(Some(crate::parser::assign_to_target_expr(target, value)))
+    Ok(Some(crate::parser::literal_assign_ro_expr(literal, value)))
 }
 
 /// `TARGET = SOURCE` over any other target the assignment family's lowering
@@ -4930,13 +4822,10 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         // `($x = EXPR)` in expression position -> an assignment expression.
         RakuAstClass::ApplyInfix if infix_is_assignment(node) => {
-            if let Some(assign) = subscript_assign(node)? {
+            if let Some(assign) = super::symbolic_deref::lower_assign(node)? {
                 return Ok(assign);
             }
-            if let Some(assign) = method_call_assign(node)? {
-                return Ok(assign);
-            }
-            if let Some(assign) = call_assign(node)? {
+            if let Some(assign) = literal_assign(node)? {
                 return Ok(assign);
             }
             if let Some(assign) = expression_assign(node)? {

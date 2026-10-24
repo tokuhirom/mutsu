@@ -365,15 +365,3 @@ pub(crate) fn looks_like_parenthesized_assignment(input: &str) -> bool {
     }
     false
 }
-
-/// `(LVALUES) = rhs`: a single target among `*` placeholders takes one item
-/// (`list_lvalue_assign_expr`); any other list assigns through the list
-/// container as a callable lvalue. RakuAST's lowering builds the same record
-/// for an assignment to a parenthesised list.
-// Cost: O(n), n = number of list items.
-pub(crate) fn paren_list_assign_expr(items: Vec<Expr>, rhs: Expr) -> Expr {
-    if let Some(expr) = list_lvalue_assign_expr(items.clone(), rhs.clone()) {
-        return expr;
-    }
-    callable_lvalue_assign_expr(Expr::ArrayLiteral(items), Vec::new(), rhs)
-}

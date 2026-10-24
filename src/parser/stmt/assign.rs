@@ -189,8 +189,8 @@ pub(crate) use compound_expr::{
     preserve_compound_assign, reverse_assign_marker,
 };
 pub(crate) use lvalue::{
-    callable_lvalue_assign_expr, dynamic_method_lvalue_assign_expr, list_lvalue_assign_expr,
-    method_lvalue_assign_expr, method_lvalue_roundtrip_assign_expr, named_sub_lvalue_assign_expr,
+    callable_lvalue_assign_expr, dynamic_method_lvalue_assign_expr, method_lvalue_assign_expr,
+    method_lvalue_roundtrip_assign_expr, named_sub_lvalue_assign_expr,
     subscript_adverb_lvalue_assign_expr,
 };
 pub(crate) use op::{ShortCircuitKeep, short_circuit_keep, short_circuit_test};
@@ -199,9 +199,7 @@ pub(crate) use op::{
     parse_compound_assign_op, parse_custom_compound_assign_op, parse_meta_compound_assign_op,
     short_circuit_compound_assign_expr,
 };
-pub(crate) use paren::{
-    looks_like_parenthesized_assignment, paren_list_assign_expr, parenthesized_assign_expr,
-};
+pub(crate) use paren::{looks_like_parenthesized_assignment, parenthesized_assign_expr};
 pub(crate) use set_compound::{
     build_set_compound_assign_expr, parse_set_compound_assign_op, preserve_set_compound_assign,
     set_op_from_spelling,
