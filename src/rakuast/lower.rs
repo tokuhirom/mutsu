@@ -2970,11 +2970,11 @@ pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             return Err(unsupported(node));
         };
         let name = name.clone();
-        return Ok(crate::parser::wrap_with_will_phasers(
-            declaration,
-            &name,
+        let _ = name;
+        return super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::WillDecl {
+            decl: Box::new(declaration),
             phasers,
-        ));
+        });
     }
     if !is_attribute && let Some((stripped, roles)) = super::var_does::split(node)? {
         let declaration = lower_var_decl_plain(&stripped)?;

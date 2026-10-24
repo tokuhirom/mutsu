@@ -153,7 +153,9 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
             }
             ParsedStmt::Default(_) => PlaceholderBodyKind::NoSignature,
             ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => unreachable!("peeled above"),
-            ParsedStmt::DoesDecl { .. } => PlaceholderBodyKind::NoSignature,
+            ParsedStmt::DoesDecl { .. } | ParsedStmt::WillDecl { .. } => {
+                PlaceholderBodyKind::NoSignature
+            }
             // A statement modifier introduces no block of its own.
             ParsedStmt::Modified(_) => PlaceholderBodyKind::Transparent,
             ParsedStmt::Loop(l) => match l.kind {

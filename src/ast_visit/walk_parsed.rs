@@ -34,6 +34,13 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         }
         return;
     }
+    if let ParsedStmt::WillDecl { decl, phasers } = node {
+        super::walk_stmt(v, decl);
+        for (_, body) in phasers {
+            super::walk_stmts(v, body);
+        }
+        return;
+    }
     // The modified statement comes before its modifiers.
     if let ParsedStmt::Modified(m) = node {
         v.visit_stmt(&m.stmt);
@@ -108,6 +115,12 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
             v.visit_expr_mut(role);
             if let Some(init) = init {
                 v.visit_expr_mut(init);
+            }
+        }
+        ParsedStmt::WillDecl { decl, phasers } => {
+            super::walk_stmt_mut(v, decl);
+            for (_, body) in phasers {
+                v.visit_stmts_mut(body);
             }
         }
         ParsedStmt::Modified(m) => {

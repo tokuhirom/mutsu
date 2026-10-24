@@ -14,15 +14,17 @@ use crate::value::{RuntimeError, Value};
 
 /// The declaration statement with its `will` phasers as its traits.
 // Cost: O(n), n = size of the declaration and the phaser bodies.
-pub(super) fn convert(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
-    let (decl, phasers) =
-        crate::ast::var_will::recognize(stmt).ok_or_else(|| unsupported("will trait"))?;
+pub(super) fn convert(
+    decl: &Stmt,
+    phasers: &[(PhaserKind, Vec<Stmt>)],
+) -> Result<RakuAstNode, RuntimeError> {
     let statement = convert_stmt(decl)?.ok_or_else(|| unsupported("will trait"))?;
     let mut declaration = expression_of(&statement)
         .filter(|d| d.class == RakuAstClass::VarDeclarationSimple)
         .ok_or_else(|| unsupported("will trait"))?;
     let mut traits = Vec::with_capacity(phasers.len());
     for (kind, body) in phasers {
+        let body = body.as_slice();
         traits.push(Value::rakuast(Box::new(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::TraitWill,

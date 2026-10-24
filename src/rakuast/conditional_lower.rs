@@ -59,6 +59,13 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
                 &name, *decl, "does", role, init,
             ))
         }
+        ParsedStmt::WillDecl { decl, phasers } => {
+            let name = match decl.as_ref() {
+                Stmt::VarDecl { name, .. } => name.clone(),
+                _ => return Err(RuntimeError::new("will declaration without a variable")),
+            };
+            Ok(crate::parser::wrap_with_will_phasers(*decl, &name, phasers))
+        }
         ParsedStmt::BindDecl(decl) => Ok(crate::ast::bind_decl::expand(*decl)),
         ParsedStmt::Modified(m) => super::modifier_lower::lower(m),
         ParsedStmt::WhileLoop(w) => {

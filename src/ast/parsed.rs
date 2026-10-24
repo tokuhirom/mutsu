@@ -53,6 +53,14 @@ pub(crate) enum ParsedStmt {
         role: Expr,
         init: Option<Expr>,
     },
+    /// `my $x will begin { ... }`: the declaration (a `Stmt::VarDecl`) and the
+    /// `will PHASE BLOCK` traits as written (kind and body). `rakuast::lower`
+    /// expands each into a phaser after the declaration
+    /// (`parser::wrap_with_will_phasers`).
+    WillDecl {
+        decl: Box<Stmt>,
+        phasers: Vec<(super::PhaserKind, Vec<Stmt>)>,
+    },
     /// A statement with statement modifiers (`Statement::Expression`'s
     /// `condition-modifier` and `loop-modifier`).
     Modified(Modified),
@@ -362,6 +370,7 @@ impl ParsedStmt {
             ParsedStmt::Loop(l) => l.condition.iter().chain(l.step.iter()).collect(),
             ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => Vec::new(),
             ParsedStmt::DoesDecl { role, init, .. } => std::iter::once(role).chain(init).collect(),
+            ParsedStmt::WillDecl { .. } => Vec::new(),
             ParsedStmt::Modified(m) => m.modifiers().map(|modifier| &modifier.expr).collect(),
             ParsedStmt::Default(_) | ParsedStmt::BareBlock(_) => Vec::new(),
         }
@@ -384,6 +393,7 @@ impl ParsedStmt {
             ParsedStmt::For { .. }
             | ParsedStmt::BindDecl(_)
             | ParsedStmt::DoesDecl { .. }
+            | ParsedStmt::WillDecl { .. }
             | ParsedStmt::Modified(_) => Vec::new(),
         }
     }
