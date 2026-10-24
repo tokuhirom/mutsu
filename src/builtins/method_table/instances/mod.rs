@@ -49,6 +49,7 @@ pub(crate) mod iterator;
 pub(crate) mod label;
 pub(crate) mod rakuast_node;
 mod rakuast_visit;
+mod rakuast_walk;
 pub(crate) mod rakudo_internals;
 pub(crate) mod regex_match;
 pub(crate) mod routine;
@@ -102,6 +103,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     supply::ROWS,
     rakuast_node::ROWS,
     rakuast_visit::ROWS,
+    rakuast_walk::ROWS,
     compunit::ROWS,
     temporal_shift::ROWS,
     temporal_edit::ROWS,

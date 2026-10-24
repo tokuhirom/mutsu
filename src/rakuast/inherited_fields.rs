@@ -8,7 +8,15 @@ const STATEMENT_FIELDS: &[(&str, Absent)] = &[("labels", Absent::EmptyList)];
 // Cost: O(1), the model class name is a finite registry key.
 pub(super) fn local_names(class_name: &str) -> Option<Vec<&'static str>> {
     match class_name {
-        "RakuAST::Node" => Some(vec!["visit-children", "visit", "visit-dfs"]),
+        "RakuAST::Node" => Some(vec![
+            "visit-children",
+            "visit",
+            "visit-dfs",
+            "map",
+            "grep",
+            "first",
+            "find-nodes",
+        ]),
         "RakuAST::Statement" => Some(STATEMENT_FIELDS.iter().map(|(name, _)| *name).collect()),
         _ => None,
     }

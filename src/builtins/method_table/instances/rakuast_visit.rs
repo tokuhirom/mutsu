@@ -109,7 +109,7 @@ fn visit_tree(
 /// Resolve a subclass or mixin to the native node it carries, while callers
 /// retain the original object for the callback.
 // Cost: O(d), d = wrapper depth.
-fn native_node(value: &Value) -> Option<Value> {
+pub(super) fn native_node(value: &Value) -> Option<Value> {
     let mut current = value.clone();
     loop {
         match current.view() {
