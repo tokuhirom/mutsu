@@ -17,6 +17,11 @@
 //!
 //! > two values that compare identical must never land in *different* buckets.
 //!
+//! Bucketed kinds: Int/BigInt, Str, Bool, Num, Rat, FatRat, Complex, Pair, Array,
+//! Hash, Date/DateTime and plain objects (by id, or by the `WHICH` a class
+//! overrides it with). Unbucketed kinds (Seq, Slip, Enum, Set/Bag/Mix, routines,
+//! Version, ObjAt, ...) keep the scan.
+//!
 //! That is why a kind with a cross-kind identity arm gets no bucket at all.
 //! `Package("int")` is `values_identical` to `Int(0)`, and a `Mixin` carrying
 //! only the read-only topic marker is transparent to its inner value, so both
@@ -26,11 +31,21 @@
 //! rather than being excluded.
 
 use crate::value::identity::values_identical;
+use crate::value::types::is_stash_class_name;
 use crate::value::{Value, ValueView};
 use num_traits::ToPrimitive;
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+
+/// The bucket of a `Str` value; also a `Pair`'s key, which `eqv` treats as the
+/// `Str` it is.
+fn str_bucket(s: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    2u8.hash(&mut hasher);
+    s.hash(&mut hasher);
+    hasher.finish()
+}
 
 /// A hash that two identical values are guaranteed to share, or `None` when
 /// this value kind has no such hash (see the module comment).
@@ -53,10 +68,7 @@ fn identity_bucket(value: &Value) -> Option<u64> {
                 b.to_string().hash(&mut hasher);
             }
         },
-        ValueView::Str(s) => {
-            2u8.hash(&mut hasher);
-            s.as_str().hash(&mut hasher);
-        }
+        ValueView::Str(s) => return Some(str_bucket(s.as_str())),
         ValueView::Bool(b) => {
             3u8.hash(&mut hasher);
             b.hash(&mut hasher);
@@ -70,6 +82,103 @@ fn identity_bucket(value: &Value) -> Option<u64> {
                 u64::MAX.hash(&mut hasher);
             } else {
                 n.to_bits().hash(&mut hasher);
+            }
+        }
+        // `===` on these falls through to `eqv`, which is structural within one
+        // variant and false across variants (`1/2 eqv 0.5` is False), so the
+        // variant tag plus the payload is a bucket two identical values share.
+        ValueView::Rat(n, d) => {
+            5u8.hash(&mut hasher);
+            n.hash(&mut hasher);
+            d.hash(&mut hasher);
+        }
+        ValueView::FatRat(n, d) => {
+            6u8.hash(&mut hasher);
+            n.hash(&mut hasher);
+            d.hash(&mut hasher);
+        }
+        // Bit-exact per component, every NaN one class: the `eqv` rule `Num` uses.
+        ValueView::Complex(re, im) => {
+            7u8.hash(&mut hasher);
+            for part in [re, im] {
+                if part.is_nan() {
+                    u64::MAX.hash(&mut hasher);
+                } else {
+                    part.to_bits().hash(&mut hasher);
+                }
+            }
+        }
+        // `Pair` and `ValuePair` are one equality class (`eqv` compares a Str
+        // key of either flavour), so a Str key hashes the same for both; any
+        // other key must itself have a bucket. The value is not hashed: it is
+        // compared by the predicate.
+        ValueView::Pair(key, _) => {
+            8u8.hash(&mut hasher);
+            str_bucket(key.as_str()).hash(&mut hasher);
+        }
+        // A key `eqv` compares through its own rules (an object key by
+        // attributes, not id) gets no bucket: only the leaf scalars whose
+        // hash above is exactly their `eqv` class are admitted.
+        ValueView::ValuePair(key, _) => {
+            if !matches!(
+                key.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Num(_)
+            ) {
+                return None;
+            }
+            8u8.hash(&mut hasher);
+            identity_bucket(key)?.hash(&mut hasher);
+        }
+        // Containers are `===` only when they are the same node. A `Seq` that
+        // reads as a List (`.cache`) can still be `eqv` to an Array, but a
+        // `Seq` has no bucket here and so is scanned against every candidate.
+        ValueView::Array(items, _) => {
+            11u8.hash(&mut hasher);
+            (crate::gc::Gc::as_ptr(&items) as usize).hash(&mut hasher);
+        }
+        ValueView::Hash(items) => {
+            12u8.hash(&mut hasher);
+            (crate::gc::Gc::as_ptr(&items) as usize).hash(&mut hasher);
+        }
+        ValueView::Instance { class_name, id, .. } => {
+            // The classes `values_identical` decides by content or through
+            // another rule than the instance id keep no bucket.
+            let name = class_name.as_str();
+            if is_stash_class_name(name)
+                || matches!(
+                    name,
+                    "Supply" | "IO::Special" | "ObjAt" | "ValueObjAt" | "IO::Handle"
+                )
+                || (name.starts_with("Perl6::Metamodel::") && name.ends_with("HOW"))
+            {
+                return None;
+            }
+            if let ValueView::Instance { attributes, .. } = value.view()
+                && attributes.contains_key("__mutsu_version_value")
+            {
+                return None;
+            }
+            match value.user_which_memo() {
+                // A class that overrides `WHICH` is decided by that answer:
+                // two objects with the same one are `===`.
+                Some(which) => {
+                    9u8.hash(&mut hasher);
+                    which.hash(&mut hasher);
+                }
+                // Date and DateTime are value types: identical when their
+                // calendar value is, whichever object holds it.
+                None if matches!(name, "Date" | "DateTime") => {
+                    13u8.hash(&mut hasher);
+                    crate::value::which_key::value_which_key(value).hash(&mut hasher);
+                }
+                None => {
+                    10u8.hash(&mut hasher);
+                    id.hash(&mut hasher);
+                }
             }
         }
         _ => return None,
