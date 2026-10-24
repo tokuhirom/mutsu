@@ -1098,6 +1098,12 @@ pub(crate) const NESTED_SCOPE_DECL_MARKER: &str = "__nested_scope";
 /// `is dynamic(ARG)` for the RakuAST view; the trait itself is the
 /// declaration's `is_dynamic` flag, and the compiler skips the entry.
 pub(crate) const DYNAMIC_TRAIT_ARGUMENT: &str = "__dynamic_argument";
+/// The `custom_traits` entry keeping, in a `.AST` parse, the colonpairs of a
+/// declared variable's extended name as written (`:foo<g h>` of
+/// `my $today:foo<g h>`): the name itself is canonical (`today:foo<g h>`),
+/// but RakuAST keeps each colonpair as a node, spelled as the source spelled
+/// it. The compiler skips the entry.
+pub(crate) const NAME_COLONPAIRS: &str = "__name_colonpairs";
 
 /// The source spelling of an [`Expr::Hash`] literal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

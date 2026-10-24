@@ -71,6 +71,7 @@ mod meta_infix;
 mod method_assign_decl;
 mod modifier_origins;
 mod multidim_splat;
+mod name_colonpairs;
 mod name_parts;
 mod named_param;
 mod nesting;

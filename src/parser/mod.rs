@@ -269,6 +269,54 @@ pub(crate) fn colonpair_source_expr(source: &str) -> Option<crate::ast::Expr> {
     }
 }
 
+/// The colonpairs of a written variable name (`:foo<g h>` of
+/// `$today:foo<g h>`, `:<home>` of `@take-me:<home>`), or `None` when the
+/// name has none. The sigil, the twigil and a `::`-qualified identifier come
+/// first; the colonpairs start at the first single `:`.
+// Cost: O(n), n = length of `written`.
+pub(crate) fn written_name_colonpairs(written: &str) -> Option<&str> {
+    let bytes = written.as_bytes();
+    let at = (1..bytes.len())
+        .find(|&i| bytes[i] == b':' && bytes.get(i + 1) != Some(&b':') && bytes[i - 1] != b':')?;
+    Some(&written[at..])
+}
+
+/// `stem` followed by the canonical spelling of the colonpairs `source` starts
+/// with (`:foo«a b»` canonicalizes to `:foo<a b>`), and the text after them:
+/// the variable-name rule of the parser.
+// Cost: O(n), n = length of `source`.
+pub(crate) fn canonical_name_colonpairs(source: &str, stem: String) -> (&str, String) {
+    match stmt::declared_name_colonpairs(source, stem.clone()) {
+        Ok(done) => done,
+        Err(_) => (source, stem),
+    }
+}
+
+/// The colonpairs of an extended name, parsed again from their source text
+/// (as [`written_name_colonpairs`] kept it) the way a `.AST` parse reads them:
+/// `:foo<g h>` is a colonpair, a key-less `:<home>` / `:«home»` / `:['home']`
+/// is the quote alone. `None` when `source` is not a sequence of colonpairs.
+// Cost: O(n), n = length of `source`.
+pub(crate) fn name_colonpair_exprs(source: &str) -> Option<Vec<crate::ast::Expr>> {
+    let _keep = crate::ast::spelled::keep_spelling(true);
+    let mut rest = source;
+    let mut pairs = Vec::new();
+    while !rest.is_empty() {
+        let after = rest.strip_prefix(':')?;
+        let (r, expr) = if after.starts_with(['<', '\u{00AB}', '[']) {
+            primary::primary(after).ok()?
+        } else {
+            primary::colonpair_expr(rest).ok()?
+        };
+        if r.len() >= rest.len() {
+            return None;
+        }
+        pairs.push(expr);
+        rest = r;
+    }
+    Some(pairs)
+}
+
 /// Slang activation surface for the runtime (ADR-0026): the runtime's
 /// `$*LANG.define_slang` maps overridden grammar-rule names onto these
 /// parser modes.
