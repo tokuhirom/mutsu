@@ -47,13 +47,6 @@ use super::parse_comma_or_expr;
 /// The prefix of the name an anonymous `$` bound to a sigilless term gets.
 const ANON_SIGILLESS_SRC_PREFIX: &str = "anon-sigilless-src-";
 
-/// Whether `name` is the fresh name [`build_sigilless_bind_stmt`] gives an
-/// anonymous `$` (`my \foo = my $ = -3`).
-// Cost: O(1).
-pub(crate) fn is_anon_sigilless_source(name: &str) -> bool {
-    name.starts_with(ANON_SIGILLESS_SRC_PREFIX)
-}
-
 static ANON_SIGILLESS_SRC_COUNTER: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
@@ -170,6 +163,33 @@ pub(crate) fn build_sigilless_bind_stmt(
     }
 }
 
+/// The statement for a sigilless declaration as written: kept as a
+/// `ParsedStmt::SigillessDecl` (lowered where it is built, or kept for a `.AST`
+/// parse).
+// Cost: O(n), n = size of the initializer.
+fn sigilless_decl<'a>(
+    name: String,
+    expr: Expr,
+    type_constraint: Option<String>,
+    is_state: bool,
+    is_our: bool,
+    form: crate::ast::parsed::SigillessForm,
+) -> Result<Stmt, PError> {
+    crate::parser::stmt::control::parsed_block::finish(
+        crate::ast::parsed::ParsedStmt::SigillessDecl(Box::new(
+            crate::ast::parsed::SigillessSource {
+                name,
+                expr,
+                type_constraint,
+                is_state,
+                is_our,
+                form,
+            },
+        )),
+    )
+    .map_err(PError::from_typed)
+}
+
 /// Parse a sigilless variable declaration: `my \name = expr`
 pub(super) fn parse_sigilless_decl(
     input: &str,
@@ -185,15 +205,14 @@ pub(super) fn parse_sigilless_decl(
     if let Some(r) = r.strip_prefix("::=").or_else(|| r.strip_prefix(":=")) {
         let (r, _) = ws(r)?;
         let (r, expr) = parse_assign_expr_or_comma(r)?;
-        let stmt = build_sigilless_bind_stmt(
+        let stmt = sigilless_decl(
             name,
             expr,
             type_constraint,
             is_state,
             is_our,
-            false,
-            crate::parser::stmt::simple::is_user_declared_value_term,
-        );
+            crate::ast::parsed::SigillessForm::Bind,
+        )?;
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
         }
@@ -234,20 +253,14 @@ pub(super) fn parse_sigilless_decl(
             quoted: false,
             sugar: false,
         };
-        let decl = Stmt::VarDecl {
-            anonymous: false,
-            name: name.clone(),
+        let stmt = sigilless_decl(
+            name,
             expr,
             type_constraint,
             is_state,
             is_our,
-            is_dynamic: false,
-            is_export: false,
-            export_tags: Vec::new(),
-            custom_traits: Vec::new(),
-            where_constraint: None,
-        };
-        let stmt = Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)]);
+            crate::ast::parsed::SigillessForm::CallAssign,
+        )?;
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
         }
@@ -257,15 +270,14 @@ pub(super) fn parse_sigilless_decl(
         let r = &r[1..];
         let (r, _) = ws(r)?;
         let (r, expr) = parse_assign_expr_or_comma(r)?;
-        let stmt = build_sigilless_bind_stmt(
+        let stmt = sigilless_decl(
             name,
             expr,
             type_constraint,
             is_state,
             is_our,
-            true,
-            crate::parser::stmt::simple::is_user_declared_value_term,
-        );
+            crate::ast::parsed::SigillessForm::Assign,
+        )?;
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
         }

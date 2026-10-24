@@ -977,38 +977,35 @@ fn lower_term_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             quoted: false,
             sugar: false,
         };
-        return Ok(Stmt::SyntheticBlock(vec![
-            Stmt::VarDecl {
-                anonymous: false,
-                name: name.clone(),
+        return super::conditional_lower::lower_sigilless(
+            crate::ast::parsed::SigillessSource {
+                name,
                 expr,
                 type_constraint,
                 is_state: false,
                 is_our: false,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: Vec::new(),
-                custom_traits: Vec::new(),
-                where_constraint: None,
+                form: crate::ast::parsed::SigillessForm::CallAssign,
             },
-            Stmt::MarkSigillessReadonly(name),
-        ]));
+            super::shadowed_terms::is_declared_term,
+        );
     }
-    let assigned = match init.class {
-        RakuAstClass::InitializerAssign => true,
-        RakuAstClass::InitializerBind => false,
+    let form = match init.class {
+        RakuAstClass::InitializerAssign => crate::ast::parsed::SigillessForm::Assign,
+        RakuAstClass::InitializerBind => crate::ast::parsed::SigillessForm::Bind,
         _ => return Err(unsupported(node)),
     };
     let expr = lower_expr(named_child_or_positional(init)?)?;
-    Ok(crate::parser::build_sigilless_bind_stmt(
-        name,
-        expr,
-        type_constraint,
-        false,
-        false,
-        assigned,
+    super::conditional_lower::lower_sigilless(
+        crate::ast::parsed::SigillessSource {
+            name,
+            expr,
+            type_constraint,
+            is_state: false,
+            is_our: false,
+            form,
+        },
         super::shadowed_terms::is_declared_term,
-    ))
+    )
 }
 
 /// `ApplyDottyInfix(left, DottyInfix::CallAssign, Call::Method)` -> the

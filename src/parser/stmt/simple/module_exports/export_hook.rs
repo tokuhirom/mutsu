@@ -160,7 +160,16 @@ fn export_body_members(body: &[Stmt]) -> Vec<&Stmt> {
 /// every one it finds, so the importer's parse learns `vrai` is a term with
 /// no arguments to swallow, the same way an exported `constant` already does.
 fn collect_export_body_value_terms(stmts: &[Stmt], out: &mut Vec<String>) {
-    for pair in export_body_members(stmts).windows(2) {
+    let members = export_body_members(stmts);
+    for member in &members {
+        // The same declaration a `.AST` parse keeps as written.
+        if let Stmt::Ast(node) = member
+            && let crate::ast::parsed::ParsedStmt::SigillessDecl(decl) = node.as_ref()
+        {
+            out.push(decl.name.clone());
+        }
+    }
+    for pair in members.windows(2) {
         if let [
             Stmt::VarDecl { name, .. },
             Stmt::MarkSigillessReadonly(marked),

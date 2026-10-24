@@ -621,11 +621,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             let node = super::temporize::convert(stmt).expect("just checked")?;
             Ok(Some(statement_expression(node)))
         }
-        // A sigilless declaration (`my \x = 5`, `my Int \x := $s`).
-        Stmt::SyntheticBlock(_) if crate::ast::sigilless_decl::declaration(stmt).is_some() => {
-            let decl = crate::ast::sigilless_decl::declaration(stmt).expect("just checked");
-            Ok(Some(statement_expression(term_declaration(&decl)?)))
-        }
         // `my Int $c .= new(), 5`: a `.=` declaration with sunk list items.
         Stmt::SyntheticBlock(_)
             if super::decl_tail::convert_call_assign_list(stmt)
@@ -633,12 +628,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         {
             let node = super::decl_tail::convert_call_assign_list(stmt).expect("just checked");
             Ok(Some(statement_expression(node?)))
-        }
-        // `while my $x { }` / `until my $x { }`: the declaration is the loop's
-        // condition (the parser hoists it out so it is declared once).
-        Stmt::SyntheticBlock(_) if crate::ast::loop_cond_decl::recognize(stmt).is_some() => {
-            let looped = crate::ast::loop_cond_decl::recognize(stmt).expect("just checked");
-            convert_stmt(&looped)
         }
         Stmt::VarDecl { .. } => var_decl_statement(var_decl_parts(stmt)?, false),
         Stmt::DocPhaser(inner) => Ok(Some(super::doc_phaser::convert(inner)?)),
@@ -2537,7 +2526,7 @@ pub(super) use super::type_build::{build_type_node, is_simple_type};
 /// `my \x = 5` / `my Int \x := $s` -> `VarDeclaration::Term(type?, name,
 /// initializer)`. A scoped one (`our \x`, `state \x`) stays the boundary.
 // Cost: O(n), n = size of the initializer.
-fn term_declaration(
+pub(super) fn term_declaration(
     decl: &crate::ast::sigilless_decl::SigillessDecl<'_>,
 ) -> Result<RakuAstNode, RuntimeError> {
     if decl.is_our || decl.is_state {
@@ -2586,16 +2575,7 @@ fn term_declaration(
 fn term_initializer(
     decl: &crate::ast::sigilless_decl::SigillessDecl<'_>,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let Some(declarator) = decl.declarator else {
-        return convert_expr(decl.expr);
-    };
-    let mut declarator = declarator.clone();
-    if let Stmt::VarDecl { name, .. } = &mut declarator
-        && crate::parser::is_anon_sigilless_source(name)
-    {
-        *name = "__ANON_STATE#".to_string();
-    }
-    convert_expr(&Expr::DoStmt(Box::new(declarator)))
+    convert_expr(decl.expr)
 }
 
 /// Split a declaration name into `(sigil, desigilname)`. mutsu keeps the sigil
@@ -3725,12 +3705,11 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     | Stmt::ProtoDecl { .. }
                     | Stmt::MethodDecl { .. }
                     | Stmt::EnumDecl { .. }
-            ) || crate::ast::sigilless_decl::declaration(stmt).is_some()
-                || matches!(
-                    stmt.as_ref(),
-                    Stmt::Ast(node)
-                        if matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::BindDecl(_))
-                ) =>
+            ) || matches!(
+                stmt.as_ref(),
+                Stmt::Ast(node)
+                    if matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::BindDecl(_) | crate::ast::parsed::ParsedStmt::SigillessDecl(_))
+            ) =>
         {
             let statement = convert_stmt(stmt)?.ok_or_else(|| unsupported("declaration term"))?;
             statement

@@ -66,6 +66,10 @@ pub(crate) enum ParsedStmt {
     /// operand re-reads the variable the head declares. RakuAST makes the
     /// whole one expression with the head as that operand.
     DeclTail { head: Box<Stmt>, tail: Expr },
+    /// A sigilless declaration, `my \x = 5` / `my Int \x := $s` /
+    /// `my \x .= new`, as written. `rakuast::lower` adds the bookkeeping the
+    /// compiler needs (`parser::build_sigilless_bind_stmt`).
+    SigillessDecl(Box<SigillessSource>),
     /// A statement with statement modifiers (`Statement::Expression`'s
     /// `condition-modifier` and `loop-modifier`).
     Modified(Modified),
@@ -132,6 +136,30 @@ impl ModifierKind {
     pub(crate) fn is_loop(self) -> bool {
         matches!(self, Self::For | Self::While | Self::Until | Self::Given)
     }
+}
+
+/// A sigilless declaration as written (see [`ParsedStmt::SigillessDecl`]).
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SigillessSource {
+    pub(crate) name: String,
+    /// The initializer: the right-hand side, or for `.=` the method call on
+    /// the declared type (`Mu` when untyped).
+    pub(crate) expr: Expr,
+    pub(crate) type_constraint: Option<String>,
+    pub(crate) is_state: bool,
+    pub(crate) is_our: bool,
+    pub(crate) form: SigillessForm,
+}
+
+/// How a sigilless declaration was initialized.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum SigillessForm {
+    /// `my \x = EXPR`.
+    Assign,
+    /// `my \x := EXPR`.
+    Bind,
+    /// `my \x .= method`.
+    CallAssign,
 }
 
 /// Where a block was written: the block (from `->` when pointy), its braces and
@@ -377,6 +405,7 @@ impl ParsedStmt {
             ParsedStmt::DoesDecl { role, init, .. } => std::iter::once(role).chain(init).collect(),
             ParsedStmt::WillDecl { .. } => Vec::new(),
             ParsedStmt::DeclTail { tail, .. } => vec![tail],
+            ParsedStmt::SigillessDecl(d) => vec![&d.expr],
             ParsedStmt::Modified(m) => m.modifiers().map(|modifier| &modifier.expr).collect(),
             ParsedStmt::Default(_) | ParsedStmt::BareBlock(_) => Vec::new(),
         }
@@ -401,6 +430,7 @@ impl ParsedStmt {
             | ParsedStmt::DoesDecl { .. }
             | ParsedStmt::WillDecl { .. }
             | ParsedStmt::DeclTail { .. }
+            | ParsedStmt::SigillessDecl(_)
             | ParsedStmt::Modified(_) => Vec::new(),
         }
     }

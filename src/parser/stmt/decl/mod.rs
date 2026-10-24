@@ -9,7 +9,7 @@ mod has_decl;
 mod has_trait_argument;
 pub(crate) use has_compound_assign::{attribute_compound_assign, expand_attribute_compound_assign};
 pub(crate) use has_decl::attribute_type_seed;
-pub(crate) use my_decl_helpers::{build_sigilless_bind_stmt, is_anon_sigilless_source};
+pub(crate) use my_decl_helpers::build_sigilless_bind_stmt;
 mod helpers;
 mod my_decl;
 mod my_decl_assign;
