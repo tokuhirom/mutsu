@@ -148,13 +148,27 @@ pub(super) fn insert(decl: &mut RakuAstNode, items: Vec<Value>) {
 }
 
 /// `is dynamic`, which the parser keeps as the declaration's `is_dynamic`
-/// flag rather than as a `custom_traits` entry.
-pub(super) fn dynamic_trait() -> Value {
-    Value::rakuast(Box::new(RakuAstNode {
+/// flag rather than as a `custom_traits` entry, with the argument a
+/// `is dynamic(ARG)` wrote (the parser's `DYNAMIC_TRAIT_ARGUMENT` entry).
+// Cost: O(t + a), t = custom traits, a = size of the argument.
+pub(super) fn dynamic_trait(
+    custom_traits: &[(String, Option<Expr>)],
+) -> Result<Value, RuntimeError> {
+    let mut fields = vec![node_field(Some("name"), name_from_identifier(DYNAMIC))];
+    if let Some((_, Some(arg))) = custom_traits
+        .iter()
+        .find(|(name, _)| name == crate::ast::DYNAMIC_TRAIT_ARGUMENT)
+    {
+        fields.push(node_field(
+            Some("argument"),
+            super::attribute::paren_argument(arg)?,
+        ));
+    }
+    Ok(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::TraitIs,
-        fields: vec![node_field(Some("name"), name_from_identifier(DYNAMIC))],
-    }))
+        fields,
+    })))
 }
 
 /// A declaration's `traits` back as `custom_traits` entries, in order, and
@@ -205,6 +219,12 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<(CustomTraits, bool), RuntimeE
         match t.fields.as_slice() {
             // `is dynamic` is the declaration's flag, not a custom trait.
             [_] if name == DYNAMIC => is_dynamic = true,
+            [_, _] if name == DYNAMIC => {
+                is_dynamic = true;
+                let argument = named_child(t, "argument")?;
+                let value = super::attribute::lower_paren_argument(t, argument)?;
+                traits.push((crate::ast::DYNAMIC_TRAIT_ARGUMENT.to_string(), Some(value)));
+            }
             // `is marked`.
             [_] => traits.push((name, None)),
             // `is default(EXPR)` / `is marked(ARGS)`.

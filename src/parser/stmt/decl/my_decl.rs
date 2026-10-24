@@ -631,6 +631,13 @@ fn parse_variable_traits<'a>(
                         crate::ast::escape_user_trait(&trait_name).into_owned(),
                         Some(trait_arg),
                     ));
+                } else if trait_name == "dynamic" {
+                    // `is dynamic(ARG)` sets the flag; the written argument is
+                    // kept for the RakuAST view only.
+                    custom_traits.push((
+                        crate::ast::DYNAMIC_TRAIT_ARGUMENT.to_string(),
+                        Some(trait_arg),
+                    ));
                 }
                 r = r3;
             } else if r2_immediate.starts_with('<') {
