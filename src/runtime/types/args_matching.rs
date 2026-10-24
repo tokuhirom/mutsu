@@ -1086,6 +1086,16 @@ impl Interpreter {
                     if sigil_name.starts_with('&') && !self.type_matches_value("Callable", val) {
                         return false;
                     }
+                    // Implicit Any constraint, as for a positional: an untyped
+                    // `$` named parameter does not take a `Mu` type object, so a
+                    // sibling `Mu :$type!` candidate is the one that applies.
+                    if pd.type_constraint.is_none()
+                        && !sigil_name.starts_with(['@', '%', '&'])
+                        && !pd.slurpy
+                        && !self.type_matches_value("Any", val)
+                    {
+                        return false;
+                    }
                 }
 
                 // A named parameter's sub-signature (`:$x! (Str $a, $b?)`)
