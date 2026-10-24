@@ -45,7 +45,7 @@ impl Interpreter {
                 role_origin: None,
                 original_role: None,
                 return_type: None,
-                compiled_code: None,
+                compiled_code: sub_data.compiled_code.clone(),
                 compiled_fns: None,
                 delegation: None,
                 is_default: false,
