@@ -67,8 +67,13 @@ impl Compiler {
         let (then_branch, else_branch) = if is_statement_modifier {
             (then_branch, else_branch)
         } else {
-            then_block = super::body_scans::scope_dynamic_branch(then_branch);
-            else_block = super::body_scans::scope_dynamic_branch(else_branch);
+            // In value position a plain block-local `my` runs as a real block
+            // too: the statement-position scope (`BlockLocalScope`) is a nested
+            // run a suspended `gather` cannot re-enter, and a value branch that
+            // is not one leaves its env mirror behind (#14801).
+            let plain_my = position == IfPosition::Value;
+            then_block = super::body_scans::scope_dynamic_branch(then_branch, plain_my);
+            else_block = super::body_scans::scope_dynamic_branch(else_branch, plain_my);
             (
                 then_block.as_deref().unwrap_or(then_branch),
                 else_block.as_deref().unwrap_or(else_branch),

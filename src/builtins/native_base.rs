@@ -109,6 +109,7 @@ fn subclass_payload(target: &Value) -> Option<Value> {
     map.get("__mutsu_pair_value")
         .or_else(|| map.get(RANGE_PAYLOAD))
         .or_else(|| map.get(VERSION_PAYLOAD))
+        .or_else(|| map.get(DEPSPEC_PAYLOAD))
         .or_else(|| map.get("__baggy_data__"))
         .cloned()
 }
@@ -120,6 +121,10 @@ pub(crate) const RANGE_PAYLOAD: &str = "__mutsu_range_value";
 /// The reserved attribute an instance of a user subclass of `Version` carries
 /// its version in (#8070).
 pub(crate) const VERSION_PAYLOAD: &str = "__mutsu_version_value";
+
+/// The reserved attribute an instance of a user subclass of
+/// `CompUnit::DependencySpecification` carries its specification in (#14850).
+pub(crate) const DEPSPEC_PAYLOAD: &str = "__mutsu_depspec_value";
 
 /// Whether `target` is an instance of an `is Pair` or quant-hash subclass:
 /// its base's methods (`Pair.Hash`, inherited from `Any`) answer on the
