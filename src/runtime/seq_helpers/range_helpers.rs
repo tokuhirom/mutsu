@@ -177,6 +177,35 @@ impl Interpreter {
         let (r_min, r_max) = Self::range_raw_bounds_f64(range);
         let (_, _, r_es, r_ee) = Self::range_exclusivity(range);
 
+        // A range of `Version`s orders by `Version` comparison, not by the
+        // numeric value of its endpoints (`v0.1 ~~ v1..v2` is False).
+        if let ValueView::Version { .. } = val.view() {
+            let (r_start, r_end) = Self::range_raw_endpoints(range);
+            let is_open = |b: &Value| {
+                matches!(b.view(), ValueView::Whatever | ValueView::HyperWhatever)
+            };
+            if matches!(r_start.view(), ValueView::Version { .. })
+                || matches!(r_end.view(), ValueView::Version { .. })
+            {
+                let cmp = |bound: &Value| -> Option<std::cmp::Ordering> {
+                    match (val.view(), bound.view()) {
+                        (
+                            ValueView::Version { parts: ap, plus: a_plus, minus: a_minus, .. },
+                            ValueView::Version { parts: bp, plus: b_plus, minus: b_minus, .. },
+                        ) => Some(crate::value::version_cmp::version_cmp(
+                            ap, a_plus, a_minus, bp, b_plus, b_minus,
+                        )),
+                        _ => None,
+                    }
+                };
+                let min_ok = is_open(&r_start)
+                    || cmp(&r_start).is_some_and(|o| if r_es { o.is_gt() } else { o.is_ge() });
+                let max_ok = is_open(&r_end)
+                    || cmp(&r_end).is_some_and(|o| if r_ee { o.is_lt() } else { o.is_le() });
+                return min_ok && max_ok;
+            }
+        }
+
         // For string ranges, compare strings
         if Self::range_has_string_endpoints(range) {
             let v_str = val.to_string_value();
