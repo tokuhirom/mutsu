@@ -6434,6 +6434,14 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     if let Some(value) = &pd.literal_value {
         return super::literal_parameter::convert(pd, value);
     }
+    if let Some(num) = super::literal_parameter::special_num(pd) {
+        let literal = crate::ast::ParamDef {
+            name: super::literal_parameter::NAME.to_string(),
+            type_constraint: None,
+            ..pd.clone()
+        };
+        return super::literal_parameter::convert(&literal, &Value::num(num));
+    }
     let type_capture = match type_capture_name(pd) {
         Some(name) => Some(type_capture_node(name)?),
         None => None,

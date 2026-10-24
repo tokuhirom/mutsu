@@ -2422,8 +2422,16 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         if matches!(value.view(), ValueView::RakuAst(_)) || has_target {
             return Err(unsupported(owner));
         }
-        def.literal_value = Some(value.clone());
-        def.required = false;
+        if let Some(name) = super::literal_parameter::special_num_name(value)
+            && owner.class != RakuAstClass::PointyBlock
+        {
+            // `sub f(Inf)`: the parser's type-only parameter of type `Inf`.
+            def.name = super::convert::TYPE_ONLY_PARAM.to_string();
+            def.type_constraint = Some(name.to_string());
+        } else {
+            def.literal_value = Some(value.clone());
+            def.required = false;
+        }
         // A pointy block's literal parameter keeps no type of its own (the
         // parser leaves it to the value); a routine's has the inferred one.
         if owner.class == RakuAstClass::PointyBlock {

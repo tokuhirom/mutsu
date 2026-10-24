@@ -46,3 +46,29 @@ pub(super) fn convert(pd: &ParamDef, value: &Value) -> Result<RakuAstNode, Runti
         ],
     })
 }
+
+/// `sub f(Inf)` / `sub f(NaN)`: the parser reads the literal as a type-only
+/// parameter of type `Inf` / `NaN` (which dispatch treats as the value);
+/// rakudo's tree has a `Num` parameter with that value.
+// Cost: O(1).
+pub(super) fn special_num(pd: &ParamDef) -> Option<f64> {
+    if pd.name != super::convert::TYPE_ONLY_PARAM || pd.literal_value.is_some() || pd.named {
+        return None;
+    }
+    match pd.type_constraint.as_deref()? {
+        "Inf" => Some(f64::INFINITY),
+        "NaN" => Some(f64::NAN),
+        _ => None,
+    }
+}
+
+/// The parser's type name for a `Num` literal parameter it reads as a type
+/// (`Inf`, `NaN`), the inverse of [`special_num`].
+// Cost: O(1).
+pub(super) fn special_num_name(value: &Value) -> Option<&'static str> {
+    match value.view() {
+        ValueView::Num(f) if f.is_nan() => Some("NaN"),
+        ValueView::Num(f) if f == f64::INFINITY => Some("Inf"),
+        _ => None,
+    }
+}
