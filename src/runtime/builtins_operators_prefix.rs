@@ -22,7 +22,7 @@ impl Interpreter {
         // read its value. Without this `-$x` computed `-(VarRef)`, i.e. 0.
         let arg = arg.unwrap_varref();
         Some(match op {
-            "!" => Ok(Value::truth(!arg.truthy())),
+            "!" => Ok(Value::truth(!self.eval_truthy(arg))),
             "+" => crate::runtime::require_numeric_candidate(arg)
                 .map(|()| crate::runtime::coerce_to_numeric(arg.clone())),
             "-" | "−" => crate::builtins::arith_negate(arg.clone()),
@@ -32,8 +32,8 @@ impl Interpreter {
                 }
                 Ok(Value::str(crate::runtime::utils::coerce_to_str(arg)))
             }
-            "?" | "so" => Ok(Value::truth(arg.truthy())),
-            "not" | "?^" => Ok(Value::truth(!arg.truthy())),
+            "?" | "so" => Ok(Value::truth(self.eval_truthy(arg))),
+            "not" | "?^" => Ok(Value::truth(!self.eval_truthy(arg))),
             "+^" => crate::runtime::require_numeric_candidate(arg)
                 .map(|()| crate::builtins::int_bitneg(&crate::runtime::coerce_to_numeric(arg.clone()))),
             "~^" => Ok(Self::str_bit_neg(arg)),
