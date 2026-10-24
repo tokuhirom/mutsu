@@ -163,6 +163,17 @@ impl Interpreter {
         None
     }
 
+    /// The class's own `iterator` of a `but`-mixed `does Sequence` instance,
+    /// run with the mixed value as `self` (the Sequence role's `iterator`
+    /// would wrap the instance instead).
+    // Same by-name bridge as `mixin_user_stringifier`, which this sits next to.
+    pub(crate) fn call_user_iterator_on_mixin(
+        &mut self,
+        mixed: &Value,
+    ) -> Result<Value, RuntimeError> {
+        self.call_method_with_values(mixed.clone(), "iterator", vec![])
+    }
+
     /// The user-defined `.Str` of a role-mixed value, without the
     /// Stringy-first ordering used by [`Self::mixin_user_stringifier`]. This
     /// is for operations whose contract explicitly calls `.Str`, such as

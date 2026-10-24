@@ -73,15 +73,18 @@ impl Interpreter {
         if !Self::is_sequence_role_method(method) {
             return None;
         }
-        if let ValueView::Mixin(inner, _) = target.view() {
-            let inner = (**inner).clone();
-            return self.try_sequence_role_delegate(&inner, method_sym, args);
-        }
+        // Under a `but` mixin the wrapped instance decides, but `self` stays
+        // the mixed value so the mixin's own methods (`of`, ...) still win
+        // inside the user `iterator`.
+        let probed = match target.view() {
+            ValueView::Mixin(inner, _) => (**inner).clone(),
+            _ => target.clone(),
+        };
         let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = target.view()
+        } = probed.view()
         else {
             return None;
         };
@@ -99,7 +102,15 @@ impl Interpreter {
         // A `has $.iterator` accessor is read directly; the Sequence role's own
         // `iterator` would wrap the instance itself.
         let items = if self.has_user_method(&cn, "iterator") {
-            self.drive_user_iterator_items(target)
+            if matches!(target.view(), ValueView::Mixin(..)) {
+                // The class's own `iterator`, with the mixed value as `self`
+                // (not the Sequence role's, which would wrap the instance).
+                self.call_user_iterator_on_mixin(target)
+                    .and_then(|iterator| self.drive_iterator_value_items(iterator))
+                    .map(|(items, _)| items)
+            } else {
+                self.drive_user_iterator_items(target)
+            }
         } else {
             let iterator = attributes
                 .as_map()
