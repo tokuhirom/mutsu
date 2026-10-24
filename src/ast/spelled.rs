@@ -32,6 +32,9 @@ pub(crate) enum Spelling {
     ImportedTerm,
     /// Semicolon-separated array composer sections before execution lowering.
     ArraySections(Vec<Vec<Expr>>),
+    /// Semicolon-separated sections of a parenthesized list, `(1; 2)`: rakudo's
+    /// `SemiList` holds one statement per section, where `(1, 2)` holds one.
+    ParenSections(Vec<Vec<Expr>>),
     /// `<a b  c>`: the raw text between the brackets, whitespace included.
     Words(Box<str>),
     /// A parenthesized package declarator adverb, including when its expression

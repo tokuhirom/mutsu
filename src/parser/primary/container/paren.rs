@@ -372,7 +372,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
 /// non-empty section becomes one element: a multi-item section is a sub-list,
 /// a single-item section is the bare item. A single overall section (e.g. a
 /// trailing `;`: `(1,2,3;)`) is NOT wrapped, matching Raku.
-fn finalize_paren_sections(
+pub(crate) fn finalize_paren_sections(
     mut sections: Vec<Vec<Expr>>,
     current: Vec<Expr>,
     saw_semicolon: bool,
@@ -383,10 +383,17 @@ fn finalize_paren_sections(
     if !current.is_empty() {
         sections.push(current);
     }
-    match sections.len() {
+    let source = crate::ast::spelled::keeping().then(|| sections.clone());
+    let result = match sections.len() {
         0 => Expr::ArrayLiteral(Vec::new()),
         1 => build_paren_section(sections.into_iter().next().unwrap()),
         _ => Expr::ArrayLiteral(sections.into_iter().map(build_paren_section).collect()),
+    };
+    match source {
+        Some(sections) => Expr::spelled(result, || {
+            crate::ast::spelled::Spelling::ParenSections(sections)
+        }),
+        None => result,
     }
 }
 

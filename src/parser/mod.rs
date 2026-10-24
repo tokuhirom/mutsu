@@ -96,6 +96,7 @@ pub(crate) use stmt::decl::typed_default_expr;
 mod parse_result;
 mod primary;
 pub(crate) use primary::container::finalize_array_sections;
+pub(crate) use primary::container::finalize_paren_sections;
 mod quote_shadow;
 pub(crate) mod sink_warn;
 mod stmt;
