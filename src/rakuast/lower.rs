@@ -477,6 +477,10 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // source-level marker while reusing the parser's existing execution
         // expansion.
         RakuAstClass::ApplyInfix if infix_is_compound_assignment(node) => {
+            if let Some(compound) = compound_assign_node(node)? {
+                return crate::parser::lower_compound_statement(compound)
+                    .map_err(RuntimeError::new);
+            }
             super::compound_stmt::restore_stmt(node, lower_compound_assign_expr(node)?)
         }
         // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
@@ -2555,7 +2559,47 @@ fn reverse_assign_base(infix: &RakuAstNode) -> Option<String> {
 
 /// Lower `ApplyInfix(MetaInfix::Assign(Infix(OP)))` to the parser's existing
 /// compound-assignment execution shape while retaining the source marker.
+/// `ApplyInfix(left, MetaInfix::Assign([BracketedInfix…] Infix(OP)), right)`
+/// over a compound operator, as the typed node the parser builds for it; `None`
+/// for any other compound spelling (a reverse, a metaoperator, a set
+/// operator), which keeps its own reader.
+// Cost: O(n), n = size of the node.
+fn compound_assign_node(
+    node: &RakuAstNode,
+) -> Result<Option<crate::ast::parsed::CompoundAssign>, RuntimeError> {
+    let infix = named_child(node, "infix")?;
+    let Some((op, depth)) = compound_assign_base(infix) else {
+        return Ok(None);
+    };
+    if !crate::parser::is_compound_assign_op(&op) {
+        return Ok(None);
+    }
+    let meta = match depth {
+        0 => crate::ast::parsed::CompoundMeta::Plain,
+        depth => crate::ast::parsed::CompoundMeta::Bracketed(
+            u8::try_from(depth).map_err(|_| unsupported(node))?,
+        ),
+    };
+    let target =
+        super::compound_stmt::restore_conditional_target(lower_expr(named_child(node, "left")?)?);
+    // `* *= 2` curries to `{ $_ *= 2 }`; the parser expands a bare `*` target
+    // so, and a read-back tree spells that `*` as a priming argument.
+    let target = match target {
+        Expr::WhateverArg => Expr::Whatever,
+        other => other,
+    };
+    Ok(Some(crate::ast::parsed::CompoundAssign {
+        target,
+        op,
+        meta,
+        source: lower_expr(named_child(node, "right")?)?,
+    }))
+}
+
 pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    if let Some(compound) = compound_assign_node(node)? {
+        return crate::parser::lower_compound_expression(compound).map_err(RuntimeError::new);
+    }
     let target =
         super::compound_stmt::restore_conditional_target(lower_expr(named_child(node, "left")?)?);
     let meta = named_child(node, "infix")?;

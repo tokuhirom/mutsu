@@ -439,18 +439,14 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
     if let Some((after_op, op)) = crate::parser::stmt::assign::parse_compound_assign_op(r) {
         let (after_ws, _) = ws(after_op)?;
         if let Ok((r2, rhs)) = precedence::ternary_mode(after_ws, operators::ExprMode::ListopArg)
-            && let Ok(result) = crate::parser::stmt::assign::build_compound_assign_expr(
+            && let Ok(compound) = crate::parser::stmt::assign::written_compound_assignment(
                 expr.clone(),
                 op,
-                rhs.clone(),
+                crate::ast::parsed::CompoundMeta::Plain,
+                rhs,
             )
         {
-            return Ok((
-                r2,
-                wrap_finished_expr(crate::parser::stmt::assign::compound_assign_marker(
-                    expr, op, rhs, result,
-                )),
-            ));
+            return Ok((r2, wrap_finished_expr(compound)));
         }
     }
 
@@ -672,11 +668,13 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
             is_bind,
         },
         // The same, as a `.AST` parse keeps it.
-        Expr::Ast(node) if is_kept_variable_assign_node(&node) => {
-            let crate::ast::parsed::ParsedExpr::Assign(mut a) = *node;
-            a.source = reassociate_fat_arrow_operand(a.source, value);
-            Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(a)))
-        }
+        Expr::Ast(node) if is_kept_variable_assign_node(&node) => match *node {
+            crate::ast::parsed::ParsedExpr::Assign(mut a) => {
+                a.source = reassociate_fat_arrow_operand(a.source, value);
+                Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(a)))
+            }
+            other => reassociated_fat_arrow_pair(Expr::Ast(Box::new(other)), value),
+        },
         // `%h<k> := $x => 1`: `=>` and `:=` share the item-assignment tier and
         // associate right, so the pair is the bound value, not the bind's result.
         Expr::IndexAssign {
@@ -717,7 +715,9 @@ fn is_kept_variable_assign(expr: &Expr) -> bool {
 
 // Cost: O(d), d = levels of parentheses around the target.
 fn is_kept_variable_assign_node(node: &crate::ast::parsed::ParsedExpr) -> bool {
-    let crate::ast::parsed::ParsedExpr::Assign(a) = node;
+    let crate::ast::parsed::ParsedExpr::Assign(a) = node else {
+        return false;
+    };
     matches!(
         a.target.peel_parens(),
         Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::BareWord(_)
