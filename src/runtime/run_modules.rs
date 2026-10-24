@@ -648,6 +648,8 @@ impl Interpreter {
         })?;
         let code = crate::runtime::source_code_text::CodeText::from_source(&preprocessed);
         Self::inject_iosocket_prelude(&code, &mut stmts);
+        Self::inject_repository_spec_prelude(&code, &mut stmts);
+        Self::inject_distribution_locally_prelude(&code, &mut stmts);
         Self::inject_trait_mod_does_prelude(&code, &mut stmts);
         Self::inject_trait_mod_of_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_default_prelude(&code, &mut stmts);

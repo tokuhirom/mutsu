@@ -206,6 +206,9 @@ pub(crate) struct ModuleState {
     /// already-loaded path of `use_module_with_tags_inner` reinstates whatever
     /// is missing from here instead.
     pub(crate) module_package_globals: std::sync::Arc<HashMap<String, Vec<(Symbol, Value)>>>,
+    /// Repositories registered by name (`CompUnit::RepositoryRegistry.register-name`),
+    /// answered by `repository-for-name` ahead of the built-in names.
+    pub(crate) named_repositories: std::sync::Arc<HashMap<String, Value>>,
     pub(crate) need_hidden_classes: std::sync::Arc<HashSet<String>>,
     /// Per loaded module, the classes and roles registered while it loaded
     /// (its own declarations plus those of the modules it pulled in). The
@@ -666,6 +669,7 @@ impl ModuleState {
             prelude_registered_functions: Default::default(),
             prelude_declaring_units: Default::default(),
             module_package_globals: Default::default(),
+            named_repositories: Default::default(),
             need_hidden_classes: Default::default(),
             module_registered_types: Default::default(),
             cur_repo: Box::new(CurRepoState::default()),
@@ -770,6 +774,7 @@ impl ModuleState {
             prelude_registered_functions: self.prelude_registered_functions.clone(),
             prelude_declaring_units: self.prelude_declaring_units.clone(),
             module_package_globals: self.module_package_globals.clone(),
+            named_repositories: self.named_repositories.clone(),
             need_hidden_classes: self.need_hidden_classes.clone(),
             module_registered_types: self.module_registered_types.clone(),
             cur_repo: self.cur_repo.clone(),

@@ -111,7 +111,24 @@ impl Interpreter {
                 _ => v.to_string_value(),
             })
             .unwrap_or_default();
-        let path_buf = self.resolve_path(&path_str);
+        // An `IO::Path` carries its own `CWD`: a relative path opens against it,
+        // not against the process's directory (`IO::Handle.new(:path($p))`).
+        let own_cwd = target.get("path").and_then(|v| match v.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "IO::Path" => {
+                attributes.as_map().get("cwd").map(|c| c.to_string_value())
+            }
+            _ => None,
+        });
+        let path_buf = match own_cwd {
+            Some(cwd) if !cwd.is_empty() && !path_str.starts_with('/') => {
+                std::path::Path::new(&cwd).join(&path_str)
+            }
+            _ => self.resolve_path(&path_str),
+        };
 
         // Build merged args: instance attributes as defaults, open args override
         let mut merged_args = Vec::new();

@@ -434,7 +434,11 @@ impl Interpreter {
         target_val: &Value,
         _args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let opened = self.with_handle_mut(target_val, |state| Ok(state.is_opened()))?;
+        // A handle that was never opened (`IO::Handle.new(:path($p))`) owns no
+        // file descriptor yet: it is simply not open.
+        let opened = self
+            .with_handle_mut_opt(target_val, |state| Ok(state.is_opened()))?
+            .unwrap_or(false);
         Ok(Value::truth(opened))
     }
 

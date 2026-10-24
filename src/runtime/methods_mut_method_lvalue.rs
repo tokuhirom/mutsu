@@ -246,6 +246,26 @@ impl Interpreter {
             )?;
             return Ok(value);
         }
+        // `$repo.next-repo = $other`: a repository's link to the next one in
+        // the chain is an `rw` attribute (`CompUnit::Repository`'s
+        // `$.next-repo`). The instance's attributes are shared, so the link is
+        // set on the repository the caller holds (Pakku hands a custom repo the
+        // chain behind it this way).
+        if method == "next-repo"
+            && method_args.is_empty()
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+            && matches!(
+                class_name.resolve().as_str(),
+                "CompUnit::Repository::Installation" | "CompUnit::Repository::FileSystem"
+            )
+        {
+            attributes.insert("next-repo", value.clone());
+            return Ok(value);
+        }
         // IO::Path read-only accessors (`.SPEC`, `.CWD`) are not `rw`: assigning
         // to them raises X::Assignment::RO referencing the current value, matching
         // Raku (`'.'.IO.SPEC = ...` / `'.'.IO.CWD = ...`).

@@ -29,6 +29,9 @@ impl Interpreter {
     /// and `core` the installation repository of that name. `Nil` otherwise.
     // Cost: as the repository's constructor.
     pub(crate) fn repo_registry_for_name(&mut self, name: &str) -> Result<Value, RuntimeError> {
+        if let Some(repo) = self.module.named_repositories.get(name) {
+            return Ok(repo.clone());
+        }
         if let Some(prefix) = name.strip_prefix("file#") {
             return self.new_repository("CompUnit::Repository::FileSystem", prefix, Vec::new());
         }
@@ -51,6 +54,15 @@ impl Interpreter {
             );
         }
         Ok(Value::NIL)
+    }
+
+    /// `CompUnit::RepositoryRegistry.register-name($name, $repo)`: later
+    /// `repository-for-name($name)` calls answer `$repo`.
+    // Cost: O(1) amortized (the table is copy-on-write).
+    pub(crate) fn repo_registry_register_name(&mut self, name: &str, repo: Value) -> Value {
+        crate::runtime::cow_table_mut(&mut self.module.named_repositories)
+            .insert(name.to_string(), repo);
+        Value::NIL
     }
 
     /// `CompUnit::RepositoryRegistry.repository-for-spec($spec)`: an `inst#`

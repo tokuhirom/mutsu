@@ -69,6 +69,12 @@ pub(super) static ROWS: &[MethodRow] = &[
         repository_for_spec,
         named: &["next-repo"]
     ),
+    row!(
+        "CompUnit::RepositoryRegistry",
+        "register-name",
+        2,
+        register_name
+    ),
     row!("CompUnit::RepositoryRegistry", "run-script", 1, run_script),
     row!("Encoding::Registry", "find", 1, encoding_find),
     row!("Encoding::Registry", "register", 1, encoding_register),
@@ -186,7 +192,31 @@ fn repository_for_name(i: &mut Interpreter, _t: &Value, args: &[Value], _n: Name
 /// `CompUnit::RepositoryRegistry.repository-for-spec($spec)`.
 // Cost: as the repository's constructor.
 fn repository_for_spec(i: &mut Interpreter, _t: &Value, args: &[Value], _n: Named<'_>) -> Answer {
-    Some(i.repo_registry_for_spec(&args[0].to_string_value()))
+    // A `CompUnit::Repository::Spec` (what `.from-string` answers) names its
+    // repository by short-id and path; a plain string is that text already.
+    let spec = match args[0].view() {
+        ValueView::Instance { attributes, .. } if attributes.as_map().contains_key("short-id") => {
+            let field = |key: &str| {
+                attributes
+                    .as_map()
+                    .get(key)
+                    .map(Value::to_string_value)
+                    .unwrap_or_default()
+            };
+            format!("{}#{}", field("short-id"), field("path"))
+        }
+        _ => args[0].to_string_value(),
+    };
+    Some(i.repo_registry_for_spec(&spec))
+}
+
+/// `CompUnit::RepositoryRegistry.register-name($name, $repo)`.
+// Cost: O(1) amortized.
+fn register_name(i: &mut Interpreter, _t: &Value, args: &[Value], _n: Named<'_>) -> Answer {
+    Some(Ok(i.repo_registry_register_name(
+        &args[0].to_string_value(),
+        args[1].clone(),
+    )))
 }
 
 /// `CompUnit::RepositoryRegistry.run-script($name)`: runs the named script of
