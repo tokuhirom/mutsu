@@ -500,6 +500,35 @@ fn trimmed_span(start: &str, end: &str, semicolons: bool) -> crate::ast::SrcSpan
     }
 }
 
+/// The empty span at the end of the text before `end`, with the whitespace
+/// just before `end` stepped back over: where the statement a modifier
+/// follows ends. A comment there is part of the statement, as in Rakudo
+/// (`say 1 #c` NL `if $x` has the call at `0..8`).
+// Cost: O(h + w), h = leaked heredoc regions, w = whitespace stepped back over.
+pub(in crate::parser) fn trimmed_end(end: &str) -> crate::ast::SrcSpan {
+    use crate::ast::SrcSpan;
+    let Some(to) = source_offset(end) else {
+        return SrcSpan::NONE;
+    };
+    let at = ORIGINAL_SOURCE.with(|s| {
+        let origin = s.borrow();
+        // SAFETY: (ptr, len) was recorded from a live `&str` by
+        // `set_original_source`, and `to <= len` was checked by
+        // `source_offset` (the position lies in the source buffer).
+        let full = unsafe {
+            std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                origin.ptr as *const u8,
+                origin.len,
+            ))
+        };
+        Some(full.get(..to)?.trim_end().len())
+    });
+    match at.and_then(unit_position) {
+        Some(at) => SrcSpan::new(at, at),
+        None => SrcSpan::NONE,
+    }
+}
+
 /// The byte range from `start` to `end` in the unit's source, as consumed:
 /// nothing is trimmed. `SrcSpan::NONE` when either position is outside the
 /// source.

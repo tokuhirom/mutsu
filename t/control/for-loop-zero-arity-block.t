@@ -66,9 +66,11 @@ is $mod-expr-ran, 0, 'statement-modifier expression form never ran the body';
 try { my @r = (-> { 1 } for 1, 2, 3, 4); @r };
 is $!.message, $msg, 'statement-modifier expression form reports one argument';
 
+# A routine is not a block: `sub () { } for LIST` builds the sub once per
+# element and calls nothing, so it neither dies nor runs the body (rakudo).
 my $sub-ran = 0;
-dies-ok { sub () { $sub-ran++ } for 1, 2, 3 },
-    'statement-modifier `sub () { } for LIST` dies';
+lives-ok { sub () { $sub-ran++ } for 1, 2, 3 },
+    'statement-modifier `sub () { } for LIST` does not call the sub';
 is $sub-ran, 0, '`sub () { } for LIST` never ran the body';
 
 # --- an EMPTY source invokes the block zero times, so it is fine -------------

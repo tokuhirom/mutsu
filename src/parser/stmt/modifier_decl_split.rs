@@ -1,15 +1,14 @@
 //! Splitting a `my`/`our` declaration out of a statement modifier: the
 //! declaration takes effect unconditionally, only its initializer is gated.
 
-use crate::ast::decl_modifier::DeclarationModifier;
 use crate::ast::{Expr, SignatureDecl, SourceForm, Stmt};
 use crate::symbol::Symbol;
 use crate::value::RuntimeError;
 use crate::value::Value;
 
-/// Keep the written declaration beside its unconditional declaration and
-/// gated initializer. Both parsing and RakuAST lowering use this expansion.
-// Cost: O(n), n = declaration and condition nodes; source copies are bounded.
+/// Split a declaration under `if` / `unless` into its unconditional
+/// declaration and gated initializer (`rakuast::modifier_lower`).
+// Cost: O(n), n = declaration and condition nodes.
 pub(crate) fn conditional_declaration(
     stmt: &Stmt,
     condition: &Expr,
@@ -28,36 +27,12 @@ pub(crate) fn conditional_declaration(
     } else {
         condition.clone()
     };
-    Ok(
-        try_split_decl_modifier(stmt, &effective, is_unless)?.map(|expanded| {
-            record(
-                stmt,
-                condition,
-                if is_unless {
-                    DeclarationModifier::Unless
-                } else {
-                    DeclarationModifier::If
-                },
-                expanded,
-            )
-        }),
-    )
-}
-
-fn record(stmt: &Stmt, condition: &Expr, kind: DeclarationModifier, expanded: Stmt) -> Stmt {
-    Stmt::SyntheticBlock(vec![
-        Stmt::SourceForm(Box::new(SourceForm::DeclarationModifier {
-            declaration: Box::new(stmt.clone()),
-            condition: condition.clone(),
-            kind,
-        })),
-        expanded,
-    ])
+    try_split_decl_modifier(stmt, &effective, is_unless)
 }
 
 /// Topicalize only a declaration's initializer, preserving list binding and
 /// keeping all declared names available even when the condition is undefined.
-// Cost: O(n), n = declaration and topic nodes; source copies are bounded.
+// Cost: O(n), n = declaration and topic nodes.
 pub(crate) fn topical_declaration(
     stmt: &Stmt,
     topic: &Expr,
@@ -108,16 +83,7 @@ pub(crate) fn topical_declaration(
             }),
         },
     ]);
-    Ok(Some(record(
-        stmt,
-        topic,
-        if is_without {
-            DeclarationModifier::Without
-        } else {
-            DeclarationModifier::With
-        },
-        expanded,
-    )))
+    Ok(Some(expanded))
 }
 
 fn is_declaration(stmt: &Stmt) -> bool {

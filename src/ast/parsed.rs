@@ -53,6 +53,72 @@ pub(crate) enum ParsedStmt {
         role: Expr,
         init: Option<Expr>,
     },
+    /// A statement with statement modifiers (`Statement::Expression`'s
+    /// `condition-modifier` and `loop-modifier`).
+    Modified(Modified),
+}
+
+/// `STMT if COND`, `STMT for LIST`, `STMT if COND for LIST`: the statement as
+/// written and its modifiers. A statement takes at most one condition
+/// modifier and one loop modifier, the condition applying first.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Modified {
+    pub(crate) stmt: Box<Stmt>,
+    pub(crate) condition: Option<StatementModifier>,
+    pub(crate) loop_: Option<StatementModifier>,
+    /// The modified statement, from its first character to its last; the
+    /// start is filled in by the statement parser, which knows it.
+    pub(crate) body: SrcSpan,
+}
+
+/// One statement modifier: its keyword, its operand as written (no `!` for
+/// `unless` / `until`) and where it was written, from the keyword to the end
+/// of the operand.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct StatementModifier {
+    pub(crate) kind: ModifierKind,
+    pub(crate) expr: Expr,
+    pub(crate) span: SrcSpan,
+}
+
+/// Which keyword a statement modifier was written with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum ModifierKind {
+    If,
+    Unless,
+    When,
+    With,
+    Without,
+    For,
+    While,
+    Until,
+    Given,
+}
+
+impl ModifierKind {
+    /// The modifier written as `keyword`, if it is one.
+    // Cost: O(1).
+    pub(crate) fn from_keyword(keyword: &str) -> Option<Self> {
+        Some(match keyword {
+            "if" => Self::If,
+            "unless" => Self::Unless,
+            "when" => Self::When,
+            "with" => Self::With,
+            "without" => Self::Without,
+            "for" => Self::For,
+            "while" => Self::While,
+            "until" => Self::Until,
+            "given" => Self::Given,
+            _ => return None,
+        })
+    }
+
+    /// Whether this is a loop modifier (`for` / `while` / `until` / `given`)
+    /// rather than a condition modifier.
+    // Cost: O(1).
+    pub(crate) fn is_loop(self) -> bool {
+        matches!(self, Self::For | Self::While | Self::Until | Self::Given)
+    }
 }
 
 /// Where a block was written: the block (from `->` when pointy), its braces and
@@ -296,6 +362,7 @@ impl ParsedStmt {
             ParsedStmt::Loop(l) => l.condition.iter().chain(l.step.iter()).collect(),
             ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => Vec::new(),
             ParsedStmt::DoesDecl { role, init, .. } => std::iter::once(role).chain(init).collect(),
+            ParsedStmt::Modified(m) => m.modifiers().map(|modifier| &modifier.expr).collect(),
             ParsedStmt::Default(_) | ParsedStmt::BareBlock(_) => Vec::new(),
         }
     }
@@ -314,10 +381,19 @@ impl ParsedStmt {
             | ParsedStmt::BareBlock(block) => vec![block],
             ParsedStmt::WhileLoop(w) => vec![&w.block],
             ParsedStmt::Loop(l) => vec![&l.block],
-            ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) | ParsedStmt::DoesDecl { .. } => {
-                Vec::new()
-            }
+            ParsedStmt::For { .. }
+            | ParsedStmt::BindDecl(_)
+            | ParsedStmt::DoesDecl { .. }
+            | ParsedStmt::Modified(_) => Vec::new(),
         }
+    }
+}
+
+impl Modified {
+    /// The modifiers, in the order they apply (condition, then loop).
+    // Cost: O(1).
+    pub(crate) fn modifiers(&self) -> impl Iterator<Item = &StatementModifier> {
+        self.condition.iter().chain(self.loop_.iter())
     }
 }
 

@@ -94,8 +94,10 @@ is ({ $_ + 1 } with 41), 42, 'bare block with the `with` modifier sees the topic
 }
 
 {
+    # A routine is a value, not a block: the loop builds it once per element
+    # and calls nothing (rakudo 2026.09).
     my @r = (sub ($x) { $x * 2 } for 1, 2, 3);
-    is-deeply @r, [2, 4, 6], 'a `sub` block is still used as the loop body';
+    ok @r.elems == 3 && @r.all ~~ Sub, 'a `sub` is a value the loop does not call';
 }
 
 {

@@ -278,7 +278,10 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
         // only the qx call and `.chomp` became a separate $_-method statement.
         && !rest.starts_with('.')
     {
-        let result = parse_statement_modifier(rest, Stmt::Expr(expr));
+        let mut result = parse_statement_modifier(rest, Stmt::Expr(expr));
+        if let Ok((_, stmt)) = &mut result {
+            place_modified_body(input, stmt);
+        }
         STMT_MEMO.store(input, &result);
         return result;
     }
@@ -322,8 +325,9 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
             }
         }
     };
-    let result = result.and_then(|(rest, stmt)| routine_decl_modifier(rest, stmt));
-    if let Ok((rest, stmt)) = &result {
+    let mut result = result.and_then(|(rest, stmt)| routine_decl_modifier(rest, stmt));
+    if let Ok((rest, stmt)) = &mut result {
+        place_modified_body(input, stmt);
         crate::parser::decl_doc::attach_stmt(input, rest, stmt);
     }
     STMT_MEMO.store(input, &result);
@@ -334,6 +338,22 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
         STMT_ANON_STATES_TLS.with(|m| m.borrow_mut().insert(key, minted));
     }
     result
+}
+
+/// A statement written with modifiers, which the modifier parser records only
+/// the end of, starts where the statement does (`ast::parsed::Modified::body`).
+// Cost: O(h), h = leaked heredoc regions.
+fn place_modified_body(input: &str, stmt: &mut Stmt) {
+    if let Stmt::Ast(node) = stmt
+        && let crate::ast::parsed::ParsedStmt::Modified(m) = node.as_mut()
+        && m.body.is_some()
+        && m.body.from == m.body.to
+    {
+        let start = crate::parser::primary::source_span(input, input);
+        if start.is_some() && start.from < m.body.to {
+            m.body.from = start.from;
+        }
+    }
 }
 
 /// `sub a() { } given 3`: a statement modifier on the same line as a routine
@@ -349,9 +369,7 @@ fn routine_decl_modifier(rest: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     if rest[..rest.len() - r_ws.len()].contains('\n') || !is_stmt_modifier_keyword(r_ws) {
         return Ok((rest, stmt));
     }
-    let nil = Stmt::Expr(crate::ast::Expr::Literal(crate::value::Value::NIL));
-    let (r, modified) = parse_statement_modifier(rest, nil)?;
-    Ok((r, Stmt::SyntheticBlock(vec![stmt, modified])))
+    parse_statement_modifier(rest, stmt)
 }
 
 /// Parse a full program (sequence of statements).

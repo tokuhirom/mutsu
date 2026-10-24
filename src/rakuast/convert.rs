@@ -24,6 +24,7 @@ use super::{
     RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, bareword, decl_traits,
     hash_literal, name_parts, routine_traits, subscript_adverb,
 };
+use crate::ast::parsed::ParsedStmt;
 use crate::ast::spelled::Spelling;
 use crate::ast::{
     AssignOp, Expr, ForMode, GivenWithKind, IMPLICIT_INVOCANT_TRAIT, ParamDef, Stmt, WithBlockKind,
@@ -200,19 +201,10 @@ fn is_do_statement(stmt: &Stmt) -> bool {
         return true;
     }
     match stmt {
-        Stmt::For {
-            is_statement_modifier,
-            ..
-        }
-        | Stmt::If {
-            is_statement_modifier,
-            ..
-        }
-        | Stmt::Given {
-            is_statement_modifier,
-            ..
-        } => !*is_statement_modifier,
-        Stmt::Ast(_)
+        Stmt::Ast(_) => !is_modifier_statement(stmt),
+        Stmt::For { .. }
+        | Stmt::If { .. }
+        | Stmt::Given { .. }
         | Stmt::While { .. }
         | Stmt::Loop { .. }
         | Stmt::Whenever { .. }
@@ -222,50 +214,11 @@ fn is_do_statement(stmt: &Stmt) -> bool {
     }
 }
 
-/// The condition and the modified statement of `STMT when COND`, which the
-/// parser spells `given $_ { when COND { STMT } }` with the `When` flagged as a
-/// modifier. `None` for any other `given` body.
-// Cost: O(s), s = statements in `body` (SetLine markers skipped).
-fn when_modifier_parts<'a>(topic: &Expr, body: &'a [Stmt]) -> Option<(&'a Expr, &'a Stmt)> {
-    if !matches!(topic, Expr::Var(name) if name == "_") {
-        return None;
-    }
-    let mut real = body.iter().filter(|s| !matches!(s, Stmt::SetLine(..)));
-    let (
-        Some(Stmt::When {
-            cond,
-            body,
-            is_statement_modifier: true,
-        }),
-        None,
-    ) = (real.next(), real.next())
-    else {
-        return None;
-    };
-    let mut inner = body.iter().filter(|s| !matches!(s, Stmt::SetLine(..)));
-    let (Some(modified), None) = (inner.next(), inner.next()) else {
-        return None;
-    };
-    Some((cond, modified))
-}
-
 /// Whether `stmt` is a statement carrying a statement modifier (`EXPR for LIST`,
 /// `EXPR if COND`, `EXPR given TOPIC`), which a SemiList holds as a statement.
 // Cost: O(1).
 fn is_modifier_statement(stmt: &Stmt) -> bool {
-    matches!(
-        stmt,
-        Stmt::For {
-            is_statement_modifier: true,
-            ..
-        } | Stmt::If {
-            is_statement_modifier: true,
-            ..
-        } | Stmt::Given {
-            is_statement_modifier: true,
-            ..
-        }
-    )
+    matches!(stmt, Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::Modified(_)))
 }
 
 /// Convert one statement. Returns `Ok(None)` for non-semantic bookkeeping
@@ -447,35 +400,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             )?;
             super::regex_declaration::retain_source(&mut declaration, body);
             Ok(Some(statement_expression(declaration)))
-        }
-        // A signature declaration (`my ($a, @b) = …`): the parser keeps its
-        // source form as the expansion's first statement.
-        Stmt::SyntheticBlock(stmts)
-            if matches!(
-                stmts.as_slice(),
-                [
-                    Stmt::SubDecl { .. },
-                    Stmt::Given {
-                        is_statement_modifier: true,
-                        ..
-                    }
-                ]
-            ) =>
-        {
-            let [declaration, Stmt::Given { topic, .. }] = stmts.as_slice() else {
-                unreachable!("guarded declaration modifier shape")
-            };
-            let mut statement = convert_stmt(declaration)?
-                .ok_or_else(|| unsupported("empty declaration modifier"))?;
-            statement.fields.push(node_field(
-                Some("loop-modifier"),
-                RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::StatementModifierGiven,
-                    fields: vec![node_field(None, convert_expr(topic)?)],
-                },
-            ));
-            Ok(Some(statement))
         }
         Stmt::SyntheticBlock(_) if source_form(stmt).is_some() => match source_form(stmt) {
             Some(crate::ast::SourceForm::DeclarationModifier {
@@ -810,41 +734,16 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             } else {
                 cond
             };
-            // A postfix `if`/`unless` introduces no block of its own: raku hangs
-            // the condition off the modified statement as a `condition-modifier`
-            // rather than building a `Statement::If` around it. Mirrors the
-            // `given` modifier arm below.
+            // A statement modifier is a typed node (`ast::parsed::Modified`);
+            // the one desugared conditional left flagged as one is the
+            // guarded control transfer `proceed |c` / `succeed |c` parses into
+            // (`slipped_control_stmt`), which rakudo has as the plain call over
+            // the slipped argument.
             if *is_statement_modifier {
-                let mut body = then_branch
-                    .iter()
-                    .filter(|s| !matches!(s, Stmt::SetLine(..)));
-                let (Some(modified), None) = (body.next(), body.next()) else {
-                    return Err(unsupported("multi-statement if/unless modifier body"));
-                };
-                if !else_branch.is_empty() {
-                    // `proceed |c` / `succeed |c` is parsed into a guarded
-                    // control transfer (`slipped_control_stmt`); rakudo has the
-                    // plain call over the slipped argument.
-                    if let Some(call) = slipped_control_call(cond, then_branch, else_branch)? {
-                        return Ok(Some(statement_expression(call)));
-                    }
-                    return Err(unsupported("if/unless modifier with an else branch"));
+                if let Some(call) = slipped_control_call(cond, then_branch, else_branch)? {
+                    return Ok(Some(statement_expression(call)));
                 }
-                let mut statement = convert_stmt(modified)?
-                    .ok_or_else(|| unsupported("empty if/unless modifier body"))?;
-                statement.fields.push(node_field(
-                    Some("condition-modifier"),
-                    RakuAstNode {
-                        origin: Default::default(),
-                        class: if *is_unless {
-                            RakuAstClass::StatementModifierUnless
-                        } else {
-                            RakuAstClass::StatementModifierIf
-                        },
-                        fields: vec![node_field(None, convert_expr(written_cond)?)],
-                    },
-                ));
-                return Ok(Some(statement));
+                return Err(unsupported("desugared statement-modifier conditional"));
             }
             // `unless` cannot carry `elsif`/`else` (rakudo rejects it at compile
             // time), so its node is just condition + body — note `body`, not
@@ -882,32 +781,8 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             // the source keyword is recoverable: raku has a `Loop::Until` class
             // and renders the *undecorated* condition, so the `!` the parser
             // added is stripped back off.
-            if *is_statement_modifier && label.is_none() {
-                let mut real = body.iter().filter(|s| !matches!(s, Stmt::SetLine(..)));
-                if let (Some(modified), None) = (real.next(), real.next()) {
-                    let mut statement = convert_stmt(modified)?
-                        .ok_or_else(|| unsupported("empty while/until modifier body"))?;
-                    statement.fields.push(node_field(
-                        Some("loop-modifier"),
-                        RakuAstNode {
-                            origin: Default::default(),
-                            class: if *is_until {
-                                RakuAstClass::StatementModifierUntil
-                            } else {
-                                RakuAstClass::StatementModifierWhile
-                            },
-                            fields: vec![node_field(
-                                None,
-                                convert_expr(if *is_until {
-                                    strip_negation(cond)?
-                                } else {
-                                    cond
-                                })?,
-                            )],
-                        },
-                    ));
-                    return Ok(Some(statement));
-                }
+            if *is_statement_modifier {
+                return Err(unsupported("desugared while/until statement modifier"));
             }
             let mut fields = label_fields(label);
             fields.push(node_field(
@@ -1020,38 +895,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             is_statement_modifier,
             uses_block_magic: _,
         } => {
-            // `STMT for LIST` is the modified statement with a `loop-modifier`
-            // of `StatementModifier::For`, not a `Statement::For` around a
-            // block (measured on rakudo 2026.09). The parser's loop holds the
-            // statement as its only body statement; one that was rewritten into
-            // the loop's own signature stays the block form below.
-            if *is_statement_modifier
-                && label.is_none()
-                && (**param_def).is_none()
-                && params_def.is_empty()
-                && !*rw_block
-                && !*explicit_zero_params
-                && matches!(mode, ForMode::Normal)
-            {
-                let mut real = body.iter().filter(|s| !matches!(s, Stmt::SetLine(..)));
-                if let (Some(modified), None) = (real.next(), real.next())
-                    // The loop has no signature of its own beyond a bare
-                    // block's placeholders (`parser::for_modifier_loop_params`).
-                    && (param.clone(), params.clone())
-                        == crate::parser::for_modifier_loop_params(modified)
-                {
-                    let mut statement = convert_stmt(modified)?
-                        .ok_or_else(|| unsupported("empty for modifier body"))?;
-                    statement.fields.push(node_field(
-                        Some("loop-modifier"),
-                        RakuAstNode {
-                            origin: Default::default(),
-                            class: RakuAstClass::StatementModifierFor,
-                            fields: vec![node_field(None, convert_expr(iterable)?)],
-                        },
-                    ));
-                    return Ok(Some(statement));
-                }
+            // A statement modifier is a typed node (`ast::parsed::Modified`).
+            if *is_statement_modifier {
+                return Err(unsupported("desugared for statement modifier"));
             }
             // Implicit-topic (`for SRC { ... $_ }`, slice 6) and explicit-signature
             // (`for @a -> $x`, slice 12) forms. Hyper/race/lazy modes, `<->` rw
@@ -1109,15 +955,12 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             is_statement_modifier,
             with_kind,
         } => {
-            // `STMT with X` / `STMT without X` reach here as the `given` the
-            // parser desugared them into; `with_kind` is what says which
-            // keyword the source actually used (the desugared shape alone is
-            // ambiguous with a hand-written `(STMT if $_.defined) given X`).
-            // raku keeps them as a `condition-modifier`, like `if`/`unless`,
-            // not as the `loop-modifier` a real `given` gets.
+            // A statement modifier is a typed node (`ast::parsed::Modified`),
+            // so a `given` flagged as one, or carrying the `with` / `without`
+            // modifier tag, is a desugaring this conversion does not undo.
             match with_kind {
-                Some(kind @ (GivenWithKind::With | GivenWithKind::Without)) => {
-                    return with_modifier_node(*kind, topic, body).map(Some);
+                Some(GivenWithKind::With | GivenWithKind::Without) => {
+                    return Err(unsupported("desugared with/without statement modifier"));
                 }
                 // The scaffold of a block form, reached on its own: the
                 // conditional that owns it renders the parameterless spelling
@@ -1128,36 +971,8 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 }
                 None => {}
             }
-            // `STMT when COND`: the parser's synthetic `given $_` over a
-            // modifier `When` (see `Stmt::When::is_statement_modifier`).
-            if let Some((cond, modified)) = when_modifier_parts(topic, body) {
-                let mut statement = convert_stmt(modified)?
-                    .ok_or_else(|| unsupported("empty when modifier body"))?;
-                statement.fields.push(node_field(
-                    Some("condition-modifier"),
-                    RakuAstNode {
-                        origin: Default::default(),
-                        class: RakuAstClass::StatementModifierWhen,
-                        fields: vec![node_field(None, convert_expr(cond)?)],
-                    },
-                ));
-                return Ok(Some(statement));
-            }
             if *is_statement_modifier {
-                let [modified] = body.as_slice() else {
-                    return Err(unsupported("multi-statement given modifier body"));
-                };
-                let mut statement = convert_stmt(modified)?
-                    .ok_or_else(|| unsupported("empty given modifier body"))?;
-                statement.fields.push(node_field(
-                    Some("loop-modifier"),
-                    RakuAstNode {
-                        origin: Default::default(),
-                        class: RakuAstClass::StatementModifierGiven,
-                        fields: vec![node_field(None, convert_expr(topic)?)],
-                    },
-                ));
-                Ok(Some(statement))
+                Err(unsupported("desugared given statement modifier"))
             } else {
                 Ok(Some(RakuAstNode {
                     origin: Default::default(),
@@ -5309,69 +5124,6 @@ fn single_if_stmt(stmts: &[Stmt]) -> Option<&Stmt> {
         return None;
     }
     matches!(first, Stmt::If { .. }).then_some(first)
-}
-
-/// `STMT with X` / `STMT without X` -> the modified statement carrying a
-/// `condition-modifier` of `StatementModifier::With` / `::Without`.
-///
-/// The parser desugars both into `given X { if $_.defined { STMT } }` (with the
-/// condition negated for `without`), optionally wrapped in a `DoStmt` when the
-/// modified statement is an expression statement. Everything but `STMT` and `X`
-/// is scaffolding raku does not model, so this unwraps back to the two pieces
-/// raku's node actually holds. Measured against rakudo 2026.07:
-/// `Q["found" with "hello"].AST`.
-fn with_modifier_node(
-    kind: GivenWithKind,
-    topic: &Expr,
-    body: &[Stmt],
-) -> Result<RakuAstNode, RuntimeError> {
-    let [wrapper] = body else {
-        return Err(unsupported("multi-statement with/without modifier body"));
-    };
-    // The expression-statement spelling carries the `if` inside a `DoStmt`.
-    let wrapper = match wrapper {
-        Stmt::Expr(Expr::DoStmt(inner)) => inner.as_ref(),
-        other => other,
-    };
-    let Stmt::If {
-        then_branch,
-        else_branch,
-        ..
-    } = wrapper
-    else {
-        return Err(unsupported(
-            "with/without modifier body is not a conditional",
-        ));
-    };
-    if !else_branch.is_empty() {
-        return Err(unsupported("with/without modifier with an else branch"));
-    }
-    let mut real = then_branch
-        .iter()
-        .filter(|s| !matches!(s, Stmt::SetLine(..)));
-    let (Some(modified), None) = (real.next(), real.next()) else {
-        return Err(unsupported("multi-statement with/without modifier body"));
-    };
-    let mut statement =
-        convert_stmt(modified)?.ok_or_else(|| unsupported("empty with/without modifier body"))?;
-    statement.fields.push(node_field(
-        Some("condition-modifier"),
-        RakuAstNode {
-            origin: Default::default(),
-            class: match kind {
-                GivenWithKind::With => RakuAstClass::StatementModifierWith,
-                GivenWithKind::Without => RakuAstClass::StatementModifierWithout,
-                // The block scaffold never reaches the modifier path: the
-                // conditional that owns it is handled by `with_block_node`, and
-                // the `Given` arm rejects a stray one before calling this.
-                GivenWithKind::BlockTopic | GivenWithKind::BlockTopicPointy => {
-                    return Err(unsupported("with/without block scaffold"));
-                }
-            },
-            fields: vec![node_field(None, convert_expr(topic)?)],
-        },
-    ));
-    Ok(statement)
 }
 
 /// A `{ ... }` block body wraps its `StatementList` in a `Blockoid`.

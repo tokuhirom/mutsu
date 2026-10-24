@@ -134,6 +134,12 @@ impl VisitMut for Ctx {
             Stmt::Ast(node) if matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::Loop(_)) => {
                 self.scoped(Vec::new(), |c| crate::ast_visit::walk_parsed_mut(c, node))
             }
+            // A statement modifier introduces no scope of its own.
+            Stmt::Ast(node)
+                if matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::Modified(_)) =>
+            {
+                crate::ast_visit::walk_parsed_mut(self, node)
+            }
             Stmt::Ast(node) => {
                 use crate::ast::parsed::ParsedStmt;
                 match node.as_mut() {
@@ -168,6 +174,7 @@ impl VisitMut for Ctx {
                     ParsedStmt::Loop(_) => unreachable!("handled by the arm above"),
                     ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => unreachable!("peeled above"),
                     ParsedStmt::DoesDecl { .. } => crate::ast_visit::walk_parsed_mut(self, node),
+                    ParsedStmt::Modified(_) => unreachable!("handled by the arm above"),
                 }
             }
             Stmt::If {

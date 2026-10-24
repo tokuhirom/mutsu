@@ -56,11 +56,12 @@ plan 20;
     is-deeply @r, ['1/2', '3/9'], 'a short final chunk falls back to the default value';
 }
 
-# --- `sub (...) { ... }` behaves the same as a pointy block ------------------
+# --- `sub (...) { ... }` is a value, not a block ----------------------------
 
 {
+    # The loop builds the sub once per element and calls nothing (rakudo 2026.09).
     my @r = (sub ($a, $b) { "$a+$b" } for 1, 2, 3, 4);
-    is-deeply @r, ['1+2', '3+4'], 'an anonymous sub with 2 params consumes 2 elements per iteration';
+    ok @r.elems == 4 && @r.all ~~ Sub, 'an anonymous sub is not called by the loop';
 }
 
 # --- an explicit slurpy-only signature ----------------------------------------

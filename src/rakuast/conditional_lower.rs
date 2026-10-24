@@ -60,6 +60,7 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
             ))
         }
         ParsedStmt::BindDecl(decl) => Ok(crate::ast::bind_decl::expand(*decl)),
+        ParsedStmt::Modified(m) => super::modifier_lower::lower(m),
         ParsedStmt::WhileLoop(w) => {
             let defs = match w.block.params {
                 BlockParams::None => None,

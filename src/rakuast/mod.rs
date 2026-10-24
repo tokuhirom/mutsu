@@ -73,7 +73,7 @@ mod lower;
 mod match_vars;
 mod meta_infix;
 mod method_assign_decl;
-mod modifier_origins;
+mod modifier_lower;
 mod multidim_splat;
 mod name_colonpairs;
 mod name_parts;
