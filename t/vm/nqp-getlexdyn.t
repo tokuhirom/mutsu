@@ -42,10 +42,8 @@ sub inner-getlexdyn() {
 is with-dynamic(), 'hello',
     'getlexdyn resolves a user-declared dynamic walking the caller chain';
 
-# An unknown dynamic name is a hard error in mutsu -- deliberately, not a
-# reproduction of NQP's own VMNull (a raw ops-level null with no Raku-level
-# equivalent that mutsu does not model): a clear error beats a value that
-# only misbehaves later, for a case no real module exercises (a module only
-# ever calls getlexdyn on a name it knows exists).
-throws-like { nqp::getlexdyn('%*NO-SUCH-DYNAMIC-EVER') }, Exception,
-    'getlexdyn on an unknown dynamic name throws';
+# An unknown dynamic name answers null, as on MoarVM: NQP code tests a
+# dynamic for presence that way. Rakudo's own `RakuAST::Deparse` reads
+# `nqp::getlexdyn('@*HEREDOCS')` and only binds its own when that is null.
+ok nqp::isnull(nqp::getlexdyn('%*NO-SUCH-DYNAMIC-EVER')),
+    'getlexdyn on an unknown dynamic name answers null';

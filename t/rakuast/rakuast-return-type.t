@@ -48,7 +48,7 @@ nok Q[sub f() { 1 }].AST.gist.contains('signature'),
     'a sub with neither parameters nor a return type omits the signature';
 
 # --- read side: an empty Signature built by hand ----------------------------
-is RakuAST::Signature.new.gist.lines[1].trim, 'parameters => ()',
+is RakuAST::Signature.new(parameters => ()).gist.lines[1].trim, 'parameters => ()',
     'a hand-built empty Signature renders parameters as ()';
 
 # --- introspection ----------------------------------------------------------

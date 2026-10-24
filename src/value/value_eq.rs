@@ -306,6 +306,11 @@ impl PartialEq for Value {
                     false
                 }
             }
+            // An immutable RakuAST tree: identical when the same node, else
+            // structurally (`RakuAstNode`'s derived equality). Without this arm
+            // a node never equalled even itself, and a `for @nodes.kv -> $i, $n`
+            // loop read the unchanged `$n` as a write to its element.
+            (ValueView::RakuAst(a), ValueView::RakuAst(b)) => std::ptr::eq(a, b) || a == b,
             (ValueView::Uni(a), ValueView::Uni(b)) => {
                 a.form == b.form && a.codepoints() == b.codepoints()
             }

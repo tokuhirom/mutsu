@@ -52,9 +52,19 @@ fn visited(class: RakuAstClass) -> &'static [&'static str] {
 /// origin the parse gave it.
 // Cost: O(e), e = empty fields with an origin.
 pub(super) fn empty_node(node: &RakuAstNode, field: &str, class: RakuAstClass) -> Value {
+    // The signature rakudo fills in has an initialized, empty parameter list
+    // (`parameters-initialized` is True, `.raku` shows `parameters => ()`).
+    let fields = if class == RakuAstClass::Signature {
+        vec![RakuAstField {
+            name: Some("parameters"),
+            value: RakuAstFieldValue::List(Vec::new()),
+        }]
+    } else {
+        Vec::new()
+    };
     Value::rakuast(Box::new(RakuAstNode {
         class,
-        fields: Vec::new(),
+        fields,
         origin: super::NodeOrigin(node.origin.1.get(field).cloned(), EmptyOrigins::default()),
     }))
 }
