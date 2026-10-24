@@ -996,6 +996,41 @@ pub fn type_object_mro(class_name: &str) -> Option<Vec<String>> {
     Some(mro)
 }
 
+/// How far `expected` is up the measured hierarchy of the RakuAST class
+/// `actual`, for multi-dispatch ranking, without allocating: its `.^mro`
+/// position for a class (`Any`/`Mu` after the RakuAST classes), and the
+/// position after the last RakuAST class for a role it does. `None` when
+/// `actual` is not a measured name; `Some(None)` when unrelated.
+// Cost: O(d + r), d = MRO depth, r = roles of `actual`.
+pub fn type_object_distance(actual: &str, expected: &str) -> Option<Option<usize>> {
+    let measured = measured_name(actual);
+    let entry = hierarchy::entry(measured)?;
+    let offset = usize::from(measured != actual);
+    if expected == actual || expected == measured {
+        return Some(Some(if expected == actual { 0 } else { offset }));
+    }
+    let classes = if entry.kind == hierarchy::Kind::Class {
+        entry.mro.len()
+    } else {
+        0
+    };
+    if let Some(i) = entry.mro.iter().position(|a| *a == expected) {
+        return Some(Some(i + 1 + offset));
+    }
+    if entry.kind == hierarchy::Kind::Class {
+        if expected == "Any" {
+            return Some(Some(classes + 1 + offset));
+        }
+        if expected == "Mu" {
+            return Some(Some(classes + 2 + offset));
+        }
+    }
+    if entry.roles.contains(&expected) {
+        return Some(Some(classes + 1 + offset));
+    }
+    Some(None)
+}
+
 /// The `.^roles` of a RakuAST type object, as rakudo prints them.
 pub fn type_object_roles(class_name: &str) -> Option<Vec<&'static str>> {
     hierarchy::entry(measured_name(class_name)).map(|e| e.roles.clone())

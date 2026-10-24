@@ -19,7 +19,7 @@ ok @infix-methods.grep(* eq 'infix'), 'multi-field node exposes infix';
 ok @infix-methods.grep(* eq 'right'), 'multi-field node exposes right';
 
 is RakuAST::Name.^methods(:local).map(*.name).sort.join(','),
-    'colonpairs,from-identifier,from-identifier-parts,is-anonymous,is-empty,new,parts',
+    'colonpairs,from-identifier,from-identifier-parts,is-anonymous,is-empty,is-indirect-lookup,new,parts',
     'Name exposes its supported constructors and accessor';
 
 is RakuAST::StatementList.^methods(:local).map(*.name).sort.join(','),
