@@ -439,6 +439,11 @@ fn render_leaf(v: &Value) -> String {
         // A complex leaf renders as the angle-bracket literal that is its
         // `.raku` (`ComplexLiteral.new(<1+2i>)`).
         ValueView::Complex(..) => format!("<{}>", v.to_string_value()),
+        // A rational leaf renders as its `.raku`, exactly (`RatLiteral.new(1.0)`,
+        // every decimal digit), not as its `.Str` (`1`, rounded).
+        ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::BigRat(..) => {
+            crate::value::raku_repr::raku_value(v)
+        }
         _ => v.to_string_value(),
     }
 }
