@@ -379,6 +379,36 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
                 || is_wrapped_whatevercode(left)
                 || is_wrapped_whatevercode(right)
         }
+        // A user-declared prefix/postfix operator is parsed as a call of its
+        // `prefix:<op>` / `postfix:<op>` routine, but it is still an operator:
+        // its operand curries exactly as the built-in unary's does, so
+        // `-*.height` stays a `WhateverCode` when a program declares
+        // `multi prefix:<->` (Red does). An ordinary call's arguments never
+        // curry (`&infix:<+>(*, 42)` hands the callee a Whatever).
+        e if operator_call_operands(e).is_some() => operator_call_operands(e)
+            .into_iter()
+            .flatten()
+            .any(|a| contains_whatever(a) || is_wrapped_whatevercode(a)),
         _ => false,
+    }
+}
+
+/// The operands of a user-declared prefix or postfix operator application.
+///
+/// Such an operator is parsed as a call of its `prefix:<op>` / `postfix:<op>`
+/// routine, but it stays an operator for Whatever-currying: `-*.height` primes
+/// whether `-` is the built-in or a program's `multi prefix:<->`. An ordinary
+/// call's arguments never prime (`&infix:<+>(*, 42)` hands the callee a
+/// Whatever), so only a call by an operator routine name answers `Some`.
+/// `contains_whatever`, `count_whatever` and the placeholder replacement all
+/// read the operands through this one accessor.
+pub(crate) fn operator_call_operands(expr: &Expr) -> Option<&[Expr]> {
+    match expr {
+        Expr::Call { name, args, .. } => {
+            let name = name.resolve();
+            (name.starts_with("prefix:<") || name.starts_with("postfix:<"))
+                .then_some(args.as_slice())
+        }
+        _ => None,
     }
 }

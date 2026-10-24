@@ -330,6 +330,15 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
         Expr::InfixFunc { left, right, .. } => {
             count_whatever(left) + right.iter().map(count_whatever).sum::<usize>()
         }
+        // User-declared prefix/postfix operators: the operand primes like a
+        // built-in unary's (see `operator_call_operands`).
+        e if crate::parser::operator_call_operands(e).is_some() => {
+            crate::parser::operator_call_operands(e)
+                .into_iter()
+                .flatten()
+                .map(count_whatever)
+                .sum()
+        }
         // R/X/Z meta-operators. R always curries on a Whatever operand; X/Z
         // currying is decided at parse time in `container.rs` (a standalone `*`
         // operand curries, a trailing `*` in a comma-list operand extends), but

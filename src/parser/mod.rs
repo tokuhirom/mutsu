@@ -9,7 +9,8 @@ pub(crate) use type_qualify::qualify_program as qualify_type_names;
 // `expr` module (and its many `pub(in crate::parser)`-typed internals) public.
 pub(crate) use expr::lower_composition;
 pub(crate) use expr::{
-    contains_whatever, is_frozen_whatever, is_whatever, should_wrap_whatevercode,
+    contains_whatever, is_frozen_whatever, is_whatever, operator_call_operands,
+    should_wrap_whatevercode,
 };
 // `but`-mixing a plain value composes an anonymous role at RUNTIME, and it must
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
