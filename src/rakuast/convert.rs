@@ -2270,18 +2270,27 @@ fn call_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Expr
         {
             Expr::Grouped(Box::new(target.clone()))
         }
-        // `(COND ?? $a !! $b) = v`, `($a || $b) = v`, `nqp::op(..) = v`: an
+        // `($a || $b) = v`, `nqp::op(..) = v`: an
         // lvalue expression with no call arguments is the parenthesised
         // left side of a plain assignment (`parser::ternary` /
         // `parser::precedence::logic`). A `do` declaration or an internal
         // call target belongs to the compound-assignment writebacks, whose
         // value is not the written right side, so those stay the boundary.
+        // `c ?? a !! b = v` (the conditional is the lvalue, `parser::ternary`),
+        // `-$x = v`, `$<c> = v`: a term that cannot be the callee of a call
+        // with no arguments (`-$x()` is `-($x())`) is the plain left side.
         "__mutsu_assign_callable_lvalue"
             if call_args.is_empty()
                 && matches!(
                     target,
-                    Expr::Ternary { .. } | Expr::Binary { .. } | Expr::Call { .. }
-                )
+                    Expr::Ternary { .. } | Expr::Unary { .. } | Expr::CaptureVar(_)
+                ) =>
+        {
+            target.clone()
+        }
+        "__mutsu_assign_callable_lvalue"
+            if call_args.is_empty()
+                && matches!(target, Expr::Binary { .. } | Expr::Call { .. })
                 && !matches!(target, Expr::Call { name, .. } if is_desugar_marker(name.as_str())) =>
         {
             Expr::Grouped(Box::new(target.clone()))
@@ -3050,6 +3059,21 @@ pub(super) fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
     }
 }
 
+/// `Circumfix::Parentheses(SemiList(Statement::Expression(NODE)))`.
+// Cost: O(1).
+fn parenthesized_node(node: RakuAstNode) -> RakuAstNode {
+    let semilist = RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::SemiList,
+        fields: vec![node_field(None, statement_expression(node))],
+    };
+    RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::CircumfixParentheses,
+        fields: vec![node_field(None, semilist)],
+    }
+}
+
 fn parenthesized_expression(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let semilist = RakuAstNode {
         origin: Default::default(),
@@ -3533,6 +3557,17 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                         node_field(Some("args"), arg_list(std::slice::from_ref(&**expr))?),
                     ],
                 })
+            }
+            Spelling::GroupedLvalue => {
+                let mut node = convert_expr(&spelled.expr)?;
+                if let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("left"))
+                    && let RakuAstFieldValue::Node(left) = &field.value
+                    && let ValueView::RakuAst(left) = left.view()
+                {
+                    let grouped = parenthesized_node(RakuAstNode::clone(left));
+                    *field = node_field(Some("left"), grouped);
+                }
+                Ok(node)
             }
             Spelling::NegatedInfix => {
                 let Expr::Unary {

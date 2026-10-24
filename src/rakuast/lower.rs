@@ -2938,8 +2938,31 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
             target @ (Expr::Ternary { .. } | Expr::Binary { .. } | Expr::Call { .. }) => {
                 crate::parser::callable_lvalue_assign_expr(target, Vec::new(), value)
             }
+            // `($x) = v`: the variable, assigned as the parser assigns it.
+            target @ (Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)) => {
+                crate::parser::assign_to_target_expr(target, value)
+            }
             _ => return Ok(None),
         }));
+    }
+    // `c ?? $a !! $b = v` (the conditional is the lvalue), `-$x = v`,
+    // `$<c> = v`: the parser's writeback through the term, as it parses.
+    if matches!(
+        left.class,
+        RakuAstClass::Ternary | RakuAstClass::ApplyPrefix | RakuAstClass::VarNamedCapture
+    ) {
+        let target = lower_expr(left)?;
+        if matches!(
+            target,
+            Expr::Ternary { .. } | Expr::Unary { .. } | Expr::CaptureVar(_)
+        ) {
+            let value = lower_expr(named_child(node, "right")?)?;
+            return Ok(Some(crate::parser::callable_lvalue_assign_expr(
+                target,
+                Vec::new(),
+                value,
+            )));
+        }
     }
     // `120 = 3`: an assignment to an immutable literal throws once the
     // right-hand side has run.

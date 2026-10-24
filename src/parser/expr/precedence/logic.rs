@@ -492,6 +492,13 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         parse_assignment_rhs_mode(r, mode)?
     };
 
+    // A grouped variable (`($x) = 1`) goes through `assign_to_target_expr`,
+    // which keeps the parentheses for a `.AST` parse.
+    if matches!(&expr, Expr::Grouped(inner)
+        if matches!(**inner, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)))
+    {
+        return Ok((r, assign_to_target_expr(expr, rhs)));
+    }
     let expr = unwrap_grouped_lvalue(expr);
     match expr {
         Expr::Var(name) => Ok((
