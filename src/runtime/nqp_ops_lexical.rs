@@ -137,13 +137,26 @@ impl Interpreter {
             "getlexcaller" => {
                 let name = name_operand(args, 0);
                 let key = lex_key(&name);
-                Ok(self
+                let found = self
                     .caller_env_stack
                     .iter()
                     .rev()
                     .find_map(|env| env.get(key))
-                    .cloned()
-                    .map_or(Value::NIL, Value::into_deref))
+                    .cloned();
+                // A dynamic (`$*INDENT`) a caller declared in a block, or one
+                // the `{*}` of a proto body redispatched from, is not in the
+                // callers' env snapshots, but the dynamic chain reaches it:
+                // read it as the dynamic it is when the running frame does not
+                // declare its own (rakudo's `RakuAST::Deparse` tests
+                // `nqp::isnull(nqp::getlexcaller('$*INDENT'))` in a proto that
+                // recurses through its multis).
+                let found = found.or_else(|| {
+                    (key.as_bytes().get(1) == Some(&b'*') || key.starts_with('*'))
+                        .then_some(())
+                        .filter(|()| !self.env.contains_key_own_tier(key))
+                        .and_then(|()| self.get_env_with_main_alias(&name))
+                });
+                Ok(found.map_or(Value::NIL, Value::into_deref))
             }
             // nqp::bindlexdyn($name, $value): bind the dynamic variable as the
             // caller of the running frame resolves it (the running frame's own
