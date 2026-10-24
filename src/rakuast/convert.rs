@@ -26,9 +26,7 @@ use super::{
 };
 use crate::ast::parsed::ParsedStmt;
 use crate::ast::spelled::Spelling;
-use crate::ast::{
-    AssignOp, Expr, ForMode, GivenWithKind, IMPLICIT_INVOCANT_TRAIT, ParamDef, Stmt, WithBlockKind,
-};
+use crate::ast::{AssignOp, Expr, ForMode, IMPLICIT_INVOCANT_TRAIT, ParamDef, Stmt};
 use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::regex_tree::{RegexExtension, RegexModifierKind, RegexNode, RegexTree};
 use crate::value::{RuntimeError, Value, ValueView};
@@ -197,9 +195,6 @@ pub(super) const MY_SCOPED: &str = "__my_scoped";
 /// expression (`do for ...`) as a `DoStmt`.
 // Cost: O(1).
 fn is_do_statement(stmt: &Stmt) -> bool {
-    if super::control_signature::source(stmt).is_some() {
-        return true;
-    }
     match stmt {
         Stmt::Ast(_) => !is_modifier_statement(stmt),
         Stmt::For { .. }
@@ -224,9 +219,6 @@ fn is_modifier_statement(stmt: &Stmt) -> bool {
 /// Convert one statement. Returns `Ok(None)` for non-semantic bookkeeping
 /// statements (e.g. `SetLine`) that carry no RakuAST representation.
 pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
-    if let Some(form) = super::control_signature::source(stmt) {
-        return super::control_signature::convert(form).map(Some);
-    }
     if let Some(zip) = super::zip_assign::convert_zip_assign(stmt) {
         return zip.map(|node| Some(statement_expression(node)));
     }
@@ -447,7 +439,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             // Only the on-demand lambda opens with a supply record.
             Some(
                 crate::ast::SourceForm::SupplyBlock(_)
-                | crate::ast::SourceForm::ControlPointy { .. }
                 | crate::ast::SourceForm::WithPointy { .. }
                 | crate::ast::SourceForm::GivenPointy { .. }
                 | crate::ast::SourceForm::IfPointy { .. }
@@ -701,186 +692,22 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 fields,
             })))
         }
+        // A conditional is a typed node (`ast::parsed::Conditional`), and a
+        // statement modifier too (`ast::parsed::Modified`). The one desugared
+        // conditional the conversion still reads is the guarded control
+        // transfer `proceed |c` / `succeed |c` parses into
+        // (`slipped_control_stmt`), which rakudo has as the plain call over the
+        // slipped argument.
         Stmt::If {
             cond,
             then_branch,
             else_branch,
-            binding_var,
-            is_statement_modifier,
-            is_unless,
-            with_kind,
-        } => {
-            // `if EXPR -> $v { }` binds the tested value; only a plain `if` chain
-            // (not `with`, `unless` or a modifier) renders its pointy block.
-            if binding_var.is_some()
-                && (with_kind.is_some() || *is_unless || *is_statement_modifier)
-            {
-                return Err(unsupported("`if EXPR -> $var` topic binding"));
-            }
-            // `with X { }` / `without X { }` reach here as the conditional the
-            // parser desugared them into; `with_kind` records which keyword the
-            // source wrote, because neither the shape nor the synthetic temp's
-            // name can be trusted to say so (see `Stmt::If`'s `with_kind`).
-            if let Some(kind) = with_kind {
-                return with_block_node(*kind, cond, then_branch, else_branch).map(Some);
-            }
-            // mutsu stores `unless X` as `if !X` PLUS an `is_unless` flag, so the
-            // source keyword is recoverable: raku has `Statement::Unless` (and
-            // `StatementModifier::Unless`) and renders the *undecorated*
-            // condition, so the `!` the parser added is stripped back off. Same
-            // shape as `Stmt::While::is_until` below.
-            let written_cond = if *is_unless {
-                strip_negation(cond)?
-            } else {
-                cond
-            };
-            // A statement modifier is a typed node (`ast::parsed::Modified`);
-            // the one desugared conditional left flagged as one is the
-            // guarded control transfer `proceed |c` / `succeed |c` parses into
-            // (`slipped_control_stmt`), which rakudo has as the plain call over
-            // the slipped argument.
-            if *is_statement_modifier {
-                if let Some(call) = slipped_control_call(cond, then_branch, else_branch)? {
-                    return Ok(Some(statement_expression(call)));
-                }
-                return Err(unsupported("desugared statement-modifier conditional"));
-            }
-            // `unless` cannot carry `elsif`/`else` (rakudo rejects it at compile
-            // time), so its node is just condition + body — note `body`, not
-            // `then`.
-            if *is_unless {
-                return Ok(Some(RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::StatementUnless,
-                    fields: vec![
-                        node_field(Some("condition"), convert_expr(written_cond)?),
-                        node_field(Some("body"), signature_block_node(then_branch)?),
-                    ],
-                }));
-            }
-            let mut fields = vec![
-                node_field(Some("condition"), convert_expr(cond)?),
-                node_field(Some("then"), clause_block_node(then_branch, binding_var)?),
-            ];
-            fields.extend(conditional_chain_fields(else_branch)?);
-            Ok(Some(RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::StatementIf,
-                fields,
-            }))
-        }
-        Stmt::While {
-            cond,
-            body,
-            label,
-            is_until,
-            is_statement_modifier,
+            is_statement_modifier: true,
             ..
-        } => {
-            // mutsu stores `until X` as `while !X` PLUS an `is_until` flag, so
-            // the source keyword is recoverable: raku has a `Loop::Until` class
-            // and renders the *undecorated* condition, so the `!` the parser
-            // added is stripped back off.
-            if *is_statement_modifier {
-                return Err(unsupported("desugared while/until statement modifier"));
-            }
-            let mut fields = label_fields(label);
-            fields.push(node_field(
-                Some("condition"),
-                convert_expr(if *is_until {
-                    strip_negation(cond)?
-                } else {
-                    cond
-                })?,
-            ));
-            fields.push(node_field(Some("body"), signature_block_node(body)?));
-            Ok(Some(RakuAstNode {
-                origin: Default::default(),
-                class: if *is_until {
-                    RakuAstClass::StatementLoopUntil
-                } else {
-                    RakuAstClass::StatementLoopWhile
-                },
-                fields,
-            }))
-        }
-        Stmt::Loop {
-            init,
-            cond,
-            step,
-            body,
-            repeat,
-            label,
-            is_until,
-            ..
-        } => {
-            if *repeat {
-                // `repeat { } while X` / `repeat { } until X`. As with the plain
-                // `while`, mutsu negates the condition and keeps an `is_until`
-                // flag, so both the class and the undecorated condition are
-                // recoverable.
-                let cond = cond
-                    .as_ref()
-                    .ok_or_else(|| unsupported("repeat loop without condition"))?;
-                // `repeat while C -> $p { }`: the parser keeps the parameter as
-                // the loop's `init` declaration (`parser::repeat_param_clause`);
-                // raku spells it as the body's signature.
-                let body_node = match init.as_deref() {
-                    Some(Stmt::VarDecl { name, .. }) => {
-                        pointy_block(&[ParamDef::plain_positional(name)], body, None)?
-                    }
-                    Some(_) => return Err(unsupported("repeat loop with a setup statement")),
-                    None => signature_block_node(body)?,
-                };
-                let mut fields = label_fields(label);
-                fields.push(node_field(Some("body"), body_node));
-                fields.push(node_field(
-                    Some("condition"),
-                    convert_expr(if *is_until {
-                        strip_negation(cond)?
-                    } else {
-                        cond
-                    })?,
-                ));
-                return Ok(Some(RakuAstNode {
-                    origin: Default::default(),
-                    class: if *is_until {
-                        RakuAstClass::StatementLoopRepeatUntil
-                    } else {
-                        RakuAstClass::StatementLoopRepeatWhile
-                    },
-                    fields,
-                }));
-            }
-            if init.is_none() && cond.is_none() && step.is_none() {
-                // Bare `loop { }`.
-                let mut fields = label_fields(label);
-                fields.push(node_field(Some("body"), block_node(body)?));
-                return Ok(Some(RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::StatementLoop,
-                    fields,
-                }));
-            }
-            // C-style `loop (init; cond; step) { }`. Each clause is optional and
-            // present only when written.
-            let mut fields = label_fields(label);
-            if let Some(init) = init.as_deref() {
-                fields.push(node_field(Some("setup"), loop_setup_node(init)?));
-            }
-            if let Some(cond) = cond {
-                fields.push(node_field(Some("condition"), convert_expr(cond)?));
-            }
-            if let Some(step) = step {
-                fields.push(node_field(Some("increment"), convert_expr(step)?));
-            }
-            fields.push(node_field(Some("body"), block_node(body)?));
-            Ok(Some(RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::StatementLoop,
-                fields,
-            }))
-        }
+        } => match slipped_control_call(cond, then_branch, else_branch)? {
+            Some(call) => Ok(Some(statement_expression(call))),
+            None => Err(unsupported("desugared conditional")),
+        },
         Stmt::For {
             iterable,
             param,
@@ -948,57 +775,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 Ok(Some(statement_expression(for_node)))
             }
         }
-        // `given X { ... }` -> Statement::Given(source, body => topic Block).
-        Stmt::Given {
-            topic,
-            body,
-            is_statement_modifier,
-            with_kind,
-        } => {
-            // A statement modifier is a typed node (`ast::parsed::Modified`),
-            // so a `given` flagged as one, or carrying the `with` / `without`
-            // modifier tag, is a desugaring this conversion does not undo.
-            match with_kind {
-                Some(GivenWithKind::With | GivenWithKind::Without) => {
-                    return Err(unsupported("desugared with/without statement modifier"));
-                }
-                // The scaffold of a block form, reached on its own: the
-                // conditional that owns it renders the parameterless spelling
-                // itself, so arriving here means the block had a signature raku
-                // would spell as a `PointyBlock`.
-                Some(GivenWithKind::BlockTopic | GivenWithKind::BlockTopicPointy) => {
-                    return Err(unsupported("with/without block with an explicit signature"));
-                }
-                None => {}
-            }
-            if *is_statement_modifier {
-                Err(unsupported("desugared given statement modifier"))
-            } else {
-                Ok(Some(RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::StatementGiven,
-                    fields: vec![
-                        node_field(Some("source"), convert_expr(topic)?),
-                        node_field(Some("body"), given_body_node(body)?),
-                    ],
-                }))
-            }
-        }
-        // `when Y { ... }` -> Statement::When(condition, body => plain Block).
-        Stmt::When { cond, body, .. } => Ok(Some(RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::StatementWhen,
-            fields: vec![
-                node_field(Some("condition"), convert_expr(cond)?),
-                node_field(Some("body"), signature_block_node(body)?),
-            ],
-        })),
-        // `default { ... }` -> Statement::Default(body => plain Block).
-        Stmt::Default(body) => Ok(Some(RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::StatementDefault,
-            fields: vec![node_field(Some("body"), block_node(body)?)],
-        })),
         // `CATCH { ... }` -> Statement::Catch(body => topic Block + exception).
         // The body topicalizes the exception, so raku marks the block both
         // `implicit-topic`/`required-topic` (like a `given` body) and
@@ -4105,7 +3881,6 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // Only the on-demand lambda opens with a supply record.
             Some(
                 crate::ast::SourceForm::SupplyBlock(_)
-                | crate::ast::SourceForm::ControlPointy { .. }
                 | crate::ast::SourceForm::BarePhaser
                 | crate::ast::SourceForm::WithPointy { .. }
                 | crate::ast::SourceForm::GivenPointy { .. }
@@ -5114,18 +4889,6 @@ pub(super) fn interp_segment(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     }
 }
 
-/// If `stmts` (ignoring `SetLine` bookkeeping) is exactly one `if` statement,
-/// return it — this is how mutsu nests an `elsif`. Anything else (a real
-/// `else` block, multiple statements, empty) returns `None`.
-fn single_if_stmt(stmts: &[Stmt]) -> Option<&Stmt> {
-    let mut real = stmts.iter().filter(|s| !matches!(s, Stmt::SetLine(..)));
-    let first = real.next()?;
-    if real.next().is_some() {
-        return None;
-    }
-    matches!(first, Stmt::If { .. }).then_some(first)
-}
-
 /// A `{ ... }` block body wraps its `StatementList` in a `Blockoid`.
 ///
 /// The body keeps the enclosing unit's declared names: the unit-level scan
@@ -5612,24 +5375,6 @@ pub(super) fn topic_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeErro
     })
 }
 
-/// The body of a `given`: the topic block, or the `PointyBlock` of
-/// `given X -> PARAM { BODY }`, from the record the parser leaves after the
-/// parameter bind.
-// Cost: O(n), n = size of the body.
-fn given_body_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
-    for stmt in body {
-        if let Stmt::SourceForm(form) = stmt
-            && let crate::ast::SourceForm::GivenPointy {
-                param_def,
-                body: written,
-            } = form.as_ref()
-        {
-            return pointy_block(std::slice::from_ref(param_def), written, None);
-        }
-    }
-    topic_block_node(body)
-}
-
 /// The body of a `CATCH` / `CONTROL` block: it topicalizes the exception, so
 /// raku marks it `implicit-topic`, `required-topic` and `exception`, all
 /// `True`, and gives it no `may-have-signature`.
@@ -5987,24 +5732,6 @@ fn constant_declaration(
         class: RakuAstClass::VarDeclarationConstant,
         fields,
     })))
-}
-
-/// Strip the `!` the parser adds when it stores `until X` as `while !X`.
-///
-/// The flag and the negation are planted together, so an `is_until` loop whose
-/// condition is *not* a `!` would mean the two had drifted apart; refuse rather
-/// than render a condition that is not the one in the source.
-fn strip_negation(cond: &Expr) -> Result<&Expr, RuntimeError> {
-    match cond {
-        Expr::Unary {
-            op: crate::token_kind::TokenKind::Bang,
-            expr,
-            ..
-        } => Ok(expr),
-        _ => Err(unsupported(
-            "`unless`/`until` without the parser's negation",
-        )),
-    }
 }
 
 /// A class declaration's `traits` list, in source order: `is P` inheritance

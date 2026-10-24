@@ -3162,8 +3162,8 @@ pub(crate) mod var_does;
 pub(crate) mod var_will;
 mod where_match;
 pub(crate) use signature_decl::{
-    ControlPointyKind, ParamTrait, SignatureDecl, SignatureGroup, SignatureInit, SignatureVar,
-    SourceForm, is_group_declaration, scope_statements,
+    ParamTrait, SignatureDecl, SignatureGroup, SignatureInit, SignatureVar, SourceForm,
+    is_group_declaration, scope_statements,
 };
 pub(crate) mod regex_placeholders;
 pub(crate) mod result_decont;

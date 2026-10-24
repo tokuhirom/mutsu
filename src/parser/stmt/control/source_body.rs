@@ -110,7 +110,7 @@ pub(in crate::parser::stmt) fn check_signature(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{ControlPointyKind, SourceForm};
+    use crate::ast::SourceForm;
     use crate::value::Value;
 
     #[test]
@@ -121,10 +121,7 @@ mod tests {
             if check(&condition, &[], &body).is_err() {
                 return;
             }
-            let record = Stmt::SourceForm(Box::new(SourceForm::ControlPointy {
-                kind: ControlPointyKind::While,
-                label: None,
-                condition: condition.clone(),
+            let record = Stmt::SourceForm(Box::new(SourceForm::IfPointy {
                 param_defs: Vec::new(),
                 body: body.clone(),
             }));
@@ -136,9 +133,6 @@ mod tests {
     #[test]
     fn parsed_nested_control_signatures_report_a_resource_error() {
         for keyword in [
-            "while 0",
-            "until 1",
-            "unless 0",
             "if 1",
             "if 0 {} else",
             "with 1",

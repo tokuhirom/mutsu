@@ -121,6 +121,11 @@ pub(crate) fn if_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::if_stmt(input)
 }
 
+/// Public accessor for the `unless` statement parser (an `unless` term).
+pub(crate) fn unless_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::unless_stmt(input)
+}
+
 /// Public accessor for `while` statement parser (used by primary.rs for `while` expressions).
 pub(crate) fn while_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::while_stmt(input)

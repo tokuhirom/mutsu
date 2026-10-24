@@ -22,14 +22,6 @@ pub(crate) enum SourceForm {
         condition: Expr,
         kind: super::decl_modifier::DeclarationModifier,
     },
-    /// A control pointy block before its shared executable expansion.
-    ControlPointy {
-        kind: ControlPointyKind,
-        label: Option<String>,
-        condition: Expr,
-        param_defs: Vec<super::ParamDef>,
-        body: Vec<Stmt>,
-    },
     /// Traits written on a routine, in source order; opens its body.
     RoutineTraits(Vec<super::routine_trait::RoutineTrait>),
     SignatureDecl(SignatureDecl),
@@ -137,13 +129,6 @@ pub(crate) fn attribute_colon_expansion(attributes: Vec<Stmt>) -> Stmt {
     )));
     statements.extend(attributes);
     Stmt::SyntheticBlock(statements)
-}
-
-#[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) enum ControlPointyKind {
-    While,
-    Until,
-    Unless,
 }
 
 /// `my|our|state [TYPE] (VARS) [is default(EXPR)] [= RHS | := RHS]`.

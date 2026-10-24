@@ -267,23 +267,7 @@ pub(crate) fn unless_clause(
     binding_params: Option<Vec<ParamDef>>,
     body: Vec<Stmt>,
 ) -> Result<Stmt, crate::value::RuntimeError> {
-    if let Some(params) = &binding_params {
-        super::source_body::check(&cond, params, &body)?;
-    }
-    let record = binding_params.as_ref().map(|params| {
-        Stmt::SourceForm(Box::new(crate::ast::SourceForm::ControlPointy {
-            kind: crate::ast::ControlPointyKind::Unless,
-            label: None,
-            condition: cond.clone(),
-            param_defs: params.clone(),
-            body: body.clone(),
-        }))
-    });
-    let expanded = expand_unless_clause(cond, binding_params, body)?;
-    Ok(match record {
-        Some(record) => Stmt::SyntheticBlock(vec![record, expanded]),
-        None => expanded,
-    })
+    expand_unless_clause(cond, binding_params, body)
 }
 
 fn expand_unless_clause(
