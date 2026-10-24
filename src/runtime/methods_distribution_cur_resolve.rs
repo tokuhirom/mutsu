@@ -398,10 +398,34 @@ impl Interpreter {
         }
         let prefix_path = std::path::Path::new(prefix);
         let dist_dir = prefix_path.join("dist");
-        if !dist_dir.is_dir() {
-            return Ok(Value::array(Vec::new()));
-        }
         let mut results = Vec::new();
+        // Rakudo's core repository holds the one distribution that provides
+        // every core module, so `candidates( short-name => 'Test' )` finds it.
+        // mutsu's bundled Rakudo-Core battery stands in for it, matched like any
+        // installed distribution (by its name or a `provides` key).
+        if self.is_core_repo_prefix(prefix)
+            && let Some(core) = self.bundled_core_distribution()
+        {
+            let core_meta = match core.view() {
+                ValueView::Instance { attributes, .. } => attributes.as_map().get("meta").cloned(),
+                _ => None,
+            };
+            if let Some(meta) = core_meta
+                && Self::matches_depspec(
+                    &meta,
+                    &short_name,
+                    &auth_matcher,
+                    &version_matcher,
+                    &api_matcher,
+                )
+                && self.meta_passes_user_matchers(&meta, &user_matchers)
+            {
+                results.push(core);
+            }
+        }
+        if !dist_dir.is_dir() {
+            return Ok(Value::array(results));
+        }
         if let Ok(entries) = std::fs::read_dir(&dist_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
