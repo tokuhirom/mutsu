@@ -95,7 +95,9 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
     };
     let assigned = assign_to_unwrapped_target(target, value);
     if depth > 0 {
-        Expr::spelled(assigned, || crate::ast::spelled::Spelling::GroupedLvalue { depth })
+        Expr::spelled(assigned, || crate::ast::spelled::Spelling::GroupedLvalue {
+            depth,
+        })
     } else {
         assigned
     }

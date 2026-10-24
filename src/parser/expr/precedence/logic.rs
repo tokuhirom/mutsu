@@ -506,8 +506,8 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
     // The `=` below may not be consumed after all; a `.AST` parse then hands
     // a parenthesised term back with its parentheses (`(c ?? $a !! $b) = v`
     // is a statement-level assignment to `Circumfix::Parentheses`).
-    let written = (crate::ast::spelled::keeping() && grouped_lvalue_depth(&expr) > 0)
-        .then(|| expr.clone());
+    let written =
+        (crate::ast::spelled::keeping() && grouped_lvalue_depth(&expr) > 0).then(|| expr.clone());
     let expr = unwrap_grouped_lvalue(expr);
     match expr {
         Expr::Var(name) => Ok((
