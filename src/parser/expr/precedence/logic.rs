@@ -499,6 +499,15 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
     {
         return Ok((r, assign_to_target_expr(expr, rhs)));
     }
+    // The `=` below may not be consumed after all; a `.AST` parse then hands
+    // a parenthesised term back with its parentheses (`(c ?? $a !! $b) = v`
+    // is a statement-level assignment to `Circumfix::Parentheses`).
+    let written = (crate::ast::spelled::keeping()
+        && matches!(&expr, Expr::Grouped(inner) if matches!(
+            **inner,
+            Expr::Ternary { .. } | Expr::Unary { .. } | Expr::CaptureVar(_)
+        )))
+    .then(|| expr.clone());
     let expr = unwrap_grouped_lvalue(expr);
     match expr {
         Expr::Var(name) => Ok((
@@ -671,6 +680,6 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                 },
             },
         )),
-        _ => Ok((rest, expr)),
+        other => Ok((rest, written.unwrap_or(other))),
     }
 }

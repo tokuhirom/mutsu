@@ -8,7 +8,7 @@ use MONKEY-SEE-NO-EVAL;
 # (which makes it a list assignment). This file passes under both mutsu and
 # raku.
 
-plan 17;
+plan 19;
 
 sub shape(Str $src) {
     my $assign = $src.AST.statements[*-1].expression;
@@ -18,6 +18,10 @@ sub shape(Str $src) {
 is shape(Q[my $x; -$x = 5]), 'RakuAST::ApplyPrefix item', 'a prefix target';
 is shape(Q[my ($x, $y); $y ?? 1 !! $x = 2]), 'RakuAST::Ternary item', 'a ternary target';
 is shape(Q[my $c; $<c> = $0]), 'RakuAST::Var::NamedCapture item', 'a named capture target';
+is shape(Q[my ($x, $y); (1 ?? $x !! $y) = 9]), 'RakuAST::Circumfix::Parentheses list',
+    'a parenthesised ternary target';
+is shape(Q[my $x; (-$x) = 5]), 'RakuAST::Circumfix::Parentheses list',
+    'a parenthesised prefix target';
 is shape(Q[sub c is rw { state $z }; c() = 5]), 'RakuAST::Call::Name list', 'a call target';
 is shape(Q[my $c; $c() = 5]), 'RakuAST::ApplyPostfix list', 'a term call target';
 is shape(Q[my $x; ($x) = 1]), 'RakuAST::Circumfix::Parentheses list', 'a grouped scalar';

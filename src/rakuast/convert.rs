@@ -2288,6 +2288,16 @@ fn call_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Expr
         {
             target.clone()
         }
+        // `(c ?? $a !! $b) = v`: the same terms, parenthesised.
+        "__mutsu_assign_callable_lvalue"
+            if call_args.is_empty()
+                && matches!(target, Expr::Grouped(inner) if matches!(
+                    **inner,
+                    Expr::Ternary { .. } | Expr::Unary { .. } | Expr::CaptureVar(_)
+                )) =>
+        {
+            target.clone()
+        }
         "__mutsu_assign_callable_lvalue"
             if call_args.is_empty()
                 && matches!(target, Expr::Binary { .. } | Expr::Call { .. })

@@ -86,10 +86,19 @@ pub(crate) fn unwrap_grouped_lvalue(target: Expr) -> Expr {
 }
 
 pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
-    // A `.AST` parse keeps the parentheses of `($x) = 1`.
+    // A `.AST` parse keeps the parentheses of `($x) = 1` and of the terms
+    // that are a plain left side without them (`(c ?? $a !! $b) = 1`).
     let grouped_var = crate::ast::spelled::keeping()
         && matches!(&target, Expr::Grouped(inner)
-            if matches!(**inner, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)));
+            if matches!(
+                **inner,
+                Expr::Var(_)
+                    | Expr::ArrayVar(_)
+                    | Expr::HashVar(_)
+                    | Expr::Ternary { .. }
+                    | Expr::Unary { .. }
+                    | Expr::CaptureVar(_)
+            ));
     let assigned = assign_to_unwrapped_target(target, value);
     if grouped_var {
         Expr::spelled(assigned, || crate::ast::spelled::Spelling::GroupedLvalue)
