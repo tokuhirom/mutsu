@@ -182,13 +182,12 @@ const NON_COOL_TEXT: &[&str] = &[
 // Cost: O(|method|) for the name lookups, O(1) for the shape probe.
 pub(crate) fn buffer_refuses_cool_method(target: &Value, method: &str) -> Option<String> {
     use crate::value::DispatchShape as Shape;
-    if !is_cool_only_method(method) {
-        return None;
-    }
+    // The shape and name tests come first: `is_cool_only_method` builds a set
+    // from the whole method-table snapshot on its first call, which a program
+    // calling a method on a plain `Str` or `Int` must not pay for (#14878).
     // A code object (`Sub`, `Block`, ...) is no `Cool` either (#13035).
     if matches!(target.view(), ValueView::Sub(..) | ValueView::Routine { .. }) {
-        return NON_COOL_TEXT
-            .contains(&method)
+        return (NON_COOL_TEXT.contains(&method) && is_cool_only_method(method))
             .then(|| crate::value::types::what_type_name(target));
     }
     let receiver = crate::builtins::method_table::Receiver::of_settled(target)?;
@@ -209,7 +208,7 @@ pub(crate) fn buffer_refuses_cool_method(target: &Value, method: &str) -> Option
         | Shape::MixHash => NON_COOL_TEXT.contains(&method),
         _ => false,
     };
-    refused.then(|| crate::value::types::what_type_name(target))
+    (refused && is_cool_only_method(method)).then(|| crate::value::types::what_type_name(target))
 }
 
 /// Whether `method` is `fmt` on a `Capture` or `Version`: `Any` declares the
