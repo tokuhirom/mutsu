@@ -11,6 +11,34 @@
 
 use super::*;
 
+/// The key [`Compiler::compile_method_body`] files a method body under, for
+/// the `package_name::method_name` whose effective signature is `param_defs`.
+/// Registration recomputes it to find a `proto method` body the main pass
+/// compiled, which no declaration plan carries a key for.
+// Cost: O(n), n = size of the signature and body.
+pub(crate) fn method_body_key(
+    package_name: &str,
+    method_name: &str,
+    param_defs: &[crate::ast::ParamDef],
+    body: &[Stmt],
+) -> Symbol {
+    let effective_param_defs =
+        crate::method_signature_shared::effective_method_param_defs(param_defs, false);
+    let effective_params: Vec<String> = effective_param_defs
+        .iter()
+        .map(|p| p.name.clone())
+        .collect();
+    let arity = effective_param_defs
+        .iter()
+        .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
+        .count();
+    let fingerprint =
+        crate::ast::function_body_fingerprint(&effective_params, &effective_param_defs, body);
+    Symbol::intern(&format!(
+        "{package_name}::{method_name}!m/{arity}#{fingerprint:x}"
+    ))
+}
+
 impl Compiler {
     /// Compile one class/role method/submethod body to bytecode at main-pass
     /// compile time, keyed into `self.compiled_functions` exactly like a

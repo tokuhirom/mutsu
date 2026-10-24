@@ -691,7 +691,7 @@ impl Interpreter {
                     .method_entry_proto(cx.name, &name.resolve())
                     .is_none()
                 {
-                    self.register_proto_method_decl(cx.name, &op.raw)?;
+                    self.register_proto_method_decl(cx.name, &op.raw, None)?;
                 }
                 continue;
             }

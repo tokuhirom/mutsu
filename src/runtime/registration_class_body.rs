@@ -599,7 +599,7 @@ impl Interpreter {
         cx: &mut ClassBodyCx<'_>,
         stmt: &Stmt,
     ) -> Result<(), RuntimeError> {
-        self.register_proto_method_decl(cx.name, stmt)
+        self.register_proto_method_decl(cx.name, stmt, Some(cx.compiled_fns))
     }
 
     /// Install a `proto method` as the dispatcher of `owner`'s `NAME`
@@ -609,6 +609,7 @@ impl Interpreter {
         &mut self,
         owner: &str,
         stmt: &Stmt,
+        compiled_fns: Option<&crate::opcode::CompiledFns>,
     ) -> Result<(), RuntimeError> {
         let Stmt::ProtoDecl {
             name: proto_name,
@@ -663,8 +664,24 @@ impl Interpreter {
         let proto_params = fdef.params.clone();
         let proto_param_defs = fdef.param_defs.clone();
         let proto_cell = fdef.routine_cell.clone();
+        // The body the main pass compiled in the class's lexical context (its
+        // `use`d routines); without it `run_proto_method` compiles one from the
+        // AST with no enclosing scope.
+        let main_pass_body = compiled_fns.and_then(|fns| {
+            let key = crate::compiler::method_body_key(
+                owner,
+                &method_name,
+                param_defs,
+                proto_body,
+            );
+            fns.get(&key).map(|cf| (cf.code.clone(), cf.compiled_fns.clone()))
+        });
         self.registry_mut()
             .set_proto_method(owner, &method_name, fdef);
+        if let Some(compiled) = main_pass_body {
+            self.registry_mut()
+                .set_proto_compiled(owner, &method_name, compiled);
+        }
         if trait_args
             .iter()
             .any(|(name, _)| name == "__hidden_from_backtrace")

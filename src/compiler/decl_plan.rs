@@ -584,6 +584,38 @@ impl Compiler {
                 self.fatal_pragma_active = true;
                 continue;
             }
+            // A non-trivial `proto method` body is compiled here too, so it
+            // sees the routines the `use`s around the class bound
+            // (`lexical_import_chain`); registration finds it by its
+            // deterministic key (`proto_method_body_key`) and not by position.
+            if let Stmt::ProtoDecl {
+                name,
+                param_defs,
+                body,
+                return_type,
+                is_method: true,
+                ..
+            } = stmt
+                && let Some(package_name) = &package_name
+                && !body.iter().filter(|s| !s.is_marker()).all(|s| {
+                    matches!(s, Stmt::Expr(Expr::Whatever))
+                })
+            {
+                self.compile_method_body(
+                    package_name,
+                    lexical_type_name,
+                    lexical_type_short_name,
+                    &name.resolve(),
+                    param_defs,
+                    body,
+                    false,
+                    false,
+                    false,
+                    return_type.as_ref(),
+                    decl_line,
+                );
+                continue;
+            }
             let Stmt::MethodDecl {
                 name,
                 name_expr,
