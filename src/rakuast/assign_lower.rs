@@ -45,7 +45,9 @@ pub(crate) fn is_expression_target(target: &Expr) -> bool {
 // Cost: O(d), d = levels of parentheses around the target.
 pub(crate) fn is_callable_lvalue_target(target: &Expr) -> bool {
     match target.peel_parens() {
-        Expr::Unary { .. } | Expr::Ternary { .. } | Expr::CaptureVar(_) | Expr::Binary { .. } => true,
+        Expr::Unary { .. } | Expr::Ternary { .. } | Expr::CaptureVar(_) | Expr::Binary { .. } => {
+            true
+        }
         Expr::DoStmt(stmt) => matches!(stmt.as_ref(), Stmt::VarDecl { .. }),
         _ => false,
     }
@@ -149,9 +151,7 @@ pub(crate) fn lower_expression(node: Assign) -> Expr {
         }
         // `-$x = 5`, `c ?? $a !! $b = 1`, `$<c> = $0`, `($a || $b) = 1`,
         // `(my $v) = 1, 2`: write through the expression's result.
-        target if is_callable_lvalue_target(&target) => {
-            callable_lvalue(target, Vec::new(), source)
-        }
+        target if is_callable_lvalue_target(&target) => callable_lvalue(target, Vec::new(), source),
         other => unreachable!("not an assignment target: {other:?}"),
     }
 }
