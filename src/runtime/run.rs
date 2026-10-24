@@ -68,6 +68,43 @@ role GLOBAL::IO::Socket {
 }
 "#;
 
+/// Builtin `CompUnit::Repository::Spec`: the parsed form of a `inst#/path` /
+/// `file#/path` repository specification. Rakudo's attributes are
+/// `$!short-id $!Str $!path %!options`. `from-string` splits on `#` as
+/// Rakudo's does (measured against `raku`, not copied): a spec without `#` is
+/// the path under the default short-id; otherwise the first segment is the
+/// short-id, the last non-empty one the path, and a middle `name<value>`
+/// segment an option.
+pub(super) const COMPUNIT_REPOSITORY_SPEC_PRELUDE: &str = r#"
+class GLOBAL::CompUnit::Repository::Spec {
+    has Str $.short-id;
+    has Str $.Str;
+    has $.path;
+    has %.options;
+
+    method from-string(::?CLASS:U: Str:D $spec, Str:D $default-short-id) {
+        my @segment = $spec.split('#');
+        my ($short-id, $path);
+        my $text = $spec;
+        my %options;
+        if @segment == 1 {
+            $short-id = $default-short-id;
+            $path = $spec;
+            $text = "$short-id#$spec";
+        }
+        else {
+            $short-id = @segment.shift;
+            @segment.pop while @segment > 1 && @segment[*-1] eq '';
+            $path = @segment.pop;
+            for @segment {
+                %options{$0.Str} = $1.Str if $_ ~~ /^ (\w+) '<' (.*) '>' $/;
+            }
+        }
+        self.new(:$short-id, :Str($text), :$path, :%options)
+    }
+}
+"#;
+
 /// Builtin `Enumeration` role. mutsu models the role's behaviour natively for
 /// *enum values* (they are their own `Value` shape, with native `key`/`value`/
 /// `kv`/`pair`/`Numeric` methods), but Rakudo's `Enumeration` is a real role
@@ -484,6 +521,7 @@ impl Interpreter {
         let code = crate::runtime::source_code_text::CodeText::from_source(&preprocessed);
         Self::inject_prelude_roles(&code, &mut stmts);
         Self::inject_iosocket_prelude(&code, &mut stmts);
+        Self::inject_repository_spec_prelude(&code, &mut stmts);
         Self::inject_trait_mod_does_prelude(&code, &mut stmts);
         Self::inject_trait_mod_of_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_default_prelude(&code, &mut stmts);
