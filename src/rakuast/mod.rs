@@ -1400,6 +1400,13 @@ pub(crate) fn is_expression_assign_target(target: &crate::ast::Expr) -> bool {
     assign_lower::is_expression_target(target)
 }
 
+/// Whether the statement parser assigns to `target` by writing through its
+/// result (`assign_lower`).
+// Cost: O(d), d = levels of parentheses around the target.
+pub(crate) fn is_callable_lvalue_assign_target(target: &crate::ast::Expr) -> bool {
+    assign_lower::is_callable_lvalue_target(target)
+}
+
 /// Lower an assignment in expression position: the one lowering of the
 /// assignment family, shared with `EVAL` of a hand-built node.
 // Cost: O(n), n = size of the target and source.

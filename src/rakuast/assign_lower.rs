@@ -38,8 +38,21 @@ pub(crate) fn is_expression_target(target: &Expr) -> bool {
     }
 }
 
+/// Whether `target` is an lvalue expression the statement parser assigns
+/// through at run time (`-$x = 5`, `c ?? $a !! $b = 1`, `$<c> = $0`,
+/// `($a || $b) = 1`, `(my $v) = 1, 2`): the conditional, operator or
+/// declaration is evaluated and its result container is written.
+// Cost: O(d), d = levels of parentheses around the target.
+pub(crate) fn is_callable_lvalue_target(target: &Expr) -> bool {
+    match target.peel_parens() {
+        Expr::Unary { .. } | Expr::Ternary { .. } | Expr::CaptureVar(_) | Expr::Binary { .. } => true,
+        Expr::DoStmt(stmt) => matches!(stmt.as_ref(), Stmt::VarDecl { .. }),
+        _ => false,
+    }
+}
+
 /// Lower an assignment in expression position whose target
-/// [`is_expression_target`].
+/// [`is_expression_target`] or [`is_callable_lvalue_target`].
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_expression(node: Assign) -> Expr {
     let Assign { target, source } = node;
@@ -134,7 +147,12 @@ pub(crate) fn lower_expression(node: Assign) -> Expr {
                 None => callable_lvalue(Expr::ArrayLiteral(items), Vec::new(), source),
             }
         }
-        other => unreachable!("not an expression assignment target: {other:?}"),
+        // `-$x = 5`, `c ?? $a !! $b = 1`, `$<c> = $0`, `($a || $b) = 1`,
+        // `(my $v) = 1, 2`: write through the expression's result.
+        target if is_callable_lvalue_target(&target) => {
+            callable_lvalue(target, Vec::new(), source)
+        }
+        other => unreachable!("not an assignment target: {other:?}"),
     }
 }
 
