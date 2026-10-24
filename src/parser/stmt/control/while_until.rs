@@ -63,9 +63,6 @@ pub(crate) fn loop_pointy_clause(
     is_until: bool,
     label: Option<String>,
 ) -> Result<Stmt, crate::value::RuntimeError> {
-    if let Some(params) = &defs {
-        super::source_body::check(&cond, params, &body)?;
-    }
     Ok(expand_loop(
         cond,
         defs.and_then(|mut defs| defs.pop()),

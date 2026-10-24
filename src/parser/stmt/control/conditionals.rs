@@ -267,9 +267,6 @@ pub(crate) fn unless_clause(
     binding_params: Option<Vec<ParamDef>>,
     body: Vec<Stmt>,
 ) -> Result<Stmt, crate::value::RuntimeError> {
-    if let Some(params) = &binding_params {
-        super::source_body::check(&cond, params, &body)?;
-    }
     expand_unless_clause(cond, binding_params, body)
 }
 

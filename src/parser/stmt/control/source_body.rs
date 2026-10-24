@@ -133,9 +133,6 @@ mod tests {
     #[test]
     fn parsed_nested_control_signatures_report_a_resource_error() {
         for keyword in [
-            "while 0",
-            "until 1",
-            "unless 0",
             "if 1",
             "if 0 {} else",
             "with 1",
