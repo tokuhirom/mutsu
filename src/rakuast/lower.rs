@@ -102,6 +102,10 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
                     continue;
                 }
                 let child = child_node(&f.value)?;
+                // An empty statement runs nothing and is no block's value.
+                if child.class == RakuAstClass::StatementEmpty {
+                    continue;
+                }
                 super::infix_func::note_declaration(child);
                 super::shadowed_terms::note_keyword_declaration(child);
                 if let Some(line) = super::origin::line_of(child) {
