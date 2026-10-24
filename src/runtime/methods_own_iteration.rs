@@ -78,6 +78,23 @@ impl Interpreter {
                 .is_some_and(|source| source.reads(method))
     }
 
+    /// Whether `target` is buffer-backed storage whose class declares its own
+    /// `list` (upstream's `CArray`), so `Any`'s `method` reads that `list`
+    /// ([`Self::own_iteration_view`] answers it) and no native entry may.
+    // Cost: O(m) name scan plus memoized method probes, m = names in the two sets.
+    pub(crate) fn buf_own_list_reads(&mut self, target: &Value, method: &str) -> bool {
+        if !VIA_ITERATOR.contains(&method) && !VIA_LIST.contains(&method) && method != "flat" {
+            return false;
+        }
+        let Some((class, _)) = crate::value::value_buf::buf_target(target) else {
+            return false;
+        };
+        let class = class.resolve();
+        !self.mixin_composes_method(target, method)
+            && !self.has_user_method(&class, method)
+            && self.has_user_method(&class, "list")
+    }
+
     /// The answer of `method` for a receiver with its own `iterator` or `list`,
     /// redispatched on its elements; `None` when `method` reads neither, the
     /// receiver has neither, or it declares `method` itself.
@@ -121,9 +138,18 @@ impl Interpreter {
     fn iteration_source(&mut self, target: &Value, method: &str) -> Option<Source> {
         // A buffer's elements are its own; it declares `elems`, `list` and
         // the other `self.list` methods itself.
-        if crate::value::value_buf::buf_target(target).is_some() {
-            return (!self.mixin_composes_method(target, method))
-                .then_some(Source::Iterator { iterable: true });
+        if let Some((class, _)) = crate::value::value_buf::buf_target(target) {
+            if self.mixin_composes_method(target, method)
+                || self.has_user_method(&class.resolve(), method)
+            {
+                return None;
+            }
+            // A buffer-backed class that declares its own `list` (upstream's
+            // `CArray`) answers `Any`'s `self.list` methods from it too.
+            if self.has_user_method(&class.resolve(), "list") {
+                return Some(Source::List);
+            }
+            return Some(Source::Iterator { iterable: true });
         }
         match target.view() {
             ValueView::Mixin(..) => (self.mixin_composes_method(target, "iterator")

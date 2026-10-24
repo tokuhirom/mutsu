@@ -5893,6 +5893,19 @@ impl Interpreter {
             _ => (raw_val, None, false),
         };
 
+        // An element that IS a `Proxy` (`@bound[1] := item(...)`) mediates its
+        // own store, as in the named op (ADR-0040 §9): `get()[1] = 5` fires the
+        // element's `STORE` rather than replacing the binding with a plain value.
+        if !was_bind
+            && let Some(existing) = Self::existing_element_container(&target, &idx, is_positional)
+            && matches!(existing.view(), ValueView::Proxy { storer, .. } if !storer.is_nil())
+        {
+            loan_env!(self, assign_proxy_lvalue(existing, val.clone()))?;
+            self.apply_pending_rw_writeback(code);
+            self.stack.push(val);
+            return Ok(());
+        }
+
         // The expression landed on a `Pair` whose value is a real container
         // (`id($p)<c> = [3,4]`): the subscript addresses that container and
         // rakudo STOREs into it. The refusal above already let this shape

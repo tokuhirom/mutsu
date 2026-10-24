@@ -234,6 +234,9 @@ pub(crate) fn general_entry_owns(
             "VAR" | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
         );
     }
+    if interp.buf_own_list_reads(target, method) {
+        return true;
+    }
     if matches!(
         method,
         "grep" | "map" | "first" | "sort" | "head" | "tail" | "flat"

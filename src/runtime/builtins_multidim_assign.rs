@@ -212,6 +212,19 @@ impl Interpreter {
         } else {
             current
         };
+        // An element that IS a `Proxy` (`@bound[1] := item(...)`) mediates its
+        // own store, whatever handed the aggregate back.
+        if !is_bind
+            && let Some(existing) = Self::existing_element_container(
+                &current,
+                &index,
+                matches!(index.view(), ValueView::Int(_)),
+            )
+            && matches!(existing.view(), ValueView::Proxy { storer, .. } if !storer.is_nil())
+        {
+            self.store_proxy_lvalue(&existing, value.clone())?;
+            return Ok(value);
+        }
         // The element is stored into the aggregate FETCH handed back, in place,
         // and STORE is not called: that is what rakudo does (a Proxy-bound
         // attribute's trigger fires on assigning the attribute, not an

@@ -2726,6 +2726,24 @@ impl Interpreter {
                     self.stack.push(Value::int(i));
                     self.exec_index_op()?;
                     self.stack.pop().unwrap_or(Value::NIL)
+                } else if i == 0
+                    && matches!(
+                        inner.view(),
+                        ValueView::Int(_)
+                            | ValueView::BigInt(_)
+                            | ValueView::Num(_)
+                            | ValueView::Str(_)
+                            | ValueView::Bool(_)
+                            | ValueView::Rat(..)
+                            | ValueView::FatRat(..)
+                            | ValueView::Complex(..)
+                    )
+                    && !self.mixin_composes_method(&target, "AT-POS")
+                    && !self.mixin_composes_method(&target, "AT-KEY")
+                {
+                    // `Any.AT-POS(0)` is the invocant: a role mixed into a
+                    // scalar keeps its mixin (`$str-but-R[0].type`).
+                    target.clone()
                 } else {
                     let default = self.typed_container_default(&target);
                     let fallback = target.clone();
