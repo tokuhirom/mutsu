@@ -77,6 +77,18 @@ pub(crate) enum Spelling {
     /// `a !< b` / `a !eq b`: the parser evaluates this as `!(a < b)` but
     /// RakuAST keeps the `MetaInfix::Negate` at the infix application.
     NegatedInfix,
+    /// `a !(elem) b`, `a !∈ b`: the `!` meta-negation of a set relation, with the
+    /// relation as written after the `!`. The parser evaluates it as `!(a ∈ b)`;
+    /// RakuAST keeps `MetaInfix::Negate(Infix("(elem)"))`.
+    NegatedSetInfix(Box<str>),
+    /// `a ∉ b`, `a ⊄ b`: a precomposed negated set glyph, which rakudo declares
+    /// as an infix of its own (`Infix("∉")`). The parser evaluates it as the
+    /// junction-threading negation of the positive relation.
+    NegatedSetGlyph(Box<str>),
+    /// `a ^... b`, `a ^…^ b`: a left-exclusive sequence, which rakudo keeps as
+    /// one list infix with the written spelling. The parser evaluates it as
+    /// the plain sequence followed by `.skip(1)`.
+    LeftExclusiveSequence(Box<str>),
     /// `$x [[+]]= 6`: bracket depth of an assignment whose executable form
     /// folds the bracketed infix into an ordinary compound assignment.
     BracketedAssignment { depth: usize },

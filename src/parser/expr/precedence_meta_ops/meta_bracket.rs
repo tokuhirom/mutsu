@@ -532,6 +532,10 @@ pub(crate) fn strip_sequence_op(input: &str) -> Option<(&str, TokenKind, &str)> 
     // `TokenKind` is the plain end-inclusive/exclusive sequence op.
     if let Some(rest) = input.strip_prefix("^...^") {
         Some((rest, TokenKind::DotDotDotCaret, "^...^"))
+    } else if let Some(rest) = input.strip_prefix("^…^") {
+        Some((rest, TokenKind::DotDotDotCaret, "^…^"))
+    } else if let Some(rest) = input.strip_prefix("^…") {
+        Some((rest, TokenKind::DotDotDot, "^…"))
     } else if input.starts_with("^...") && !input.starts_with("^....") {
         Some((&input[4..], TokenKind::DotDotDot, "^..."))
     } else if let Some(rest) = input.strip_prefix("...^") {

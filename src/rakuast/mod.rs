@@ -79,6 +79,7 @@ mod name_colonpairs;
 mod name_parts;
 mod named_ctor;
 mod named_param;
+mod negated_set;
 mod nesting;
 mod nf_quote;
 mod operator_origins;

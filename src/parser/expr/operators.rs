@@ -730,9 +730,10 @@ pub(super) fn parse_junction_infix_op_after(
             return None;
         }
         Some((JunctionInfixOp::All, 1))
-    // ^ but not ^.. or ^^ or ^= or a start-excluding flip-flop (^ff / ^fff …)
+    // ^ but not ^.. or ^… or ^^ or ^= or a start-excluding flip-flop (^ff / ^fff …)
     } else if input.starts_with('^')
         && !input.starts_with("^.")
+        && !input.starts_with("^\u{2026}")
         && !input.starts_with("^^")
         && !input.starts_with("^=")
         && !starts_with_caret_flipflop(input)

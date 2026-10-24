@@ -6,14 +6,17 @@ use super::*;
 /// which stays lazy for an infinite series.
 pub(super) fn wrap_left_exclusive_sequence(op_str: &str, expr: Expr) -> Expr {
     if op_str.starts_with('^') {
-        Expr::MethodCall {
-            target: Box::new(expr),
-            name: crate::symbol::Symbol::intern("skip"),
-            args: vec![Expr::Literal(crate::value::Value::int(1))],
-            modifier: None,
-            quoted: false,
-            sugar: false,
-        }
+        Expr::spelled(
+            Expr::MethodCall {
+                target: Box::new(expr),
+                name: crate::symbol::Symbol::intern("skip"),
+                args: vec![Expr::Literal(crate::value::Value::int(1))],
+                modifier: None,
+                quoted: false,
+                sugar: false,
+            },
+            || crate::ast::spelled::Spelling::LeftExclusiveSequence(op_str.into()),
+        )
     } else {
         expr
     }

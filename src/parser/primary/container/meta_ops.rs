@@ -442,20 +442,7 @@ pub(crate) fn try_parse_sequence_in_paren<'a>(
 ) -> Option<PResult<'a, Expr>> {
     // `is_left_excl` marks the `^...` / `^...^` left-exclusive forms, which
     // generate the same series and then drop the first element (`.skip(1)`).
-    let (is_excl, is_left_excl, rest) = if let Some(stripped) = input.strip_prefix("^...^") {
-        (true, true, stripped)
-    } else if input.starts_with("^...") && !input.starts_with("^....") {
-        (false, true, &input[4..])
-    } else if let Some(stripped) = input.strip_prefix("...^") {
-        (true, false, stripped)
-    } else if let Some(stripped) = input.strip_prefix("\u{2026}^") {
-        (true, false, stripped)
-    } else if input.starts_with("...") && !input.starts_with("....") {
-        (false, false, &input[3..])
-    } else {
-        let stripped = input.strip_prefix('\u{2026}')?;
-        (false, false, stripped)
-    };
+    let (is_excl, is_left_excl, rest) = sequence_prefix(input)?;
     // Parse the endpoint expression
     let result = (|| {
         let (rest, _) = ws(rest)?;
@@ -546,11 +533,19 @@ pub(crate) fn try_parse_sequence_in_paren<'a>(
 }
 
 pub(crate) fn starts_with_sequence_op(input: &str) -> bool {
-    input.starts_with("...")
-        || input.starts_with('\u{2026}')
-        // Left-exclusive sequence (`^...` / `^...^`); the `^...^` case also starts
-        // with `^...`, so this single prefix covers both.
-        || input.starts_with("^...")
+    sequence_prefix(input).is_some()
+}
+
+/// The sequence operator at the start of `input`: whether it excludes the end
+/// (`...^`), whether it excludes the start (`^...`), and the text after it.
+/// `^...` / `^…` generate the same series and then drop the first element.
+fn sequence_prefix(input: &str) -> Option<(bool, bool, &str)> {
+    let (rest, kind, written) = crate::parser::expr::precedence_meta_ops::strip_sequence_op(input)?;
+    Some((
+        kind == TokenKind::DotDotDotCaret,
+        written.starts_with('^'),
+        rest,
+    ))
 }
 
 fn maybe_wrap_whatever(expr: Expr) -> Expr {
@@ -618,19 +613,7 @@ fn build_sequence_from_seeds(input: &str, seeds: Vec<Expr>) -> PResult<'_, Expr>
     // `is_left_excl` marks the `^...` / `^...^` forms, which produce the same
     // series as `...` / `...^` but drop the first element (wrapped in `.skip(1)`
     // below). Check the longer `^...^` prefix before `^...`, and `...^` before `...`.
-    let (is_excl, is_left_excl, rest) = if let Some(s) = input.strip_prefix("^...^") {
-        (true, true, s)
-    } else if input.starts_with("^...") && !input.starts_with("^....") {
-        (false, true, &input[4..])
-    } else if let Some(s) = input.strip_prefix("...^") {
-        (true, false, s)
-    } else if let Some(s) = input.strip_prefix("\u{2026}^") {
-        (true, false, s)
-    } else if input.starts_with("...") && !input.starts_with("....") {
-        (false, false, &input[3..])
-    } else if let Some(s) = input.strip_prefix('\u{2026}') {
-        (false, false, s)
-    } else {
+    let Some((is_excl, is_left_excl, rest)) = sequence_prefix(input) else {
         return Err(PError::expected("expected sequence operator"));
     };
     let (rest, _) = ws(rest)?;
