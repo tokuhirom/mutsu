@@ -31,9 +31,12 @@ pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
             &["declarator"]
         }
         ApplyInfix | Postfix => &["colonpairs"],
+        TraitIs | TraitHides | TraitDoes | TraitOf | TraitReturns | TraitWillBuild | TraitWill
+        | TraitHandles | TraitTrusts => &["IMPL-TRAIT-NAME"],
+        StatementIf | StatementWith | StatementElsif | StatementOrwith => &["IMPL-QAST-TYPE"],
         ApplyPostfix => &["on-topic"],
         Assignment => &["operator"],
-        Parameter => &["value"],
+        Parameter => &["value", "outer-type"],
         QuotedString => &["has-variables"],
         TypeSubset => &["of"],
         VarDeclarationTerm => &["type"],
@@ -157,6 +160,23 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
             })))
         }
         (Assignment, "operator") => Some(Value::str_from("=")),
+        // The trait keyword (`&trait_mod:<is>`), which a deparser writes.
+        (TraitIs, "IMPL-TRAIT-NAME") => Some(Value::str_from("is")),
+        (TraitHides, "IMPL-TRAIT-NAME") => Some(Value::str_from("hides")),
+        (TraitDoes, "IMPL-TRAIT-NAME") => Some(Value::str_from("does")),
+        (TraitOf, "IMPL-TRAIT-NAME") => Some(Value::str_from("of")),
+        (TraitReturns, "IMPL-TRAIT-NAME") => Some(Value::str_from("returns")),
+        (TraitWillBuild | TraitWill, "IMPL-TRAIT-NAME") => Some(Value::str_from("will")),
+        (TraitHandles, "IMPL-TRAIT-NAME") => Some(Value::str_from("handles")),
+        (TraitTrusts, "IMPL-TRAIT-NAME") => Some(Value::str_from("trusts")),
+        // The keyword of a conditional's first branch.
+        (StatementIf | StatementElsif, "IMPL-QAST-TYPE") => Some(Value::str_from("if")),
+        (StatementWith | StatementOrwith, "IMPL-QAST-TYPE") => Some(Value::str_from("with")),
+        // Whether the type came from an outer list declaration
+        // (`my Int ($a, $b)`); an nqp integer.
+        (Parameter, "outer-type") => Some(Value::int(i64::from(
+            field(node, "outer-type").is_some_and(|v| v.truthy()),
+        ))),
         // A literal-value parameter (`sub f(1)`); any other answers `Mu`.
         (Parameter, "value") => Some(
             field(node, "value")

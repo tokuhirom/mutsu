@@ -813,6 +813,26 @@ impl Interpreter {
         } else {
             constraint
         };
+        // A RakuAST node or type object ranks by rakudo's measured hierarchy
+        // (`src/rakuast/hierarchy.tsv`), answered without allocating: this
+        // runs for every candidate of every call into a multi dispatching
+        // on node types (rakudo's own RakuAST::Deparse has 267).
+        if base.starts_with("RakuAST::") || base == "Any" || base == "Mu" {
+            let distance = match value.view() {
+                ValueView::RakuAst(node) => {
+                    crate::rakuast::type_object_distance(node.class.printed_name(), base)
+                }
+                ValueView::Package(name) => name.with_str(|n| {
+                    n.starts_with("RakuAST::")
+                        .then(|| crate::rakuast::type_object_distance(n, base))
+                        .flatten()
+                }),
+                _ => None,
+            };
+            if let Some(distance) = distance {
+                return distance.unwrap_or(UNRELATED_DISTANCE);
+            }
+        }
         // `base` may be an env-bound alias for a fully-qualified type name —
         // an imported short name (`use Mod; ...` importing `Mod::Foo` and
         // binding it lexically as bare `Foo`) or a `::T` type capture.
@@ -944,27 +964,6 @@ impl Interpreter {
                 .type_hierarchy_distance(constraint, inner.as_ref())
                 .saturating_add(1)
                 .min(UNRELATED_DISTANCE);
-        }
-        // A RakuAST node or type object ranks by rakudo's measured hierarchy
-        // (`src/rakuast/hierarchy.tsv`): its MRO position for a class, and
-        // after its last RakuAST class (before `Any`) for a role it does.
-        let rakuast_class = match value.view() {
-            ValueView::RakuAst(node) => Some(node.class.printed_name().to_string()),
-            ValueView::Package(name) if name.resolve().starts_with("RakuAST::") => {
-                Some(name.resolve())
-            }
-            _ => None,
-        };
-        if let Some(class) = rakuast_class
-            && let Some(mro) = crate::rakuast::type_object_mro(&class)
-        {
-            if let Some(i) = mro.iter().position(|ancestor| ancestor == base) {
-                return i;
-            }
-            if base.starts_with("RakuAST::") && crate::rakuast::type_object_does(&class, base) {
-                return mro.len().saturating_sub(2);
-            }
-            return UNRELATED_DISTANCE;
         }
         if base == value_type && !matches!(value.view(), ValueView::Instance { .. }) {
             return 0;
