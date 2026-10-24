@@ -324,7 +324,12 @@ fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResul
             let mut items = Vec::with_capacity(sinks.len() + 1);
             items.push(Expr::Var(name));
             items.extend(sinks);
-            stmts.push(Stmt::Expr(Expr::ArrayLiteral(items)));
+            let list = Expr::ArrayLiteral(items);
+            if let [_] = stmts.as_slice() {
+                let head = stmts.pop().expect("one statement");
+                return Ok((r_inner, super::word_logical_split::tail_stmt(head, list)));
+            }
+            stmts.push(Stmt::Expr(list));
         }
         None => stmts.extend(sinks.into_iter().map(Stmt::Expr)),
     }
