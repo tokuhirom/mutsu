@@ -321,7 +321,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             let node = convert_expr(e)?;
             if matches!(
                 node.class,
-                RakuAstClass::StatementRequire | RakuAstClass::StatementExpression
+                RakuAstClass::StatementRequire
+                    | RakuAstClass::StatementExpression
+                    | RakuAstClass::StatementEmpty
             ) {
                 Ok(Some(node))
             } else {
@@ -3516,6 +3518,11 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 delimiter,
                 interpolates,
             } => super::word_quote::convert(*val, text, *delimiter, *interpolates),
+            Spelling::EmptyStatement => Ok(RakuAstNode {
+                origin: Default::default(),
+                class: RakuAstClass::StatementEmpty,
+                fields: Vec::new(),
+            }),
             Spelling::PrefixCall => {
                 let Expr::Unary { op, expr, .. } = &spelled.expr else {
                     return Err(unsupported("prefix call spelling without its prefix"));

@@ -85,6 +85,9 @@ pub(crate) enum Spelling {
     /// as an infix of its own (`Infix("∉")`). The parser evaluates it as the
     /// junction-threading negation of the positive relation.
     NegatedSetGlyph(Box<str>),
+    /// A `;` that terminates no statement (`1;; 2`): rakudo's
+    /// `Statement::Empty`, which the statement list otherwise drops.
+    EmptyStatement,
     /// `a ^... b`, `a ^…^ b`: a left-exclusive sequence, which rakudo keeps as
     /// one list infix with the written spelling. The parser evaluates it as
     /// the plain sequence followed by `.skip(1)`.

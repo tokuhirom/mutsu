@@ -168,6 +168,24 @@ pub(super) fn empty_statements(run_start: &str, resume: &str, open_terminator: b
     }
 }
 
+/// The `;` of the run `run_start` .. `resume` that terminate no statement
+/// (the rule of [`empty_statements`], without the numbering), each as the
+/// source text from it onwards.
+// Cost: O(n), n = length of the separator run.
+pub(super) fn empty_statement_tails<'a>(
+    run_start: &'a str,
+    resume: &str,
+    open_terminator: bool,
+) -> Vec<&'a str> {
+    let Some(run) = text_before(run_start, resume) else {
+        return Vec::new();
+    };
+    run.match_indices(';')
+        .skip(usize::from(open_terminator))
+        .map(|(at, _)| &run_start[at..])
+        .collect()
+}
+
 /// Apply a `use trace` / `no trace` statement to the lexical scope. Done by
 /// the statement-list loop after the statement parsed, not inside the `use`
 /// parser: the statement parser is memoized, and a replayed `use trace` would
