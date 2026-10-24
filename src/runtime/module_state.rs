@@ -308,6 +308,11 @@ pub(crate) struct ModuleState {
     pub(crate) exported_subs: std::sync::Arc<ExportTagTable>,
     /// Exported variable/constant symbols by package and export tag.
     pub(crate) exported_vars: std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
+    /// An exported variable/constant a module re-exports from another module
+    /// (`UNIT::EXPORT::{$tag} := Other::EXPORT::{$tag}`): `(module, name)` ->
+    /// the module that owns the value.
+    pub(crate) reexported_var_owners:
+        std::sync::Arc<HashMap<(String, String), String>>,
     /// Trait-modified routine values (e.g. a sub with a custom `is` trait that
     /// mixed a role into it) keyed by package and routine name. Captured at
     /// `is export` registration time so `import` can restore the `&name` env
@@ -692,6 +697,7 @@ impl ModuleState {
             exported_sub_values: Default::default(),
             exported_token_defs: Default::default(),
             exported_vars: Default::default(),
+            reexported_var_owners: Default::default(),
             unit_module_exported_subs: Default::default(),
             unit_module_loading_stack: Vec::new(),
             import_target_package: None,
@@ -795,6 +801,7 @@ impl ModuleState {
             module_declared_unit_packages: self.module_declared_unit_packages.clone(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
+            reexported_var_owners: self.reexported_var_owners.clone(),
             exported_sub_values: self.exported_sub_values.clone(),
             exported_token_defs: self.exported_token_defs.clone(),
             unit_module_exported_subs: self.unit_module_exported_subs.clone(),

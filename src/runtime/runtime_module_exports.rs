@@ -676,6 +676,13 @@ impl Interpreter {
     /// is persisted in that class's package-lexical store when its body exits.
     /// Keep both import-time and EXPORT-stash reads on the same lookup path.
     pub(crate) fn exported_var_value(&self, module: &str, name: &str) -> Option<Value> {
+        if let Some(owner) = self
+            .module
+            .reexported_var_owners
+            .get(&(module.to_string(), name.to_string()))
+        {
+            return self.exported_var_value(owner, name);
+        }
         // A sigil-less constant's export name is its term key (#9962): its
         // package store is keyed by the spelling, its lexical copies by the key.
         if let Some(spelled) = crate::runtime::term_names::term_spelling(name) {
@@ -1334,7 +1341,6 @@ impl Interpreter {
                 self.env.insert(qualified_key, val);
             }
         }
-
         for (name, symbol_tags) in vars {
             let is_mandatory = symbol_tags.contains("MANDATORY");
             if !import_all

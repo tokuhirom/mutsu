@@ -36,16 +36,14 @@ impl Interpreter {
         if dst_module == src_module {
             return;
         }
-        let wanted = |tags: &rustc_hash::FxHashSet<String>| {
-            src_tag == "ALL" || tags.contains(src_tag) || tags.contains("ALL")
-        };
+        let tagged = |tag: &String| src_tag == "ALL" || tag == src_tag || tag == "ALL";
         let sub_names: Vec<String> = self
             .module
             .exported_subs
             .get(src_module)
             .map(|subs| {
                 subs.iter()
-                    .filter(|(_, tags)| wanted(tags))
+                    .filter(|(_, tags)| tags.iter().any(tagged))
                     .map(|(name, _)| name.clone())
                     .collect()
             })
@@ -59,30 +57,17 @@ impl Interpreter {
             .get(src_module)
             .map(|vars| {
                 vars.iter()
-                    .filter(|(_, tags)| {
-                        src_tag == "ALL" || tags.contains(src_tag) || tags.contains("ALL")
-                    })
+                    .filter(|(_, tags)| tags.iter().any(tagged))
                     .map(|(name, _)| name.clone())
                     .collect()
             })
             .unwrap_or_default();
         for name in var_names {
-            let Some(value) = self.exported_var_value(src_module, &name) else {
-                continue;
-            };
-            let key = match name.chars().next() {
-                Some(sigil @ ('$' | '@' | '%' | '&')) => {
-                    format!("{sigil}{dst_module}::{}", &name[1..])
-                }
-                _ => crate::qualified::qualified_text(
-                    &dst_module,
-                    crate::runtime::term_names::term_spelling(&name).unwrap_or(&name),
-                )
-                    .as_str()
-                    .to_string(),
-            };
-            self.set_our_var(key.clone(), value.clone());
-            self.env_mut().insert(key, value);
+            // The value stays with its owner: a copy under the loading module's
+            // own qualified name is a package symbol an importer's scope would
+            // then have to tell apart from the owner's.
+            crate::runtime::cow_table_mut(&mut self.module.reexported_var_owners)
+                .insert((dst_module.clone(), name.clone()), src_module.to_string());
             self.register_exported_var(dst_module.clone(), name, vec![dst_tag.to_string()]);
         }
     }

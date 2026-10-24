@@ -1437,6 +1437,15 @@ impl Interpreter {
             // names explicitly recorded by `import_module` are aliases whose
             // visibility must be undone at the end of this compunit.
             for (name, _, _) in imported.iter().rev() {
+                // A name the module's own top-level `use` also binds in its
+                // mainline pad (`unit_lex_names`) is taken over from `env` by
+                // the `unit_lexicals` extraction below, which restores the
+                // loader's value itself; a dynamic import of the same name
+                // (a re-exporting module's `UNIT::EXPORT` stash) must not
+                // clear it first, or the module's routines read `Nil`.
+                if unit_lex_names.contains(name) {
+                    continue;
+                }
                 let key = crate::symbol::Symbol::intern(name);
                 if let Some(value) = saved_plain_env.get(&key) {
                     self.env.insert_sym(key, value.clone());
