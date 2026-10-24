@@ -486,7 +486,10 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 Some(assign) => Some(assign),
                 None => match method_call_assign(node)? {
                     Some(assign) => Some(assign),
-                    None => call_assign(node)?,
+                    None => match call_assign(node)? {
+                        Some(assign) => Some(assign),
+                        None => expression_assign(node)?,
+                    },
                 },
             };
             match assign {
@@ -2625,6 +2628,16 @@ fn lower_assign_parts(node: &RakuAstNode) -> Result<(String, Expr), RuntimeError
     if let Some(key) = term_target_key(left) {
         return Ok((key, lower_expr(named_child(node, "right")?)?));
     }
+    // `$^x = v`, `@_ = v`: a placeholder parameter, named as the parser names
+    // its variable.
+    if left
+        .class
+        .printed_name()
+        .starts_with("RakuAST::VarDeclaration::Placeholder::")
+        && let Some(name) = super::assign_lower::variable_name(&lower_expr(left)?)
+    {
+        return Ok((name, lower_expr(named_child(node, "right")?)?));
+    }
     let raw = variable_spelling(left).map_err(|_| unsupported(node))?;
     let name = match raw.strip_prefix('$') {
         Some(bare) => bare.to_string(),
@@ -2750,7 +2763,9 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
             return Ok(Some(crate::parser::literal_assign_ro_expr(literal, value)));
         }
     }
-    let is_call = left.class == RakuAstClass::CallName
+    // `nqp::atposref_i(@i, 0) = 5` writes through the op's result, as a
+    // call does.
+    let is_call = matches!(left.class, RakuAstClass::CallName | RakuAstClass::Nqp)
         || (left.class == RakuAstClass::ApplyPostfix
             && named_child(left, "postfix").is_ok_and(|p| p.class == RakuAstClass::CallTerm));
     if !is_call {
@@ -2762,6 +2777,47 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
     }
     let value = lower_expr(named_child(node, "right")?)?;
     Ok(Some(crate::parser::assign_to_target_expr(target, value)))
+}
+
+/// `TARGET = SOURCE` over any other target the assignment family's lowering
+/// takes (`rakuast::assign_lower`), such as an adverbed subscript
+/// (`@a[0]:v = 3`) or a declared term (`constant term:<$box> = …; $box = 3`).
+/// A variable target stays with [`lower_assign`], which knows the anonymous
+/// and attribute spellings.
+// Cost: O(n), n = size of the target and source.
+fn expression_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+    let left = named_child(node, "left")?;
+    if matches!(
+        left.class,
+        RakuAstClass::VarLexical
+            | RakuAstClass::VarDynamic
+            | RakuAstClass::VarAttribute
+            | RakuAstClass::VarPackage
+    ) || super::anon_state::is_anonymous(left)
+    {
+        return Ok(None);
+    }
+    // A sigilless variable (`my \v`, `-> \x`) assigns into what it is bound
+    // to ([`lower_assign`]); only a term spelled otherwise lowers here.
+    if left.class == RakuAstClass::TermName
+        && matches!(
+            name_parts::name_shape(named_child_or_positional(left)?),
+            Some(NameShape::Identifier(name))
+                if name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+        )
+    {
+        return Ok(None);
+    }
+    let target = lower_expr(left)?;
+    if matches!(target, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_))
+        || !super::assign_lower::is_expression_target(&target)
+    {
+        return Ok(None);
+    }
+    let source = lower_expr(named_child(node, "right")?)?;
+    Ok(Some(super::assign_lower::lower_expression(
+        crate::ast::parsed::Assign { target, source },
+    )))
 }
 
 fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
@@ -4879,6 +4935,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 return Ok(assign);
             }
             if let Some(assign) = call_assign(node)? {
+                return Ok(assign);
+            }
+            if let Some(assign) = expression_assign(node)? {
                 return Ok(assign);
             }
             let (name, expr) = lower_assign_parts(node)?;

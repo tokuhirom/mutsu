@@ -141,6 +141,29 @@ pub(crate) enum CompoundAssignOp {
 }
 
 mod assign_stmt;
+
+/// `TARGET = SOURCE` in expression position: kept in its RakuAST shape by a
+/// `.AST` parse, lowered at once otherwise (ADR-10723 Stage 2, #14948).
+// Cost: O(n), n = size of the target and source (lowering only).
+pub(crate) fn written_assignment(target: Expr, source: Expr) -> Expr {
+    let node = crate::ast::parsed::Assign { target, source };
+    if crate::ast::spelled::keeping() {
+        return Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(node)));
+    }
+    crate::rakuast::lower_expression_assign(node)
+}
+
+/// `TARGET = SOURCE;` written as a statement, the same way.
+// Cost: O(n), n = size of the target and source (lowering only).
+pub(crate) fn written_assignment_stmt(target: Expr, source: Expr) -> Stmt {
+    let node = crate::ast::parsed::Assign { target, source };
+    if crate::ast::spelled::keeping() {
+        return Stmt::Expr(Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(
+            node,
+        ))));
+    }
+    crate::rakuast::lower_statement_assign(node)
+}
 mod bracket;
 mod comma;
 mod compound_expr;

@@ -307,6 +307,8 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         return parsed;
     }
     if let Ok((expr_rest, expr)) = expression(rest) {
+        // The forms below read the assignment's executable shape.
+        let expr = crate::parser::lowered_assignment(expr);
         // temp on a *multi-level* indexed lvalue: `temp $s[1]<k>[1] = 23`.
         // `expression` parses the whole `lvalue = value` into a nested
         // `IndexAssign` (its `target` is itself an `Index`). The single-level

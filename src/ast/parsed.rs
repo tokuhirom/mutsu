@@ -162,6 +162,20 @@ pub(crate) enum SigillessForm {
     CallAssign,
 }
 
+/// An expression-level construct kept in its RakuAST shape.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum ParsedExpr {
+    /// `TARGET = SOURCE` (`ApplyInfix` over `Assignment`).
+    Assign(Assign),
+}
+
+/// An assignment as written: the target with its parentheses, and the source.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Assign {
+    pub(crate) target: Expr,
+    pub(crate) source: Expr,
+}
+
 /// Where a block was written: the block (from `->` when pointy), its braces and
 /// its statements. See [`ParsedBlock`].
 #[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]

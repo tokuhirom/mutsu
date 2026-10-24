@@ -11,7 +11,7 @@ use super::convert::{
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::parsed::{
     BlockParams, BlockSpans, ClauseKind, Conditional, ConditionalKind, LoopKind, LoopStmt,
-    Modified, ModifierKind, ParsedBlock, ParsedStmt,
+    Modified, ModifierKind, ParsedBlock, ParsedExpr, ParsedStmt,
 };
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -111,6 +111,68 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
             }
             node
         }
+    })
+}
+
+/// The RakuAST node of an expression the parser built in its RakuAST shape.
+/// An assignment is an `ApplyInfix` over `Assignment`; whether it is an item
+/// assignment is decided over the whole tree (`assignment_item`). Rakudo
+/// folds an assignment to a positional or a literal hash subscript into the
+/// subscript's `assignee` (`@a[0] = 1`, `%h<k> = 1`; measured on 2026.09).
+// Cost: O(n), n = size of the expression.
+pub(super) fn parsed_expr_node(node: &ParsedExpr) -> Result<RakuAstNode, RuntimeError> {
+    match node {
+        ParsedExpr::Assign(a) => match &a.target {
+            crate::ast::Expr::Index {
+                target,
+                index,
+                is_positional: true,
+                ..
+            } => super::convert::subscript_node(target, index, true, Some(&a.source), Vec::new()),
+            crate::ast::Expr::Index {
+                target,
+                index,
+                is_positional: false,
+                spelling: crate::ast::IndexSpelling::Angle,
+                ..
+            } if super::convert::angle_key_text(index).is_some() => {
+                super::convert::angle_subscript_node(target, index, Some(&a.source), Vec::new())
+            }
+            // `@a[|| @i] = 7`: one (spread) dimension folds the same way.
+            crate::ast::Expr::MultiDimIndex {
+                target,
+                dimensions,
+                is_positional,
+            } if dimensions.len() == 1 => super::convert::subscript_dims_node(
+                target,
+                &super::convert::splat_dimensions(dimensions),
+                *is_positional,
+                Some(&a.source),
+                Vec::new(),
+            ),
+            _ => assignment_node(a),
+        },
+    }
+}
+
+/// `TARGET = SOURCE` as an `ApplyInfix` over a plain `Assignment`.
+// Cost: O(n), n = size of the target and source.
+fn assignment_node(a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, RuntimeError> {
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::ApplyInfix,
+        fields: vec![
+            node_field(Some("left"), convert_expr(&a.target)?),
+            node_field(
+                Some("infix"),
+                RakuAstNode {
+                    origin: Default::default(),
+                    class: RakuAstClass::Assignment,
+                    fields: Vec::new(),
+                },
+            ),
+            node_field(Some("right"), convert_expr(&a.source)?),
+        ],
     })
 }
 

@@ -2961,6 +2961,9 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         return super::react::convert_supply(body);
     }
     match expr {
+        // An expression the parser built in its RakuAST shape (ADR-10723
+        // Stage 2): rendered, not reconstructed.
+        Expr::Ast(node) => super::parsed_view::parsed_expr_node(node),
         // `$<name>`: the named capture of the last match.
         Expr::CaptureVar(name) => super::match_vars::convert(name),
         // `<a b  c>`: rakudo keeps the raw text of a word list, whitespace

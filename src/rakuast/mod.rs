@@ -7,6 +7,7 @@
 
 mod adverb_origins;
 mod anon_state;
+mod assign_lower;
 mod assignment_item;
 mod atomic_op;
 mod attribute;
@@ -1391,6 +1392,27 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementImport,
     RakuAstClass::StatementLanguageVersion,
 ];
+
+/// Whether an assignment in expression position assigns to `target`
+/// (`assign_lower`, ADR-10723 Stage 2).
+// Cost: O(d), d = levels of parentheses around the target.
+pub(crate) fn is_expression_assign_target(target: &crate::ast::Expr) -> bool {
+    assign_lower::is_expression_target(target)
+}
+
+/// Lower an assignment in expression position: the one lowering of the
+/// assignment family, shared with `EVAL` of a hand-built node.
+// Cost: O(n), n = size of the target and source.
+pub(crate) fn lower_expression_assign(node: crate::ast::parsed::Assign) -> crate::ast::Expr {
+    assign_lower::lower_expression(node)
+}
+
+/// Lower an assignment written as a statement: the one lowering of the
+/// assignment family, shared with `EVAL` of a hand-built node.
+// Cost: O(n), n = size of the target and source.
+pub(crate) fn lower_statement_assign(node: crate::ast::parsed::Assign) -> crate::ast::Stmt {
+    assign_lower::lower_statement(node)
+}
 
 /// Lower a construct the parser built in its RakuAST shape (ADR-10723
 /// Stage 2): the one lowering of its family, shared with `EVAL` of a
