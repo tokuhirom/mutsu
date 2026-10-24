@@ -62,6 +62,30 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
     chop_n_row("Str"),
     chop_n_row("Cool"),
+    MethodRow {
+        owner: "Str",
+        name: "chomp",
+        arity: 1,
+        handler: Handler::Narrow(chomp_needle),
+        flags: RowFlags::ANY_ARGS,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Str",
+        name: "leading-whitespace",
+        arity: 0,
+        handler: Handler::Pure(leading_whitespace),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Str",
+        name: "trailing-whitespace",
+        arity: 0,
+        handler: Handler::Pure(trailing_whitespace),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
 ];
 
 /// `chop($n)`, which `Str` and `Cool` both declare.
@@ -176,6 +200,35 @@ pub(crate) fn trim_leading(target: &Value, _args: &[Value]) -> Result<Value, Run
 // Cost: O(n), n = chars of the invocant (result copied).
 pub(crate) fn trim_trailing(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(with_str(target, |s| Value::str_from(s.trim_end())))
+}
+
+/// `Str.chomp(Str $needle)`: drops `$needle` from the end when the string
+/// ends in it (rakudo's own `RakuAST::Deparse` dedents with it).
+// Cost: O(n + m), n = chars of the invocant, m = chars of the needle.
+fn chomp_needle(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let needle = args.first()?.to_string_value();
+    Some(Ok(with_str(target, |s| {
+        match s.strip_suffix(needle.as_str()) {
+            Some(rest) => Value::str_from(rest),
+            None => Value::str_from(s),
+        }
+    })))
+}
+
+/// `Str.leading-whitespace`: the whitespace `trim-leading` drops.
+// Cost: O(n), n = chars of the invocant (result copied).
+pub(crate) fn leading_whitespace(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(with_str(target, |s| {
+        Value::str_from(&s[..s.len() - s.trim_start().len()])
+    }))
+}
+
+/// `Str.trailing-whitespace`: the whitespace `trim-trailing` drops.
+// Cost: O(n), n = chars of the invocant (result copied).
+pub(crate) fn trailing_whitespace(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(with_str(target, |s| {
+        Value::str_from(&s[s.trim_end().len()..])
+    }))
 }
 
 /// `Str.chomp`: drops one trailing line ending.
