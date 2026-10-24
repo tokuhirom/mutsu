@@ -1011,9 +1011,18 @@ impl Interpreter {
             // the composer stamped on, a closure the method hands out (Tinky's
             // Proxy `STORE`) resolved the role's module-internal names against
             // the composer's package chain and got plain strings.
+            // A class declared INSIDE the role's body is the exception: its
+            // methods' `lexical_package` is the enclosing role too, but their
+            // owner is the nested class (`R::Cfg`), whose own file-scoped subs
+            // the closure must see (Pakku::Command::Config, mutsu#14870).
             if f.is_method
                 && let Some(role) = f.lexical_package
                 && self.registry().roles.contains_key(role.as_str())
+                && !self
+                    .types
+                    .method_class_stack
+                    .last()
+                    .is_some_and(|owner| crate::qualified::package_ancestors(owner.name).any(|p| p == role && p != owner.name))
             {
                 return role;
             }
