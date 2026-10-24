@@ -193,6 +193,17 @@ pub(crate) fn seed_native_subclass_payloads(
             }
         }
     }
+    // An `is CompUnit::DependencySpecification` subclass carries the native
+    // specification its named arguments describe; the table's rows answer on it
+    // (`native_base::redirect`).
+    if class_mro
+        .iter()
+        .any(|name| name == "CompUnit::DependencySpecification")
+        && !attrs.contains_key(crate::builtins::native_base::DEPSPEC_PAYLOAD)
+        && let Ok(payload) = Interpreter::build_compunit_dependencyspecification(args)
+    {
+        attrs.insert(crate::builtins::native_base::DEPSPEC_PAYLOAD, payload);
+    }
     // An `is IterationBuffer` subclass keeps its elements in a reserved array
     // attribute, which nqp code (`nqp::push(self, ...)`) writes into from the
     // first statement of a method. `nqp::create` seeds it (`create_instance`),

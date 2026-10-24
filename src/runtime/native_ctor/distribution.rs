@@ -77,11 +77,20 @@ impl Interpreter {
         _c: &CtorCall<'_>,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        Self::build_compunit_dependencyspecification(&args)
+    }
+
+    /// The `CompUnit::DependencySpecification` the constructor arguments name;
+    /// also the payload a user subclass carries (`seed_native_subclass_payloads`).
+    // Cost: O(a), a = constructor arguments.
+    pub(crate) fn build_compunit_dependencyspecification(
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
             let mut short_name: Option<String> = None;
             let mut auth_matcher: Option<String> = None;
             let mut version_matcher: Option<String> = None;
             let mut api_matcher: Option<String> = None;
-            for arg in &args {
+            for arg in args {
                 if let ValueView::Pair(key, value) = arg.view() {
                     match key.as_str() {
                         "short-name" => {
