@@ -45,7 +45,45 @@ impl Interpreter {
     /// false/0; only the DECLARING class finds it via either). Rather than
     /// duplicating the whole per-level `Value::make_sub` construction twice,
     /// `classhow_find_method` calls this with `false` instead.
+    // Cost: O(1) for a repeated lookup on a class (one hash probe); the first
+    // lookup per (class, method) after a registry change is `classhow_lookup_uncached`.
     fn classhow_lookup_impl(
+        &mut self,
+        invocant: &Value,
+        method_name: &str,
+        include_ancestor_submethods: bool,
+    ) -> Option<Value> {
+        // `$c.^find_method("foo")` hands back the same Method object every
+        // time in rakudo (`===`), and building one (attribute map, Signature,
+        // callable) costs ~34k Ir (#14853). A class receiver's answer is a
+        // function of (class, method, flag) and the registry alone, so it is
+        // memoized under the method generation every `.wrap`, `.^add_method`,
+        // `augment` and role composition bumps. A mixin or a plain value
+        // derives its owner from the value, so it is not memoized.
+        let class_sym = match invocant.view() {
+            ValueView::Package(name) => name,
+            ValueView::Instance { class_name, .. } => class_name,
+            _ => return self.classhow_lookup_uncached(invocant, method_name, include_ancestor_submethods),
+        };
+        self.refresh_method_caches_for_generation();
+        let key = (
+            class_sym,
+            Symbol::intern(method_name),
+            include_ancestor_submethods,
+        );
+        if let Some(hit) = self.caches.classhow_lookup_cache.get(&key) {
+            return hit.clone();
+        }
+        let found = self.classhow_lookup_uncached(invocant, method_name, include_ancestor_submethods);
+        // The lookup may itself register something (a punned role's class);
+        // only an answer computed at the current generation is stored.
+        if self.registry().method_generation == self.caches.method_cache_generation {
+            self.caches.classhow_lookup_cache.insert(key, found.clone());
+        }
+        found
+    }
+
+    fn classhow_lookup_uncached(
         &mut self,
         invocant: &Value,
         method_name: &str,

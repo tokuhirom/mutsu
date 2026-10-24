@@ -350,6 +350,11 @@ pub(crate) struct ResolutionCaches {
     /// Structural (registry-shape) only, so it is sound to key on `(class, method)`
     /// and is cleared with the other method caches on any registry change.
     pub(crate) dispatch_multi_candidate: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// `.^lookup` / `.^find_method` answers for a class receiver, keyed
+    /// `(class, method, include_ancestor_submethods)`, so repeated lookups of
+    /// one method return the same Method object (`===`) without rebuilding it
+    /// (#14853). Cleared with the other method caches on a generation change.
+    pub(crate) classhow_lookup_cache: rustc_hash::FxHashMap<(Symbol, Symbol, bool), Option<Value>>,
     /// Memoized `(class, method) -> can this name's deferral frame be built
     /// after the call has started` (see `method_dispatch_lazy`). Structural,
     /// cleared with `dispatch_multi_candidate`.
