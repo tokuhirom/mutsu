@@ -85,6 +85,16 @@ pub(super) fn convert(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> 
     Some(convert_temporized(&temporized))
 }
 
+/// `temp my $x`: the declaration under a `temp` prefix.
+// Cost: O(n), n = size of the declaration.
+pub(super) fn convert_declaration(decl: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+    convert_temporized(&Temporized {
+        is_temp: true,
+        target: Target::Declaration(Box::new(decl.clone())),
+        assigned: Assigned::No,
+    })
+}
+
 /// `temp $obj.method = value` / `temp $.attribute OP= value` as the written
 /// assignment around a `temp` prefix. The parser's statement stores the
 /// already-expanded writeback value for the compiler; its identity marker

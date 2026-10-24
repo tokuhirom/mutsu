@@ -80,6 +80,9 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
                 .ok_or_else(|| super::convert::unsupported("a declaration with a header"))?;
             statement_expression(super::package_header::apply(&expression, header)?)
         }
+        ParsedStmt::TempDecl(decl) => {
+            statement_expression(super::temporize::convert_declaration(decl)?)
+        }
         ParsedStmt::SigillessDecl(d) => {
             let call_assign = match (&d.form, &d.expr) {
                 (

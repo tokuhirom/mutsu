@@ -70,6 +70,10 @@ pub(crate) enum ParsedStmt {
     /// `my \x .= new`, as written. `rakuast::lower` adds the bookkeeping the
     /// compiler needs (`parser::build_sigilless_bind_stmt`).
     SigillessDecl(Box<SigillessSource>),
+    /// `temp my $x`: the declaration (a `Stmt::VarDecl`) under a `temp` prefix.
+    /// `rakuast::lower` follows it with the save of the fresh variable
+    /// (`ast::temporize::save`).
+    TempDecl(Box<Stmt>),
     /// A package-like declaration (`class`, `grammar`, `module`, `package`,
     /// `role`) with `:ver<..>` / `:auth<..>` adverbs on its name or an
     /// `is export`: the declaration as written and its header. `rakuast::lower`
@@ -379,7 +383,7 @@ impl ParsedStmt {
     pub(crate) fn inner_stmt(&self) -> Option<&Stmt> {
         match self {
             ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
-            ParsedStmt::PackageHeader { decl, .. } => Some(decl),
+            ParsedStmt::PackageHeader { decl, .. } | ParsedStmt::TempDecl(decl) => Some(decl),
             _ => None,
         }
     }
@@ -410,7 +414,7 @@ impl ParsedStmt {
     pub(crate) fn inner_stmt_mut(&mut self) -> Option<&mut Stmt> {
         match self {
             ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
-            ParsedStmt::PackageHeader { decl, .. } => Some(decl),
+            ParsedStmt::PackageHeader { decl, .. } | ParsedStmt::TempDecl(decl) => Some(decl),
             _ => None,
         }
     }
@@ -427,7 +431,9 @@ impl ParsedStmt {
             ParsedStmt::When { condition, .. } => vec![condition],
             ParsedStmt::WhileLoop(w) => vec![&w.condition],
             ParsedStmt::Loop(l) => l.condition.iter().chain(l.step.iter()).collect(),
-            ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => Vec::new(),
+            ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) | ParsedStmt::TempDecl(_) => {
+                Vec::new()
+            }
             ParsedStmt::DoesDecl { role, init, .. } => std::iter::once(role).chain(init).collect(),
             ParsedStmt::WillDecl { .. } => Vec::new(),
             ParsedStmt::DeclTail { tail, .. } => vec![tail],
@@ -461,6 +467,7 @@ impl ParsedStmt {
             | ParsedStmt::DeclTail { .. }
             | ParsedStmt::SigillessDecl(_)
             | ParsedStmt::PackageHeader { .. }
+            | ParsedStmt::TempDecl(_)
             | ParsedStmt::Modified(_) => Vec::new(),
         }
     }

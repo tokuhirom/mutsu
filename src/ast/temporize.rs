@@ -3,9 +3,10 @@
 //! The parser (`parser::stmt::simple_expr_stmt::let_temp`) turns the prefix
 //! into a [`Stmt::Let`] that saves the variable (or one element of it) and,
 //! when an assignment follows, assigns inside the same node. A compound
-//! assignment (`temp $x ~= "a"`) and a declaration (`temp my $x = 1`) cannot be
-//! spelled in one `Stmt::Let`, so they are a [`Stmt::SyntheticBlock`] of the
-//! save and the ordinary statement.
+//! assignment (`temp $x ~= "a"`) cannot be spelled in one `Stmt::Let`, so it is
+//! a [`Stmt::SyntheticBlock`] of the save and the ordinary statement. A
+//! declaration (`temp my $x`) is kept as written by the parser
+//! (`ParsedStmt::TempDecl`) and lowered to the declaration plus its save.
 //!
 //! Rakudo has none of that: `temp LVALUE` is an `ApplyPrefix` and the
 //! assignment is the `ApplyInfix` around it. [`recognize`] reads the parser's
@@ -18,7 +19,7 @@ use super::{Expr, Stmt};
 pub(crate) enum Target {
     /// A variable, by its environment key (`x`, `@a`, `%h`, `*CWD`, `!attr`).
     Variable(String),
-    /// A declaration: `temp my $x = 1`.
+    /// A declaration: `temp my $x` (kept as `ParsedStmt::TempDecl`).
     Declaration(Box<Stmt>),
     /// An element of a variable or a deeper subscript, as the lvalue
     /// expression (`@a[1]`, `%h<k>`, `$s[1]<k>`).
@@ -193,22 +194,6 @@ pub(crate) fn recognize(stmt: &Stmt) -> Option<Temporized> {
                     assigned: Assigned::Compound(assignment.clone()),
                 })
             }
-            // `temp my $x = 1`: the declaration, then a bare `temp` of it.
-            [
-                decl @ Stmt::VarDecl { name, .. },
-                Stmt::Let {
-                    name: saved,
-                    index: None,
-                    value: None,
-                    is_temp: true,
-                    undefine_first: false,
-                    nested_lvalue: false,
-                },
-            ] if name == saved => Some(Temporized {
-                is_temp: true,
-                target: Target::Declaration(Box::new(decl.clone())),
-                assigned: Assigned::No,
-            }),
             _ => None,
         },
         _ => None,

@@ -70,6 +70,14 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
         ParsedStmt::PackageHeader { decl, name, header } => {
             Ok(crate::ast::package_header::wrap(*decl, &name, header))
         }
+        ParsedStmt::TempDecl(decl) => {
+            let name = match decl.as_ref() {
+                Stmt::VarDecl { name, .. } => name.clone(),
+                _ => return Err(RuntimeError::new("temp declaration without a variable")),
+            };
+            let save = crate::ast::temporize::save(&name, None, None, true);
+            Ok(Stmt::SyntheticBlock(vec![*decl, save]))
+        }
         ParsedStmt::SigillessDecl(d) => {
             lower_sigilless(*d, crate::parser::is_user_declared_value_term)
         }

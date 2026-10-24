@@ -176,7 +176,8 @@ impl VisitMut for Ctx {
                     ParsedStmt::DoesDecl { .. } => crate::ast_visit::walk_parsed_mut(self, node),
                     ParsedStmt::DeclTail { .. }
                     | ParsedStmt::SigillessDecl(_)
-                    | ParsedStmt::PackageHeader { .. } => {
+                    | ParsedStmt::PackageHeader { .. }
+                    | ParsedStmt::TempDecl(_) => {
                         crate::ast_visit::walk_parsed_mut(self, node)
                     }
                     ParsedStmt::WillDecl { decl, phasers } => {
