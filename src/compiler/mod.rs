@@ -1125,6 +1125,7 @@ mod helpers_control_flow;
 mod helpers_do_expr;
 mod helpers_dynamic;
 mod helpers_method_body;
+pub(crate) use helpers_method_body::method_body_key;
 pub(crate) mod helpers_ops;
 mod helpers_phasers;
 mod helpers_placeholder_binds;
