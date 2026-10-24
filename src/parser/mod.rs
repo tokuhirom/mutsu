@@ -44,8 +44,6 @@ pub(crate) use stmt::class::{
 pub(crate) use stmt::control::placeholder_loop_params;
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
 pub(crate) use stmt::decl::handle_specs_from_term;
-pub(crate) use stmt::modifier::for_modifier_loop_params;
-pub(crate) use stmt::modifier::rewrite_placeholder_block_modifier_stmt;
 pub(crate) use stmt::simple::supersede_marker;
 pub(crate) use stmt::simple::{
     CanonicalScans, ExportedVar, canonical_export_scans, scanned_exported_types,
@@ -509,7 +507,9 @@ pub(crate) fn parse_nested_block_fragment(
             language_version: stmt::simple::current_language_version(),
         });
     });
-    let result = parse_fragment(input);
+    // A `.AST` parse of the unit keeps the block's statements in their
+    // RakuAST shape too (ADR-10723 Stage 2): the conversion reads them.
+    let result = parse_fragment_keeping(input, crate::ast::spelled::keeping());
     // `parse_program` consumes the slot; clear it in case it bailed out first.
     INHERITED_SCOPES.with(|slot| slot.borrow_mut().take());
     if unit_offset.is_some() {
@@ -548,6 +548,15 @@ fn apply_inherited_scopes() {
 /// clears the warning buffer up front, an unguarded nested parse also *dropped*
 /// the enclosing unit's real warnings, so they are saved and restored here.
 pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    parse_fragment_keeping(input, false)
+}
+
+/// [`parse_fragment`], keeping the source spelling when `keep_spelling` is set
+/// (see [`parse_program_spelled`]).
+fn parse_fragment_keeping(
+    input: &str,
+    keep_spelling: bool,
+) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // See the matching call in `parse_program`.
     crate::opcode::note_dispatcher_mention(input);
     let saved_warnings = PARSE_WARNINGS.with(|w| std::mem::take(&mut *w.borrow_mut()));
@@ -565,7 +574,7 @@ pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>),
     // `use` then turned every later undeclared type name into a gobbled block.
     let type_index_was_incomplete = !stmt::simple::type_index_is_complete();
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(true));
-    let result = parse_program(input);
+    let result = parse_program_keeping(input, keep_spelling);
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(false));
     if type_index_was_incomplete {
         stmt::simple::note_type_index_incomplete();

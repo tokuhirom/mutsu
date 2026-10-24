@@ -12,7 +12,7 @@
 //! Anything that may have a side effect (calls, method calls, assignments,
 //! declarations, `say`/`print`, regex matches, ...) is never flagged.
 
-use crate::ast::parsed::ParsedStmt;
+use crate::ast::parsed::{ModifierKind, ParsedStmt};
 use crate::ast::{DoBlockOrigin, Expr, Stmt};
 use crate::ast_visit::{
     Visit, walk_expr, walk_stmt as walk_ast_stmt, walk_stmts as walk_ast_stmts,
@@ -181,6 +181,18 @@ fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
         Stmt::Ast(node) => match node.as_ref() {
             ParsedStmt::When { block, .. } | ParsedStmt::Default(block) => {
                 walk_stmts(sunk_prefix(&block.body), false, line)
+            }
+            // A modified statement is sunk, except under `when`, whose
+            // statement is the value it succeeds with. Only a loop or
+            // topicalizer modifier alone (`1 while 0`) suggests `Nil`.
+            ParsedStmt::Modified(m) => {
+                if !m
+                    .condition
+                    .as_ref()
+                    .is_some_and(|c| c.kind == ModifierKind::When)
+                {
+                    walk_stmt(&m.stmt, m.condition.is_none() && m.loop_.is_some(), line);
+                }
             }
             other if other.inner_stmt().is_some() => {
                 if let Some(stmt) = other.inner_stmt() {

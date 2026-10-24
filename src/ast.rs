@@ -3329,26 +3329,13 @@ impl Expr {
     /// statement is the content of a semilist, not an operand.
     // Cost: O(1).
     pub(crate) fn is_modified_statement(&self) -> bool {
-        let Expr::DoStmt(stmt) = self else {
-            return false;
-        };
-        match stmt.as_ref() {
-            Stmt::For {
-                is_statement_modifier: true,
-                ..
-            }
-            | Stmt::If {
-                is_statement_modifier: true,
-                ..
-            }
-            | Stmt::Given {
-                is_statement_modifier: true,
-                ..
-            } => true,
-            // `EXPR with TOPIC` is wrapped once more, to keep expression semantics.
-            Stmt::Expr(inner) => inner.is_modified_statement(),
-            _ => false,
-        }
+        matches!(
+            self,
+            Expr::DoStmt(stmt) if matches!(
+                stmt.as_ref(),
+                Stmt::Ast(node) if matches!(node.as_ref(), parsed::ParsedStmt::Modified(_))
+            )
+        )
     }
 }
 
