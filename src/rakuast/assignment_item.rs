@@ -10,7 +10,7 @@
 //! enclosing one's sigil alone.
 //!
 //! The converted tree holds those terms in source order, so the flag is
-//! derived by walking it the way the grammar read it: [`derive`] runs once
+//! derived by walking it the way the grammar read it: [`derive()`] runs once
 //! over a whole `.AST` tree. An `Assignment` inside a metaoperator (`X=`,
 //! `R=`, `»=«`) is always `:item` and is left as converted.
 
