@@ -136,6 +136,7 @@ pub(crate) const BUILTIN_INHERITABLE_TYPES: &[&str] = &[
     "Attribute",
     "CallFrame",
     "CompUnit",
+    "CompUnit::DependencySpecification",
     "CX::Return",
     "CX::Warn",
     "ComplexStr",
