@@ -69,6 +69,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         repository_for_spec,
         named: &["next-repo"]
     ),
+    row!("CompUnit::RepositoryRegistry", "register-name", 2, register_name),
     row!("CompUnit::RepositoryRegistry", "run-script", 1, run_script),
     row!("Encoding::Registry", "find", 1, encoding_find),
     row!("Encoding::Registry", "register", 1, encoding_register),
@@ -204,6 +205,15 @@ fn repository_for_spec(i: &mut Interpreter, _t: &Value, args: &[Value], _n: Name
         _ => args[0].to_string_value(),
     };
     Some(i.repo_registry_for_spec(&spec))
+}
+
+/// `CompUnit::RepositoryRegistry.register-name($name, $repo)`.
+// Cost: O(1) amortized.
+fn register_name(i: &mut Interpreter, _t: &Value, args: &[Value], _n: Named<'_>) -> Answer {
+    Some(Ok(i.repo_registry_register_name(
+        &args[0].to_string_value(),
+        args[1].clone(),
+    )))
 }
 
 /// `CompUnit::RepositoryRegistry.run-script($name)`: runs the named script of
