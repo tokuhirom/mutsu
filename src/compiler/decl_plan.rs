@@ -597,9 +597,10 @@ impl Compiler {
                 ..
             } = stmt
                 && let Some(package_name) = &package_name
-                && !body.iter().filter(|s| !s.is_marker()).all(|s| {
-                    matches!(s, Stmt::Expr(Expr::Whatever))
-                })
+                && !body
+                    .iter()
+                    .filter(|s| !s.is_marker())
+                    .all(|s| matches!(s, Stmt::Expr(Expr::Whatever)))
             {
                 self.compile_method_body(
                     package_name,
