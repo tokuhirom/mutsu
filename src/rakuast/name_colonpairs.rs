@@ -30,7 +30,11 @@ pub(super) fn apply(
     }) else {
         return Ok(());
     };
-    let Some(field) = decl.fields.iter_mut().find(|f| f.name == Some("desigilname")) else {
+    let Some(field) = decl
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("desigilname"))
+    else {
         return Ok(());
     };
     let RakuAstFieldValue::Node(name) = &field.value else {
@@ -111,7 +115,11 @@ pub(super) fn lower(name: &RakuAstNode) -> Option<Result<String, RuntimeError>> 
 /// rule canonicalizes back.
 // Cost: O(n), n = size of the pair.
 fn colonpair_source(pair: &RakuAstNode) -> Option<String> {
-    let key = || match pair.fields.iter().find(|f| f.name == Some("key") || f.name.is_none()) {
+    let key = || match pair
+        .fields
+        .iter()
+        .find(|f| f.name == Some("key") || f.name.is_none())
+    {
         Some(RakuAstField {
             value: RakuAstFieldValue::Node(k),
             ..
@@ -135,15 +143,106 @@ fn colonpair_source(pair: &RakuAstNode) -> Option<String> {
     }
 }
 
-/// The bracketed source of a colonpair's value: its words in `<…>` when it
-/// is a list of strings, the expression in `(…)` otherwise.
+/// The bracketed source of a colonpair's value, in a spelling the parser's
+/// name rule canonicalizes the way it does the original: a word quote keeps
+/// its brackets, a list of strings is a `[…]` of quoted items, anything else
+/// is its expression in `(…)`.
 // Cost: O(n), n = size of the value.
 fn value_source(value: &RakuAstNode) -> Option<String> {
-    let expr = super::lower::lower_expr(value).ok()?;
-    let text = crate::regex_tree::expression_source(&expr)?;
-    Some(format!("[{text}]"))
+    if let Some((processors, text)) = quoted_words(value) {
+        if text.contains(['<', '>', '\u{00AB}', '\u{00BB}']) {
+            return None;
+        }
+        return match processors {
+            QuoteWords::Words => Some(format!("<{text}>")),
+            QuoteWords::QuoteWords => Some(format!("\u{00AB}{text}\u{00BB}")),
+        };
+    }
+    let expr = super::lower::lower_expr(circumfix_content(value).unwrap_or(value)).ok()?;
+    let quoted = |s: &str| (!s.contains(['\'', '\\'])).then(|| format!("'{s}'"));
+    match &expr {
+        Expr::Literal(v) if v.as_str().is_some() => Some(format!("[{}]", quoted(v.as_str()?)?)),
+        Expr::ArrayLiteral(items) => {
+            let items = items
+                .iter()
+                .map(|item| match item {
+                    Expr::Literal(v) => v.as_str().and_then(quoted),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(format!("[{}]", items.join(", ")))
+        }
+        _ => Some(format!(
+            "({})",
+            crate::regex_tree::expression_source(&expr)?
+        )),
+    }
 }
 
 fn unsupported() -> RuntimeError {
     RuntimeError::new("RakuAST: a variable name whose colonpairs cannot be spelled".to_string())
+}
+
+/// A word quote's processor: `<…>` or `«…»`.
+enum QuoteWords {
+    Words,
+    QuoteWords,
+}
+
+/// The processor and the one text segment of a `QuotedString` that splits
+/// words (`<a b>`, `«a b»`), or `None` for any other node.
+// Cost: O(1).
+fn quoted_words(node: &RakuAstNode) -> Option<(QuoteWords, String)> {
+    if node.class != RakuAstClass::QuotedString {
+        return None;
+    }
+    let RakuAstFieldValue::List(processors) = &node
+        .fields
+        .iter()
+        .find(|f| f.name == Some("processors"))?
+        .value
+    else {
+        return None;
+    };
+    let kind = match processors.first()?.as_str()? {
+        "words" => QuoteWords::Words,
+        "quotewords" => QuoteWords::QuoteWords,
+        _ => return None,
+    };
+    if !processors[1..].iter().all(|p| p.as_str() == Some("val")) {
+        return None;
+    }
+    Some((kind, super::name_parts::quoted_text(node)?))
+}
+
+/// The one expression a `[…]` or `(…)` circumfix holds.
+// Cost: O(1).
+fn circumfix_content(node: &RakuAstNode) -> Option<&RakuAstNode> {
+    if !matches!(
+        node.class,
+        RakuAstClass::CircumfixArrayComposer | RakuAstClass::CircumfixParentheses
+    ) {
+        return None;
+    }
+    let semilist = only(node)?;
+    let statement = only(semilist)?;
+    (statement.class == RakuAstClass::StatementExpression).then_some(())?;
+    only(statement)
+}
+
+/// The node a node's one positional field holds.
+// Cost: O(1).
+fn only(node: &RakuAstNode) -> Option<&RakuAstNode> {
+    match node.fields.as_slice() {
+        [
+            RakuAstField {
+                value: RakuAstFieldValue::Node(v),
+                ..
+            },
+        ] => match v.view() {
+            ValueView::RakuAst(n) => Some(n),
+            _ => None,
+        },
+        _ => None,
+    }
 }

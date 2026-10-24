@@ -276,9 +276,8 @@ pub(crate) fn colonpair_source_expr(source: &str) -> Option<crate::ast::Expr> {
 // Cost: O(n), n = length of `written`.
 pub(crate) fn written_name_colonpairs(written: &str) -> Option<&str> {
     let bytes = written.as_bytes();
-    let at = (1..bytes.len()).find(|&i| {
-        bytes[i] == b':' && bytes.get(i + 1) != Some(&b':') && bytes[i - 1] != b':'
-    })?;
+    let at = (1..bytes.len())
+        .find(|&i| bytes[i] == b':' && bytes.get(i + 1) != Some(&b':') && bytes[i - 1] != b':')?;
     Some(&written[at..])
 }
 
@@ -287,7 +286,10 @@ pub(crate) fn written_name_colonpairs(written: &str) -> Option<&str> {
 /// the variable-name rule of the parser.
 // Cost: O(n), n = length of `source`.
 pub(crate) fn canonical_name_colonpairs(source: &str, stem: String) -> (&str, String) {
-    primary::var::parse_var_name_adverb_suffixes(source, stem)
+    match stmt::declared_name_colonpairs(source, stem.clone()) {
+        Ok(done) => done,
+        Err(_) => (source, stem),
+    }
 }
 
 /// The colonpairs of an extended name, parsed again from their source text
