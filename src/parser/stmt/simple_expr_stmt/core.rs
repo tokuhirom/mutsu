@@ -802,20 +802,17 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // (statement-level) comma expression.
     let item_form =
         matches!(expr, Expr::Contextualizer { .. }).then(|| expr.clone().contextualizer_call());
-    if let Expr::MethodCall {
-        target, name, args, ..
-    } = item_form.as_ref().unwrap_or(&expr)
+    if let Expr::MethodCall { name, args, .. } = item_form.as_ref().unwrap_or(&expr)
         && name == "item"
         && args.is_empty()
         && rest.starts_with('=')
         && !rest.starts_with("==")
         && !rest.starts_with("=>")
     {
-        let inner_target = (**target).clone();
         let r = &rest[1..];
         let (r, _) = ws(r)?;
         let (mut r, value) = expression(r)?;
-        let assign = crate::parser::expr::precedence::assign_to_target_expr(inner_target, value);
+        let assign = crate::parser::written_assignment(expr.clone(), value);
         let (r_ws, _) = ws(r)?;
         r = r_ws;
         let result = if r.starts_with(',') && !r.starts_with(",,") {

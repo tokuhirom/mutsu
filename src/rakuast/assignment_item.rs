@@ -80,6 +80,20 @@ fn expression(node: &mut RakuAstNode, sigil: &mut LeftSigil) {
             with_field(node, "then", nested);
             with_field(node, "else", |e| expression(e, sigil));
         }
+        // `$(…)`, `@(…)`, `%(…)`: the grammar reads the contextualizer as a
+        // variable of its sigil; what it holds is an expression of its own.
+        RakuAstClass::ContextualizerItem
+        | RakuAstClass::ContextualizerList
+        | RakuAstClass::ContextualizerHash => {
+            if *sigil == LeftSigil::Unset {
+                *sigil = if node.class == RakuAstClass::ContextualizerItem {
+                    LeftSigil::Scalar
+                } else {
+                    LeftSigil::Other
+                };
+            }
+            children(node);
+        }
         class if is_variable(class) => {
             if *sigil == LeftSigil::Unset {
                 *sigil = match variable_sigil(node) {
