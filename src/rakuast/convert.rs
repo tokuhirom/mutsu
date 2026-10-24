@@ -3587,6 +3587,9 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 super::composition_source::convert(source, &spelled.expr)
             }
             Spelling::DottyInfixCall => dotty_infix_call(&spelled.expr),
+            Spelling::CompilerVar(written) => {
+                super::compiler_var::convert_folded(written, &spelled.expr)
+            }
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept
@@ -3776,6 +3779,9 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     "$",
                     name,
                 ));
+            }
+            if let Some(node) = super::compiler_var::convert_var(name) {
+                return Ok(node);
             }
             Ok(var_lexical("$", name))
         }

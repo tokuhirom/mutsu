@@ -419,11 +419,17 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     // $?LINE is a compile-time constant: replace with the current line number
     if full_name == "?LINE" {
         let line = crate::parser::primary::current_line_number(input);
-        return Ok((rest, Expr::Literal(Value::int(line))));
+        return Ok((
+            rest,
+            compiler_var(Expr::Literal(Value::int(line)), "$?LINE"),
+        ));
     }
     // $?TABSTOP is a compile-time constant: hardcoded to 8
     if full_name == "?TABSTOP" {
-        return Ok((rest, Expr::Literal(Value::int(8))));
+        return Ok((
+            rest,
+            compiler_var(Expr::Literal(Value::int(8)), "$?TABSTOP"),
+        ));
     }
     // $?FILE is a compile-time constant too: the file of the compilation unit
     // being parsed, NOT the file that happens to be running when the code is
@@ -433,7 +439,10 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     if full_name == "?FILE"
         && let Some(file) = crate::parser::stmt::simple::parser_source_file()
     {
-        return Ok((rest, Expr::Literal(Value::str(file))));
+        return Ok((
+            rest,
+            compiler_var(Expr::Literal(Value::str(file)), "$?FILE"),
+        ));
     }
     // Normalize positional capture variables: $00 → $0, $01 → $1, etc.
     // Strip leading zeros from all-digit variable names so $00 resolves to $0.
@@ -495,4 +504,13 @@ fn parse_dollar_paren_block(input: &str) -> PResult<'_, Expr> {
     // only to carry the statement list, which is exactly what
     // `DoBlockOrigin::Desugar` marks.
     Ok((rest, Expr::desugar_block(stmts)))
+}
+
+/// A compiler variable's folded literal, with its written name kept for a
+/// `.AST` parse (`Spelling::CompilerVar`).
+// Cost: O(1).
+pub(crate) fn compiler_var(literal: Expr, written: &str) -> Expr {
+    Expr::spelled(literal, || {
+        crate::ast::spelled::Spelling::CompilerVar(written.into())
+    })
 }
