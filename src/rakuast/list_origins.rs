@@ -38,8 +38,10 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
     let Some(ranges) = ranges.filter(|r| r.len() >= 2) else {
         return;
     };
-    // Each gap holds exactly the operator, between whitespace and comments.
+    // Each gap holds exactly the operator, between whitespace and comments,
+    // in one spelling throughout (`…` for `...`).
     let mut last_op = None;
+    let mut spelling: Option<String> = None;
     for pair in ranges.windows(2) {
         let ((_, end), (start, _)) = (pair[0], pair[1]);
         if end > start {
@@ -48,7 +50,12 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
         let at = super::unit_source::with_text(SrcSpan::new(end, start), |gap| {
             use crate::source_comments::trivia_len;
             let lead = trivia_len(gap)?;
-            let after = gap[lead..].strip_prefix(op.as_str())?;
+            let written = super::infix_spelling::written_prefix(&op, &gap[lead..])?;
+            if spelling.as_deref().is_some_and(|s| s != written) {
+                return None;
+            }
+            spelling = Some(written.to_string());
+            let after = &gap[lead + written.len()..];
             (trivia_len(after)? == after.len()).then_some(end + lead)
         });
         let Some(at) = at else {
@@ -56,6 +63,7 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
         };
         last_op = Some(at);
     }
+    let op = spelling.unwrap_or(op);
     let (from, mut to) = (ranges[0].0, ranges[ranges.len() - 1].1);
     // A trailing `,` belongs to the list: no tighter operator ends at a `,`.
     if op == "," {
@@ -72,6 +80,9 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
     };
     super::origin::set_span(node, SrcSpan::new(from, to));
     with_child(node, "infix", |infix| {
+        if leaf_text(infix).as_deref() != Some(op.as_str()) {
+            super::infix_origins::set_leaf_text(infix, &op);
+        }
         super::origin::set_span(infix, SrcSpan::new(op_at, op_at + op.len()))
     });
 }

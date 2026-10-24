@@ -184,11 +184,24 @@ fn apply_infix(node: &mut RakuAstNode) {
     let own = byte_range(node);
     // The operator follows the left operand after whitespace, or ends where
     // whitespace before the right operand begins.
+    // A plain operator may be written in one of its Unicode spellings
+    // (`×` for `*`), which the `Infix` then takes.
+    let mut spelled = None;
     let op_at = match (left, right, own) {
         (Some((_, left_end)), Some((right_start, _)), _) if left_end <= right_start => {
             super::unit_source::with_text(SrcSpan::new(left_end, right_start), |between| {
                 let after = between.trim_start();
-                let rest = after.strip_prefix(text.as_str())?;
+                let written = if inner.is_none()
+                    && child(node, "infix").is_some_and(|i| i.class == RakuAstClass::Infix)
+                {
+                    super::infix_spelling::written_prefix(&text, after)?
+                } else {
+                    after.strip_prefix(text.as_str()).map(|_| text.as_str())?
+                };
+                let rest = &after[written.len()..];
+                if written != text {
+                    spelled = Some(written.to_string());
+                }
                 (rest.is_empty() || rest.starts_with(char::is_whitespace) || rest.starts_with('#'))
                     .then_some(left_end + (between.len() - after.len()))
             })
@@ -211,7 +224,11 @@ fn apply_infix(node: &mut RakuAstNode) {
     {
         super::origin::set_span(node, SrcSpan::new(from, to));
     }
+    let text = spelled.unwrap_or(text);
     with_child(node, "infix", |infix| {
+        if text != leaf_text(infix).unwrap_or_default() {
+            set_leaf_text(infix, &text);
+        }
         super::origin::set_span(infix, SrcSpan::new(op_at, op_at + text.len()));
         if let Some((from, to)) = inner {
             with_child_at(infix, 0, |op| {
@@ -367,5 +384,17 @@ fn initializer(node: &mut RakuAstNode) {
         with_child(node, "initializer", |init| {
             super::origin::set_span(init, SrcSpan::new(op_at, expr_to))
         });
+    }
+}
+
+/// Replace the text of `node`'s first leaf field (an `Infix`'s operator).
+// Cost: O(f), f = fields of `node`.
+pub(super) fn set_leaf_text(node: &mut RakuAstNode, text: &str) {
+    if let Some(field) = node
+        .fields
+        .iter_mut()
+        .find(|f| matches!(&f.value, RakuAstFieldValue::Node(v) if v.as_str().is_some()))
+    {
+        field.value = RakuAstFieldValue::Node(Value::str(text.to_string()));
     }
 }
