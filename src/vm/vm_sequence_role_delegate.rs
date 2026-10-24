@@ -44,6 +44,11 @@ impl Interpreter {
     /// whose `.Str`/`.list`/... [`Self::try_sequence_role_delegate`] answers.
     // Cost: O(1) amortized, memoized class probes.
     pub(crate) fn is_iterator_sequence_instance(&mut self, value: &Value) -> bool {
+        // A `but` mixin keeps the instance (and so its `Sequence` role) inside.
+        if let ValueView::Mixin(inner, _) = value.view() {
+            let inner = (**inner).clone();
+            return self.is_iterator_sequence_instance(&inner);
+        }
         let ValueView::Instance {
             class_name,
             attributes,
@@ -67,6 +72,10 @@ impl Interpreter {
         let method = method_sym.as_str();
         if !Self::is_sequence_role_method(method) {
             return None;
+        }
+        if let ValueView::Mixin(inner, _) = target.view() {
+            let inner = (**inner).clone();
+            return self.try_sequence_role_delegate(&inner, method_sym, args);
         }
         let ValueView::Instance {
             class_name,
