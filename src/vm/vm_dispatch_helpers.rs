@@ -583,7 +583,12 @@ impl Interpreter {
             // the mixed-in `Bool` method, exactly like a class with a user `Bool`.
             // Without this, `?$mixin` / `if $mixin` ignored the role's `Bool` and
             // used the base value's truthiness.
-            ValueView::Mixin(..) if self.mixin_role_has_method(val, "Bool") => {
+            // ...and so does a `Bool` the wrapped instance's class (or a role it
+            // composes) declares: `$all but Role` with `$all`'s own `Bool`.
+            ValueView::Mixin(..)
+                if self.mixin_role_has_method(val, "Bool")
+                    || self.mixin_inner_instance_declares_bool(val) =>
+            {
                 let caller_code = self.current_code;
                 let result = self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![]);
                 self.reconcile_caller_after_internal_dispatch(caller_code);
@@ -613,6 +618,25 @@ impl Interpreter {
             | ValueView::Routine { is_regex: true, .. } => self.regex_bool(val, true),
             _ => val.truthy(),
         }
+    }
+
+    /// Whether the instance under a `but` mixin has a `Bool` of its own (class
+    /// method, or a composed role's).
+    // Cost: O(1) amortized, memoized class probes.
+    fn mixin_inner_instance_declares_bool(&mut self, val: &Value) -> bool {
+        let ValueView::Mixin(inner, _) = val.view() else {
+            return false;
+        };
+        let ValueView::Instance { class_name, .. } = inner.view() else {
+            return false;
+        };
+        let cn = class_name.resolve();
+        loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
+            || crate::builtins::method_table::composed_roles::role_declares(
+                self,
+                &cn,
+                crate::symbol::wk::bool_method(),
+            )
     }
 
     /// Evaluate a callable's result as a grep/map predicate. A regex value
