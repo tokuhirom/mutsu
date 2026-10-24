@@ -7,8 +7,8 @@
 //! through its container, a method call the rw-accessor writeback. This is
 //! the dispatch the parser used to do at the `=` it read.
 
-use crate::ast::parsed::Assign;
 use crate::ast::Expr;
+use crate::ast::parsed::Assign;
 use crate::symbol::Symbol;
 
 /// Whether an assignment in expression position assigns to `target`, as
@@ -107,7 +107,8 @@ pub(crate) fn lower_expression(node: Assign) -> Expr {
         Expr::CallOn { target, args } => {
             if args.is_empty()
                 && let Expr::ArrayLiteral(items) = target.as_ref()
-                && let Some(expr) = crate::parser::list_lvalue_assign_expr(items.clone(), source.clone())
+                && let Some(expr) =
+                    crate::parser::list_lvalue_assign_expr(items.clone(), source.clone())
             {
                 return expr;
             }

@@ -10,9 +10,8 @@ use super::convert::{
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::parsed::{
-    ParsedExpr,
     BlockParams, BlockSpans, ClauseKind, Conditional, ConditionalKind, LoopKind, LoopStmt,
-    Modified, ModifierKind, ParsedBlock, ParsedStmt,
+    Modified, ModifierKind, ParsedBlock, ParsedExpr, ParsedStmt,
 };
 use crate::value::{RuntimeError, Value, ValueView};
 

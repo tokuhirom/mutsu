@@ -7,6 +7,7 @@
 
 mod adverb_origins;
 mod anon_state;
+mod assign_lower;
 mod assignment_item;
 mod atomic_op;
 mod attribute;
@@ -22,7 +23,6 @@ mod class_constructor;
 mod compiler_var;
 mod composition_source;
 mod compound_stmt;
-mod assign_lower;
 mod conditional_lower;
 mod constructor_positional;
 mod contextualizer;
