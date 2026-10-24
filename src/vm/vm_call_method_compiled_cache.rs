@@ -34,6 +34,11 @@ const LITERAL_NATIVE_KEY: &str = "__mutsu_key_literal_native";
 /// distinct buckets.
 const ENUM_MEMBER_KEY: &str = "__mutsu_key_enum_member";
 
+/// Cache-key marker introducing the governing owner of a `proto method`'s
+/// `{*}` redispatch: the candidate set stops at that class, so the same
+/// `(class, method, argument types)` resolves differently per boundary.
+const PROTO_BOUNDARY_KEY: &str = "__mutsu_key_proto_boundary";
+
 /// The reserved marker names above, plus the three native type names a literal
 /// argument keys as, interned ONCE per process instead of on every use.
 ///
@@ -63,6 +68,7 @@ mod key_syms {
         declared_type => super::DECLARED_TYPE_KEY;
         literal_native => super::LITERAL_NATIVE_KEY;
         enum_member => super::ENUM_MEMBER_KEY;
+        proto_boundary => super::PROTO_BOUNDARY_KEY;
         native_int => "int";
         native_num => "num";
         native_str => "str";
@@ -686,6 +692,66 @@ impl Interpreter {
             }
         }
         resolved_arc
+    }
+
+    /// [`Self::resolve_method_within_boundary`] for a `proto method`'s `{*}`
+    /// redispatch, memoized like [`Self::resolve_method_cached`]: for a multi
+    /// whose dispatch is a function of the argument types
+    /// ([`Self::multi_dispatch_type_cacheable`]) the winner is cached under
+    /// `(class, method, [boundary marker, boundary owner, receiver
+    /// definedness bit, argument type keys])`, so the pairwise candidate
+    /// ranking runs once per type tuple instead of on every call (#14868). An
+    /// ambiguous resolution is never cached: it must re-raise on every call.
+    // Cost: O(a) for a cache hit, a = arguments; a miss is one
+    // `resolve_method_within_boundary`.
+    pub(crate) fn resolve_proto_redispatch_cached(
+        &mut self,
+        class_name: &str,
+        method: &str,
+        args: &[Value],
+        invocant: &Value,
+        boundary_owner: crate::symbol::Symbol,
+    ) -> Option<(crate::symbol::Symbol, crate::runtime::MethodDef)> {
+        self.refresh_method_caches_for_generation();
+        let class_sym = crate::symbol::Symbol::intern(class_name);
+        let method_sym = crate::symbol::Symbol::intern(method);
+        if let Some(mut arg_keys) = self.multi_arg_type_keys(args)
+            && self.multi_dispatch_type_cacheable(class_sym, method_sym, class_name, method)
+        {
+            arg_keys.insert(0, boundary_owner);
+            if !crate::runtime::types::value_is_concrete(invocant) {
+                arg_keys.insert(0, key_syms::undefined_arg());
+            }
+            arg_keys.insert(0, key_syms::proto_boundary());
+            let mkey = (class_sym, method_sym, arg_keys);
+            if let Some(hit) = self.caches.multi_resolve_cache.get(&mkey) {
+                self.dispatch.dispatch_ambiguous = false;
+                return hit.as_ref().map(|(owner, def)| (*owner, (**def).clone()));
+            }
+            let resolved = self.resolve_method_within_boundary(
+                class_name,
+                method,
+                args,
+                Some(invocant),
+                Some(boundary_owner),
+            );
+            if !self.dispatch.dispatch_ambiguous {
+                self.caches.multi_resolve_cache.insert(
+                    mkey,
+                    resolved
+                        .as_ref()
+                        .map(|(owner, def)| (*owner, std::sync::Arc::new(def.clone()))),
+                );
+            }
+            return resolved;
+        }
+        self.resolve_method_within_boundary(
+            class_name,
+            method,
+            args,
+            Some(invocant),
+            Some(boundary_owner),
+        )
     }
 
     /// Compile a resolved user method's body on demand when it lacks bytecode,
