@@ -486,7 +486,10 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 Some(assign) => Some(assign),
                 None => match method_call_assign(node)? {
                     Some(assign) => Some(assign),
-                    None => call_assign(node)?,
+                    None => match call_assign(node)? {
+                        Some(assign) => Some(assign),
+                        None => expression_assign(node)?,
+                    },
                 },
             };
             match assign {
@@ -2769,6 +2772,36 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
     Ok(Some(crate::parser::assign_to_target_expr(target, value)))
 }
 
+/// `TARGET = SOURCE` over any other target the assignment family's lowering
+/// takes (`rakuast::assign_lower`), such as an adverbed subscript
+/// (`@a[0]:v = 3`). A variable target stays with [`lower_assign`], which
+/// knows the anonymous, sigilless and attribute spellings.
+// Cost: O(n), n = size of the target and source.
+fn expression_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+    let left = named_child(node, "left")?;
+    if matches!(
+        left.class,
+        RakuAstClass::VarLexical
+            | RakuAstClass::VarDynamic
+            | RakuAstClass::VarAttribute
+            | RakuAstClass::VarPackage
+            | RakuAstClass::TermName
+    ) || super::anon_state::is_anonymous(left)
+    {
+        return Ok(None);
+    }
+    let target = lower_expr(left)?;
+    if matches!(target, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_))
+        || !super::assign_lower::is_expression_target(&target)
+    {
+        return Ok(None);
+    }
+    let source = lower_expr(named_child(node, "right")?)?;
+    Ok(Some(super::assign_lower::lower_expression(
+        crate::ast::parsed::Assign { target, source },
+    )))
+}
+
 fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // `v = …` where `v` is a sigilless term (`my \v = @a`) assigns into what
     // the term is bound to.
@@ -4884,6 +4917,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 return Ok(assign);
             }
             if let Some(assign) = call_assign(node)? {
+                return Ok(assign);
+            }
+            if let Some(assign) = expression_assign(node)? {
                 return Ok(assign);
             }
             let (name, expr) = lower_assign_parts(node)?;
