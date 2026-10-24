@@ -176,7 +176,10 @@ impl VisitMut for Ctx {
                     ParsedStmt::DoesDecl { .. } => crate::ast_visit::walk_parsed_mut(self, node),
                     ParsedStmt::DeclTail { .. } => crate::ast_visit::walk_parsed_mut(self, node),
                     ParsedStmt::WillDecl { decl, phasers } => {
-                        self.visit_stmt_mut(decl);
+                        // The declaration runs in the enclosing scope.
+                        let mut one = vec![std::mem::replace(decl.as_mut(), Stmt::MarkBind)];
+                        self.visit_stmts_mut(&mut one);
+                        *decl.as_mut() = one.pop().expect("one statement");
                         for (_, body) in phasers {
                             self.scoped(Vec::new(), |v| v.visit_stmts_mut(body));
                         }
