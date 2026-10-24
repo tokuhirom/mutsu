@@ -105,9 +105,7 @@ impl Interpreter {
             // name and each keeps the cells it bound.
             if !plan.multi && self.lexicals.lexsub_free_aliases.contains_key(&sub) {
                 crate::runtime::cow_table_mut(&mut self.lexicals.lexsub_latest_cells)
-                    .retain(|(name, var), _| {
-                        *name != sub || *var == crate::symbol::wk::self_()
-                    });
+                    .retain(|(name, var), _| *name != sub || *var == crate::symbol::wk::self_());
             }
             return;
         }
