@@ -329,15 +329,14 @@ pub(crate) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
             }
             if end > 0 {
                 let block_src = rest[1..end].trim();
-                if !block_src.is_empty() {
-                    // DoStmt(Block) for scope isolation — block-local `my` doesn't
-                    // leak, and a bare `$` is a `state` of THIS block (see
-                    // `parse_interpolation_block`).
-                    if let Some(block) =
-                        crate::parser::primary::string::parse_interpolation_block(block_src)?
-                    {
-                        parts.push(block);
-                    }
+                // DoStmt(Block) for scope isolation — block-local `my` doesn't
+                // leak, and a bare `$` is a `state` of THIS block (see
+                // `parse_interpolation_block`). An empty `{ }` is still a block
+                // (rakudo: `Block`, and `Nil` in string context).
+                if let Some(block) =
+                    crate::parser::primary::string::parse_interpolation_block(block_src)?
+                {
+                    parts.push(block);
                 }
                 rest = &rest[end + 1..];
                 continue;
@@ -478,15 +477,14 @@ pub(crate) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
             }
             if end > 0 {
                 let block_src = rest[1..end].trim();
-                if !block_src.is_empty() {
-                    // DoStmt(Block) for scope isolation — block-local `my` doesn't
-                    // leak, and a bare `$` is a `state` of THIS block (see
-                    // `parse_interpolation_block`).
-                    if let Some(block) =
-                        crate::parser::primary::string::parse_interpolation_block(block_src)?
-                    {
-                        parts.push(block);
-                    }
+                // DoStmt(Block) for scope isolation — block-local `my` doesn't
+                // leak, and a bare `$` is a `state` of THIS block (see
+                // `parse_interpolation_block`). An empty `{ }` is still a block
+                // (rakudo: `Block`, and `Nil` in string context).
+                if let Some(block) =
+                    crate::parser::primary::string::parse_interpolation_block(block_src)?
+                {
+                    parts.push(block);
                 }
                 rest = &rest[end + 1..];
                 continue;
