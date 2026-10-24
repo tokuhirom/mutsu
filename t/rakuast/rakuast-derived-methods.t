@@ -5,7 +5,7 @@ use Test;
 # (`$ast.default-scope`, `$name.is-anonymous`, `$call.dispatch`, ...). This
 # file passes under both mutsu and raku.
 
-plan 26;
+plan 41;
 
 sub expr(Str $src) { $src.AST.statements[0].expression }
 
@@ -55,3 +55,21 @@ is RakuAST::Name.from-identifier('a').is-empty, 0, 'an identifier is not empty';
 is RakuAST::Name.new.is-empty, 1, 'a name without parts is empty';
 
 ok RakuAST::Call::Method.^can('dispatch'), '.^can finds a computed method';
+
+# Call::Method.macroish: a special op (`.WHAT`) is an integer 1.
+is expr(Q[1.WHAT]).postfix.macroish, 1, '.WHAT is macroish';
+is expr(Q[1.Str]).postfix.macroish, 0, '.Str is not';
+
+is expr(Q[1 + 2]).colonpairs.elems, 0, 'ApplyInfix.colonpairs';
+ok Q[my $x; $_.foo].AST.statements[1].expression.on-topic, 'a call on $_ is on-topic';
+is Q[my $a; $a = 1].AST.statements[1].expression.infix.operator, '=', 'Assignment.operator';
+is expr(Q[sub f(1) {}]).signature.parameters[0].value, 1, 'a literal parameter\'s value';
+nok expr(Q["a"]).has-variables, 'a plain string has no variables';
+ok Q[my $x; "a $x"].AST.statements[1].expression.has-variables, 'an interpolating one does';
+nok expr(Q[subset S9 of Int]).of.defined, 'Subset.of (the type is an `of` trait)';
+is expr(Q[$(1)]).sigil, '$', 'Contextualizer::Item.sigil';
+is expr(Q[@(1)]).sigil, '@', 'Contextualizer::List.sigil';
+is expr(Q[gather 1]).type, 'gather', 'a statement prefix\'s keyword';
+is expr(Q[BEGIN 1]).type, 'BEGIN', 'a phaser\'s keyword';
+is expr(Q[class C3 {}]).declarator, 'class', 'a class\'s declarator';
+is expr(Q[sub f3 {}]).declarator, 'sub', 'a sub\'s declarator';

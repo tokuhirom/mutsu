@@ -14,21 +14,51 @@ pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
     if default_scope_rule(class).is_some() {
         return match class {
             Class | Role | Grammar | Module | Package | Native => {
-                &["default-scope", "scope", "augmented"]
+                &["default-scope", "scope", "augmented", "declarator"]
             }
             _ => &["default-scope", "scope"],
         };
     }
     match class {
         Name => &["is-empty", "is-anonymous"],
-        CallMethod | CallQuotedMethod | CallNameAsMethod | CallTermAsMethod | CallPrivateMethod => {
+        CallMethod => &["dispatch", "dispatcher", "macroish"],
+        CallQuotedMethod | CallNameAsMethod | CallTermAsMethod | CallPrivateMethod => {
             &["dispatch", "dispatcher"]
         }
         VarDeclarationSimple => &["original-type"],
         Signature => &["parameters-initialized"],
+        Sub | Method | Submethod | RegexDeclaration | TokenDeclaration | RuleDeclaration => {
+            &["declarator"]
+        }
+        ApplyInfix | Postfix => &["colonpairs"],
+        ApplyPostfix => &["on-topic"],
+        Assignment => &["operator"],
+        Parameter => &["value"],
+        QuotedString => &["has-variables"],
+        TypeSubset => &["of"],
+        VarDeclarationTerm => &["type"],
+        ContextualizerItem | ContextualizerList | ContextualizerHash => &["sigil"],
+        _ if statement_prefix_type(class).is_some() => &["type"],
         _ => &[],
     }
 }
+
+/// The keyword of a statement prefix or phaser (`.type`): rakudo answers the
+/// class's last name segment, lowercased for a prefix (`gather`, `once`) and
+/// uppercased for a phaser (`BEGIN`, `PRE`).
+// Cost: O(n), n = length of the class name.
+fn statement_prefix_type(class: RakuAstClass) -> Option<String> {
+    let name = class.printed_name();
+    if let Some(phaser) = name.strip_prefix("RakuAST::StatementPrefix::Phaser::") {
+        return Some(phaser.to_uppercase());
+    }
+    let prefix = name.strip_prefix("RakuAST::StatementPrefix::")?;
+    (!prefix.contains("::")).then(|| prefix.to_lowercase())
+}
+
+/// The special-op method names a `Call::Method` compiles to a primitive op
+/// (rakudo's `IMPL-SPECIAL-OP`), which `.macroish` reports.
+const SPECIAL_OPS: &[&str] = &["WHAT", "HOW", "WHO", "VAR", "WHERE", "REPR", "DEFINITE"];
 
 /// The answer to `method` on `node` when it is one of the computed methods.
 // Cost: O(f), f = fields of the node (a name's parts for the Name methods).
@@ -86,8 +116,90 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         (Class | Role | Grammar | Module | Package | Native, "augmented") => Some(Value::truth(
             field(node, "augmented").is_some_and(|v| v.truthy()),
         )),
+        (Sub, "declarator") => Some(Value::str_from("sub")),
+        (Class, "declarator") => Some(Value::str_from("class")),
+        (Role, "declarator") => Some(Value::str_from("role")),
+        (Grammar, "declarator") => Some(Value::str_from("grammar")),
+        (Module, "declarator") => Some(Value::str_from("module")),
+        (Package, "declarator") => Some(Value::str_from("package")),
+        (Native, "declarator") => Some(Value::str_from("native")),
+        (Method, "declarator") => Some(Value::str_from("method")),
+        (Submethod, "declarator") => Some(Value::str_from("submethod")),
+        (RegexDeclaration, "declarator") => Some(Value::str_from("regex")),
+        (TokenDeclaration, "declarator") => Some(Value::str_from("token")),
+        (RuleDeclaration, "declarator") => Some(Value::str_from("rule")),
+        // `nqp::istrue` of the special-op lookup: an integer.
+        (CallMethod, "macroish") => {
+            let special = field(node, "name")
+                .and_then(|name| match name.view() {
+                    ValueView::RakuAst(n) => {
+                        super::name_parts::name_shape(n).and_then(|shape| match shape {
+                            super::name_parts::NameShape::Identifier(s) => Some(s),
+                            _ => None,
+                        })
+                    }
+                    _ => None,
+                })
+                .is_some_and(|s| SPECIAL_OPS.contains(&s.as_str()));
+            Some(Value::int(i64::from(special)))
+        }
+        // mutsu keeps an infix's adverbs out of `visit-children`, as rakudo
+        // does; the accessor still answers them.
+        (ApplyInfix | Postfix, "colonpairs") => {
+            Some(field(node, "colonpairs").unwrap_or_else(|| Value::array(Vec::new())))
+        }
+        (ApplyPostfix, "on-topic") => {
+            Some(Value::truth(field(node, "operand").is_some_and(|op| {
+                matches!(op.view(), ValueView::RakuAst(n)
+                if n.class == VarLexical
+                    && n.fields.first().is_some_and(|f| matches!(&f.value,
+                        RakuAstFieldValue::Node(v) if str_of(v).as_deref() == Some("$_"))))
+            })))
+        }
+        (Assignment, "operator") => Some(Value::str_from("=")),
+        // A literal-value parameter (`sub f(1)`); any other answers `Mu`.
+        (Parameter, "value") => Some(
+            field(node, "value")
+                .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Mu"))),
+        ),
+        (QuotedString, "has-variables") => Some(Value::truth(quoted_has_variables(node))),
+        (TypeSubset, "of") | (VarDeclarationTerm, "type") => {
+            Some(field(node, method).unwrap_or(Value::NIL))
+        }
+        (ContextualizerItem, "sigil") => Some(Value::str_from("$")),
+        (ContextualizerList, "sigil") => Some(Value::str_from("@")),
+        (ContextualizerHash, "sigil") => Some(Value::str_from("%")),
+        (_, "type") => statement_prefix_type(node.class).map(Value::str),
         _ => None,
     }
+}
+
+/// Whether anything in a quoted string is interpolated; a nested quote counts
+/// by its own segments (rakudo's `QuotedString.has-variables`).
+// Cost: O(s), s = segments, nested ones included.
+fn quoted_has_variables(node: &RakuAstNode) -> bool {
+    let segments = field(node, "segments")
+        .and_then(|v| v.as_list_items().map(<[Value]>::to_vec))
+        .unwrap_or_default();
+    segments.iter().any(|segment| match segment.view() {
+        ValueView::RakuAst(n) => match n.class {
+            RakuAstClass::StrLiteral => false,
+            RakuAstClass::QuotedString => quoted_has_variables(n),
+            RakuAstClass::QuoteWordsAtom => n.fields.first().is_some_and(|f| match &f.value {
+                RakuAstFieldValue::Node(atom) => match atom.view() {
+                    ValueView::RakuAst(a) => match a.class {
+                        RakuAstClass::StrLiteral => false,
+                        RakuAstClass::QuotedString => quoted_has_variables(a),
+                        _ => true,
+                    },
+                    _ => false,
+                },
+                _ => false,
+            }),
+            _ => true,
+        },
+        _ => false,
+    })
 }
 
 /// How a declaration's default scope follows from its class (rakudo's
