@@ -29,7 +29,7 @@ impl Interpreter {
     ///
     /// Cost: O(p), p = sub declarations compiled into the routine's body (plus
     /// the registration of each exported one, recursively).
-    pub(super) fn register_nested_exported_subs(
+    pub(crate) fn register_nested_exported_subs(
         &mut self,
         routine: &CompiledFunction,
         compiled_fns: &CompiledFns,

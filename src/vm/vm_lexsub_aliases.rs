@@ -92,6 +92,7 @@ impl Interpreter {
             return;
         };
         let sub = plan.name;
+        self.note_exported_sub_self(plan, compiled_fns);
         if plan.lexsub_free_aliases.is_empty() {
             // A same-named sub with no routine-nested free variables (a
             // mainline block's `my sub reset`) now shadows any routine-nested
@@ -100,9 +101,11 @@ impl Interpreter {
             // (mutsu#10391).
             // Cost: O(1) unless a routine-nested sub of this name exists,
             // then O(c), c = latest-cell entries.
-            if self.lexicals.lexsub_free_aliases.contains_key(&sub) {
+            // A `multi` candidate does not shadow its siblings: they share the
+            // name and each keeps the cells it bound.
+            if !plan.multi && self.lexicals.lexsub_free_aliases.contains_key(&sub) {
                 crate::runtime::cow_table_mut(&mut self.lexicals.lexsub_latest_cells)
-                    .retain(|(name, _), _| *name != sub);
+                    .retain(|(name, var), _| *name != sub || *var == crate::symbol::wk::self_());
             }
             return;
         }
@@ -178,6 +181,60 @@ impl Interpreter {
             }
             self.note_lexsub_alias(sub, a);
         }
+    }
+
+    /// An `is export` sub declared in a method body reads `self` (and so its
+    /// attributes) from the latest activation of that method, as Rakudo's
+    /// `capturelex` re-points the sub's static outer at the running frame
+    /// (mutsu#14870: `submethod BUILD { multi sub log(...) is export { $!bar } }`).
+    /// Filed under the sub's name and the key `self` in `lexsub_latest_cells`.
+    // Cost: O(1).
+    fn note_exported_sub_self(
+        &mut self,
+        plan: &crate::opcode::CompiledSubDeclPlan,
+        compiled_fns: &CompiledFns,
+    ) {
+        if !plan.is_export || plan.name_chunk.is_some() {
+            return;
+        }
+        let Some(frame) = self.routine_stack().last() else {
+            return;
+        };
+        if !frame.is_method || frame.is_block {
+            return;
+        }
+        let Some(owner) = Self::lexsub_plan_owner(plan, compiled_fns) else {
+            return;
+        };
+        let Some(self_val) = self.env().get_sym(crate::symbol::wk::self_()).cloned() else {
+            return;
+        };
+        crate::runtime::cow_table_mut(&mut self.lexicals.lexsub_latest_cells).insert(
+            (plan.name, crate::symbol::wk::self_()),
+            LexSubLatestCell {
+                owner,
+                cell: self_val,
+            },
+        );
+    }
+
+    /// The `self` the latest activation of the running exported sub's declaring
+    /// method recorded ([`Self::note_exported_sub_self`]).
+    // Cost: O(1) expected.
+    #[inline]
+    pub(crate) fn exported_sub_latest_self(&self) -> Option<Value> {
+        if self.lexicals.lexsub_latest_cells.is_empty() {
+            return None;
+        }
+        let frame = self.routine_stack().last()?;
+        if frame.is_block || frame.is_method {
+            return None;
+        }
+        let entry = self
+            .lexicals
+            .lexsub_latest_cells
+            .get(&(frame.name, crate::symbol::wk::self_()))?;
+        (entry.owner == (frame.package, frame.def_file)).then(|| entry.cell.clone())
     }
 
     /// Record in `lexsub_free_aliases` that `sub` reads `a.var` through

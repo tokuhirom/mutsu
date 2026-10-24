@@ -1601,6 +1601,13 @@ impl Interpreter {
     /// Every branch below the direct env probe is a miss-path alias cascade
     /// building its own fresh name, so only that probe takes the symbol.
     pub(crate) fn get_env_with_main_alias_sym(&self, name: &str, sym: Symbol) -> Option<Value> {
+        // `self` of an exported sub declared in a method body is the latest
+        // activation's (mutsu#14870).
+        if sym == crate::symbol::wk::self_()
+            && let Some(v) = self.exported_sub_latest_self()
+        {
+            return Some(v);
+        }
         // A process-level dynamic written at run time (`$PROCESS::OUT = ...`,
         // possibly by another thread) lives only in the process stash, and a
         // read reaching the process binding must see it (ADR-11318). Asked

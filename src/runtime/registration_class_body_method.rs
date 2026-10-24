@@ -178,6 +178,13 @@ impl Interpreter {
                 cf.params == expected_full_params
                     && format!("{:?}", cf.param_defs) == format!("{raw_param_defs_for_key_check:?}")
             });
+        // mutsu mutsu#14870: an `is export` routine nested in a method body is
+        // exported at compile time, like one nested in a `sub` body.
+        if let Some(cf) = matched_compiled_fn
+            && cf.has_nested_export_plans()
+        {
+            self.register_nested_exported_subs(cf, cx.compiled_fns)?;
+        }
         let installed_compiled_code =
             matched_compiled_fn.map(|cf| cf.code.clone());
         let installed_compiled_fns = matched_compiled_fn.and_then(|cf| cf.compiled_fns.clone());

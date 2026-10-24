@@ -233,7 +233,9 @@ impl Interpreter {
         // method reads. Without an invocant in scope it falls through to the
         // ordinary resolution (a `constant self`, or the undeclared error).
         if name == "self"
-            && let Some(v) = self.env_self_value()
+            && let Some(v) = self
+                .exported_sub_latest_self()
+                .or_else(|| self.env_self_value())
         {
             self.stack.push(v);
             return Ok(());
