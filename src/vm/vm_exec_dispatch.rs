@@ -1960,7 +1960,9 @@ impl Interpreter {
                     && !is_rebind
                     && !was_scalar_bind
                     && !was_param_raw_bind
-                    && !name.trim_start_matches(['$', '@', '%', '&']).starts_with("__")
+                    && !name
+                        .trim_start_matches(['$', '@', '%', '&'])
+                        .starts_with("__")
                 {
                     self.fetch_proxy_for_store(raw_val)?
                 } else {
