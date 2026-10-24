@@ -128,7 +128,25 @@ impl Interpreter {
         }
     }
 
+    /// The Attribute meta-object of `attr`: an instance of the declarator's
+    /// `<kw>-attr` class when `owner` was declared with an `EXPORTHOW::DECLARE`
+    /// keyword that has one, a plain `Attribute` otherwise.
+    // Cost: O(a), a = the attribute's meta-object keys.
     pub(super) fn make_attribute_object(&self, attr: &super::ClassAttributeDef, owner: &str) -> Value {
+        let object = self.make_plain_attribute_object(attr, owner);
+        let Some(attr_class) = self.registry().declare_attribute_classes.get(owner).cloned() else {
+            return object;
+        };
+        match object.view() {
+            ValueView::Instance { attributes, .. } => Value::make_instance(
+                Symbol::intern(&attr_class),
+                attributes.as_map().clone(),
+            ),
+            _ => object,
+        }
+    }
+
+    pub(super) fn make_plain_attribute_object(&self, attr: &super::ClassAttributeDef, owner: &str) -> Value {
         let attr_name = &attr.name;
         let is_public = attr.is_public;
         let default = &attr.default;
