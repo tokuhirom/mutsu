@@ -20,6 +20,14 @@ on a `VarDeclaration::Term` declared `my`) and its `.raku` order
   prints it;
 - `Parameter.new` accepts a sigilless `ParameterTarget::Term`.
 
-A parsed `for` / `given` / `loop` / stub / subset / `|c` signature now
-round-trips through `EVAL($ast.raku)`. Found by the RakuAST construction
+A roast-wide check of `EVAL($ast.raku).raku eq $ast.raku` exposed the
+remaining gaps. Some classes had no named constructor yet: `Pragma` with
+an argument, `ColonPair::Number`, `Substitution`, `Transliteration`,
+`Call::NameAsMethod` / `TermAsMethod`, and `Name.from-identifier` with
+`colonpairs`. Others had constructors that dropped an argument:
+`Trait::Is`'s `type`, `Call::Method`'s `dispatch`, `Type::Enum`'s scope,
+`Class`'s `repr`, `Parameter`'s `traits`. A proto's `{*}` body was refused.
+`Parameter` now renders in rakudo's field order. On a sample of 182 roast
+files the round trip went from 79 to 167 identical. The rest are files
+`.AST` cannot parse yet, and one `EVAL` text-scan bug (#14931). Found by the RakuAST construction
 survey (#7564); part of #14926.
