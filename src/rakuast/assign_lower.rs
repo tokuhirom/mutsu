@@ -59,8 +59,21 @@ pub(crate) fn is_callable_lvalue_target(target: &Expr) -> bool {
     }
 }
 
+/// Whether `target` is an item contextualizer (`$(EXPR)`, `EXPR.item`), whose
+/// assignment writes through to `EXPR` as an item assignment. The statement
+/// parser owns it: `$(EXPR) = a, b` leaves the comma to the statement.
+// Cost: O(d), d = levels of parentheses around the target.
+pub(crate) fn is_item_target(target: &Expr) -> bool {
+    match target.peel_parens() {
+        Expr::Contextualizer { kind, .. } => *kind == crate::ast::ContextKind::Item,
+        Expr::MethodCall { name, args, .. } => name == "item" && args.is_empty(),
+        _ => false,
+    }
+}
+
 /// Lower an assignment in expression position whose target
-/// [`is_expression_target`] or [`is_callable_lvalue_target`].
+/// [`is_expression_target`], [`is_callable_lvalue_target`] or
+/// [`is_item_target`].
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_expression(node: Assign) -> Expr {
     let Assign { target, source } = node;
@@ -142,7 +155,8 @@ pub(crate) fn lower_expression(node: Assign) -> Expr {
             callable_lvalue(*target, args, source)
         }
         // A method-call lvalue (`$o.a = v`, `my $c = $o.a = 42`): the
-        // rw-accessor writeback.
+        // rw-accessor writeback. `$(EXPR) = v` is the contextualizer's
+        // `.item` call here, which writes through to `EXPR`.
         target @ (Expr::MethodCall { .. } | Expr::DynamicMethodCall { .. }) => {
             crate::parser::assign_to_target_expr(target, source)
         }

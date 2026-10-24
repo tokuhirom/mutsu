@@ -609,14 +609,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             if after_ws.starts_with(',') && !after_ws.starts_with(",,") {
                 // `($x = rhs), <rest...>` — assign the first element, sink the rest.
                 let target = written_target(&var_expr);
-                let assign_expr = if keeps_written(&target) {
-                    super::written_assignment(target, rhs)
-                } else {
-                    crate::rakuast::lower_expression_assign(crate::ast::parsed::Assign {
-                        target,
-                        source: rhs,
-                    })
-                };
+                let assign_expr = super::written_assignment(target, rhs);
                 let mut items = vec![assign_expr];
                 let mut r = after_ws;
                 while r.starts_with(',') && !r.starts_with(",,") {
@@ -694,19 +687,6 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     Err(PError::expected("assignment"))
 }
 
-/// Whether a `.AST` parse keeps an assignment to `target` in its RakuAST
-/// shape. A double-underscore name (an anonymous variable's minted name, or a
-/// user's `$__c`) is spelled from the statement's source by the conversion's
-/// `Stmt::Assign` arm, which this target has not moved off yet (#14948).
-// Cost: O(1).
-fn keeps_written(target: &Expr) -> bool {
-    !matches!(
-        target,
-        Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name) | Expr::CodeVar(name)
-            if name.trim_start_matches(['&', '@', '%']).starts_with("__")
-    )
-}
-
 /// The variable an assignment statement names, as the expression grammar
 /// reads it: `&f` is a code variable.
 // Cost: O(|name|).
@@ -723,14 +703,6 @@ fn written_target(var_expr: &Expr) -> Expr {
 /// assignment as a statement and the tail over a re-read of `seed`.
 // Cost: O(n), n = size of the target, source and tail.
 fn assignment_statement(rest: &str, target: Expr, source: Expr, seed: Expr) -> PResult<'_, Stmt> {
-    if !keeps_written(&target) {
-        let node = crate::ast::parsed::Assign { target, source };
-        return crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
-            rest,
-            crate::rakuast::lower_statement_assign(node),
-            seed,
-        );
-    }
     if crate::ast::spelled::keeping() {
         let (rest, expr) =
             crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(

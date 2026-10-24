@@ -1407,6 +1407,13 @@ pub(crate) fn is_callable_lvalue_assign_target(target: &crate::ast::Expr) -> boo
     assign_lower::is_callable_lvalue_target(target)
 }
 
+/// Whether `target` is an item contextualizer the statement parser assigns
+/// through (`$(EXPR) = v`).
+// Cost: O(d), d = levels of parentheses around the target.
+pub(crate) fn is_item_assign_target(target: &crate::ast::Expr) -> bool {
+    assign_lower::is_item_target(target)
+}
+
 /// Lower an assignment in expression position: the one lowering of the
 /// assignment family, shared with `EVAL` of a hand-built node.
 // Cost: O(n), n = size of the target and source.

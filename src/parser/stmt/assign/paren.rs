@@ -231,16 +231,13 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
     // trailing comma list into the parenthesized value.
     let item_form =
         matches!(lhs, Expr::Contextualizer { .. }).then(|| lhs.clone().contextualizer_call());
-    if let Expr::MethodCall {
-        target, name, args, ..
-    } = item_form.as_ref().unwrap_or(&lhs)
+    if let Expr::MethodCall { name, args, .. } = item_form.as_ref().unwrap_or(&lhs)
         && name == "item"
         && args.is_empty()
         && !is_atomic
     {
-        let inner_target = (**target).clone();
         let (r, value) = expression_no_sequence(rest)?;
-        let assign = crate::parser::expr::precedence::assign_to_target_expr(inner_target, value);
+        let assign = super::written_assignment(lhs.clone(), value);
         let (mut r, _) = ws(r)?;
         if r.starts_with(',') && !r.starts_with(",,") {
             let mut items = vec![assign];

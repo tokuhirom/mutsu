@@ -169,7 +169,7 @@ fn assignment_node(a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, Runtim
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), convert_expr(&a.target)?),
+            node_field(Some("left"), target_node(&a.target)?),
             node_field(
                 Some("infix"),
                 RakuAstNode {
@@ -181,6 +181,23 @@ fn assignment_node(a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, Runtim
             node_field(Some("right"), convert_expr(&a.source)?),
         ],
     })
+}
+
+/// An assignment's target. A variable is the variable as written, including a
+/// double-underscore name (a user's `$__c`, or an anonymous `$`'s minted name)
+/// that an expression read refuses as an internal marker.
+// Cost: O(n), n = size of the target.
+fn target_node(target: &crate::ast::Expr) -> Result<RakuAstNode, RuntimeError> {
+    let (sigil, name) = match target {
+        crate::ast::Expr::Var(name) => ("$", name),
+        crate::ast::Expr::ArrayVar(name) => ("@", name),
+        crate::ast::Expr::HashVar(name) => ("%", name),
+        _ => return convert_expr(target),
+    };
+    if name.starts_with("__") {
+        return Ok(super::convert::var_lexical(sigil, name));
+    }
+    convert_expr(target)
 }
 
 /// The statement as written, with its modifiers as its `condition-modifier`
