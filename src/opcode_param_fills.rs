@@ -205,9 +205,14 @@ mod param_fill_tests {
         // `Nil` and a type object are constants too.
         let mut pd = param("$y");
         pd.default = Some(Expr::Literal(Value::NIL));
-        assert_eq!(CompiledFunction::const_fill_for_param(&pd), Some(Value::NIL));
+        assert_eq!(
+            CompiledFunction::const_fill_for_param(&pd),
+            Some(Value::NIL)
+        );
         let mut pd = param("$y");
-        pd.default = Some(Expr::Literal(Value::package(crate::symbol::Symbol::intern("Any"))));
+        pd.default = Some(Expr::Literal(Value::package(
+            crate::symbol::Symbol::intern("Any"),
+        )));
         assert!(CompiledFunction::const_fill_for_param(&pd).is_some());
 
         // A mandatory parameter is not fillable at all.
