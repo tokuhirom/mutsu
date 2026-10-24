@@ -107,22 +107,6 @@ pub(super) fn convert_whenever(
     })
 }
 
-/// The written body a `supply { … }` expansion records, given the
-/// `Supply.on-demand` call's arguments.
-// Cost: O(1).
-pub(super) fn supply_record(args: &[Expr]) -> Option<&[Stmt]> {
-    let [Expr::Lambda { body, .. }] = args else {
-        return None;
-    };
-    match body.first()? {
-        Stmt::SourceForm(form) => match form.as_ref() {
-            crate::ast::SourceForm::SupplyBlock(body) => Some(body),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
 /// `supply { body }` -> `StatementPrefix::Supply(Block)`.
 // Cost: O(n), n = size of the body.
 pub(super) fn convert_supply(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {

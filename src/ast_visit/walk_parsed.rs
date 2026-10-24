@@ -239,6 +239,12 @@ pub(crate) fn walk_parsed_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &
             v.visit_expr(&a.target);
             v.visit_expr(&a.source);
         }
+        ParsedExpr::Supply(body) | ParsedExpr::StartBody(body) => super::walk_stmts(v, body),
+        ParsedExpr::HyperAssign(a) => {
+            v.visit_expr(&a.target);
+            v.visit_expr(&a.value);
+        }
+        ParsedExpr::InlineSubset(declaration) => v.visit_stmt(declaration),
     }
 }
 
@@ -254,5 +260,13 @@ pub(crate) fn walk_parsed_expr_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut P
             v.visit_expr_mut(&mut a.target);
             v.visit_expr_mut(&mut a.source);
         }
+        ParsedExpr::Supply(body) | ParsedExpr::StartBody(body) => {
+            super::walk_stmts_mut(v, body)
+        }
+        ParsedExpr::HyperAssign(a) => {
+            v.visit_expr_mut(&mut a.target);
+            v.visit_expr_mut(&mut a.value);
+        }
+        ParsedExpr::InlineSubset(declaration) => v.visit_stmt_mut(declaration),
     }
 }

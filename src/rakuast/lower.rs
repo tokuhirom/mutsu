@@ -4182,7 +4182,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         RakuAstClass::StatementExpression => lower_expr(named_child(node, "expression")?),
         // An inline subset term declares its generated name and yields it.
-        RakuAstClass::TypeSubset => Ok(crate::ast::inline_subset_term::expand(lower_subset(node)?)),
+        RakuAstClass::TypeSubset => Ok(crate::ast::inline_subset_term::lower(lower_subset(node)?)),
         RakuAstClass::VarCompilerBlock => Ok(Expr::CodeVar("?BLOCK".to_string())),
         RakuAstClass::VarCompilerRoutine => Ok(Expr::CodeVar("?ROUTINE".to_string())),
         RakuAstClass::VarCompilerLookup

@@ -25,9 +25,6 @@ pub(crate) enum SourceForm {
         signature: Expr,
         rhs: Expr,
     },
-    /// An inline `subset` term expands to a declaration followed by a read of
-    /// its generated name. Keep the declaration as written for RakuAST.
-    InlineSubsetTerm(Box<Stmt>),
     /// `has Type ($.a, $.b)`: one visible RakuAST signature declaration,
     /// whose parser expansion installs each listed attribute separately.
     AttributeGroup(Vec<Stmt>),
@@ -36,14 +33,6 @@ pub(crate) enum SourceForm {
     /// declaration that introduced the colon list.
     AttributeColonArglist(Vec<Stmt>),
     MethodAssignDecl(super::method_assign_decl::MethodAssignDecl),
-    /// `supply { BODY }`: the body as written, before the expansion rewrites
-    /// its `emit` / `done` onto the on-demand emitter. It opens the emitter
-    /// lambda's body.
-    SupplyBlock(Vec<Stmt>),
-    /// A `start { BODY }` whose placeholder is rejected by Raku. The parser
-    /// keeps this marker when using a desugared block to defer that diagnostic
-    /// until compilation instead of letting `make_anon_sub` consume it.
-    StartBlock,
     /// `with COND -> PARAM { BODY }`: the written parameter and body, which
     /// open the then-branch of the expansion `with_then_branch` builds.
     WithPointy {
@@ -64,15 +53,6 @@ pub(crate) enum SourceForm {
     IfPointy {
         param_defs: Vec<super::ParamDef>,
         body: Vec<Stmt>,
-    },
-    /// `(LVALUES) »=» VALUE`: the written target, value and dwim flags, which
-    /// open the expansion `hyper_assignment_expr` builds for a literal list of
-    /// lvalues.
-    HyperAssign {
-        target: Expr,
-        value: Expr,
-        dwim_left: bool,
-        dwim_right: bool,
     },
     /// `my $x OP= EXPR`: a declaration initialized by a compound assignment.
     /// It opens the expansion `decl_compound_assign::expand` builds (the

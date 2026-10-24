@@ -182,7 +182,7 @@ fn convert_temporized(t: &Temporized) -> Result<RakuAstNode, RuntimeError> {
                     a.meta,
                 )
             }
-            crate::ast::parsed::ParsedExpr::Assign(_) => Err(super::convert::unsupported(
+            _ => Err(super::convert::unsupported(
                 "temp with an unrecognised compound assignment",
             )),
         },

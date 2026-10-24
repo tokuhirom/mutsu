@@ -20,6 +20,10 @@ pub(crate) fn is_assignment_expr(expr: &Expr) -> bool {
                     | Expr::MultiDimIndex { .. }
             ),
             crate::ast::parsed::ParsedExpr::CompoundAssign(_) => true,
+            crate::ast::parsed::ParsedExpr::Supply(_)
+            | crate::ast::parsed::ParsedExpr::StartBody(_)
+            | crate::ast::parsed::ParsedExpr::HyperAssign(_)
+            | crate::ast::parsed::ParsedExpr::InlineSubset(_) => false,
         },
         _ => false,
     }

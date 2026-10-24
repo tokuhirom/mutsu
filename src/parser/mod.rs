@@ -430,6 +430,7 @@ pub(crate) fn lowered_assignment(expr: crate::ast::Expr) -> crate::ast::Expr {
                 stmt::assign::lower_compound_expression(a)
                     .expect("a kept compound assignment lowers")
             }
+            other => crate::ast::Expr::Ast(Box::new(other)),
         },
         other => other,
     }

@@ -180,7 +180,33 @@ pub(super) fn parsed_expr_node(node: &ParsedExpr) -> Result<RakuAstNode, Runtime
             _ => assignment_node(a),
         },
         ParsedExpr::CompoundAssign(a) => compound_assignment_node(a),
+        ParsedExpr::Supply(body) => super::react::convert_supply(body),
+        ParsedExpr::StartBody(body) => block_node(body),
+        ParsedExpr::HyperAssign(a) => {
+            super::convert::hyper_infix(&a.target, "=", &a.value, a.dwim_left, a.dwim_right)
+        }
+        ParsedExpr::InlineSubset(declaration) => inline_subset_node(declaration),
     }
+}
+
+/// An inline `subset` term: the `Type::Subset` expression of the declaration
+/// as written.
+// Cost: O(n), n = size of the declaration.
+fn inline_subset_node(declaration: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+    let statement = super::convert::convert_stmt(declaration)?
+        .ok_or_else(|| super::convert::unsupported("inline subset declaration"))?;
+    statement
+        .fields
+        .iter()
+        .find(|field| field.name == Some("expression"))
+        .and_then(|field| match &field.value {
+            RakuAstFieldValue::Node(value) => match value.view() {
+                ValueView::RakuAst(node) => Some(node.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .ok_or_else(|| super::convert::unsupported("inline subset declaration"))
 }
 
 /// `TARGET = SOURCE` as an `ApplyInfix` over a plain `Assignment`.

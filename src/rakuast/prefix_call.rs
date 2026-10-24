@@ -61,13 +61,10 @@ fn blorst(arg: &Expr) -> Result<RakuAstNode, RuntimeError> {
             origin: crate::ast::DoBlockOrigin::SourceBlock,
             ..
         } => block_node(body),
-        Expr::DoBlock {
-            body,
-            origin: crate::ast::DoBlockOrigin::Desugar,
-            ..
-        } if matches!(body.first(), Some(crate::ast::Stmt::SourceForm(form)) if matches!(form.as_ref(), crate::ast::SourceForm::StartBlock)) => {
-            block_node(&body[1..])
-        }
+        Expr::Ast(node) => match node.as_ref() {
+            crate::ast::parsed::ParsedExpr::StartBody(body) => block_node(body),
+            _ => Ok(statement_expression(convert_expr(arg)?)),
+        },
         other => Ok(statement_expression(convert_expr(other)?)),
     }
 }
