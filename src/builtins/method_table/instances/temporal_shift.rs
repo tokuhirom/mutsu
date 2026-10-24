@@ -431,12 +431,9 @@ fn datetime_later_earlier(
                 }
                 clip_non_leap_second(y, m, d, h, mi, &mut s, timezone);
             }
-            _ => {
-                return Err(RuntimeError::new(format!(
-                    "Unknown unit '{}' for DateTime.{}",
-                    key, method
-                )));
-            }
+            // rakudo leaves the DateTime alone for a unit it does not know
+            // (`:sec(5)`, `:min(1)`, `:frobs(2)`), without raising anything.
+            _ => {}
         }
         Ok(())
     };
