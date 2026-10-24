@@ -9,11 +9,11 @@ use super::convert::{
     signature_block_node, statement_expression, topic_block_node,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{Expr, Stmt};
 use crate::ast::parsed::{
     BlockParams, BlockSpans, ClauseKind, Conditional, ConditionalKind, LoopKind, LoopStmt,
     Modified, ModifierKind, ParsedBlock, ParsedExpr, ParsedStmt,
 };
+use crate::ast::{Expr, Stmt};
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The RakuAST node of a construct the parser built in its RakuAST shape.
@@ -84,9 +84,9 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
         ParsedStmt::TempDecl(decl) => {
             statement_expression(super::temporize::convert_declaration(decl)?)
         }
-        ParsedStmt::TakeLogicalTail { value, op, right } => statement_expression(
-            super::convert::take_logical_tail_node(value, op, right)?,
-        ),
+        ParsedStmt::TakeLogicalTail { value, op, right } => {
+            statement_expression(super::convert::take_logical_tail_node(value, op, right)?)
+        }
         ParsedStmt::CommaDecls(declarations) => {
             statement_expression(super::convert::comma_declarations_node(declarations)?)
         }

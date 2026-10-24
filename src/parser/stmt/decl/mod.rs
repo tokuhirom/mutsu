@@ -210,7 +210,9 @@ fn parse_comma_chained_decls<'a>(input: &'a str, first: Stmt) -> PResult<'a, Stm
     declarations.extend(ParsedStmt::comma_operands(next));
     Ok((
         rest,
-        crate::parser::stmt::control::parsed_block::finish_total(ParsedStmt::CommaDecls(declarations)),
+        crate::parser::stmt::control::parsed_block::finish_total(ParsedStmt::CommaDecls(
+            declarations,
+        )),
     ))
 }
 

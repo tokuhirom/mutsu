@@ -631,10 +631,8 @@ fn lower_comma_declarations(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeE
         };
         declarations.push(lower_stmt_inner(child)?);
     }
-    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::CommaDecls(
-        declarations,
-    ))
-    .map(Some)
+    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::CommaDecls(declarations))
+        .map(Some)
 }
 
 // Cost: O(n + t), n = Native node fields, t = its traits.
