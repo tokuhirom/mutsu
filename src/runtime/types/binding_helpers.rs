@@ -36,7 +36,7 @@ impl Interpreter {
         pd: &ParamDef,
         default_expr: &Expr,
     ) -> Result<Value, RuntimeError> {
-        // An immutable scalar literal (`$desc = ''`, `$n = 1`) is its own
+        // An immutable scalar literal (`$desc = ''`, `$n = 1`), `*` or `\()` is its own
         // value: nothing in the scoping below can change what it evaluates
         // to, so bind it directly instead of paying a re-entrant
         // `eval_block_value` -- topic save/restore, parameter shadow, a fresh
@@ -45,11 +45,9 @@ impl Interpreter {
         // registration-time table (`CompiledFunction::const_fill_for_param`);
         // a container literal is deliberately NOT short-circuited, because the
         // evaluation below hands every call a fresh container.
-        if let Expr::Literal(v) = default_expr
-            && crate::opcode::CompiledFunction::is_immutable_scalar_literal(v)
-        {
+        if let Some(v) = crate::opcode::CompiledFunction::constant_default_value(default_expr) {
             crate::vm::vm_stats::record_param_default(false);
-            return Ok(v.clone());
+            return Ok(v);
         }
         crate::vm::vm_stats::record_param_default(true);
         let saved_topic = self.env.get("_").cloned();
