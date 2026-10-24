@@ -574,18 +574,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         // The reverse meta-op assignment `$x R op= $y` assigns to its RIGHT
         // operand (`$y = $y op $x`), so retarget the assignment to `rhs`.
         if meta == "R" {
-            let var_expr_written = var_expr.clone();
-            let value = Expr::MetaOp {
-                meta,
-                op: op.clone(),
-                left: Box::new(var_expr),
-                right: Box::new(rhs.clone()),
-            };
-            let assign = crate::parser::expr::precedence::assign_to_target_expr(rhs.clone(), value);
-            return Ok((
-                rest,
-                reverse_assign_marker(var_expr_written, &op, rhs, assign),
-            ));
+            return Ok((rest, super::written_reverse_assignment(var_expr, &op, rhs)));
         }
         // The expression-position twin of the statement rewrite in
         // `assign_stmt`: `X`/`Z` over an assignment infix accumulates into the

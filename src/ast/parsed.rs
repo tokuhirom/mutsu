@@ -243,6 +243,11 @@ pub(crate) enum CompoundMeta {
     Bracketed(u8),
     /// `$x Z+= 1` on a scalar.
     Zip,
+    /// `$s (|)= 5`, `$s ∪= 5`: a set operator, as `op` spells it.
+    Set,
+    /// `$x R-= $y`: the reversed infix, which assigns to its right operand
+    /// (`$y -= $x`). Its `op` may be `=` (`$x R= $y`).
+    Reverse,
 }
 
 /// An assignment as written: the target with its parentheses, and the source.

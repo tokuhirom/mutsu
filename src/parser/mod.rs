@@ -130,16 +130,6 @@ pub(crate) fn parse_regex_call_arg_list(input: &str) -> Option<(&str, Vec<crate:
     primary::parse_call_arg_list(input).ok()
 }
 
-/// The execution shape of the reverse metaop assignment `LHS R<op>= RHS`
-/// (`op` is `-`, or `=` for `R=`): it assigns to its right operand.
-pub(crate) fn expand_reverse_assign_expr(
-    lhs: crate::ast::Expr,
-    op: &str,
-    rhs: crate::ast::Expr,
-) -> crate::ast::Expr {
-    expr::precedence::build_compound_assign_target_expr(rhs, op, lhs)
-}
-
 /// Lower a compound assignment in expression position: the one lowering of
 /// the compound-assignment family (`stmt::assign::compound_lower`), for
 /// consumers that cannot name the parser's parse-error type.
@@ -155,6 +145,13 @@ pub(crate) fn lower_compound_expression(
 // Cost: O(k), k = number of compound operators.
 pub(crate) fn is_compound_assign_op(op: &str) -> bool {
     stmt::assign::compound_assign_op_from_name(op).is_some()
+}
+
+/// Whether `op` is a set operator a compound assignment applies (`(|)` of
+/// `(|)=`, `∪` of `∪=`).
+// Cost: O(k), k = number of set operator spellings.
+pub(crate) fn is_set_compound_op(op: &str) -> bool {
+    stmt::assign::set_op_from_spelling(op).is_some()
 }
 
 /// [`lower_compound_expression`] for a compound assignment written as a
