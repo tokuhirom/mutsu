@@ -28,18 +28,13 @@ pub(crate) fn parse_assign_expr_or_comma(input: &str) -> PResult<'_, Expr> {
         // handling for `(%h = a, b)`.
         if r.starts_with(',')
             && !r.starts_with(",,")
-            && let Expr::AssignExpr {
-                name,
-                expr,
-                is_bind: false,
-            } = &assign_expr
-            && (name.starts_with('@') || name.starts_with('%'))
+            && let Some(expr) = list_assign_source(&assign_expr)
         {
             let (r2, _) = parse_char(r, ',')?;
             let (r2, _) = ws(r2)?;
             if !(r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') || r2.starts_with(')'))
             {
-                let mut items = vec![(**expr).clone()];
+                let mut items = vec![expr.clone()];
                 let (mut r_iter, second) = expression(r2)?;
                 items.push(second);
                 loop {
@@ -60,11 +55,7 @@ pub(crate) fn parse_assign_expr_or_comma(input: &str) -> PResult<'_, Expr> {
                 }
                 return Ok((
                     r_iter,
-                    Expr::AssignExpr {
-                        name: name.clone(),
-                        expr: Box::new(Expr::ArrayLiteral(items)),
-                        is_bind: false,
-                    },
+                    with_list_source(assign_expr, Expr::ArrayLiteral(items)),
                 ));
             }
         }
@@ -116,18 +107,13 @@ pub(crate) fn parse_assign_expr_or_comma_no_word_logical(input: &str) -> PResult
         // on its right (see [`parse_assign_expr_or_comma`]).
         if r.starts_with(',')
             && !r.starts_with(",,")
-            && let Expr::AssignExpr {
-                name,
-                expr,
-                is_bind: false,
-            } = &assign_expr
-            && (name.starts_with('@') || name.starts_with('%'))
+            && let Some(expr) = list_assign_source(&assign_expr)
         {
             let (r2, _) = parse_char(r, ',')?;
             let (r2, _) = ws(r2)?;
             if !(r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') || r2.starts_with(')'))
             {
-                let mut items = vec![(**expr).clone()];
+                let mut items = vec![expr.clone()];
                 let (mut r_iter, second) = expression_no_word_logical(r2)?;
                 items.push(second);
                 loop {
@@ -148,11 +134,7 @@ pub(crate) fn parse_assign_expr_or_comma_no_word_logical(input: &str) -> PResult
                 }
                 return Ok((
                     r_iter,
-                    Expr::AssignExpr {
-                        name: name.clone(),
-                        expr: Box::new(Expr::ArrayLiteral(items)),
-                        is_bind: false,
-                    },
+                    with_list_source(assign_expr, Expr::ArrayLiteral(items)),
                 ));
             }
         }
@@ -227,5 +209,44 @@ pub(crate) fn rewrite_scalar_assignment_stmt_as_sink(name: String, rhs: Expr) ->
             }))
         }
         _ => None,
+    }
+}
+
+/// The source of a list assignment to an `@`/`%` variable, which absorbs the
+/// comma list on its right (`@a = %h = 1, 2`).
+// Cost: O(1).
+fn list_assign_source(expr: &Expr) -> Option<&Expr> {
+    match expr {
+        Expr::AssignExpr {
+            name,
+            expr,
+            is_bind: false,
+        } if name.starts_with('@') || name.starts_with('%') => Some(expr),
+        Expr::Ast(node) => match node.as_ref() {
+            crate::ast::parsed::ParsedExpr::Assign(assign)
+                if matches!(assign.target, Expr::ArrayVar(_) | Expr::HashVar(_)) =>
+            {
+                Some(&assign.source)
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// The list assignment [`list_assign_source`] read, assigning `source`.
+// Cost: O(1).
+fn with_list_source(assign: Expr, source: Expr) -> Expr {
+    match assign {
+        Expr::AssignExpr { name, .. } => Expr::AssignExpr {
+            name,
+            expr: Box::new(source),
+            is_bind: false,
+        },
+        Expr::Ast(node) => {
+            let crate::ast::parsed::ParsedExpr::Assign(assign) = *node;
+            super::written_assignment(assign.target, source)
+        }
+        other => other,
     }
 }

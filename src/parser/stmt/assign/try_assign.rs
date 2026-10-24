@@ -353,13 +353,15 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             if let Some(store) = atomic_store {
                 return Ok((rest, store));
             }
-            let assigned = Expr::IndexAssign {
-                target: Box::new(target),
-                index: Box::new(index_expr),
-                value: Box::new(rhs),
-                is_positional,
-                spelling: Default::default(),
-            };
+            let assigned = super::written_assignment(
+                Expr::Index {
+                    target: Box::new(target),
+                    index: Box::new(index_expr),
+                    is_positional,
+                    spelling: Default::default(),
+                },
+                rhs,
+            );
             return crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
                 rest, assigned,
             );
@@ -721,17 +723,15 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             return Ok((rest, crate::ast::atomic_op::store_var(name, rhs)));
         }
         let name = format!("{}{}", prefix, var);
-        return Ok((
-            rest,
-            match rewrite_scalar_assignment_rhs_as_sink(name.clone(), rhs.clone()) {
-                Some(expr) => expr,
-                None => Expr::AssignExpr {
-                    name,
-                    expr: Box::new(rhs),
-                    is_bind: false,
-                },
-            },
-        ));
+        if let Some(expr) = rewrite_scalar_assignment_rhs_as_sink(name, rhs.clone()) {
+            return Ok((rest, expr));
+        }
+        let target = match sigil {
+            b'@' => Expr::ArrayVar(var),
+            b'%' => Expr::HashVar(var),
+            _ => Expr::Var(var),
+        };
+        return Ok((rest, super::written_assignment(target, rhs)));
     }
     Err(PError::expected("assignment expression"))
 }

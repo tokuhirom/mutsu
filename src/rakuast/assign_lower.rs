@@ -7,7 +7,7 @@
 //! through its container, a method call the rw-accessor writeback. This is
 //! the dispatch the parser used to do at the `=` it read.
 
-use crate::ast::parsed::Assign;
+use crate::ast::parsed::{Assign, ParsedExpr};
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::symbol::Symbol;
 
@@ -40,8 +40,9 @@ pub(crate) fn is_expression_target(target: &Expr) -> bool {
 
 /// Whether `target` is an lvalue expression the statement parser assigns
 /// through at run time (`-$x = 5`, `c ?? $a !! $b = 1`, `$<c> = $0`,
-/// `($a || $b) = 1`, `(my $v) = 1, 2`): the conditional, operator or
-/// declaration is evaluated and its result container is written.
+/// `($a || $b) = 1`, `(my $v) = 1, 2`, `($x = 5) = 6`): the conditional,
+/// operator, declaration or assignment is evaluated and its result container
+/// is written.
 // Cost: O(d), d = levels of parentheses around the target.
 pub(crate) fn is_callable_lvalue_target(target: &Expr) -> bool {
     match target.peel_parens() {
@@ -49,6 +50,11 @@ pub(crate) fn is_callable_lvalue_target(target: &Expr) -> bool {
             true
         }
         Expr::DoStmt(stmt) => matches!(stmt.as_ref(), Stmt::VarDecl { .. }),
+        // `($x = 5) = 6`, `(@a[0] = 5) = 7`: an assignment yields its
+        // target's container.
+        Expr::Ast(node) => matches!(node.as_ref(), ParsedExpr::Assign(_)),
+        Expr::AssignExpr { is_bind, .. } => !is_bind,
+        Expr::IndexAssign { .. } | Expr::MultiDimIndexAssign { .. } => true,
         _ => false,
     }
 }
