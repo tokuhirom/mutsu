@@ -327,6 +327,18 @@ impl Interpreter {
         self.push_routine_with_visibility(package, name, line, file, def_file, false, 0);
     }
 
+    /// A routine's `$_` is its own: a typed `$_` the *caller* declared (a
+    /// `Foo $_` parameter) is not a constraint on the callee's topic, so the
+    /// scoped constraint entry the callee's env inherited is dropped on entry.
+    /// A `$_` parameter of the callee itself binds after this and re-registers.
+    // Cost: O(1); a single bit test unless a typed `$_` was ever declared.
+    fn drop_inherited_topic_constraint(&mut self) {
+        let topic = Symbol::intern("_");
+        if Self::env_type_constraint_seen_for(topic) {
+            self.env.remove_sym(Self::type_meta_key_for_sym(topic));
+        }
+    }
+
     /// Push a routine frame with its declaration's backtrace visibility and
     /// the address of its body (`RoutineFrame::code`, `0` = not recorded).
     #[allow(clippy::too_many_arguments)]
@@ -340,6 +352,7 @@ impl Interpreter {
         is_hidden_from_backtrace: bool,
         code: usize,
     ) {
+        self.drop_inherited_topic_constraint();
         let invocation_id = self.take_invocation_id();
         let lexical_package = self.lexical_package_for_frame(def_file);
         // Decided once per symbol (`src/qualified.rs`): this runs on every
@@ -395,6 +408,7 @@ impl Interpreter {
         callable_id: u64,
         fixtures: super::routine_stack::FrameFixtures,
     ) {
+        self.drop_inherited_topic_constraint();
         let invocation_id = self.take_invocation_id();
         let frame = super::RoutineFrame {
             package,
