@@ -67,6 +67,9 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
             Ok(crate::parser::wrap_with_will_phasers(*decl, &name, phasers))
         }
         ParsedStmt::DeclTail { head, tail } => Ok(crate::ast::decl_tail::expand(*head, tail)),
+        ParsedStmt::PackageHeader { decl, name, header } => {
+            Ok(crate::ast::package_header::wrap(*decl, &name, header))
+        }
         ParsedStmt::SigillessDecl(d) => {
             lower_sigilless(*d, crate::parser::is_user_declared_value_term)
         }

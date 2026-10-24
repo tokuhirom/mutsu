@@ -485,7 +485,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     let export_tags = traits.export_tags.filter(|_| name.contains("::"));
     Ok((
         rest,
-        crate::ast::package_header::wrap(
+        crate::parser::stmt::control::parsed_block::finish_package_header(
             package,
             &name,
             crate::ast::package_header::Header {

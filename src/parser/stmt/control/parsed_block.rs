@@ -111,3 +111,21 @@ pub(crate) fn finish(node: ParsedStmt) -> Result<Stmt, crate::value::RuntimeErro
 pub(crate) fn finish_total(node: ParsedStmt) -> Stmt {
     finish(node).expect("the lowering of this node is total")
 }
+
+/// A package-like declaration with its header: kept as a
+/// `ParsedStmt::PackageHeader` when it has one, the bare declaration otherwise.
+// Cost: O(n), n = size of the declaration.
+pub(crate) fn finish_package_header(
+    declaration: Stmt,
+    name: &str,
+    header: crate::ast::package_header::Header,
+) -> Stmt {
+    if header.adverbs.is_empty() && header.export_tags.is_none() {
+        return declaration;
+    }
+    finish_total(ParsedStmt::PackageHeader {
+        decl: Box::new(declaration),
+        name: name.to_string(),
+        header,
+    })
+}

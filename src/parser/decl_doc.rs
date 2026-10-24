@@ -336,6 +336,8 @@ fn stmt_ident(stmt: &Stmt) -> Option<(SiteIdent, bool)> {
             sigiled: format!("{sigil}!{}", name.resolve()),
         },
         Stmt::VarDecl { .. } => SiteIdent::Variable,
+        // A declaration a `.AST` parse keeps as written (its header, a binding).
+        Stmt::Ast(node) => return node.inner_stmt().and_then(stmt_ident),
         // `class Foo:ver<1> { }` and similar come back as their metadata
         // setters followed by the declaration itself.
         Stmt::SyntheticBlock(stmts) => {

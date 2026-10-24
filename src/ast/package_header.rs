@@ -6,8 +6,9 @@
 //! the `__MUTSU_EXPORT_TYPE__` registration after it; with neither it is the
 //! bare declaration. Rakudo has neither statement: the adverbs are colonpairs
 //! of the declaration's `name` and the export a `Trait::Is`. [`wrap`] is the
-//! parser's and the RakuAST lowering's one builder, [`unwrap`] the converter's
-//! recognizer.
+//! lowering of `ParsedStmt::PackageHeader` (the parser keeps the declaration and
+//! its header as written), [`unwrap`] reads the compiler's form for passes over
+//! a lowered tree.
 
 use super::{Expr, Stmt};
 use crate::symbol::Symbol;
@@ -17,7 +18,7 @@ const SET_META: &str = "__MUTSU_SET_META__";
 const EXPORT_TYPE: &str = "__MUTSU_EXPORT_TYPE__";
 
 /// The header of a package-like declaration.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Header {
     /// `:ver<1.0>` and friends, as `(key, value)` in the written order.
     pub(crate) adverbs: Vec<(String, Expr)>,
@@ -85,6 +86,7 @@ fn is_declaration(stmt: &Stmt) -> bool {
 pub(crate) fn declaration(stmt: &Stmt) -> Option<&Stmt> {
     match stmt {
         Stmt::SyntheticBlock(parts) => parts.iter().find(|part| is_declaration(part)),
+        Stmt::Ast(node) => node.inner_stmt().filter(|inner| is_declaration(inner)),
         other => is_declaration(other).then_some(other),
     }
 }
@@ -95,6 +97,7 @@ pub(crate) fn declaration(stmt: &Stmt) -> Option<&Stmt> {
 pub(crate) fn declaration_mut(stmt: &mut Stmt) -> Option<&mut Stmt> {
     match stmt {
         Stmt::SyntheticBlock(parts) => parts.iter_mut().find(|part| is_declaration(part)),
+        Stmt::Ast(node) => node.inner_stmt_mut().filter(|inner| is_declaration(inner)),
         other => is_declaration(other).then_some(other),
     }
 }

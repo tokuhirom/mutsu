@@ -40,7 +40,7 @@ pub(crate) fn package_decl_with_scope(input: &str, is_my: bool) -> PResult<'_, S
     };
     Ok((
         rest,
-        crate::ast::package_header::wrap(
+        crate::parser::stmt::control::parsed_block::finish_package_header(
             declaration,
             &name,
             crate::ast::package_header::Header {

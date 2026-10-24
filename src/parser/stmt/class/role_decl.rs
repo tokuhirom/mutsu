@@ -438,16 +438,21 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
         custom_traits,
         decl_id: crate::ast::next_class_decl_id(),
     };
-    // Emit __MUTSU_SET_META__ calls for ver/auth/api traits (like class declarations)
-    let mut meta_stmts = Vec::new();
-    for (trait_name, trait_value) in traits {
-        if trait_name == "ver" || trait_name == "auth" || trait_name == "api" {
-            meta_stmts.push(meta_setter_stmt(&name, &trait_name, trait_value));
-        }
-    }
-    if meta_stmts.is_empty() {
-        return Ok((rest, role_stmt));
-    }
-    meta_stmts.push(role_stmt);
-    Ok((rest, Stmt::SyntheticBlock(meta_stmts)))
+    // The ver/auth/api traits become the declaration's header adverbs, like
+    // a class declaration's.
+    let adverbs = traits
+        .into_iter()
+        .filter(|(trait_name, _)| matches!(trait_name.as_str(), "ver" | "auth" | "api"))
+        .collect();
+    Ok((
+        rest,
+        crate::parser::stmt::control::parsed_block::finish_package_header(
+            role_stmt,
+            &name,
+            crate::ast::package_header::Header {
+                adverbs,
+                export_tags: None,
+            },
+        ),
+    ))
 }

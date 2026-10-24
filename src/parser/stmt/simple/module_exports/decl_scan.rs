@@ -106,6 +106,35 @@ struct DeclScan {
 }
 
 impl DeclScan {
+    /// An exported qualified type is imported under its short name too
+    /// (`class A::B::C is export { }` imports `C`).
+    // Cost: O(t), t = export tags.
+    fn header_exports(&mut self, decl: &Stmt, header: &crate::ast::package_header::Header) {
+        let Some(tags) = &header.export_tags else {
+            return;
+        };
+        let (Stmt::ClassDecl { name, .. }
+        | Stmt::RoleDecl { name, .. }
+        | Stmt::Package { name, .. }) = decl
+        else {
+            return;
+        };
+        let name = name.resolve();
+        if let Some((_, short)) = name.rsplit_once("::") {
+            self.out.type_names.push(short.to_string());
+        }
+        let lexical = matches!(
+            decl,
+            Stmt::ClassDecl {
+                is_lexical: true,
+                ..
+            }
+        ) || matches!(decl, Stmt::Package { is_my: true, .. });
+        if !lexical {
+            self.export_type(&name, tags);
+        }
+    }
+
     /// Walk `stmt`, a package-like declaration whose body opens the package
     /// path `prefix` / `package`.
     fn enter_package(&mut self, stmt: &Stmt, prefix: String, is_unit: bool, package: String) {
@@ -492,28 +521,22 @@ impl<'ast> Visit<'ast> for DeclScan {
             // block together with its metadata statements. The wrapper opens
             // no package, so it stays on the spine with the same paths.
             Stmt::Block(_) | Stmt::SyntheticBlock(_) => {
-                // An exported qualified type is imported under its short name
-                // too (`class A::B::C is export { }` imports `C`).
-                if let Some((decl, header)) = crate::ast::package_header::unwrap(stmt)
-                    && let Some(tags) = &header.export_tags
-                    && let Stmt::ClassDecl { name, .. }
-                    | Stmt::RoleDecl { name, .. }
-                    | Stmt::Package { name, .. } = decl
+                if let Some((decl, header)) = crate::ast::package_header::unwrap(stmt) {
+                    self.header_exports(decl, &header);
+                }
+                walk_stmt(self, stmt)
+            }
+            // The same declaration a `.AST` parse keeps as written.
+            Stmt::Ast(node)
+                if matches!(
+                    node.as_ref(),
+                    crate::ast::parsed::ParsedStmt::PackageHeader { .. }
+                ) =>
+            {
+                if let crate::ast::parsed::ParsedStmt::PackageHeader { decl, header, .. } =
+                    node.as_ref()
                 {
-                    let name = name.resolve();
-                    if let Some((_, short)) = name.rsplit_once("::") {
-                        self.out.type_names.push(short.to_string());
-                    }
-                    let lexical = matches!(
-                        decl,
-                        Stmt::ClassDecl {
-                            is_lexical: true,
-                            ..
-                        }
-                    ) || matches!(decl, Stmt::Package { is_my: true, .. });
-                    if !lexical {
-                        self.export_type(&name, tags);
-                    }
+                    self.header_exports(decl, header);
                 }
                 walk_stmt(self, stmt)
             }

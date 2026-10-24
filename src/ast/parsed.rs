@@ -70,6 +70,16 @@ pub(crate) enum ParsedStmt {
     /// `my \x .= new`, as written. `rakuast::lower` adds the bookkeeping the
     /// compiler needs (`parser::build_sigilless_bind_stmt`).
     SigillessDecl(Box<SigillessSource>),
+    /// A package-like declaration (`class`, `grammar`, `module`, `package`,
+    /// `role`) with `:ver<..>` / `:auth<..>` adverbs on its name or an
+    /// `is export`: the declaration as written and its header. `rakuast::lower`
+    /// adds the meta setters and the export registration
+    /// (`ast::package_header::wrap`).
+    PackageHeader {
+        decl: Box<Stmt>,
+        name: String,
+        header: super::package_header::Header,
+    },
     /// A statement with statement modifiers (`Statement::Expression`'s
     /// `condition-modifier` and `loop-modifier`).
     Modified(Modified),
@@ -369,6 +379,7 @@ impl ParsedStmt {
     pub(crate) fn inner_stmt(&self) -> Option<&Stmt> {
         match self {
             ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
+            ParsedStmt::PackageHeader { decl, .. } => Some(decl),
             _ => None,
         }
     }
@@ -399,6 +410,7 @@ impl ParsedStmt {
     pub(crate) fn inner_stmt_mut(&mut self) -> Option<&mut Stmt> {
         match self {
             ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
+            ParsedStmt::PackageHeader { decl, .. } => Some(decl),
             _ => None,
         }
     }
@@ -420,6 +432,9 @@ impl ParsedStmt {
             ParsedStmt::WillDecl { .. } => Vec::new(),
             ParsedStmt::DeclTail { tail, .. } => vec![tail],
             ParsedStmt::SigillessDecl(d) => vec![&d.expr],
+            ParsedStmt::PackageHeader { header, .. } => {
+                header.adverbs.iter().map(|(_, value)| value).collect()
+            }
             ParsedStmt::Modified(m) => m.modifiers().map(|modifier| &modifier.expr).collect(),
             ParsedStmt::Default(_) | ParsedStmt::BareBlock(_) => Vec::new(),
         }
@@ -445,6 +460,7 @@ impl ParsedStmt {
             | ParsedStmt::WillDecl { .. }
             | ParsedStmt::DeclTail { .. }
             | ParsedStmt::SigillessDecl(_)
+            | ParsedStmt::PackageHeader { .. }
             | ParsedStmt::Modified(_) => Vec::new(),
         }
     }

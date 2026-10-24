@@ -86,6 +86,7 @@ pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
         {
             &inner[0]
         }
+        Stmt::Ast(node) => node.inner_stmt().unwrap_or(stmt),
         _ => stmt,
     };
     if let Stmt::EnumDecl { spans, .. } | Stmt::SubsetDecl { spans, .. } = stmt {
