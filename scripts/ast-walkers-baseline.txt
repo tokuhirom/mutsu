@@ -24,7 +24,7 @@ src/compiler/stmt.rs                                 4  # 4 spines: statement-ta
 src/param_destructure.rs                             1  # destructure_binds: lowering of a sub-signature into bind statements, recursing over ParamDefs
 src/parser/decl_doc.rs                               1  # stmt_ident: spine to the declaration a SyntheticBlock wrapper ends with
 src/parser/expr/mod.rs                               1  # reassociate_fat_arrow_operand: parser rewrite along the right spine of a loose-logical chain
-src/parser/expr/precedence/assign.rs                 3  # 3 parser lowerings/lvalue spines: grouped-lvalue unwrap, assignment-target lowering, compound-assignment lowering
+src/parser/expr/precedence/assign.rs                 2  # 3 parser lowerings/lvalue spines: grouped-lvalue unwrap, assignment-target lowering, compound-assignment lowering
 src/parser/expr/precedence/comparison.rs             1  # comparison_tail: recursive-descent parse function (the Expr is its accumulator), not a walk
 src/parser/expr/precedence/feed.rs                   1  # feed_leftmost_operand_mut: spine to a feed chain's leftmost operand
 src/parser/expr/precedence_meta_ops/arith.rs         1  # autoincrement_expr: recursive-descent parse function, not a walk

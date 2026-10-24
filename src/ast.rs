@@ -3262,6 +3262,24 @@ impl Expr {
         }
     }
 
+    /// Whether this is a scalar, array or hash variable term.
+    // Cost: O(1).
+    pub(crate) fn is_container_variable(&self) -> bool {
+        matches!(self, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_))
+    }
+
+    /// How many pairs of parentheses the source wrote around this term.
+    // Cost: O(d), d = nesting depth of the parentheses.
+    pub(crate) fn paren_depth(&self) -> usize {
+        let mut depth = 0;
+        let mut expr = self;
+        while let Expr::Grouped(inner) = expr {
+            depth += 1;
+            expr = inner;
+        }
+        depth
+    }
+
     /// The bareword a term is, or `None` for any other expression.
     // Cost: O(1).
     pub(crate) fn as_bare_word(&self) -> Option<&str> {
