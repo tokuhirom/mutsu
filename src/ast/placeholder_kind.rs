@@ -157,7 +157,8 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
             | ParsedStmt::WillDecl { .. }
             | ParsedStmt::DeclTail { .. }
             | ParsedStmt::SigillessDecl(_)
-            | ParsedStmt::PackageHeader { .. } => PlaceholderBodyKind::NoSignature,
+            | ParsedStmt::PackageHeader { .. }
+            | ParsedStmt::TempDecl(_) => PlaceholderBodyKind::NoSignature,
             // A statement modifier introduces no block of its own.
             ParsedStmt::Modified(_) => PlaceholderBodyKind::Transparent,
             ParsedStmt::Loop(l) => match l.kind {

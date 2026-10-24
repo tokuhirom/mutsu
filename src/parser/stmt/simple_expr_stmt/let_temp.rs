@@ -270,21 +270,13 @@ fn temp_declaration_stmt(input: &str) -> Option<PResult<'_, Stmt>> {
         return None;
     }
     let (rest, decl) = crate::parser::stmt::decl::my_decl_expr(input).ok()?;
-    let Stmt::VarDecl { name, .. } = &decl else {
+    let Stmt::VarDecl { .. } = &decl else {
         return None;
     };
-    let save = Stmt::Let {
-        name: name.clone(),
-        index: None,
-        value: None,
-        is_temp: true,
-        undefine_first: false,
-        nested_lvalue: false,
-    };
-    Some(parse_statement_modifier(
-        rest,
-        Stmt::SyntheticBlock(vec![decl, save]),
-    ))
+    let stmt = crate::parser::stmt::control::parsed_block::finish_total(
+        crate::ast::parsed::ParsedStmt::TempDecl(Box::new(decl)),
+    );
+    Some(parse_statement_modifier(rest, stmt))
 }
 
 /// The variable a `temp <invocant>.method …` saves: a plain scalar `$obj`, or
