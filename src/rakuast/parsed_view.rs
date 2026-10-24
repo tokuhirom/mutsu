@@ -71,9 +71,7 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
                 .ok_or_else(|| super::convert::unsupported("binding declaration"))?
         }
         ParsedStmt::DoesDecl { decl, role, init } => {
-            let statement = super::convert::does_declaration(decl, role, init.as_ref())?
-                .ok_or_else(|| super::convert::unsupported("does declaration"))?;
-            super::convert::expression_of(&statement)
+            super::convert::does_declaration(decl, role, init.as_ref())?
                 .ok_or_else(|| super::convert::unsupported("does declaration"))?
         }
         ParsedStmt::For { stmt, block } => {
