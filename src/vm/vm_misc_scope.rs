@@ -302,19 +302,18 @@ impl Interpreter {
         // type (`state buf32 $w`) holds a Buf whose element-assignment path
         // (`$w[$j] = ...` — Digest's SHA2) must see the Buf, not a cell, so it
         // keeps the plain store. `Mu` is universal — no constraint to check.
-        let scalar_type_constraint: Option<String> = (!name.starts_with('@')
-            && !name.starts_with('%')
-            && Self::env_type_constraint_seen())
-        .then(|| {
-            self.var_type_constraint_sym(name_sym).or_else(|| {
-                let bare = name.trim_start_matches('$');
-                (bare.len() != name.len())
-                    .then(|| self.var_type_constraint(bare))
-                    .flatten()
-            })
-        })
-        .flatten()
-        .filter(|t| t != "Mu");
+        let scalar_type_constraint: Option<String> =
+            (!name.starts_with('@') && !name.starts_with('%') && Self::env_type_constraint_seen())
+                .then(|| {
+                    self.var_type_constraint_sym(name_sym).or_else(|| {
+                        let bare = name.trim_start_matches('$');
+                        (bare.len() != name.len())
+                            .then(|| self.var_type_constraint(bare))
+                            .flatten()
+                    })
+                })
+                .flatten()
+                .filter(|t| t != "Mu");
         let type_constrained_scalar = scalar_type_constraint.as_deref().is_some_and(|t| {
             t.starts_with("buf") || t.starts_with("blob") || t.starts_with("array[")
         });
@@ -525,10 +524,8 @@ impl Interpreter {
             Some(ValueView::Str(current)) if Self::state_key_display_is(scoped_key, current.as_str())
         );
         if !meta_current {
-            self.env_mut().insert_sym_noting(
-                meta_key,
-                Value::str(Self::state_key_display(scoped_key)),
-            );
+            self.env_mut()
+                .insert_sym_noting(meta_key, Value::str(Self::state_key_display(scoped_key)));
         }
     }
 
