@@ -382,6 +382,7 @@ impl Interpreter {
     /// `&&` operator) are marked handled -- the original below the dup too,
     /// on the taken path.
     #[inline]
+    #[cfg(feature = "jit")]
     pub(super) fn jump_if_false_taken(&mut self) -> bool {
         Self::mark_failure_handled_on_stack(&mut self.stack);
         let val = self.stack.pop().unwrap();
@@ -420,6 +421,7 @@ impl Interpreter {
     /// `OpCode::JumpIfTrue` condition: PEEKS the tested value (it stays on the
     /// stack on both paths -- `||`-style short-circuit); true when truthy.
     #[inline]
+    #[cfg(feature = "jit")]
     pub(super) fn jump_if_true_taken(&mut self) -> bool {
         Self::mark_failure_handled_on_stack(&mut self.stack);
         let val = self.stack.last().unwrap().clone();
