@@ -393,6 +393,30 @@ impl Interpreter {
         }
     }
 
+    /// [`Self::jump_if_false_taken`] for the interpreter loop: an error the
+    /// tested value's own `Bool` raised unwinds the statement instead of
+    /// being swallowed (the JIT helper keeps the infallible form).
+    #[inline]
+    pub(super) fn try_jump_if_false_taken(&mut self) -> Result<bool, RuntimeError> {
+        Self::mark_failure_handled_on_stack(&mut self.stack);
+        let val = self.stack.pop().unwrap();
+        if !self.eval_truthy_result(&val)? {
+            Self::mark_failure_handled_on_stack(&mut self.stack);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// [`Self::jump_if_true_taken`], erroring like
+    /// [`Self::try_jump_if_false_taken`].
+    #[inline]
+    pub(super) fn try_jump_if_true_taken(&mut self) -> Result<bool, RuntimeError> {
+        Self::mark_failure_handled_on_stack(&mut self.stack);
+        let val = self.stack.last().unwrap().clone();
+        self.eval_truthy_result(&val)
+    }
+
     /// `OpCode::JumpIfTrue` condition: PEEKS the tested value (it stays on the
     /// stack on both paths -- `||`-style short-circuit); true when truthy.
     #[inline]

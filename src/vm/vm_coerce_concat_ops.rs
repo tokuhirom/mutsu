@@ -289,12 +289,13 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(super) fn exec_not_op(&mut self) {
+    pub(super) fn exec_not_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
         // Boolifying a Failure marks it as handled
         val.mark_failure_handled();
-        let t = self.eval_truthy(&val);
+        let t = self.eval_truthy_result(&val)?;
         self.stack.push(Value::truth(!t));
+        Ok(())
     }
 
     /// `Not` applied to every eigenstate of a Junction (recursively), keeping
@@ -314,7 +315,7 @@ impl Interpreter {
         Value::truth(!self.eval_truthy(val))
     }
 
-    pub(super) fn exec_bool_coerce_op(&mut self) {
+    pub(super) fn exec_bool_coerce_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
         let out = match val.view() {
             ValueView::Regex(_)
@@ -327,10 +328,11 @@ impl Interpreter {
             _ => {
                 // Boolifying a Failure marks it as handled
                 val.mark_failure_handled();
-                Value::truth(self.eval_truthy(&val))
+                Value::truth(self.eval_truthy_result(&val)?)
             }
         };
         self.stack.push(out);
+        Ok(())
     }
 
     // Cost: see `concat_values`.

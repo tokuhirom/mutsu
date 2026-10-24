@@ -3729,7 +3729,7 @@ impl Interpreter {
             // element, one callback per source element up to its first result
             // (see eval_truthy).
             OpCode::Not => {
-                self.exec_not_op();
+                self.exec_not_op()?;
                 *ip += 1;
             }
             // Cost: O(k) for a Junction of k eigenstates (nested ones included),
@@ -3743,7 +3743,7 @@ impl Interpreter {
             // (see eval_truthy).
             OpCode::BoolCoerce => {
                 self.sync_source_line(code, *ip);
-                self.exec_bool_coerce_op();
+                self.exec_bool_coerce_op()?;
                 *ip += 1;
             }
             // Cost: O(c), c = the chunk's container-ref capture names (a linear
@@ -4542,7 +4542,7 @@ impl Interpreter {
             }
             // Cost: O(1) (a user `Bool` method costs its call).
             OpCode::JumpIfFalse(target) => {
-                *ip = if self.jump_if_false_taken() {
+                *ip = if self.try_jump_if_false_taken()? {
                     *target as usize
                 } else {
                     *ip + 1
@@ -4550,7 +4550,7 @@ impl Interpreter {
             }
             // Cost: O(1) (a user `Bool` method costs its call).
             OpCode::JumpIfTrue(target) => {
-                *ip = if self.jump_if_true_taken() {
+                *ip = if self.try_jump_if_true_taken()? {
                     *target as usize
                 } else {
                     *ip + 1

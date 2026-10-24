@@ -111,7 +111,7 @@ impl Interpreter {
                 &code,
                 (control_begin, end),
                 &fns,
-                message,
+                &RuntimeError::warn_signal(message.to_string()),
                 resume_safe,
                 installing,
             );
@@ -135,6 +135,55 @@ impl Interpreter {
         Ok(Value::NIL)
     }
 
+    /// Offer a user-defined control exception (a class doing `X::Control`,
+    /// thrown with `.throw`) to the active CONTROL handlers at its throw site,
+    /// so a handler's `.resume` continues right after the `.throw`, as in
+    /// rakudo (Red's `CX::Red::Bool` relies on it).
+    ///
+    /// - `Ok(_)`: a handler resumed; the `.throw` returns.
+    /// - `Err(e)`: a handler ended its region without resuming (stamped with
+    ///   that region's token), raised something else, or every handler
+    ///   declined and `signal` unwinds as an ordinary control exception.
+    // Cost: O(h * b), h = active CONTROL handlers, b = a handler's body.
+    pub(crate) fn try_control_inline_signal(
+        &mut self,
+        signal: RuntimeError,
+    ) -> Result<Value, RuntimeError> {
+        let mut idx = self.control.control_handlers.len();
+        while idx > 0 {
+            idx -= 1;
+            let entry = &self.control.control_handlers[idx];
+            let resume_safe = entry.resume_safe;
+            let token = entry.token;
+            let code = entry.handler.code.clone();
+            let control_begin = entry.handler.control_begin;
+            let end = entry.handler.end;
+            let fns = entry.handler.compiled_fns.clone();
+            let installing = (entry.installing_base, entry.installing_call_depth);
+            let inner = self.control.control_handlers.split_off(idx);
+            let outcome = self.run_control_handler_inline(
+                &code,
+                (control_begin, end),
+                &fns,
+                &signal,
+                resume_safe,
+                installing,
+            );
+            self.control.control_handlers.extend(inner);
+            match outcome {
+                ControlInlineOutcome::Resumed => return Ok(Value::NIL),
+                ControlInlineOutcome::Handled => {
+                    let mut err = signal;
+                    err.set_catch_inline_verdict(Some((token, CatchInlineVerdict::Handled)));
+                    return Err(err);
+                }
+                ControlInlineOutcome::Declined => {}
+                ControlInlineOutcome::Raised(e) => return Err(e),
+            }
+        }
+        Err(signal)
+    }
+
     /// Run `code[control_begin..end]` as a CONTROL handler for a warning, with
     /// a `CX::Warn` as the topic.
     fn run_control_handler_inline(
@@ -142,14 +191,14 @@ impl Interpreter {
         code: &CompiledCode,
         (control_begin, end): (usize, usize),
         fns: &CompiledFns,
-        message: &str,
+        signal: &RuntimeError,
         resume_safe: bool,
         installing: (usize, usize),
     ) -> ControlInlineOutcome {
-        // Present the warning to the handler as a `CX::Warn` topic in `$_`,
+        // Present the signal to the handler as its topic in `$_` (a `CX::Warn`
+        // for a warning, the exception itself for a user control exception),
         // mirroring the unwinding path in `exec_try_catch_op_inner`.
-        let warn_signal = RuntimeError::warn_signal(message.to_string());
-        let topic = Self::control_signal_topic_value(&warn_signal);
+        let topic = Self::control_signal_topic_value(signal);
         let saved_topic = self.env().get("_").cloned();
         // The handler's body belongs to the frame that registered it, so it
         // runs on that activation's env, as an inline `CATCH` handler does

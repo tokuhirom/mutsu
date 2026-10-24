@@ -511,6 +511,26 @@ impl Interpreter {
     /// Cost: O(1) for most values; a `gather` LazyList likewise pulls one element; a not-yet-run `.map`/`.grep` Seq pulls one element
     /// (`reify_map_grep_prefix`), one callback per source element up to its first result.
     pub(crate) fn eval_truthy(&mut self, val: &Value) -> bool {
+        self.eval_truthy_impl(val, &mut None)
+    }
+
+    /// [`Self::eval_truthy`], but an error a user `Bool` method raised (a
+    /// `die`, a control exception such as Red's `CX::Red::Bool`) is returned
+    /// instead of being swallowed: the operand's `Bool` runs inside the
+    /// statement that tests it, so the error unwinds that statement, as in
+    /// rakudo. A `Bool` that cannot be resolved still falls back to the
+    /// value's raw truthiness.
+    // Cost: as `eval_truthy`.
+    pub(crate) fn eval_truthy_result(&mut self, val: &Value) -> Result<bool, RuntimeError> {
+        let mut error = None;
+        let truth = self.eval_truthy_impl(val, &mut error);
+        match error {
+            Some(e) => Err(e),
+            None => Ok(truth),
+        }
+    }
+
+    fn eval_truthy_impl(&mut self, val: &Value, error: &mut Option<RuntimeError>) -> bool {
         // A successful lazy Match already knows its truth value, and reading
         // it through `view()` would force the capture map. Plain regex
         // Matches have no user-defined Bool method, so answer directly before
@@ -529,7 +549,7 @@ impl Interpreter {
         if val.is_proxy_value()
             && let Ok(fetched) = loan_env!(self, auto_fetch_proxy(val))
         {
-            return self.eval_truthy(&fetched);
+            return self.eval_truthy_impl(&fetched, error);
         }
         // ADR-0058: `Value::truthy` cannot pull, so it reports a not-yet-run
         // `.map`/`.grep` Seq as TRUE rather than reading its still-empty seed
@@ -553,6 +573,9 @@ impl Interpreter {
                     let caller_code = self.current_code;
                     let result = self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![]);
                     self.reconcile_caller_after_internal_dispatch(caller_code);
+                    // A type object's `Bool` that dies (a role's abstract method
+                    // reached through the role itself) keeps the old answer:
+                    // only an instance's own `Bool` unwinds the statement.
                     if let Ok(result) = result {
                         return result.truthy();
                     }
@@ -573,8 +596,10 @@ impl Interpreter {
                     let caller_code = self.current_code;
                     let result = self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![]);
                     self.reconcile_caller_after_internal_dispatch(caller_code);
-                    if let Ok(result) = result {
-                        return result.truthy();
+                    match result {
+                        Ok(result) => return result.truthy(),
+                        Err(e) if !e.is_method_not_found_for("Bool") => *error = Some(e),
+                        Err(_) => {}
                     }
                 }
                 val.truthy()
@@ -594,7 +619,12 @@ impl Interpreter {
                 self.reconcile_caller_after_internal_dispatch(caller_code);
                 match result {
                     Ok(result) => result.truthy(),
-                    Err(_) => val.truthy(),
+                    Err(e) => {
+                        if !e.is_method_not_found_for("Bool") {
+                            *error = Some(e);
+                        }
+                        val.truthy()
+                    }
                 }
             }
             // A `gather` Seq is true iff its body yields a first element, as
