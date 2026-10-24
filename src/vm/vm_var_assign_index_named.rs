@@ -3868,9 +3868,10 @@ impl Interpreter {
                     } else {
                         outer_idx
                     };
-                    Self::assign_into_nested_container(
+                    Self::assign_into_nested_container_keyed(
                         &mut container,
                         &outer_idx.to_string_value(),
+                        Some(&outer_idx),
                         val.clone(),
                     )?;
                     self.stack.push(val);
@@ -4229,9 +4230,10 @@ impl Interpreter {
                     // mutation reaches the aliased container (`@h[i] := @inner;
                     // @h[i][j] = v` updates `@inner[j]`).
                     if matches!(arr[inner_i].view(), ValueView::ContainerRef(_)) {
-                        Self::assign_into_nested_container(
+                        Self::assign_into_nested_container_keyed(
                             &mut arr[inner_i],
                             &outer_key,
+                            Some(&outer_idx),
                             val.clone(),
                         )?;
                     } else if let Some(r) = {
@@ -4277,10 +4279,12 @@ impl Interpreter {
                         r?;
                     } else {
                         let _ = arr[inner_i].with_hash_mut(|inner_hash| {
-                            // Container identity (§3): write through a shared
-                            // inner node.
-                            let hd = crate::value::gc_data_mut(inner_hash);
-                            Value::hash_insert_through(&mut hd.map, outer_key.clone(), val.clone());
+                            Self::insert_hash_element_keyed(
+                                inner_hash,
+                                &outer_key,
+                                Some(&outer_idx),
+                                val.clone(),
+                            );
                         });
                     }
                     Ok(true)
@@ -4371,7 +4375,7 @@ impl Interpreter {
                     ) {
                         return Err(err);
                     }
-                    Self::assign_into_nested_container(inner_val, &outer_key, val.clone())?;
+                    Self::assign_into_nested_container_keyed(inner_val, &outer_key, Some(&outer_idx), val.clone())?;
                     Ok(())
                 })
             })
@@ -4722,10 +4726,25 @@ impl Interpreter {
         outer_key: &str,
         val: Value,
     ) -> Result<(), RuntimeError> {
+        Self::assign_into_nested_container_keyed(target, outer_key, None, val)
+    }
+
+    /// [`Self::assign_into_nested_container`] for a subscript key that is an
+    /// object: when the container written to is an object hash (it carries a
+    /// `key_type`), the entry is stored under the key's `.WHICH` and the key
+    /// object is recorded in `original_keys`, as the single-level store does.
+    /// `key_object` is `None` for a key that is only a string.
+    // Cost: O(1) plus the key's `.WHICH`.
+    pub(crate) fn assign_into_nested_container_keyed(
+        target: &mut Value,
+        outer_key: &str,
+        key_object: Option<&Value>,
+        val: Value,
+    ) -> Result<(), RuntimeError> {
         if let ValueView::ContainerRef(cell) = target.view() {
             let cell = cell.clone();
             let mut guard = cell.lock().unwrap();
-            Self::assign_into_nested_container(&mut guard, outer_key, val)?;
+            Self::assign_into_nested_container_keyed(&mut guard, outer_key, key_object, val)?;
         } else if let Some(aggregate) = Self::pair_subscript_aggregate(target, Some(outer_key)) {
             // `%h<x><y> = v` where `%h<x>` is the Pair `y => [...]`. The
             // subscript addresses the Pair's value, which is a real container,
@@ -4754,15 +4773,39 @@ impl Interpreter {
             r?;
         } else {
             let _ = target.with_hash_mut(|h| {
-                // Container identity (§3): write through a shared node.
-                Value::hash_insert_through(
-                    &mut crate::value::gc_data_mut(h).map,
-                    outer_key.to_string(),
-                    val.clone(),
-                );
+                Self::insert_hash_element_keyed(h, outer_key, key_object, val.clone());
             });
         }
         Ok(())
+    }
+
+    /// Store `val` under `key` in `hash`. When `key_object` is given and the
+    /// hash is an object hash (it carries a `key_type`), the entry is stored
+    /// under the key object's `.WHICH` and the object is remembered in
+    /// `original_keys`, as the single-level store does; otherwise under the
+    /// string `key`. The one place a chained subscript store writes a hash
+    /// element.
+    // Cost: O(1) plus the key's `.WHICH`.
+    fn insert_hash_element_keyed(
+        hash: &mut crate::gc::Gc<crate::value::HashData>,
+        key: &str,
+        key_object: Option<&Value>,
+        val: Value,
+    ) {
+        let which = key_object
+            .filter(|_| hash.key_type.is_some())
+            .map(|obj| (crate::runtime::utils::value_which_key(obj), obj));
+        // Container identity (§3): write through a shared node.
+        let data = crate::value::gc_data_mut(hash);
+        match which {
+            Some((which_key, obj)) => {
+                Value::hash_insert_through(&mut data.map, which_key.clone(), val);
+                data.original_keys
+                    .get_or_insert_with(ValueMap::default)
+                    .insert(which_key, obj.clone());
+            }
+            None => Value::hash_insert_through(&mut data.map, key.to_string(), val),
+        }
     }
 
     /// Follow `current` through any chain of `:=`-bound container cells
