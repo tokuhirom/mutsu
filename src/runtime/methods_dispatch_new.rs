@@ -850,6 +850,7 @@ impl Interpreter {
             .collect();
         super::seed_native_subclass_payloads(&mut attributes, &class_mro, &args, &positional_args);
         self.seed_concurrency_payload(&mut attributes, &class_mro, &args);
+        self.seed_repository_state(&mut attributes, &class_mro, &args);
         // `bless` can receive a typed `@`/`%` attribute through a custom
         // constructor (`self.bless(|%args)`).  Apply the same element checks
         // and container metadata as the native `.new` path before the

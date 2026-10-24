@@ -258,10 +258,12 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && matches!(
+            && (matches!(
                 class_name.resolve().as_str(),
                 "CompUnit::Repository::Installation" | "CompUnit::Repository::FileSystem"
-            )
+            ) || attributes
+                .as_map()
+                .contains_key(crate::builtins::method_table::carried_state::REPO_SUBCLASS))
         {
             attributes.insert("next-repo", value.clone());
             return Ok(value);

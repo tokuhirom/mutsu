@@ -137,6 +137,8 @@ pub(crate) const BUILTIN_INHERITABLE_TYPES: &[&str] = &[
     "CallFrame",
     "CompUnit",
     "CompUnit::DependencySpecification",
+    "CompUnit::Repository::FileSystem",
+    "CompUnit::Repository::Installation",
     "CX::Return",
     "CX::Warn",
     "ComplexStr",

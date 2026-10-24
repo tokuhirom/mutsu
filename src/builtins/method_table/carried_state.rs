@@ -14,6 +14,15 @@
 use super::io_concurrency::supplier_scheduler::SUPPLIER_SUBCLASS;
 use crate::value::{Value, ValueView};
 
+/// The reserved attribute an instance of a user subclass of a repository class
+/// carries (`inst` for `CompUnit::Repository::Installation`, `file` for
+/// `::FileSystem`): the repository's state is its `prefix` / `next-repo`
+/// attributes, which the subclass instance holds itself.
+pub(crate) const REPO_SUBCLASS: &str = "__mutsu_repo_subclass";
+
+const INSTALLATION: &[&str] = &["CompUnit::Repository::Installation"];
+const FILE_SYSTEM: &[&str] = &["CompUnit::Repository::FileSystem"];
+
 /// `Proc::Async`'s state attribute (`Interpreter::proc_async_state`).
 const PROC_ASYNC_STATE: &str = "__mutsu_proc_async_state";
 
@@ -42,6 +51,12 @@ pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
     let attributes = attributes.as_map();
     if attributes.contains_key(PROC_ASYNC_STATE) {
         Some(PROC_ASYNC)
+    } else if let Some(kind) = attributes.get(REPO_SUBCLASS) {
+        Some(if kind.to_string_value() == "file" {
+            FILE_SYSTEM
+        } else {
+            INSTALLATION
+        })
     } else if attributes.contains_key(SUPPLIER_SUBCLASS) {
         Some(SUPPLIER)
     } else if attributes

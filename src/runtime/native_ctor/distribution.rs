@@ -209,6 +209,55 @@ impl Interpreter {
             ))
     }
 
+    /// The state an instance of a user subclass of a repository class holds
+    /// itself (`class CompUnit::Repository::Staging is
+    /// CompUnit::Repository::Installation`): the `prefix` / `next-repo` its
+    /// constructor was given, and the marker the method table reads to answer
+    /// the repository rows on it (`method_table::carried_state`).
+    // Cost: O(m + a), m = classes in the MRO, a = arguments.
+    pub(crate) fn seed_repository_state(
+        &mut self,
+        attrs: &mut AttrMap,
+        class_mro: &[Symbol],
+        args: &[Value],
+    ) {
+        use crate::builtins::method_table::carried_state::REPO_SUBCLASS;
+        if attrs.contains_key(REPO_SUBCLASS) {
+            return;
+        }
+        let kind = if class_mro
+            .iter()
+            .any(|name| name == "CompUnit::Repository::Installation")
+        {
+            "inst"
+        } else if class_mro
+            .iter()
+            .any(|name| name == "CompUnit::Repository::FileSystem")
+        {
+            "file"
+        } else {
+            return;
+        };
+        let mut prefix = None;
+        for arg in args {
+            if let ValueView::Pair(key, value) = arg.view() {
+                if key == "prefix" {
+                    prefix = Some(value.to_string_value());
+                } else if key == "next-repo" && value.truthy() {
+                    attrs.insert("next-repo", value.clone());
+                }
+            }
+        }
+        if let Some(prefix) = prefix {
+            attrs.insert("prefix", self.make_io_path_instance(&prefix));
+        }
+        attrs.insert(
+            "short-id",
+            Value::str_from(if kind == "file" { "file" } else { "inst" }),
+        );
+        attrs.insert(REPO_SUBCLASS, Value::str_from(kind));
+    }
+
     /// `CompUnit::Repository::Installation`.
     pub(super) fn ctor_compunit_repository_installation(
         &mut self,
