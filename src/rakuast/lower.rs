@@ -13,7 +13,7 @@ use conditional::*;
 use super::name_parts::{self, NameShape};
 use super::routine_lower::lower_sub;
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
-use crate::ast::parsed::{ConditionalKind, ModifierKind, Modified, StatementModifier};
+use crate::ast::parsed::{ConditionalKind, Modified, ModifierKind, StatementModifier};
 use crate::ast::{ContextKind, Expr, ParamDef, Stmt};
 use crate::regex_tree::{RegexNode, RegexTree};
 use crate::symbol::Symbol;

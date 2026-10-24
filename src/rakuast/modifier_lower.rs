@@ -10,7 +10,7 @@
 //! `S`. The condition modifier applies first: `S if C for L` loops over
 //! `S if C`.
 
-use crate::ast::parsed::{ModifierKind, Modified, StatementModifier};
+use crate::ast::parsed::{Modified, ModifierKind, StatementModifier};
 use crate::ast::{Expr, ForMode, GivenWithKind, ParamDef, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
@@ -186,7 +186,9 @@ fn loop_modifier(modifier: StatementModifier, stmt: Stmt) -> Stmt {
 
 /// The declaration modifier an attribute keeps for a condition modifier.
 // Cost: O(1).
-fn declaration_modifier(kind: ModifierKind) -> Option<crate::ast::decl_modifier::DeclarationModifier> {
+fn declaration_modifier(
+    kind: ModifierKind,
+) -> Option<crate::ast::decl_modifier::DeclarationModifier> {
     use crate::ast::decl_modifier::DeclarationModifier as D;
     Some(match kind {
         ModifierKind::If => D::If,
@@ -272,65 +274,62 @@ type ForParamShape = (
 // Cost: O(n), n = size of `stmt`.
 fn for_modifier(iterable: Expr, stmt: Stmt) -> Stmt {
     let (hoisted_decl, stmt) = split_compound_decl(stmt);
-    let no_signature = || -> ForParamShape {
-        (None, Box::new(None), Vec::new(), Vec::new(), false, false)
-    };
-    let ((param, param_def, params, params_def, rw_block, explicit_zero_params), body) =
-        match stmt {
-            // `{ ... } for LIST` is the very same loop as `for LIST { ... }`,
-            // so the bare block gives the loop its implicit placeholder
-            // signature exactly as a `for LIST { ... }` body block does.
-            Stmt::Block(_) => {
-                let (param, params) = loop_params(&stmt);
-                (
-                    (param, Box::new(None), params, Vec::new(), false, false),
-                    vec![stmt],
-                )
-            }
-            // A Whatever-curried statement (`* + 1 for @a`) is an ordinary
-            // expression evaluated once per iteration, so the loop yields one
-            // WhateverCode per element and calls nothing (#13308); it falls
-            // through to the generic arm below. A pointy block is the
-            // statement itself and is called per element.
-            Stmt::Expr(
-                expr @ Expr::Lambda {
-                    is_whatever_code: false,
-                    ..
-                },
-            ) => (no_signature(), vec![call_with_topic(expr)]),
-            // A routine (`sub (...) { ... }`, `method (...) { ... }`) is a value
-            // like any other expression: the loop builds it once per element
-            // and calls nothing (rakudo 2026.09).
-            routine @ Stmt::Expr(Expr::AnonSubParams { declarator, .. })
-                if declarator.is_routine() =>
-            {
-                (no_signature(), vec![routine])
-            }
-            // A multi-/zero-/slurpy-param signature written as a pointy block:
-            // the block's signature is the loop's, so the loop consumes N
-            // elements per iteration, as `for LIST -> SIG { ... }` does. The
-            // implicit-`@_` bare block (`{ @_ } for LIST`) is invoked one
-            // element at a time instead.
-            Stmt::Expr(Expr::AnonSubParams {
-                params,
-                param_defs,
-                body,
-                is_rw,
+    let no_signature =
+        || -> ForParamShape { (None, Box::new(None), Vec::new(), Vec::new(), false, false) };
+    let ((param, param_def, params, params_def, rw_block, explicit_zero_params), body) = match stmt
+    {
+        // `{ ... } for LIST` is the very same loop as `for LIST { ... }`,
+        // so the bare block gives the loop its implicit placeholder
+        // signature exactly as a `for LIST { ... }` body block does.
+        Stmt::Block(_) => {
+            let (param, params) = loop_params(&stmt);
+            (
+                (param, Box::new(None), params, Vec::new(), false, false),
+                vec![stmt],
+            )
+        }
+        // A Whatever-curried statement (`* + 1 for @a`) is an ordinary
+        // expression evaluated once per iteration, so the loop yields one
+        // WhateverCode per element and calls nothing (#13308); it falls
+        // through to the generic arm below. A pointy block is the
+        // statement itself and is called per element.
+        Stmt::Expr(
+            expr @ Expr::Lambda {
+                is_whatever_code: false,
                 ..
-            }) if !(params.len() == 1
-                && params[0] == "@_"
-                && param_defs.first().is_some_and(|d| d.block_param)) =>
-            {
-                (
-                    closure_signature_as_for_params(params, param_defs, is_rw),
-                    body,
-                )
-            }
-            Stmt::Expr(expr @ Expr::AnonSubParams { .. }) => {
-                (no_signature(), vec![call_with_topic(expr)])
-            }
-            other => (no_signature(), vec![other]),
-        };
+            },
+        ) => (no_signature(), vec![call_with_topic(expr)]),
+        // A routine (`sub (...) { ... }`, `method (...) { ... }`) is a value
+        // like any other expression: the loop builds it once per element
+        // and calls nothing (rakudo 2026.09).
+        routine @ Stmt::Expr(Expr::AnonSubParams { declarator, .. }) if declarator.is_routine() => {
+            (no_signature(), vec![routine])
+        }
+        // A multi-/zero-/slurpy-param signature written as a pointy block:
+        // the block's signature is the loop's, so the loop consumes N
+        // elements per iteration, as `for LIST -> SIG { ... }` does. The
+        // implicit-`@_` bare block (`{ @_ } for LIST`) is invoked one
+        // element at a time instead.
+        Stmt::Expr(Expr::AnonSubParams {
+            params,
+            param_defs,
+            body,
+            is_rw,
+            ..
+        }) if !(params.len() == 1
+            && params[0] == "@_"
+            && param_defs.first().is_some_and(|d| d.block_param)) =>
+        {
+            (
+                closure_signature_as_for_params(params, param_defs, is_rw),
+                body,
+            )
+        }
+        Stmt::Expr(expr @ Expr::AnonSubParams { .. }) => {
+            (no_signature(), vec![call_with_topic(expr)])
+        }
+        other => (no_signature(), vec![other]),
+    };
     let loop_stmt = Stmt::For {
         iterable,
         param,
@@ -370,7 +369,9 @@ fn call_with_topic(closure: Expr) -> Stmt {
 // Cost: O(n), n = size of the block.
 fn loop_params(stmt: &Stmt) -> (Option<String>, Vec<String>) {
     match stmt {
-        Stmt::Block(body) => crate::parser::placeholder_loop_params(body).unwrap_or((None, Vec::new())),
+        Stmt::Block(body) => {
+            crate::parser::placeholder_loop_params(body).unwrap_or((None, Vec::new()))
+        }
         _ => (None, Vec::new()),
     }
 }

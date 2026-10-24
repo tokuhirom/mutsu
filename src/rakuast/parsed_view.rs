@@ -11,7 +11,7 @@ use super::convert::{
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::parsed::{
     BlockParams, BlockSpans, ClauseKind, Conditional, ConditionalKind, LoopKind, LoopStmt,
-    ModifierKind, Modified, ParsedBlock, ParsedStmt,
+    Modified, ModifierKind, ParsedBlock, ParsedStmt,
 };
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -90,7 +90,10 @@ fn modified_node(m: &Modified) -> Result<RakuAstNode, RuntimeError> {
         .ok_or_else(|| super::convert::unsupported("empty modified statement"))?;
     if m.body.is_some()
         && m.body.from < m.body.to
-        && let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("expression"))
+        && let Some(field) = node
+            .fields
+            .iter_mut()
+            .find(|f| f.name == Some("expression"))
         && let RakuAstFieldValue::Node(value) = &field.value
         && let ValueView::RakuAst(expression) = value.view()
     {
