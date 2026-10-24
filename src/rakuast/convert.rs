@@ -2559,6 +2559,8 @@ fn var_decl_statement(
             || n == crate::ast::method_assign_decl::METHOD_ASSIGN_DECL_TRAIT
             || n == crate::ast::shaped_decl::SHAPED_DECL
             || n == crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE
+            // The argument of `is dynamic(ARG)`, rendered with the trait.
+            || n == crate::ast::DYNAMIC_TRAIT_ARGUMENT
             || (is_binding && n == crate::ast::bind_decl::SCALAR_BIND)
             || (is_binding && n == crate::ast::bind_decl::CODE_BIND)
     };
@@ -2658,7 +2660,7 @@ fn var_decl_statement(
         if !traits.is_empty() {
             return Err(unsupported("`is dynamic` beside other traits"));
         }
-        traits.push(decl_traits::dynamic_trait());
+        traits.push(decl_traits::dynamic_trait(custom_traits)?);
     }
     if let Some(export) = export_trait {
         // Like `is dynamic`, `is export` is a flag of the parsed declaration,

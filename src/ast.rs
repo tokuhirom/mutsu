@@ -1094,6 +1094,10 @@ pub(crate) const MULTI_CANDIDATE_VALUE_MARKER: &str = "__multi_candidate_value";
 /// in its unit's or routine's own (an `if` body, a bare block): registering it
 /// may shadow an outer `&name` binding instead of redeclaring it (#13855).
 pub(crate) const NESTED_SCOPE_DECL_MARKER: &str = "__nested_scope";
+/// The `custom_traits` entry keeping the argument of a variable's
+/// `is dynamic(ARG)` for the RakuAST view; the trait itself is the
+/// declaration's `is_dynamic` flag, and the compiler skips the entry.
+pub(crate) const DYNAMIC_TRAIT_ARGUMENT: &str = "__dynamic_argument";
 
 /// The source spelling of an [`Expr::Hash`] literal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
