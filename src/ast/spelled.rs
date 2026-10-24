@@ -113,6 +113,10 @@ pub(crate) enum Spelling {
     /// A bare Whatever operand of `o` is expanded to a closure for execution;
     /// the public RakuAST keeps the written composition and Whatever argument.
     CompositionWhatever(Box<Expr>),
+    /// `TERM .meth`: a method call after whitespace, which rakudo parses as
+    /// the dotty infix `.` (`ApplyDottyInfix(TERM, DottyInfix::Call, ...)`);
+    /// the wrapped expression is the ordinary method call.
+    DottyInfixCall,
     /// Where the term was written (ADR-10723 Stage 2, expression families):
     /// the byte range its RakuAST node's `origin` answers.
     Origin(crate::ast::SrcSpan),

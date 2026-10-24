@@ -906,7 +906,15 @@ fn postfix_expr_loop_from<'a>(
     // `Type.{...}` is a postcircumfix call on the type object (roast's
     // `Mu.{'a'}`), so the dot has to reach the branch that tells them apart.
     let mut dotted_subscript = false;
+    // `TERM .meth`: the method call the previous iteration parsed after
+    // whitespace is the dotty infix `.` (`Spelling::DottyInfixCall`), and so
+    // is every `.meth` chained onto it (`$a .foo.bar`).
+    let mut pending_dotty = false;
+    let mut dotty_chain = false;
     loop {
+        if std::mem::take(&mut pending_dotty) {
+            expr = dotty_infix_call(expr);
+        }
         let came_from_dot = std::mem::take(&mut dotted_subscript);
         if let (Some(start), Some(_)) = (chain_start, last_iter_start) {
             crate::parser::primary::note_origin(start, rest, &expr);
@@ -937,9 +945,15 @@ fn postfix_expr_loop_from<'a>(
                 // A `}` closing a subscript (`%h{...}`) is not a block
                 // boundary, so the chain continues across the newline.
                 if !(brace_final && crossed_newline) || super::helpers::is_subscript_expr(&expr) {
+                    if r_ws.len() != rest.len() {
+                        dotty_chain = true;
+                    }
                     rest = r_ws;
                 }
             }
+        }
+        if dotty_chain && rest.starts_with('.') && !rest.starts_with("..") {
+            pending_dotty = true;
         }
 
         // Unspace: backslash + optional whitespace/comments collapses to nothing,
@@ -3726,7 +3740,22 @@ fn postfix_expr_loop_from<'a>(
         break;
     }
 
+    if pending_dotty {
+        expr = dotty_infix_call(expr);
+    }
     Ok((rest, expr))
+}
+
+/// `expr`, a method call written after whitespace (or chained onto one),
+/// marked as the dotty infix call rakudo's tree has (`Spelling::DottyInfixCall`).
+/// Anything else (the dot led to another postfix) stays as it is.
+// Cost: O(1).
+fn dotty_infix_call(expr: Expr) -> Expr {
+    if matches!(expr, Expr::MethodCall { .. }) {
+        Expr::spelled(expr, || crate::ast::spelled::Spelling::DottyInfixCall)
+    } else {
+        expr
+    }
 }
 
 /// Parse superscript digits as an exponent. Returns (exponent_value, byte_length).

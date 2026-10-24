@@ -385,6 +385,8 @@ pub enum RakuAstClass {
     // `$x .= meth`: `ApplyDottyInfix(left, DottyInfix::CallAssign, Call::Method)`.
     ApplyDottyInfix,
     DottyInfixCallAssign,
+    // `TERM .meth`: `ApplyDottyInfix(left, DottyInfix::Call, Call::Method)`.
+    DottyInfixCall,
     // Phase 2 slice 10: scoped/typed variable declarations.
     TypeSimple,
     // `enum Color <Red Green>` -> `Type::Enum(name, term)`.
@@ -751,6 +753,7 @@ impl RakuAstClass {
             ApplyListInfix => "RakuAST::ApplyListInfix",
             ApplyDottyInfix => "RakuAST::ApplyDottyInfix",
             DottyInfixCallAssign => "RakuAST::DottyInfix::CallAssign",
+            DottyInfixCall => "RakuAST::DottyInfix::Call",
             TypeSimple => "RakuAST::Type::Simple",
             TypeEnum => "RakuAST::Type::Enum",
             TypeDefinedness => "RakuAST::Type::Definedness",
@@ -881,6 +884,7 @@ impl RakuAstClass {
             RakuAstClass::Assignment
                 | RakuAstClass::CallTerm
                 | RakuAstClass::DottyInfixCallAssign
+                | RakuAstClass::DottyInfixCall
                 | RakuAstClass::TermWhatever
                 | RakuAstClass::PrefixMultislice
                 | RakuAstClass::WhateverCodeArgument
@@ -1246,6 +1250,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::ApplyListInfix,
     RakuAstClass::ApplyDottyInfix,
     RakuAstClass::DottyInfixCallAssign,
+    RakuAstClass::DottyInfixCall,
     RakuAstClass::TypeSimple,
     RakuAstClass::TypeEnum,
     RakuAstClass::TypeDefinedness,
@@ -3022,6 +3027,8 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         ("RakuAST::Var::Compiler::Block", "new") => RakuAstClass::VarCompilerBlock,
         ("RakuAST::Var::Compiler::Routine", "new") => RakuAstClass::VarCompilerRoutine,
         ("RakuAST::Statement::Empty", "new") => RakuAstClass::StatementEmpty,
+        ("RakuAST::DottyInfix::Call", "new") => RakuAstClass::DottyInfixCall,
+        ("RakuAST::DottyInfix::CallAssign", "new") => RakuAstClass::DottyInfixCallAssign,
         ("RakuAST::VarDeclaration::Placeholder::SlurpyArray", "new") => {
             RakuAstClass::VarDeclarationPlaceholderSlurpyArray
         }
@@ -3089,6 +3096,10 @@ fn multi_field_schema(
             (RakuAstClass::ApplyListInfix, &["infix", "operands"][..])
         }
         ("RakuAST::ApplyPrefix", "new") => (RakuAstClass::ApplyPrefix, &["prefix", "operand"][..]),
+        ("RakuAST::ApplyDottyInfix", "new") => (
+            RakuAstClass::ApplyDottyInfix,
+            &["left", "infix", "right"][..],
+        ),
         ("RakuAST::ApplyPostfix", "new") => {
             (RakuAstClass::ApplyPostfix, &["operand", "postfix"][..])
         }

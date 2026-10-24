@@ -1214,6 +1214,13 @@ pub(super) fn lower_dotty_assign(
 ) -> Result<Expr, RuntimeError> {
     let target = lower_expr(named_child(node, "left")?)?;
     let call = named_child(node, "right")?;
+    // `TERM .meth`: the dotty infix call is the method call itself.
+    if named_child(node, "infix")?.class == RakuAstClass::DottyInfixCall {
+        if !is_method_call(call) && !super::dynamic_method::is_dynamic(call) {
+            return Err(unsupported(node));
+        }
+        return lower_method_postfix(target, call);
+    }
     let template = if call.class == RakuAstClass::MetaPostfixHyper {
         let inner = named_child_or_positional(call)?;
         if !is_method_call(inner) {
