@@ -167,7 +167,7 @@ pub(crate) fn build_sigilless_bind_stmt(
 /// `ParsedStmt::SigillessDecl` (lowered where it is built, or kept for a `.AST`
 /// parse).
 // Cost: O(n), n = size of the initializer.
-fn sigilless_decl<'a>(
+fn sigilless_decl(
     name: String,
     expr: Expr,
     type_constraint: Option<String>,
