@@ -97,6 +97,16 @@ pub(crate) enum ParsedStmt {
     /// `rakuast::lower` expands it into the declaration and a call of its name
     /// (`ast::immediate_call::expand`).
     ImmediateCall { decl: Box<Stmt>, args: Vec<Expr> },
+    /// `take VALUE and|or|xor|andthen|orelse|notandthen TAIL`: the value, the
+    /// loose operator and the tail as written. RakuAST makes the whole one
+    /// infix application with the `take` call as its left operand;
+    /// `rakuast::lower` evaluates the value once into a temporary, takes it,
+    /// and runs the short-circuit tail (`ast::expand_take_logical_tail`).
+    TakeLogicalTail {
+        value: Expr,
+        op: crate::token_kind::TokenKind,
+        right: Expr,
+    },
     /// A comma list of declarations, `my $x = 1, my $y = 2`, as written: one
     /// source statement whose execution is the declarations' expansions in
     /// order, with no new lexical scope (RakuAST's `ApplyListInfix` over the
@@ -472,6 +482,7 @@ impl ParsedStmt {
             | ParsedStmt::TempDecl(_)
             | ParsedStmt::BarePhaser(_)
             | ParsedStmt::CommaDecls(_) => Vec::new(),
+            ParsedStmt::TakeLogicalTail { value, right, .. } => vec![value, right],
             ParsedStmt::ImmediateCall { args, .. } => args.iter().collect(),
             ParsedStmt::AttributeModifier { condition, .. } => vec![condition],
             ParsedStmt::DoesDecl { role, init, .. } => std::iter::once(role).chain(init).collect(),
@@ -512,6 +523,7 @@ impl ParsedStmt {
             | ParsedStmt::ImmediateCall { .. }
             | ParsedStmt::AttributeModifier { .. }
             | ParsedStmt::CommaDecls(_)
+            | ParsedStmt::TakeLogicalTail { .. }
             | ParsedStmt::Modified(_) => Vec::new(),
         }
     }

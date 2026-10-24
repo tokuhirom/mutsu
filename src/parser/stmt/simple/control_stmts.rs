@@ -336,7 +336,13 @@ pub(crate) fn take_stmt(input: &str) -> PResult<'_, Stmt> {
         };
         return parse_statement_modifier(
             rest,
-            crate::ast::expand_take_logical_tail(expr, op.clone(), (**right).clone()),
+            crate::parser::stmt::control::parsed_block::finish_total(
+                crate::ast::parsed::ParsedStmt::TakeLogicalTail {
+                    value: expr,
+                    op: op.clone(),
+                    right: (**right).clone(),
+                },
+            ),
         );
     } else {
         Stmt::Take(expr, false)

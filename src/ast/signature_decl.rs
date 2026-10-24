@@ -44,14 +44,6 @@ pub(crate) enum SourceForm {
     /// keeps this marker when using a desugared block to defer that diagnostic
     /// until compilation instead of letting `make_anon_sub` consume it.
     StartBlock,
-    /// `take VALUE and|or|xor|andthen|orelse|notandthen TAIL`: the parser
-    /// expands the value-producing control call into a temporary and a
-    /// `Stmt::Take`, while the model layer keeps the written infix form.
-    TakeLogicalTail {
-        value: Expr,
-        op: crate::token_kind::TokenKind,
-        right: Expr,
-    },
     /// `with COND -> PARAM { BODY }`: the written parameter and body, which
     /// open the then-branch of the expansion `with_then_branch` builds.
     WithPointy {

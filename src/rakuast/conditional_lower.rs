@@ -79,6 +79,9 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
             Ok(Stmt::SyntheticBlock(vec![*decl, save]))
         }
         ParsedStmt::BarePhaser(phaser) => Ok(*phaser),
+        ParsedStmt::TakeLogicalTail { value, op, right } => {
+            Ok(crate::ast::expand_take_logical_tail(value, op, right))
+        }
         ParsedStmt::CommaDecls(declarations) => {
             let mut expanded = Vec::with_capacity(declarations.len());
             for declaration in declarations {

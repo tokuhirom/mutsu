@@ -180,6 +180,7 @@ impl VisitMut for Ctx {
                     | ParsedStmt::TempDecl(_)
                     | ParsedStmt::BarePhaser(_)
                     | ParsedStmt::CommaDecls(_)
+                    | ParsedStmt::TakeLogicalTail { .. }
                     | ParsedStmt::ImmediateCall { .. }
                     | ParsedStmt::AttributeModifier { .. } => {
                         crate::ast_visit::walk_parsed_mut(self, node)

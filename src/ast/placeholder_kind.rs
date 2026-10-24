@@ -161,6 +161,7 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
             | ParsedStmt::TempDecl(_)
             | ParsedStmt::BarePhaser(_)
             | ParsedStmt::CommaDecls(_)
+            | ParsedStmt::TakeLogicalTail { .. }
             | ParsedStmt::ImmediateCall { .. }
             | ParsedStmt::AttributeModifier { .. } => PlaceholderBodyKind::NoSignature,
             // A statement modifier introduces no block of its own.

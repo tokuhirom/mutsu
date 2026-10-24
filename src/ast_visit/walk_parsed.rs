@@ -45,6 +45,11 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         v.visit_expr(condition);
         return;
     }
+    if let ParsedStmt::TakeLogicalTail { value, right, .. } = node {
+        v.visit_expr(value);
+        v.visit_expr(right);
+        return;
+    }
     if let ParsedStmt::CommaDecls(declarations) = node {
         super::walk_stmts(v, declarations);
         return;
@@ -149,6 +154,10 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
         | ParsedStmt::BindDecl(stmt)
         | ParsedStmt::TempDecl(stmt)
         | ParsedStmt::BarePhaser(stmt) => super::walk_stmt_mut(v, stmt),
+        ParsedStmt::TakeLogicalTail { value, right, .. } => {
+            v.visit_expr_mut(value);
+            v.visit_expr_mut(right);
+        }
         ParsedStmt::CommaDecls(declarations) => super::walk_stmts_mut(v, declarations),
         ParsedStmt::ImmediateCall { decl, args } => {
             super::walk_stmt_mut(v, decl);

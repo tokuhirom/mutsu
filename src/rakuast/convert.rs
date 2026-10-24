@@ -406,10 +406,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Some(crate::ast::SourceForm::DeclarationCompoundAssign) => {
                 declaration_compound_assign_statement(stmt).map(Some)
             }
-            Some(crate::ast::SourceForm::TakeLogicalTail { value, op, right }) => {
-                take_logical_tail_node(value, op, right)
-                    .map(|node| Some(statement_expression(node)))
-            }
             Some(crate::ast::SourceForm::SignatureBind { signature, rhs }) => {
                 signature_bind_node(signature, rhs).map(|node| Some(statement_expression(node)))
             }
@@ -2784,7 +2780,7 @@ fn source_form(stmt: &Stmt) -> Option<&crate::ast::SourceForm> {
     }
 }
 
-fn take_logical_tail_node(
+pub(super) fn take_logical_tail_node(
     value: &Expr,
     op: &crate::token_kind::TokenKind,
     right: &Expr,
@@ -3715,9 +3711,6 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             Some(crate::ast::SourceForm::DeclarationCompoundAssign) => {
                 declaration_compound_assign(stmt)
-            }
-            Some(crate::ast::SourceForm::TakeLogicalTail { value, op, right }) => {
-                take_logical_tail_node(value, op, right)
             }
             Some(crate::ast::SourceForm::SignatureBind { signature, rhs }) => {
                 signature_bind_node(signature, rhs)

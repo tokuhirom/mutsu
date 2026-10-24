@@ -84,6 +84,9 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
         ParsedStmt::TempDecl(decl) => {
             statement_expression(super::temporize::convert_declaration(decl)?)
         }
+        ParsedStmt::TakeLogicalTail { value, op, right } => statement_expression(
+            super::convert::take_logical_tail_node(value, op, right)?,
+        ),
         ParsedStmt::CommaDecls(declarations) => {
             statement_expression(super::convert::comma_declarations_node(declarations)?)
         }

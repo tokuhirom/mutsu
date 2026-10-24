@@ -1,8 +1,8 @@
-# RakuAST Stage 2: four `Stmt::SourceForm` marker records become parser nodes
+# RakuAST Stage 2: five `Stmt::SourceForm` marker records become parser nodes
 
-`SourceForm::BarePhaser`, `ImmediateCall`, `DeclarationModifier` and `CommaDeclarations` are
-gone. The parser keeps the construct as written (`ParsedStmt::{BarePhaser, ImmediateCall,
-AttributeModifier, CommaDecls}`); `rakuast::lower` produces the expansion the compiler runs, and
+`SourceForm::BarePhaser`, `ImmediateCall`, `DeclarationModifier`, `CommaDeclarations` and
+`TakeLogicalTail` are gone. The parser keeps the construct as written (`ParsedStmt::{BarePhaser, ImmediateCall,
+AttributeModifier, CommaDecls, TakeLogicalTail}`); `rakuast::lower` produces the expansion the compiler runs, and
 `.AST` renders the node directly. The `convert.rs` arms that read the marker back, the
 `ast::immediate_call::parts` recognizer and `convert_conditional.rs` are deleted.
 
