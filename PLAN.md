@@ -86,6 +86,18 @@ and its deletion criterion.
       `native_method_row_table.rs` and the `native_call_unmodeled` counter are deleted, so rows are
       the only source of truth for both dispatch and `.^can`/`.^methods`. Progress is recorded in
       ADR-11276 §9, not here.
+- [ ] **The slow-path fallbacks are retired** — tracking issue
+      [#11510](https://github.com/tokuhirom/mutsu/issues/11510). AGENTS.md bans new slow-path /
+      tree-walk fallbacks; this makes the existing debt measurable and ends in its deletion.
+      `make check-slow-path` counts `TODO: compile to bytecode` markers and the
+      `call_method_with_values(` call sites under `src/vm/` per file
+      (`scripts/slow-path-baseline.txt`; a count may fall without an edit, never rise), and
+      `scripts/slow-path-survey.sh` sums the distinct `Class.method` shapes that still enter
+      `run_instance_method` over `t/` and the roast whitelist (baseline in #11510). The completion
+      criterion is the deletion of `run_instance_method`'s role as a fallback and of the
+      `runtime/methods*.rs` slow-path cascades that serve **user-class** dispatch and the
+      `eval_block_value` carriers. The built-in cascades are the previous item's (ADR-11276); this
+      one covers what that ADR does not reach.
 - [ ] **`Interpreter` is split into subsystems, and the lower layers stop naming the upper ones** —
       [ADR-10779](docs/adr/10779-interpreter-subsystems-and-upward-call-traits.md),
       [#10779](https://github.com/tokuhirom/mutsu/issues/10779). `struct Interpreter` keeps only the
@@ -393,5 +405,6 @@ signal "mutsu differs from raku **and** from the documented expectation" over a 
 | RakuAST frontend round trip (§0) | tracked in [#7564](https://github.com/tokuhirom/mutsu/issues/7564) | parity with the ordinary frontend, then default flip |
 | Regex walk uses, `regex-walk:` (§0) | tracked in ADR-0135 §8 | `walked=0 bridged=0`, then the walk deleted |
 | Built-in method rows (§0) | tracked in ADR-11276 §9 | every family migrated, then the cascades deleted |
+| Slow-path fallbacks (§0) | `make check-slow-path`, `scripts/slow-path-survey.sh` ([#11510](https://github.com/tokuhirom/mutsu/issues/11510)) | marker and call-site counts at 0, survey shape count 0, then `run_instance_method` as a fallback deleted |
 | Startup vs raku | **0.04×** | maintain |
 | fib / method-call / bench-class vs raku | all under target (bench CI) | maintain |
