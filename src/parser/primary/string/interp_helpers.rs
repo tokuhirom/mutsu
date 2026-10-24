@@ -121,6 +121,23 @@ pub(crate) fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, 
     while let Some((expr, after)) = try_parse_interp_hyper_subscript(input, &target) {
         (target, input) = (expr, after);
     }
+    // A hyper method call (`"@m>>.gist()"`, `"@m».gist()"`) interpolates like
+    // a plain one: only with parentheses on the chain's last call.
+    if let Some(after_hyper) = input
+        .strip_prefix(">>")
+        .or_else(|| input.strip_prefix('\u{bb}'))
+        && after_hyper.starts_with('.')
+        && !after_hyper.starts_with("..")
+    {
+        let placeholder = Expr::Var(HYPER_PLACEHOLDER.to_string());
+        let (chain, after) = try_parse_interp_method_call(after_hyper, placeholder.clone());
+        if !std::ptr::eq(after, after_hyper)
+            && let Some(expr) = hyper_first_call(chain, &target)
+        {
+            return (expr, after);
+        }
+        return (target, input);
+    }
     let mut expr = target;
     let mut rest = input;
     // Collect chain of .method parts; only commit if chain ends with parens
@@ -536,4 +553,49 @@ pub(crate) fn has_malformed_angle_interpolation(rest: &str) -> bool {
         return !after_open.contains('>');
     }
     false
+}
+
+/// The invocant name [`try_parse_interp_method_call`] parses a hyper method
+/// chain over; [`hyper_first_call`] replaces it.
+const HYPER_PLACEHOLDER: &str = "__mutsu_interp_hyper_invocant";
+
+/// `chain` (method calls over [`HYPER_PLACEHOLDER`]) with its first call made a
+/// hyper call on `target`. `None` when the chain does not start with a plain
+/// method call.
+// Cost: O(d), d = calls in the chain.
+fn hyper_first_call(chain: Expr, target: &Expr) -> Option<Expr> {
+    match chain {
+        Expr::MethodCall {
+            target: inner,
+            name,
+            args,
+            modifier,
+            quoted,
+            ..
+        } if matches!(inner.as_ref(), Expr::Var(n) if n == HYPER_PLACEHOLDER) => {
+            Some(Expr::HyperMethodCall {
+                target: Box::new(target.clone()),
+                name,
+                args,
+                modifier,
+                quoted,
+            })
+        }
+        Expr::MethodCall {
+            target: inner,
+            name,
+            args,
+            modifier,
+            quoted,
+            sugar,
+        } => Some(Expr::MethodCall {
+            target: Box::new(hyper_first_call(*inner, target)?),
+            name,
+            args,
+            modifier,
+            quoted,
+            sugar,
+        }),
+        _ => None,
+    }
 }
