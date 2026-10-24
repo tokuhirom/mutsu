@@ -74,7 +74,10 @@ impl Interpreter {
                 Some(sigil @ ('$' | '@' | '%' | '&')) => {
                     format!("{sigil}{dst_module}::{}", &name[1..])
                 }
-                _ => crate::qualified::qualified_text(&dst_module, &name)
+                _ => crate::qualified::qualified_text(
+                    &dst_module,
+                    crate::runtime::term_names::term_spelling(&name).unwrap_or(&name),
+                )
                     .as_str()
                     .to_string(),
             };
