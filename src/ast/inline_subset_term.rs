@@ -7,9 +7,9 @@ use super::{Expr, Stmt};
 // Cost: O(n), n = size of the declaration.
 pub(crate) fn expand(declaration: Stmt) -> Expr {
     if super::spelled::keeping() {
-        return Expr::Ast(Box::new(super::parsed::ParsedExpr::InlineSubset(
-            Box::new(declaration),
-        )));
+        return Expr::Ast(Box::new(super::parsed::ParsedExpr::InlineSubset(Box::new(
+            declaration,
+        ))));
     }
     lower(declaration)
 }

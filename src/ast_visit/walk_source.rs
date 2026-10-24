@@ -183,9 +183,9 @@ mod tests {
 
     #[test]
     fn source_records_are_opt_in_and_walk_their_original_declarations() {
-        let record = Stmt::SourceForm(Box::new(SourceForm::AttributeGroup(vec![
-            Stmt::Expr(Expr::Var("written".into())),
-        ])));
+        let record = Stmt::SourceForm(Box::new(SourceForm::AttributeGroup(vec![Stmt::Expr(
+            Expr::Var("written".into()),
+        )])));
         let mut ordinary = Names::default();
         ordinary.visit_stmt(&record);
         assert!(ordinary.names.is_empty());
