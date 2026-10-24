@@ -12,7 +12,8 @@ is `Dotty`, and its `source` is the method call written over the target.
 Every parser site builds the node:
 - the leading `.=` statement and `EXPR .= meth` in `simple_expr_stmt`;
 - `NAME .= meth` in `assign_stmt` and `try_assign`;
-- the four postfix `.=` spellings (plain, quoted, dynamic and `&routine`).
+- the four postfix `.=` spellings (plain, quoted, dynamic and `&routine`);
+- the hyper `>>.=` statement.
 
 `rakuast::lower` reads `ApplyDottyInfix(DottyInfix::CallAssign)` into the
 same node and lowering.
@@ -23,8 +24,9 @@ Deleted:
   `retarget_dotty_call`;
 - the duplicate topic/expression dispatch in `lower_dotty_assign`.
 
-A hyper `.=` (`@a>>.=uc`) still renders an assignment over a hyper postfix
-rather than rakudo's `ApplyDottyInfix` over `MetaPostfix::Hyper`. That
-predates this change and is filed separately.
+A hyper `.=` (`@a>>.=uc`) used to be parsed into a plain `Stmt::Assign`
+and rendered as an assignment over a hyper postfix. It is now the same node,
+and it renders as rakudo 2026.09 does: `ApplyDottyInfix` over
+`MetaPostfix::Hyper`, whose method carries the `.=` dispatch.
 
 `t/rakuast/rakuast-dotty-assign-node.t` pins the shapes and the semantics.

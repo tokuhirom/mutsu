@@ -1893,6 +1893,29 @@ pub(super) fn dotty_assignment_with_left(
     left: RakuAstNode,
     call: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
+    // `@a>>.=uc`: the hyper of the call, whose method carries the `.=`
+    // dispatch (measured on 2026.09).
+    if let Expr::HyperMethodCall {
+        name,
+        args,
+        modifier,
+        quoted,
+        ..
+    } = call
+    {
+        let mut method = method_call_postfix(name.as_str(), args, *modifier, *quoted)?;
+        if modifier.is_none() {
+            method
+                .fields
+                .push(leaf_field(Some("dispatch"), Value::str(".=".to_string())));
+        }
+        let right = RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::MetaPostfixHyper,
+            fields: vec![node_field(None, method)],
+        };
+        return Ok(dotty_node(left, right));
+    }
     let right = match crate::ast::dotty_assign::method_call(call) {
         Some(crate::ast::dotty_assign::DottyCall {
             name,
@@ -1903,7 +1926,13 @@ pub(super) fn dotty_assignment_with_left(
         // `$x .= &f` / `$x .= $m` / `$x .= "{...}"()`: a term as the method.
         None => super::dynamic_method::call_assign_postfix(call)?,
     };
-    Ok(RakuAstNode {
+    Ok(dotty_node(left, right))
+}
+
+/// `ApplyDottyInfix(left, DottyInfix::CallAssign, right)`.
+// Cost: O(1).
+fn dotty_node(left: RakuAstNode, right: RakuAstNode) -> RakuAstNode {
+    RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ApplyDottyInfix,
         fields: vec![
@@ -1918,7 +1947,7 @@ pub(super) fn dotty_assignment_with_left(
             ),
             node_field(Some("right"), right),
         ],
-    })
+    }
 }
 
 /// `TERM .meth` (`Spelling::DottyInfixCall`): the method call's postfix

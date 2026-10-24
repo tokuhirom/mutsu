@@ -1034,7 +1034,8 @@ pub(super) fn lower_dotty_assign(
             target: Box::new(Expr::Literal(Value::NIL)),
             name: crate::symbol::Symbol::intern(&name),
             args: arg_exprs(inner)?,
-            modifier: dispatch_modifier(inner)?,
+            // The method of `@a>>.=uc` carries the `.=` dispatch itself.
+            modifier: dispatch_modifier(inner)?.filter(|m| *m != '='),
             quoted,
         }
     } else {
