@@ -2291,10 +2291,11 @@ fn call_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Expr
         // `(c ?? $a !! $b) = v`: the same terms, parenthesised.
         "__mutsu_assign_callable_lvalue"
             if call_args.is_empty()
-                && matches!(target, Expr::Grouped(inner) if matches!(
-                    **inner,
+                && matches!(target, Expr::Grouped(_))
+                && matches!(
+                    target.peel_parens(),
                     Expr::Ternary { .. } | Expr::Unary { .. } | Expr::CaptureVar(_)
-                )) =>
+                ) =>
         {
             target.clone()
         }
@@ -3568,13 +3569,16 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     ],
                 })
             }
-            Spelling::GroupedLvalue => {
+            Spelling::GroupedLvalue { depth } => {
                 let mut node = convert_expr(&spelled.expr)?;
                 if let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("left"))
                     && let RakuAstFieldValue::Node(left) = &field.value
                     && let ValueView::RakuAst(left) = left.view()
                 {
-                    let grouped = parenthesized_node(RakuAstNode::clone(left));
+                    let mut grouped = RakuAstNode::clone(left);
+                    for _ in 0..*depth {
+                        grouped = parenthesized_node(grouped);
+                    }
                     *field = node_field(Some("left"), grouped);
                 }
                 Ok(node)

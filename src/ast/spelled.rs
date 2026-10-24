@@ -77,10 +77,10 @@ pub(crate) enum Spelling {
     /// `a !< b` / `a !eq b`: the parser evaluates this as `!(a < b)` but
     /// RakuAST keeps the `MetaInfix::Negate` at the infix application.
     NegatedInfix,
-    /// `($x) = 1`: an assignment whose variable target the source wrote in
-    /// parentheses; rakudo keeps the `Circumfix::Parentheses` (and makes the
-    /// assignment a list assignment).
-    GroupedLvalue,
+    /// `($x) = 1`, `((c ?? $a !! $b)) = 1`: an assignment whose target the
+    /// source wrote in `depth` pairs of parentheses; rakudo keeps each
+    /// `Circumfix::Parentheses` (and makes the assignment a list assignment).
+    GroupedLvalue { depth: usize },
     /// `$x [[+]]= 6`: bracket depth of an assignment whose executable form
     /// folds the bracketed infix into an ordinary compound assignment.
     BracketedAssignment { depth: usize },

@@ -494,20 +494,20 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
 
     // A grouped variable (`($x) = 1`) goes through `assign_to_target_expr`,
     // which keeps the parentheses for a `.AST` parse.
-    if matches!(&expr, Expr::Grouped(inner)
-        if matches!(**inner, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)))
+    if crate::ast::spelled::keeping()
+        && grouped_lvalue_depth(&expr) > 0
+        && matches!(
+            expr.peel_parens(),
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
+        )
     {
         return Ok((r, assign_to_target_expr(expr, rhs)));
     }
     // The `=` below may not be consumed after all; a `.AST` parse then hands
     // a parenthesised term back with its parentheses (`(c ?? $a !! $b) = v`
     // is a statement-level assignment to `Circumfix::Parentheses`).
-    let written = (crate::ast::spelled::keeping()
-        && matches!(&expr, Expr::Grouped(inner) if matches!(
-            **inner,
-            Expr::Ternary { .. } | Expr::Unary { .. } | Expr::CaptureVar(_)
-        )))
-    .then(|| expr.clone());
+    let written = (crate::ast::spelled::keeping() && grouped_lvalue_depth(&expr) > 0)
+        .then(|| expr.clone());
     let expr = unwrap_grouped_lvalue(expr);
     match expr {
         Expr::Var(name) => Ok((

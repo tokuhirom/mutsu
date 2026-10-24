@@ -88,22 +88,42 @@ pub(crate) fn unwrap_grouped_lvalue(target: Expr) -> Expr {
 pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
     // A `.AST` parse keeps the parentheses of `($x) = 1` and of the terms
     // that are a plain left side without them (`(c ?? $a !! $b) = 1`).
-    let grouped_var = crate::ast::spelled::keeping()
-        && matches!(&target, Expr::Grouped(inner)
-            if matches!(
-                **inner,
-                Expr::Var(_)
-                    | Expr::ArrayVar(_)
-                    | Expr::HashVar(_)
-                    | Expr::Ternary { .. }
-                    | Expr::Unary { .. }
-                    | Expr::CaptureVar(_)
-            ));
+    let depth = if crate::ast::spelled::keeping() {
+        grouped_lvalue_depth(&target)
+    } else {
+        0
+    };
     let assigned = assign_to_unwrapped_target(target, value);
-    if grouped_var {
-        Expr::spelled(assigned, || crate::ast::spelled::Spelling::GroupedLvalue)
+    if depth > 0 {
+        Expr::spelled(assigned, || crate::ast::spelled::Spelling::GroupedLvalue { depth })
     } else {
         assigned
+    }
+}
+
+/// How many pairs of parentheses wrap an assignment target whose
+/// parentheses `.AST` keeps (a variable, or a term that is a plain left side
+/// without them), or 0 for any other target.
+// Cost: O(d), d = nesting depth of the parentheses.
+pub(crate) fn grouped_lvalue_depth(target: &Expr) -> usize {
+    let mut depth = 0;
+    let mut expr = target;
+    while let Expr::Grouped(inner) = expr {
+        depth += 1;
+        expr = inner;
+    }
+    if matches!(
+        expr,
+        Expr::Var(_)
+            | Expr::ArrayVar(_)
+            | Expr::HashVar(_)
+            | Expr::Ternary { .. }
+            | Expr::Unary { .. }
+            | Expr::CaptureVar(_)
+    ) {
+        depth
+    } else {
+        0
     }
 }
 

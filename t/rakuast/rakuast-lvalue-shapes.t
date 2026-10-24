@@ -8,7 +8,7 @@ use MONKEY-SEE-NO-EVAL;
 # (which makes it a list assignment). This file passes under both mutsu and
 # raku.
 
-plan 19;
+plan 20;
 
 sub shape(Str $src) {
     my $assign = $src.AST.statements[*-1].expression;
@@ -40,6 +40,9 @@ RakuAST::Circumfix::Parentheses.new(
 )
 END
     'the parentheses hold the variable';
+
+is Q[my $x; (($x)) = 1].AST.statements[1].expression.left.raku.comb('Circumfix::Parentheses').elems,
+    2, 'each written pair of parentheses is kept';
 
 # The trees evaluate like the source they came from.
 is EVAL(Q[my $x; ($x) = 7; $x].AST), 7, 'a grouped scalar';

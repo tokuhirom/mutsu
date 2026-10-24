@@ -59,7 +59,7 @@ pub(crate) use assign::{
     assign_to_target_expr, assignment_ro_parts, build_compound_assign_target_expr,
     list_lvalue_assign_expr, literal_assign_ro_expr, literal_assign_ro_parts,
     parse_assignment_rhs_mode, parse_compound_assign_rhs_mode, single_target_list_lvalue_expr,
-    unwrap_grouped_lvalue,
+    grouped_lvalue_depth, unwrap_grouped_lvalue,
 };
 pub(crate) use chain_cmp::{make_chain_cmp, wrap_smartmatch_rhs};
 pub(crate) use comparison::comparison_expr_mode;
