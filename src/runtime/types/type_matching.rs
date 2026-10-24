@@ -2242,11 +2242,19 @@ impl Interpreter {
                 }
             }
         }
-        // RakuAST nodes carry their own hierarchy (base `RakuAST::Node`, plus
-        // `::`-namespace ancestors); route through `isa_check` rather than the
-        // static `type_matches` name table (Phase 3).
-        if matches!(value.view(), ValueView::RakuAst(_)) && constraint.starts_with("RakuAST::") {
-            return value.isa_check(constraint);
+        // A RakuAST node or type object answers from rakudo's measured
+        // hierarchy (`src/rakuast/hierarchy.tsv`): its MRO and the roles it
+        // does, rather than the static `type_matches` name table.
+        if constraint.starts_with("RakuAST::") {
+            match value.view() {
+                ValueView::RakuAst(node) => {
+                    return crate::rakuast::type_object_does(node.class.printed_name(), constraint);
+                }
+                ValueView::Package(name) if name.resolve().starts_with("RakuAST::") => {
+                    return crate::rakuast::type_object_does(&name.resolve(), constraint);
+                }
+                _ => {}
+            }
         }
         // Last resort: a parameterization whose type argument is a `constant`
         // type alias (`constant intptr = uint64; my CArray[intptr] $x`). The

@@ -14,8 +14,8 @@ is RakuAST::StatementList.^can('add-statement').elems, 1,
 is RakuAST::Name.^can('from-identifier').elems, 1,
     'type object can find its named constructor';
 
-is RakuAST::Assignment.^can('new').elems, 0,
-    'can omits an unsupported model constructor';
+ok RakuAST::Assignment.^can('new').elems,
+    'can finds the constructor a class inherits';
 is RakuAST::IntLiteral.^can('missing').elems, 0,
     'can rejects an unknown model method';
 

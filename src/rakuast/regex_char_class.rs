@@ -141,27 +141,6 @@ impl RegexCharClassKind {
     }
 }
 
-/// The ancestors of a char-class node, nearest first.
-// Cost: O(1).
-pub(super) fn ancestors(kind: RegexCharClassKind) -> &'static [&'static str] {
-    if kind.negatable() {
-        &[
-            "RakuAST::Regex::CharClass::Negatable",
-            "RakuAST::Regex::CharClass",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-        ]
-    } else {
-        &[
-            "RakuAST::Regex::CharClass",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-        ]
-    }
-}
-
 fn truth_field(name: &'static str) -> RakuAstField {
     RakuAstField {
         name: Some(name),

@@ -43,23 +43,23 @@ is RakuAST::Statement::If.^isa(RakuAST::Expression), 0,
 is $literal.^isa(RakuAST::Term), 1, 'node .^isa follows semantic hierarchy';
 is $literal.^isa(RakuAST::Statement), 0, 'node .^isa rejects unrelated node type';
 
-my @literal-mro = RakuAST::IntLiteral.^mro;
-is @literal-mro.elems, 8, 'literal type-object MRO has the model hierarchy and roots';
-is @literal-mro[0].^name, 'RakuAST::IntLiteral', 'literal MRO starts with concrete type';
-is @literal-mro[1].^name, 'RakuAST::Literal', 'literal MRO includes the abstract Literal parent';
-is @literal-mro[2].^name, 'RakuAST::Term', 'literal MRO includes semantic Term parent';
-is @literal-mro[3].^name, 'RakuAST::Termish', 'literal MRO includes Termish';
-is @literal-mro[4].^name, 'RakuAST::Expression', 'literal MRO includes Expression';
-is @literal-mro[5].^name, 'RakuAST::Node', 'literal MRO includes Node';
-is @literal-mro[6].^name, 'Any', 'literal MRO includes Any';
-is @literal-mro[7].^name, 'Mu', 'literal MRO includes Mu';
+my @literal-mro = RakuAST::IntLiteral.^mro.map(*.^name);
+is @literal-mro.elems, 8, 'literal type-object MRO has the measured hierarchy and roots';
+is @literal-mro[0], 'RakuAST::IntLiteral', 'literal MRO starts with concrete type';
+is @literal-mro[1], 'RakuAST::Literal', 'literal MRO includes Literal';
+is @literal-mro[2], 'RakuAST::Term', 'literal MRO includes semantic Term parent';
+is @literal-mro[4], 'RakuAST::Expression', 'literal MRO includes Expression';
+is @literal-mro[5], 'RakuAST::Node', 'literal MRO includes Node';
+is @literal-mro[6], 'Any', 'literal MRO includes Any';
+is @literal-mro[7], 'Mu', 'literal MRO includes Mu';
 
-my @if-parents = RakuAST::Statement::If.^parents;
-is @if-parents.elems, 2, 'statement parents omit Any and Mu';
-is @if-parents[0].^name, 'RakuAST::Statement', 'statement has namespace parent';
-is @if-parents[1].^name, 'RakuAST::Node', 'statement parents include Node';
+my @if-parents = RakuAST::Statement::If.^parents.map(*.^name);
+is @if-parents.elems, 3, 'statement parents omit Any and Mu';
+is @if-parents[0], 'RakuAST::Statement::IfWith', 'If inherits from IfWith';
+is @if-parents[1], 'RakuAST::Statement', 'statement has the Statement parent';
+is @if-parents[2], 'RakuAST::Node', 'statement parents include Node';
 
 is RakuAST::IntLiteral.^parents(:local)[0].^name, 'RakuAST::Literal',
-    ':local reports the immediate semantic parent';
+    ':local reports the immediate parent';
 is RakuAST::IntLiteral.^parents(:all)[5].^name, 'Any', ':all retains Any';
 is $literal.^mro[0].^name, 'RakuAST::IntLiteral', 'node .^mro uses its concrete model type';
