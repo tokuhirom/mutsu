@@ -184,6 +184,13 @@ impl Interpreter {
                         .then(|| self.sub_value_from_function_def((*def).clone()))
                 })
                 .or_else(|| self.unit_import_routine(unit, name))
+                // A package-less `sub` of a parameterized role's body is moved
+                // into its unit's private table (`seclude_role_lexical_routine`):
+                // it is in the role file's lexical scope all the same.
+                .or_else(|| {
+                    self.unit_private_routine_from(unit, name_sym)
+                        .map(|def| self.sub_value_from_function_def((*def).clone()))
+                })
         };
         // The innermost routine frame is the one reading `CALLERS::`.
         // Only the nearest calling routine's scope counts: a routine two calls
