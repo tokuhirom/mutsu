@@ -240,13 +240,19 @@ impl Interpreter {
         // `sub EXPORT` (the `Exportable` idiom) -- and its `EXPORT::<tag>`
         // mirror keys survive the restore. Only the loading module's own
         // exports: a module `require`d inside a block is still lexical to it.
+        //
+        // The same holds after the load: a routine of the module that runs later
+        // (`submethod BUILD { multi sub log(...) is export { ... } }`, Pakku::Log)
+        // exports what it declares each time it runs, so the package the routine
+        // belongs to is the owner then.
         let owned_exports = if is_eval {
             None
         } else {
-            self.module
-                .module_load_stack
-                .last()
-                .and_then(|m| self.module.module_owned_exports.get(m))
+            let owner = match self.module.module_load_stack.last() {
+                Some(loading) => loading.clone(),
+                None => self.current_package(),
+            };
+            self.module.module_owned_exports.get(&owner)
         };
         let new_exported: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = match owned_exports {
             None => Vec::new(),
