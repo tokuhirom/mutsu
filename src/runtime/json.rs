@@ -127,6 +127,12 @@ fn jsonify(
             out.push('"');
         }
         ValueView::Scalar(inner) => jsonify(inner, opts, level, depth + 1, out)?,
+        // A hash/array element that was mutated in place (`%h<k>.push(..)`) is
+        // boxed in a container cell: serialize what the cell holds.
+        ValueView::ContainerRef(_) => {
+            let inner = val.deref_container();
+            jsonify(&inner, opts, level, depth + 1, out)?;
+        }
         ValueView::Mixin(inner, mixins) => {
             // A punned Rational-role instance is Real; JSON::Fast's Real:D
             // candidate serializes it numerically (0.3), not as an opaque
