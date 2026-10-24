@@ -318,12 +318,13 @@ pub(super) fn declares_dynamic_local(stmts: &[Stmt]) -> bool {
     scan.found
 }
 
-/// A branch that declares a dynamic `my $*x` of its own, wrapped as a real
-/// `do { ... }` block so the declaration ends with the branch; `None` for a
-/// branch that declares none.
+/// A branch that declares a dynamic `my $*x` of its own -- or, with
+/// `plain_my`, any block-local `my` -- wrapped as a real `do { ... }` block so
+/// the declaration ends with the branch; `None` for a branch that declares
+/// none.
 // Cost: O(n), n = size of the part of `stmts` in the branch's own scope.
-pub(super) fn scope_dynamic_branch(stmts: &[Stmt]) -> Option<Vec<Stmt>> {
-    declares_dynamic_local(stmts).then(|| {
+pub(super) fn scope_dynamic_branch(stmts: &[Stmt], plain_my: bool) -> Option<Vec<Stmt>> {
+    (declares_dynamic_local(stmts) || (plain_my && declares_block_local(stmts))).then(|| {
         vec![Stmt::Expr(Expr::DoBlock {
             body: stmts.to_vec(),
             label: None,
