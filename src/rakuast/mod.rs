@@ -42,6 +42,7 @@ mod declarator_docs;
 mod declare_how;
 mod declared_routines;
 mod deferred_name;
+mod derived_methods;
 mod doc_phaser;
 mod dynamic_method;
 mod enum_term;
@@ -2184,6 +2185,10 @@ fn construct_values(
         }))));
     }
     if class_name == "RakuAST::Signature" && method == "new" {
+        // `parameters` is kept only when given: `Signature.new` and
+        // `Signature.new(parameters => ())` differ on rakudo
+        // (`parameters-initialized`).
+        let given = named_arg(args, "parameters").is_some();
         let parameters = named_arg(args, "parameters")
             .map(|value| {
                 value
@@ -2209,10 +2214,13 @@ fn construct_values(
         if let Some(returns) = &returns {
             require_any_rakuast(returns, "RakuAST::Signature.new", "returns")?;
         }
-        let mut fields = vec![RakuAstField {
-            name: Some("parameters"),
-            value: RakuAstFieldValue::List(parameters),
-        }];
+        let mut fields = Vec::new();
+        if given {
+            fields.push(RakuAstField {
+                name: Some("parameters"),
+                value: RakuAstFieldValue::List(parameters),
+            });
+        }
         if let Some(returns) = returns {
             fields.push(RakuAstField {
                 name: Some("returns"),
@@ -3504,24 +3512,6 @@ fn named_arg(args: &[Value], name: &str) -> Option<Value> {
     })
 }
 
-/// The semantic scope of a routine without a written scope. Rakudo 2026.09
-/// resolves this from the routine kind and whether it has a source name.
-// Cost: O(f), f = fields of the routine node.
-fn routine_default_scope(node: &RakuAstNode) -> Option<&'static str> {
-    if !matches!(
-        node.class,
-        RakuAstClass::Sub | RakuAstClass::Method | RakuAstClass::Submethod
-    ) {
-        return None;
-    }
-    let named = node.fields.iter().any(|field| field.name == Some("name"));
-    Some(match (named, node.class) {
-        (false, _) => "anon",
-        (true, RakuAstClass::Sub) => "my",
-        (true, _) => "has",
-    })
-}
-
 /// A named-field / positional accessor on a RakuAST node (Phase 3). Returns the
 /// field value as a mutsu `Value`, or `None` if `method` is not an accessor for
 /// this node (so ordinary methods like `.gist` fall through). `.statements`
@@ -3552,14 +3542,10 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
             return Some(field_to_value(&f.value));
         }
     }
-    // Rakudo 2026.09 resolves an omitted routine scope from its class and
-    // whether it has a name. A nameless routine is `anon`; a named Sub is
-    // `my`, and a named Method/Submethod is `has`. The resolved value is an
-    // accessor result, not a constructor field to render.
-    if method == "scope"
-        && let Some(scope) = routine_default_scope(node)
-    {
-        return Some(Value::str_from(scope));
+    // Methods rakudo computes from the attributes (`default-scope`, `scope`
+    // without a written scope, `Name.is-anonymous`, `Call::Method.dispatch`).
+    if let Some(value) = derived_methods::call(node, method) {
+        return Some(value);
     }
     // This inherited Block capability defaults to false and is not one of
     // the class's local model fields reported by reflection.
@@ -3697,6 +3683,7 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
         _ => {}
     }
     names.extend(accessor_names(class));
+    names.extend(derived_methods::names(class));
     if class == RakuAstClass::CompUnit {
         names.push("replace-statement-list");
     }
