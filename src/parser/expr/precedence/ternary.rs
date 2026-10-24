@@ -2,13 +2,26 @@ use super::*;
 use crate::parser::primary::misc::colonpair_expr;
 
 pub(crate) fn is_assignment_expr(expr: &Expr) -> bool {
-    matches!(
-        expr,
+    match expr {
         Expr::AssignExpr { .. }
-            | Expr::CompoundAssign { .. }
-            | Expr::IndexAssign { .. }
-            | Expr::MultiDimIndexAssign { .. }
-    )
+        | Expr::CompoundAssign { .. }
+        | Expr::IndexAssign { .. }
+        | Expr::MultiDimIndexAssign { .. } => true,
+        // The same assignments as a `.AST` parse keeps them: those whose
+        // lowering is one of the shapes above.
+        Expr::Ast(node) => match node.as_ref() {
+            crate::ast::parsed::ParsedExpr::Assign(a) => matches!(
+                a.target.peel_parens(),
+                Expr::Var(_)
+                    | Expr::ArrayVar(_)
+                    | Expr::HashVar(_)
+                    | Expr::BareWord(_)
+                    | Expr::Index { .. }
+                    | Expr::MultiDimIndex { .. }
+            ),
+        },
+        _ => false,
+    }
 }
 
 /// Whether an assignment-like ternary branch used a *tight* operator, i.e. the

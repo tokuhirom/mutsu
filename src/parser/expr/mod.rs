@@ -637,6 +637,7 @@ fn reassociate_fat_arrow(pair: Expr) -> Expr {
     // would turn an already auto-quoted `V => 1` (or the deliberately
     // positional `::V => 1`) back into a fresh, misclassified pair.
     if !matches!(&*left, Expr::AssignExpr { .. })
+        && !is_kept_variable_assign(&left)
         && !is_indexed_bind(&left)
         && !matches!(&*left, Expr::Binary { op, .. } if is_loose_word_logical(op))
     {
@@ -670,6 +671,12 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
             expr: Box::new(reassociate_fat_arrow_operand(*expr, value)),
             is_bind,
         },
+        // The same, as a `.AST` parse keeps it.
+        Expr::Ast(node) if is_kept_variable_assign_node(&node) => {
+            let crate::ast::parsed::ParsedExpr::Assign(mut a) = *node;
+            a.source = reassociate_fat_arrow_operand(a.source, value);
+            Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(a)))
+        }
         // `%h<k> := $x => 1`: `=>` and `:=` share the item-assignment tier and
         // associate right, so the pair is the bound value, not the bind's result.
         Expr::IndexAssign {
@@ -699,6 +706,22 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
         }
         left => reassociated_fat_arrow_pair(left, value),
     }
+}
+
+/// Whether `expr` is an assignment to a variable a `.AST` parse kept in its
+/// RakuAST shape (the `AssignExpr` of any other parse).
+// Cost: O(d), d = levels of parentheses around the target.
+fn is_kept_variable_assign(expr: &Expr) -> bool {
+    matches!(expr, Expr::Ast(node) if is_kept_variable_assign_node(node))
+}
+
+// Cost: O(d), d = levels of parentheses around the target.
+fn is_kept_variable_assign_node(node: &crate::ast::parsed::ParsedExpr) -> bool {
+    let crate::ast::parsed::ParsedExpr::Assign(a) = node;
+    matches!(
+        a.target.peel_parens(),
+        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::BareWord(_)
+    )
 }
 
 fn is_bind_index_value(value: &Expr) -> bool {

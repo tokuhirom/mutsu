@@ -384,7 +384,25 @@ pub use stmt::simple::{
     set_parser_program_path, set_parser_source_file,
 };
 
-pub(crate) use expr::precedence::assign_to_target_expr;
+pub(crate) use expr::precedence::{
+    assign_to_target_expr, list_lvalue_assign_expr, single_target_list_lvalue_expr,
+    unwrap_grouped_lvalue,
+};
+pub(crate) use stmt::assign::named_sub_lvalue_assign_expr;
+
+/// `expr`, with an assignment a `.AST` parse kept in its RakuAST shape
+/// lowered to the executable shape the parser builds otherwise. For a parser
+/// pass that reads that shape and has not moved to the typed node yet
+/// (ADR-10723 Stage 2, #14948).
+// Cost: O(n), n = size of a kept assignment; O(1) otherwise.
+pub(crate) fn lowered_assignment(expr: crate::ast::Expr) -> crate::ast::Expr {
+    match expr {
+        crate::ast::Expr::Ast(node) => match *node {
+            crate::ast::parsed::ParsedExpr::Assign(a) => crate::rakuast::lower_expression_assign(a),
+        },
+        other => other,
+    }
+}
 pub(crate) use expr::precedence::{
     assignment_ro_parts, literal_assign_ro_expr, literal_assign_ro_parts,
 };

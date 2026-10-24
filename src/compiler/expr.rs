@@ -69,6 +69,9 @@ impl Compiler {
             return;
         }
         match expr {
+            Expr::Ast(_) => {
+                debug_assert!(false, "Expr::Ast reached the compiler");
+            }
             Expr::GivenPointyTopic => {
                 self.code.emit(OpCode::GetGivenPointyTopic);
             }

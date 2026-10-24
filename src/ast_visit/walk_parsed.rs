@@ -4,7 +4,7 @@
 //! be.
 
 use super::{Visit, VisitMut, params, params_mut};
-use crate::ast::parsed::{BlockParams, ParsedBlock, ParsedStmt};
+use crate::ast::parsed::{BlockParams, ParsedBlock, ParsedExpr, ParsedStmt};
 
 /// Visits every child of `node`.
 // Cost: O(n), n = size of `node`'s subtree.
@@ -162,4 +162,26 @@ fn block_mut<V: VisitMut + ?Sized>(v: &mut V, b: &mut ParsedBlock) {
         }
     }
     super::walk_stmts_mut(v, &mut b.body);
+}
+
+/// Visits every child of `node`, an expression kept in its RakuAST shape.
+// Cost: O(n), n = size of `node`'s subtree.
+pub(crate) fn walk_parsed_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast ParsedExpr) {
+    match node {
+        ParsedExpr::Assign(a) => {
+            v.visit_expr(&a.target);
+            v.visit_expr(&a.source);
+        }
+    }
+}
+
+/// Visits every child of `node` mutably.
+// Cost: O(n), n = size of `node`'s subtree.
+pub(crate) fn walk_parsed_expr_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut ParsedExpr) {
+    match node {
+        ParsedExpr::Assign(a) => {
+            v.visit_expr_mut(&mut a.target);
+            v.visit_expr_mut(&mut a.source);
+        }
+    }
 }
