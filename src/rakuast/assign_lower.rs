@@ -7,8 +7,8 @@
 //! through its container, a method call the rw-accessor writeback. This is
 //! the dispatch the parser used to do at the `=` it read.
 
-use crate::ast::{AssignOp, Expr, Stmt};
 use crate::ast::parsed::Assign;
+use crate::ast::{AssignOp, Expr, Stmt};
 use crate::symbol::Symbol;
 
 /// Whether an assignment in expression position assigns to `target`, as

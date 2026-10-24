@@ -732,10 +732,11 @@ fn assignment_statement(rest: &str, target: Expr, source: Expr, seed: Expr) -> P
         );
     }
     if crate::ast::spelled::keeping() {
-        let (rest, expr) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
-            rest,
-            super::written_assignment(target, source),
-        )?;
+        let (rest, expr) =
+            crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
+                rest,
+                super::written_assignment(target, source),
+            )?;
         return Ok((rest, Stmt::Expr(expr)));
     }
     crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
