@@ -3244,13 +3244,17 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         "__ANON_STATE#".to_string()
     } else {
         let desigil_node = named_child(node, "desigilname")?;
-        match name_parts::name_shape(desigil_node) {
+        if let Some(name) = super::name_colonpairs::lower(desigil_node) {
+            name?
+        } else {
+            match name_parts::name_shape(desigil_node) {
             // `my $a::b`: a package-qualified name, `::`-joined as the parser
             // keeps it (`Name.from-identifier-parts("a", "b")`).
             Some(NameShape::Identifier(name)) if !name_parts::has_leading_empty(desigil_node) => {
                 name
             }
             _ => return Err(unsupported(node)),
+            }
         }
     };
     let twigil = if is_dynamic { "*" } else { "" };
