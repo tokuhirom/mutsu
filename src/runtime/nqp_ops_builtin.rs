@@ -300,12 +300,10 @@ impl Interpreter {
                     .first()
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                match self.get_env_with_main_alias(&name) {
-                    Some(v) => Ok(v),
-                    None => Err(RuntimeError::new(format!(
-                        "No such dynamic variable: {name}"
-                    ))),
-                }
+                // An unbound name answers null, as on MoarVM: NQP code tests a
+                // dynamic for presence with `nqp::isnull(nqp::getlexdyn(...))`
+                // (`RakuAST::Deparse` reads `@*HEREDOCS` that way).
+                Ok(self.get_env_with_main_alias(&name).unwrap_or(Value::NIL))
             }
             // nqp::bindattr($obj, Type, '$!attr', value): write an attribute
             // cell directly, bypassing accessors (roast's Test::Compile uses it
