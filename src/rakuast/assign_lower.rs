@@ -7,7 +7,7 @@
 //! through its container, a method call the rw-accessor writeback. This is
 //! the dispatch the parser used to do at the `=` it read.
 
-use crate::ast::Expr;
+use crate::ast::{AssignOp, Expr, Stmt};
 use crate::ast::parsed::Assign;
 use crate::symbol::Symbol;
 
@@ -56,6 +56,12 @@ pub(crate) fn lower_expression(node: Assign) -> Expr {
         },
         Expr::HashVar(name) => Expr::AssignExpr {
             name: format!("%{name}"),
+            expr: Box::new(source),
+            is_bind: false,
+        },
+        // `&f = …, …` (a statement whose comma list follows the assignment).
+        Expr::CodeVar(name) => Expr::AssignExpr {
+            name: format!("&{name}"),
             expr: Box::new(source),
             is_bind: false,
         },
@@ -129,6 +135,34 @@ pub(crate) fn lower_expression(node: Assign) -> Expr {
             }
         }
         other => unreachable!("not an expression assignment target: {other:?}"),
+    }
+}
+
+/// Lower an assignment written as a statement. A variable target is a
+/// `Stmt::Assign`; any other target is the expression form as a statement.
+// Cost: O(n), n = size of the target and source.
+pub(crate) fn lower_statement(node: Assign) -> Stmt {
+    match variable_name(&node.target) {
+        Some(name) => Stmt::Assign {
+            name,
+            expr: node.source,
+            op: AssignOp::Assign,
+            target_is_sigilless: false,
+        },
+        None => Stmt::Expr(lower_expression(node)),
+    }
+}
+
+/// The storage name of a variable target, as `Stmt::Assign` spells it:
+/// `$x` is `x`, `@a` is `@a`, `%h` is `%h`, `&f` is `&f`.
+// Cost: O(1).
+fn variable_name(target: &Expr) -> Option<String> {
+    match target {
+        Expr::Var(name) => Some(name.clone()),
+        Expr::ArrayVar(name) => Some(format!("@{name}")),
+        Expr::HashVar(name) => Some(format!("%{name}")),
+        Expr::CodeVar(name) => Some(format!("&{name}")),
+        _ => None,
     }
 }
 
