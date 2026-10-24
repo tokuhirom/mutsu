@@ -828,19 +828,23 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // parsing the declaration, so — unlike a type name — there is no AST node
     // to walk; the scan's own scope stack is the record. Callable term symbols
     // (`sub term:<foo>`) are excluded: those really can take arguments.
-    let mut value_terms: Vec<String> = SCOPES.with(|s| {
+    let (mut value_terms, imported_value_terms): (Vec<String>, Vec<String>) = SCOPES.with(|s| {
         let scopes = s.borrow();
-        let own = scopes.iter().flat_map(|scope| {
-            scope
-                .term_symbols
-                .iter()
-                .filter(|(_, binding)| matches!(binding, TermBinding::Value(_)))
-                .map(|(symbol, _)| symbol.clone())
-        });
-        let transitive = scopes
+        let own = scopes
             .iter()
-            .flat_map(|scope| scope.imported_value_terms.iter().cloned());
-        own.chain(transitive).collect()
+            .flat_map(|scope| {
+                scope
+                    .term_symbols
+                    .iter()
+                    .filter(|(_, binding)| matches!(binding, TermBinding::Value(_)))
+                    .map(|(symbol, _)| symbol.clone())
+            })
+            .collect();
+        let imported = scopes
+            .iter()
+            .flat_map(|scope| scope.imported_value_terms.iter().cloned())
+            .collect();
+        (own, imported)
     });
     // Restore scopes, package path, and language version
     SCOPES.with(|s| {
@@ -911,6 +915,12 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // the module's parse ends; one declared inside a `class`/`role`/`package`
     // body, whose scope has been popped by then, comes from the AST walk.
     value_terms.extend(decls.constant_names);
+    // Imports are lexical: what this module's own `use`s brought in (NativeCall's
+    // `bool`, say) is not re-exported to its importer. Only a `sub EXPORT` hook
+    // can hand an import on.
+    if declares_export_hook {
+        value_terms.extend(imported_value_terms);
+    }
     let mut exports: HashMap<String, InlineModuleExport> = decls.exports;
     // A module whose exports are computed by a run-time `sub EXPORT` hook has
     // no `is export` traits to find, so the scan above returns nothing at all.

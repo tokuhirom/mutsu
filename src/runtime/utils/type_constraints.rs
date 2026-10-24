@@ -288,6 +288,7 @@ pub(crate) fn is_known_compound_type(name: &str) -> bool {
             | "CompUnit::Repository::Perl5"
             | "Distribution"
             | "Distribution::Hash"
+            | "Distribution::Locally"
             | "CompUnit::Repository::Distribution"
             | "CompUnit::Repository::Installation::LazyDistribution"
             | "Distribution::Path"

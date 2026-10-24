@@ -1839,6 +1839,7 @@ impl Interpreter {
                         declaring_package,
                         sigil,
                         default_is_seed,
+                        default_is_trait,
                         ..
                     } = attr;
                     let storage_key =
@@ -1857,7 +1858,12 @@ impl Interpreter {
                     // With a BUILD phase the initializer runs AFTER BUILD and
                     // only if BUILD left the attribute alone, so seed the slot
                     // now and postpone the initializer (see attr_build_defaults).
-                    if has_build_phase && (build_override.is_some() || default.is_some()) {
+                    // An `is default(...)` value is not an initializer: it belongs to
+                    // the attribute's container, so it holds before BUILD runs.
+                    if has_build_phase
+                        && !(default_is_trait && build_override.is_none())
+                        && (build_override.is_some() || default.is_some())
+                    {
                         let seed = self.seed_attr_value(
                             class_key,
                             &attr_name,
