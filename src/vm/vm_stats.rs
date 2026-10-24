@@ -96,6 +96,14 @@ fn resolver_method_by_name() -> &'static Mutex<HashMap<String, u64>> {
     static BY_NAME: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
     BY_NAME.get_or_init(|| Mutex::new(HashMap::new()))
 }
+
+/// The same dispatches keyed by `Class.method`, untruncated: the distinct-shape
+/// count `scripts/slow-path-survey.sh` sums (#11510). A shape count moves only
+/// when a mechanism is retired, so it is stable against test churn.
+fn resolver_shape_by_key() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_KEY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_KEY.get_or_init(|| Mutex::new(HashMap::new()))
+}
 // Dual-store (locals <-> env) sync cost. See docs/vm-dual-store.md.
 static CLONE_ENV: AtomicU64 = AtomicU64::new(0);
 static ENV_FLUSH: AtomicU64 = AtomicU64::new(0);
@@ -997,11 +1005,15 @@ pub(crate) fn record_method_dispatch() {
 /// Record that a method call entered the slow-path resolver dispatch
 /// `run_instance_method` (resolve + setup; the body itself runs compiled since #3680).
 #[inline]
-pub(crate) fn record_resolver_method_dispatch(name: &str) {
-    if enabled()
-        && let Ok(mut map) = resolver_method_by_name().lock()
-    {
+pub(crate) fn record_resolver_method_dispatch(receiver_class: &str, name: &str) {
+    if !enabled() {
+        return;
+    }
+    if let Ok(mut map) = resolver_method_by_name().lock() {
         *map.entry(name.to_string()).or_insert(0) += 1;
+    }
+    if let Ok(mut map) = resolver_shape_by_key().lock() {
+        *map.entry(format!("{receiver_class}.{name}")).or_insert(0) += 1;
     }
 }
 
@@ -1598,6 +1610,23 @@ pub(crate) fn dump() {
             total,
             top.len(),
             top.join(" ")
+        );
+    }
+    // Every distinct `Class.method` shape that reached the slow-path resolver:
+    // one line, untruncated, for `scripts/slow-path-survey.sh`.
+    if let Ok(map) = resolver_shape_by_key().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort();
+        let all: Vec<String> = entries
+            .iter()
+            .map(|(key, count)| format!("{key}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] slow-path-shapes: {} {}",
+            all.len(),
+            all.join(" ")
         );
     }
     if let Ok(map) = function_carrier_by_name().lock()

@@ -118,6 +118,8 @@ is_doc_path() {
     # the CI checkout this guard ran in did not contain scripts/ at all.
     scripts/check-ast-walkers.py) return 1 ;;
     scripts/check-interp-construction.py) return 1 ;;
+    # `make check-slow-path` (#11510), likewise a `make checks` ratchet.
+    scripts/check-slow-path.py) return 1 ;;
     # `make check-layer-deps` (#10779), likewise a `make checks` ratchet.
     scripts/check-layer-deps.py) return 1 ;;
     # `make check-interp-fields` (ADR-10779 D4) runs it with --check.

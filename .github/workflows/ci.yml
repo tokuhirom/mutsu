@@ -312,6 +312,15 @@ jobs:
         # down, never up. The script self-tests its test-code masking first.
         run: make check-interp-construction
 
+      - name: No new slow-path fallback
+        # A ratchet (#11510): `TODO: compile to bytecode` markers and
+        # `call_method_with_values(` call sites under src/vm/ -- the slow-path
+        # debt AGENTS.md bans from growing -- are counted per file in
+        # scripts/slow-path-baseline.txt. A new site fails; a fall needs no
+        # edit, so shrinking PRs never conflict on the list. The script
+        # self-tests its test-code masking first.
+        run: make check-slow-path
+
       - name: No new hand-rolled AST walker
         # A ratchet (ADR-0137): an analysis over a Stmt/Expr subtree implements
         # `crate::ast_visit::Visit` instead of a private recursive `match`

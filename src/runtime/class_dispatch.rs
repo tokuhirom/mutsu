@@ -131,7 +131,7 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
-        crate::vm::vm_stats::record_resolver_method_dispatch(method_name);
+        crate::vm::vm_stats::record_resolver_method_dispatch(receiver_class_name, method_name);
         let inv_value = if let Some(inv) = &invocant {
             inv.clone()
         } else if attributes.is_empty() {
