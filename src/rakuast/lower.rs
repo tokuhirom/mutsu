@@ -2774,8 +2774,9 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
 
 /// `TARGET = SOURCE` over any other target the assignment family's lowering
 /// takes (`rakuast::assign_lower`), such as an adverbed subscript
-/// (`@a[0]:v = 3`). A variable target stays with [`lower_assign`], which
-/// knows the anonymous, sigilless and attribute spellings.
+/// (`@a[0]:v = 3`) or a declared term (`constant term:<$box> = …; $box = 3`).
+/// A variable target stays with [`lower_assign`], which knows the anonymous
+/// and attribute spellings.
 // Cost: O(n), n = size of the target and source.
 fn expression_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
     let left = named_child(node, "left")?;
@@ -2785,8 +2786,18 @@ fn expression_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
             | RakuAstClass::VarDynamic
             | RakuAstClass::VarAttribute
             | RakuAstClass::VarPackage
-            | RakuAstClass::TermName
     ) || super::anon_state::is_anonymous(left)
+    {
+        return Ok(None);
+    }
+    // A sigilless variable (`my \v`, `-> \x`) assigns into what it is bound
+    // to ([`lower_assign`]); only a term spelled otherwise lowers here.
+    if left.class == RakuAstClass::TermName
+        && matches!(
+            name_parts::name_shape(named_child_or_positional(left)?),
+            Some(NameShape::Identifier(name))
+                if name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+        )
     {
         return Ok(None);
     }
