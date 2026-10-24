@@ -39,6 +39,11 @@ pub(crate) enum ParsedStmt {
     /// the source wrote, so the node is that statement plus the positions of
     /// its block.
     For { stmt: Box<Stmt>, block: BlockSpans },
+    /// A binding declaration, `my $x := EXPR` / `my @a := EXPR` / `my %h :=
+    /// EXPR` (`VarDeclaration::Simple` with `Initializer::Bind`): the
+    /// `Stmt::VarDecl` as written. `rakuast::lower` wraps it in the
+    /// bookkeeping statements the compiler needs (`ast::bind_decl::expand`).
+    BindDecl(Box<Stmt>),
 }
 
 /// Where a block was written: the block (from `->` when pointy), its braces and
@@ -233,7 +238,7 @@ impl ParsedStmt {
     // Cost: O(1).
     pub(crate) fn inner_stmt(&self) -> Option<&Stmt> {
         match self {
-            ParsedStmt::For { stmt, .. } => Some(stmt),
+            ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
             _ => None,
         }
     }
@@ -263,7 +268,7 @@ impl ParsedStmt {
     // Cost: O(1).
     pub(crate) fn inner_stmt_mut(&mut self) -> Option<&mut Stmt> {
         match self {
-            ParsedStmt::For { stmt, .. } => Some(stmt),
+            ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
             _ => None,
         }
     }
@@ -280,7 +285,7 @@ impl ParsedStmt {
             ParsedStmt::When { condition, .. } => vec![condition],
             ParsedStmt::WhileLoop(w) => vec![&w.condition],
             ParsedStmt::Loop(l) => l.condition.iter().chain(l.step.iter()).collect(),
-            ParsedStmt::For { .. } => Vec::new(),
+            ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => Vec::new(),
             ParsedStmt::Default(_) | ParsedStmt::BareBlock(_) => Vec::new(),
         }
     }
@@ -299,7 +304,7 @@ impl ParsedStmt {
             | ParsedStmt::BareBlock(block) => vec![block],
             ParsedStmt::WhileLoop(w) => vec![&w.block],
             ParsedStmt::Loop(l) => vec![&l.block],
-            ParsedStmt::For { .. } => Vec::new(),
+            ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => Vec::new(),
         }
     }
 }

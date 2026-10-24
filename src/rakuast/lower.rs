@@ -3373,19 +3373,21 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             }
             custom_traits.push((crate::ast::bind_decl::SCALAR_BIND.to_string(), None));
         }
-        return Ok(crate::ast::bind_decl::expand(Stmt::VarDecl {
-            anonymous,
-            name,
-            expr,
-            type_constraint,
-            is_state,
-            is_our,
-            is_dynamic,
-            is_export,
-            export_tags: export_tags.clone(),
-            custom_traits,
-            where_constraint,
-        }));
+        return super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::BindDecl(
+            Box::new(Stmt::VarDecl {
+                anonymous,
+                name,
+                expr,
+                type_constraint,
+                is_state,
+                is_our,
+                is_dynamic,
+                is_export,
+                export_tags: export_tags.clone(),
+                custom_traits,
+                where_constraint,
+            }),
+        ));
     }
     Ok(Stmt::VarDecl {
         anonymous,

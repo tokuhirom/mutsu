@@ -941,21 +941,24 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         custom_traits.push((crate::ast::bind_decl::SCALAR_BIND.to_string(), None));
     }
     // The bookkeeping around the declaration (`MarkBind`, `MarkReadonly`, the
-    // bound-array records) is built by `ast::bind_decl::expand`, which the
-    // RakuAST lowerer shares.
-    let stmt = crate::ast::bind_decl::expand(Stmt::VarDecl {
-        anonymous: s.anonymous,
-        name: s.name,
-        expr,
-        type_constraint: s.type_constraint,
-        is_state: s.is_state,
-        is_our: s.is_our,
-        is_dynamic: s.has_dynamic_trait,
-        is_export: s.has_export_trait,
-        export_tags: s.export_tags.clone(),
-        custom_traits,
-        where_constraint: s.where_constraint.clone(),
-    });
+    // bound-array records) is added by the lowering of the node
+    // (`ast::bind_decl::expand`), shared with the RakuAST lowerer.
+    let stmt = crate::parser::stmt::control::parsed_block::finish(
+        crate::ast::parsed::ParsedStmt::BindDecl(Box::new(Stmt::VarDecl {
+            anonymous: s.anonymous,
+            name: s.name,
+            expr,
+            type_constraint: s.type_constraint,
+            is_state: s.is_state,
+            is_our: s.is_our,
+            is_dynamic: s.has_dynamic_trait,
+            is_export: s.has_export_trait,
+            export_tags: s.export_tags.clone(),
+            custom_traits,
+            where_constraint: s.where_constraint.clone(),
+        })),
+    )
+    .map_err(PError::from_typed)?;
     if s.apply_modifier {
         return parse_statement_modifier(rest, stmt);
     }

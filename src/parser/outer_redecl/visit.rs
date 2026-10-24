@@ -166,7 +166,7 @@ impl VisitMut for Ctx {
                         self.scoped(Vec::new(), |v| v.visit_stmts_mut(&mut block.body));
                     }
                     ParsedStmt::Loop(_) => unreachable!("handled by the arm above"),
-                    ParsedStmt::For { .. } => unreachable!("peeled above"),
+                    ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => unreachable!("peeled above"),
                 }
             }
             Stmt::If {

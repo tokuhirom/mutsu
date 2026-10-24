@@ -152,7 +152,7 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
                 PlaceholderBodyKind::Signature(ArgSupply::None)
             }
             ParsedStmt::Default(_) => PlaceholderBodyKind::NoSignature,
-            ParsedStmt::For { .. } => unreachable!("peeled above"),
+            ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => unreachable!("peeled above"),
             ParsedStmt::Loop(l) => match l.kind {
                 crate::ast::parsed::LoopKind::Loop => PlaceholderBodyKind::NoSignature,
                 crate::ast::parsed::LoopKind::RepeatWhile

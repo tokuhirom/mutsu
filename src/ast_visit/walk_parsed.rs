@@ -86,7 +86,7 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
             block_mut(v, &mut w.block);
         }
         ParsedStmt::Default(block) | ParsedStmt::BareBlock(block) => block_mut(v, block),
-        ParsedStmt::For { stmt, .. } => super::walk_stmt_mut(v, stmt),
+        ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => super::walk_stmt_mut(v, stmt),
         ParsedStmt::Loop(l) => {
             if let Some(init) = &mut l.init {
                 v.visit_stmt_mut(init);
