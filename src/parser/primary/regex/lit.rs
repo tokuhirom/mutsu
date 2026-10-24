@@ -1057,6 +1057,12 @@ pub(in crate::parser::primary) fn version_lit(input: &str) -> PResult<'_, Expr> 
     let (rest, version) = take_while1(rest, |c: char| {
         c.is_ascii_alphanumeric() || c == '.' || c == '*' || c == '+'
     })?;
+    // `v1..v2` is the range `v1 .. v2`: a version's parts are separated by a
+    // single dot, so the run ends where `..` begins.
+    let (version, rest) = match version.find("..") {
+        Some(at) => (&version[..at], &input[1 + at..]),
+        None => (version, rest),
+    };
     // A v-plus-digits spelling is also a valid routine identifier. When it is
     // immediately followed by call parentheses, let the identifier parser
     // handle it so declared routines such as `sub v1 {}; v1()` win, and an
