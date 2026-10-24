@@ -10,8 +10,8 @@
 //! let it overlap native code (ADR-12814, guarantee 2: everything the program
 //! cannot see stays memory-safe).
 //!
-//! Every FFI call holds a [`NativeCallGuard`]; [`exit_process`] raises
-//! `EXITING`, waits [`QUIESCE_TIMEOUT`] for the in-flight calls to return and
+//! Every FFI call holds a `NativeCallGuard`; [`exit_process`] raises
+//! `EXITING`, waits `QUIESCE_TIMEOUT` for the in-flight calls to return and
 //! only then lets `exit()` run its handlers. A thread that tries to start a
 //! native call after that point parks forever (the process is on its way out),
 //! so no call can begin during teardown either. If a call is still running at
