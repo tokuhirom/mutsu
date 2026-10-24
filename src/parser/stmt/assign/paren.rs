@@ -296,6 +296,10 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
     if let Some(expr) = subscript_adverb_lvalue_assign_expr(lhs.clone(), rhs.clone()) {
         return Ok((rest, expr));
     }
+    // `((c ?? $a !! $b) = 5)`: the typed assignment node, target as written.
+    if !is_atomic && crate::rakuast::is_callable_lvalue_assign_target(&lhs) {
+        return Ok((rest, super::written_assignment(lhs, rhs)));
+    }
     let expr = match lhs {
         Expr::Var(name) => Expr::AssignExpr {
             name,

@@ -380,13 +380,10 @@ pub(crate) fn ternary_trailing_assignment<'a>(
         let (rhs_in, _) = ws(&r[1..])?;
         let (r2, rhs) = ternary_mode(rhs_in, mode)
             .map_err(|err| enrich_expected_error(err, "expected value after '='", rhs_in.len()))?;
+        // The conditional is the target: its chosen branch is written.
         return Ok(Some((
             r2,
-            Expr::Call {
-                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-                args: vec![ternary_expr.clone(), Expr::ArrayLiteral(Vec::new()), rhs],
-                listop: false,
-            },
+            crate::parser::stmt::assign::written_assignment(ternary_expr.clone(), rhs),
         )));
     }
     Ok(None)

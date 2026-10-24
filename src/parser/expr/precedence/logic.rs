@@ -493,8 +493,14 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
     };
 
     // Not a target here: the `=` is left to the statement parser, which sees
-    // the target without its parentheses.
+    // the target without its parentheses. A `.AST` parse keeps the
+    // parentheses of a target the statement parser writes through
+    // (`(-$x) = 5`), which builds the assignment node from it as written.
     if !crate::rakuast::is_expression_assign_target(&expr) {
+        if crate::ast::spelled::keeping() && crate::rakuast::is_callable_lvalue_assign_target(&expr)
+        {
+            return Ok((rest, expr));
+        }
         return Ok((rest, unwrap_grouped_lvalue(expr)));
     }
     // The target as written, parentheses included; a `.AST` parse keeps the

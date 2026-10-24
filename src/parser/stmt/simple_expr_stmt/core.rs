@@ -944,6 +944,11 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     catch,
                 })
             }
+            // `-$x = 5`, `$<c> = $0`, `($a || $b) = 1`, `(my $v) = 1, 2`: the
+            // assignment node, written through the target's result.
+            target if crate::rakuast::is_callable_lvalue_assign_target(&target) => {
+                Stmt::Expr(crate::parser::stmt::assign::written_assignment(target, rhs))
+            }
             target => {
                 if let Some(stmt) = grouped_assign_lvalue_stmt(&target, rhs.clone()) {
                     stmt

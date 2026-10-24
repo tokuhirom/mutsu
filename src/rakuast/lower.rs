@@ -2813,7 +2813,8 @@ fn expression_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
     }
     let target = lower_expr(left)?;
     if matches!(target, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_))
-        || !super::assign_lower::is_expression_target(&target)
+        || !(super::assign_lower::is_expression_target(&target)
+            || super::assign_lower::is_callable_lvalue_target(&target))
     {
         return Ok(None);
     }
