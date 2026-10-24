@@ -156,19 +156,15 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         if meta == "reduce"
             && let Some(compound_op) = CompoundAssignOp::from_op_name(&op)
         {
-            // The same marker as the spelled `+=`: `$x [+]= 6` is `$x += 6`.
-            let expr = Expr::spelled(
-                preserve_compound_assign(var_expr, compound_op, rhs)?,
-                || crate::ast::spelled::Spelling::BracketedAssignment {
-                    depth: bracket_depth,
-                },
-            );
-            let stmt = Stmt::Assign {
-                name,
-                expr,
-                op: AssignOp::Assign,
-                target_is_sigilless: false,
-            };
+            // `$x [+]= 6` assigns as `$x += 6` does.
+            let depth = u8::try_from(bracket_depth)
+                .map_err(|_| PError::expected("a bracketed infix nested at most 255 levels"))?;
+            let stmt = super::written_compound_assignment_stmt(
+                var_expr,
+                compound_op,
+                crate::ast::parsed::CompoundMeta::Bracketed(depth),
+                rhs,
+            )?;
             return parse_statement_modifier(rest, stmt);
         }
         let expr = Expr::spelled(
@@ -204,14 +200,13 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             && sigil == b'$'
             && let Some(compound_op) = CompoundAssignOp::from_op_name(&op)
         {
-            // The same marker as the spelled `+=`.
-            let expr = preserve_compound_assign(var_expr, compound_op, rhs)?;
-            let stmt = Stmt::Assign {
-                name,
-                expr,
-                op: AssignOp::Assign,
-                target_is_sigilless: false,
-            };
+            // A scalar's `Z+=` assigns as `+=` does.
+            let stmt = super::written_compound_assignment_stmt(
+                var_expr,
+                compound_op,
+                crate::ast::parsed::CompoundMeta::Zip,
+                rhs,
+            )?;
             return parse_statement_modifier(rest, stmt);
         }
         // `@a Z= rhs` (zip metaoperator on `=`) is element-wise assignment, not
@@ -351,22 +346,18 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         // `//=` / `||=` / `&&=` on a plain scalar must not store when the short
         // circuit keeps the current value (see
         // `short_circuit_compound_assign_expr`).
-        let stmt = if matches!(var_expr, Expr::Var(_))
-            && let Some(short) =
-                short_circuit_compound_assign_expr(&name, var_expr.clone(), op, rhs.clone())
-        {
-            Stmt::Expr(compound_assign_marker(var_expr, op, rhs, short))
-        } else {
-            Stmt::Assign {
-                name: name.clone(),
-                expr: preserve_compound_assign(var_expr, op, rhs)?,
-                op: AssignOp::Assign,
-                target_is_sigilless: false,
-            }
-        };
+        let plain = crate::ast::parsed::CompoundMeta::Plain;
+        if crate::ast::spelled::keeping() {
+            let (rest, expr) =
+                crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
+                    rest,
+                    super::written_compound_assignment(var_expr, op, plain, rhs)?,
+                )?;
+            return parse_statement_modifier(rest, Stmt::Expr(expr));
+        }
         let (rest, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
             rest,
-            stmt,
+            super::written_compound_assignment_stmt(var_expr, op, plain, rhs)?,
             crate::parser::stmt::word_logical_split::seed_read_expr(&name),
         )?;
         return parse_statement_modifier(rest, stmt);

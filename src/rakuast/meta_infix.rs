@@ -229,14 +229,6 @@ pub(super) fn convert_bracketed_assignment(
         ));
     }
     let (target, meta, op, rhs) = match expr {
-        Expr::CompoundAssign {
-            target, op, rhs, ..
-        } => {
-            let base = op
-                .strip_suffix('=')
-                .ok_or_else(|| unsupported_expr("bracketed assignment without an operator"))?;
-            (target.as_ref(), "reduce", base, rhs.as_ref())
-        }
         Expr::AssignExpr { expr, .. } => match expr.as_ref() {
             Expr::MetaOp {
                 meta,

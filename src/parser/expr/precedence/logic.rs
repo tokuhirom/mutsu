@@ -258,12 +258,14 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         let (after_ws, _) = ws(after_op)?;
         let comma_level = matches!(op, crate::parser::stmt::assign::CompoundAssignOp::Comma);
         if let Ok((r, rhs)) = parse_compound_assign_rhs_mode(after_ws, comma_level, mode)
-            && let Ok(result) = build_compound_assign_expr(expr.clone(), op, rhs.clone())
+            && let Ok(compound) = crate::parser::stmt::assign::written_compound_assignment(
+                expr.clone(),
+                op,
+                crate::ast::parsed::CompoundMeta::Plain,
+                rhs,
+            )
         {
-            // Preserve the original lvalue for RakuAST. The marker is
-            // transparent to execution and keeps the established expansion
-            // (including dedicated index/method writeback) underneath it.
-            return Ok((r, compound_assign_marker(expr, op, rhs, result)));
+            return Ok((r, compound));
         }
     }
 

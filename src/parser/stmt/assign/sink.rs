@@ -243,10 +243,12 @@ fn with_list_source(assign: Expr, source: Expr) -> Expr {
             expr: Box::new(source),
             is_bind: false,
         },
-        Expr::Ast(node) => {
-            let crate::ast::parsed::ParsedExpr::Assign(assign) = *node;
-            super::written_assignment(assign.target, source)
-        }
+        Expr::Ast(node) => match *node {
+            crate::ast::parsed::ParsedExpr::Assign(assign) => {
+                super::written_assignment(assign.target, source)
+            }
+            other => Expr::Ast(Box::new(other)),
+        },
         other => other,
     }
 }

@@ -181,6 +181,32 @@ pub(crate) enum SigillessForm {
 pub(crate) enum ParsedExpr {
     /// `TARGET = SOURCE` (`ApplyInfix` over `Assignment`).
     Assign(Assign),
+    /// `TARGET OP= SOURCE` (`ApplyInfix` over `MetaInfix::Assign`).
+    CompoundAssign(CompoundAssign),
+}
+
+/// A compound assignment as written: the target, the infix it applies, how
+/// the infix was spelled, and the source.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct CompoundAssign {
+    pub(crate) target: Expr,
+    /// The base infix, as `CompoundAssignOp::from_op_name` reads it (`+`,
+    /// `//`, `min`).
+    pub(crate) op: String,
+    pub(crate) meta: CompoundMeta,
+    pub(crate) source: Expr,
+}
+
+/// How a compound assignment's infix was written. Every spelling assigns the
+/// same way to a scalar; the tree keeps what the source wrote.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum CompoundMeta {
+    /// `$x += 1`.
+    Plain,
+    /// `$x [+]= 1`, `$x [[+]]= 1`: the infix inside this many brackets.
+    Bracketed(u8),
+    /// `$x Z+= 1` on a scalar.
+    Zip,
 }
 
 /// An assignment as written: the target with its parentheses, and the source.

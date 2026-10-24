@@ -183,7 +183,10 @@ pub(crate) fn recognize(stmt: &Stmt) -> Option<Temporized> {
         Stmt::SyntheticBlock(parts) => match parts.as_slice() {
             // `temp $x ~= "a"`: the save, then the assignment parsed from the
             // variable on.
-            [save, Stmt::Expr(assignment @ Expr::CompoundAssign { .. })] => {
+            [
+                save,
+                Stmt::Expr(assignment @ (Expr::CompoundAssign { .. } | Expr::Ast(_))),
+            ] if is_compound(assignment) => {
                 let (name, index, is_temp) = bare_save(save)?;
                 Some(Temporized {
                     is_temp,
@@ -197,5 +200,19 @@ pub(crate) fn recognize(stmt: &Stmt) -> Option<Temporized> {
             _ => None,
         },
         _ => None,
+    }
+}
+
+/// Whether `expr` is a compound assignment: the parser's marker, or the typed
+/// node a `.AST` parse keeps (ADR-10723 Stage 2).
+// Cost: O(1).
+fn is_compound(expr: &Expr) -> bool {
+    match expr {
+        Expr::CompoundAssign { .. } => true,
+        Expr::Ast(node) => matches!(
+            node.as_ref(),
+            crate::ast::parsed::ParsedExpr::CompoundAssign(_)
+        ),
+        _ => false,
     }
 }

@@ -167,6 +167,7 @@ pub(crate) fn written_assignment_stmt(target: Expr, source: Expr) -> Stmt {
 mod bracket;
 mod comma;
 mod compound_expr;
+mod compound_lower;
 mod lvalue;
 mod op;
 mod paren;
@@ -179,6 +180,10 @@ pub(in crate::parser) use assign_stmt::assign_stmt;
 pub(in crate::parser) use comma::{
     comma_list_ends_here, normalize_comma_list_items, parse_comma_or_expr,
     parse_comma_or_expr_item_no_word_logical, parse_comma_or_expr_no_word_logical,
+};
+pub(crate) use compound_lower::{
+    lower_compound_expression, lower_compound_statement, written_compound_assignment,
+    written_compound_assignment_stmt,
 };
 pub(in crate::parser) use try_assign::{paren_assign_rhs_is_complete, try_parse_assign_expr};
 

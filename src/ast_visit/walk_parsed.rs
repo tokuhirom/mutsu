@@ -193,6 +193,10 @@ pub(crate) fn walk_parsed_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &
             v.visit_expr(&a.target);
             v.visit_expr(&a.source);
         }
+        ParsedExpr::CompoundAssign(a) => {
+            v.visit_expr(&a.target);
+            v.visit_expr(&a.source);
+        }
     }
 }
 
@@ -201,6 +205,10 @@ pub(crate) fn walk_parsed_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &
 pub(crate) fn walk_parsed_expr_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut ParsedExpr) {
     match node {
         ParsedExpr::Assign(a) => {
+            v.visit_expr_mut(&mut a.target);
+            v.visit_expr_mut(&mut a.source);
+        }
+        ParsedExpr::CompoundAssign(a) => {
             v.visit_expr_mut(&mut a.target);
             v.visit_expr_mut(&mut a.source);
         }
