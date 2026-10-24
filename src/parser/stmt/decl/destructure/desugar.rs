@@ -371,6 +371,18 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
             && !dvar.is_slurpy
             && !is_implicit_slurpy
             && (dvar.sigilless || binds_container_trait || dvar.name.starts_with(['@', '%']));
+        // An `@` target of a signature bind takes a `Seq` the way an `@`
+        // parameter does -- through its `.cache` List -- while a plain `my @a :=
+        // SEQ` still refuses it.
+        let expr = if binds_element && is_array {
+            Expr::Call {
+                name: Symbol::intern("__mutsu_bind_positional_element"),
+                args: vec![expr],
+                listop: false,
+            }
+        } else {
+            expr
+        };
         let effective_where = dvar.where_constraint.clone().map(Box::new);
         // A `$` target that binds its element (`is rw` / `is raw`) is the
         // same scalar bind `my $a := EXPR` lowers to, and carries the same

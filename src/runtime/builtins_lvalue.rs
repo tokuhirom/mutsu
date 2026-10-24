@@ -890,6 +890,26 @@ impl Interpreter {
         Ok(v.clone())
     }
 
+    /// `__mutsu_bind_positional_element(x)` — the staged element a `my (..., @a)
+    /// := ...` signature bind hands an `@` target: a `Seq` binds through its
+    /// cached List view (what an `@` parameter does with a Seq argument), every
+    /// other value passes through unchanged.
+    // Cost: O(1).
+    pub(super) fn builtin_bind_positional_element(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let Some(v) = args.first() else {
+            return Ok(Value::NIL);
+        };
+        if let ValueView::Seq(body) = v.view() {
+            let body = std::sync::Arc::clone(&body);
+            body.mark_cache_requested();
+            return Ok(Value::seq_list_view(&body));
+        }
+        Ok(v.clone())
+    }
+
     /// `:(...) := RHS`: bind `RHS` (a `Capture`, or anything a signature
     /// smartmatch takes apart the same way: a list of positionals and pairs, a
     /// pair, a hash) to the signature literal with the signature binder, in a
