@@ -639,11 +639,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         Stmt::SyntheticBlock(_) if crate::ast::var_will::recognize(stmt).is_some() => {
             super::var_will::convert(stmt).map(Some)
         }
-        // `my %h does R = EXPR`: one declaration with a `Trait::Does`.
-        Stmt::SyntheticBlock(_) if crate::ast::var_does::recognize(stmt).is_some() => {
-            let (decl, role, init) = crate::ast::var_does::recognize(stmt).expect("just checked");
-            does_declaration(decl, role, init)
-        }
         // `my Int $c .= new(), 5`: a `.=` declaration with sunk list items.
         Stmt::SyntheticBlock(_)
             if super::decl_tail::convert_call_assign_list(stmt)
@@ -659,15 +654,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 Some(node) => Ok(Some(statement_expression(node?))),
                 None => Err(unsupported("a declaration with a loose tail")),
             }
-        }
-        // A binding declaration (`my $x := …`, `my @a := …`, `my %h := …`):
-        // the statement is exactly `ast::bind_decl::expand`'s form of the
-        // declaration inside it.
-        Stmt::VarDecl { .. } | Stmt::SyntheticBlock(_)
-            if crate::ast::bind_decl::declaration(stmt).is_some() =>
-        {
-            let decl = crate::ast::bind_decl::declaration(stmt).expect("just checked");
-            var_decl_statement(var_decl_parts(decl)?, true)
         }
         // `while my $x { }` / `until my $x { }`: the declaration is the loop's
         // condition (the parser hoists it out so it is declared once).
@@ -2378,7 +2364,7 @@ fn compound_target_matches_name(target: &Expr, name: &str) -> bool {
 /// A `my`/`our`/`state` declaration with an optional simple type, as a
 /// `VarDeclaration::Simple` statement; `is_binding` renders its right-hand side
 /// as an `Initializer::Bind` (`:=`) rather than an `Initializer::Assign`.
-fn var_decl_statement(
+pub(super) fn var_decl_statement(
     parts: VarDeclParts<'_>,
     is_binding: bool,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
@@ -2586,7 +2572,7 @@ pub(super) fn does_declaration(
 /// The fields of a `Stmt::VarDecl` that a `VarDeclaration::Simple` renders.
 /// Taken apart in one place so the rendering function is not one more step of
 /// the converter's recursion over `Stmt` (`make check-ast-walkers`).
-struct VarDeclParts<'a> {
+pub(super) struct VarDeclParts<'a> {
     name: &'a str,
     anonymous: bool,
     expr: &'a Expr,
@@ -2603,7 +2589,7 @@ struct VarDeclParts<'a> {
     export_tags: &'a [String],
 }
 
-fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeError> {
+pub(super) fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeError> {
     let Stmt::VarDecl {
         anonymous,
         name,
@@ -3976,7 +3962,11 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     | Stmt::MethodDecl { .. }
                     | Stmt::EnumDecl { .. }
             ) || crate::ast::sigilless_decl::declaration(stmt).is_some()
-                || crate::ast::bind_decl::declaration(stmt).is_some() =>
+                || matches!(
+                    stmt.as_ref(),
+                    Stmt::Ast(node)
+                        if matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::BindDecl(_))
+                ) =>
         {
             let statement = convert_stmt(stmt)?.ok_or_else(|| unsupported("declaration term"))?;
             statement

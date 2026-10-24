@@ -172,7 +172,8 @@ impl VisitMut for Ctx {
                         self.scoped(Vec::new(), |v| v.visit_stmts_mut(&mut block.body));
                     }
                     ParsedStmt::Loop(_) => unreachable!("handled by the arm above"),
-                    ParsedStmt::For { .. } => unreachable!("peeled above"),
+                    ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => unreachable!("peeled above"),
+                    ParsedStmt::DoesDecl { .. } => crate::ast_visit::walk_parsed_mut(self, node),
                     ParsedStmt::Modified(_) => unreachable!("handled by the arm above"),
                 }
             }

@@ -44,6 +44,22 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
         ParsedStmt::BareBlock(block) => Ok(Stmt::Block(block.body)),
         ParsedStmt::Loop(l) => lower_loop(l),
         ParsedStmt::For { stmt, .. } => Ok(*stmt),
+        ParsedStmt::DoesDecl { decl, role, init } => {
+            let name = match decl.as_ref() {
+                Stmt::VarDecl { name, .. } => name.clone(),
+                _ => return Err(RuntimeError::new("does declaration without a variable")),
+            };
+            let init = init.map(|expr| Stmt::Assign {
+                name: name.clone(),
+                expr,
+                op: crate::ast::AssignOp::Assign,
+                target_is_sigilless: false,
+            });
+            Ok(crate::ast::var_does::expand(
+                &name, *decl, "does", role, init,
+            ))
+        }
+        ParsedStmt::BindDecl(decl) => Ok(crate::ast::bind_decl::expand(*decl)),
         ParsedStmt::Modified(m) => super::modifier_lower::lower(m),
         ParsedStmt::WhileLoop(w) => {
             let defs = match w.block.params {

@@ -65,6 +65,15 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
             statement_expression(view_block(block, BlockKind::Signature)?)
         }
         ParsedStmt::Loop(l) => loop_node(l)?,
+        ParsedStmt::BindDecl(decl) => {
+            let parts = super::convert::var_decl_parts(decl)?;
+            super::convert::var_decl_statement(parts, true)?
+                .ok_or_else(|| super::convert::unsupported("binding declaration"))?
+        }
+        ParsedStmt::DoesDecl { decl, role, init } => {
+            super::convert::does_declaration(decl, role, init.as_ref())?
+                .ok_or_else(|| super::convert::unsupported("does declaration"))?
+        }
         ParsedStmt::Modified(m) => modified_node(m)?,
         ParsedStmt::For { stmt, block } => {
             let mut node = super::convert::convert_stmt(stmt)?

@@ -369,7 +369,7 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
         is_our: false,
         is_dynamic,
         ..
-    }) = crate::ast::bind_decl::declaration(&stmt)
+    }) = crate::ast::bind_decl::declared(&stmt)
         && !type_constraint
             .as_deref()
             .is_some_and(|tc| tc.starts_with(|c: char| c.is_ascii_lowercase()))

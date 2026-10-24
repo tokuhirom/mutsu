@@ -3,17 +3,13 @@
 //!
 //! The compiler needs a binding declaration wrapped in bookkeeping statements
 //! (`MarkBind`, `MarkReadonly`, the bound-array length record) chosen by the
-//! sigil and the right-hand side. That wrapping used to be built inline by the
-//! parser, so the RakuAST layer met only the wrapped form and refused it.
-//! [`expand`] is now the one place the wrapping is built: the parser calls it,
-//! and `rakuast::lower` hands it the declaration it lowers from
-//! `VarDeclaration::Simple(initializer => Initializer::Bind(…))`
-//! (ADR-10723 Stage 1). [`declaration`] goes the other way for the converter:
-//! it accepts a statement only when it is exactly what [`expand`] builds for
-//! the declaration inside it, so nothing is reverse-engineered from a shape
-//! some other desugaring happens to share.
-
-use std::hash::{Hash, Hasher};
+//! sigil and the right-hand side. The parser keeps the declaration as written
+//! (`ParsedStmt::BindDecl`, ADR-10723 Stage 2) and [`expand`] is the one place
+//! the wrapping is built: the lowering of that node calls it, for the parser's
+//! node and for a hand-built
+//! `VarDeclaration::Simple(initializer => Initializer::Bind(…))` alike.
+//! [`declared`] reads the compiler's input form for passes that need the
+//! declaration inside it.
 
 use super::{Expr, ReadonlyKind, Stmt};
 
@@ -118,47 +114,39 @@ fn binds_a_container(expr: &Expr) -> bool {
     true
 }
 
-/// The binding declaration `stmt` is the [`expand`]ed form of, if it is one:
-/// a `$` declaration carrying [`SCALAR_BIND`], or an `@`/`%` one, whose
-/// expansion is exactly `stmt`.
-// Cost: O(n), n = AST nodes under `stmt` (the expansion is rebuilt and hashed).
-pub(crate) fn declaration(stmt: &Stmt) -> Option<&Stmt> {
-    let decl = match stmt {
-        Stmt::VarDecl { .. } => stmt,
+/// The `VarDecl` inside the lowered form of a binding declaration (see
+/// [`expand`]); a pass over the compiler's input uses it to find what a bind
+/// declares. A plain `VarDecl` is its own declaration.
+// Cost: O(s), s = statements of the expansion (at most four).
+pub(crate) fn declared(stmt: &Stmt) -> Option<&Stmt> {
+    match stmt {
+        // A bare `$` / `&` bind carries its marker trait; `@` and `%` binds
+        // are always wrapped.
+        Stmt::VarDecl {
+            name,
+            custom_traits,
+            ..
+        } => {
+            let marker = if name.starts_with('&') {
+                CODE_BIND
+            } else {
+                SCALAR_BIND
+            };
+            (is_scalar_bind_name(name) || name.starts_with('&'))
+                .then(|| custom_traits.iter().any(|(t, _)| t == marker))
+                .filter(|bound| *bound)
+                .map(|_| stmt)
+        }
         Stmt::SyntheticBlock(stmts) => {
-            let mut decls = stmts.iter().filter(|s| matches!(s, Stmt::VarDecl { .. }));
-            let decl = decls.next()?;
-            if decls.next().is_some() {
+            if !matches!(stmts.first(), Some(Stmt::MarkBind | Stmt::MarkReadonly(..))) {
                 return None;
             }
-            decl
+            let mut decls = stmts.iter().filter(|s| matches!(s, Stmt::VarDecl { .. }));
+            let decl = decls.next()?;
+            decls.next().is_none().then_some(decl)
         }
-        _ => return None,
-    };
-    let Stmt::VarDecl {
-        name,
-        custom_traits,
-        ..
-    } = decl
-    else {
-        return None;
-    };
-    let is_bind = if is_scalar_bind_name(name) {
-        custom_traits.iter().any(|(t, _)| t == SCALAR_BIND)
-    } else {
-        name.starts_with('@')
-            || name.starts_with('%')
-            || (name.starts_with('&') && custom_traits.iter().any(|(t, _)| t == CODE_BIND))
-    };
-    (is_bind && structural_hash(&expand(decl.clone())) == structural_hash(stmt)).then_some(decl)
-}
-
-/// A structural identity of `stmt` through the derived `Hash` impls, the same
-/// identity the AST fingerprints use (#7822).
-fn structural_hash(stmt: &Stmt) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    stmt.hash(&mut hasher);
-    hasher.finish()
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -190,28 +178,25 @@ mod tests {
             decl("x", Expr::BareWord("f".to_string()), &[SCALAR_BIND]),
             decl("@a", Expr::ArrayVar("b".to_string()), &[]),
             decl("%h", Expr::HashVar("s".to_string()), &[]),
-            decl("&f", Expr::CodeVar("source".to_string()), &[]),
+            decl("&f", Expr::CodeVar("source".to_string()), &[CODE_BIND]),
         ] {
             let expanded = expand(d.clone());
-            assert!(declaration(&expanded).is_some(), "{expanded:?}");
+            assert!(declared(&expanded).is_some(), "{expanded:?}");
         }
     }
 
     #[test]
-    fn an_assignment_or_a_foreign_block_is_not_a_binding() {
+    fn an_assignment_is_not_a_binding() {
         // `my $x = $y`: no bind trait.
         let assign = decl("x", Expr::Var("y".to_string()), &["__has_initializer"]);
-        assert!(declaration(&assign).is_none());
+        assert!(declared(&assign).is_none());
         let code_assign = decl(
             "&f",
             Expr::CodeVar("source".to_string()),
             &["__has_initializer"],
         );
-        assert!(declaration(&code_assign).is_none());
+        assert!(declared(&code_assign).is_none());
         // `my @a = …` is never wrapped the way a bind is.
-        assert!(declaration(&decl("@a", Expr::ArrayVar("b".to_string()), &[])).is_none());
-        // A block of the right shape around the wrong statement order.
-        let d = decl("x", Expr::Var("y".to_string()), &[SCALAR_BIND]);
-        assert!(declaration(&Stmt::SyntheticBlock(vec![d, Stmt::MarkBind])).is_none());
+        assert!(declared(&decl("@a", Expr::ArrayVar("b".to_string()), &[])).is_none());
     }
 }
