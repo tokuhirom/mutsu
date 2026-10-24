@@ -279,6 +279,13 @@ impl Interpreter {
         let scoped_key = self.scoped_state_key(base_key);
         let slot_idx = slot as usize;
         let name = &code.locals[slot_idx];
+        // The slot's interned name, so the steady state below probes the env by
+        // symbol instead of re-hashing the text for each probe.
+        let name_sym = code
+            .locals_syms()
+            .get(slot_idx)
+            .copied()
+            .unwrap_or_else(|| crate::symbol::Symbol::intern(name));
         // A `state` declaration names a fresh variable of THIS frame, whatever
         // the readonly registry says about a same-named binding further up the
         // call stack (`sub t($p) { f() }` with `sub f { state $p = 1; $p = 2 }`
@@ -286,7 +293,7 @@ impl Interpreter {
         // `SetLocal` declaration; `state` needs it on every call, since the
         // guard skips its initializer after the first. The unmark is journaled
         // per frame, so the caller's own mark comes back on return.
-        self.unmark_readonly(name);
+        self.unmark_readonly_sym(name_sym);
         // A type-constrained state scalar lives in a cell too (like untyped
         // scalars since #5959), with the constraint registered ON the cell so
         // the `ContainerRef` write chokepoint re-checks it
@@ -295,14 +302,18 @@ impl Interpreter {
         // type (`state buf32 $w`) holds a Buf whose element-assignment path
         // (`$w[$j] = ...` — Digest's SHA2) must see the Buf, not a cell, so it
         // keeps the plain store. `Mu` is universal — no constraint to check.
-        let scalar_type_constraint: Option<String> = (!name.starts_with('@')
-            && !name.starts_with('%'))
-        .then(|| {
-            self.var_type_constraint(name)
-                .or_else(|| self.var_type_constraint(name.trim_start_matches('$')))
-        })
-        .flatten()
-        .filter(|t| t != "Mu");
+        let scalar_type_constraint: Option<String> =
+            (!name.starts_with('@') && !name.starts_with('%') && Self::env_type_constraint_seen())
+                .then(|| {
+                    self.var_type_constraint_sym(name_sym).or_else(|| {
+                        let bare = name.trim_start_matches('$');
+                        (bare.len() != name.len())
+                            .then(|| self.var_type_constraint(bare))
+                            .flatten()
+                    })
+                })
+                .flatten()
+                .filter(|t| t != "Mu");
         let type_constrained_scalar = scalar_type_constraint.as_deref().is_some_and(|t| {
             t.starts_with("buf") || t.starts_with("blob") || t.starts_with("array[")
         });
@@ -481,7 +492,6 @@ impl Interpreter {
             val
         };
         self.locals[slot_idx] = val.clone();
-        let name = name.to_string();
         // Only insert into env if the value differs from what's already there.
         // This avoids triggering Arc::make_mut deep clone on the CoW env when
         // the state variable is already initialized with the same value (common
@@ -491,24 +501,31 @@ impl Interpreter {
         // decl op pre-seeded in env, and the cell would never reach env (every
         // name-based reader/writer would then use the detached plain snapshot,
         // e.g. `state @a; @a = 9,8` right after init read back as empty).
-        let needs_env_insert = match (val.view(), self.env().get(&name).map(Value::view)) {
+        let in_env = self.env().get_sym(name_sym);
+        let needs_env_insert = match (val.view(), in_env.map(Value::view)) {
             (ValueView::ContainerRef(cell), Some(ValueView::ContainerRef(existing))) => {
                 !crate::gc::Gc::ptr_eq(&cell, &existing)
             }
             (ValueView::ContainerRef(_), _) => true,
-            _ => self.env().get(&name) != Some(&val),
+            _ => in_env != Some(&val),
         };
         if needs_env_insert {
-            self.env_mut().insert(name.clone(), val);
+            self.env_mut().insert_sym_noting(name_sym, val);
         }
         // Store metadata mapping variable name to its state storage key.
         // Closures that capture this variable can use this to update state
         // storage when they modify the variable.
-        let meta_key = Self::state_meta_key_for_sym(crate::symbol::Symbol::intern(&name));
-        let scoped_key_val = Value::str(Self::state_key_display(scoped_key));
-        let needs_meta_insert = self.env().get_sym(meta_key) != Some(&scoped_key_val);
-        if needs_meta_insert {
-            self.env_mut().insert_sym_noting(meta_key, scoped_key_val);
+        let meta_key = Self::state_meta_key_for_sym(name_sym);
+        // The steady state finds the entry already there: compare against the
+        // key text without building the display string (an unscoped key is its
+        // own text).
+        let meta_current = matches!(
+            self.env().get_sym(meta_key).map(Value::view),
+            Some(ValueView::Str(current)) if Self::state_key_display_is(scoped_key, current.as_str())
+        );
+        if !meta_current {
+            self.env_mut()
+                .insert_sym_noting(meta_key, Value::str(Self::state_key_display(scoped_key)));
         }
     }
 
