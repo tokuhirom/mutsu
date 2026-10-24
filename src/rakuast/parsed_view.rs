@@ -237,6 +237,9 @@ fn assignment_node(a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, Runtim
 fn compound_assignment_node(
     a: &crate::ast::parsed::CompoundAssign,
 ) -> Result<RakuAstNode, RuntimeError> {
+    if a.meta == CompoundMeta::Dotty {
+        return super::convert::dotty_assignment(&a.target, &a.source);
+    }
     let node =
         super::convert::compound_assignment_infix(&a.target, &compound_spelling(a), &a.source)?;
     with_compound_meta(node, a.meta)
@@ -248,6 +251,7 @@ fn compound_assignment_node(
 pub(super) fn compound_spelling(a: &crate::ast::parsed::CompoundAssign) -> String {
     match a.meta {
         CompoundMeta::Reverse => format!("R{}=", a.op),
+        CompoundMeta::Dotty => ".=".to_string(),
         _ => format!("{}=", a.op),
     }
 }
@@ -266,7 +270,7 @@ pub(super) fn with_compound_meta(
     };
     if matches!(
         meta,
-        CompoundMeta::Plain | CompoundMeta::Reverse | CompoundMeta::Set
+        CompoundMeta::Plain | CompoundMeta::Reverse | CompoundMeta::Set | CompoundMeta::Dotty
     ) {
         return Ok(node);
     }
@@ -293,7 +297,10 @@ pub(super) fn with_compound_meta(
         let mut inner = infix(RakuAstNode::clone(assign))
             .ok_or_else(|| super::convert::unsupported("compound assignment infix"))?;
         match meta {
-            CompoundMeta::Plain | CompoundMeta::Reverse | CompoundMeta::Set => {}
+            CompoundMeta::Plain
+            | CompoundMeta::Reverse
+            | CompoundMeta::Set
+            | CompoundMeta::Dotty => {}
             CompoundMeta::Bracketed(depth) => {
                 for _ in 0..depth {
                     inner = wrap(inner, RakuAstClass::BracketedInfix);

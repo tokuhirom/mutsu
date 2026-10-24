@@ -92,15 +92,7 @@ fn chained_assign_writeback(
 /// every `.=` lowering keeps the marker. See
 /// [`crate::parser::stmt::assign::dotty_assign_marker`].
 pub(crate) fn dot_assign_to_name(name: String, method_call: Expr) -> Expr {
-    let target = if let Some(rest) = name.strip_prefix('@') {
-        Expr::ArrayVar(rest.to_string())
-    } else if let Some(rest) = name.strip_prefix('%') {
-        Expr::HashVar(rest.to_string())
-    } else if let Some(term) = crate::term_names::term_spelling(&name) {
-        Expr::BareWord(term.to_string())
-    } else {
-        Expr::Var(name.clone())
-    };
+    let target = dot_assign_target(&name);
     let expanded = Expr::AssignExpr {
         name,
         expr: Box::new(method_call.clone()),
@@ -109,28 +101,43 @@ pub(crate) fn dot_assign_to_name(name: String, method_call: Expr) -> Expr {
     crate::parser::stmt::assign::dotty_assign_marker(target, method_call, expanded)
 }
 
-/// Wrap a `.=` method call result in the appropriate assignment expression.
-/// For simple variables, generates [`dot_assign_to_name`]'s marked
-/// `AssignExpr { name, expr }`.
-/// For index expressions, generates an `IndexAssign` wrapped in a `DoBlock`.
-/// For non-lvalue targets, returns the method call as-is.
-///
-/// Every shape carries the source-level `.=` marker
-/// ([`crate::parser::stmt::assign::dotty_assign_marker`]): the target as written
-/// and the method call, so the RakuAST conversion can render
-/// `ApplyDottyInfix` and the lowering can rebuild the same expansion.
-// Cost: O(n), n = size of the target and the method call (both are cloned).
-pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl Fn(Expr) -> Expr) -> Expr {
-    wrap_dot_assign_with_terms(
-        target,
-        method_call_fn,
-        crate::parser::stmt::simple::is_user_declared_value_term,
-    )
+/// `call`, a `.=` method call written over one invocant, applied to
+/// `invocant` instead.
+// Cost: O(n), n = size of the call.
+pub(crate) fn retarget_dotty_call(call: &Expr, invocant: Expr) -> Expr {
+    let mut call = call.clone();
+    if let Expr::MethodCall { target, .. }
+    | Expr::DynamicMethodCall { target, .. }
+    | Expr::HyperMethodCall { target, .. } = &mut call
+    {
+        **target = invocant;
+    }
+    call
 }
 
-/// [`wrap_dot_assign`] with the caller's notion of which barewords name a
-/// sigilless term: the parser asks its scopes, the RakuAST lowering asks the
-/// declarations its unit carries.
+/// The variable an `AssignExpr`-convention name (`x`, `@a`, `%h`, a term key)
+/// spells as an expression.
+// Cost: O(|name|).
+pub(crate) fn dot_assign_target(name: &str) -> Expr {
+    if let Some(rest) = name.strip_prefix('@') {
+        Expr::ArrayVar(rest.to_string())
+    } else if let Some(rest) = name.strip_prefix('%') {
+        Expr::HashVar(rest.to_string())
+    } else if let Some(term) = crate::term_names::term_spelling(name) {
+        Expr::BareWord(term.to_string())
+    } else {
+        Expr::Var(name.to_string())
+    }
+}
+
+/// Wrap a `.=` method call result in the appropriate assignment expression:
+/// [`dot_assign_to_name`]'s marked `AssignExpr` for a simple variable, an
+/// `IndexAssign` in a block for an element, the method call as-is for a
+/// non-lvalue target. Every shape carries the source-level `.=` marker
+/// ([`crate::parser::stmt::assign::dotty_assign_marker`]). `is_term` is the
+/// caller's notion of which barewords name a sigilless term: the parser asks
+/// its scopes, the RakuAST lowering asks the declarations its unit carries.
+// Cost: O(n), n = size of the target and the method call (both are cloned).
 pub(crate) fn wrap_dot_assign_with_terms(
     target: Expr,
     method_call_fn: impl Fn(Expr) -> Expr,
@@ -527,7 +534,7 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
         let result = match qname {
             QuotedMethodName::Static(mname) => {
                 let mname_sym = Symbol::intern(&mname);
-                wrap_dot_assign(expr, |target| Expr::MethodCall {
+                written_dotty(expr, |target| Expr::MethodCall {
                     target: Box::new(target),
                     name: mname_sym,
                     args: args.clone(),
@@ -537,7 +544,7 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
                 })
             }
             QuotedMethodName::Dynamic(name_expr) => {
-                wrap_dot_assign(expr, |target| Expr::DynamicMethodCall {
+                written_dotty(expr, |target| Expr::DynamicMethodCall {
                     target: Box::new(target),
                     name_expr: Box::new(name_expr.clone()),
                     args: args.clone(),
@@ -563,7 +570,7 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
         } else {
             (r_name, vec![])
         };
-        let result = wrap_dot_assign(expr, |target| Expr::DynamicMethodCall {
+        let result = written_dotty(expr, |target| Expr::DynamicMethodCall {
             target: Box::new(target),
             name_expr: Box::new(name_expr.clone()),
             args: args.clone(),
@@ -649,7 +656,7 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
         (r, vec![])
     };
     let method_sym = Symbol::intern(method_name);
-    let result = wrap_dot_assign(expr, |target| Expr::MethodCall {
+    let result = written_dotty(expr, |target| Expr::MethodCall {
         target: Box::new(target),
         name: method_sym,
         args: args.clone(),
@@ -658,6 +665,14 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
         sugar: false,
     });
     Ok((r_final, result))
+}
+
+/// `EXPR .= call` as the typed `.=` node over the method call `call_fn`
+/// builds for `EXPR` (ADR-10723 Stage 2, #14948).
+// Cost: O(n), n = size of the target and the call.
+fn written_dotty(expr: Expr, call_fn: impl Fn(Expr) -> Expr) -> Expr {
+    let call = call_fn(expr.clone());
+    crate::parser::stmt::assign::written_dotty_assignment(expr, call, false)
 }
 
 /// `__mutsu_custom_store(VALUE)`: whether `.=` stores through the value's own

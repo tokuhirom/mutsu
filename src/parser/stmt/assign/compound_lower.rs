@@ -23,6 +23,13 @@ pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PE
     match node.meta {
         CompoundMeta::Reverse => return Ok(lower_reverse(node)),
         CompoundMeta::Set => return lower_set(node),
+        CompoundMeta::Dotty => {
+            return Ok(lower_dotty(
+                node,
+                false,
+                crate::parser::stmt::simple::is_user_declared_value_term,
+            ));
+        }
         _ => {}
     }
     let op = operator(&node)?;
@@ -42,6 +49,13 @@ pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PE
 /// as a statement.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_compound_statement(node: CompoundAssign) -> Result<Stmt, PError> {
+    if node.meta == CompoundMeta::Dotty {
+        return Ok(Stmt::Expr(lower_dotty(
+            node,
+            true,
+            crate::parser::stmt::simple::is_user_declared_value_term,
+        )));
+    }
     if matches!(node.meta, CompoundMeta::Reverse | CompoundMeta::Set) {
         return Ok(Stmt::Expr(lower_compound_expression(node)?));
     }
@@ -81,6 +95,53 @@ fn lower_reverse(node: CompoundAssign) -> Expr {
         target.clone(),
     );
     reverse_assign_marker(target, &op, source, expanded)
+}
+
+/// `TARGET .= meth(args)`: the marker over the `.=` expansion, which writes
+/// the method's result back through the target. As a statement, `$_ .= meth`
+/// is the topic form, which can write through a read-only whole-container
+/// topic (`given @a { .= uc }`). `is_term` says which barewords name a
+/// sigilless term: the parser asks its scopes, `rakuast::lower` the
+/// declarations its unit carries.
+// Cost: O(n), n = size of the target and the call.
+pub(crate) fn lower_dotty(
+    node: CompoundAssign,
+    as_statement: bool,
+    is_term: fn(&str) -> bool,
+) -> Expr {
+    let CompoundAssign {
+        target,
+        source: call,
+        ..
+    } = node;
+    if as_statement && matches!(&target, Expr::Var(topic) if topic == "_") {
+        return crate::parser::stmt::simple_expr_stmt::topic_dot_assign(call);
+    }
+    crate::parser::expr::wrap_dot_assign_with_terms(
+        target,
+        |invocant| crate::parser::expr::retarget_dotty_call(&call, invocant),
+        is_term,
+    )
+}
+
+/// `TARGET .= meth(args)`, kept in its RakuAST shape by a `.AST` parse and
+/// lowered at once otherwise. `call` is the method call over the target.
+// Cost: O(n), n = size of the target and the call.
+pub(crate) fn written_dotty_assignment(target: Expr, call: Expr, as_statement: bool) -> Expr {
+    let node = CompoundAssign {
+        target,
+        op: ".".to_string(),
+        meta: CompoundMeta::Dotty,
+        source: call,
+    };
+    if crate::ast::spelled::keeping() {
+        return Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node)));
+    }
+    lower_dotty(
+        node,
+        as_statement,
+        crate::parser::stmt::simple::is_user_declared_value_term,
+    )
 }
 
 /// `TARGET (|)= SOURCE`: the marker over the set operator's expansion.

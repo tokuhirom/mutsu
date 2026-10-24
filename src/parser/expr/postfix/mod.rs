@@ -21,8 +21,8 @@ pub(in crate::parser::expr) use loop_::{postfix_expr_tight_pub, prefix_expr};
 pub(crate) use call_method::{ParsedBracketIndex, parse_bracket_indices_inner};
 pub(crate) use call_method::{QuotedMethodName, parse_quoted_method_name};
 pub(crate) use dot_assign::{
-    atomic_elem_update, dot_assign_to_name, is_atomic_elem_target, parse_trailing_call_adverbs,
-    wrap_dot_assign, wrap_dot_assign_with_terms,
+    atomic_elem_update, dot_assign_target, is_atomic_elem_target, parse_trailing_call_adverbs,
+    retarget_dotty_call, wrap_dot_assign_with_terms,
 };
 pub(in crate::parser) use helpers::is_angle_subscript_key_char;
 pub(in crate::parser) use helpers::is_conservative_angle_key_char;

@@ -1883,7 +1883,7 @@ pub(super) fn compound_assignment_with_left(
 /// Call::Method)`. The marker's `rhs` is the method call applied to the target;
 /// only its name, arguments and dispatch modifier are rendered.
 // Cost: O(n), n = size of the target and the arguments.
-fn dotty_assignment(target: &Expr, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn dotty_assignment(target: &Expr, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
     dotty_assignment_with_left(convert_expr(target)?, call)
 }
 

@@ -417,7 +417,11 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             };
             return Ok((
                 rest,
-                super::super::super::expr::dot_assign_to_name(name, method_expr),
+                super::written_dotty_assignment(
+                    crate::parser::expr::dot_assign_target(&name),
+                    method_expr,
+                    false,
+                ),
             ));
         }
         // Parse regular method name
@@ -493,7 +497,11 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         };
         return Ok((
             r,
-            super::super::super::expr::dot_assign_to_name(name, method_expr),
+            super::written_dotty_assignment(
+                crate::parser::expr::dot_assign_target(&name),
+                method_expr,
+                false,
+            ),
         ));
     }
     if let Some((stripped, op)) = parse_compound_assign_op(r2) {

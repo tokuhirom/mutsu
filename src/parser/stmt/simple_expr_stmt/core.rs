@@ -147,7 +147,11 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             quoted: false,
             sugar: false,
         };
-        let stmt = Stmt::Expr(topic_dot_assign(call));
+        let stmt = Stmt::Expr(crate::parser::stmt::assign::written_dotty_assignment(
+            Expr::Var("_".to_string()),
+            call,
+            true,
+        ));
         return parse_statement_modifier(rest, stmt);
     }
 
@@ -482,13 +486,21 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             // `$_ .= meth`: route the topic metaop through `__mutsu_topic_dotassign`
             // (see the leading-dot case above).
             Expr::Var(name) if name == "_" => {
-                let stmt = Stmt::Expr(topic_dot_assign(make_rhs(Expr::Var("_".to_string()))));
+                let topic = Expr::Var("_".to_string());
+                let stmt = Stmt::Expr(crate::parser::stmt::assign::written_dotty_assignment(
+                    topic.clone(),
+                    make_rhs(topic),
+                    true,
+                ));
                 return parse_statement_modifier(r, stmt);
             }
             // A variable or an element: the same `.=` expansion (and marker) the
             // expression form builds, so the RakuAST conversion sees one shape.
             Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::Index { .. } => {
-                let stmt = Stmt::Expr(crate::parser::wrap_dot_assign(expr, make_rhs));
+                let call = make_rhs(expr.clone());
+                let stmt = Stmt::Expr(crate::parser::stmt::assign::written_dotty_assignment(
+                    expr, call, true,
+                ));
                 return parse_statement_modifier(r, stmt);
             }
             Expr::BareWord(ref name) => {
