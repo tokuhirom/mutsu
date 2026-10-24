@@ -129,15 +129,50 @@ pub(crate) fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, 
         && after_hyper.starts_with('.')
         && !after_hyper.starts_with("..")
     {
-        let placeholder = Expr::Var(HYPER_PLACEHOLDER.to_string());
-        let (chain, after) = try_parse_interp_method_call(after_hyper, placeholder.clone());
-        if !std::ptr::eq(after, after_hyper)
-            && let Some(expr) = hyper_first_call(chain, &target)
-        {
-            return (expr, after);
+        let mut hyper = true;
+        let (expr, after) = interp_method_chain(after_hyper, target.clone(), &mut hyper);
+        if hyper || std::ptr::eq(after, after_hyper) {
+            return (target, input);
         }
-        return (target, input);
+        return (expr, after);
     }
+    interp_method_chain(input, target, &mut false)
+}
+
+/// The method call `name(args)` on `target`; the hyper form when `hyper` is
+/// set (the first call of a `>>.` chain), which it then clears.
+// Cost: O(1).
+fn chain_call(
+    target: Expr,
+    name: Symbol,
+    args: Vec<Expr>,
+    modifier: Option<char>,
+    quoted: bool,
+    hyper: &mut bool,
+) -> Expr {
+    if std::mem::take(hyper) {
+        Expr::HyperMethodCall {
+            target: Box::new(target),
+            name,
+            args,
+            modifier,
+            quoted,
+        }
+    } else {
+        Expr::MethodCall {
+            target: Box::new(target),
+            name,
+            args,
+            modifier,
+            quoted,
+            sugar: false,
+        }
+    }
+}
+
+/// The `.method(...)` chain of [`try_parse_interp_method_call`]; `hyper` makes
+/// its first call a hyper call.
+fn interp_method_chain<'a>(input: &'a str, target: Expr, hyper: &mut bool) -> (Expr, &'a str) {
     let mut expr = target;
     let mut rest = input;
     // Collect chain of .method parts; only commit if chain ends with parens
@@ -193,14 +228,14 @@ pub(crate) fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, 
                         // Flush any pending paren-less `.method` entries collected
                         // before this one (e.g. `.uc.&mööse()`) as zero-arg calls.
                         for (pending_name, quoted, modifier) in chain.drain(..) {
-                            expr = Expr::MethodCall {
-                                target: Box::new(expr),
-                                name: Symbol::intern(&pending_name),
-                                args: vec![],
+                            expr = chain_call(
+                                expr,
+                                Symbol::intern(&pending_name),
+                                vec![],
                                 modifier,
                                 quoted,
-                                sugar: false,
-                            };
+                                hyper,
+                            );
                         }
                         let args = if args_str.trim().is_empty() {
                             vec![]
@@ -347,14 +382,7 @@ pub(crate) fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, 
                     } else {
                         vec![]
                     };
-                    expr = Expr::MethodCall {
-                        target: Box::new(expr),
-                        name: Symbol::intern(name),
-                        args,
-                        modifier: *modifier,
-                        quoted: *quoted,
-                        sugar: false,
-                    };
+                    expr = chain_call(expr, Symbol::intern(name), args, *modifier, *quoted, hyper);
                 }
                 rest = after_parens;
                 chain.clear();
@@ -553,49 +581,4 @@ pub(crate) fn has_malformed_angle_interpolation(rest: &str) -> bool {
         return !after_open.contains('>');
     }
     false
-}
-
-/// The invocant name [`try_parse_interp_method_call`] parses a hyper method
-/// chain over; [`hyper_first_call`] replaces it.
-const HYPER_PLACEHOLDER: &str = "__mutsu_interp_hyper_invocant";
-
-/// `chain` (method calls over [`HYPER_PLACEHOLDER`]) with its first call made a
-/// hyper call on `target`. `None` when the chain does not start with a plain
-/// method call.
-// Cost: O(d), d = calls in the chain.
-fn hyper_first_call(chain: Expr, target: &Expr) -> Option<Expr> {
-    match chain {
-        Expr::MethodCall {
-            target: inner,
-            name,
-            args,
-            modifier,
-            quoted,
-            ..
-        } if matches!(inner.as_ref(), Expr::Var(n) if n == HYPER_PLACEHOLDER) => {
-            Some(Expr::HyperMethodCall {
-                target: Box::new(target.clone()),
-                name,
-                args,
-                modifier,
-                quoted,
-            })
-        }
-        Expr::MethodCall {
-            target: inner,
-            name,
-            args,
-            modifier,
-            quoted,
-            sugar,
-        } => Some(Expr::MethodCall {
-            target: Box::new(hyper_first_call(*inner, target)?),
-            name,
-            args,
-            modifier,
-            quoted,
-            sugar,
-        }),
-        _ => None,
-    }
 }
