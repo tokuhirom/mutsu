@@ -105,6 +105,23 @@ class GLOBAL::CompUnit::Repository::Spec {
 }
 "#;
 
+/// Builtin `Distribution::Locally`: a `Distribution` that lives under a
+/// directory (`prefix`). Rakudo's `Distribution::Path` composes it, and
+/// ecosystem code mixes it into its own distribution classes
+/// (`self does Distribution::Locally(:$prefix)`). Its one method hands back an
+/// UNOPENED `IO::Handle` on the file the `files` map (or, failing that, the
+/// address itself) names under the prefix -- measured against `raku`.
+pub(super) const DISTRIBUTION_LOCALLY_PRELUDE: &str = r#"
+role GLOBAL::Distribution::Locally does Distribution {
+    has IO::Path $.prefix;
+
+    method content($address) {
+        my $file = (self.meta<files> // {}){$address} // $address;
+        IO::Handle.new(:path(IO::Path.new(~$file, :CWD($!prefix.absolute))))
+    }
+}
+"#;
+
 /// Builtin `Enumeration` role. mutsu models the role's behaviour natively for
 /// *enum values* (they are their own `Value` shape, with native `key`/`value`/
 /// `kv`/`pair`/`Numeric` methods), but Rakudo's `Enumeration` is a real role
@@ -522,6 +539,7 @@ impl Interpreter {
         Self::inject_prelude_roles(&code, &mut stmts);
         Self::inject_iosocket_prelude(&code, &mut stmts);
         Self::inject_repository_spec_prelude(&code, &mut stmts);
+        Self::inject_distribution_locally_prelude(&code, &mut stmts);
         Self::inject_trait_mod_does_prelude(&code, &mut stmts);
         Self::inject_trait_mod_of_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_default_prelude(&code, &mut stmts);

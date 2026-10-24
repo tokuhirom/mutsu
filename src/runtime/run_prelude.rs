@@ -1,5 +1,5 @@
 use super::run::{
-    COMPUNIT_REPOSITORY_SPEC_PRELUDE, ENUMERATION_ROLE_PRELUDE, IO_SOCKET_ROLE_PRELUDE, METAMODEL_ROLE_PRELUDE,
+    COMPUNIT_REPOSITORY_SPEC_PRELUDE, DISTRIBUTION_LOCALLY_PRELUDE, ENUMERATION_ROLE_PRELUDE, IO_SOCKET_ROLE_PRELUDE, METAMODEL_ROLE_PRELUDE,
     RATIONAL_ROLE_PRELUDE, TRAIT_MOD_DOES_PRELUDE, TRAIT_MOD_OF_PRELUDE, TRAIT_MOD_IS_DEFAULT_PRELUDE,
     X_WRAPPER_ROLE_PRELUDE,
 };
@@ -84,6 +84,33 @@ impl Interpreter {
         static REPOSITORY_SPEC_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = REPOSITORY_SPEC_STMTS.get_or_init(|| {
             crate::runtime::prelude_source::parse_prelude_source(COMPUNIT_REPOSITORY_SPEC_PRELUDE)
+                .map(|(s, _)| s)
+                .unwrap_or_default()
+        });
+        if prelude.is_empty() {
+            return;
+        }
+        let mut combined = prelude.clone();
+        combined.append(stmts);
+        *stmts = combined;
+    }
+
+    /// Prepend the builtin `Distribution::Locally` role
+    /// ([`DISTRIBUTION_LOCALLY_PRELUDE`]) to a program or module that names it
+    /// without declaring its own. Parsed once and cached.
+    pub(super) fn inject_distribution_locally_prelude(
+        source: &CodeText<'_>,
+        stmts: &mut Vec<Stmt>,
+    ) {
+        if !source.contains("Distribution::Locally")
+            || source.contains("role Distribution::Locally")
+        {
+            return;
+        }
+        use std::sync::OnceLock;
+        static LOCALLY_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
+        let prelude = LOCALLY_STMTS.get_or_init(|| {
+            crate::runtime::prelude_source::parse_prelude_source(DISTRIBUTION_LOCALLY_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });

@@ -14,6 +14,10 @@
 //! - `INCLUDE`: the `-I` paths the running process was started with, read from
 //!   `%*COMPILING<%?OPTIONS><I>` exactly as Rakudo does. Test suites use it to
 //!   re-exec `$*EXECUTABLE` with the same include path.
+//! - `DIR-RECURSE`: every file under a directory, recursively (the helper
+//!   `CompUnit::Repository::Installation` and Pakku walk `bin/` and `resources/`
+//!   with). `:dir` / `:file` are matchers for the basename of each
+//!   subdirectory entered / each file listed.
 //! - `Rakudo::Sorting.MERGESORT-str`: sorts a native `str` array (an
 //!   `nqp::list_s`) by codepoint and returns the sorted native array
 //!   (ValueMap's `WHICH` sorts its keys with it).
@@ -67,6 +71,14 @@ pub(super) static ROWS: &[MethodRow] = &[
         Handler::Interp(include),
         RowFlags::TYPE_OBJECT_OK
     ),
+    MethodRow {
+        owner: "Rakudo::Internals",
+        name: "DIR-RECURSE",
+        arity: 1,
+        handler: Handler::Interp(dir_recurse),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &["dir", "file"],
+    },
     row!(
         "Rakudo::Sorting",
         "MERGESORT-str",
@@ -118,4 +130,55 @@ fn mergesort_str(_: &Value, args: &[Value]) -> Answer {
         sorted,
         crate::value::NqpElemKind::Str,
     )))
+}
+
+/// `Rakudo::Internals.DIR-RECURSE($path, :$dir = True, :$file = True)`: the
+/// paths (`$path` joined with the relative name) of every file below `$path`,
+/// hidden ones included. `:dir` filters the subdirectories entered and `:file`
+/// the files listed, each by smartmatching the entry's basename. A symlink to a
+/// directory is not entered (a cycle would never end). Entries come in name
+/// order, so the listing is deterministic.
+// Cost: O(e log e + m), e = directory entries visited, m = matcher calls (one
+// per entry).
+fn dir_recurse(interp: &mut Interpreter, _: &Value, args: &[Value], named: Named<'_>) -> Answer {
+    let Some(root) = args.first() else {
+        return None;
+    };
+    let root = root.to_string_value();
+    let dir_matcher = named.get("dir").cloned();
+    let file_matcher = named.get("file").cloned();
+    let mut accepts = |matcher: &Option<Value>, name: &str| -> bool {
+        match matcher {
+            None => true,
+            Some(m) if matches!(m.view(), ValueView::Bool(_)) => m.truthy(),
+            Some(m) => interp.smart_match_values(&Value::str(name.to_string()), m),
+        }
+    };
+    let mut out = Vec::new();
+    let mut pending = vec![root];
+    while let Some(dir) = pending.pop() {
+        let Ok(read) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut entries: Vec<_> = read.flatten().collect();
+        entries.sort_by_key(|e| e.file_name());
+        let mut subdirs = Vec::new();
+        for entry in entries {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let path = format!("{dir}/{name}");
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() {
+                if accepts(&dir_matcher, &name) {
+                    subdirs.push(path);
+                }
+            } else if accepts(&file_matcher, &name) {
+                out.push(Value::str(path));
+            }
+        }
+        // Depth-first in name order: the next directory popped is the first.
+        pending.extend(subdirs.into_iter().rev());
+    }
+    Some(Ok(Value::seq(out)))
 }
