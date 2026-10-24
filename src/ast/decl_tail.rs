@@ -8,7 +8,8 @@
 //! statement is one expression with the declaration itself as the leftmost
 //! operand (`ApplyInfix(and, VarDeclaration, 2)`).
 //!
-//! [`expand`] builds the parser's shape, [`recognize`] takes it apart again.
+//! The parser keeps the head and the tail (`ParsedStmt::DeclTail`); [`expand`]
+//! builds the compiler's shape from them.
 
 use super::{Expr, Stmt};
 
@@ -18,22 +19,17 @@ pub(crate) fn expand(head: Stmt, tail: Expr) -> Stmt {
     Stmt::SyntheticBlock(vec![head, Stmt::Expr(tail)])
 }
 
-/// The `(head, tail)` of a statement [`expand`] could have built: a
-/// declaration or assignment of a variable, followed by one expression.
+/// Whether `head` is a declaration or assignment RakuAST can take as the
+/// leftmost operand of a loose tail: a variable declaration or assignment, a
+/// compound assignment of a variable, or a grouped declaration.
 // Cost: O(1).
-pub(crate) fn recognize(stmt: &Stmt) -> Option<(&Stmt, &Expr)> {
-    let Stmt::SyntheticBlock(stmts) = stmt else {
-        return None;
-    };
-    let [head, Stmt::Expr(tail)] = stmts.as_slice() else {
-        return None;
-    };
-    let simple_head = matches!(head, Stmt::VarDecl { .. } | Stmt::Assign { .. })
-        || matches!(head, Stmt::Expr(Expr::CompoundAssign { target, .. }) if variable_name(target).is_some());
-    (simple_head || signature_declaration(head).is_some()).then_some((head, tail))
+pub(crate) fn is_head(head: &Stmt) -> bool {
+    matches!(head, Stmt::VarDecl { .. } | Stmt::Assign { .. })
+        || matches!(head, Stmt::Expr(Expr::CompoundAssign { target, .. }) if variable_name(target).is_some())
+        || signature_declaration(head).is_some()
 }
 
-/// The name a [`recognize`]d head declares or assigns.
+/// The name an [`is_head`] head declares or assigns.
 // Cost: O(1).
 pub(crate) fn head_name(head: &Stmt) -> Option<&str> {
     match head {

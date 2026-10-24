@@ -117,12 +117,10 @@ fn declared_variable(head: &Stmt) -> Option<(&str, &str)> {
     crate::ast::decl_tail::head_name(head).map(split_sigil)
 }
 
-/// A recognized `SyntheticBlock([head, Expr(tail)])` as the one expression it
-/// was written as; `None` for any other statement.
+/// A head and its loose tail as the one expression they were written as.
 // Cost: O(n), n = size of the statement.
-pub(super) fn convert(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> {
-    let (head, tail) = crate::ast::decl_tail::recognize(stmt)?;
-    Some((|| {
+pub(super) fn convert(head: &Stmt, tail: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    (|| {
         let converted = convert_expr(tail)?;
         if let Some((sigil, name)) = declared_variable(head) {
             let (bottom, depth) = leftmost(&converted, true);
@@ -148,7 +146,7 @@ pub(super) fn convert(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> 
             crate::ast::decl_tail::signature_declaration(head).ok_or_else(unsupported_statement)?;
         let declaration = super::signature_decl::convert(decl)?;
         replace_group_seed(&converted, &declaration).ok_or_else(unsupported_statement)
-    })())
+    })()
 }
 
 /// `my Int $c .= new(), 5, 6`: the parser keeps the `.=` declaration and each
@@ -334,7 +332,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
             Ok(tail) => tail,
             Err(error) => return Some(Err(error)),
         };
-        return Some(Ok(crate::ast::decl_tail::expand(head, tail)));
+        return Some(lower_tail(head, tail));
     }
     let (sigil, name) = declared_variable(&head)?;
     let seed = var_lexical(sigil, name);
@@ -342,7 +340,15 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
         Ok(tail) => tail,
         Err(error) => return Some(Err(error)),
     };
-    Some(Ok(crate::ast::decl_tail::expand(head, tail)))
+    Some(lower_tail(head, tail))
+}
+
+// Cost: O(1).
+fn lower_tail(head: Stmt, tail: Expr) -> Result<Stmt, RuntimeError> {
+    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::DeclTail {
+        head: Box::new(head),
+        tail,
+    })
 }
 
 // Cost: O(v), v = number of variables in the grouped declaration.

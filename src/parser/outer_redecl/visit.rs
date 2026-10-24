@@ -174,6 +174,7 @@ impl VisitMut for Ctx {
                     ParsedStmt::Loop(_) => unreachable!("handled by the arm above"),
                     ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => unreachable!("peeled above"),
                     ParsedStmt::DoesDecl { .. } => crate::ast_visit::walk_parsed_mut(self, node),
+                    ParsedStmt::DeclTail { .. } => crate::ast_visit::walk_parsed_mut(self, node),
                     ParsedStmt::WillDecl { decl, phasers } => {
                         self.visit_stmt_mut(decl);
                         for (_, body) in phasers {

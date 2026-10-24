@@ -160,7 +160,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 } else {
                     (r2, lhs)
                 };
-            let block = Stmt::SyntheticBlock(vec![decl, Stmt::Expr(tail_expr)]);
+            let block = crate::parser::stmt::word_logical_split::tail_stmt(decl, tail_expr);
             if s.apply_modifier {
                 return parse_statement_modifier(r3, block);
             }
@@ -519,7 +519,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 (rest, stmt)
             };
             let stmt = if let Some(tail) = post_andthen {
-                Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(tail)])
+                crate::parser::stmt::word_logical_split::tail_stmt(stmt, tail)
             } else {
                 stmt
             };
@@ -620,7 +620,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             (rest, stmt)
         };
         let stmt = if let Some(tail) = post_andthen.clone() {
-            Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(tail)])
+            crate::parser::stmt::word_logical_split::tail_stmt(stmt, tail)
         } else {
             stmt
         };
@@ -663,7 +663,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         (rest, stmt)
     };
     let stmt = if let Some(tail) = post_andthen {
-        Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(tail)])
+        crate::parser::stmt::word_logical_split::tail_stmt(stmt, tail)
     } else {
         stmt
     };
@@ -841,7 +841,9 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             where_constraint: s.where_constraint.clone(),
         };
         match chain.clone() {
-            Some(chained) => Stmt::SyntheticBlock(vec![declaration, Stmt::Expr(chained)]),
+            Some(chained) => {
+                crate::parser::stmt::word_logical_split::tail_stmt(declaration, chained)
+            }
             None => declaration,
         }
     };

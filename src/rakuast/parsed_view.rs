@@ -70,6 +70,7 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
             super::convert::var_decl_statement(parts, true)?
                 .ok_or_else(|| super::convert::unsupported("binding declaration"))?
         }
+        ParsedStmt::DeclTail { head, tail } => super::decl_tail::convert(head, tail)?,
         ParsedStmt::WillDecl { decl, phasers } => super::var_will::convert(decl, phasers)?,
         ParsedStmt::DoesDecl { decl, role, init } => {
             super::convert::does_declaration(decl, role, init.as_ref())?

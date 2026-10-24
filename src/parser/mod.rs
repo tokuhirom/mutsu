@@ -115,9 +115,9 @@ pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws, role_
 /// initializer; the RakuAST lowering re-plants the same one.
 pub(crate) use stmt::decl::attribute_type_seed;
 pub(crate) use stmt::decl::destructure::desugar::signature_decl as signature_decl_expansion;
+pub(crate) use stmt::decl::wrap_with_will_phasers;
 pub(crate) use stmt::decl::{attribute_compound_assign, expand_attribute_compound_assign};
 pub(crate) use stmt::decl::{build_sigilless_bind_stmt, is_anon_sigilless_source};
-pub(crate) use stmt::decl::wrap_with_will_phasers;
 pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutable;
 pub(crate) use stmt::simple_expr_stmt::topic_dot_assign;
 pub(crate) use stmt::{conditional_declaration, topical_declaration};
