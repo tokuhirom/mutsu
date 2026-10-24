@@ -9,6 +9,7 @@ use crate::ast::Expr;
 // Cost: O(n), n = size of `e`'s subtree.
 pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr) {
     match e {
+        Expr::Ast(node) => super::walk_parsed_expr(v, node),
         Expr::Literal(value) => walk_literal(v, value),
         Expr::ShadowableTermKeyword { name, value } => {
             v.visit_name(name.as_str(), NameKind::Term);

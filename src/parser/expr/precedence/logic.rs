@@ -492,178 +492,22 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         parse_assignment_rhs_mode(r, mode)?
     };
 
-    let expr = unwrap_grouped_lvalue(expr);
-    match expr {
-        Expr::Var(name) => Ok((
-            r,
-            Expr::AssignExpr {
-                name,
-                expr: Box::new(rhs),
-                is_bind: false,
-            },
-        )),
-        Expr::ArrayVar(name) => Ok((
-            r,
-            Expr::AssignExpr {
-                name: format!("@{}", name),
-                expr: Box::new(rhs),
-                is_bind: false,
-            },
-        )),
-        Expr::HashVar(name) => Ok((
-            r,
-            Expr::AssignExpr {
-                name: format!("%{}", name),
-                expr: Box::new(rhs),
-                is_bind: false,
-            },
-        )),
-        // ADR-0036 slice 2: `(@a[0]:kv)[1] = rhs` used to be rewritten here into
-        // a plain `@a[0] = rhs` element assign, bypassing the `:kv` Pair/list
-        // machinery entirely. Now that `:kv`'s list value carries a live
-        // element container (`array_slot_ref`/`hash_slot_ref`), the rewrite is
-        // redundant: the generic index-assign path already writes *through* a
-        // `ContainerRef` slot (`Value::assign_element_slot`), so evaluating
-        // `@a[0]:kv` normally and assigning into its `[1]` slot reaches the
-        // same backing element without a special case here.
-        Expr::Index {
-            target,
-            index,
-            is_positional,
-            spelling,
-            ..
-        } => Ok((
-            r,
-            Expr::IndexAssign {
-                target,
-                index,
-                value: Box::new(rhs),
-                is_positional,
-                spelling,
-            },
-        )),
-        Expr::Call { name, args, .. } => Ok((
-            r,
-            crate::parser::stmt::assign::named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
-        )),
-        Expr::MultiDimIndex {
-            target,
-            dimensions,
-            is_positional,
-        } => Ok((
-            r,
-            Expr::MultiDimIndexAssign {
-                target,
-                dimensions,
-                value: Box::new(rhs),
-                is_positional,
-            },
-        )),
-        // `$::('name') = expr` in expression context (e.g. as a listop argument
-        // `flat $::('b') = l()`). Without this arm the assignment falls through to
-        // `_ => (rest, expr)` below, leaving the `=` unconsumed so the surrounding
-        // listop swallows the bare deref and the outer parser mis-reads the whole
-        // `flat $::('b')` as an assignable call. Mirrors `assign_to_target_expr`.
-        Expr::SymbolicDeref { sigil, expr } => Ok((
-            r,
-            Expr::SymbolicDerefAssign {
-                sigil,
-                expr,
-                value: Box::new(rhs),
-            },
-        )),
-        Expr::IndirectTypeLookup(inner) => Ok((
-            r,
-            Expr::IndirectTypeLookupAssign {
-                expr: inner,
-                value: Box::new(rhs),
-            },
-        )),
-        // A bareword target is a term, spelled by its term key (ADR-12441).
-        Expr::BareWord(name) => Ok((
-            r,
-            Expr::AssignExpr {
-                name: crate::term_names::bareword_target_key(&name),
-                expr: Box::new(rhs),
-                is_bind: false,
-            },
-        )),
-        Expr::CallOn { target, args } => Ok((
-            r,
-            if args.is_empty() {
-                if let Expr::ArrayLiteral(items) = *target.clone() {
-                    if let Some(expr) = list_lvalue_assign_expr(items, rhs.clone()) {
-                        expr
-                    } else {
-                        Expr::Call {
-                            name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-                            args: vec![*target, Expr::ArrayLiteral(args), rhs],
-                            listop: false,
-                        }
-                    }
-                } else {
-                    Expr::Call {
-                        name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-                        args: vec![*target, Expr::ArrayLiteral(args), rhs],
-                        listop: false,
-                    }
-                }
-            } else {
-                Expr::Call {
-                    name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-                    args: vec![*target, Expr::ArrayLiteral(args), rhs],
-                    listop: false,
-                }
-            },
-        )),
-        // A method-call lvalue (`$o.a = v`) in expression position, e.g. the
-        // middle term of a chained assignment (`my $c = $o.a = 42`). The shared
-        // `assign_to_target_expr` lowers it to the rw-accessor writeback; without
-        // this arm the `=` was left unconsumed and surfaced as a `Confused` error.
-        //
-        // The `$(EXPR)` item contextualizer lowers to a bare `.item` method call
-        // whose assignment has ITEM (comma-tight) semantics enforced by the
-        // statement-level `$(EXPR) = ...` handler; leave its `=` unconsumed (as
-        // before) so that handler still runs.
-        mc @ Expr::MethodCall { .. } => {
-            if matches!(&mc, Expr::MethodCall { name, args, .. } if name == "item" && args.is_empty())
-            {
-                Ok((rest, mc))
-            } else {
-                Ok((r, assign_to_target_expr(mc, rhs)))
-            }
-        }
-        // An indirect method-call lvalue (`$o."$name"() = v`) in expression
-        // position: route through the shared lowering (which has a
-        // `DynamicMethodCall` arm) instead of leaving `=` unconsumed.
-        dmc @ Expr::DynamicMethodCall { .. } => Ok((r, assign_to_target_expr(dmc, rhs))),
-        // A parenthesized multi-element list-lvalue (`($a, $b) = @rhs`) used in
-        // expression position rather than as the whole statement — a listop
-        // argument (`say ($a, $b) = foo()`), or a later item of a comma list
-        // (`1, ($a, $b) = foo()`). The statement-level assignment parser
-        // (`stmt/simple_expr_stmt/core.rs`) already lowers a bare `ArrayLiteral`
-        // target this way (trying the `*`-slurpy single-target shape first,
-        // then falling back to `__mutsu_assign_callable_lvalue`); without this
-        // arm the `=` was left unconsumed here and the caller saw a bare
-        // `Confused` parse error. `single_target_list_lvalue_expr` (not the
-        // `CallOn` arm's `list_lvalue_assign_expr` above) is used for the
-        // `*`-slurpy case because it extracts the target's element by
-        // position, matching `single_target_list_lvalue_stmt`.
-        Expr::ArrayLiteral(items) => Ok((
-            r,
-            match single_target_list_lvalue_expr(items.clone(), rhs.clone()) {
-                Some(expr) => expr,
-                None => Expr::Call {
-                    name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-                    args: vec![
-                        Expr::ArrayLiteral(items),
-                        Expr::ArrayLiteral(Vec::new()),
-                        rhs,
-                    ],
-                    listop: false,
-                },
-            },
-        )),
-        _ => Ok((rest, expr)),
+    // Not a target here: the `=` is left to the statement parser, which sees
+    // the target without its parentheses.
+    if !crate::rakuast::is_expression_assign_target(&expr) {
+        return Ok((rest, unwrap_grouped_lvalue(expr)));
     }
+    // The target as written, parentheses included; a `.AST` parse keeps the
+    // assignment in its RakuAST shape (ADR-10723 Stage 2).
+    let node = crate::ast::parsed::Assign {
+        target: expr,
+        source: rhs,
+    };
+    if crate::ast::spelled::keeping() {
+        return Ok((
+            r,
+            Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(node))),
+        ));
+    }
+    Ok((r, crate::rakuast::lower_expression_assign(node)))
 }

@@ -2753,7 +2753,9 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
             return Ok(Some(crate::parser::literal_assign_ro_expr(literal, value)));
         }
     }
-    let is_call = left.class == RakuAstClass::CallName
+    // `nqp::atposref_i(@i, 0) = 5` writes through the op's result, as a
+    // call does.
+    let is_call = matches!(left.class, RakuAstClass::CallName | RakuAstClass::Nqp)
         || (left.class == RakuAstClass::ApplyPostfix
             && named_child(left, "postfix").is_ok_and(|p| p.class == RakuAstClass::CallTerm));
     if !is_call {

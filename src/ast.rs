@@ -1213,6 +1213,11 @@ pub(crate) struct SubstThunk {
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
+    /// An expression the parser built in its RakuAST shape, kept only by a
+    /// parse whose tree the RakuAST conversion reads (ADR-10723 Stage 2,
+    /// [`parsed`]). Every other parse lowers it where it is built, so the
+    /// compiler never sees one.
+    Ast(Box<parsed::ParsedExpr>),
     /// The current pointy `given`/`with` topic used by its synthetic binding.
     GivenPointyTopic,
     Literal(Value),

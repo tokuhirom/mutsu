@@ -213,6 +213,13 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         }
         // `($x = *)` / `($x := *)` in expression position.
         Expr::AssignExpr { expr, .. } => mark_value_leaf(expr),
+        // The same, as a `.AST` parse keeps it (ADR-10723 Stage 2).
+        Expr::Ast(node) => match node.as_mut() {
+            crate::ast::parsed::ParsedExpr::Assign(a) => {
+                mark_expr(&mut a.target);
+                mark_value_leaf(&mut a.source);
+            }
+        },
         // A source-preserving compound assignment has three views of its
         // children: the source target/RHS used by RakuAST and the expanded
         // execution expression used by the compiler. An enclosing

@@ -636,7 +636,7 @@ fn reassociate_fat_arrow(pair: Expr) -> Expr {
     // contains the loose expression shape that needs repair; otherwise this
     // would turn an already auto-quoted `V => 1` (or the deliberately
     // positional `::V => 1`) back into a fresh, misclassified pair.
-    if !matches!(&*left, Expr::AssignExpr { .. })
+    if !matches!(&*left, Expr::AssignExpr { .. } | Expr::Ast(_))
         && !is_indexed_bind(&left)
         && !matches!(&*left, Expr::Binary { op, .. } if is_loose_word_logical(op))
     {

@@ -9,6 +9,7 @@ use crate::ast::Expr;
 // Cost: O(n), n = size of `e`'s subtree.
 pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
     match e {
+        Expr::Ast(node) => super::walk_parsed_expr_mut(v, node),
         Expr::Literal(_value) => {}
         Expr::ShadowableTermKeyword { name: _, value: _ } => {}
         Expr::ExportTermOrCall { name: _, call } => v.visit_expr_mut(call),
