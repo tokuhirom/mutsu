@@ -2049,6 +2049,13 @@ pub(super) fn signature_positional_params(
 // Cost: O(n), n = size of the parameter list.
 fn lower_fake_signature(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let sig = child_node(&node.fields.first().ok_or_else(|| unsupported(node))?.value)?;
+    lower_signature_value(sig, node)
+}
+
+/// A bare `Signature` node -> the `Signature` value it denotes
+/// (`RakuAST::Signature.new(...).EVAL`), the same value `:(...)` builds.
+// Cost: O(n), n = size of the parameter list.
+fn lower_signature_value(sig: &RakuAstNode, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let mut defs = lower_signature_parameters(sig, node)?;
     // The literal is a value, so `lower`'s program-wide curry pass never sees
     // the parameters' `where` clauses inside it; run it here so a
@@ -4318,6 +4325,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         // `:(Int $x)`: the `Signature` value the parser builds for the literal.
         RakuAstClass::FakeSignature => lower_fake_signature(node),
+        RakuAstClass::Signature => lower_signature_value(node, node),
         RakuAstClass::IntLiteral
         | RakuAstClass::NumLiteral
         | RakuAstClass::RatLiteral

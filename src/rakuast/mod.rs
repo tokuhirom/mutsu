@@ -1870,6 +1870,23 @@ pub fn construct(
     method: &str,
     args: &[Value],
 ) -> Result<Option<Value>, RuntimeError> {
+    // An array element or a bound variable arrives as its `ContainerRef` cell
+    // (`Name.from-identifier(@parts.head)`); a node stores the value inside.
+    if args
+        .iter()
+        .any(|arg| matches!(arg.view(), ValueView::ContainerRef(_)))
+    {
+        let read: Vec<Value> = args.iter().map(Value::deref_container).collect();
+        return construct_values(class_name, method, &read);
+    }
+    construct_values(class_name, method, args)
+}
+
+fn construct_values(
+    class_name: &str,
+    method: &str,
+    args: &[Value],
+) -> Result<Option<Value>, RuntimeError> {
     if method == "new"
         && let Some(result) = routine_ctor::construct(class_name, args)
     {

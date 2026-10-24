@@ -181,8 +181,10 @@ impl Interpreter {
         let non_transitive = args[1..]
             .iter()
             .any(|a| matches!(a.view(), ValueView::Pair(k, v) if k == "transitive" && !v.truthy()));
-        let mut roles =
-            self.collect_roles_for_class(&class_name, local, non_transitive, is_instance);
+        let mut roles = match typed_container_roles(&class_name, local, non_transitive) {
+            Some(roles) => roles,
+            None => self.collect_roles_for_class(&class_name, local, non_transitive, is_instance),
+        };
         // A `but`-mixed value's own roles come FIRST, most-recently-applied
         // first, ahead of whatever the base type composes:
         // `((1 but A) but B).^roles` is `(B, A, Real, Numeric)`. They were
@@ -447,4 +449,55 @@ impl Interpreter {
             }
         }
     }
+}
+
+/// The roles rakudo reports for a parameterized container type object:
+/// `Array[Int].^roles` is `(Array::Typed[Int] Positional[Int] Positional
+/// Iterable)` and `Hash[Str, Int]` is `(Hash::Object[Str,Int,Str]
+/// Associative[Str] Associative Iterable)`. `:!transitive` drops the
+/// parameterized `Positional[T]` / `Associative[V]` level; a one-argument
+/// `Hash[V]` keys on `Str(Any)` and is `Hash::Typed`. `None` for any other name.
+// Cost: O(n), n = chars of the type name.
+fn typed_container_roles(class_name: &str, local: bool, non_transitive: bool) -> Option<Vec<String>> {
+    let (base, rest) = class_name.split_once('[')?;
+    let inner = rest.strip_suffix(']')?;
+    let mut args = Vec::new();
+    let (mut start, mut depth) = (0, 0usize);
+    for (i, b) in inner.bytes().enumerate() {
+        match b {
+            b'[' => depth += 1,
+            b']' => depth = depth.saturating_sub(1),
+            b',' if depth == 0 => {
+                args.push(inner[start..i].trim());
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    args.push(inner[start..].trim());
+    let (typed, parameterized, bare) = match (base, args.as_slice()) {
+        ("Array", [t]) => (
+            format!("Array::Typed[{t}]"),
+            format!("Positional[{t}]"),
+            "Positional",
+        ),
+        ("Hash", [v]) => (
+            format!("Hash::Typed[{v},Str(Any),{v}]"),
+            format!("Associative[{v}]"),
+            "Associative",
+        ),
+        ("Hash", [v, k]) => (
+            format!("Hash::Object[{v},{k},{v}]"),
+            format!("Associative[{v}]"),
+            "Associative",
+        ),
+        _ => return None,
+    };
+    let mut roles = vec![typed];
+    if local || !non_transitive {
+        roles.push(parameterized);
+    }
+    roles.push(bare.to_string());
+    roles.push("Iterable".to_string());
+    Some(roles)
 }
