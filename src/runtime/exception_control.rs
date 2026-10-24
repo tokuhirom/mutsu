@@ -162,6 +162,16 @@ impl Interpreter {
         } else {
             Self::stamp_thrown_exception_message(&target, &err.message)
         }));
+        // A control exception of a user-declared class runs the active CONTROL
+        // handlers at the throw site, so a handler's `.resume` continues after
+        // the `.throw` (the built-in `CX::*` signals unwind as before).
+        if does_x_control
+            && method == "throw"
+            && !self.control.control_handlers.is_empty()
+            && self.registry().classes.contains_key(&cn)
+        {
+            return self.try_control_inline_signal(err);
+        }
         Err(err)
     }
 
