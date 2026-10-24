@@ -191,6 +191,9 @@ impl Interpreter {
                 .get_dynamic_var("*JSON_NAN_INF_SUPPORT")
                 .map(|v| v.truthy())
                 .unwrap_or(false),
+            // Rakudo's `Rakudo::Internals::JSON.to-json` is compact unless asked
+            // otherwise (`:pretty`), unlike JSON::Fast's `to-json`.
+            pretty: false,
             ..ToJsonOpts::default()
         }
     }
@@ -236,9 +239,8 @@ fn native_to_json(args: &[Value], base_opts: ToJsonOpts) -> Result<Value, Runtim
     for arg in args {
         match arg.view() {
             ValueView::Pair(name, val) => apply_to_json_named(&mut opts, name, val),
-            ValueView::ValuePair(key, val) => {
-                apply_to_json_named(&mut opts, &key.to_string_value(), val)
-            }
+            // Only the `Pair` flavour is a named argument (ADR-0021); a
+            // `ValuePair` is a positional Pair, e.g. a subject held in a variable.
             _ if subject.is_none() => subject = Some(arg),
             _ => {}
         }
@@ -283,7 +285,6 @@ fn native_from_json(args: &[Value], default_immutable: bool) -> Result<Value, Ru
     for arg in args {
         match arg.view() {
             ValueView::Pair(name, val) => named(name, val),
-            ValueView::ValuePair(key, val) => named(&key.to_string_value(), val),
             _ if !have_text => {
                 text = arg.to_string_value();
                 have_text = true;
