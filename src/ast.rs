@@ -3096,11 +3096,6 @@ pub(crate) fn expand_take_logical_tail(value: Expr, op: TokenKind, right: Expr) 
     let name = format!("__mutsu_take_value_{id}");
     let variable = Expr::Var(name.clone());
     Stmt::SyntheticBlock(vec![
-        Stmt::SourceForm(Box::new(SourceForm::TakeLogicalTail {
-            value: value.clone(),
-            op: op.clone(),
-            right: right.clone(),
-        })),
         Stmt::VarDecl {
             anonymous: false,
             name,

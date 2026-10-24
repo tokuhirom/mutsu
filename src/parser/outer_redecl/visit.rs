@@ -177,7 +177,12 @@ impl VisitMut for Ctx {
                     ParsedStmt::DeclTail { .. }
                     | ParsedStmt::SigillessDecl(_)
                     | ParsedStmt::PackageHeader { .. }
-                    | ParsedStmt::TempDecl(_) => {
+                    | ParsedStmt::TempDecl(_)
+                    | ParsedStmt::BarePhaser(_)
+                    | ParsedStmt::CommaDecls(_)
+                    | ParsedStmt::TakeLogicalTail { .. }
+                    | ParsedStmt::ImmediateCall { .. }
+                    | ParsedStmt::AttributeModifier { .. } => {
                         crate::ast_visit::walk_parsed_mut(self, node)
                     }
                     ParsedStmt::WillDecl { decl, phasers } => {

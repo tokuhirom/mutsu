@@ -628,24 +628,15 @@ fn lower_comma_declarations(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeE
     {
         return Ok(None);
     }
-    let mut source = Vec::with_capacity(operands.len());
-    let mut expanded = Vec::new();
+    let mut declarations = Vec::with_capacity(operands.len());
     for value in operands {
         let ValueView::RakuAst(child) = value.view() else {
             return Err(unsupported(node));
         };
-        let statement = lower_stmt_inner(child)?;
-        match &statement {
-            Stmt::SyntheticBlock(parts) => expanded.extend(parts.iter().cloned()),
-            _ => expanded.push(statement.clone()),
-        }
-        source.push(statement);
+        declarations.push(lower_stmt_inner(child)?);
     }
-    expanded.insert(
-        0,
-        Stmt::SourceForm(Box::new(crate::ast::SourceForm::CommaDeclarations(source))),
-    );
-    Ok(Some(Stmt::SyntheticBlock(expanded)))
+    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::CommaDecls(declarations))
+        .map(Some)
 }
 
 // Cost: O(n + t), n = Native node fields, t = its traits.

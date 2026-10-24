@@ -1337,7 +1337,13 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         modifier_sink.as_ref(),
         modifier_source,
     ) {
-        crate::ast::attribute_modifier::expand(decl, condition, kind)
+        crate::parser::stmt::control::parsed_block::finish_total(
+            crate::ast::parsed::ParsedStmt::AttributeModifier {
+                decl: Box::new(decl),
+                condition,
+                kind,
+            },
+        )
     } else {
         match (assign_stmt, modifier_sink) {
             (None, None) => decl,
