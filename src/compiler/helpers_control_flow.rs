@@ -135,6 +135,14 @@ impl Compiler {
         if matches!(s, "e" | "tau") {
             return Some(true);
         }
+        // A package-qualified name (`static::Types::Fact`, a type imported from
+        // a lower-case-named module) is a type, never a value term.
+        if s.contains("::")
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == ':' || c == '_' || c == '-')
+        {
+            return Some(false);
+        }
         if s.chars().next().is_some_and(|c| c.is_ascii_lowercase())
             && !crate::runtime::utils::is_known_type_constraint(s)
         {

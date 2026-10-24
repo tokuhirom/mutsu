@@ -979,6 +979,12 @@ impl RakuAstClass {
         // A Term is also an Expression.
         const TERM: &[&str] = &["RakuAST::Term", "RakuAST::Expression"];
         const EXPR: &[&str] = &["RakuAST::Expression"];
+        const LITERAL: &[&str] = &[
+            "RakuAST::Literal",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+        ];
         match self {
             TraitIs | TraitReturns | TraitOf | TraitDoes | TraitHides | TraitWillBuild
             | TraitHandles | TraitWill | TraitTrusts => &["RakuAST::Trait"],
@@ -987,13 +993,10 @@ impl RakuAstClass {
             RoleBody => &["RakuAST::Sub", "RakuAST::Routine", "RakuAST::Term", "RakuAST::Expression"],
             CallBlockMethod => &["RakuAST::Call::Methodish", "RakuAST::Postfixish"],
             StatementEmpty => &["RakuAST::Statement", "RakuAST::Blorst", "RakuAST::ProducesNil", "RakuAST::ImplicitLookups"],
-            IntLiteral
-            | NumLiteral
-            | RatLiteral
-            | VersionLiteral
-            | ComplexLiteral
-            | FakeSignature
-            | StrLiteral
+            IntLiteral | NumLiteral | RatLiteral | VersionLiteral | ComplexLiteral | StrLiteral => {
+                LITERAL
+            }
+            FakeSignature
             | QuotedString
             | Heredoc
             | QuotedRegex
@@ -1296,8 +1299,15 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::RatLiteral"
         | "RakuAST::VersionLiteral"
         | "RakuAST::ComplexLiteral"
-        | "RakuAST::FakeSignature"
-        | "RakuAST::StrLiteral"
+        | "RakuAST::StrLiteral" => &[
+            "RakuAST::Literal",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+        ],
+        "RakuAST::Literal" => &["RakuAST::Term", "RakuAST::Termish", "RakuAST::Expression"],
+        "RakuAST::Termish" => EXPR,
+        "RakuAST::FakeSignature"
         | "RakuAST::QuotedString"
         | "RakuAST::Heredoc"
         | "RakuAST::Type::Enum"
@@ -1418,6 +1428,8 @@ pub(crate) fn is_registered_type_object(class_name: &str) -> bool {
         class_name,
         "RakuAST::Node"
             | "RakuAST::Expression"
+            | "RakuAST::Literal"
+            | "RakuAST::Termish"
             | "RakuAST::Term"
             | "RakuAST::Statement"
             | "RakuAST::Call"

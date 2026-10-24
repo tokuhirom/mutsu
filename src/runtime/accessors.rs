@@ -114,6 +114,15 @@ impl Interpreter {
         {
             return false;
         }
+        // A package-qualified name is a type whatever case its first segment
+        // has: a routine's return type is resolved to its declaring package
+        // (`static::Types::Fact`) before this runs.
+        if s.contains("::")
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == ':' || c == '_' || c == '-')
+        {
+            return false;
+        }
         true
     }
 
