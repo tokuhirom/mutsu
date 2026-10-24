@@ -234,6 +234,7 @@ impl Interpreter {
             self.pending_where_exception = outer_where_exception;
             return Ok(None);
         }
+        let tier_bind_check = matches.first().is_some_and(|(rank, _)| rank.tier_bind_check);
         let matches = match self.prune_incomparable_matches(name, args, matches) {
             Ok(matches) => matches,
             Err(err) => {
@@ -241,7 +242,14 @@ impl Interpreter {
                 return Err(err);
             }
         };
-        self.settle_ranked_matches(name, args, matches, threw, outer_where_exception)
+        self.settle_ranked_matches(
+            name,
+            args,
+            matches,
+            threw,
+            outer_where_exception,
+            tier_bind_check,
+        )
     }
 
     fn run_value_checks(
