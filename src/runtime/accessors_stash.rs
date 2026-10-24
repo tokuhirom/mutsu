@@ -609,6 +609,10 @@ impl Interpreter {
         if name == "IterationEnd" {
             return Value::iteration_end();
         }
+        // A core RakuAST type object or namespace (`::('RakuAST::IntLiteral')`).
+        if crate::rakuast::is_registered_type_object(name) {
+            return Value::package(Symbol::intern(name));
+        }
         // Symbols loaded via `$*REPO.need(...)` stay invisible to `::('Name')`
         // until they are merged into GLOBAL with `merge-symbols`.
         if self.module.cur_repo.pending_global_symbols.contains(name) {
