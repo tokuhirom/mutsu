@@ -9,7 +9,7 @@ use MONKEY-SEE-NO-EVAL;
 # (ADR-10723 Stage 2, #14948). This file passes under both mutsu and
 # raku.
 
-plan 20;
+plan 22;
 
 sub shape(Str $src) {
     my $assign = $src.AST.statements[*-1].expression;
@@ -52,6 +52,11 @@ is EVAL(Q[my %h; (%h) = a => 1; %h<a>].AST), 1, 'a grouped hash takes the pair';
 is EVAL(Q[my $x; my $y = 0; $y ?? 1 !! $x = 2; $x].AST), 2,
     'a ternary target assigns to the chosen branch';
 is EVAL(Q[sub c is rw { state $z }; c() = 5; c()].AST), 5, 'a call target';
+my $inner = Q[my ($x, $y); my $r = ((1 ?? $x !! $y) = 5)].AST.statements[*-1].expression.initializer.expression;
+is $inner.semilist.statements[0].expression.left.^name, 'RakuAST::Circumfix::Parentheses',
+    'a grouped assignment keeps its target as written';
+is EVAL(Q[my ($x, $y); my $r = ((1 ?? $x !! $y) = 5); "$r $x"].AST), '5 5',
+    'and writes through the chosen branch';
 
 # Rebuilding a tree from its `.raku` gives the same tree.
 for Q[my $x; ($x) = 1], Q[my ($x, $y); $y ?? 1 !! $x = 2] -> $src {
