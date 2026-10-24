@@ -3561,6 +3561,32 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     &spelled.expr,
                 )
             }
+            Spelling::NegatedSetInfix(written) => {
+                let Some((left, _, right)) = negated_set_operands(&spelled.expr) else {
+                    return Err(unsupported("negated set spelling without its relation"));
+                };
+                super::meta_infix::convert("!", written, left, right, &spelled.expr)
+            }
+            Spelling::NegatedSetGlyph(glyph) => {
+                let Some((left, _, right)) = negated_set_operands(&spelled.expr) else {
+                    return Err(unsupported("negated set glyph without its relation"));
+                };
+                Ok(RakuAstNode {
+                    origin: Default::default(),
+                    class: RakuAstClass::ApplyInfix,
+                    fields: vec![
+                        node_field(Some("left"), convert_expr(left)?),
+                        node_field(Some("infix"), plain_infix(glyph)),
+                        node_field(Some("right"), convert_expr(right)?),
+                    ],
+                })
+            }
+            Spelling::LeftExclusiveSequence(written) => {
+                let Expr::MethodCall { target, .. } = &spelled.expr else {
+                    return Err(unsupported("left-exclusive sequence without its skip"));
+                };
+                left_exclusive_sequence_node(written, target)
+            }
             Spelling::BracketedAssignment { depth } => {
                 super::meta_infix::convert_bracketed_assignment(&spelled.expr, *depth)
             }
@@ -7193,6 +7219,65 @@ fn convert_chained_compare(
         };
     }
     Ok(node)
+}
+
+/// The operands and positive relation under a negated set operator's `!`.
+fn negated_set_operands(expr: &Expr) -> Option<(&Expr, &crate::token_kind::TokenKind, &Expr)> {
+    let Expr::Unary { expr, .. } = expr else {
+        return None;
+    };
+    match expr.as_ref() {
+        Expr::Binary {
+            left, op, right, ..
+        } => Some((left, op, right)),
+        _ => None,
+    }
+}
+
+/// `a ^... b ^... c` -> one `ApplyListInfix(Infix("^..."), (a, b, c))`: the
+/// parser nests the chain as `.skip(1)` over the sequence, left to right.
+// Cost: O(n), n = operands of the chain.
+fn left_exclusive_sequence_node(
+    written: &str,
+    sequence: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
+    let mut operands: Vec<&Expr> = Vec::new();
+    let mut current = sequence;
+    loop {
+        let Expr::Binary { left, right, .. } = current else {
+            return Err(unsupported("left-exclusive sequence without its operator"));
+        };
+        operands.push(right);
+        match left.as_ref() {
+            Expr::Spelled(inner) if matches!(&inner.spelling, Spelling::LeftExclusiveSequence(w) if **w == *written) =>
+            {
+                let Expr::MethodCall { target, .. } = &inner.expr else {
+                    return Err(unsupported("left-exclusive sequence without its skip"));
+                };
+                current = target;
+            }
+            first => {
+                operands.push(first);
+                break;
+            }
+        }
+    }
+    operands.reverse();
+    let mut nodes = Vec::with_capacity(operands.len());
+    for operand in operands {
+        nodes.push(Value::rakuast(Box::new(convert_expr(operand)?)));
+    }
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::ApplyListInfix,
+        fields: vec![
+            node_field(Some("infix"), plain_infix(written)),
+            RakuAstField {
+                name: Some("operands"),
+                value: RakuAstFieldValue::List(nodes),
+            },
+        ],
+    })
 }
 
 /// True for the list-associative infixes raku renders as `ApplyListInfix`

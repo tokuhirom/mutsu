@@ -78,6 +78,7 @@ mod multidim_splat;
 mod name_colonpairs;
 mod name_parts;
 mod named_param;
+mod negated_set;
 mod nesting;
 mod nf_quote;
 mod operator_origins;

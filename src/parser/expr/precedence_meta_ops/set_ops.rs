@@ -132,7 +132,14 @@ fn parse_negated_set_op(input: &str) -> Option<(TokenKind, usize, bool)> {
     }
     // Precomposed Unicode negated glyphs.
     let glyph = input.chars().next()?;
-    let tok = match glyph {
+    let tok = negated_glyph_relation(glyph)?;
+    Some((tok, glyph.len_utf8(), true))
+}
+
+/// The positive relation a precomposed negated set glyph negates (`∉` -> `(elem)`).
+// Cost: O(1).
+pub(crate) fn negated_glyph_relation(glyph: char) -> Option<TokenKind> {
+    Some(match glyph {
         '\u{2209}' => TokenKind::SetElem,
         '\u{220C}' => TokenKind::SetCont,
         '\u{2288}' => TokenKind::SetSubset,
@@ -140,8 +147,7 @@ fn parse_negated_set_op(input: &str) -> Option<(TokenKind, usize, bool)> {
         '\u{2284}' => TokenKind::SetStrictSubset,
         '\u{2285}' => TokenKind::SetStrictSuperset,
         _ => return None,
-    };
-    Some((tok, glyph.len_utf8(), true))
+    })
 }
 
 /// True for the set operators that return a Bool and can therefore carry the
@@ -237,6 +243,7 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
         // !(<=), !(>=), !(>), !(==), and Unicode glyphs (in/cont/subset/superset).
         // Lower to `!(left <positive set op> right)` — a negated Bool.
         if let Some((tok, len, threaded)) = parse_negated_set_op(r) {
+            let op_text = r;
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = concat_expr(r).map_err(|err| {
@@ -246,20 +253,30 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
                     r.len(),
                 )
             })?;
-            left = Expr::Unary {
-                op: if threaded {
-                    TokenKind::Ident(NOT_THREADED.to_string())
-                } else {
-                    TokenKind::Bang
+            let written = &op_text[..len];
+            left = Expr::spelled(
+                Expr::Unary {
+                    op: if threaded {
+                        TokenKind::Ident(NOT_THREADED.to_string())
+                    } else {
+                        TokenKind::Bang
+                    },
+                    expr: Box::new(Expr::Binary {
+                        left: Box::new(left),
+                        op: tok,
+                        right: Box::new(right),
+                        form: Default::default(),
+                    }),
+                    word: false,
                 },
-                expr: Box::new(Expr::Binary {
-                    left: Box::new(left),
-                    op: tok,
-                    right: Box::new(right),
-                    form: Default::default(),
-                }),
-                word: false,
-            };
+                || {
+                    if threaded {
+                        crate::ast::spelled::Spelling::NegatedSetGlyph(written.into())
+                    } else {
+                        crate::ast::spelled::Spelling::NegatedSetInfix(written[1..].into())
+                    }
+                },
+            );
             rest = r;
             continue;
         }

@@ -5161,7 +5161,11 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             }
             let left = lower_expr(named_child(node, "left")?)?;
             let right = lower_expr(named_child(node, "right")?)?;
-            let op = infix_token(named_child(node, "infix")?)?;
+            let infix = named_child(node, "infix")?;
+            if let Some(relation) = super::negated_set::glyph_relation(infix) {
+                return Ok(super::negated_set::threaded_negation(left, relation, right));
+            }
+            let op = infix_token(infix)?;
             let binary = Expr::Binary {
                 left: Box::new(left),
                 op,
@@ -5272,6 +5276,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 return Err(unsupported(node));
             };
             let op = super::infix_spelling::lowered_name(&op).to_string();
+            let left_exclusive = super::negated_set::left_exclusive_base(&op);
+            let op = left_exclusive.map_or(op, str::to_string);
             let mut items = Vec::new();
             for v in list_field(node, "operands")? {
                 let ValueView::RakuAst(child) = v.view() else {
@@ -5295,11 +5301,18 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let Some(first) = items.next() else {
                 return Err(unsupported(node));
             };
-            Ok(items.fold(first, |left, right| Expr::Binary {
-                left: Box::new(left),
-                op: token.clone(),
-                right: Box::new(right),
-                form: Default::default(),
+            Ok(items.fold(first, |left, right| {
+                let sequence = Expr::Binary {
+                    left: Box::new(left),
+                    op: token.clone(),
+                    right: Box::new(right),
+                    form: Default::default(),
+                };
+                if left_exclusive.is_some() {
+                    super::negated_set::skip_first(sequence)
+                } else {
+                    sequence
+                }
             }))
         }
         // A postfix method call (`$x.abs`, `$x.?abs`, `$x."abs"()`), a hyper
