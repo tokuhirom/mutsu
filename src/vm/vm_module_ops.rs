@@ -176,7 +176,15 @@ impl Interpreter {
             .unwrap_or_default();
         // ADR-0019 Phase F box F5 cutover: see `exec_use_module_op`'s comment.
         let f5_gen_before = self.registry().method_generation;
-        loan_env!(self, import_module(module, &tags))?;
+        match loan_env!(self, import_module(module, &tags)) {
+            Ok(()) => {}
+            // `import Foo` of a package this unit declared itself and that
+            // exports nothing is a no-op, not an error (an unknown name stays one).
+            Err(err)
+                if err.message.starts_with("No exports found for module:")
+                    && self.is_known_package(module) => {}
+            Err(err) => return Err(err),
+        }
         {
             let f5_gen_after = self.registry().method_generation;
             crate::vm::vm_stats::record_module_reg_gen_shadow_check(
