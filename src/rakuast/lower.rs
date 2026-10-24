@@ -4493,6 +4493,21 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             if semilist.fields.is_empty() {
                 return Ok(Expr::ArrayLiteral(Vec::new()));
             }
+            // `(1; 2)`: one statement per semicolon section, the way the parser
+            // builds it.
+            if semilist.fields.len() > 1 {
+                let mut sections = Vec::new();
+                for field in &semilist.fields {
+                    let statement = child_node(&field.value)?;
+                    sections.push(match lower_expr(statement)? {
+                        Expr::ArrayLiteral(items) => items,
+                        other => vec![other],
+                    });
+                }
+                return Ok(Expr::Grouped(Box::new(
+                    crate::parser::finalize_paren_sections(sections, Vec::new(), true),
+                )));
+            }
             let inner = named_child_or_positional(semilist)?;
             // The contents of `(...)` are a semilist of *statements*: a
             // declaration written there (`(my $x = 9) given 2`) is a statement,

@@ -40,7 +40,7 @@ pub(in crate::parser) use array::array_literal;
 // parses its `(...)` body with the very same parenthesized-term rule rakudo
 // uses (`parser::stmt::decl::enum_decl`), which is what makes `;` a variant
 // separator there.
-pub(crate) use paren::paren_expr;
+pub(crate) use paren::{finalize_paren_sections, paren_expr};
 pub(in crate::parser) use paren::{colonpair_run_item, looks_like_colonpair_start};
 pub(super) use sigil_context::{
     hash_context_paren_expr, itemized_brace_expr, itemized_bracket_expr,

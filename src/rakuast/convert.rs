@@ -3453,7 +3453,7 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             Spelling::Words(text) => Ok(word_quote(text)),
             Spelling::ParenthesizedDeclaratorAdverb => parenthesized_expression(&spelled.expr),
-            Spelling::BracketTraitArgument => convert_expr(&spelled.expr),
+            Spelling::BracketTraitArgument | Spelling::ParenSections(_) => convert_expr(&spelled.expr),
             Spelling::Heredoc { stop, body } => heredoc_node(&spelled.expr, stop, *body),
             Spelling::WordQuote {
                 quotewords,
@@ -4235,6 +4235,43 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                         fields: Vec::new(),
                     },
                 )],
+            })
+        }
+        // `(1; 2)`: one statement per section.
+        Expr::Grouped(inner)
+            if matches!(inner.as_ref(), Expr::Spelled(spelled)
+                if matches!(spelled.spelling, Spelling::ParenSections(_))) =>
+        {
+            let Expr::Spelled(spelled) = inner.as_ref() else {
+                unreachable!("guarded above");
+            };
+            let Spelling::ParenSections(sections) = &spelled.spelling else {
+                unreachable!("guarded above");
+            };
+            let fields = sections
+                .iter()
+                .map(|items| {
+                    let expression = match items.as_slice() {
+                        [single] => convert_expr(single)?,
+                        _ => comma_list_node(items)?,
+                    };
+                    let statement = if expression.class == RakuAstClass::StatementExpression {
+                        expression
+                    } else {
+                        statement_expression(expression)
+                    };
+                    Ok(node_field(None, statement))
+                })
+                .collect::<Result<Vec<_>, RuntimeError>>()?;
+            let semilist = RakuAstNode {
+                origin: Default::default(),
+                class: RakuAstClass::SemiList,
+                fields,
+            };
+            Ok(RakuAstNode {
+                origin: Default::default(),
+                class: RakuAstClass::CircumfixParentheses,
+                fields: vec![node_field(None, semilist)],
             })
         }
         // `(EXPR)` -> `Circumfix::Parentheses(SemiList(Statement::Expression(...)))`.
