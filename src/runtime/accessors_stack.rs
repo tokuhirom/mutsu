@@ -333,7 +333,10 @@ impl Interpreter {
     /// A `$_` parameter of the callee itself binds after this and re-registers.
     // Cost: O(1); a single bit test unless a typed `$_` was ever declared.
     fn drop_inherited_topic_constraint(&mut self) {
-        let topic = Symbol::intern("_");
+        // Interned once: this runs on every routine entry, and the intern
+        // budget per call (`tests/routine_package_switch_budget.rs`) is ~0.
+        static TOPIC: std::sync::LazyLock<Symbol> = std::sync::LazyLock::new(|| Symbol::intern("_"));
+        let topic = *TOPIC;
         if Self::env_type_constraint_seen_for(topic) {
             self.env.remove_sym(Self::type_meta_key_for_sym(topic));
         }
