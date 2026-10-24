@@ -24,7 +24,10 @@ pub(super) fn convert_var(name: &str) -> Option<RakuAstNode> {
     }
     Some(match bare {
         "DISTRIBUTION" => node(RakuAstClass::VarCompilerDistribution, None),
-        _ => node(RakuAstClass::VarCompilerLookup, Some(Value::str(format!("${name}")))),
+        _ => node(
+            RakuAstClass::VarCompilerLookup,
+            Some(Value::str(format!("${name}"))),
+        ),
     })
 }
 
@@ -39,7 +42,10 @@ pub(super) fn convert_folded(written: &str, value: &Expr) -> Result<RakuAstNode,
     Ok(match written {
         "$?LINE" => node(RakuAstClass::VarCompilerLine, Some(literal)),
         "$?FILE" => node(RakuAstClass::VarCompilerFile, Some(literal)),
-        _ => node(RakuAstClass::VarCompilerLookup, Some(Value::str(written.to_string()))),
+        _ => node(
+            RakuAstClass::VarCompilerLookup,
+            Some(Value::str(written.to_string())),
+        ),
     })
 }
 
@@ -52,9 +58,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         _ => Err(super::lower::unsupported(node)),
     };
     Ok(match node.class {
-        RakuAstClass::VarCompilerLine | RakuAstClass::VarCompilerFile => {
-            Expr::Literal(leaf()?)
-        }
+        RakuAstClass::VarCompilerLine | RakuAstClass::VarCompilerFile => Expr::Literal(leaf()?),
         RakuAstClass::VarCompilerDistribution => Expr::Var("?DISTRIBUTION".to_string()),
         _ => {
             let name = leaf()?;
