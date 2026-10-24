@@ -26,9 +26,7 @@ use super::{
 };
 use crate::ast::parsed::ParsedStmt;
 use crate::ast::spelled::Spelling;
-use crate::ast::{
-    AssignOp, Expr, ForMode, IMPLICIT_INVOCANT_TRAIT, ParamDef, Stmt,
-};
+use crate::ast::{AssignOp, Expr, ForMode, IMPLICIT_INVOCANT_TRAIT, ParamDef, Stmt};
 use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::regex_tree::{RegexExtension, RegexModifierKind, RegexNode, RegexTree};
 use crate::value::{RuntimeError, Value, ValueView};
