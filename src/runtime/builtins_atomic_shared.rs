@@ -473,9 +473,7 @@ impl Interpreter {
                 let cell = c.clone();
                 drop(shared);
                 *cell.lock().unwrap_or_else(|e| e.into_inner()) = value.clone();
-                if let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
-                    dirty.insert(arr_name.to_string());
-                }
+                self.threads.note_dirty(arr_name);
                 return value;
             }
         }
@@ -511,12 +509,17 @@ impl Interpreter {
                 crate::gc::Gc::new(data),
                 crate::value::ArrayKind::Array,
             );
-            shared.insert(atomic_key.to_string(), new_arr.clone());
+            // Replace the entry in place when it exists (every store after
+            // the first): `insert` would build the key `String` again.
+            match shared.get_mut(atomic_key) {
+                Some(slot) => *slot = new_arr.clone(),
+                None => {
+                    shared.insert(atomic_key.to_string(), new_arr.clone());
+                }
+            }
             new_arr
         };
-        if let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
-            dirty.insert(arr_name.to_string());
-        }
+        self.threads.note_dirty(arr_name);
         if let Some(cell) = self.unit_lexical_container_cell(arr_name) {
             *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated;
         } else if let Some(ValueView::ContainerRef(cell)) = self.env.get(arr_name).map(Value::view)
@@ -551,9 +554,7 @@ impl Interpreter {
                 let cell = c.clone();
                 drop(shared);
                 *cell.lock().unwrap_or_else(|e| e.into_inner()) = value.clone();
-                if let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
-                    dirty.insert(hash_name.to_string());
-                }
+                self.threads.note_dirty(hash_name);
                 return value;
             }
         }
@@ -579,12 +580,15 @@ impl Interpreter {
             };
             Value::hash_insert_through(&mut map.map, elem_key, value.clone());
             let new_hash = Value::hash_with_data(crate::gc::Gc::new(map));
-            shared.insert(atomic_key.to_string(), new_hash.clone());
+            match shared.get_mut(atomic_key) {
+                Some(slot) => *slot = new_hash.clone(),
+                None => {
+                    shared.insert(atomic_key.to_string(), new_hash.clone());
+                }
+            }
             new_hash
         };
-        if let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
-            dirty.insert(hash_name.to_string());
-        }
+        self.threads.note_dirty(hash_name);
         if let Some(cell) = self.unit_lexical_container_cell(hash_name) {
             *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated;
         } else if let Some(ValueView::ContainerRef(cell)) = self.env.get(hash_name).map(Value::view)

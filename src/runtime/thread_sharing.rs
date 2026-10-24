@@ -166,6 +166,24 @@ impl ThreadSharing {
         Interpreter::is_plain_lexical_name(key) || crate::env::is_dynamic_var_name(key)
     }
 
+    /// Note `name` as explicitly updated in `shared_vars_dirty`. A store into
+    /// a shared container runs this on every write, and the set already holds
+    /// the name from the second write on, so look before building the owned
+    /// `String` an insert needs.
+    // Cost: O(l), l = name length (O(1) allocations only on the first note).
+    pub(crate) fn note_dirty(&self, name: &str) {
+        if self
+            .shared_vars_dirty
+            .read()
+            .is_ok_and(|dirty| dirty.contains(name))
+        {
+            return;
+        }
+        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+            dirty.insert(name.to_string());
+        }
+    }
+
     /// The main interpreter's state: the root of the shared store, sharing not
     /// yet active, nothing masked.
     // Cost: O(1).
