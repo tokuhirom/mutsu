@@ -82,6 +82,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!(INST, "id", 0, inst_id),
     row!(INST, "loaded", 0, inst_loaded),
     row!(INST, "next-repo", 0, next_repo),
+    row!(INST, "name", 0, inst_name),
     row!(INST, "prefix", 0, prefix_path),
     row!(INST, "need", 1, inst_need, slurpy),
     row!(INST, "files", 1, inst_files, slurpy),
@@ -150,16 +151,17 @@ fn inst_candidates(i: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>)
 
 /// `.install(Distribution $distribution, Bool :$force)`.
 // Cost: O(f), f = files of the distribution.
-fn inst_install(i: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answer {
+fn inst_install(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
     let prefix = prefix_of(t)?;
-    Some(i.cur_inst_install_checked(&prefix, &first(args), false))
+    let force = named.get("force").is_some_and(Value::truthy);
+    Some(i.cur_inst_install_checked(&prefix, &first(args), false, force))
 }
 
 /// `.uninstall(Distribution $distribution)`.
 // Cost: O(f), f = files of the distribution.
 fn inst_uninstall(i: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answer {
     let prefix = prefix_of(t)?;
-    Some(i.cur_inst_install_checked(&prefix, &first(args), true))
+    Some(i.cur_inst_install_checked(&prefix, &first(args), true, false))
 }
 
 /// `.installed`.
@@ -214,6 +216,13 @@ fn inst_id(_: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer 
 fn inst_loaded(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
     let prefix = prefix_of(t)?;
     Some(Ok(i.cur_inst_loaded(&prefix)))
+}
+
+/// `.name`: the name the repository is registered under.
+// Cost: O(r), r = registered and built-in repository names.
+fn inst_name(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    repo(t)?;
+    Some(Ok(i.repo_registry_name_for(t)))
 }
 
 /// `.next-repo`.

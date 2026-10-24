@@ -71,6 +71,12 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
     row!(
         "CompUnit::RepositoryRegistry",
+        "name-for-repository",
+        1,
+        name_for_repository
+    ),
+    row!(
+        "CompUnit::RepositoryRegistry",
         "register-name",
         2,
         register_name
@@ -208,6 +214,12 @@ fn repository_for_spec(i: &mut Interpreter, _t: &Value, args: &[Value], _n: Name
         _ => args[0].to_string_value(),
     };
     Some(i.repo_registry_for_spec(&spec))
+}
+
+/// `CompUnit::RepositoryRegistry.name-for-repository($repo)`.
+// Cost: O(r), r = registered and built-in repository names.
+fn name_for_repository(i: &mut Interpreter, _t: &Value, args: &[Value], _n: Named<'_>) -> Answer {
+    Some(Ok(i.repo_registry_name_for(&args[0])))
 }
 
 /// `CompUnit::RepositoryRegistry.register-name($name, $repo)`.

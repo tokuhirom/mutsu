@@ -74,6 +74,7 @@ impl Interpreter {
         prefix: &str,
         dist: &Value,
         uninstall: bool,
+        force: bool,
     ) -> Result<Value, RuntimeError> {
         if !self.type_matches_value("Distribution", dist) {
             return Err(self.typecheck_binding_parameter_failure(
@@ -85,7 +86,7 @@ impl Interpreter {
         if uninstall {
             self.cur_inst_uninstall(prefix, dist)
         } else {
-            self.cur_inst_install(prefix, dist)
+            self.cur_inst_install(prefix, dist, force)
         }
     }
 

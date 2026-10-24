@@ -65,6 +65,40 @@ impl Interpreter {
         Value::NIL
     }
 
+    /// `CompUnit::RepositoryRegistry.name-for-repository($repo)` /
+    /// `Installation.name`: the name `$repo` was registered under
+    /// (`register-name`), or the built-in one (`site`, `home`, `vendor`,
+    /// `core`, `perl`) whose directory is its prefix. `Nil` for an unnamed one.
+    // Cost: O(r), r = registered names plus the five built-in ones.
+    pub(crate) fn repo_registry_name_for(&self, repo: &Value) -> Value {
+        let prefix_of = |repo: &Value| -> Option<String> {
+            let ValueView::Instance { attributes, .. } = repo.view() else {
+                return None;
+            };
+            attributes.as_map().get("prefix").map(Value::to_string_value)
+        };
+        let Some(prefix) = prefix_of(repo) else {
+            return Value::NIL;
+        };
+        if let Some((name, _)) = self
+            .module
+            .named_repositories
+            .iter()
+            .find(|(_, registered)| prefix_of(registered).as_deref() == Some(prefix.as_str()))
+        {
+            return Value::str(name.clone());
+        }
+        for name in ["site", "home", "vendor", "perl", "core"] {
+            if self
+                .default_repo_dir(name)
+                .is_some_and(|dir| dir.as_path() == std::path::Path::new(&prefix))
+            {
+                return Value::str(name.to_string());
+            }
+        }
+        Value::NIL
+    }
+
     /// `CompUnit::RepositoryRegistry.repository-for-spec($spec)`: an `inst#`
     /// or `file#` spec names an installation or a `FileSystem` repository.
     /// `Nil` otherwise.

@@ -6,6 +6,7 @@
   "license": "Artistic-2.0",
   "perl": "6.d",
   "provides": {
+    "CompUnit::Repository::Staging": "lib/CompUnit/Repository/Staging.rakumod",
     "NativeCall": "lib/NativeCall.rakumod",
     "NativeCall::Compiler::GNU": "lib/NativeCall/Compiler/GNU.rakumod",
     "NativeCall::Compiler::MSVC": "lib/NativeCall/Compiler/MSVC.rakumod",

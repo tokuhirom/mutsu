@@ -57,6 +57,7 @@ impl Interpreter {
         &mut self,
         prefix: &str,
         dist: &Value,
+        force: bool,
     ) -> Result<Value, RuntimeError> {
         let prefix_path = std::path::Path::new(prefix);
         let dist_dir = prefix_path.join("dist");
@@ -98,7 +99,11 @@ impl Interpreter {
                 let Ok(existing_meta) = self.parse_json_to_value(&json_str) else {
                     continue;
                 };
-                if dist_identity(&existing_meta) == new_identity {
+                if dist_identity(&existing_meta) == new_identity && force {
+                    // `:force` installs over the identical distribution: the
+                    // old one's files go first, so it is not listed twice.
+                    Self::remove_installed_dist_files(prefix_path, &path, &existing_meta);
+                } else if dist_identity(&existing_meta) == new_identity {
                     let name = meta
                         .hash_get_str("name")
                         .map(|v| v.to_string_value())
@@ -210,6 +215,45 @@ impl Interpreter {
         std::fs::write(&dist_file, json_str)
             .map_err(|e| RuntimeError::new(format!("Cannot write dist file: {e}")))?;
         Ok(Value::TRUE)
+    }
+
+    /// Remove the files an installed distribution owns: its `dist/<id>.json`,
+    /// the sources its `provides` name and the resources and scripts its
+    /// `files` name.
+    // Cost: O(f), f = files of the distribution.
+    fn remove_installed_dist_files(
+        prefix: &std::path::Path,
+        dist_file: &std::path::Path,
+        meta: &Value,
+    ) {
+        let mut owned: Vec<std::path::PathBuf> = Vec::new();
+        if let Some(provides) = meta.hash_get_str("provides")
+            && let ValueView::Hash(map) = provides.view()
+        {
+            for entry in map.values() {
+                if let ValueView::Hash(by_path) = entry.view() {
+                    for file in by_path.values() {
+                        if let ValueView::Hash(h) = file.view()
+                            && let Some(id) = h.get("file")
+                        {
+                            owned.push(prefix.join("sources").join(id.to_string_value()));
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(files) = meta.hash_get_str("files")
+            && let ValueView::Hash(map) = files.view()
+        {
+            for (name, id) in map.iter() {
+                let dir = if name.starts_with("bin/") { "bin" } else { "resources" };
+                owned.push(prefix.join(dir).join(id.to_string_value()));
+            }
+        }
+        for file in owned {
+            std::fs::remove_file(file).ok();
+        }
+        std::fs::remove_file(dist_file).ok();
     }
 
     /// Uninstall a distribution.
