@@ -237,10 +237,10 @@ mod param_fill_tests {
         // `*` and an empty capture literal are constants as well.
         let mut pd = param("$y");
         pd.default = Some(Expr::Whatever);
-        assert_eq!(
-            CompiledFunction::const_fill_for_param(&pd),
-            Some(Value::WHATEVER)
-        );
+        assert!(matches!(
+            CompiledFunction::const_fill_for_param(&pd).map(|v| v.view()),
+            Some(ValueView::Whatever)
+        ));
         let mut pd = param("$y");
         pd.default = Some(Expr::CaptureLiteral(Vec::new(), true));
         assert!(CompiledFunction::const_fill_for_param(&pd).is_some());
