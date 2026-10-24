@@ -1,4 +1,5 @@
-//! Hand-built `Type::Definedness`, `Type::AnyDefinedness` and `Type::Coercion`.
+//! Hand-built `Type::Definedness`, `Type::AnyDefinedness`, `Type::Coercion` and
+//! `Type::Parameterized`.
 //!
 //! The read direction (`convert::build_type_node`) already renders `Int:D`,
 //! `Int:_` and `Int(Str)` as these nodes; this is the matching `.new`:
@@ -7,11 +8,12 @@
 //! RakuAST::Type::Definedness.new(base-type => $int, definite => True)
 //! RakuAST::Type::AnyDefinedness.new(base-type => $int)
 //! RakuAST::Type::Coercion.new(base-type => $int, constraint => $str)
+//! RakuAST::Type::Parameterized.new(base-type => $array, args => $arg-list)
 //! ```
 //!
 //! Field order is the one `build_type_node` produces and rakudo prints
 //! (`base-type`, then `definite` / `constraint`); `constraint` is omitted when
-//! absent, as for `Int()`.
+//! absent, as for `Int()`; `args` is omitted when absent (`R[]`).
 
 use super::require_rakuast_type;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, named_arg};
@@ -24,13 +26,14 @@ fn field(name: &'static str, value: Value) -> RakuAstField {
     }
 }
 
-/// The `.new` of one of the three classes, or `None` for any other class.
+/// The `.new` of one of the four classes, or `None` for any other class.
 // Cost: O(1) -- a fixed number of named-argument lookups.
 pub(super) fn construct(class_name: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     let class = match class_name {
         "RakuAST::Type::Definedness" => RakuAstClass::TypeDefinedness,
         "RakuAST::Type::AnyDefinedness" => RakuAstClass::TypeAnyDefinedness,
         "RakuAST::Type::Coercion" => RakuAstClass::TypeCoercion,
+        "RakuAST::Type::Parameterized" => RakuAstClass::TypeParameterized,
         _ => return None,
     };
     Some(build(class, class_name, args))
@@ -57,6 +60,19 @@ fn build(class: RakuAstClass, class_name: &str, args: &[Value]) -> Result<Value,
             if let Some(constraint) = named_arg(args, "constraint") {
                 require_rakuast_type(&constraint, &ctor)?;
                 fields.push(field("constraint", constraint));
+            }
+        }
+        RakuAstClass::TypeParameterized => {
+            if let Some(args) = named_arg(args, "args") {
+                match args.view() {
+                    ValueView::RakuAst(node) if node.class == RakuAstClass::ArgList => {}
+                    _ => {
+                        return Err(RuntimeError::new(format!(
+                            "{ctor} expects `args` to be a RakuAST::ArgList"
+                        )));
+                    }
+                }
+                fields.push(field("args", args));
             }
         }
         _ => {}

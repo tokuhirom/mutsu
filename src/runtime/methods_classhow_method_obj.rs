@@ -943,6 +943,20 @@ impl Interpreter {
                 Vec::new()
             };
         }
+        // A meta-object (`$type.HOW`) is a `Metamodel::*HOW` type object here;
+        // its metamethods are the `ctors_mop` rows owned by that HOW class
+        // (`nqp::can($type.HOW, "roles")`, the probe `RakuAST::Utils` makes).
+        if let Some(owner) = class_name.strip_prefix("Perl6::")
+            && owner.starts_with("Metamodel::")
+            && owner.ends_with("HOW")
+            && crate::builtins::method_table::owner_declares(owner, Symbol::intern(method_name))
+        {
+            return vec![Value::routine_parts(
+                Symbol::intern(owner),
+                Symbol::intern(method_name),
+                false,
+            )];
+        }
         let mro = self.classhow_mro_unhidden_names(target);
         let mut results = Vec::new();
         // Built-in MRO levels that declare `method_name` themselves (#9869):
