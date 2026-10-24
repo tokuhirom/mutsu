@@ -156,7 +156,7 @@ pub(crate) fn lower_statement(node: Assign) -> Stmt {
 /// The storage name of a variable target, as `Stmt::Assign` spells it:
 /// `$x` is `x`, `@a` is `@a`, `%h` is `%h`, `&f` is `&f`.
 // Cost: O(1).
-fn variable_name(target: &Expr) -> Option<String> {
+pub(super) fn variable_name(target: &Expr) -> Option<String> {
     match target {
         Expr::Var(name) => Some(name.clone()),
         Expr::ArrayVar(name) => Some(format!("@{name}")),

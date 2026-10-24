@@ -2631,6 +2631,13 @@ fn lower_assign_parts(node: &RakuAstNode) -> Result<(String, Expr), RuntimeError
     if let Some(key) = term_target_key(left) {
         return Ok((key, lower_expr(named_child(node, "right")?)?));
     }
+    // `$^x = v`, `@_ = v`: a placeholder parameter, named as the parser names
+    // its variable.
+    if left.class.printed_name().starts_with("RakuAST::VarDeclaration::Placeholder::")
+        && let Some(name) = super::assign_lower::variable_name(&lower_expr(left)?)
+    {
+        return Ok((name, lower_expr(named_child(node, "right")?)?));
+    }
     let raw = variable_spelling(left).map_err(|_| unsupported(node))?;
     let name = match raw.strip_prefix('$') {
         Some(bare) => bare.to_string(),
