@@ -521,7 +521,6 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 _ => expression_no_sequence(rest)?,
             }
         };
-        let name = format!("{}{}", prefix, var);
         // Read the current value through the sigil-appropriate lvalue so `%h ,= %g`
         // / `@a ,= 3` treat the LHS as a Hash/Array container (not a scalar
         // `Var("h")`), letting the comma operator merge/append the two containers.
@@ -530,13 +529,15 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             b'%' => Expr::HashVar(var),
             _ => Expr::Var(var),
         };
-        if sigil == b'$'
-            && let Some(short) =
-                short_circuit_compound_assign_expr(&name, lhs_expr.clone(), op, rhs.clone())
-        {
-            return Ok((rest, compound_assign_marker(lhs_expr, op, rhs, short)));
-        }
-        return Ok((rest, preserve_compound_assign(lhs_expr, op, rhs)?));
+        return Ok((
+            rest,
+            super::written_compound_assignment(
+                lhs_expr,
+                op,
+                crate::ast::parsed::CompoundMeta::Plain,
+                rhs,
+            )?,
+        ));
     }
     if let Some((stripped, meta, op)) = parse_meta_compound_assign_op(r2) {
         let (rest, _) = ws(stripped)?;

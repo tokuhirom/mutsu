@@ -10,8 +10,8 @@ use super::convert::{
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::parsed::{
-    BlockParams, BlockSpans, ClauseKind, Conditional, ConditionalKind, LoopKind, LoopStmt,
-    Modified, ModifierKind, ParsedBlock, ParsedExpr, ParsedStmt,
+    BlockParams, BlockSpans, ClauseKind, CompoundMeta, Conditional, ConditionalKind, LoopKind,
+    LoopStmt, Modified, ModifierKind, ParsedBlock, ParsedExpr, ParsedStmt,
 };
 use crate::ast::{Expr, Stmt};
 use crate::value::{RuntimeError, Value, ValueView};
@@ -179,6 +179,7 @@ pub(super) fn parsed_expr_node(node: &ParsedExpr) -> Result<RakuAstNode, Runtime
             ),
             _ => assignment_node(a),
         },
+        ParsedExpr::CompoundAssign(a) => compound_assignment_node(a),
     }
 }
 
@@ -201,6 +202,69 @@ fn assignment_node(a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, Runtim
             node_field(Some("right"), convert_expr(&a.source)?),
         ],
     })
+}
+
+/// `TARGET OP= SOURCE` as an `ApplyInfix` over `MetaInfix::Assign`, whose
+/// infix is wrapped the way it was written: `[+]=` in a `BracketedInfix` per
+/// bracket, a scalar `Z+=` in `MetaInfix::Zip` (measured on 2026.09).
+// Cost: O(n + d), n = size of the target and source, d = bracket depth.
+fn compound_assignment_node(
+    a: &crate::ast::parsed::CompoundAssign,
+) -> Result<RakuAstNode, RuntimeError> {
+    let node =
+        super::convert::compound_assignment_infix(&a.target, &format!("{}=", a.op), &a.source)?;
+    with_compound_meta(node, a.meta)
+}
+
+/// `node`, a compound `ApplyInfix` over `MetaInfix::Assign(Infix(OP))`, with
+/// its infix wrapped as `meta` spells it.
+// Cost: O(d), d = bracket depth.
+pub(super) fn with_compound_meta(
+    mut node: RakuAstNode,
+    meta: CompoundMeta,
+) -> Result<RakuAstNode, RuntimeError> {
+    let wrap = |inner: RakuAstNode, class: RakuAstClass| RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields: vec![node_field(None, inner)],
+    };
+    if meta == CompoundMeta::Plain {
+        return Ok(node);
+    }
+    let infix = |meta: RakuAstNode| -> Option<RakuAstNode> {
+        let field = meta.fields.into_iter().next()?;
+        let RakuAstFieldValue::Node(value) = field.value else {
+            return None;
+        };
+        let ValueView::RakuAst(inner) = value.view() else {
+            return None;
+        };
+        Some(RakuAstNode::clone(inner))
+    };
+    for field in node.fields.iter_mut() {
+        if field.name != Some("infix") {
+            continue;
+        }
+        let RakuAstFieldValue::Node(value) = &field.value else {
+            continue;
+        };
+        let ValueView::RakuAst(assign) = value.view() else {
+            continue;
+        };
+        let mut inner = infix(RakuAstNode::clone(assign))
+            .ok_or_else(|| super::convert::unsupported("compound assignment infix"))?;
+        match meta {
+            CompoundMeta::Plain => {}
+            CompoundMeta::Bracketed(depth) => {
+                for _ in 0..depth {
+                    inner = wrap(inner, RakuAstClass::BracketedInfix);
+                }
+            }
+            CompoundMeta::Zip => inner = wrap(inner, RakuAstClass::MetaInfixZip),
+        }
+        *field = node_field(Some("infix"), wrap(inner, RakuAstClass::MetaInfixAssign));
+    }
+    Ok(node)
 }
 
 /// An assignment's target. A variable is the variable as written, including a

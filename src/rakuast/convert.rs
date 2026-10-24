@@ -1436,20 +1436,8 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             ))))
         }
         Stmt::Assign { name, expr, op, .. } => match op {
-            // `$x = EXPR` — the special `Assignment` infix (slice 2). A compound
-            // assignment keeps its source-level metaop marker inside the ordinary
-            // assignment expansion used by the compiler.
-            AssignOp::Assign => match expr {
-                Expr::CompoundAssign {
-                    target, op, rhs, ..
-                } if !is_dotty_assign_op(op) && compound_target_matches_name(target, name) => {
-                    Ok(Some(statement_expression(super::compound_stmt::mark(
-                        compound_assignment_infix(target, op, rhs)?,
-                        name,
-                    ))))
-                }
-                _ => Ok(Some(statement_expression(assignment_infix(name, expr)?))),
-            },
+            // `$x = EXPR` — the special `Assignment` infix (slice 2).
+            AssignOp::Assign => Ok(Some(statement_expression(assignment_infix(name, expr)?))),
             // `$x := EXPR` — a plain `:=` infix (slice 9).
             AssignOp::Bind => Ok(Some(statement_expression(bind_infix(name, expr)?))),
             AssignOp::MatchAssign => Err(unsupported("`~~` match-assignment")),
@@ -1761,7 +1749,7 @@ fn is_dotty_assign_op(op: &str) -> bool {
 }
 
 /// `$x OP= EXPR` -> `ApplyInfix(left, MetaInfix::Assign(Infix(OP)), right)`.
-fn compound_assignment_infix(
+pub(super) fn compound_assignment_infix(
     target: &Expr,
     op: &str,
     rhs: &Expr,
@@ -1976,19 +1964,6 @@ fn dotty_infix_call(call: &Expr) -> Result<RakuAstNode, RuntimeError> {
             right,
         ],
     })
-}
-
-/// A compound marker may be nested in the RHS of a separate assignment. Only
-/// the marker that names the statement's own target replaces `Assignment` with
-/// `MetaInfix::Assign`; nested markers stay under the outer assignment node.
-fn compound_target_matches_name(target: &Expr, name: &str) -> bool {
-    match target {
-        Expr::Var(target_name) => target_name == name,
-        Expr::ArrayVar(target_name) => name == format!("@{target_name}"),
-        Expr::HashVar(target_name) => name == format!("%{target_name}"),
-        Expr::CodeVar(target_name) => name == format!("&{target_name}"),
-        _ => false,
-    }
 }
 
 /// A `my`/`our`/`state` declaration with an optional simple type, as a

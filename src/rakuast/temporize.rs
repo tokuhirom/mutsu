@@ -170,6 +170,22 @@ fn convert_temporized(t: &Temporized) -> Result<RakuAstNode, RuntimeError> {
                 super::convert::compound_assignment_with_left(left, op, rhs)
             }
         }
+        Assigned::Compound(Expr::Ast(node)) => match node.as_ref() {
+            crate::ast::parsed::ParsedExpr::CompoundAssign(a) => {
+                let left = prefix_node(t.is_temp, convert_expr(&a.target)?);
+                super::parsed_view::with_compound_meta(
+                    super::convert::compound_assignment_with_left(
+                        left,
+                        &format!("{}=", a.op),
+                        &a.source,
+                    )?,
+                    a.meta,
+                )
+            }
+            crate::ast::parsed::ParsedExpr::Assign(_) => Err(super::convert::unsupported(
+                "temp with an unrecognised compound assignment",
+            )),
+        },
         Assigned::Compound(_) => Err(super::convert::unsupported(
             "temp with an unrecognised compound assignment",
         )),

@@ -140,6 +140,32 @@ pub(crate) fn expand_reverse_assign_expr(
     expr::precedence::build_compound_assign_target_expr(rhs, op, lhs)
 }
 
+/// Lower a compound assignment in expression position: the one lowering of
+/// the compound-assignment family (`stmt::assign::compound_lower`), for
+/// consumers that cannot name the parser's parse-error type.
+// Cost: O(n), n = size of the target and source.
+pub(crate) fn lower_compound_expression(
+    node: crate::ast::parsed::CompoundAssign,
+) -> Result<crate::ast::Expr, String> {
+    stmt::assign::lower_compound_expression(node).map_err(|error| error.to_string())
+}
+
+/// Whether `op` is the base infix of a compound assignment the compound
+/// lowering takes (`+` of `+=`).
+// Cost: O(k), k = number of compound operators.
+pub(crate) fn is_compound_assign_op(op: &str) -> bool {
+    stmt::assign::compound_assign_op_from_name(op).is_some()
+}
+
+/// [`lower_compound_expression`] for a compound assignment written as a
+/// statement.
+// Cost: O(n), n = size of the target and source.
+pub(crate) fn lower_compound_statement(
+    node: crate::ast::parsed::CompoundAssign,
+) -> Result<crate::ast::Stmt, String> {
+    stmt::assign::lower_compound_statement(node).map_err(|error| error.to_string())
+}
+
 /// Reuse the parser's proven compound-assignment expansion from consumers that
 /// cannot name the parser's private parse-error type (such as RakuAST lowering).
 pub(crate) fn expand_compound_assign_expr(
@@ -401,6 +427,12 @@ pub(crate) fn lowered_assignment(expr: crate::ast::Expr) -> crate::ast::Expr {
     match expr {
         crate::ast::Expr::Ast(node) => match *node {
             crate::ast::parsed::ParsedExpr::Assign(a) => crate::rakuast::lower_expression_assign(a),
+            // A kept compound assignment passed the target check when it was
+            // built, so lowering it cannot fail.
+            crate::ast::parsed::ParsedExpr::CompoundAssign(a) => {
+                stmt::assign::lower_compound_expression(a)
+                    .expect("a kept compound assignment lowers")
+            }
         },
         other => other,
     }
