@@ -206,11 +206,7 @@ impl Interpreter {
         let Some(owner) = Self::lexsub_plan_owner(plan, compiled_fns) else {
             return;
         };
-        let Some(self_val) = self
-            .env()
-            .get_sym(crate::symbol::wk::self_())
-            .cloned()
-        else {
+        let Some(self_val) = self.env().get_sym(crate::symbol::wk::self_()).cloned() else {
             return;
         };
         crate::runtime::cow_table_mut(&mut self.lexicals.lexsub_latest_cells).insert(
