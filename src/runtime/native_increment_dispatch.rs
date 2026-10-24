@@ -123,7 +123,21 @@ impl Interpreter {
             return None;
         }
         if !self.has_multi_function_cached(name) {
-            return None;
+            // The parser emits a call for the operator whenever the program
+            // imports a user `postfix:<++>`/... even when the declaration never
+            // reaches this scope's routine table (an `EXPORT` map handed the
+            // candidates to a module that does not bind them here). With no
+            // routine of that name at all the native operator is the only
+            // candidate, as for any call the user's candidates do not cover.
+            if self.resolve_function_with_types(name, args).ok().flatten().is_some() {
+                return None;
+            }
+            return match self.env.get(&format!("&{name}")).cloned() {
+                None => Some(true),
+                Some(callable) => self
+                    .imported_increment_candidate_rejects(&callable, &args[0])
+                    .then_some(true),
+            };
         }
         // Rank against the user candidate multi dispatch would otherwise run.
         // With no matching user candidate there is nothing to compare and the
@@ -135,6 +149,36 @@ impl Interpreter {
             return Some(true);
         };
         Some(self.core_increment_wins_over(&def, args))
+    }
+
+    /// Does an imported `&postfix:<++>`-style routine (a lone `Sub` the import
+    /// bound by name) reject the operand by its parameter's type? Then it is not
+    /// a candidate for this call and the core operator runs.
+    // Cost: O(t), t = the type-check of one argument.
+    fn imported_increment_candidate_rejects(&mut self, callable: &Value, arg: &Value) -> bool {
+        let ValueView::Sub(data) = callable.view() else {
+            return false;
+        };
+        let operand = Self::increment_operand(arg);
+        // An export table binds a multi as a dispatcher `Sub` that carries its
+        // candidates; a plain `Sub` is its own single candidate.
+        let candidates: Vec<Value> = match data
+            .env
+            .get("__mutsu_multi_dispatch_candidates")
+            .map(Value::view)
+        {
+            Some(ValueView::Array(cands, _)) => cands.iter().cloned().collect(),
+            _ => vec![callable.clone()],
+        };
+        !candidates.iter().any(|cand| match cand.view() {
+            ValueView::Sub(d) => d
+                .param_defs
+                .iter()
+                .find(|p| !p.named)
+                .and_then(|p| p.type_constraint.as_deref())
+                .is_none_or(|constraint| self.type_matches_value(constraint, &operand)),
+            _ => true,
+        })
     }
 
     /// Whether the core candidate set out-ranks the user candidate `def`
