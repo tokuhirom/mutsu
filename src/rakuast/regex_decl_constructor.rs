@@ -52,7 +52,10 @@ fn build(class: RakuAstClass, args: &[Value]) -> Result<Value, RuntimeError> {
     }
     let body = named_arg(args, "body")
         .ok_or_else(|| RuntimeError::new(format!("{constructor} requires `body`")))?;
-    require_regex_node(&body, &constructor)?;
+    // A proto's `{*}` body is a bare `OnlyStar`.
+    if !matches!(body.view(), ValueView::RakuAst(node) if node.class == RakuAstClass::OnlyStar) {
+        require_regex_node(&body, &constructor)?;
+    }
     fields.push(field("body", body));
     Ok(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),

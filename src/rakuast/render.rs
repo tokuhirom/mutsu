@@ -33,6 +33,11 @@ fn render_node_body(node: &RakuAstNode, indent: usize) -> String {
     {
         return render_node(&shown, indent);
     }
+    if node.class == RakuAstClass::Parameter
+        && let Some(shown) = parameter_in_raku_order(node)
+    {
+        return render_node(&shown, indent);
+    }
     let name = node.class.printed_name();
     if node.class == RakuAstClass::Name
         && !node.fields.iter().any(|f| f.name == Some("colonpairs"))
@@ -456,4 +461,38 @@ fn render_leaf(v: &Value) -> String {
 // Cost: O(n), n = chars of `s`.
 pub(super) fn render_str_literal(s: &str) -> String {
     crate::value::raku_repr::escape_raku_str(s)
+}
+
+/// A `Parameter` with its fields in the order rakudo 2026.09's
+/// `Parameter.raku` writes them (`src/core.c/RakuAST/Raku.rakumod`), or
+/// `None` when they already are. The parameter's parts are converted from
+/// several places, and a hand-built one takes its arguments in any order.
+// Cost: O(f log f), f = fields of the parameter.
+fn parameter_in_raku_order(node: &RakuAstNode) -> Option<RakuAstNode> {
+    const ORDER: &[&str] = &[
+        "type",
+        "names",
+        "type-captures",
+        "invocant",
+        "default-rw",
+        "target",
+        "optional",
+        "slurpy",
+        "traits",
+        "default",
+        "where",
+        "sub-signature",
+        "value",
+    ];
+    let rank = |f: &super::RakuAstField| {
+        f.name
+            .and_then(|n| ORDER.iter().position(|o| *o == n))
+            .unwrap_or(ORDER.len())
+    };
+    if node.fields.windows(2).all(|w| rank(&w[0]) <= rank(&w[1])) {
+        return None;
+    }
+    let mut shown = node.clone();
+    shown.fields.sort_by_key(rank);
+    Some(shown)
 }

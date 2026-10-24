@@ -75,7 +75,10 @@ fn build(class: RakuAstClass, args: &[Value]) -> Result<Value, RuntimeError> {
         });
     }
     let body = named_arg(args, "body").unwrap_or_else(empty_blockoid);
-    require_rakuast_class(&body, RakuAstClass::Blockoid, &constructor)?;
+    // A proto's `{*}` body is a bare `OnlyStar`.
+    if !matches!(body.view(), ValueView::RakuAst(node) if node.class == RakuAstClass::OnlyStar) {
+        require_rakuast_class(&body, RakuAstClass::Blockoid, &constructor)?;
+    }
     fields.push(RakuAstField {
         name: Some("body"),
         value: RakuAstFieldValue::Node(body),
