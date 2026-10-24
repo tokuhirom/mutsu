@@ -149,24 +149,6 @@ mod tests {
     }
 
     #[test]
-    fn declaration_modifier_source_records_share_the_copy_budget() {
-        let condition = Expr::Literal(Value::TRUE);
-        let mut body = vec![Stmt::Expr(Expr::Literal(Value::NIL))];
-        for _ in 0..32 {
-            if check(&condition, &[], &body).is_err() {
-                return;
-            }
-            let record = Stmt::SourceForm(Box::new(SourceForm::DeclarationModifier {
-                declaration: Box::new(Stmt::SyntheticBlock(body.clone())),
-                condition: condition.clone(),
-                kind: crate::ast::decl_modifier::DeclarationModifier::If,
-            }));
-            body = vec![record, Stmt::SyntheticBlock(body)];
-        }
-        panic!("the declaration source copy budget did not bound nested records");
-    }
-
-    #[test]
     fn signature_materialization_reports_oversized_parameters_before_expansion() {
         let declaration = crate::ast::SignatureDecl {
             vars: vec![crate::ast::SignatureVar::plain("$value"); MAX_NODES + 1],

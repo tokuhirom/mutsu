@@ -613,7 +613,12 @@ pub(crate) fn sub_decl_body(
             .collect();
         return Ok((
             r,
-            crate::ast::immediate_call::expand(sub_decl, positional_args),
+            crate::parser::stmt::control::parsed_block::finish_total(
+                crate::ast::parsed::ParsedStmt::ImmediateCall {
+                    decl: Box::new(sub_decl),
+                    args: positional_args,
+                },
+            ),
         ));
     }
     Ok((rest, sub_decl))

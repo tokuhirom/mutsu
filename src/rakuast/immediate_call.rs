@@ -1,46 +1,43 @@
 //! `sub foo($n) { … }(21)` ↔ `ApplyPostfix(operand => Sub, postfix =>
 //! Call::Term)` (measured on rakudo 2026.09).
 //!
-//! The parser's expansion (`ast::immediate_call`) opens with its record; the
-//! converter renders the source form from the declaration and the call
-//! arguments it holds, and the lowering hands a measured node back to the same
-//! expansion function, so the routine is declared in the enclosing scope as
-//! the parsed program declares it.
+//! The parser keeps the written form (`ParsedStmt::ImmediateCall`); the
+//! converter renders it from the declaration and the call arguments, and the
+//! lowering hands a measured node back to the same expansion function
+//! (`ast::immediate_call::expand`), so the routine is declared in the
+//! enclosing scope as the parsed program declares it.
 
 use super::convert::{arg_list, convert_stmt, expression_of, node_field};
 use super::lower::{arg_exprs, lower_stmt, named_child, unsupported};
 use super::{RakuAstClass, RakuAstNode};
-use crate::ast::Stmt;
+use crate::ast::{Expr, Stmt};
 use crate::value::RuntimeError;
 
-/// The `ApplyPostfix` node of an immediate-call expansion, or `None` when
-/// `stmt` is not one.
+/// The `ApplyPostfix` node of an immediate call: the routine `sub_decl` and the
+/// arguments of the call.
 // Cost: O(n), n = size of the routine and its arguments.
-pub(super) fn convert(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> {
-    let (sub_decl, args) = crate::ast::immediate_call::parts(stmt)?;
-    Some((|| {
-        let statement = convert_stmt(sub_decl)?
-            .ok_or_else(|| super::convert::unsupported("immediately called sub"))?;
-        let routine = expression_of(&statement)
-            .ok_or_else(|| super::convert::unsupported("immediately called sub"))?;
-        // raku omits `args` for an argument-less call, as for `$f()`.
-        let mut call = RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::CallTerm,
-            fields: Vec::new(),
-        };
-        if !args.is_empty() {
-            call.fields.push(node_field(Some("args"), arg_list(args)?));
-        }
-        Ok(RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::ApplyPostfix,
-            fields: vec![
-                node_field(Some("operand"), routine),
-                node_field(Some("postfix"), call),
-            ],
-        })
-    })())
+pub(super) fn convert(sub_decl: &Stmt, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+    let statement = convert_stmt(sub_decl)?
+        .ok_or_else(|| super::convert::unsupported("immediately called sub"))?;
+    let routine = expression_of(&statement)
+        .ok_or_else(|| super::convert::unsupported("immediately called sub"))?;
+    // raku omits `args` for an argument-less call, as for `$f()`.
+    let mut call = RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::CallTerm,
+        fields: Vec::new(),
+    };
+    if !args.is_empty() {
+        call.fields.push(node_field(Some("args"), arg_list(args)?));
+    }
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::ApplyPostfix,
+        fields: vec![
+            node_field(Some("operand"), routine),
+            node_field(Some("postfix"), call),
+        ],
+    })
 }
 
 /// Whether `node` is an `ApplyPostfix` calling a named `Sub` declared in

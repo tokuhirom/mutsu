@@ -208,12 +208,12 @@ pub(crate) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
             if stmts.len() == 1 {
                 (r, Some(Box::new(stmts.into_iter().next().unwrap())))
             } else {
-                let mut expanded = Vec::with_capacity(stmts.len() + 1);
-                expanded.push(Stmt::SourceForm(Box::new(
-                    crate::ast::SourceForm::CommaDeclarations(stmts.clone()),
-                )));
-                expanded.extend(stmts);
-                (r, Some(Box::new(Stmt::SyntheticBlock(expanded))))
+                (
+                    r,
+                    Some(Box::new(super::parsed_block::finish_total(
+                        crate::ast::parsed::ParsedStmt::CommaDecls(stmts),
+                    ))),
+                )
             }
         };
         let (rest, _) = ws(rest)?;

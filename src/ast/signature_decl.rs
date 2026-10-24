@@ -16,18 +16,9 @@ use super::{Expr, Stmt};
 /// expansion. The compiler skips it.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum SourceForm {
-    /// The declaration and modifier before their shared executable expansion.
-    DeclarationModifier {
-        declaration: Box<Stmt>,
-        condition: Expr,
-        kind: super::decl_modifier::DeclarationModifier,
-    },
     /// Traits written on a routine, in source order; opens its body.
     RoutineTraits(Vec<super::routine_trait::RoutineTrait>),
     SignatureDecl(SignatureDecl),
-    /// `my $x = 1, my $y = 2`: the declarations before their comma-list
-    /// execution expansion is flattened into one synthetic block.
-    CommaDeclarations(Vec<Stmt>),
     /// `:(...) := RHS`: the parser expands the signature bind into temporary
     /// declarations and assignments; the model layer keeps the written bind.
     SignatureBind {
@@ -53,14 +44,6 @@ pub(crate) enum SourceForm {
     /// keeps this marker when using a desugared block to defer that diagnostic
     /// until compilation instead of letting `make_anon_sub` consume it.
     StartBlock,
-    /// `take VALUE and|or|xor|andthen|orelse|notandthen TAIL`: the parser
-    /// expands the value-producing control call into a temporary and a
-    /// `Stmt::Take`, while the model layer keeps the written infix form.
-    TakeLogicalTail {
-        value: Expr,
-        op: crate::token_kind::TokenKind,
-        right: Expr,
-    },
     /// `with COND -> PARAM { BODY }`: the written parameter and body, which
     /// open the then-branch of the expansion `with_then_branch` builds.
     WithPointy {
@@ -91,14 +74,6 @@ pub(crate) enum SourceForm {
         dwim_left: bool,
         dwim_right: bool,
     },
-    /// `BEGIN say 1`: a phaser written over a bare statement (ADR-12199). It
-    /// opens a one-statement expansion whose second statement is the phaser;
-    /// only a spelling-keeping parse builds it.
-    BarePhaser,
-    /// `sub foo { … }(ARGS)`: a routine declaration called on the spot. It
-    /// opens the expansion `immediate_call::expand` builds (the declaration,
-    /// then the call); only a spelling-keeping parse builds it.
-    ImmediateCall,
     /// `my $x OP= EXPR`: a declaration initialized by a compound assignment.
     /// It opens the expansion `decl_compound_assign::expand` builds (the
     /// declaration, then the assignment, whose `Expr::CompoundAssign` keeps

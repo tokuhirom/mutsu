@@ -30,6 +30,30 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         super::walk_stmt(v, decl);
         return;
     }
+    if let ParsedStmt::ImmediateCall { decl, args } = node {
+        super::walk_stmt(v, decl);
+        for arg in args {
+            v.visit_expr(arg);
+        }
+        return;
+    }
+    if let ParsedStmt::AttributeModifier {
+        decl, condition, ..
+    } = node
+    {
+        super::walk_stmt(v, decl);
+        v.visit_expr(condition);
+        return;
+    }
+    if let ParsedStmt::TakeLogicalTail { value, right, .. } = node {
+        v.visit_expr(value);
+        v.visit_expr(right);
+        return;
+    }
+    if let ParsedStmt::CommaDecls(declarations) = node {
+        super::walk_stmts(v, declarations);
+        return;
+    }
     if let Some(stmt) = node.inner_stmt() {
         super::walk_stmt(v, stmt);
         return;
@@ -126,8 +150,26 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
             block_mut(v, &mut w.block);
         }
         ParsedStmt::Default(block) | ParsedStmt::BareBlock(block) => block_mut(v, block),
-        ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) | ParsedStmt::TempDecl(stmt) => {
-            super::walk_stmt_mut(v, stmt)
+        ParsedStmt::For { stmt, .. }
+        | ParsedStmt::BindDecl(stmt)
+        | ParsedStmt::TempDecl(stmt)
+        | ParsedStmt::BarePhaser(stmt) => super::walk_stmt_mut(v, stmt),
+        ParsedStmt::TakeLogicalTail { value, right, .. } => {
+            v.visit_expr_mut(value);
+            v.visit_expr_mut(right);
+        }
+        ParsedStmt::CommaDecls(declarations) => super::walk_stmts_mut(v, declarations),
+        ParsedStmt::ImmediateCall { decl, args } => {
+            super::walk_stmt_mut(v, decl);
+            for arg in args {
+                v.visit_expr_mut(arg);
+            }
+        }
+        ParsedStmt::AttributeModifier {
+            decl, condition, ..
+        } => {
+            super::walk_stmt_mut(v, decl);
+            v.visit_expr_mut(condition);
         }
         ParsedStmt::DoesDecl { decl, role, init } => {
             super::walk_stmt_mut(v, decl);
