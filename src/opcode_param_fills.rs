@@ -112,6 +112,10 @@ impl CompiledFunction {
                 | ValueView::Str(_)
                 | ValueView::Bool(_)
                 | ValueView::Rat(..)
+                // `Nil` and a type object (`$x = Nil`, `Int $x = Int`, `$x = Any`)
+                // are singletons with no state to share or mutate.
+                | ValueView::Nil
+                | ValueView::Package(_)
         )
     }
 
@@ -196,6 +200,19 @@ mod param_fill_tests {
         // A bare `?`: the parameter's own (undefined) type object.
         let mut pd = param("$y");
         pd.optional_marker = true;
+        assert!(CompiledFunction::const_fill_for_param(&pd).is_some());
+
+        // `Nil` and a type object are constants too.
+        let mut pd = param("$y");
+        pd.default = Some(Expr::Literal(Value::NIL));
+        assert_eq!(
+            CompiledFunction::const_fill_for_param(&pd),
+            Some(Value::NIL)
+        );
+        let mut pd = param("$y");
+        pd.default = Some(Expr::Literal(Value::package(
+            crate::symbol::Symbol::intern("Any"),
+        )));
         assert!(CompiledFunction::const_fill_for_param(&pd).is_some());
 
         // A mandatory parameter is not fillable at all.
