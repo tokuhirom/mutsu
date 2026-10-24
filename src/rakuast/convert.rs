@@ -277,6 +277,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
     if let Some(zip) = super::zip_assign::convert_zip_assign(stmt) {
         return zip.map(|node| Some(statement_expression(node)));
     }
+    if let Some(cross) = super::cross_assign::convert(stmt) {
+        return cross.map(|node| Some(statement_expression(node)));
+    }
     match stmt {
         Stmt::SyntheticBlock(stmts)
             if matches!(stmts.as_slice(), [Stmt::ProtoDecl { .. }, Stmt::Use { .. }]) =>
