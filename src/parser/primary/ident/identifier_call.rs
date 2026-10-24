@@ -911,26 +911,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
         }
         "unless" => {
-            if let Ok((r, _)) = ws1(rest) {
-                let (r, cond) = expression(r)?;
-                let (r, _) = ws(r)?;
-                let (r, body) = parse_block_body(r)?;
-                return Ok((
-                    r,
-                    Expr::DoStmt(Box::new(crate::ast::Stmt::If {
-                        cond: Expr::Unary {
-                            op: crate::token_kind::TokenKind::Bang,
-                            expr: Box::new(cond),
-                            word: false,
-                        },
-                        then_branch: body,
-                        else_branch: Vec::new(),
-                        binding_var: None,
-                        is_statement_modifier: false,
-                        is_unless: false,
-                        with_kind: None,
-                    })),
-                ));
+            if ws1(rest).is_ok() {
+                let (r, stmt) = crate::parser::stmt::unless_stmt_pub(input)?;
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
             }
         }
         "for" => {

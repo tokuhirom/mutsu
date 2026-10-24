@@ -110,7 +110,7 @@ pub(in crate::parser::stmt) fn check_signature(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{ControlPointyKind, SourceForm};
+    use crate::ast::SourceForm;
     use crate::value::Value;
 
     #[test]
@@ -121,10 +121,7 @@ mod tests {
             if check(&condition, &[], &body).is_err() {
                 return;
             }
-            let record = Stmt::SourceForm(Box::new(SourceForm::ControlPointy {
-                kind: ControlPointyKind::While,
-                label: None,
-                condition: condition.clone(),
+            let record = Stmt::SourceForm(Box::new(SourceForm::IfPointy {
                 param_defs: Vec::new(),
                 body: body.clone(),
             }));

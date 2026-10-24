@@ -1,9 +1,9 @@
 //! Written control signatures and their shared parser expansions.
 
-use super::convert::{convert_expr, node_field, pointy_block};
+
 use super::lower::{name_for_unpack_params, signature_positional_params};
 use super::{RakuAstClass, RakuAstNode};
-use crate::ast::{ControlPointyKind, ParamDef, SourceForm, Stmt};
+use crate::ast::ParamDef;
 use crate::value::RuntimeError;
 
 // Cost: O(1), bounded class names.
@@ -96,51 +96,6 @@ pub(super) fn construct(
             fields,
         })))
     })())
-}
-
-// Cost: O(1).
-pub(super) fn source(stmt: &Stmt) -> Option<&SourceForm> {
-    let Stmt::SyntheticBlock(stmts) = stmt else {
-        return None;
-    };
-    match stmts.first() {
-        Some(Stmt::SourceForm(form))
-            if matches!(form.as_ref(), SourceForm::ControlPointy { .. }) =>
-        {
-            Some(form)
-        }
-        _ => None,
-    }
-}
-
-// Cost: O(n), n = size of the written clause.
-pub(super) fn convert(form: &SourceForm) -> Result<RakuAstNode, RuntimeError> {
-    let SourceForm::ControlPointy {
-        kind,
-        label,
-        condition,
-        param_defs,
-        body,
-    } = form
-    else {
-        return Err(RuntimeError::new(
-            "RakuAST: expected a control signature source form",
-        ));
-    };
-    let mut fields = super::convert::label_fields(label);
-    fields.extend([
-        node_field(Some("condition"), convert_expr(condition)?),
-        node_field(Some("body"), pointy_block(param_defs, body, None)?),
-    ]);
-    Ok(RakuAstNode {
-        origin: Default::default(),
-        class: match kind {
-            ControlPointyKind::While => RakuAstClass::StatementLoopWhile,
-            ControlPointyKind::Until => RakuAstClass::StatementLoopUntil,
-            ControlPointyKind::Unless => RakuAstClass::StatementUnless,
-        },
-        fields,
-    })
 }
 
 // Cost: O(p), p = size of the signature.

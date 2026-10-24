@@ -15,18 +15,6 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
             v.visit_stmt(declaration);
             v.visit_expr(condition);
         }
-        SourceForm::ControlPointy {
-            kind: _,
-            label,
-            condition,
-            param_defs,
-            body,
-        } => {
-            names(v, label.iter(), NameKind::Label);
-            v.visit_expr(condition);
-            params(v, param_defs);
-            walk_stmts(v, body);
-        }
         SourceForm::IfPointy { param_defs, body } => {
             params(v, param_defs);
             walk_stmts(v, body);

@@ -53,8 +53,8 @@ pub(super) fn parse_loop(input: &str, is_until: bool, label: Option<String>) -> 
     Ok((rest, clause))
 }
 
-/// The one expansion of a written while/until clause, shared with RakuAST.
-/// The source record precedes the executable tree and is skipped by codegen.
+/// The one expansion of a written while/until clause (`rakuast` lowers the
+/// loop family through it).
 // Cost: O(n), n = size of the condition, parameter and body.
 pub(crate) fn loop_pointy_clause(
     cond: Expr,
@@ -66,30 +66,13 @@ pub(crate) fn loop_pointy_clause(
     if let Some(params) = &defs {
         super::source_body::check(&cond, params, &body)?;
     }
-    let record = defs.as_ref().map(|params| {
-        Stmt::SourceForm(Box::new(crate::ast::SourceForm::ControlPointy {
-            kind: if is_until {
-                crate::ast::ControlPointyKind::Until
-            } else {
-                crate::ast::ControlPointyKind::While
-            },
-            condition: cond.clone(),
-            label: label.clone(),
-            param_defs: params.clone(),
-            body: body.clone(),
-        }))
-    });
-    let expanded = expand_loop(
+    Ok(expand_loop(
         cond,
         defs.and_then(|mut defs| defs.pop()),
         body,
         is_until,
         label,
-    );
-    Ok(match record {
-        Some(record) => Stmt::SyntheticBlock(vec![record, expanded]),
-        None => expanded,
-    })
+    ))
 }
 
 fn expand_loop(
