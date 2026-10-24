@@ -2393,12 +2393,11 @@ impl Interpreter {
                 // carries no declared constraint of its own; the key type is
                 // embedded in the hash it holds. So does a `%` name bound to
                 // one (`my %h := :{}`, no `{Mu}` on the declaration).
-                let key_constraint = key_constraint.or_else(|| {
-                    match index_target_deref.as_ref().map(Value::view) {
+                let key_constraint =
+                    key_constraint.or_else(|| match index_target_deref.as_ref().map(Value::view) {
                         Some(ValueView::Hash(h)) => h.key_type.clone(),
                         _ => None,
-                    }
-                });
+                    });
                 let is_object_hash = key_constraint.is_some();
                 // A parameterized *mutable* QuantHash (`SetHash[Int()]`, ...)
                 // coerces its keys the same way an object hash does. An immutable
