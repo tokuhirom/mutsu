@@ -346,9 +346,9 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                     }
                 }
                 // `my \x = 5` / `my \x := $s` declares the term `x`.
-                Stmt::SyntheticBlock(_) => {
-                    if let Some(decl) = crate::ast::sigilless_decl::declaration(stmt) {
-                        insert_term(self.0, decl.name.to_string());
+                Stmt::Ast(node) => {
+                    if let crate::ast::parsed::ParsedStmt::SigillessDecl(decl) = node.as_ref() {
+                        insert_term(self.0, decl.name.clone());
                     }
                 }
                 // A method literal's folded sigilless invocant is a bind

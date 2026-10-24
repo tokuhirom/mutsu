@@ -7,11 +7,11 @@
 //! `!$x` for `until`). RakuAST has no such split: the declaration *is* the
 //! loop's condition (`Loop::Until(condition => VarDeclaration::Simple)`).
 //!
-//! [`expand`] builds the parser's shape, [`recognize`] takes it apart again and
-//! hands back the loop with the declaration put back as its condition.
+//! The parser keeps the loop with the declaration as its condition
+//! (`ParsedStmt::WhileLoop`); its lowering hoists the declaration with
+//! [`split_loop_cond_decl`] and [`expand`].
 
 use super::{Expr, Stmt};
-use crate::token_kind::TokenKind;
 
 /// `SyntheticBlock([decl, loop])`.
 // Cost: O(1).
@@ -48,58 +48,4 @@ pub(crate) fn split_loop_cond_decl(cond: Expr) -> (Option<Stmt>, Expr) {
         return (Some(decl), read);
     }
     (None, cond)
-}
-
-/// The loop of a statement [`expand`] could have built, with its condition
-/// replaced by the declaration it reads (`until my $x` is `While` over `!$x`
-/// plus `is_until`).
-// Cost: O(s), s = the size of the loop body (it is cloned into the result).
-pub(crate) fn recognize(stmt: &Stmt) -> Option<Stmt> {
-    let Stmt::SyntheticBlock(stmts) = stmt else {
-        return None;
-    };
-    let [
-        decl @ Stmt::VarDecl { name, .. },
-        Stmt::While { cond, is_until, .. },
-    ] = stmts.as_slice()
-    else {
-        return None;
-    };
-    let read = match cond {
-        Expr::Unary {
-            op: TokenKind::Bang,
-            expr,
-            ..
-        } if *is_until => expr.as_ref(),
-        other if !*is_until => other,
-        _ => return None,
-    };
-    let reads_declared = match read {
-        Expr::Var(n) => n == name,
-        Expr::ArrayVar(n) | Expr::HashVar(n) => name.strip_prefix(['@', '%']) == Some(n.as_str()),
-        _ => false,
-    };
-    if !reads_declared {
-        return None;
-    }
-    let Some(Stmt::While { body, label, .. }) = stmts.get(1) else {
-        return None;
-    };
-    let declared = Expr::DoStmt(Box::new(decl.clone()));
-    Some(Stmt::While {
-        cond: if *is_until {
-            Expr::Unary {
-                op: TokenKind::Bang,
-                expr: Box::new(declared),
-                word: false,
-            }
-        } else {
-            declared
-        },
-        body: body.clone(),
-        label: label.clone(),
-        is_statement_modifier: false,
-        is_until: *is_until,
-        is_bare_term: false,
-    })
 }

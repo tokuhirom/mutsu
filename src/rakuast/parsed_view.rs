@@ -73,6 +73,26 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
         ParsedStmt::DeclTail { head, tail } => {
             statement_expression(super::decl_tail::convert(head, tail)?)
         }
+        ParsedStmt::SigillessDecl(d) => {
+            let call_assign = match (&d.form, &d.expr) {
+                (
+                    crate::ast::parsed::SigillessForm::CallAssign,
+                    crate::ast::Expr::MethodCall { name, args, .. },
+                ) => Some((name, args.as_slice())),
+                _ => None,
+            };
+            statement_expression(super::convert::term_declaration(
+                &crate::ast::sigilless_decl::SigillessDecl {
+                    name: &d.name,
+                    expr: &d.expr,
+                    type_constraint: d.type_constraint.as_deref(),
+                    is_state: d.is_state,
+                    is_our: d.is_our,
+                    assigned: d.form != crate::ast::parsed::SigillessForm::Bind,
+                    call_assign,
+                },
+            )?)
+        }
         ParsedStmt::WillDecl { decl, phasers } => super::var_will::convert(decl, phasers)?,
         ParsedStmt::DoesDecl { decl, role, init } => {
             super::convert::does_declaration(decl, role, init.as_ref())?

@@ -34,6 +34,10 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         }
         return;
     }
+    if let ParsedStmt::SigillessDecl(d) = node {
+        v.visit_expr(&d.expr);
+        return;
+    }
     if let ParsedStmt::DeclTail { head, tail } = node {
         super::walk_stmt(v, head);
         v.visit_expr(tail);
@@ -122,6 +126,7 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
                 v.visit_expr_mut(init);
             }
         }
+        ParsedStmt::SigillessDecl(d) => v.visit_expr_mut(&mut d.expr),
         ParsedStmt::DeclTail { head, tail } => {
             super::walk_stmt_mut(v, head);
             v.visit_expr_mut(tail);

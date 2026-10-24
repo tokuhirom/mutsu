@@ -67,6 +67,9 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
             Ok(crate::parser::wrap_with_will_phasers(*decl, &name, phasers))
         }
         ParsedStmt::DeclTail { head, tail } => Ok(crate::ast::decl_tail::expand(*head, tail)),
+        ParsedStmt::SigillessDecl(d) => {
+            lower_sigilless(*d, crate::parser::is_user_declared_value_term)
+        }
         ParsedStmt::BindDecl(decl) => Ok(crate::ast::bind_decl::expand(*decl)),
         ParsedStmt::Modified(m) => super::modifier_lower::lower(m),
         ParsedStmt::WhileLoop(w) => {
@@ -306,5 +309,34 @@ fn lower_loop(l: crate::ast::parsed::LoopStmt) -> Result<Stmt, RuntimeError> {
         label: l.label,
         is_until: until,
         is_bare_term: l.bare_term,
+    })
+}
+
+/// Lower a sigilless declaration. `is_value_term` says whether a bareword
+/// names a declared sigilless value term: the parser asks its own scopes, the
+/// RakuAST lowering the terms the unit declares.
+// Cost: O(n), n = size of the initializer.
+pub(crate) fn lower_sigilless(
+    d: crate::ast::parsed::SigillessSource,
+    is_value_term: fn(&str) -> bool,
+) -> Result<Stmt, RuntimeError> {
+    use crate::ast::parsed::SigillessForm;
+    Ok(match d.form {
+        SigillessForm::CallAssign => crate::ast::sigilless_decl::call_assign_expansion(
+            d.name,
+            d.expr,
+            d.type_constraint,
+            d.is_state,
+            d.is_our,
+        ),
+        form => crate::parser::build_sigilless_bind_stmt(
+            d.name,
+            d.expr,
+            d.type_constraint,
+            d.is_state,
+            d.is_our,
+            form == SigillessForm::Assign,
+            is_value_term,
+        ),
     })
 }
