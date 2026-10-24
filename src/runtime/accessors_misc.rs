@@ -248,11 +248,10 @@ impl Interpreter {
         let owned_exports = if is_eval {
             None
         } else {
-            let owner = match self.module.module_load_stack.last() {
-                Some(loading) => loading.clone(),
-                None => self.current_package(),
-            };
-            self.module.module_owned_exports.get(&owner)
+            match self.module.module_load_stack.last() {
+                Some(loading) => self.module.module_owned_exports.get(loading),
+                None => self.module.exported_subs.get(&self.current_package()),
+            }
         };
         let new_exported: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = match owned_exports {
             None => Vec::new(),
