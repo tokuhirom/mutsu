@@ -176,7 +176,7 @@ fn convert_temporized(t: &Temporized) -> Result<RakuAstNode, RuntimeError> {
                 super::parsed_view::with_compound_meta(
                     super::convert::compound_assignment_with_left(
                         left,
-                        &format!("{}=", a.op),
+                        &super::parsed_view::compound_spelling(a),
                         &a.source,
                     )?,
                     a.meta,

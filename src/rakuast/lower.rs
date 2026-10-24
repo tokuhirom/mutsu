@@ -2557,28 +2557,35 @@ fn reverse_assign_base(infix: &RakuAstNode) -> Option<String> {
     }
 }
 
-/// Lower `ApplyInfix(MetaInfix::Assign(Infix(OP)))` to the parser's existing
-/// compound-assignment execution shape while retaining the source marker.
 /// `ApplyInfix(left, MetaInfix::Assign([BracketedInfix…] Infix(OP)), right)`
-/// over a compound operator, as the typed node the parser builds for it; `None`
-/// for any other compound spelling (a reverse, a metaoperator, a set
-/// operator), which keeps its own reader.
+/// over a compound operator, or `MetaInfix::Reverse` around the assignment,
+/// as the typed node the parser builds for it; `None` for any other compound
+/// spelling (a metaoperator, a set operator), which keeps its own reader.
 // Cost: O(n), n = size of the node.
 fn compound_assign_node(
     node: &RakuAstNode,
 ) -> Result<Option<crate::ast::parsed::CompoundAssign>, RuntimeError> {
     let infix = named_child(node, "infix")?;
-    let Some((op, depth)) = compound_assign_base(infix) else {
-        return Ok(None);
-    };
-    if !crate::parser::is_compound_assign_op(&op) {
-        return Ok(None);
-    }
-    let meta = match depth {
-        0 => crate::ast::parsed::CompoundMeta::Plain,
-        depth => crate::ast::parsed::CompoundMeta::Bracketed(
-            u8::try_from(depth).map_err(|_| unsupported(node))?,
-        ),
+    let (op, meta) = match reverse_assign_base(infix) {
+        Some(op) => (op, crate::ast::parsed::CompoundMeta::Reverse),
+        None => {
+            let Some((op, depth)) = compound_assign_base(infix) else {
+                return Ok(None);
+            };
+            let meta = match depth {
+                0 if crate::parser::is_set_compound_op(&op)
+                    && !crate::parser::is_compound_assign_op(&op) =>
+                {
+                    crate::ast::parsed::CompoundMeta::Set
+                }
+                _ if !crate::parser::is_compound_assign_op(&op) => return Ok(None),
+                0 => crate::ast::parsed::CompoundMeta::Plain,
+                depth => crate::ast::parsed::CompoundMeta::Bracketed(
+                    u8::try_from(depth).map_err(|_| unsupported(node))?,
+                ),
+            };
+            (op, meta)
+        }
     };
     let target =
         super::compound_stmt::restore_conditional_target(lower_expr(named_child(node, "left")?)?);
@@ -2596,6 +2603,8 @@ fn compound_assign_node(
     }))
 }
 
+/// Lower `ApplyInfix(MetaInfix::Assign(Infix(OP)))` to the parser's existing
+/// compound-assignment execution shape while retaining the source marker.
 pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     if let Some(compound) = compound_assign_node(node)? {
         return crate::parser::lower_compound_expression(compound).map_err(RuntimeError::new);
@@ -2603,18 +2612,6 @@ pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, Run
     let target =
         super::compound_stmt::restore_conditional_target(lower_expr(named_child(node, "left")?)?);
     let meta = named_child(node, "infix")?;
-    // `$x R-= $y`: assigns to the right operand.
-    if let Some(base) = reverse_assign_base(meta) {
-        let rhs = lower_expr(named_child(node, "right")?)?;
-        let expanded =
-            crate::parser::expand_reverse_assign_expr(target.clone(), &base, rhs.clone());
-        return Ok(Expr::CompoundAssign {
-            target: Box::new(target),
-            op: format!("R{base}="),
-            rhs: Box::new(rhs),
-            expanded: Box::new(expanded),
-        });
-    }
     if let Some((operator, base)) = bracketed_meta_assign(meta) {
         let rhs = lower_expr(named_child(node, "right")?)?;
         let expression = Expr::MetaOp {

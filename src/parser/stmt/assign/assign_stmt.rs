@@ -235,16 +235,8 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         // `$x` unchanged and sets `$y` to `$y ~ $x`, and `$x R op= <literal>`
         // dies with X::Assignment::RO because the literal is not a container.
         if meta == "R" {
-            let var_expr_written = var_expr.clone();
-            let value = Expr::MetaOp {
-                meta,
-                op: op.clone(),
-                left: Box::new(var_expr),
-                right: Box::new(rhs.clone()),
-            };
-            let assign = crate::parser::expr::precedence::assign_to_target_expr(rhs.clone(), value);
-            let marker = reverse_assign_marker(var_expr_written, &op, rhs, assign);
-            return parse_statement_modifier(rest, Stmt::Expr(marker));
+            let assign = super::written_reverse_assignment(var_expr, &op, rhs);
+            return parse_statement_modifier(rest, Stmt::Expr(assign));
         }
         // `@a X+= rhs` / `@a Z+= rhs` is the meta-operator applied to the
         // ASSIGNMENT infix `+=`, not to the plain infix `+` with an assignment
@@ -308,7 +300,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(rest.len())),
             exception: None,
         })?;
-        let stmt = Stmt::Expr(preserve_set_compound_assign(
+        let stmt = Stmt::Expr(super::written_set_assignment(
             var_expr, spelling, set_tok, rhs,
         ));
         return parse_statement_modifier(rest, stmt);

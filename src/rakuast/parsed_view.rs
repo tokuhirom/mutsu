@@ -195,8 +195,18 @@ fn compound_assignment_node(
     a: &crate::ast::parsed::CompoundAssign,
 ) -> Result<RakuAstNode, RuntimeError> {
     let node =
-        super::convert::compound_assignment_infix(&a.target, &format!("{}=", a.op), &a.source)?;
+        super::convert::compound_assignment_infix(&a.target, &compound_spelling(a), &a.source)?;
     with_compound_meta(node, a.meta)
+}
+
+/// The assignment infix a compound marker spells: `+=`, or `R-=` for the
+/// reversed infix (`MetaInfix::Reverse` around the assignment).
+// Cost: O(k), k = length of the operator.
+pub(super) fn compound_spelling(a: &crate::ast::parsed::CompoundAssign) -> String {
+    match a.meta {
+        CompoundMeta::Reverse => format!("R{}=", a.op),
+        _ => format!("{}=", a.op),
+    }
 }
 
 /// `node`, a compound `ApplyInfix` over `MetaInfix::Assign(Infix(OP))`, with
@@ -211,7 +221,10 @@ pub(super) fn with_compound_meta(
         class,
         fields: vec![node_field(None, inner)],
     };
-    if meta == CompoundMeta::Plain {
+    if matches!(
+        meta,
+        CompoundMeta::Plain | CompoundMeta::Reverse | CompoundMeta::Set
+    ) {
         return Ok(node);
     }
     let infix = |meta: RakuAstNode| -> Option<RakuAstNode> {
@@ -237,7 +250,7 @@ pub(super) fn with_compound_meta(
         let mut inner = infix(RakuAstNode::clone(assign))
             .ok_or_else(|| super::convert::unsupported("compound assignment infix"))?;
         match meta {
-            CompoundMeta::Plain => {}
+            CompoundMeta::Plain | CompoundMeta::Reverse | CompoundMeta::Set => {}
             CompoundMeta::Bracketed(depth) => {
                 for _ in 0..depth {
                     inner = wrap(inner, RakuAstClass::BracketedInfix);
