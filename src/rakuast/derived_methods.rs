@@ -13,34 +13,60 @@ pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
     use RakuAstClass::*;
     if default_scope_rule(class).is_some() {
         return match class {
-            Class | Role | Grammar | Module | Package | Native => {
-                &["default-scope", "scope", "augmented", "declarator"]
-            }
+            Class | Role | Grammar | Module | Package | Native => &[
+                "default-scope",
+                "scope",
+                "augmented",
+                "declarator",
+                "parsed-declarator",
+                "parameterization",
+            ],
             _ => &["default-scope", "scope"],
         };
     }
     match class {
-        Name => &["is-empty", "is-anonymous"],
+        Name => &["is-empty", "is-anonymous", "is-indirect-lookup"],
         CallMethod => &["dispatch", "dispatcher", "macroish"],
         CallQuotedMethod | CallNameAsMethod | CallTermAsMethod | CallPrivateMethod => {
             &["dispatch", "dispatcher"]
         }
         VarDeclarationSimple => &["original-type"],
         Signature => &["parameters-initialized"],
-        Sub | Method | Submethod | RegexDeclaration | TokenDeclaration | RuleDeclaration => {
-            &["declarator"]
-        }
+        Sub | RegexDeclaration | TokenDeclaration | RuleDeclaration => &["declarator"],
         ApplyInfix | Postfix => &["colonpairs"],
         TraitIs | TraitHides | TraitDoes | TraitOf | TraitReturns | TraitWillBuild | TraitWill
         | TraitHandles | TraitTrusts => &["IMPL-TRAIT-NAME"],
         StatementIf | StatementWith | StatementElsif | StatementOrwith => &["IMPL-QAST-TYPE"],
         ApplyPostfix => &["on-topic"],
         Assignment => &["operator"],
-        Parameter => &["value", "outer-type"],
+        Parameter => &[
+            "value",
+            "outer-type",
+            "is-declared-optional",
+            "is-declared-required",
+        ],
+        TermEnum => &["name"],
+        CallMetaMethod => &["args"],
+        Heredoc => &["has-variables", "processors"],
+        StubFail | StubDie | StubWarn => &["name"],
+        Method | Submethod => &["meta", "declarator"],
+        VarDeclarationPlaceholderSlurpyArray | VarDeclarationPlaceholderSlurpyHash => {
+            &["lexical-name"]
+        }
+        TypeCapture => &["smiley"],
+        WhateverCodeArgument => &["is-hyper"],
+        FatArrow | ColonPairTrue | ColonPairFalse | ColonPairValue | ColonPairVariable
+        | ColonPairNumber => &["named-arg-name", "named-arg-value"],
         QuotedString => &["has-variables"],
         TypeSubset => &["of"],
         VarDeclarationTerm => &["type"],
         ContextualizerItem | ContextualizerList | ContextualizerHash => &["sigil"],
+        _ if class
+            .printed_name()
+            .starts_with("RakuAST::StatementPrefix::Phaser::") =>
+        {
+            &["type", "original-blorst"]
+        }
         _ if statement_prefix_type(class).is_some() => &["type"],
         _ => &[],
     }
@@ -182,7 +208,27 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
             field(node, "value")
                 .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Mu"))),
         ),
-        (QuotedString, "has-variables") => Some(Value::truth(quoted_has_variables(node))),
+        (QuotedString | Heredoc, "has-variables") => Some(Value::truth(quoted_has_variables(node))),
+        (Heredoc, "processors") => {
+            Some(field(node, "processors").unwrap_or_else(|| Value::array(Vec::new())))
+        }
+        // `$x.^name` with no arguments has an empty argument list.
+        (CallMetaMethod, "args") => Some(field(node, "args").unwrap_or_else(|| {
+            Value::rakuast(Box::new(RakuAstNode {
+                class: ArgList,
+                fields: Vec::new(),
+                origin: Default::default(),
+            }))
+        })),
+        (StubFail, "name") => Some(Value::str_from("...")),
+        (StubDie, "name") => Some(Value::str_from("!!!")),
+        (StubWarn, "name") => Some(Value::str_from("???")),
+        // A `meta` method (`method ^m`) is declared with the caret.
+        (Method | Submethod, "meta") => Some(Value::truth(
+            field(node, "meta").is_some_and(|v| v.truthy()),
+        )),
+        (VarDeclarationPlaceholderSlurpyArray, "lexical-name") => Some(Value::str_from("@_")),
+        (VarDeclarationPlaceholderSlurpyHash, "lexical-name") => Some(Value::str_from("%_")),
         (TypeSubset, "of") | (VarDeclarationTerm, "type") => {
             Some(field(node, method).unwrap_or(Value::NIL))
         }
@@ -190,6 +236,84 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         (ContextualizerList, "sigil") => Some(Value::str_from("@")),
         (ContextualizerHash, "sigil") => Some(Value::str_from("%")),
         (_, "type") => statement_prefix_type(node.class).map(Value::str),
+        // The blorst as written (rakudo keeps it apart once a block made
+        // around it takes its place; mutsu never replaces it).
+        (_, "original-blorst")
+            if node
+                .class
+                .printed_name()
+                .starts_with("RakuAST::StatementPrefix::Phaser::") =>
+        {
+            node_accessor(node, "blorst")
+        }
+        // nqp `eqaddr` answers: `1` when `optional` was written as that Bool.
+        (Parameter, "is-declared-optional" | "is-declared-required") => {
+            let want = method == "is-declared-optional";
+            let declared = field(node, "optional")
+                .is_some_and(|v| matches!(v.view(), ValueView::Bool(b) if b == want));
+            Some(Value::int(i64::from(declared)))
+        }
+        // `True` when a part is computed (`::($name)`), else `Mu`.
+        (Name, "is-indirect-lookup") => {
+            let indirect = name_parts(node).iter().any(|part| {
+                matches!(part.view(), ValueView::RakuAst(n) if n.class == NamePartExpression)
+            });
+            Some(if indirect {
+                Value::truth(true)
+            } else {
+                Value::package(crate::symbol::Symbol::intern("Mu"))
+            })
+        }
+        // `Term::Enum.from-identifier("Less")` keeps the identifier; rakudo
+        // answers the Name.
+        (TermEnum, "name") => node.fields.first().and_then(|f| match &f.value {
+            RakuAstFieldValue::Node(v) => {
+                str_of(v).map(|s| Value::rakuast(Box::new(super::name_parts::qualified_name(&s))))
+            }
+            _ => None,
+        }),
+        (TypeCapture, "smiley") => {
+            Some(field(node, "smiley").unwrap_or_else(|| Value::str_from("")))
+        }
+        (WhateverCodeArgument, "is-hyper") => Some(Value::truth(
+            field(node, "hyper").is_some_and(|v| v.truthy()),
+        )),
+        (
+            FatArrow | ColonPairTrue | ColonPairFalse | ColonPairValue | ColonPairVariable
+            | ColonPairNumber,
+            "named-arg-name",
+        ) => node_accessor(node, "key"),
+        (ColonPairTrue | ColonPairFalse, "named-arg-value") => {
+            Some(Value::truth(node.class == ColonPairTrue))
+        }
+        (FatArrow | ColonPairValue | ColonPairVariable | ColonPairNumber, "named-arg-value") => {
+            node_accessor(node, "value")
+        }
+        (Class | Role | Grammar | Module | Package | Native, "parsed-declarator") => {
+            field(node, "parsed-declarator")
+                .filter(|v| str_of(v).is_some_and(|s| !s.is_empty()))
+                .or_else(|| call(node, "declarator"))
+        }
+        // A parameterized role's signature; any other package has none.
+        (Role, "parameterization") => node_accessor(node, "body")
+            .and_then(|body| match body.view() {
+                ValueView::RakuAst(b) => node_accessor(b, "signature"),
+                _ => None,
+            })
+            // A role without one has an empty, initialized signature.
+            .or_else(|| {
+                Some(Value::rakuast(Box::new(RakuAstNode {
+                    class: Signature,
+                    fields: vec![super::RakuAstField {
+                        name: Some("parameters"),
+                        value: RakuAstFieldValue::List(Vec::new()),
+                    }],
+                    origin: Default::default(),
+                })))
+            }),
+        (Class | Grammar | Module | Package | Native, "parameterization") => {
+            Some(Value::package(crate::symbol::Symbol::intern("Mu")))
+        }
         _ => None,
     }
 }
