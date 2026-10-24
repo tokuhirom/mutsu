@@ -2502,6 +2502,46 @@ pub(super) fn dotty_assignment_with_left(
     })
 }
 
+/// `TERM .meth` (`Spelling::DottyInfixCall`): the method call's postfix
+/// application as rakudo's dotty infix,
+/// `ApplyDottyInfix(left, DottyInfix::Call, Call::Method)`.
+// Cost: O(n), n = size of the call.
+fn dotty_infix_call(call: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let mut node = convert_expr(call)?;
+    if node.class != RakuAstClass::ApplyPostfix {
+        return Ok(node);
+    }
+    let take = |node: &mut RakuAstNode, name: &str| {
+        node.fields
+            .iter()
+            .position(|f| f.name == Some(name))
+            .map(|i| node.fields.remove(i))
+    };
+    let (Some(mut left), Some(mut right)) =
+        (take(&mut node, "operand"), take(&mut node, "postfix"))
+    else {
+        return Err(unsupported("a dotty infix call of another shape"));
+    };
+    left.name = Some("left");
+    right.name = Some("right");
+    Ok(RakuAstNode {
+        origin: node.origin,
+        class: RakuAstClass::ApplyDottyInfix,
+        fields: vec![
+            left,
+            node_field(
+                Some("infix"),
+                RakuAstNode {
+                    origin: Default::default(),
+                    class: RakuAstClass::DottyInfixCall,
+                    fields: Vec::new(),
+                },
+            ),
+            right,
+        ],
+    })
+}
+
 /// A compound marker may be nested in the RHS of a separate assignment. Only
 /// the marker that names the statement's own target replaces `Assignment` with
 /// `MetaInfix::Assign`; nested markers stay under the outer assignment node.
@@ -3541,6 +3581,7 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Spelling::CompositionWhatever(source) => {
                 super::composition_source::convert(source, &spelled.expr)
             }
+            Spelling::DottyInfixCall => dotty_infix_call(&spelled.expr),
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept
