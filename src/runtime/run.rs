@@ -426,20 +426,32 @@ impl Interpreter {
     /// Run `input` as a program: its final statement is in sink context, as
     /// in Raku (an unhandled `Failure` there throws, a user `sink` runs).
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
-        self.run_unit(input, true)
+        self.run_unit(input, true, false)
+    }
+
+    /// `-c`: compile `input` and run only what happens at compile time -- the
+    /// BEGIN prologue and the CHECK phasers -- leaving INIT, the mainline and
+    /// END phasers unrun.
+    pub fn run_compile_only(&mut self, input: &str) -> Result<String, RuntimeError> {
+        self.run_unit(input, true, true)
     }
 
     /// Run `input` as a REPL line: its final statement is the line's value
     /// (reported through `last_value`), not sunk — the rule `EVAL` follows.
     pub fn run_value_tail(&mut self, input: &str) -> Result<String, RuntimeError> {
         crate::parser::set_eval_value_tail();
-        self.run_unit(input, false)
+        self.run_unit(input, false, false)
     }
 
     /// The body of [`Self::run`] / [`Self::run_value_tail`]; `sink_tail`
     /// selects whether the unit's final statement is sunk
     /// (`Compiler::unit_tail_sinks`).
-    fn run_unit(&mut self, input: &str, sink_tail: bool) -> Result<String, RuntimeError> {
+    fn run_unit(
+        &mut self,
+        input: &str,
+        sink_tail: bool,
+        compile_only: bool,
+    ) -> Result<String, RuntimeError> {
         // Fresh top-level program: forget which parse warnings were already
         // surfaced by a previous `run()` on this Interpreter (REPL lines,
         // `#[test]` helpers, ... — see `surfaced_parse_warnings`), so this
@@ -559,7 +571,10 @@ impl Interpreter {
         // is never entered at all. Reaching one of these declarations later
         // does not install a second phaser; it only records the scope the body
         // closes over. See `runtime::end_phasers`.
-        self.preregister_main_end_phasers(&stmts);
+        // `-c` runs no END phaser: the unit's mainline never runs.
+        if !compile_only {
+            self.preregister_main_end_phasers(&stmts);
+        }
         crate::runtime::begin_prologue::lift_package_var_traits(&mut stmts);
         crate::runtime::begin_prologue::lift_unit_var_traits(&mut stmts);
         crate::runtime::begin_prologue::split_package_bodies(&mut stmts);
@@ -666,7 +681,7 @@ impl Interpreter {
                 forward_vars?;
                 Ok(guards)
             });
-        let begin_prologue = match checked {
+        let (begin_prologue, head_len) = match checked {
             Ok(guards) => {
                 let end = prologue_len + guards.len();
                 body_main.splice(prologue_len..prologue_len, guards);
@@ -675,7 +690,7 @@ impl Interpreter {
                 if end > 0 {
                     body_main.insert(end, Stmt::BeginPrologueEnd);
                 }
-                end > 0
+                (end > 0, if end > 0 { end + 1 } else { 0 })
             }
             Err(err) => {
                 if prologue_len > 0 {
@@ -684,6 +699,23 @@ impl Interpreter {
                 return Err(err);
             }
         };
+        if compile_only {
+            // `-c`: what is left of the unit is the BEGIN prologue and the CHECK
+            // phasers (reordered ahead of INIT and the mainline above).
+            let mut index = 0;
+            body_main.retain(|stmt| {
+                let keep = index < head_len
+                    || matches!(
+                        stmt,
+                        Stmt::Phaser {
+                            kind: crate::ast::PhaserKind::Check,
+                            ..
+                        }
+                    );
+                index += 1;
+                keep
+            });
+        }
         let mut compiler = crate::compiler::Compiler::new();
         compiler.set_current_package(self.current_package());
         compiler.is_mainline = true;

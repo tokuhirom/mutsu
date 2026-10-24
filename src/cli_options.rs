@@ -24,6 +24,7 @@ fn usage_text(program: &str) -> String {
     println!("  -e CODE        Evaluate CODE");
     println!("  -I PATH        Add PATH to the module search path");
     println!("  -M MODULE      use MODULE before executing program (repeatable)");
+    println!("  -c             Compile only: run BEGIN/CHECK, print Syntax OK, skip the rest");
     println!("  --dump-ast     Dump the AST instead of executing");
     println!("  --dump-bytecode  Dump compiled bytecode instead of executing");
     println!("  --doc          Render Pod documentation from the source");

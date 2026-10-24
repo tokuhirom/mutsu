@@ -106,6 +106,7 @@ fn run_main() {
 
     let mut dump_ast = false;
     let mut dump_bytecode = false;
+    let mut compile_only = false;
     let mut doc_mode = false;
     let mut repl_flag = false;
     let mut no_precomp = false;
@@ -152,6 +153,8 @@ fn run_main() {
             dump_ast = true;
         } else if arg == "--dump-bytecode" {
             dump_bytecode = true;
+        } else if arg == "-c" {
+            compile_only = true;
         } else if arg == "--doc" {
             doc_mode = true;
         } else if let Some(renderer) = arg.strip_prefix("--doc=") {
@@ -415,7 +418,18 @@ fn run_main() {
             report_uncaught(interp, err, &input, &program_name);
         }));
     }
-    match interpreter.run(&input) {
+    let outcome = if compile_only {
+        interpreter.run_compile_only(&input)
+    } else {
+        interpreter.run(&input)
+    };
+    if compile_only && outcome.is_ok() && !interpreter.exit_requested() {
+        // Rakudo's `-c`: the compile-time phase ran and nothing else did.
+        println!("Syntax OK");
+        interpreter.flush_all_handles();
+        mutsu::native_exit_gate::exit_process(0);
+    }
+    match outcome {
         Ok(_output) => {
             // A `Thread` created without `:app_lifetime` keeps the process
             // alive until it finishes (`Type/Thread.rakudoc`), so the mainline
