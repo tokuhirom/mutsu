@@ -268,6 +268,19 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             return Ok((r, compound));
         }
     }
+    // `$s (|)= 1`: a set operator's compound assignment.
+    if !matches!(mode, ExprMode::NoSequenceNoFeed | ExprMode::ListopArg)
+        && let Some((after_op, set_tok, spelling)) =
+            crate::parser::stmt::assign::parse_set_compound_assign_op(r)
+    {
+        let (after_ws, _) = ws(after_op)?;
+        if let Ok((r, rhs)) = parse_compound_assign_rhs_mode(after_ws, false, mode) {
+            return Ok((
+                r,
+                crate::parser::stmt::assign::written_set_assignment(expr, spelling, set_tok, rhs),
+            ));
+        }
+    }
 
     // Bracket meta-op compound assignment on an *indexed* lvalue: `%h<k> [R//]= $v`,
     // `@a[$i] [+]= 1`. A bare-variable LHS is handled by the dedicated
