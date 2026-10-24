@@ -37,6 +37,7 @@ decision 2026-10-23):
 | Child processes | the argv the program asked for | inheriting the interpreter's internal fds (signal pipe, merge pipes), or a shell where argv was given |
 | Data parsers (`from-json`, `val`, grammars, `EVAL` of data a program received) | "decode this value" | aborting the process (stack overflow, OOM abort, wasm trap) instead of raising a catchable exception |
 | Threads (`start`, `hyper`, `race`, `Promise`, `Thread`) | Raku's concurrency semantics, as rakudo implements them | **memory unsafety in a program that synchronizes its shared data, or in mutsu's own sharing** (ADR-12814). As on rakudo, unsynchronized concurrent mutation of one container is the program's bug and may crash its own process |
+| Process exit (`src/native_exit_gate.rs`) | "end the program" | running a loaded C library's `atexit` teardown (OpenSSL's `OPENSSL_cleanup`) while another thread is still inside a `NativeCall` into it: every FFI call holds a `NativeCallGuard`, and `exit_process` waits for them (#14864) |
 | Browser playground / `<mutsu-code>` (`site/`) | run the shown code in this tab | XSS from program output; running code from a URL without a click |
 | Ecosystem sweep (`scripts/ecosystem_common.py`, bwrap) | run untrusted distribution tests | reading secrets (`.env`, `~/.config/gh`, runner env) or reaching the network |
 | CI / release (`.github/`, `scripts/ci-docs-only.sh`) | build and test a PR | a PR's code reaching a release secret, a ruleset-bypass token, or npm |
