@@ -20,6 +20,9 @@
 //!
 //! This is a leaf module (std, plus `libc` for the fallback).
 
+// The browser build has no FFI: nothing there constructs a guard.
+#![cfg_attr(target_arch = "wasm32", allow(dead_code))]
+
 use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
