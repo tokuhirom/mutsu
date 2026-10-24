@@ -15,8 +15,9 @@
 //! The `augment` conflict reads the snapshot without the rows: Rakudo refuses
 //! to redeclare a method it declares whether or not mutsu implements it.
 //!
-//! The snapshot is parsed on the first introspection call, never on the
-//! startup path. It replaced the hand-kept recognition table
+//! The snapshot is indexed on the first introspection call, never on the
+//! startup path, and an owner's lists are parsed when that owner is first
+//! asked about. It replaced the hand-kept recognition table
 //! (`native_method_row_table.rs`), whose flags were baked from Rakudo once and
 //! drifted from both Rakudo and the rows (#11271).
 
@@ -94,32 +95,76 @@ fn revision_e() -> bool {
     crate::parser::current_language_version_starts_with("6.e")
 }
 
-/// The snapshot, by owner. Parsed on the first introspection call.
-// Cost: O(1) after the first call; that call is O(s), s = bytes of the snapshot.
-fn facts() -> &'static FxHashMap<&'static str, OwnerFacts> {
-    static FACTS: OnceLock<FxHashMap<&'static str, OwnerFacts>> = OnceLock::new();
-    FACTS.get_or_init(|| {
-        let mut facts: FxHashMap<&'static str, OwnerFacts> = FxHashMap::default();
+/// One owner's snapshot lines, parsed into [`OwnerFacts`] on first use.
+struct OwnerSlot {
+    lines: Vec<&'static str>,
+    facts: OnceLock<OwnerFacts>,
+}
+
+/// The snapshot, by owner. Indexing it only finds where each owner's lines
+/// are; an owner's lists are parsed when that owner is first asked about, so
+/// a program that introspects a few types never pays for the other hundred
+/// (#14878).
+struct Snapshot {
+    owners: FxHashMap<&'static str, OwnerSlot>,
+}
+
+impl Snapshot {
+    /// The facts of `owner`, or `None` when the snapshot does not list it.
+    // Cost: O(1) expected; the first call per owner is O(l), l = bytes of that owner's lines.
+    fn get(&self, owner: &str) -> Option<&OwnerFacts> {
+        let slot = self.owners.get(owner)?;
+        Some(slot.facts.get_or_init(|| parse_owner(&slot.lines)))
+    }
+}
+
+/// The snapshot index. Built on the first introspection call.
+// Cost: O(1) after the first call; that call is O(s), s = bytes of the snapshot
+// (one pass over the lines, reading only each line's first two fields).
+fn facts() -> &'static Snapshot {
+    static SNAPSHOT_INDEX: OnceLock<Snapshot> = OnceLock::new();
+    SNAPSHOT_INDEX.get_or_init(|| {
+        let mut owners: FxHashMap<&'static str, OwnerSlot> = FxHashMap::default();
         for line in SNAPSHOT.lines().filter(|line| !line.starts_with('#')) {
-            let mut fields = line.split('\t');
-            let (Some(kind), Some(owner)) = (fields.next(), fields.next()) else {
+            let mut fields = line.splitn(3, '\t');
+            let (Some(_), Some(owner)) = (fields.next(), fields.next()) else {
                 continue;
             };
-            let (kind, revision) = match kind.strip_suffix(".e") {
-                Some(base) => (base, 1),
-                None => (kind, 0),
-            };
-            let entry = facts.entry(owner).or_default();
-            let list = match kind {
-                "declared" => &mut entry.declared[revision],
-                "methods" => &mut entry.methods[revision],
-                "only" => &mut entry.only[revision],
-                _ => continue,
-            };
-            list.extend(fields.filter(|name| !name.is_empty()));
+            owners
+                .entry(owner)
+                .or_insert_with(|| OwnerSlot {
+                    lines: Vec::new(),
+                    facts: OnceLock::new(),
+                })
+                .lines
+                .push(line);
         }
-        facts
+        Snapshot { owners }
     })
+}
+
+/// Parse one owner's lines into its lists.
+// Cost: O(l), l = bytes of the lines.
+fn parse_owner(lines: &[&'static str]) -> OwnerFacts {
+    let mut entry = OwnerFacts::default();
+    for line in lines {
+        let mut fields = line.split('\t');
+        let (Some(kind), Some(_owner)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        let (kind, revision) = match kind.strip_suffix(".e") {
+            Some(base) => (base, 1),
+            None => (kind, 0),
+        };
+        let list = match kind {
+            "declared" => &mut entry.declared[revision],
+            "methods" => &mut entry.methods[revision],
+            "only" => &mut entry.only[revision],
+            _ => continue,
+        };
+        list.extend(fields.filter(|name| !name.is_empty()));
+    }
+    entry
 }
 
 /// Whether a row reaches `name` from `owner`: a row of `owner` or of a class
@@ -269,10 +314,10 @@ mod tests {
 
     #[test]
     fn the_snapshot_parses() {
-        assert!(facts()["Rat"].has(Kind::Declared, "numerator"));
-        assert!(facts()["Int"].has(Kind::Methods, "FatRat"));
-        assert!(facts()["Str"].has(Kind::Only, "Int"));
-        assert!(!facts()["Str"].has(Kind::Only, "uc"));
+        assert!(facts().get("Rat").unwrap().has(Kind::Declared, "numerator"));
+        assert!(facts().get("Int").unwrap().has(Kind::Methods, "FatRat"));
+        assert!(facts().get("Str").unwrap().has(Kind::Only, "Int"));
+        assert!(!facts().get("Str").unwrap().has(Kind::Only, "uc"));
     }
 
     #[test]
