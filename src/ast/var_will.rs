@@ -4,9 +4,9 @@
 //! runs the written block with `$_` bound to the container
 //! (`parser::wrap_with_will_phasers`). Rakudo's tree keeps them as the
 //! declaration's `Trait::Will(phase => "begin", block => Block)` entries
-//! (measured on 2026.09); [`recognize`] reads the expansion back.
+//! (measured on 2026.09); the parser keeps them that way (`ParsedStmt::WillDecl`).
 
-use super::{Expr, PhaserKind, Stmt};
+use super::PhaserKind;
 
 /// The `will` spelling of a phaser kind (`begin`, `leave`, ...).
 // Cost: O(1).
@@ -51,57 +51,4 @@ pub(crate) fn phase_kind(name: &str) -> Option<PhaserKind> {
         "close" => PhaserKind::Close,
         _ => return None,
     })
-}
-
-/// One `will` phaser of an expansion: its kind and the written body.
-pub(crate) type WillPhaser<'a> = (&'a PhaserKind, &'a [Stmt]);
-
-/// The declaration and its `will` phasers (kind and written body) of an
-/// expansion the parser built, or `None` for any other statement.
-// Cost: O(p), p = number of phasers.
-pub(crate) fn recognize(stmt: &Stmt) -> Option<(&Stmt, Vec<WillPhaser<'_>>)> {
-    let Stmt::SyntheticBlock(stmts) = stmt else {
-        return None;
-    };
-    let [decl @ Stmt::VarDecl { name, .. }, phasers @ ..] = stmts.as_slice() else {
-        return None;
-    };
-    if phasers.is_empty() {
-        return None;
-    }
-    let mut out = Vec::with_capacity(phasers.len());
-    for phaser in phasers {
-        let Stmt::Phaser {
-            spans: _,
-            kind,
-            body,
-            condition: None,
-            end_index: None,
-        } = phaser
-        else {
-            return None;
-        };
-        let [
-            Stmt::Given {
-                topic,
-                body,
-                is_statement_modifier: false,
-                with_kind: None,
-            },
-        ] = body.as_slice()
-        else {
-            return None;
-        };
-        // A run-time phaser's topic is the variable; a compile-time one's is
-        // the declaration's initial value.
-        let compile_time = matches!(
-            kind,
-            PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init
-        );
-        if !compile_time && !matches!(topic, Expr::Var(v) if v == name) {
-            return None;
-        }
-        out.push((kind, body.as_slice()));
-    }
-    Some((decl, out))
 }

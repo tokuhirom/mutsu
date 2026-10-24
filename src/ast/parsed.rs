@@ -53,6 +53,19 @@ pub(crate) enum ParsedStmt {
         role: Expr,
         init: Option<Expr>,
     },
+    /// `my $x will begin { ... }`: the declaration (a `Stmt::VarDecl`) and the
+    /// `will PHASE BLOCK` traits as written (kind and body). `rakuast::lower`
+    /// expands each into a phaser after the declaration
+    /// (`parser::wrap_with_will_phasers`).
+    WillDecl {
+        decl: Box<Stmt>,
+        phasers: Vec<(super::PhaserKind, Vec<Stmt>)>,
+    },
+    /// A declaration or assignment with a loose tail, `my $x = 1 and 2`: the
+    /// head (see `ast::decl_tail::is_head`) and the tail, whose leftmost
+    /// operand re-reads the variable the head declares. RakuAST makes the
+    /// whole one expression with the head as that operand.
+    DeclTail { head: Box<Stmt>, tail: Expr },
     /// A statement with statement modifiers (`Statement::Expression`'s
     /// `condition-modifier` and `loop-modifier`).
     Modified(Modified),
@@ -362,6 +375,8 @@ impl ParsedStmt {
             ParsedStmt::Loop(l) => l.condition.iter().chain(l.step.iter()).collect(),
             ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => Vec::new(),
             ParsedStmt::DoesDecl { role, init, .. } => std::iter::once(role).chain(init).collect(),
+            ParsedStmt::WillDecl { .. } => Vec::new(),
+            ParsedStmt::DeclTail { tail, .. } => vec![tail],
             ParsedStmt::Modified(m) => m.modifiers().map(|modifier| &modifier.expr).collect(),
             ParsedStmt::Default(_) | ParsedStmt::BareBlock(_) => Vec::new(),
         }
@@ -384,6 +399,8 @@ impl ParsedStmt {
             ParsedStmt::For { .. }
             | ParsedStmt::BindDecl(_)
             | ParsedStmt::DoesDecl { .. }
+            | ParsedStmt::WillDecl { .. }
+            | ParsedStmt::DeclTail { .. }
             | ParsedStmt::Modified(_) => Vec::new(),
         }
     }

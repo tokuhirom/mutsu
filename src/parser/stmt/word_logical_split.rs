@@ -70,5 +70,22 @@ pub(crate) fn wrap_trailing_word_logical<'a>(
         return Ok((rest, stmt));
     }
     let (r, tail) = word_logical_tail_pub(r, seed)?;
-    Ok((r, Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(tail)])))
+    Ok((r, tail_stmt(stmt, tail)))
+}
+
+/// A declaration or assignment `head` followed by a loose `tail` that re-reads
+/// its variable: the node RakuAST keeps as one expression
+/// (`ParsedStmt::DeclTail`), or, for a head RakuAST has no such operand for, a
+/// scopeless block of the two.
+// Cost: O(n), n = size of the head and the tail.
+pub(crate) fn tail_stmt(head: Stmt, tail: Expr) -> Stmt {
+    if crate::ast::decl_tail::is_head(&head) {
+        return crate::parser::stmt::control::parsed_block::finish_total(
+            crate::ast::parsed::ParsedStmt::DeclTail {
+                head: Box::new(head),
+                tail,
+            },
+        );
+    }
+    Stmt::SyntheticBlock(vec![head, Stmt::Expr(tail)])
 }

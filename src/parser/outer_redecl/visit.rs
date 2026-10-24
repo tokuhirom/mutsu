@@ -174,6 +174,16 @@ impl VisitMut for Ctx {
                     ParsedStmt::Loop(_) => unreachable!("handled by the arm above"),
                     ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => unreachable!("peeled above"),
                     ParsedStmt::DoesDecl { .. } => crate::ast_visit::walk_parsed_mut(self, node),
+                    ParsedStmt::DeclTail { .. } => crate::ast_visit::walk_parsed_mut(self, node),
+                    ParsedStmt::WillDecl { decl, phasers } => {
+                        // The declaration runs in the enclosing scope.
+                        let mut one = vec![std::mem::replace(decl.as_mut(), Stmt::MarkBind)];
+                        self.visit_stmts_mut(&mut one);
+                        *decl.as_mut() = one.pop().expect("one statement");
+                        for (_, body) in phasers {
+                            self.scoped(Vec::new(), |v| v.visit_stmts_mut(body));
+                        }
+                    }
                     ParsedStmt::Modified(_) => unreachable!("handled by the arm above"),
                 }
             }

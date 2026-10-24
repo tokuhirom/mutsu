@@ -8,7 +8,7 @@ use super::my_decl::MyDeclState;
 use super::{
     consume_scalar_decl_trailing_comma, default_decl_expr, parse_assign_expr_or_comma,
     parse_comma_chained_decls, parse_statement_modifier, rewrite_decl_assignment_or_chain,
-    wrap_with_will_phasers,
+    will_decl,
 };
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::symbol::Symbol;
@@ -160,7 +160,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 } else {
                     (r2, lhs)
                 };
-            let block = Stmt::SyntheticBlock(vec![decl, Stmt::Expr(tail_expr)]);
+            let block = crate::parser::stmt::word_logical_split::tail_stmt(decl, tail_expr);
             if s.apply_modifier {
                 return parse_statement_modifier(r3, block);
             }
@@ -205,7 +205,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 custom_traits: s.custom_traits.clone(),
                 where_constraint: s.where_constraint.clone(),
             };
-            let block = Stmt::SyntheticBlock(vec![decl, Stmt::Expr(call_expr)]);
+            let block = crate::parser::stmt::word_logical_split::tail_stmt(decl, call_expr);
             if s.apply_modifier {
                 return parse_statement_modifier(r2, block);
             }
@@ -291,7 +291,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                         None => (r2, None),
                     }
                 };
-                let stmt = wrap_with_will_phasers(stmt, &s.name, s.will_phasers);
+                let stmt = will_decl(stmt, &s.name, s.will_phasers);
                 // Assign the initializer BEFORE mixing the role in: the `does`
                 // desugar mixes the role into the value currently held by the
                 // variable and writes it back, so a later assignment would drop
@@ -327,7 +327,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
             }
         }
     }
-    let stmt = wrap_with_will_phasers(stmt, &s.name, s.will_phasers);
+    let stmt = will_decl(stmt, &s.name, s.will_phasers);
     if s.apply_modifier {
         // A bare declaration followed by a loose word-logical (`my %h andthen
         // do { ... }`, `my $x orelse fail`): the word-logicals are looser than
@@ -511,7 +511,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 }))),
                 right,
             });
-            let stmt = wrap_with_will_phasers(stmt, &var_name_for_leave, s.will_phasers);
+            let stmt = will_decl(stmt, &var_name_for_leave, s.will_phasers);
             let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
             let (rest, stmt) = if s.apply_modifier {
                 consume_scalar_decl_trailing_comma(rest, stmt)?
@@ -519,7 +519,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 (rest, stmt)
             };
             let stmt = if let Some(tail) = post_andthen {
-                Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(tail)])
+                crate::parser::stmt::word_logical_split::tail_stmt(stmt, tail)
             } else {
                 stmt
             };
@@ -566,7 +566,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 where_constraint: s.where_constraint.clone(),
             }));
         }
-        let stmt = wrap_with_will_phasers(
+        let stmt = will_decl(
             Stmt::Expr(feed),
             &var_name_for_leave,
             s.will_phasers.clone(),
@@ -609,7 +609,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         where_constraint: s.where_constraint.clone(),
     };
     if let Some(stmt) = rewrite_decl_assignment_or_chain(expr.clone(), base_stmt) {
-        let stmt = wrap_with_will_phasers(stmt, &var_name_for_leave, s.will_phasers.clone());
+        let stmt = will_decl(stmt, &var_name_for_leave, s.will_phasers.clone());
         let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
         // For scalar declarations, consume trailing sink expressions (e.g. `my $c = 1, 2, 3;`)
         // Only in statement context (apply_modifier=true). In expression context (e.g.,
@@ -620,7 +620,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             (rest, stmt)
         };
         let stmt = if let Some(tail) = post_andthen.clone() {
-            Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(tail)])
+            crate::parser::stmt::word_logical_split::tail_stmt(stmt, tail)
         } else {
             stmt
         };
@@ -652,7 +652,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         custom_traits,
         where_constraint: s.where_constraint.clone(),
     };
-    let stmt = wrap_with_will_phasers(stmt, &var_name_for_leave, s.will_phasers.clone());
+    let stmt = will_decl(stmt, &var_name_for_leave, s.will_phasers.clone());
     let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
     // For scalar declarations, consume trailing sink expressions (e.g. `my $c = 1, 2, 3;`)
     // Only in statement context (apply_modifier=true). In expression context (e.g.,
@@ -663,7 +663,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         (rest, stmt)
     };
     let stmt = if let Some(tail) = post_andthen {
-        Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(tail)])
+        crate::parser::stmt::word_logical_split::tail_stmt(stmt, tail)
     } else {
         stmt
     };
@@ -841,7 +841,9 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             where_constraint: s.where_constraint.clone(),
         };
         match chain.clone() {
-            Some(chained) => Stmt::SyntheticBlock(vec![declaration, Stmt::Expr(chained)]),
+            Some(chained) => {
+                crate::parser::stmt::word_logical_split::tail_stmt(declaration, chained)
+            }
             None => declaration,
         }
     };

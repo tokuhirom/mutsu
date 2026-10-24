@@ -626,10 +626,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             let decl = crate::ast::sigilless_decl::declaration(stmt).expect("just checked");
             Ok(Some(statement_expression(term_declaration(&decl)?)))
         }
-        // `my $x will begin { ... }`: the declaration with `Trait::Will`s.
-        Stmt::SyntheticBlock(_) if crate::ast::var_will::recognize(stmt).is_some() => {
-            super::var_will::convert(stmt).map(Some)
-        }
         // `my Int $c .= new(), 5`: a `.=` declaration with sunk list items.
         Stmt::SyntheticBlock(_)
             if super::decl_tail::convert_call_assign_list(stmt)
@@ -637,14 +633,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         {
             let node = super::decl_tail::convert_call_assign_list(stmt).expect("just checked");
             Ok(Some(statement_expression(node?)))
-        }
-        // `my $x = 1 and 2` / `my $x = 1, 2, 3`: the declaration and the tail the
-        // parser re-attaches to it are one expression.
-        Stmt::SyntheticBlock(_) if crate::ast::decl_tail::recognize(stmt).is_some() => {
-            match super::decl_tail::convert(stmt) {
-                Some(node) => Ok(Some(statement_expression(node?))),
-                None => Err(unsupported("a declaration with a loose tail")),
-            }
         }
         // `while my $x { }` / `until my $x { }`: the declaration is the loop's
         // condition (the parser hoists it out so it is declared once).
@@ -3760,8 +3748,17 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // `is my $k.defined, ...`: a declaration with a postfix (or any loose
         // tail) in expression position is the same split as at statement level.
-        Expr::DoStmt(stmt) if crate::ast::decl_tail::recognize(stmt).is_some() => {
-            super::decl_tail::convert(stmt).expect("just checked")
+        Expr::DoStmt(stmt)
+            if matches!(stmt.as_ref(), Stmt::Ast(node)
+                if matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::DeclTail { .. })) =>
+        {
+            let Stmt::Ast(node) = stmt.as_ref() else {
+                unreachable!()
+            };
+            let crate::ast::parsed::ParsedStmt::DeclTail { head, tail } = node.as_ref() else {
+                unreachable!()
+            };
+            super::decl_tail::convert(head, tail)
         }
         // A parenthesized comma list of declarations is grouped by the parser
         // into one synthetic block. Rakudo keeps each declaration as an

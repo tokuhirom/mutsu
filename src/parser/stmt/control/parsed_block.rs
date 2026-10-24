@@ -105,3 +105,9 @@ pub(crate) fn finish(node: ParsedStmt) -> Result<Stmt, crate::value::RuntimeErro
     }
     crate::rakuast::lower_parsed_stmt(node)
 }
+
+/// [`finish`] for a node whose lowering cannot fail.
+// Cost: O(n), n = size of the construct.
+pub(crate) fn finish_total(node: ParsedStmt) -> Stmt {
+    finish(node).expect("the lowering of this node is total")
+}

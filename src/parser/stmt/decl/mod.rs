@@ -72,6 +72,25 @@ fn parse_decl_type_constraint(input: &str) -> Option<(&str, String)> {
 /// variable's initial expression rather than the variable reference.
 /// This ensures the correct type is available even before runtime
 /// initialization (e.g. `@a` has type `Array`, not `Nil`, at BEGIN time).
+/// The statement for a declaration with `will` traits: a plain `VarDecl` is
+/// kept as a [`crate::ast::parsed::ParsedStmt::WillDecl`] (lowered where it is
+/// built, or kept for a `.AST` parse); any other statement is wrapped
+/// directly.
+// Cost: O(n), n = size of the declaration and the phaser bodies.
+pub(crate) fn will_decl(
+    stmt: Stmt,
+    var_name: &str,
+    will_phasers: Vec<(PhaserKind, Vec<Stmt>)>,
+) -> Stmt {
+    if will_phasers.is_empty() || !matches!(stmt, Stmt::VarDecl { .. }) {
+        return wrap_with_will_phasers(stmt, var_name, will_phasers);
+    }
+    super::control::parsed_block::finish_total(crate::ast::parsed::ParsedStmt::WillDecl {
+        decl: Box::new(stmt),
+        phasers: will_phasers,
+    })
+}
+
 pub(crate) fn wrap_with_will_phasers(
     stmt: Stmt,
     var_name: &str,
@@ -305,7 +324,12 @@ fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResul
             let mut items = Vec::with_capacity(sinks.len() + 1);
             items.push(Expr::Var(name));
             items.extend(sinks);
-            stmts.push(Stmt::Expr(Expr::ArrayLiteral(items)));
+            let list = Expr::ArrayLiteral(items);
+            if let [_] = stmts.as_slice() {
+                let head = stmts.pop().expect("one statement");
+                return Ok((r_inner, super::word_logical_split::tail_stmt(head, list)));
+            }
+            stmts.push(Stmt::Expr(list));
         }
         None => stmts.extend(sinks.into_iter().map(Stmt::Expr)),
     }
