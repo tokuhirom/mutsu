@@ -531,6 +531,27 @@ impl Interpreter {
         }
     }
 
+    /// Whether `text` is [`Self::state_key_display`] of `key`, answered without
+    /// building the display string.
+    // Cost: O(l), l = length of `text`.
+    pub(crate) fn state_key_display_is(key: crate::state_scope::StateKey, text: &str) -> bool {
+        use crate::state_scope::StateScopeId;
+        let (marker, id) = match key.1 {
+            None => return text == key.0.as_str(),
+            Some(StateScopeId::Routine(id)) => ('r', id),
+            Some(StateScopeId::Block(id)) => ('c', id),
+            Some(StateScopeId::Invocation(id)) => ('i', id),
+            Some(StateScopeId::Type(id)) => ('t', u64::from(id)),
+        };
+        text.strip_prefix(key.0.as_str())
+            .and_then(|rest| rest.strip_prefix('#'))
+            .and_then(|rest| rest.strip_prefix(marker))
+            // `parse` accepts a leading `+`, which `format!` never writes.
+            .is_some_and(|digits| {
+                !digits.starts_with('+') && digits.parse::<u64>().is_ok_and(|n| n == id)
+            })
+    }
+
     /// Reverse of `state_key_display`. Used only by the `__mutsu_state_key::*`
     /// env metadata bridge (a closure's free-var state writeback path, see
     /// `vm_closure_dispatch.rs`), which persists the key as a string `Value`

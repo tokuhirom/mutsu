@@ -520,13 +520,10 @@ impl Interpreter {
         // The steady state finds the entry already there: compare against the
         // key text without building the display string (an unscoped key is its
         // own text).
-        let meta_current = match (scoped_key.1, self.env().get_sym(meta_key).map(Value::view)) {
-            (None, Some(ValueView::Str(current))) => current.as_str() == scoped_key.0.as_str(),
-            (Some(_), Some(ValueView::Str(current))) => {
-                current.as_str() == Self::state_key_display(scoped_key)
-            }
-            _ => false,
-        };
+        let meta_current = matches!(
+            self.env().get_sym(meta_key).map(Value::view),
+            Some(ValueView::Str(current)) if Self::state_key_display_is(scoped_key, current.as_str())
+        );
         if !meta_current {
             self.env_mut().insert_sym_noting(
                 meta_key,
