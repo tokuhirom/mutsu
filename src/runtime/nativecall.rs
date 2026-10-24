@@ -571,6 +571,10 @@ pub fn call_native_with_out_args(
     let _interp_guard =
         unsafe { crate::runtime::nativecall_callback::InterpreterGuard::push(interp as *mut _) };
 
+    // Registered so process exit does not run a library's `atexit` teardown
+    // under this call (#14864).
+    let native_gate = crate::native_exit_gate::NativeCallGuard::enter();
+
     // SAFETY: the CIF matches the declared signature; arg pointers outlive the
     // call via `owners`.
     let result = unsafe {
@@ -637,6 +641,7 @@ pub fn call_native_with_out_args(
         }
     };
 
+    drop(native_gate);
     drop(_interp_guard);
 
     // Write `is rw Pointer` out-slots back into the caller's Pointer objects.

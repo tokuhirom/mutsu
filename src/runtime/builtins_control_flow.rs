@@ -444,7 +444,7 @@ impl Interpreter {
         // The browser build runs `start` blocks on its one thread: there is no
         // main thread to wait for.
         #[cfg(target_arch = "wasm32")]
-        std::process::exit(code as i32);
+        crate::native_exit_gate::exit_process(code as i32);
         #[cfg(not(target_arch = "wasm32"))]
         match crate::exit_handover::request(code) {
             crate::exit_handover::Request::Made => {
@@ -454,7 +454,7 @@ impl Interpreter {
                     crate::exit_handover::await_adoption(crate::exit_handover::GRACE)
                 });
                 if !adopted {
-                    std::process::exit(code as i32);
+                    crate::native_exit_gate::exit_process(code as i32);
                 }
                 crate::gc::block_quiescent(|| crate::exit_handover::park_forever())
             }
@@ -463,7 +463,7 @@ impl Interpreter {
             crate::exit_handover::Request::AlreadyExiting => {
                 crate::gc::block_quiescent(|| crate::exit_handover::park_forever())
             }
-            crate::exit_handover::Request::Closed => std::process::exit(code as i32),
+            crate::exit_handover::Request::Closed => crate::native_exit_gate::exit_process(code as i32),
         }
     }
 

@@ -30,6 +30,7 @@ mod lexical_builtin_op;
 mod light_closure_shape;
 pub(crate) mod meta_ns;
 pub(crate) mod method_signature_shared;
+pub mod native_exit_gate;
 pub(crate) mod native_stack;
 pub(crate) mod native_types;
 pub(crate) mod nqp_op_ids;
