@@ -77,6 +77,7 @@ mod modifier_origins;
 mod multidim_splat;
 mod name_colonpairs;
 mod name_parts;
+mod named_ctor;
 mod named_param;
 mod nesting;
 mod nf_quote;
@@ -1525,6 +1526,11 @@ fn construct_values(
         return result.map(Some);
     }
     if method == "new"
+        && let Some(result) = named_ctor::construct(class_name, args)
+    {
+        return result.map(Some);
+    }
+    if method == "new"
         && let Some(result) = package_traits::construct(class_name, args)
     {
         return result.map(Some);
@@ -1869,7 +1875,11 @@ fn construct_values(
     }
     if class_name == "RakuAST::Parameter" && method == "new" {
         let target = named_arg(args, "target");
-        if let Some(target) = &target {
+        // A sigilless parameter (`|c`, `\x`) targets a `ParameterTarget::Term`.
+        if let Some(target) = &target
+            && !matches!(target.view(), ValueView::RakuAst(node)
+                if node.class == RakuAstClass::ParameterTargetTerm)
+        {
             require_rakuast_class(
                 target,
                 RakuAstClass::ParameterTargetVar,
@@ -2732,7 +2742,13 @@ fn construct_values(
     if let Some((class, schema)) = multi_field_schema(class_name, method) {
         let mut fields = Vec::with_capacity(schema.len());
         if class == RakuAstClass::Block {
-            for name in ["topic", "exception", "may-have-signature"] {
+            for name in [
+                "topic",
+                "implicit-topic",
+                "required-topic",
+                "exception",
+                "may-have-signature",
+            ] {
                 if named_arg(args, name).is_some_and(|value| value.truthy()) {
                     fields.push(convert::true_field(name));
                 }
@@ -3392,6 +3408,9 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
         return true;
     }
     if control_signature::constructor_schema(class.printed_name()).is_some() {
+        return true;
+    }
+    if named_ctor::is_supported(class) {
         return true;
     }
     matches!(

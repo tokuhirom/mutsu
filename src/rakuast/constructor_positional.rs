@@ -99,6 +99,18 @@ pub(super) fn single_positional_class(class_name: &str, method: &str) -> Option<
         ("RakuAST::Regex::CapturingGroup", "new") => RakuAstClass::RegexCapturingGroup,
         ("RakuAST::Regex::WithWhitespace", "new") => RakuAstClass::RegexWithWhitespace,
         ("RakuAST::Regex::Block", "new") => RakuAstClass::RegexBlock,
+        ("RakuAST::Contextualizer::Item", "new") => RakuAstClass::ContextualizerItem,
+        ("RakuAST::Contextualizer::List", "new") => RakuAstClass::ContextualizerList,
+        ("RakuAST::Contextualizer::Hash", "new") => RakuAstClass::ContextualizerHash,
+        ("RakuAST::Nqp::Const", "new") => RakuAstClass::NqpConst,
+        ("RakuAST::Term::Declaration", "new") => RakuAstClass::TermDeclaration,
+        ("RakuAST::Trait::Handles", "new") => RakuAstClass::TraitHandles,
+        ("RakuAST::Trait::WillBuild", "new") => RakuAstClass::TraitWillBuild,
+        ("RakuAST::Statement::LanguageVersion", "new") => RakuAstClass::StatementLanguageVersion,
+        ("RakuAST::StatementPrefix::Phaser::Pre", "new") => RakuAstClass::StatementPrefixPhaserPre,
+        ("RakuAST::StatementPrefix::Phaser::Post", "new") => {
+            RakuAstClass::StatementPrefixPhaserPost
+        }
         ("RakuAST::ColonPair::True", "new") => RakuAstClass::ColonPairTrue,
         ("RakuAST::ColonPair::False", "new") => RakuAstClass::ColonPairFalse,
         // Each phaser kind wraps its blorst positionally, exactly as the read

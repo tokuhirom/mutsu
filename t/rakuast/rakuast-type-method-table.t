@@ -20,8 +20,8 @@ is RakuAST::Name.^method_table.keys.sort.join(','),
     'named constructor appears in the method table';
 is RakuAST::StatementList.^method_table.keys.sort.join(','), 'add-statement,new,statements,unshift-statement',
     'mutable model class exposes construction, mutation, and its accessor';
-is RakuAST::Assignment.^method_table.keys.sort.join(','), 'operator',
-    'a class with only a computed method lists it';
+is RakuAST::Assignment.^method_table.keys.sort.join(','), 'new,operator',
+    'a class with a constructor and a computed method lists both';
 
 my $node = RakuAST::IntLiteral.new(42);
 is $node.^method_table.keys.sort.join(','), 'new,value',
