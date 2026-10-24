@@ -191,6 +191,9 @@ impl Interpreter {
                 .get_dynamic_var("*JSON_NAN_INF_SUPPORT")
                 .map(|v| v.truthy())
                 .unwrap_or(false),
+            // Rakudo's `Rakudo::Internals::JSON.to-json` is compact unless asked
+            // otherwise (`:pretty`), unlike JSON::Fast's `to-json`.
+            pretty: false,
             ..ToJsonOpts::default()
         }
     }
