@@ -141,10 +141,7 @@ fn mergesort_str(_: &Value, args: &[Value]) -> Answer {
 // Cost: O(e log e + m), e = directory entries visited, m = matcher calls (one
 // per entry).
 fn dir_recurse(interp: &mut Interpreter, _: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    let Some(root) = args.first() else {
-        return None;
-    };
-    let root = root.to_string_value();
+    let root = args.first()?.to_string_value();
     let dir_matcher = named.get("dir").cloned();
     let file_matcher = named.get("file").cloned();
     let mut accepts = |matcher: &Option<Value>, name: &str| -> bool {
