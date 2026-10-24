@@ -1624,19 +1624,47 @@ fn construct_values(
                     "RakuAST::Type::Enum.new",
                 )
             })?;
+        let mut fields = Vec::with_capacity(5);
+        if let Some(scope) =
+            named_arg(args, "scope").filter(|s| s.as_str().is_some_and(|s| !s.is_empty()))
+        {
+            fields.push(RakuAstField {
+                name: Some("scope"),
+                value: RakuAstFieldValue::Node(scope),
+            });
+        }
+        fields.push(RakuAstField {
+            name: Some("name"),
+            value: RakuAstFieldValue::Node(name),
+        });
+        if let Some(of) = named_arg(args, "of").filter(|v| !v.is_nil()) {
+            fields.push(RakuAstField {
+                name: Some("of"),
+                value: RakuAstFieldValue::Node(of),
+            });
+        }
+        if let Some(traits) = named_arg(args, "traits")
+            && traits
+                .as_list_items()
+                .is_some_and(|items| !items.is_empty())
+        {
+            fields.push(RakuAstField {
+                name: Some("traits"),
+                value: RakuAstFieldValue::List(rakuast_node_list(
+                    &traits,
+                    "RakuAST::Type::Enum.new",
+                    "traits",
+                )?),
+            });
+        }
+        fields.push(RakuAstField {
+            name: Some("term"),
+            value: RakuAstFieldValue::Node(term),
+        });
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::TypeEnum,
-            fields: vec![
-                RakuAstField {
-                    name: Some("name"),
-                    value: RakuAstFieldValue::Node(name),
-                },
-                RakuAstField {
-                    name: Some("term"),
-                    value: RakuAstFieldValue::Node(term),
-                },
-            ],
+            fields,
         }))));
     }
     // `RakuAST::Call::Name.new(name => ..., args => ...)` and its method-call
@@ -1661,6 +1689,16 @@ fn construct_values(
             fields.push(RakuAstField {
                 name: Some("args"),
                 value: RakuAstFieldValue::Node(arg_list),
+            });
+        }
+        // `$x.?m` / `$x.+m` / `$x.*m`: a method call's dispatcher.
+        if class == RakuAstClass::CallMethod
+            && let Some(dispatch) = named_arg(args, "dispatch")
+            && dispatch.as_str().is_some_and(|d| !d.is_empty())
+        {
+            fields.push(RakuAstField {
+                name: Some("dispatch"),
+                value: RakuAstFieldValue::Node(dispatch),
             });
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
@@ -1777,28 +1815,6 @@ fn construct_values(
                     value: RakuAstFieldValue::Node(value),
                 })
                 .collect(),
-        }))));
-    }
-    if class_name == "RakuAST::Pragma" && method == "new" {
-        let name = named_arg(args, "name")
-            .ok_or_else(|| RuntimeError::new("RakuAST::Pragma.new requires `name`"))?;
-        let ValueView::Str(name) = name.view() else {
-            return Err(RuntimeError::new(
-                "RakuAST::Pragma.new expects `name` to be a Str",
-            ));
-        };
-        if named_arg(args, "argument").is_some() || named_arg(args, "off").is_some() {
-            return Err(RuntimeError::new(
-                "RakuAST::Pragma.new only supports argument-less pragmas",
-            ));
-        }
-        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::Pragma,
-            fields: vec![RakuAstField {
-                name: Some("name"),
-                value: RakuAstFieldValue::Node(Value::str(name.to_string())),
-            }],
         }))));
     }
     if class_name == "RakuAST::Blockoid" && method == "new" {
@@ -2019,6 +2035,19 @@ fn construct_values(
                 value: RakuAstFieldValue::Node(value),
             });
         }
+        if let Some(traits) = named_arg(args, "traits")
+            && let Some(items) = traits.as_list_items()
+            && !items.is_empty()
+        {
+            fields.push(RakuAstField {
+                name: Some("traits"),
+                value: RakuAstFieldValue::List(rakuast_node_list(
+                    &traits,
+                    "RakuAST::Parameter.new",
+                    "traits",
+                )?),
+            });
+        }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::Parameter,
@@ -2082,7 +2111,7 @@ fn construct_values(
     if class_name == "RakuAST::Regex::Interpolation" && method == "new" {
         let var = named_arg(args, "var")
             .ok_or_else(|| RuntimeError::new("RakuAST::Regex::Interpolation.new requires `var`"))?;
-        require_simple_variable(&var, "RakuAST::Regex::Interpolation.new")?;
+        require_any_rakuast(&var, "RakuAST::Regex::Interpolation.new", "var")?;
         let sequential = named_arg(args, "sequential").unwrap_or_else(|| Value::truth(false));
         if !matches!(sequential.view(), ValueView::Bool(_)) {
             return Err(RuntimeError::new(
@@ -2364,11 +2393,7 @@ fn construct_values(
         if !matches!(
             assertion.view(),
             ValueView::RakuAst(node)
-                if matches!(
-                    node.class,
-                    RakuAstClass::RegexAssertionNamedRegexArg
-                        | RakuAstClass::RegexAssertionInterpolatedVar
-                )
+                if node.class.printed_name().starts_with("RakuAST::Regex::")
         ) {
             return Err(RuntimeError::new(
                 "RakuAST::Regex::Assertion::Lookahead.new expects a supported assertion node",
@@ -2642,6 +2667,43 @@ fn construct_values(
             origin: Default::default(),
             class,
             fields: Vec::new(),
+        }))));
+    }
+    // `Name.from-identifier("today", colonpairs => (...))`: the identifier and
+    // its colonpairs, as a declared extended name converts (`name_colonpairs`).
+    if class_name == "RakuAST::Name"
+        && method == "from-identifier"
+        && let Some(pairs) = named_arg(args, "colonpairs")
+    {
+        let identifier = args
+            .iter()
+            .find(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+            .filter(|a| a.as_str().is_some())
+            .ok_or_else(|| {
+                RuntimeError::new("RakuAST::Name.from-identifier expects an identifier")
+            })?;
+        let items = pairs.as_list_items().ok_or_else(|| {
+            RuntimeError::new("RakuAST::Name.from-identifier expects `colonpairs` to be a list")
+        })?;
+        let mut fields = vec![RakuAstField {
+            name: None,
+            value: RakuAstFieldValue::Node(identifier.clone()),
+        }];
+        if !items.is_empty() {
+            fields.push(RakuAstField {
+                name: Some("colonpairs"),
+                value: RakuAstFieldValue::List(
+                    items
+                        .iter()
+                        .map(|item| item.with_deref(|v| v.descalarize().clone()))
+                        .collect(),
+                ),
+            });
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::Name,
+            fields,
         }))));
     }
     // Single-positional-argument constructors: the literals, `Name.from-identifier`,

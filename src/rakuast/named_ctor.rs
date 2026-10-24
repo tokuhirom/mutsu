@@ -79,6 +79,54 @@ fn schema(class_name: &str) -> Option<(RakuAstClass, &'static [Arg])> {
             ],
         ),
         "RakuAST::Call::Term" => (C::CallTerm, &[("args", Node, Omit)]),
+        "RakuAST::Call::NameAsMethod" => (
+            C::CallNameAsMethod,
+            &[
+                ("name", Node, Required),
+                ("args", Node, Omit),
+                ("dispatch", Node, Omit),
+            ],
+        ),
+        "RakuAST::Call::TermAsMethod" => (
+            C::CallTermAsMethod,
+            &[
+                ("callee", Node, Required),
+                ("args", Node, Omit),
+                ("dispatch", Node, Omit),
+            ],
+        ),
+        "RakuAST::Transliteration" => (
+            C::Transliteration,
+            &[
+                ("destructive", Node, Required),
+                ("left", Node, Required),
+                ("right", Node, Required),
+                ("adverbs", List, Omit),
+            ],
+        ),
+        "RakuAST::Pragma" => (
+            C::Pragma,
+            &[
+                ("off", Flag, Omit),
+                ("name", Node, Required),
+                ("argument", Node, Omit),
+            ],
+        ),
+        "RakuAST::ColonPair::Number" => (
+            C::ColonPairNumber,
+            &[("key", Node, Required), ("value", Node, Omit)],
+        ),
+        "RakuAST::Substitution" => (
+            C::Substitution,
+            &[
+                ("immutable", Node, DefaultFalse),
+                ("samespace", Node, DefaultFalse),
+                ("adverbs", List, Omit),
+                ("infix", Node, Omit),
+                ("pattern", Node, Required),
+                ("replacement", Node, Required),
+            ],
+        ),
         "RakuAST::MetaInfix::Hyper" => (
             C::MetaInfixHyper,
             &[
@@ -201,6 +249,9 @@ pub(super) fn is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::StatementSequence
             | RakuAstClass::Nqp
             | RakuAstClass::Label
+            | RakuAstClass::FakeSignature
+            | RakuAstClass::RegexNested
+            | RakuAstClass::VarNamedCapture
     ) || schema(class.printed_name()).is_some()
 }
 
@@ -248,6 +299,64 @@ fn positional(class_name: &str, args: &[Value]) -> Option<Result<Value, RuntimeE
                 Vec::new()
             };
             node(RakuAstClass::Assignment, fields)
+        }
+        // `FakeSignature.new($signature, :$block)`.
+        "RakuAST::FakeSignature" => {
+            let positional: Vec<Value> = args
+                .iter()
+                .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+                .cloned()
+                .collect();
+            let [signature] = positional.as_slice() else {
+                return Some(Err(RuntimeError::new(
+                    "RakuAST::FakeSignature.new expects a signature",
+                )));
+            };
+            let mut fields = positional_fields(std::slice::from_ref(signature));
+            if let Some(block) = super::named_arg(args, "block") {
+                fields.push(RakuAstField {
+                    name: Some("block"),
+                    value: RakuAstFieldValue::Node(block),
+                });
+            }
+            node(RakuAstClass::FakeSignature, fields)
+        }
+        // `Regex::Nested.new($goal, $expr)`: two positional regexes.
+        "RakuAST::Regex::Nested" => match args {
+            [_, _] => node(RakuAstClass::RegexNested, positional_fields(args)),
+            _ => Err(RuntimeError::new(
+                "RakuAST::Regex::Nested.new expects a goal and an expression",
+            )),
+        },
+        // `Var::NamedCapture.new($index, :$sigil, :@colonpairs)`.
+        "RakuAST::Var::NamedCapture" => {
+            let positional: Vec<Value> = args
+                .iter()
+                .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+                .cloned()
+                .collect();
+            let [index] = positional.as_slice() else {
+                return Some(Err(RuntimeError::new(
+                    "RakuAST::Var::NamedCapture.new expects an index",
+                )));
+            };
+            let mut fields = positional_fields(std::slice::from_ref(index));
+            if let Some(sigil) = super::named_arg(args, "sigil") {
+                fields.push(RakuAstField {
+                    name: Some("sigil"),
+                    value: RakuAstFieldValue::Node(sigil),
+                });
+            }
+            if let Some(pairs) = super::named_arg(args, "colonpairs")
+                && let Some(items) = pairs.as_list_items()
+                && !items.is_empty()
+            {
+                fields.push(RakuAstField {
+                    name: Some("colonpairs"),
+                    value: RakuAstFieldValue::List(items.to_vec()),
+                });
+            }
+            node(RakuAstClass::VarNamedCapture, fields)
         }
         "RakuAST::StatementSequence" => {
             node(RakuAstClass::StatementSequence, positional_fields(args))

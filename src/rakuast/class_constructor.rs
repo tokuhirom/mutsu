@@ -48,8 +48,8 @@ fn construct_as(args: &[Value], class: RakuAstClass) -> Result<Value, RuntimeErr
         require_rakuast_class(&name, RakuAstClass::Name, &constructor)?;
         fields.push(field("name", name));
     }
-    if class == RakuAstClass::Native
-        && let Some(repr) = named_arg(args, "repr")
+    // `class C is repr('CStruct')` keeps its repr, as a `native` does.
+    if let Some(repr) = named_arg(args, "repr")
         && !repr.is_nil()
     {
         fields.push(field("repr", Value::str(repr.to_string_value())));
