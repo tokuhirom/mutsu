@@ -4406,6 +4406,10 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::TypeSubset => Ok(crate::ast::inline_subset_term::expand(lower_subset(node)?)),
         RakuAstClass::VarCompilerBlock => Ok(Expr::CodeVar("?BLOCK".to_string())),
         RakuAstClass::VarCompilerRoutine => Ok(Expr::CodeVar("?ROUTINE".to_string())),
+        RakuAstClass::VarCompilerLookup
+        | RakuAstClass::VarCompilerFile
+        | RakuAstClass::VarCompilerLine
+        | RakuAstClass::VarCompilerDistribution => super::compiler_var::lower(node),
         // `class { }` / `role { }` / `grammar { }` as a term: the parser carries
         // a declaration in expression position as a `DoStmt`.
         RakuAstClass::Class | RakuAstClass::Grammar | RakuAstClass::Role => {

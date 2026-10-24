@@ -18,6 +18,7 @@ mod callable_context;
 mod capture_term;
 mod chain;
 mod class_constructor;
+mod compiler_var;
 mod composition_source;
 mod compound_stmt;
 mod conditional_lower;
@@ -298,6 +299,10 @@ pub enum RakuAstClass {
     VarLexical,
     VarCompilerBlock,
     VarCompilerRoutine,
+    VarCompilerLookup,
+    VarCompilerFile,
+    VarCompilerLine,
+    VarCompilerDistribution,
     // A package-qualified variable `$Foo::v`: a `Name` plus its sigil.
     VarPackage,
     // A dynamic variable `$*x`: its whole spelling, twigil included.
@@ -675,6 +680,10 @@ impl RakuAstClass {
             VarLexical => "RakuAST::Var::Lexical",
             VarCompilerBlock => "RakuAST::Var::Compiler::Block",
             VarCompilerRoutine => "RakuAST::Var::Compiler::Routine",
+            VarCompilerLookup => "RakuAST::Var::Compiler::Lookup",
+            VarCompilerFile => "RakuAST::Var::Compiler::File",
+            VarCompilerLine => "RakuAST::Var::Compiler::Line",
+            VarCompilerDistribution => "RakuAST::Var::Compiler::Distribution",
             VarPackage => "RakuAST::Var::Package",
             VarDynamic => "RakuAST::Var::Dynamic",
             VarDeclarationSimple => "RakuAST::VarDeclaration::Simple",
@@ -914,6 +923,7 @@ impl RakuAstClass {
                 | RakuAstClass::StatementEmpty
                 | RakuAstClass::VarCompilerBlock
                 | RakuAstClass::VarCompilerRoutine
+                | RakuAstClass::VarCompilerDistribution
                 | RakuAstClass::RegexQuantifierRange
                 | RakuAstClass::RegexQuantifierBlockRange
                 | RakuAstClass::RegexCharClass(_)
@@ -1179,6 +1189,10 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::VarLexical,
     RakuAstClass::VarCompilerBlock,
     RakuAstClass::VarCompilerRoutine,
+    RakuAstClass::VarCompilerLookup,
+    RakuAstClass::VarCompilerFile,
+    RakuAstClass::VarCompilerLine,
+    RakuAstClass::VarCompilerDistribution,
     RakuAstClass::VarPackage,
     RakuAstClass::VarDynamic,
     RakuAstClass::VarDeclarationSimple,
@@ -3026,6 +3040,7 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
     Some(match (class_name, method) {
         ("RakuAST::Var::Compiler::Block", "new") => RakuAstClass::VarCompilerBlock,
         ("RakuAST::Var::Compiler::Routine", "new") => RakuAstClass::VarCompilerRoutine,
+        ("RakuAST::Var::Compiler::Distribution", "new") => RakuAstClass::VarCompilerDistribution,
         ("RakuAST::Statement::Empty", "new") => RakuAstClass::StatementEmpty,
         ("RakuAST::DottyInfix::Call", "new") => RakuAstClass::DottyInfixCall,
         ("RakuAST::DottyInfix::CallAssign", "new") => RakuAstClass::DottyInfixCallAssign,
@@ -3395,6 +3410,9 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::VarLexical
             | RakuAstClass::VarCompilerBlock
             | RakuAstClass::VarCompilerRoutine
+            | RakuAstClass::VarCompilerLookup
+            | RakuAstClass::VarCompilerFile
+            | RakuAstClass::VarCompilerLine
             | RakuAstClass::VarPackage
             | RakuAstClass::VarDynamic
             | RakuAstClass::StatementExpression
