@@ -26,6 +26,14 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         super::walk_stmt(v, stmt);
         return;
     }
+    // The modified statement comes before its modifiers.
+    if let ParsedStmt::Modified(m) = node {
+        v.visit_stmt(&m.stmt);
+        for modifier in m.modifiers() {
+            v.visit_expr(&modifier.expr);
+        }
+        return;
+    }
     for e in node.headers() {
         v.visit_expr(e);
     }
@@ -87,6 +95,12 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
         }
         ParsedStmt::Default(block) | ParsedStmt::BareBlock(block) => block_mut(v, block),
         ParsedStmt::For { stmt, .. } => super::walk_stmt_mut(v, stmt),
+        ParsedStmt::Modified(m) => {
+            v.visit_stmt_mut(&mut m.stmt);
+            for modifier in [&mut m.condition, &mut m.loop_].into_iter().flatten() {
+                v.visit_expr_mut(&mut modifier.expr);
+            }
+        }
         ParsedStmt::Loop(l) => {
             if let Some(init) = &mut l.init {
                 v.visit_stmt_mut(init);

@@ -44,8 +44,6 @@ pub(crate) use stmt::class::{
 pub(crate) use stmt::control::placeholder_loop_params;
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
 pub(crate) use stmt::decl::handle_specs_from_term;
-pub(crate) use stmt::modifier::for_modifier_loop_params;
-pub(crate) use stmt::modifier::rewrite_placeholder_block_modifier_stmt;
 pub(crate) use stmt::simple::supersede_marker;
 pub(crate) use stmt::simple::{
     CanonicalScans, ExportedVar, canonical_export_scans, scanned_exported_types,

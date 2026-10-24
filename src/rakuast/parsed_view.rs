@@ -11,7 +11,7 @@ use super::convert::{
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::parsed::{
     BlockParams, BlockSpans, ClauseKind, Conditional, ConditionalKind, LoopKind, LoopStmt,
-    ParsedBlock, ParsedStmt,
+    ModifierKind, Modified, ParsedBlock, ParsedStmt,
 };
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -65,6 +65,7 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
             statement_expression(view_block(block, BlockKind::Signature)?)
         }
         ParsedStmt::Loop(l) => loop_node(l)?,
+        ParsedStmt::Modified(m) => modified_node(m)?,
         ParsedStmt::For { stmt, block } => {
             let mut node = super::convert::convert_stmt(stmt)?
                 .ok_or_else(|| super::convert::unsupported("empty for loop"))?;
@@ -78,6 +79,59 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
             node
         }
     })
+}
+
+/// The statement as written, with its modifiers as its `condition-modifier`
+/// and `loop-modifier`, and the positions the parser recorded for the
+/// modified expression and each modifier.
+// Cost: O(n), n = size of the statement and its modifiers' operands.
+fn modified_node(m: &Modified) -> Result<RakuAstNode, RuntimeError> {
+    let mut node = super::convert::convert_stmt(&m.stmt)?
+        .ok_or_else(|| super::convert::unsupported("empty modified statement"))?;
+    if m.body.is_some()
+        && m.body.from < m.body.to
+        && let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("expression"))
+        && let RakuAstFieldValue::Node(value) = &field.value
+        && let ValueView::RakuAst(expression) = value.view()
+    {
+        let mut expression = RakuAstNode::clone(expression);
+        super::origin::set_span(&mut expression, m.body);
+        super::infix_origins::derive(&mut expression);
+        field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(expression)));
+    }
+    for modifier in m.modifiers() {
+        let mut modifier_node = RakuAstNode {
+            origin: Default::default(),
+            class: modifier_class(modifier.kind),
+            fields: vec![node_field(None, convert_expr(&modifier.expr)?)],
+        };
+        if modifier.span.is_some() {
+            super::origin::set_span(&mut modifier_node, modifier.span);
+        }
+        let name = if modifier.kind.is_loop() {
+            "loop-modifier"
+        } else {
+            "condition-modifier"
+        };
+        node.fields.push(node_field(Some(name), modifier_node));
+    }
+    Ok(node)
+}
+
+/// The `StatementModifier::*` class of a modifier.
+// Cost: O(1).
+fn modifier_class(kind: ModifierKind) -> RakuAstClass {
+    match kind {
+        ModifierKind::If => RakuAstClass::StatementModifierIf,
+        ModifierKind::Unless => RakuAstClass::StatementModifierUnless,
+        ModifierKind::When => RakuAstClass::StatementModifierWhen,
+        ModifierKind::With => RakuAstClass::StatementModifierWith,
+        ModifierKind::Without => RakuAstClass::StatementModifierWithout,
+        ModifierKind::For => RakuAstClass::StatementModifierFor,
+        ModifierKind::While => RakuAstClass::StatementModifierWhile,
+        ModifierKind::Until => RakuAstClass::StatementModifierUntil,
+        ModifierKind::Given => RakuAstClass::StatementModifierGiven,
+    }
 }
 
 /// `Statement::Loop` (C-style or bare) or `Statement::Loop::RepeatWhile` /

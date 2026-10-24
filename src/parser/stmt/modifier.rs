@@ -11,13 +11,10 @@ use super::super::parse_result::{
     PError, PResult, TWO_TERMS_ACROSS_LINES, merge_expected_messages,
 };
 
-use crate::ast::{CallArg, Expr, GivenWithKind, ParamDef, Stmt};
-use crate::symbol::Symbol;
-use crate::token_kind::TokenKind;
-use crate::value::Value;
+use crate::ast::parsed::{Modified, ParsedStmt, StatementModifier};
+use crate::ast::{CallArg, Expr, Stmt};
 
 use super::super::helpers::is_raku_identifier_start;
-use super::modifier_decl_split::{conditional_declaration, topical_declaration};
 use super::{keyword, parse_comma_or_expr};
 
 thread_local! {
@@ -115,78 +112,6 @@ fn check_two_terms_across_lines(cond_input: &str, r: &str) -> Result<(), PError>
     Ok(())
 }
 
-/// A compound-assignment declaration is represented as a scopeless synthetic
-/// block containing its declaration and assignment. For a postfix `for`, the
-/// declaration belongs outside the loop while the assignment runs once per
-/// item; otherwise the synthetic block would redeclare and reset the variable
-/// on every iteration (`my $product *= $_ for @values`).
-///
-/// A spelling-keeping parse records the declaration's source form
-/// (`ast::decl_compound_assign`); the hoisted part is then the record and the
-/// declaration, as a synthetic block the caller flattens.
-pub(crate) fn split_compound_decl_for_modifier(stmt: Stmt) -> (Option<Stmt>, Stmt) {
-    let stmt = match crate::ast::decl_compound_assign::split_for_modifier(stmt) {
-        (Some(hoisted), assign) => return (Some(Stmt::SyntheticBlock(hoisted)), assign),
-        (None, stmt) => stmt,
-    };
-    let Stmt::SyntheticBlock(mut stmts) = stmt else {
-        return (None, stmt);
-    };
-    if stmts.len() < 2 || !matches!(stmts.first(), Some(Stmt::VarDecl { .. })) {
-        return (None, Stmt::SyntheticBlock(stmts));
-    }
-    let declaration = stmts.remove(0);
-    // `my $x = 1, $y for ...`: the trailing items' value list is headed by the
-    // declared scalar (see `consume_scalar_decl_trailing_comma`). Hoisted out
-    // of the loop body, that head would read as a user-written `$x` sunk per
-    // iteration, so leave only the trailing items in the body.
-    if let Stmt::VarDecl { name, .. } = &declaration {
-        stmts = stmts
-            .into_iter()
-            .flat_map(|s| match s {
-                Stmt::Expr(Expr::ArrayLiteral(items))
-                    if matches!(items.first(), Some(Expr::Var(head)) if head == name) =>
-                {
-                    items.into_iter().skip(1).map(Stmt::Expr).collect()
-                }
-                other => vec![other],
-            })
-            .collect();
-    }
-    (Some(declaration), Stmt::SyntheticBlock(stmts))
-}
-
-pub(crate) fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -> Stmt {
-    if let Stmt::Block(body) = &stmt
-        && let placeholders = crate::ast::collect_placeholders_shallow(body)
-        && !placeholders.is_empty()
-    {
-        let mut rewritten = Vec::new();
-        for (idx, name) in placeholders.into_iter().enumerate() {
-            rewritten.push(Stmt::VarDecl {
-                anonymous: false,
-                name,
-                expr: if idx == 0 {
-                    cond.clone()
-                } else {
-                    Expr::Literal(Value::NIL)
-                },
-                type_constraint: None,
-                is_state: false,
-                is_our: false,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: Vec::new(),
-                custom_traits: Vec::new(),
-                where_constraint: None,
-            });
-        }
-        rewritten.extend(body.clone());
-        return Stmt::Block(rewritten);
-    }
-    stmt
-}
-
 pub(super) fn is_stmt_modifier_keyword(input: &str) -> bool {
     leading_modifier_keyword(input).is_some()
 }
@@ -271,18 +196,13 @@ fn second_modifier_allowed(first: &str, next: &str) -> bool {
     first_is_cond && next_is_loop
 }
 
-/// A bare block to the left of `while`/`until` is the modifier's operand: the
-/// loop repeatedly evaluates the Block value without invoking its body.
-fn while_modifier_operand(stmt: Stmt) -> Stmt {
-    match stmt {
-        Stmt::Block(body) => Stmt::Expr(crate::ast::make_anon_sub(body)),
-        other => other,
-    }
-}
-
-/// Parse statement modifier (postfix if/unless/for/while/until/given/when).
-/// Supports chaining: `expr if cond for list` parses as `for list { expr if cond }`.
+/// Parse the statement modifiers (postfix if/unless/for/while/until/given/when)
+/// after `stmt`, which ended at `input`. A condition modifier may be followed
+/// by a loop modifier: `expr if cond for list` loops over `expr if cond`. The
+/// statement and its modifiers are one [`Modified`] node (ADR-10723 Stage 2),
+/// lowered by `rakuast::modifier_lower`.
 pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
+    let body = crate::parser::primary::trimmed_end(input);
     let (rest, _) = ws(input)?;
     // A trailing comma in the statement's argument list is an empty list slot, not
     // a syntax error: `die "x", if @c;` is legal Raku. Statements that parse a
@@ -309,7 +229,9 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
     if crate::parser::stmt_ending_brace::at_stmt_ending_brace(rest) {
         return Ok((input, stmt));
     }
-    let mut current_stmt = stmt;
+    let mut written = stmt;
+    let mut condition: Option<StatementModifier> = None;
+    let mut loop_: Option<StatementModifier> = None;
     let mut rest = rest;
     // The keywords of the modifiers parsed so far, in order.
     let mut parsed_kinds: Vec<&str> = Vec::new();
@@ -324,7 +246,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
         // A block-terminated condition followed by a newline ends the statement;
         // whatever comes next (including another modifier keyword) is a new one.
         if prev_cond_block_terminated {
-            return Ok((rest, current_stmt));
+            break;
         }
 
         // If there's a semicolon, the statement is terminated — no more modifiers
@@ -332,12 +254,12 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
         // statement-prefix term such as `try`, consuming it here would make
         // the next conditional look like another modifier on the prefix.
         if rest.starts_with(';') {
-            return Ok((rest, current_stmt));
+            break;
         }
 
         // If at end of input or block, return as-is
         if rest.is_empty() || rest.starts_with('}') {
-            return Ok((rest, current_stmt));
+            break;
         }
 
         // An enclosing statement that can take this keyword has consumed it, so
@@ -378,31 +300,42 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
             PENDING_EXTRA_MODIFIER.with(|p| {
                 *p.borrow_mut() = Some((key, err));
             });
-            return Ok((rest, current_stmt));
+            break;
         }
 
         let kw = leading_modifier_keyword(rest);
-        match parse_single_modifier(rest, current_stmt.clone())? {
-            Some((r, modified)) => {
-                // Did this modifier's condition end with a `{ ... }` block?
-                let cond_consumed =
-                    crate::parser::primary::source_tail(rest, r).map_or("", |tail| tail.before());
-                let cond_ends_block = cond_consumed.trim_end().ends_with('}')
-                    && !super::modifier_tail::modifier_operand_ends_with_subscript(&modified);
-                current_stmt = modified;
-                if let Some(k) = kw {
-                    parsed_kinds.push(k);
-                }
-                let (r_ws, _) = ws(r)?;
-                let gap_has_newline = r[..r.len() - r_ws.len()].contains('\n');
-                prev_cond_block_terminated = cond_ends_block && gap_has_newline;
-                rest = r_ws;
-            }
-            None => {
-                return Ok((rest, current_stmt));
-            }
+        let Some((r, modifier)) = parse_single_modifier(rest, &mut written)? else {
+            break;
+        };
+        // Did this modifier's condition end with a `{ ... }` block?
+        let cond_consumed =
+            crate::parser::primary::source_tail(rest, r).map_or("", |tail| tail.before());
+        let cond_ends_block = cond_consumed.trim_end().ends_with('}')
+            && !super::modifier_tail::operand_ends_with_subscript(&modifier.expr);
+        if let Some(k) = kw {
+            parsed_kinds.push(k);
         }
+        if modifier.kind.is_loop() {
+            loop_ = Some(modifier);
+        } else {
+            condition = Some(modifier);
+        }
+        let (r_ws, _) = ws(r)?;
+        let gap_has_newline = r[..r.len() - r_ws.len()].contains('\n');
+        prev_cond_block_terminated = cond_ends_block && gap_has_newline;
+        rest = r_ws;
     }
+    if condition.is_none() && loop_.is_none() {
+        return Ok((rest, written));
+    }
+    let node = ParsedStmt::Modified(Modified {
+        stmt: Box::new(written),
+        condition,
+        loop_,
+        body,
+    });
+    let stmt = super::control::finish(node).map_err(PError::from_typed)?;
+    Ok((rest, stmt))
 }
 
 /// Check if the input starts with a character that unambiguously begins a term
@@ -422,16 +355,4 @@ fn starts_with_term_char(input: &str) -> bool {
                 | '\u{201D}'
                 | '\u{201E}'
         )
-}
-
-/// The loop signature `STMT for LIST` gives the statement `stmt` as its own:
-/// a bare block's placeholders (`{ $^a ~ $^b } for ...`), none for any other
-/// statement. The parser and the RakuAST converter / lowering share it.
-// Cost: O(n), n = size of the block.
-pub(crate) fn for_modifier_loop_params(stmt: &Stmt) -> (Option<String>, Vec<String>) {
-    match stmt {
-        Stmt::Block(body) => crate::parser::stmt::control::placeholder_loop_params(body)
-            .unwrap_or((None, Vec::new())),
-        _ => (None, Vec::new()),
-    }
 }

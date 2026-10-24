@@ -7,26 +7,13 @@
 //! on the next line, as App::Lorea writes it) is an ordinary term end, so the
 //! next line's modifier still belongs to the same statement.
 
-use crate::ast::{Expr, Stmt};
+use crate::ast::Expr;
 
-/// Whether the operand of the statement modifier that produced `stmt` (the
-/// `if`/`unless`/`while`/`until` condition, the `for` list, the `given`/`with`
-/// topic) ends with a subscript such as `%h{...}`, so its final `}` does not
-/// close a block.
-pub(super) fn modifier_operand_ends_with_subscript(stmt: &Stmt) -> bool {
-    let operand = match stmt {
-        Stmt::If { cond, .. } | Stmt::While { cond, .. } => cond,
-        Stmt::For { iterable, .. } => iterable,
-        Stmt::Given { topic, .. } => topic,
-        Stmt::SyntheticBlock(parts) => match parts.first() {
-            Some(Stmt::SourceForm(form)) => match form.as_ref() {
-                crate::ast::SourceForm::DeclarationModifier { condition, .. } => condition,
-                _ => return false,
-            },
-            _ => return false,
-        },
-        _ => return false,
-    };
+/// Whether a statement modifier's operand (the `if`/`unless`/`while`/`until`
+/// condition, the `for` list, the `given`/`with` topic) ends with a subscript
+/// such as `%h{...}`, so its final `}` does not close a block.
+// Cost: O(d), d = depth of the operand's right spine.
+pub(super) fn operand_ends_with_subscript(operand: &Expr) -> bool {
     crate::parser::expr::is_subscript_expr(rightmost_term(operand))
 }
 

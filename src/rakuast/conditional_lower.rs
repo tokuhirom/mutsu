@@ -44,6 +44,7 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
         ParsedStmt::BareBlock(block) => Ok(Stmt::Block(block.body)),
         ParsedStmt::Loop(l) => lower_loop(l),
         ParsedStmt::For { stmt, .. } => Ok(*stmt),
+        ParsedStmt::Modified(m) => super::modifier_lower::lower(m),
         ParsedStmt::WhileLoop(w) => {
             let defs = match w.block.params {
                 BlockParams::None => None,

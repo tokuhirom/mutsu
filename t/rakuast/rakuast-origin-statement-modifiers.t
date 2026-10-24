@@ -61,10 +61,9 @@ is range(@p[1]), '120..131', 'a without modifier';
 is range(@p[0]), '133..138', 'extra whitespace stays out of the call';
 is range(@p[1]), '140..147', 'and the modifier starts at its keyword';
 
-# Nothing is guessed when a comment sits between the parts (Rakudo's call
-# range takes the comment in; mutsu leaves the call unplaced).
+# A comment between the parts is part of the call's range, as in Rakudo.
 my $commented = "say 1 #c\n if \$*x;".AST.statements[0];
-is range(parts($commented)[0]), 'none', 'a comment before the keyword leaves the call unplaced';
+is range(parts($commented)[0]), '0..8', 'a comment before the keyword is part of the call';
 is range(parts($commented)[1]), '10..16', 'the modifier still starts at its keyword';
 
 # Semantics are unchanged.
