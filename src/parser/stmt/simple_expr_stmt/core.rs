@@ -9,7 +9,7 @@ use crate::parser::parse_result::{
 use crate::parser::primary::parse_call_arg_list;
 use crate::parser::stmt::assign::{
     CompoundAssignOp, parse_assign_expr_or_comma, parse_colon_args, parse_comma_or_expr,
-    parse_compound_assign_op, parse_set_compound_assign_op, preserve_set_compound_assign,
+    parse_compound_assign_op, parse_set_compound_assign_op,
 };
 use crate::parser::stmt::modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
 use crate::parser::stmt::simple::{
@@ -1152,7 +1152,9 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        let stmt = Stmt::Expr(preserve_set_compound_assign(expr, spelling, set_tok, rhs));
+        let stmt = Stmt::Expr(crate::parser::stmt::assign::written_set_assignment(
+            expr, spelling, set_tok, rhs,
+        ));
         return parse_statement_modifier(r, stmt);
     }
 

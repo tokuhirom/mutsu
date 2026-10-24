@@ -20,6 +20,11 @@ fn operator(node: &CompoundAssign) -> Result<CompoundAssignOp, PError> {
 /// current value.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PError> {
+    match node.meta {
+        CompoundMeta::Reverse => return Ok(lower_reverse(node)),
+        CompoundMeta::Set => return lower_set(node),
+        _ => {}
+    }
     let op = operator(&node)?;
     let CompoundAssign { target, source, .. } = node;
     if let Expr::Var(name) = &target
@@ -37,6 +42,9 @@ pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PE
 /// as a statement.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_compound_statement(node: CompoundAssign) -> Result<Stmt, PError> {
+    if matches!(node.meta, CompoundMeta::Reverse | CompoundMeta::Set) {
+        return Ok(Stmt::Expr(lower_compound_expression(node)?));
+    }
     let name = match &node.target {
         // `$.n += 1` writes through the accessor: the expression form's
         // `AssignExpr` is what the compiler reads the `$.` twigil from.
@@ -58,6 +66,69 @@ pub(crate) fn lower_compound_statement(node: CompoundAssign) -> Result<Stmt, PEr
         op: AssignOp::Assign,
         target_is_sigilless: false,
     })
+}
+
+/// `TARGET R OP= SOURCE` assigns `SOURCE OP= TARGET`: the marker over the
+/// assignment to the right operand.
+// Cost: O(n), n = size of the target and source.
+fn lower_reverse(node: CompoundAssign) -> Expr {
+    let CompoundAssign {
+        target, op, source, ..
+    } = node;
+    let expanded = crate::parser::expr::precedence::build_compound_assign_target_expr(
+        source.clone(),
+        &op,
+        target.clone(),
+    );
+    reverse_assign_marker(target, &op, source, expanded)
+}
+
+/// `TARGET (|)= SOURCE`: the marker over the set operator's expansion.
+// Cost: O(n), n = size of the target and source.
+fn lower_set(node: CompoundAssign) -> Result<Expr, PError> {
+    let set_tok = set_op_from_spelling(&node.op).ok_or_else(|| PError::expected("set operator"))?;
+    Ok(preserve_set_compound_assign(
+        node.target,
+        &node.op,
+        set_tok,
+        node.source,
+    ))
+}
+
+/// `TARGET (|)= SOURCE`, kept in its RakuAST shape by a `.AST` parse and
+/// lowered at once otherwise. `spelling` is the set operator as written.
+// Cost: O(n), n = size of the target and source.
+pub(crate) fn written_set_assignment(
+    target: Expr,
+    spelling: &str,
+    set_tok: TokenKind,
+    source: Expr,
+) -> Expr {
+    if crate::ast::spelled::keeping() {
+        return Expr::Ast(Box::new(ParsedExpr::CompoundAssign(CompoundAssign {
+            target,
+            op: spelling.to_string(),
+            meta: CompoundMeta::Set,
+            source,
+        })));
+    }
+    preserve_set_compound_assign(target, spelling, set_tok, source)
+}
+
+/// `TARGET R OP= SOURCE`, kept in its RakuAST shape by a `.AST` parse and
+/// lowered at once otherwise. `op` is the reversed infix (`-`, or `=`).
+// Cost: O(n), n = size of the target and source.
+pub(crate) fn written_reverse_assignment(target: Expr, op: &str, source: Expr) -> Expr {
+    let node = CompoundAssign {
+        target,
+        op: op.to_string(),
+        meta: CompoundMeta::Reverse,
+        source,
+    };
+    if crate::ast::spelled::keeping() {
+        return Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node)));
+    }
+    lower_reverse(node)
 }
 
 /// `TARGET OP= SOURCE` in expression position: kept in its RakuAST shape by a
