@@ -283,17 +283,26 @@ pub(crate) fn try_interpolate_var<'a>(
             // that resolves to the empty string (`"line $?LINE"` -> `"line "`).
             if var_name == "?LINE" {
                 let line = crate::parser::primary::current_line_number(rest);
-                parts.push(Expr::Literal(Value::int(line)));
+                parts.push(crate::parser::primary::var::compiler_var(
+                    Expr::Literal(Value::int(line)),
+                    "$?LINE",
+                ));
                 return Some(var_rest);
             }
             if var_name == "?TABSTOP" {
-                parts.push(Expr::Literal(Value::int(8)));
+                parts.push(crate::parser::primary::var::compiler_var(
+                    Expr::Literal(Value::int(8)),
+                    "$?TABSTOP",
+                ));
                 return Some(var_rest);
             }
             if var_name == "?FILE"
                 && let Some(file) = crate::parser::stmt::simple::parser_source_file()
             {
-                parts.push(Expr::Literal(literal_str(file)));
+                parts.push(crate::parser::primary::var::compiler_var(
+                    Expr::Literal(literal_str(file)),
+                    "$?FILE",
+                ));
                 return Some(var_rest);
             }
             // An interpolated `$self` is the user lexical, not the `self` term —

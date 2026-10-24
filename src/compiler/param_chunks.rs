@@ -163,8 +163,7 @@ impl Compiler {
     /// A default the binder binds as-is, never evaluating it
     /// (`Interpreter::eval_param_default`'s immutable-scalar-literal shortcut).
     fn is_bound_without_evaluation(default: &Expr) -> bool {
-        matches!(default, Expr::Literal(v)
-            if crate::opcode::CompiledFunction::is_immutable_scalar_literal(v))
+        crate::opcode::CompiledFunction::constant_default_value(default).is_some()
     }
 
     fn param_has_evaluated_exprs(pd: &crate::ast::ParamDef) -> bool {

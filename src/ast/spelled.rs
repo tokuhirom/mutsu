@@ -117,6 +117,9 @@ pub(crate) enum Spelling {
     /// the dotty infix `.` (`ApplyDottyInfix(TERM, DottyInfix::Call, ...)`);
     /// the wrapped expression is the ordinary method call.
     DottyInfixCall,
+    /// `$?LINE`, `$?FILE`, `$?TABSTOP`: a compiler variable the parser folded
+    /// into its literal; the written name.
+    CompilerVar(Box<str>),
     /// Where the term was written (ADR-10723 Stage 2, expression families):
     /// the byte range its RakuAST node's `origin` answers.
     Origin(crate::ast::SrcSpan),

@@ -64,8 +64,7 @@ impl CompiledFunction {
             return None;
         }
         let value = match &pd.default {
-            Some(Expr::Literal(v)) if Self::is_immutable_scalar_literal(v) => v.clone(),
-            Some(_) => return None,
+            Some(default) => Self::constant_default_value(default)?,
             None if pd.optional_marker => {
                 crate::runtime::Interpreter::missing_optional_param_value(pd)
             }
@@ -95,6 +94,26 @@ impl CompiledFunction {
                 }
             }
             None => None,
+        }
+    }
+
+    /// The value a parameter default binds when evaluating it can only ever
+    /// produce one shareable value: an immutable scalar literal, `*` (the
+    /// `Whatever` singleton) or an empty capture literal `\()`. These are the
+    /// exact values the compiler loads (`LoadConst`) or builds from nothing
+    /// (`MakeCapture(0)`), so binding them directly equals evaluating them.
+    /// `()` is not here: a user may overload list-associative `infix:<,>`, which
+    /// the evaluation consults even for the empty list. `[]` and `{}` are not
+    /// here: each call must get a fresh container.
+    pub(crate) fn constant_default_value(default: &Expr) -> Option<Value> {
+        match default {
+            Expr::Literal(v) if Self::is_immutable_scalar_literal(v) => Some(v.clone()),
+            Expr::Whatever | Expr::WhateverArg => Some(Value::WHATEVER),
+            Expr::CaptureLiteral(items, _) if items.is_empty() => Some(Value::capture(
+                Vec::new(),
+                crate::value::ValueMap::default(),
+            )),
+            _ => None,
         }
     }
 
@@ -214,6 +233,19 @@ mod param_fill_tests {
             crate::symbol::Symbol::intern("Any"),
         )));
         assert!(CompiledFunction::const_fill_for_param(&pd).is_some());
+
+        // `*` and an empty capture literal are constants as well.
+        let mut pd = param("$y");
+        pd.default = Some(Expr::Whatever);
+        let fill = CompiledFunction::const_fill_for_param(&pd).expect("a * default fills");
+        assert!(matches!(fill.view(), ValueView::Whatever));
+        let mut pd = param("$y");
+        pd.default = Some(Expr::CaptureLiteral(Vec::new(), true));
+        assert!(CompiledFunction::const_fill_for_param(&pd).is_some());
+        // A capture with an element is not.
+        let mut pd = param("$y");
+        pd.default = Some(Expr::CaptureLiteral(vec![Expr::Var("x".to_string())], true));
+        assert!(CompiledFunction::const_fill_for_param(&pd).is_none());
 
         // A mandatory parameter is not fillable at all.
         assert!(CompiledFunction::const_fill_for_param(&param("$y")).is_none());

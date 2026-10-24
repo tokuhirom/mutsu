@@ -147,6 +147,9 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             &[("value", Absent::Required)]
         }
         VarLexical | VarDynamic => &[("name", Absent::Required)],
+        VarCompilerLookup => &[("name", Absent::Required)],
+        VarCompilerFile => &[("file", Absent::Required)],
+        VarCompilerLine => &[("line", Absent::Required)],
         QuotedString => &[
             ("segments", Absent::Required),
             ("processors", Absent::EmptyList),
@@ -493,6 +496,9 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         Infix | Prefix | Feed | FlipFlop | Mixin => "operator",
         VarAttribute => "name",
         VarLexical | VarDynamic => "name",
+        VarCompilerLookup => "name",
+        VarCompilerFile => "file",
+        VarCompilerLine => "line",
         Label => "name",
         NamePartSimple => "name",
         NamePartExpression => "expr",

@@ -16,6 +16,7 @@ mod adverb;
 mod ident;
 mod perl5;
 mod scalar;
+pub(crate) use scalar::compiler_var;
 mod self_call;
 mod sigil_vars;
 

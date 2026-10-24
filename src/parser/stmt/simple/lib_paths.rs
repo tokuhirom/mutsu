@@ -138,6 +138,8 @@ fn static_path(expr: &Expr, file: Option<&str>, program: Option<&str>) -> Option
         Expr::Var(v) if v == "?FILE" => file.or(program).map(str::to_string),
         // A parenthesised chain link: `($?FILE.IO.parent).add('lib')`.
         Expr::Grouped(inner) => static_path(inner, file, program),
+        // A `.AST` parse keeps the written `$?FILE` beside its folded literal.
+        Expr::Spelled(spelled) => static_path(&spelled.expr, file, program),
         Expr::MethodCall {
             target, name, args, ..
         } => {
