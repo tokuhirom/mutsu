@@ -93,7 +93,7 @@ and its deletion criterion.
       `call_method_with_values(` call sites under `src/vm/` per file
       (`scripts/slow-path-baseline.txt`; a count may fall without an edit, never rise), and
       `scripts/slow-path-survey.sh` sums the distinct `Class.method` shapes that still enter
-      `run_instance_method` over `t/` and the roast whitelist (baseline in #11510). The completion
+      `run_instance_method` over `t/` and the roast whitelist (**132 shapes, 380 calls** on 2026-10-24; 93 static sites). The completion
       criterion is the deletion of `run_instance_method`'s role as a fallback and of the
       `runtime/methods*.rs` slow-path cascades that serve **user-class** dispatch and the
       `eval_block_value` carriers. The built-in cascades are the previous item's (ADR-11276); this
