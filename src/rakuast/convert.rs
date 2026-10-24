@@ -3979,7 +3979,10 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             let Stmt::Ast(node) = stmt.as_ref() else {
                 unreachable!()
             };
-            super::parsed_view::parsed_node(node)
+            let crate::ast::parsed::ParsedStmt::DeclTail { head, tail } = node.as_ref() else {
+                unreachable!()
+            };
+            super::decl_tail::convert(head, tail)
         }
         // A parenthesized comma list of declarations is grouped by the parser
         // into one synthetic block. Rakudo keeps each declaration as an
