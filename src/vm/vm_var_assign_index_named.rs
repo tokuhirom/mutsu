@@ -4375,7 +4375,12 @@ impl Interpreter {
                     ) {
                         return Err(err);
                     }
-                    Self::assign_into_nested_container_keyed(inner_val, &outer_key, Some(&outer_idx), val.clone())?;
+                    Self::assign_into_nested_container_keyed(
+                        inner_val,
+                        &outer_key,
+                        Some(&outer_idx),
+                        val.clone(),
+                    )?;
                     Ok(())
                 })
             })
