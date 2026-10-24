@@ -5271,7 +5271,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let ValueView::Str(op) = infix_value.view() else {
                 return Err(unsupported(node));
             };
-            let op = op.to_string();
+            let op = super::infix_spelling::lowered_name(&op).to_string();
             let mut items = Vec::new();
             for v in list_field(node, "operands")? {
                 let ValueView::RakuAst(child) = v.view() else {
@@ -5687,7 +5687,8 @@ pub(super) fn infix_token(
     let ValueView::Str(s) = name.view() else {
         return Err(unsupported(node));
     };
-    crate::compiler::helpers_ops::op_name_to_token_kind(&s).ok_or_else(|| unsupported(node))
+    crate::compiler::helpers_ops::op_name_to_token_kind(super::infix_spelling::lowered_name(&s))
+        .ok_or_else(|| unsupported(node))
 }
 
 /// Resolve a `Prefix` operator's positional spelling in prefix context.

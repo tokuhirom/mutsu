@@ -63,6 +63,7 @@ mod immediate_call;
 mod infix_func;
 pub(crate) use infix_func::{add_colonpair, with_caller_operators};
 mod infix_origins;
+mod infix_spelling;
 mod inherited_fields;
 mod keyed_hash;
 mod label_context;
