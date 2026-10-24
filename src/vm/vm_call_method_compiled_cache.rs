@@ -564,17 +564,21 @@ impl Interpreter {
         {
             return true;
         }
-        let answer = match self.caches.native_lever_a_override_cache.get(&key) {
+        // Both halves are functions of (type, method) and the registry alone,
+        // so the cache holds the combined answer: the outranking half is an MRO
+        // walk (~12k Ir) that a call on a type with a same-named user method
+        // would otherwise repeat every time (#14855).
+        match self.caches.native_lever_a_override_cache.get(&key) {
             Some(&hit) => hit,
             None => {
-                let answer = self.has_user_method(type_name, method_sym.as_str());
+                let answer = self.has_user_method(type_name, method_sym.as_str())
+                    && !self.user_override_outranked_by_builtin(type_name, method_sym.as_str());
                 self.caches
                     .native_lever_a_override_cache
                     .insert(key, answer);
                 answer
             }
-        };
-        answer && !self.user_override_outranked_by_builtin(type_name, method_sym.as_str())
+        }
     }
 
     /// An `augment`ed `multi` joins the built-in method's candidates and is
