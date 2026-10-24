@@ -50,8 +50,16 @@ static TABLE: LazyLock<HashMap<&'static str, Entry>> = LazyLock::new(|| {
 });
 
 /// The measured entry for `name`, or `None` when rakudo has no such name.
-// Cost: O(1) expected, a hash lookup.
+///
+/// Every measured name is in the `RakuAST` package tree, so any other name is
+/// answered without building the table: a program that never touches RakuAST
+/// must not pay for parsing it (#14869).
+// Cost: O(1) expected, a prefix test and a hash lookup; the first RakuAST name
+// builds the table once, O(n), n = rows in `hierarchy.tsv`.
 pub(crate) fn entry(name: &str) -> Option<&'static Entry> {
+    if !name.starts_with("RakuAST") {
+        return None;
+    }
     TABLE.get(name)
 }
 
@@ -100,6 +108,8 @@ mod tests {
             Some(false)
         );
         assert_eq!(isa("NotRakuAST", "RakuAST::Node"), None);
+        assert!(entry("Int").is_none());
+        assert!(entry("RakuAST").is_some());
     }
 
     #[test]
