@@ -209,7 +209,7 @@ impl Interpreter {
         let Some(self_val) = self
             .env()
             .get_sym(crate::symbol::wk::self_())
-            .map(|v| v.clone())
+            .cloned()
         else {
             return;
         };
