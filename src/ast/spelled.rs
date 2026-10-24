@@ -85,6 +85,15 @@ pub(crate) enum Spelling {
     /// as an infix of its own (`Infix("∉")`). The parser evaluates it as the
     /// junction-threading negation of the positive relation.
     NegatedSetGlyph(Box<str>),
+    /// `-$x = 5`, `$<c> = $0`, `$a ?? $b !! $c = 1`: an assignment whose target
+    /// is any expression written without call parentheses. The parser lowers
+    /// it to the callable-lvalue call with no arguments, which is
+    /// indistinguishable from `$f() = 5`; RakuAST assigns to the target itself.
+    PlainLvalueAssign,
+    /// `($x) = 1`: an assignment to a variable written inside this many pairs
+    /// of parentheses, which the parser peels off (the wrapped expression is
+    /// the plain assignment).
+    GroupedTargetAssign(usize),
     /// `a ^... b`, `a ^…^ b`: a left-exclusive sequence, which rakudo keeps as
     /// one list infix with the written spelling. The parser evaluates it as
     /// the plain sequence followed by `.skip(1)`.

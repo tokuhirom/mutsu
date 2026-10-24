@@ -86,6 +86,24 @@ pub(crate) fn unwrap_grouped_lvalue(target: Expr) -> Expr {
 }
 
 pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
+    let mut depth = 0;
+    let mut peeled = &target;
+    while let Expr::Grouped(inner) = peeled {
+        depth += 1;
+        peeled = inner;
+    }
+    let is_variable = matches!(peeled, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_));
+    let assigned = assign_to_unwrapped_target(target, value);
+    if depth > 0 && is_variable {
+        Expr::spelled(assigned, || {
+            crate::ast::spelled::Spelling::GroupedTargetAssign(depth)
+        })
+    } else {
+        assigned
+    }
+}
+
+fn assign_to_unwrapped_target(target: Expr, value: Expr) -> Expr {
     match unwrap_grouped_lvalue(target) {
         Expr::Var(name) => Expr::AssignExpr {
             name,

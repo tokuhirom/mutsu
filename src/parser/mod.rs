@@ -565,7 +565,8 @@ pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>),
     // `use` then turned every later undeclared type name into a gobbled block.
     let type_index_was_incomplete = !stmt::simple::type_index_is_complete();
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(true));
-    let result = parse_program(input);
+    // A fragment of a unit that keeps spellings (a regex code block) keeps them.
+    let result = parse_program_noting(input, crate::ast::spelled::keeping(), false);
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(false));
     if type_index_was_incomplete {
         stmt::simple::note_type_index_incomplete();
@@ -1004,9 +1005,20 @@ fn parse_program_keeping(
     input: &str,
     keep_spelling: bool,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    parse_program_noting(input, keep_spelling, keep_spelling)
+}
+
+/// [`parse_program_keeping`] with the origins decided apart from the
+/// spellings: a fragment inside a unit keeps the unit's spellings, but its
+/// positions are the unit's and are not noted again.
+fn parse_program_noting(
+    input: &str,
+    keep_spelling: bool,
+    keep_origins: bool,
+) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // A parse nested inside this one (a module load) sets its own.
     let _spelling = crate::ast::spelled::keep_spelling(keep_spelling);
-    let _origins = term_origins::begin(keep_spelling);
+    let _origins = term_origins::begin(keep_origins);
     // Re-entrant (a nested EVAL or module load parses from inside a running
     // program), which the claim-at-exit rule handles without a depth counter.
     let _region = crate::profile::enter(crate::profile::Region::Parse);

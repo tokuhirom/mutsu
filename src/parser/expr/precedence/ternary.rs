@@ -369,11 +369,7 @@ pub(crate) fn ternary_trailing_assignment<'a>(
             .map_err(|err| enrich_expected_error(err, "expected value after '='", rhs_in.len()))?;
         return Ok(Some((
             r2,
-            Expr::Call {
-                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-                args: vec![ternary_expr.clone(), Expr::ArrayLiteral(Vec::new()), rhs],
-                listop: false,
-            },
+            crate::parser::stmt::assign::plain_lvalue_assign_expr(ternary_expr.clone(), rhs),
         )));
     }
     Ok(None)

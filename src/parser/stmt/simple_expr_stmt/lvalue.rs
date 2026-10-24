@@ -79,6 +79,10 @@ pub(super) fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, va
     }
 }
 
+pub(super) fn plain_lvalue_assign_expr(target: Expr, value: Expr) -> Expr {
+    crate::parser::stmt::assign::plain_lvalue_assign_expr(target, value)
+}
+
 pub(super) fn bind_source_name(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.container_var_key(),

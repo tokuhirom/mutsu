@@ -492,6 +492,17 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         parse_assignment_rhs_mode(r, mode)?
     };
 
+    // A parenthesized variable target keeps its parentheses for `.AST`.
+    if matches!(expr, Expr::Grouped(_))
+        && matches!(
+            expr.peel_parens(),
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
+        )
+    {
+        return Ok((r, assign_to_target_expr(expr, rhs)));
+    }
+    // The target as written, for a shape this match leaves to the statement.
+    let written = matches!(expr, Expr::Grouped(_)).then(|| expr.clone());
     let expr = unwrap_grouped_lvalue(expr);
     match expr {
         Expr::Var(name) => Ok((
@@ -664,6 +675,6 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                 },
             },
         )),
-        _ => Ok((rest, expr)),
+        expr => Ok((rest, written.unwrap_or(expr))),
     }
 }

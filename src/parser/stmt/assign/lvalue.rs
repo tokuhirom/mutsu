@@ -241,6 +241,16 @@ pub(crate) fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, va
     }
 }
 
+/// An assignment to `target` written without call parentheses: the callable
+/// lvalue call with no arguments, tagged so `.AST` does not read it as `$f() = v`.
+// Cost: O(1).
+pub(crate) fn plain_lvalue_assign_expr(target: Expr, value: Expr) -> Expr {
+    Expr::spelled(
+        callable_lvalue_assign_expr(target, Vec::new(), value),
+        || crate::ast::spelled::Spelling::PlainLvalueAssign,
+    )
+}
+
 pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Option<Expr> {
     fn subscript_parts(expr: &Expr) -> Option<(Expr, Expr, String)> {
         let Expr::Call { name, args, .. } = expr else {

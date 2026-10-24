@@ -2933,6 +2933,10 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
             target @ Expr::DoStmt(_) if matches!(&target, Expr::DoStmt(stmt) if matches!(stmt.as_ref(), Stmt::VarDecl { .. })) => {
                 crate::parser::callable_lvalue_assign_expr(target, Vec::new(), value)
             }
+            // `($x) = v`: the parentheses make it a list assignment to one variable.
+            target @ (Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)) => {
+                crate::parser::assign_to_target_expr(target, value)
+            }
             // `(COND ?? $a !! $b) = v`, `($a || $b) = v`, `nqp::op(..) = v`
             // write through the selected lvalue at run time.
             target @ (Expr::Ternary { .. } | Expr::Binary { .. } | Expr::Call { .. }) => {
@@ -2964,6 +2968,20 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
     let is_call = left.class == RakuAstClass::CallName
         || (left.class == RakuAstClass::ApplyPostfix
             && named_child(left, "postfix").is_ok_and(|p| p.class == RakuAstClass::CallTerm));
+    // `-$x = 5`, `$<c> = $0`, `COND ?? $a !! $b = v`: an expression target
+    // written without call parentheses, as the parser's callable lvalue.
+    if matches!(
+        left.class,
+        RakuAstClass::ApplyPrefix | RakuAstClass::VarNamedCapture | RakuAstClass::Ternary
+    ) {
+        let target = lower_expr(left)?;
+        let value = lower_expr(named_child(node, "right")?)?;
+        return Ok(Some(crate::parser::callable_lvalue_assign_expr(
+            target,
+            Vec::new(),
+            value,
+        )));
+    }
     if !is_call {
         return Ok(None);
     }

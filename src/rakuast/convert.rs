@@ -3051,16 +3051,21 @@ pub(super) fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
 }
 
 fn parenthesized_expression(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    Ok(parenthesized_node(convert_expr(expr)?))
+}
+
+/// `Circumfix::Parentheses(SemiList(Statement::Expression(inner)))`.
+fn parenthesized_node(inner: RakuAstNode) -> RakuAstNode {
     let semilist = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::SemiList,
-        fields: vec![node_field(None, statement_expression(convert_expr(expr)?))],
+        fields: vec![node_field(None, statement_expression(inner))],
     };
-    Ok(RakuAstNode {
+    RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::CircumfixParentheses,
         fields: vec![node_field(None, semilist)],
-    })
+    }
 }
 
 /// The leading fields of a package declaration node (`class`, `grammar`,
@@ -3586,6 +3591,26 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     return Err(unsupported("left-exclusive sequence without its skip"));
                 };
                 left_exclusive_sequence_node(written, target)
+            }
+            Spelling::GroupedTargetAssign(depth) => {
+                let Expr::AssignExpr { name, expr, .. } = &spelled.expr else {
+                    return Err(unsupported("grouped assignment without its assignment"));
+                };
+                let (sigil, desigil) = split_sigil(name);
+                let mut left = var_lexical(sigil, desigil);
+                for _ in 0..*depth {
+                    left = parenthesized_node(left);
+                }
+                assignment_around(left, false, expr)
+            }
+            Spelling::PlainLvalueAssign => {
+                let Expr::Call { name, args, .. } = &spelled.expr else {
+                    return Err(unsupported("lvalue assignment without its call"));
+                };
+                let Some((target, value)) = plain_lvalue_parts(name.as_str(), args) else {
+                    return Err(unsupported("lvalue assignment without its target"));
+                };
+                assignment_around(convert_expr(target)?, false, value)
             }
             Spelling::BracketedAssignment { depth } => {
                 super::meta_infix::convert_bracketed_assignment(&spelled.expr, *depth)
@@ -7219,6 +7244,14 @@ fn convert_chained_compare(
         };
     }
     Ok(node)
+}
+
+/// The target and value of a plain assignment to a non-call lvalue.
+fn plain_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(&'a Expr, &'a Expr)> {
+    let [target, Expr::ArrayLiteral(call_args), value] = args else {
+        return None;
+    };
+    (name == "__mutsu_assign_callable_lvalue" && call_args.is_empty()).then_some((target, value))
 }
 
 /// The operands and positive relation under a negated set operator's `!`.

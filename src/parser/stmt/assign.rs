@@ -168,7 +168,7 @@ pub(crate) use compound_expr::{
 pub(crate) use lvalue::{
     callable_lvalue_assign_expr, dynamic_method_lvalue_assign_expr, list_lvalue_assign_expr,
     method_lvalue_assign_expr, method_lvalue_roundtrip_assign_expr, named_sub_lvalue_assign_expr,
-    subscript_adverb_lvalue_assign_expr,
+    plain_lvalue_assign_expr, subscript_adverb_lvalue_assign_expr,
 };
 pub(crate) use op::{ShortCircuitKeep, short_circuit_keep, short_circuit_test};
 pub(crate) use op::{

@@ -23,7 +23,8 @@ use crate::value::ValueView;
 
 use super::lvalue::{
     callable_lvalue_assign_expr, grouped_assign_lvalue_stmt, method_lvalue_assign_expr,
-    method_lvalue_target_name, named_sub_lvalue_assign_expr, single_target_list_lvalue_stmt,
+    method_lvalue_target_name, named_sub_lvalue_assign_expr, plain_lvalue_assign_expr,
+    single_target_list_lvalue_stmt,
 };
 use super::predicates::{
     is_literal_expr, is_pseudo_package, starts_with_postfix_ambiguous_term, starts_with_term_token,
@@ -85,7 +86,7 @@ fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
         }
         Expr::Call { name, args, .. } => named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
         Expr::CallOn { target, args } => callable_lvalue_assign_expr(*target, args, rhs),
-        other => callable_lvalue_assign_expr(other, Vec::new(), rhs),
+        other => plain_lvalue_assign_expr(other, rhs),
     }
 }
 
@@ -785,7 +786,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 {
                     stmt
                 } else {
-                    Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), expr))
+                    Stmt::Expr(plain_lvalue_assign_expr(target, expr))
                 }
             }
         };
@@ -952,7 +953,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 {
                     stmt
                 } else {
-                    Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), rhs))
+                    Stmt::Expr(plain_lvalue_assign_expr(target, rhs))
                 }
             }
         };
