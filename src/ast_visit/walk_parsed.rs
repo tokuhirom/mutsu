@@ -26,6 +26,14 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         super::walk_stmt(v, stmt);
         return;
     }
+    if let ParsedStmt::DoesDecl { decl, role, init } = node {
+        super::walk_stmt(v, decl);
+        v.visit_expr(role);
+        if let Some(init) = init {
+            v.visit_expr(init);
+        }
+        return;
+    }
     for e in node.headers() {
         v.visit_expr(e);
     }
@@ -87,6 +95,13 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
         }
         ParsedStmt::Default(block) | ParsedStmt::BareBlock(block) => block_mut(v, block),
         ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => super::walk_stmt_mut(v, stmt),
+        ParsedStmt::DoesDecl { decl, role, init } => {
+            super::walk_stmt_mut(v, decl);
+            v.visit_expr_mut(role);
+            if let Some(init) = init {
+                v.visit_expr_mut(init);
+            }
+        }
         ParsedStmt::Loop(l) => {
             if let Some(init) = &mut l.init {
                 v.visit_stmt_mut(init);

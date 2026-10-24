@@ -44,6 +44,15 @@ pub(crate) enum ParsedStmt {
     /// `Stmt::VarDecl` as written. `rakuast::lower` wraps it in the
     /// bookkeeping statements the compiler needs (`ast::bind_decl::expand`).
     BindDecl(Box<Stmt>),
+    /// `my %h does Role`, `my @a does Role = 1, 2`: the declaration (a
+    /// `Stmt::VarDecl`), the role as written and the `=` initializer.
+    /// `rakuast::lower` mixes the role in between the two
+    /// (`ast::var_does::expand`).
+    DoesDecl {
+        decl: Box<Stmt>,
+        role: Expr,
+        init: Option<Expr>,
+    },
 }
 
 /// Where a block was written: the block (from `->` when pointy), its braces and
@@ -286,6 +295,7 @@ impl ParsedStmt {
             ParsedStmt::WhileLoop(w) => vec![&w.condition],
             ParsedStmt::Loop(l) => l.condition.iter().chain(l.step.iter()).collect(),
             ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => Vec::new(),
+            ParsedStmt::DoesDecl { role, init, .. } => std::iter::once(role).chain(init).collect(),
             ParsedStmt::Default(_) | ParsedStmt::BareBlock(_) => Vec::new(),
         }
     }
@@ -304,7 +314,9 @@ impl ParsedStmt {
             | ParsedStmt::BareBlock(block) => vec![block],
             ParsedStmt::WhileLoop(w) => vec![&w.block],
             ParsedStmt::Loop(l) => vec![&l.block],
-            ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => Vec::new(),
+            ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) | ParsedStmt::DoesDecl { .. } => {
+                Vec::new()
+            }
         }
     }
 }
