@@ -281,32 +281,13 @@ impl Interpreter {
                 let items = crate::runtime::utils::value_to_list(&target);
                 self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
             }
-            ValueView::Str(s) => {
-                if let Some(ValueView::Sub(data)) = args.first().map(Value::view)
-                    && let Some(Stmt::Expr(expr)) = data.body.last()
-                    && matches!(
-                        expr,
-                        Expr::Literal(lit) | Expr::RegexLiteral { value: lit, .. }
-                            if matches!(lit.view(), ValueView::Regex(_))
-                    )
-                {
-                    return self.eval_grep_with_adverb(
-                        args.first().cloned(),
-                        vec![Value::str_arc(s.clone())],
-                        &grep_adverb,
-                    );
-                }
-                match grep_adverb {
-                    GrepAdverb::K => Ok(Value::int(0)),
-                    GrepAdverb::Kv => {
-                        Ok(Value::array(vec![Value::int(0), Value::str_arc(s.clone())]))
-                    }
-                    GrepAdverb::P => {
-                        Ok(Value::value_pair(Value::int(0), Value::str_arc(s.clone())))
-                    }
-                    GrepAdverb::V => Ok(Value::str_arc(s.clone())),
-                }
-            }
+            // A `Str` is one item: the matcher decides whether it stays, as for
+            // any other scalar (`"a".grep(Int)` is empty, `"a".grep(/a/)` is `a`).
+            ValueView::Str(s) => self.eval_grep_with_adverb(
+                args.first().cloned(),
+                vec![Value::str_arc(s.clone())],
+                &grep_adverb,
+            ),
             ValueView::Seq(items) => {
                 self.eval_grep_with_adverb(args.first().cloned(), items.to_vec(), &grep_adverb)
             }
