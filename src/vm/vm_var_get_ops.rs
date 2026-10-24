@@ -819,6 +819,9 @@ impl Interpreter {
             Value::package(name_sym)
         } else if Self::is_builtin_type(name) || Self::is_type_with_smiley(name, self) {
             Value::package(Symbol::intern(self.resolve_core_type_alias(name)))
+        } else if name == "RakuAST" {
+            // The RakuAST namespace root (`RakuAST.WHO`, `RakuAST::`).
+            Value::package(name_sym)
         } else if let Some(enum_val) =
             self.resolve_enum_member_in_current_package(Symbol::intern(name))
         {

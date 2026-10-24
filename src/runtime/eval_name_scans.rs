@@ -277,6 +277,8 @@ impl UndeclaredName<'_> {
             || Interpreter::is_builtin_type(name)
             || crate::builtin_types::catalog::builtin_type_info(name).is_some()
             || Interpreter::is_pseudo_package_name(name)
+            // The `RakuAST` namespace root.
+            || crate::rakuast::is_registered_type_object(name)
             || CORE_CLASSES_REGISTERED_ON_USE.contains(&name)
             || Interpreter::is_implicit_zero_arg_builtin(name)
             || Interpreter::is_builtin_function(name)

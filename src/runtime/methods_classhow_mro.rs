@@ -58,6 +58,10 @@ impl Interpreter {
                 }
             }
         };
+        // A RakuAST role's MRO is the role alone, as rakudo prints it.
+        if crate::rakuast::type_object_is_role(&class_name) {
+            return mro;
+        }
         // A role mixin introduces a synthetic subtype ahead of the wrapped
         // class. The latter remains a distinct MRO level even when both have
         // the same display name after `.^set_name`.

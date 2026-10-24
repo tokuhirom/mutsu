@@ -201,37 +201,23 @@ impl Value {
         if my_type == type_name {
             return true;
         }
-        if let ValueView::Package(name) = self.view() {
-            let actual = name.resolve();
-            if actual.starts_with("RakuAST::") && type_name.starts_with("RakuAST::") {
-                return crate::rakuast::type_object_isa(&actual, type_name);
-            }
-        }
-        // RakuAST node hierarchy (Phase 3): every node isa `RakuAST::Node`, a node
-        // isa any `::`-namespace ancestor of its printed class name (e.g.
-        // `Statement::If` isa `RakuAST::Statement`; the `::` boundary avoids a
-        // false `StatementList isa Statement`), and a node isa its semantic
-        // ancestors (`RakuAST::Term`/`RakuAST::Expression`) whose names are not
-        // part of the printed class name.
-        if let ValueView::RakuAst(node) = self.view() {
-            // A `Name::Part` is neither a `RakuAST::Node` nor a `RakuAST::Name`
-            // in Rakudo, whatever its namespace prefix suggests.
-            let is_name_part = crate::rakuast::is_name_part_class(node.class);
-            if type_name == "RakuAST::Node" {
-                return !is_name_part;
-            }
-            if is_name_part && type_name == "RakuAST::Name" {
-                return false;
-            }
-            if crate::qualified::is_inside_package(
-                crate::symbol::Symbol::intern(my_type),
-                crate::symbol::Symbol::intern(type_name),
-            ) {
-                return true;
-            }
-            if node.class.semantic_ancestors().contains(&type_name) {
-                return true;
-            }
+        // A RakuAST type object or node answers from rakudo's measured
+        // hierarchy (`src/rakuast/hierarchy.tsv`): its MRO, plus the roles it
+        // does when roles count.
+        let rakuast_class = match self.view() {
+            ValueView::Package(name) => Some(name.resolve()),
+            ValueView::RakuAst(node) => Some(node.class.printed_name().to_string()),
+            _ => None,
+        };
+        if let Some(actual) = rakuast_class
+            && actual.starts_with("RakuAST::")
+            && type_name.starts_with("RakuAST::")
+        {
+            return if allow_roles {
+                crate::rakuast::type_object_does(&actual, type_name)
+            } else {
+                crate::rakuast::type_object_isa(&actual, type_name)
+            };
         }
         // Perl6::Metamodel:: and Metamodel:: are equivalent namespaces
         if let Some(short) = my_type.strip_prefix("Perl6::")
