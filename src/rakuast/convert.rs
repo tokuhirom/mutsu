@@ -483,21 +483,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 if let Some(stub) = stub_node(name.as_str(), &args) {
                     return Ok(Some(statement_expression(stub?)));
                 }
-                if name.as_str() == "__mutsu_assign_callable_lvalue"
-                    && let [Expr::DoStmt(stmt), Expr::ArrayLiteral(call_args), value] =
-                        args.as_slice()
-                    && call_args.is_empty()
-                    && let Stmt::VarDecl { .. } = stmt.as_ref()
-                {
-                    let left = convert_expr(&Expr::Grouped(Box::new(Expr::DoStmt(stmt.clone()))))?;
-                    return Ok(Some(statement_expression(method_lvalue_assignment(
-                        left,
-                        convert_expr(value)?,
-                    ))));
-                }
-                if let Some((call, value)) = method_lvalue_parts(name.as_str(), &args)
-                    .or_else(|| call_lvalue_parts(name.as_str(), &args))
-                {
+                if let Some((call, value)) = method_lvalue_parts(name.as_str(), &args) {
                     return Ok(Some(statement_expression(method_lvalue_assignment(
                         convert_expr(&call)?,
                         convert_expr(value)?,
@@ -1782,75 +1768,6 @@ fn index_bind_rhs(value: &Expr) -> Option<&Expr> {
 }
 
 /// `ApplyInfix(left, Assignment, right)` over already converted operands.
-/// `f(ARGS) = EXPR` and `$c(ARGS) = EXPR` parse to the internal
-/// `__mutsu_assign_named_sub_lvalue("f", [ARGS], value)` /
-/// `__mutsu_assign_callable_lvalue($c, [ARGS], value)` writeback calls. Rakudo
-/// models both as a plain assignment whose left side is the call: this
-/// returns that call and the assigned value. Lowering hands the call back to
-/// `parser::assign_to_target_expr`. Callable targets retain their full source
-/// expression, including method objects, indexed values and adverb-bearing
-/// subscripts; compound writeback records stay the boundary.
-// Cost: O(1).
-fn call_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Expr)> {
-    let [target, Expr::ArrayLiteral(call_args), value] = args else {
-        return None;
-    };
-    let call = match name {
-        "__mutsu_assign_named_sub_lvalue" => {
-            let (Expr::Literal(routine) | Expr::LiteralSrc(routine, _)) = target else {
-                return None;
-            };
-            let ValueView::Str(routine) = routine.view() else {
-                return None;
-            };
-            let plain = routine
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_alphabetic() || c == '_')
-                && routine
-                    .chars()
-                    .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''));
-            if !plain || is_desugar_marker(&routine) {
-                return None;
-            }
-            Expr::Call {
-                name: crate::symbol::Symbol::intern(&routine),
-                args: call_args.clone(),
-                listop: false,
-            }
-        }
-        // `(LVALUES) = rhs` assigns to a parenthesised list
-        // (`parser::paren_list_assign_expr`).
-        "__mutsu_assign_callable_lvalue"
-            if call_args.is_empty() && matches!(target, Expr::ArrayLiteral(_)) =>
-        {
-            Expr::Grouped(Box::new(target.clone()))
-        }
-        // `(COND ?? $a !! $b) = v`, `($a || $b) = v`, `nqp::op(..) = v`: an
-        // lvalue expression with no call arguments is the parenthesised
-        // left side of a plain assignment (`parser::ternary` /
-        // `parser::precedence::logic`). A `do` declaration or an internal
-        // call target belongs to the compound-assignment writebacks, whose
-        // value is not the written right side, so those stay the boundary.
-        "__mutsu_assign_callable_lvalue"
-            if call_args.is_empty()
-                && matches!(
-                    target,
-                    Expr::Ternary { .. } | Expr::Binary { .. } | Expr::Call { .. }
-                )
-                && !matches!(target, Expr::Call { name, .. } if is_desugar_marker(name.as_str())) =>
-        {
-            Expr::Grouped(Box::new(target.clone()))
-        }
-        "__mutsu_assign_callable_lvalue" => Expr::CallOn {
-            target: Box::new(target.clone()),
-            args: call_args.clone(),
-        },
-        _ => return None,
-    };
-    Some((call, value))
-}
-
 fn method_lvalue_assignment(left: RakuAstNode, right: RakuAstNode) -> RakuAstNode {
     let assignment = RakuAstNode {
         origin: Default::default(),
@@ -3298,18 +3215,7 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 ));
             }
             if is_desugar_marker(name.as_str()) {
-                if name.as_str() == "__mutsu_assign_callable_lvalue"
-                    && let [Expr::DoStmt(stmt), Expr::ArrayLiteral(call_args), value] =
-                        args.as_slice()
-                    && call_args.is_empty()
-                    && let Stmt::VarDecl { .. } = stmt.as_ref()
-                {
-                    let left = convert_expr(&Expr::Grouped(Box::new(Expr::DoStmt(stmt.clone()))))?;
-                    return Ok(method_lvalue_assignment(left, convert_expr(value)?));
-                }
-                if let Some((call, value)) = method_lvalue_parts(name.as_str(), args)
-                    .or_else(|| call_lvalue_parts(name.as_str(), args))
-                {
+                if let Some((call, value)) = method_lvalue_parts(name.as_str(), args) {
                     return Ok(method_lvalue_assignment(
                         convert_expr(&call)?,
                         convert_expr(value)?,
