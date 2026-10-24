@@ -8,7 +8,8 @@
       "Data::TypeSystem",
       "Math::SparseMatrix",
       "Math::SparseMatrix::Native",
-      "NativeHelpers::Array"
+      "NativeHelpers::Array",
+      "Stats"
     ],
     "unresolved": []
   },
@@ -20,7 +21,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.56,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -30,7 +31,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 11.58,
+        "secs": 8.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +43,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.17,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -52,7 +53,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.22,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -67,10 +68,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-23",
+    "date": "2026-10-24",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "439101ad",
+    "mutsu_commit": "068dff0f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

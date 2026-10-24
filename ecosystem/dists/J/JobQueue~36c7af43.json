@@ -18,7 +18,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 3.96,
+        "secs": 4.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 19.21,
+        "secs": 18.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 1.41,
+        "secs": 1.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 8.95,
+        "secs": 8.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.56,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 3.09,
+        "secs": 2.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +84,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.69,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +94,29 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 3.55,
+        "secs": 3.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 2.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-lock-snapshots.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 4.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,10 +134,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-23",
+    "date": "2026-10-24",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "439101ad",
+    "mutsu_commit": "068dff0f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -124,15 +146,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/J/OB/JOBQUEUE/5832e00a3e8075592f123c3ef724f63310efd40f.tar.gz"
+    "url": "https://360.zef.pm/J/OB/JOBQUEUE/2e5edc0ac902cc86290becdfc85e9e887f887884.tar.gz"
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 61,
-    "baseline_files": 4,
-    "mutsu_assertions": 61,
-    "parity_files": 4,
+    "baseline_assertions": 72,
+    "baseline_files": 5,
+    "mutsu_assertions": 72,
+    "parity_files": 5,
     "regressed_files": 0
   },
-  "version": "0.1.2"
+  "version": "0.1.3"
 }
