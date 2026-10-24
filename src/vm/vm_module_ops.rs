@@ -344,6 +344,24 @@ impl Interpreter {
         }
     }
 
+    /// The repository specs a `RAKULIB` value names, in listed order. As in
+    /// Rakudo the list is comma-separated (not colon-separated like
+    /// `MUTSULIB`) and each entry is `inst#PATH`, `file#PATH` or a bare path;
+    /// an entry with any other `scheme#` prefix, and an empty one, is ignored.
+    // Cost: O(n), n = length of the value.
+    pub fn rakulib_specs(value: &str) -> Vec<String> {
+        value
+            .split(',')
+            .map(str::trim)
+            .filter(|spec| !spec.is_empty())
+            .filter(|spec| match spec.split_once('#') {
+                Some((scheme, _)) => matches!(scheme, "inst" | "file"),
+                None => true,
+            })
+            .map(str::to_string)
+            .collect()
+    }
+
     /// Put the repository a lib spec names at the front of `$*REPO`'s chain:
     /// an `inst#PREFIX` spec is a CompUnit::Repository::Installation, anything
     /// else a CompUnit::Repository::FileSystem on that directory.

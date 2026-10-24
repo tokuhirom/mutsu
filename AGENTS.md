@@ -108,7 +108,7 @@ These are absolute; if a task seems to require breaking one, stop and ask the us
   - code execution on a path that only parses or analyses (`src/analysis/`, `crates/mutsu-lsp`,
     `--dump-*`) — a new parse-time probe, `BEGIN` or slang activation is gated off there;
   - a module search location nobody named (cwd, script directory, ancestor-directory walks,
-    `/tmp`) — search is `use lib` → `-I` → `MUTSULIB` → installed → bundled, nothing else;
+    `/tmp`) — search is `use lib` → `-I` → `MUTSULIB` → `RAKULIB` → installed → bundled, nothing else;
   - an `unsafe` block without a `// SAFETY:` comment, an `unsafe impl Send`/`Sync`, or a
     `&self → &mut T` access (`gc_contents_mut` and kin) without a lock to mutsu-internal state
     another Raku thread can reach. Concurrency follows rakudo (ADR-12814): a program that
@@ -161,7 +161,7 @@ work, so free space with the `reclaim-disk` skill and continue.
 - Run: `./target/debug/mutsu <file>` or `-e '<code>'`. **Always wrap it in `timeout 30`** — parsing
   or execution can hang. `--dump-ast` prints the AST; `--help` lists the rest.
 - Module search order, highest first: `use lib` → `-I <path>` → `MUTSULIB` (colon-separated) →
-  installed (`mzef` site repo) → bundled batteries.
+  `RAKULIB` (comma-separated, Rakudo's format) → installed (`mzef` site repo) → bundled batteries.
 - Scratch scripts go in `./tmp/` (gitignored), written with the Write tool — never `/tmp/`.
 - One TAP test: `prove -e 'target/debug/mutsu' t/<category>/<file>.t`.
 - One roast test: `MUTSU_FUDGE=1 prove -e 'target/debug/mutsu' roast/<path>.t`. **`MUTSU_FUDGE=1`
