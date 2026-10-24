@@ -7,14 +7,6 @@ use crate::ast::{SignatureDecl, SignatureInit, SignatureVar, SourceForm};
 // Cost: O(n), n = source-record subtree nodes.
 pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &'ast SourceForm) {
     match form {
-        SourceForm::DeclarationModifier {
-            declaration,
-            condition,
-            kind: _,
-        } => {
-            v.visit_stmt(declaration);
-            v.visit_expr(condition);
-        }
         SourceForm::IfPointy { param_defs, body } => {
             params(v, param_defs);
             walk_stmts(v, body);
@@ -49,7 +41,6 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
             v.visit_expr(value);
         }
         SourceForm::SignatureDecl(declaration) => v.visit_signature_decl(declaration),
-        SourceForm::CommaDeclarations(declarations) => walk_stmts(v, declarations),
         SourceForm::SignatureBind { signature, rhs } => {
             v.visit_expr(signature);
             v.visit_expr(rhs);
@@ -119,10 +110,7 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
                 }
             }
         }
-        SourceForm::BarePhaser
-        | SourceForm::ImmediateCall
-        | SourceForm::DeclarationCompoundAssign
-        | SourceForm::StartBlock => {}
+        SourceForm::DeclarationCompoundAssign | SourceForm::StartBlock => {}
     }
 }
 
@@ -210,16 +198,14 @@ mod tests {
 
     #[test]
     fn source_records_are_opt_in_and_walk_their_original_declarations() {
-        let record = Stmt::SourceForm(Box::new(SourceForm::DeclarationModifier {
-            declaration: Box::new(Stmt::Expr(Expr::Var("written".into()))),
-            condition: Expr::Var("condition".into()),
-            kind: crate::ast::decl_modifier::DeclarationModifier::If,
-        }));
+        let record = Stmt::SourceForm(Box::new(SourceForm::InlineSubsetTerm(Box::new(
+            Stmt::Expr(Expr::Var("written".into())),
+        ))));
         let mut ordinary = Names::default();
         ordinary.visit_stmt(&record);
         assert!(ordinary.names.is_empty());
         let mut copying = CopyingNames::default();
         copying.visit_stmt(&record);
-        assert_eq!(copying.0.names, ["written", "condition"]);
+        assert_eq!(copying.0.names, ["written"]);
     }
 }

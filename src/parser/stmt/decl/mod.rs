@@ -205,36 +205,13 @@ fn parse_comma_chained_decls<'a>(input: &'a str, first: Stmt) -> PResult<'a, Stm
     }
     // Parse the next declaration
     let (rest, next) = my_decl::my_decl_inner(after_ws, false)?;
-    let mut source = match &first {
-        Stmt::SyntheticBlock(parts) if matches!(parts.first(), Some(Stmt::SourceForm(form)) if matches!(form.as_ref(), crate::ast::SourceForm::CommaDeclarations(_))) =>
-        {
-            let Some(Stmt::SourceForm(form)) = parts.first() else {
-                unreachable!("guarded comma declaration source form")
-            };
-            let crate::ast::SourceForm::CommaDeclarations(declarations) = form.as_ref() else {
-                unreachable!("guarded comma declaration source form")
-            };
-            declarations.clone()
-        }
-        other => vec![other.clone()],
-    };
-    source.push(next.clone());
-    let mut stmts = match first {
-        Stmt::SyntheticBlock(v) if matches!(v.first(), Some(Stmt::SourceForm(form)) if matches!(form.as_ref(), crate::ast::SourceForm::CommaDeclarations(_))) => {
-            v.into_iter().skip(1).collect()
-        }
-        Stmt::SyntheticBlock(v) => v,
-        other => vec![other],
-    };
-    match next {
-        Stmt::SyntheticBlock(v) => stmts.extend(v),
-        other => stmts.push(other),
-    }
-    stmts.insert(
-        0,
-        Stmt::SourceForm(Box::new(crate::ast::SourceForm::CommaDeclarations(source))),
-    );
-    Ok((rest, Stmt::SyntheticBlock(stmts)))
+    use crate::ast::parsed::ParsedStmt;
+    let mut declarations = ParsedStmt::comma_operands(first);
+    declarations.extend(ParsedStmt::comma_operands(next));
+    Ok((
+        rest,
+        crate::parser::stmt::control::parsed_block::finish_total(ParsedStmt::CommaDecls(declarations)),
+    ))
 }
 
 /// Detect "two terms in a row" right after a sink expression parsed inside a

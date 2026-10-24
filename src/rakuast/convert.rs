@@ -6,10 +6,6 @@
 //! `RuntimeError` (the documented coverage boundary) rather than a
 //! silently-wrong node.
 
-#[path = "convert_conditional.rs"]
-mod conditional;
-use conditional::*;
-
 use super::bareword::simple_type_node;
 use super::method_assign_decl::call_method;
 use super::origin;
@@ -394,17 +390,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Ok(Some(statement_expression(declaration)))
         }
         Stmt::SyntheticBlock(_) if source_form(stmt).is_some() => match source_form(stmt) {
-            Some(crate::ast::SourceForm::DeclarationModifier {
-                declaration,
-                condition,
-                kind,
-            }) => declaration_modifier_node(declaration, condition, *kind).map(Some),
             Some(crate::ast::SourceForm::SignatureDecl(decl)) => Ok(Some(statement_expression(
                 super::signature_decl::convert(decl)?,
             ))),
-            Some(crate::ast::SourceForm::CommaDeclarations(declarations)) => Ok(Some(
-                statement_expression(comma_declarations_node(declarations)?),
-            )),
             Some(crate::ast::SourceForm::AttributeGroup(attributes)) => Ok(Some(
                 statement_expression(super::attribute_group::to_signature(attributes)?),
             )),
@@ -425,17 +413,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Some(crate::ast::SourceForm::SignatureBind { signature, rhs }) => {
                 signature_bind_node(signature, rhs).map(|node| Some(statement_expression(node)))
             }
-            // `sub f { … }(ARGS)`: the routine as the operand of its call.
-            Some(crate::ast::SourceForm::ImmediateCall) => super::immediate_call::convert(stmt)
-                .ok_or_else(|| unsupported("source form"))?
-                .map(|node| Some(statement_expression(node))),
-            // `BEGIN say 1`: the phaser (second statement) over its bare statement.
-            Some(crate::ast::SourceForm::BarePhaser) => match stmt {
-                Stmt::SyntheticBlock(stmts) if stmts.len() == 2 => {
-                    super::bare_prefix::bare_phaser_statement(&stmts[1])
-                }
-                _ => Err(unsupported("source form")),
-            },
             // Only the on-demand lambda opens with a supply record.
             Some(
                 crate::ast::SourceForm::SupplyBlock(_)
@@ -3635,6 +3612,19 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             };
             super::decl_tail::convert(head, tail)
         }
+        // A comma list of declarations kept in its RakuAST shape.
+        Expr::DoStmt(stmt)
+            if matches!(stmt.as_ref(), Stmt::Ast(node)
+                if matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::CommaDecls(_))) =>
+        {
+            let Stmt::Ast(node) = stmt.as_ref() else {
+                unreachable!()
+            };
+            let crate::ast::parsed::ParsedStmt::CommaDecls(declarations) = node.as_ref() else {
+                unreachable!()
+            };
+            comma_declarations_node(declarations)
+        }
         // A parenthesized comma list of declarations is grouped by the parser
         // into one synthetic block. Rakudo keeps each declaration as an
         // operand of the comma ApplyListInfix.
@@ -3711,16 +3701,8 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // A signature declaration in expression position (`if my ($a, $b) = …`).
         Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
-            Some(crate::ast::SourceForm::DeclarationModifier {
-                declaration,
-                condition,
-                kind,
-            }) => declaration_modifier_node(declaration, condition, *kind),
             Some(crate::ast::SourceForm::SignatureDecl(decl)) => {
                 super::signature_decl::convert(decl)
-            }
-            Some(crate::ast::SourceForm::CommaDeclarations(declarations)) => {
-                comma_declarations_node(declarations)
             }
             Some(crate::ast::SourceForm::AttributeGroup(attributes)) => {
                 super::attribute_group::to_signature(attributes)
@@ -3740,20 +3722,9 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Some(crate::ast::SourceForm::SignatureBind { signature, rhs }) => {
                 signature_bind_node(signature, rhs)
             }
-            // `do sub f { … }(ARGS)`: the call statement under the prefix.
-            Some(crate::ast::SourceForm::ImmediateCall) => {
-                let node = super::immediate_call::convert(stmt)
-                    .ok_or_else(|| unsupported("source form"))??;
-                Ok(RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::StatementPrefixDo,
-                    fields: vec![node_field(None, statement_expression(node))],
-                })
-            }
             // Only the on-demand lambda opens with a supply record.
             Some(
                 crate::ast::SourceForm::SupplyBlock(_)
-                | crate::ast::SourceForm::BarePhaser
                 | crate::ast::SourceForm::WithPointy { .. }
                 | crate::ast::SourceForm::GivenPointy { .. }
                 | crate::ast::SourceForm::IfPointy { .. }
@@ -7113,7 +7084,7 @@ fn labelled_control_call(name: &'static str, label: &str) -> RakuAstNode {
 /// A comma list `1, 2, 3` -> `ApplyListInfix(infix => ",", operands)`.
 /// The source declarations of `my $x = 1, my $y = 2` as one comma application.
 // Cost: O(n), n = declarations and their nested nodes.
-fn comma_declarations_node(declarations: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn comma_declarations_node(declarations: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     let mut operands = Vec::with_capacity(declarations.len());
     for declaration in declarations {
         let statement = convert_stmt(declaration)?

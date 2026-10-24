@@ -1,17 +1,17 @@
 //! The runtime-only part of a postfix modifier on a class attribute.
 //!
 //! Attributes are installed while the class is composed. The modifier still
-//! evaluates its condition, but cannot gate the declaration. Keep that source
-//! form separate from the declaration so conversion never has to infer it from
-//! the class-body expansion.
+//! evaluates its condition, but cannot gate the declaration. The parser keeps
+//! the written form (`ParsedStmt::AttributeModifier`); [`expand`] is its one
+//! lowering, which `rakuast::lower` calls.
 
 use super::decl_modifier::DeclarationModifier;
-use super::{Expr, SourceForm, Stmt};
+use super::{Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 
 /// Build the class-body statements for an attribute and its postfix modifier.
-// Cost: O(n), n = size of the cloned declaration AST.
+// Cost: O(n), n = size of the condition.
 pub(crate) fn expand(declaration: Stmt, condition: Expr, kind: DeclarationModifier) -> Stmt {
     let modifier = match kind {
         DeclarationModifier::If | DeclarationModifier::Unless => Stmt::If {
@@ -81,13 +81,5 @@ pub(crate) fn expand(declaration: Stmt, condition: Expr, kind: DeclarationModifi
             }
         }
     };
-    Stmt::SyntheticBlock(vec![
-        Stmt::SourceForm(Box::new(SourceForm::DeclarationModifier {
-            declaration: Box::new(declaration.clone()),
-            condition,
-            kind,
-        })),
-        declaration,
-        modifier,
-    ])
+    Stmt::SyntheticBlock(vec![declaration, modifier])
 }

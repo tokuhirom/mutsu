@@ -78,6 +78,30 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
             let save = crate::ast::temporize::save(&name, None, None, true);
             Ok(Stmt::SyntheticBlock(vec![*decl, save]))
         }
+        ParsedStmt::BarePhaser(phaser) => Ok(*phaser),
+        ParsedStmt::CommaDecls(declarations) => {
+            let mut expanded = Vec::with_capacity(declarations.len());
+            for declaration in declarations {
+                match declaration {
+                    Stmt::SyntheticBlock(parts) => expanded.extend(parts),
+                    other => expanded.push(other),
+                }
+            }
+            Ok(Stmt::SyntheticBlock(expanded))
+        }
+        ParsedStmt::ImmediateCall { decl, args } => {
+            if !matches!(decl.as_ref(), Stmt::SubDecl { .. }) {
+                return Err(RuntimeError::new("immediate call without a named sub"));
+            }
+            Ok(crate::ast::immediate_call::expand(*decl, args))
+        }
+        ParsedStmt::AttributeModifier {
+            decl,
+            condition,
+            kind,
+        } => Ok(crate::ast::attribute_modifier::expand(
+            *decl, condition, kind,
+        )),
         ParsedStmt::SigillessDecl(d) => {
             lower_sigilless(*d, crate::parser::is_user_declared_value_term)
         }

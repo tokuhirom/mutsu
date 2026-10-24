@@ -511,10 +511,9 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     if bare && crate::ast::spelled::keeping() {
         return Ok((
             rest,
-            Stmt::SyntheticBlock(vec![
-                Stmt::SourceForm(Box::new(crate::ast::SourceForm::BarePhaser)),
-                phaser,
-            ]),
+            crate::parser::stmt::control::parsed_block::finish_total(
+                crate::ast::parsed::ParsedStmt::BarePhaser(Box::new(phaser)),
+            ),
         ));
     }
     Ok((rest, phaser))

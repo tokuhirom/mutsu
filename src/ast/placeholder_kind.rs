@@ -158,7 +158,11 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
             | ParsedStmt::DeclTail { .. }
             | ParsedStmt::SigillessDecl(_)
             | ParsedStmt::PackageHeader { .. }
-            | ParsedStmt::TempDecl(_) => PlaceholderBodyKind::NoSignature,
+            | ParsedStmt::TempDecl(_)
+            | ParsedStmt::BarePhaser(_)
+            | ParsedStmt::CommaDecls(_)
+            | ParsedStmt::ImmediateCall { .. }
+            | ParsedStmt::AttributeModifier { .. } => PlaceholderBodyKind::NoSignature,
             // A statement modifier introduces no block of its own.
             ParsedStmt::Modified(_) => PlaceholderBodyKind::Transparent,
             ParsedStmt::Loop(l) => match l.kind {

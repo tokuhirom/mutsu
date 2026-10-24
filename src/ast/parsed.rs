@@ -87,6 +87,32 @@ pub(crate) enum ParsedStmt {
     /// A statement with statement modifiers (`Statement::Expression`'s
     /// `condition-modifier` and `loop-modifier`).
     Modified(Modified),
+    /// A phaser written over a bare statement, `BEGIN say 1` (the
+    /// `Stmt::Phaser`); RakuAST keeps the statement as the prefix's child,
+    /// which the phaser's block-less body cannot tell from `BEGIN { say 1 }`.
+    /// It lowers to the phaser itself.
+    BarePhaser(Box<Stmt>),
+    /// A named routine declared and called on the spot, `sub f($n) { ... }(21)`:
+    /// the declaration (a `Stmt::SubDecl`) and the call arguments as written.
+    /// `rakuast::lower` expands it into the declaration and a call of its name
+    /// (`ast::immediate_call::expand`).
+    ImmediateCall { decl: Box<Stmt>, args: Vec<Expr> },
+    /// A comma list of declarations, `my $x = 1, my $y = 2`, as written: one
+    /// source statement whose execution is the declarations' expansions in
+    /// order, with no new lexical scope (RakuAST's `ApplyListInfix` over the
+    /// declarations).
+    CommaDecls(Vec<Stmt>),
+    /// `has $.x if COND` / `unless` / `with` / `without` / `when`: the
+    /// attribute declaration (a `Stmt::VarDecl` or a declaration list) and its
+    /// postfix modifier. The modifier cannot gate the declaration (attributes
+    /// install when the class is composed), so `rakuast::lower` expands it
+    /// into the declaration and a runtime-only test of the condition
+    /// (`ast::attribute_modifier::expand`).
+    AttributeModifier {
+        decl: Box<Stmt>,
+        condition: Expr,
+        kind: super::decl_modifier::DeclarationModifier,
+    },
 }
 
 /// `STMT if COND`, `STMT for LIST`, `STMT if COND for LIST`: the statement as
@@ -382,8 +408,13 @@ impl ParsedStmt {
     // Cost: O(1).
     pub(crate) fn inner_stmt(&self) -> Option<&Stmt> {
         match self {
-            ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
-            ParsedStmt::PackageHeader { decl, .. } | ParsedStmt::TempDecl(decl) => Some(decl),
+            ParsedStmt::For { stmt, .. }
+            | ParsedStmt::BindDecl(stmt)
+            | ParsedStmt::BarePhaser(stmt) => Some(stmt),
+            ParsedStmt::PackageHeader { decl, .. }
+            | ParsedStmt::TempDecl(decl)
+            | ParsedStmt::ImmediateCall { decl, .. }
+            | ParsedStmt::AttributeModifier { decl, .. } => Some(decl),
             _ => None,
         }
     }
@@ -413,8 +444,13 @@ impl ParsedStmt {
     // Cost: O(1).
     pub(crate) fn inner_stmt_mut(&mut self) -> Option<&mut Stmt> {
         match self {
-            ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
-            ParsedStmt::PackageHeader { decl, .. } | ParsedStmt::TempDecl(decl) => Some(decl),
+            ParsedStmt::For { stmt, .. }
+            | ParsedStmt::BindDecl(stmt)
+            | ParsedStmt::BarePhaser(stmt) => Some(stmt),
+            ParsedStmt::PackageHeader { decl, .. }
+            | ParsedStmt::TempDecl(decl)
+            | ParsedStmt::ImmediateCall { decl, .. }
+            | ParsedStmt::AttributeModifier { decl, .. } => Some(decl),
             _ => None,
         }
     }
@@ -431,9 +467,13 @@ impl ParsedStmt {
             ParsedStmt::When { condition, .. } => vec![condition],
             ParsedStmt::WhileLoop(w) => vec![&w.condition],
             ParsedStmt::Loop(l) => l.condition.iter().chain(l.step.iter()).collect(),
-            ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) | ParsedStmt::TempDecl(_) => {
-                Vec::new()
-            }
+            ParsedStmt::For { .. }
+            | ParsedStmt::BindDecl(_)
+            | ParsedStmt::TempDecl(_)
+            | ParsedStmt::BarePhaser(_)
+            | ParsedStmt::CommaDecls(_) => Vec::new(),
+            ParsedStmt::ImmediateCall { args, .. } => args.iter().collect(),
+            ParsedStmt::AttributeModifier { condition, .. } => vec![condition],
             ParsedStmt::DoesDecl { role, init, .. } => std::iter::once(role).chain(init).collect(),
             ParsedStmt::WillDecl { .. } => Vec::new(),
             ParsedStmt::DeclTail { tail, .. } => vec![tail],
@@ -468,6 +508,10 @@ impl ParsedStmt {
             | ParsedStmt::SigillessDecl(_)
             | ParsedStmt::PackageHeader { .. }
             | ParsedStmt::TempDecl(_)
+            | ParsedStmt::BarePhaser(_)
+            | ParsedStmt::ImmediateCall { .. }
+            | ParsedStmt::AttributeModifier { .. }
+            | ParsedStmt::CommaDecls(_)
             | ParsedStmt::Modified(_) => Vec::new(),
         }
     }
@@ -520,6 +564,22 @@ impl Stmt {
         match self {
             Stmt::Ast(node) => node.inner_stmt_mut().expect("checked above"),
             _ => unreachable!("checked above"),
+        }
+    }
+}
+
+impl ParsedStmt {
+    /// The declarations of a comma list as written, flattening a list that is
+    /// itself one of the operands (`my $a, my $b, my $c` parses as `my $a,
+    /// (my $b, my $c)`).
+    // Cost: O(d), d = declarations.
+    pub(crate) fn comma_operands(stmt: Stmt) -> Vec<Stmt> {
+        match stmt {
+            Stmt::Ast(node) => match *node {
+                ParsedStmt::CommaDecls(declarations) => declarations,
+                other => vec![Stmt::Ast(Box::new(other))],
+            },
+            other => vec![other],
         }
     }
 }
