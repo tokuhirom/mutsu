@@ -157,12 +157,12 @@ impl Interpreter {
                 ValueView::Instance { attributes, .. } => attributes.as_map().clone(),
                 _ => crate::value::AttrMap::new(),
             };
-            let resolved = self.resolve_method_within_boundary(
+            let resolved = self.resolve_proto_redispatch_cached(
                 &receiver_class_name,
                 &proto_name,
                 &args,
-                Some(&ctx.invocant),
-                boundary_owner,
+                &ctx.invocant,
+                Symbol::intern(&owner),
             );
             // A `.wrap` on the dispatcher was entered where the proto body was
             // intercepted (`try_proto_method_body`), before this `{*}`; the
