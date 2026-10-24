@@ -105,7 +105,7 @@ impl Interpreter {
             if matches!(target.view(), ValueView::Mixin(..)) {
                 // The class's own `iterator`, with the mixed value as `self`
                 // (not the Sequence role's, which would wrap the instance).
-                self.call_method_with_values(target.clone(), "iterator", vec![])
+                self.call_user_iterator_on_mixin(target)
                     .and_then(|iterator| self.drive_iterator_value_items(iterator))
                     .map(|(items, _)| items)
             } else {
