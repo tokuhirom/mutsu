@@ -3453,7 +3453,9 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             Spelling::Words(text) => Ok(word_quote(text)),
             Spelling::ParenthesizedDeclaratorAdverb => parenthesized_expression(&spelled.expr),
-            Spelling::BracketTraitArgument | Spelling::ParenSections(_) => convert_expr(&spelled.expr),
+            Spelling::BracketTraitArgument | Spelling::ParenSections(_) => {
+                convert_expr(&spelled.expr)
+            }
             Spelling::Heredoc { stop, body } => heredoc_node(&spelled.expr, stop, *body),
             Spelling::WordQuote {
                 quotewords,
