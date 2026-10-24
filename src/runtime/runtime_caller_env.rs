@@ -169,8 +169,12 @@ impl Interpreter {
     // unit, p = enclosing packages of the frame.
     pub(crate) fn caller_scope_routine(&self, name: &str, outers_only: bool) -> Option<Value> {
         let name_sym = Symbol::intern(name);
-        let in_scope = |package: Symbol, unit: Symbol| -> Option<Value> {
+        let in_scope = |package: Symbol, lexical_package: Option<Symbol>, unit: Symbol| -> Option<Value> {
+            // A role's method runs with the composing class as its package but
+            // is lexically inside the role (and the file the role was written
+            // in), so the role's own enclosing packages count too.
             crate::qualified::package_ancestors(package)
+                .chain(lexical_package.into_iter().flat_map(crate::qualified::package_ancestors))
                 .chain(std::iter::once(Symbol::intern("GLOBAL")))
                 .find_map(|pkg| {
                     let def = self
@@ -188,9 +192,9 @@ impl Interpreter {
         // no calling routine the caller is the program's mainline.
         let callers = self.routine_stack.len().saturating_sub(1);
         match self.routine_stack[..callers].last() {
-            Some(frame) => in_scope(frame.package, self.unit_of_source_sym(frame.def_file)),
+            Some(frame) => in_scope(frame.package, frame.lexical_package, self.unit_of_source_sym(frame.def_file)),
             None => (!outers_only)
-                .then(|| in_scope(Symbol::intern("GLOBAL"), crate::runtime::main_unit()))
+                .then(|| in_scope(Symbol::intern("GLOBAL"), None, crate::runtime::main_unit()))
                 .flatten(),
         }
     }
