@@ -43,8 +43,8 @@ plan 8;
     is $obj.greet, 'hello', 'exported method still callable as a normal method';
 }
 
-# Importing a class with no exports at all is still an error.
+# Importing a class with no exports at all is a no-op (rakudo agrees).
 {
     class C2 { method plain { 1 } }
-    dies-ok { import C2 }, 'import of class without exports still dies';
+    lives-ok { import C2 }, 'import of class without exports is a no-op';
 }

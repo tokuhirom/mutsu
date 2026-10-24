@@ -613,6 +613,12 @@ impl Interpreter {
                     crate::ast::PackageKind::Grammar => "Perl6::Metamodel::GrammarHOW",
                 }
                 .to_string()
+            } else if is_type_object && crate::rakuast::type_object_is_role(&type_name) {
+                // A RakuAST role (`RakuAST::Code`, `RakuAST::Sinkable`), as
+                // measured from rakudo (`src/rakuast/hierarchy.tsv`).
+                "Perl6::Metamodel::ParametricRoleHOW".to_string()
+            } else if is_type_object && crate::rakuast::type_object_is_package(&type_name) {
+                "Perl6::Metamodel::PackageHOW".to_string()
             } else if is_type_object
                 && !self.registry().classes.contains_key(&type_name)
                 && !self.registry().roles.contains_key(&type_name)

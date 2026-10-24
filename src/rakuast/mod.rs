@@ -52,6 +52,7 @@ mod fields;
 mod formatter;
 pub(crate) mod frontend;
 mod hash_literal;
+pub(crate) mod hierarchy;
 mod hyper_dotty_writeback;
 mod hyper_prefix;
 mod hyper_subscript;
@@ -140,7 +141,7 @@ mod zip_assign;
 
 pub use formatter::formatter_ast;
 pub use lower::lower;
-pub(crate) use name_parts::{is_name_part, is_name_part_class};
+pub(crate) use name_parts::is_name_part;
 pub use subclass::gist as subclass_gist;
 pub(crate) use subclass::is_node_value;
 
@@ -968,319 +969,58 @@ impl RakuAstClass {
     pub fn is_simple_variable(self) -> bool {
         matches!(self, RakuAstClass::VarLexical | RakuAstClass::VarDynamic)
     }
-
-    /// Extra `RakuAST::*` ancestor type names this node kind smartmatches beyond
-    /// its own class, its `::`-namespace ancestors, and the universal
-    /// `RakuAST::Node` — i.e. the *semantic* hierarchy (`RakuAST::Term` /
-    /// `RakuAST::Expression`) whose names don't appear in the printed class name.
-    /// Only classes verified against Rakudo are listed; an unlisted expression
-    /// node is a documented gap (a missed match), never a false positive.
-    pub fn semantic_ancestors(self) -> &'static [&'static str] {
-        use RakuAstClass::*;
-        // A Term is also an Expression.
-        const TERM: &[&str] = &["RakuAST::Term", "RakuAST::Expression"];
-        const EXPR: &[&str] = &["RakuAST::Expression"];
-        match self {
-            TraitIs | TraitReturns | TraitOf | TraitDoes | TraitHides | TraitWillBuild
-            | TraitHandles | TraitWill | TraitTrusts => &["RakuAST::Trait"],
-            Native => &["RakuAST::Package", "RakuAST::Term", "RakuAST::Expression"],
-            Role => &["RakuAST::Package", "RakuAST::Term", "RakuAST::Expression"],
-            RoleBody => &["RakuAST::Sub", "RakuAST::Routine", "RakuAST::Term", "RakuAST::Expression"],
-            CallBlockMethod => &["RakuAST::Call::Methodish", "RakuAST::Postfixish"],
-            StatementEmpty => &["RakuAST::Statement", "RakuAST::Blorst", "RakuAST::ProducesNil", "RakuAST::ImplicitLookups"],
-            IntLiteral
-            | NumLiteral
-            | RatLiteral
-            | VersionLiteral
-            | ComplexLiteral
-            | FakeSignature
-            | StrLiteral
-            | QuotedString
-            | Heredoc
-            | QuotedRegex
-            | TypeEnum
-            | VarLexical
-            | VarCompilerBlock
-            | VarCompilerRoutine
-            | VarPackage
-            | VarDynamic
-            | TermReduce
-            | Sub
-            | Block
-            | PointyBlock
-            | VarDeclarationPlaceholderPositional
-            | VarDeclarationPlaceholderNamed
-            | VarDeclarationPlaceholderSlurpyArray
-            | VarDeclarationPlaceholderSlurpyHash
-            | CallName
-            | CallNameWithoutParentheses
-            | RegexDeclaration
-            | TokenDeclaration
-            | RuleDeclaration
-            // `RakuAST::WhateverCode::Argument` does not start with
-            // `RakuAST::Term::`, so it does not get Term/Expression for free
-            // from the name-prefix rule in `type_object_isa` — it must be
-            // listed explicitly (ADR-0033 Phase 2 §2.4). Measured MRO:
-            // `Argument, Term, Termish, Expression, ..., Node`.
-            | WhateverCodeArgument
-            // Measured MRO: `Self, Term, Termish, Expression, ..., Node`. The
-            // `RakuAST::Term::` name prefix already answers `~~ RakuAST::Term`
-            // for an instance, but `RakuAST::Expression` is only reachable
-            // through this list.
-            | TermSelf | TermDeclaration => TERM,
-            // Measured MRO: `Fail, Stub, Term, Termish, Expression, ..., Node`.
-            StubFail | StubDie | StubWarn => &["RakuAST::Stub", "RakuAST::Term", "RakuAST::Expression"],
-            ApplyInfix | ApplyPrefix | ApplyPostfix | ApplyListInfix | ApplyDottyInfix | Ternary => {
-                EXPR
-            }
-            RegexLiteral
-            | RegexQuote
-            | RegexGroup
-            | RegexCapturingGroup
-            | RegexNamedCapture
-            | RegexAssertionNamed
-            | RegexAssertionNamedArgs
-            | RegexAssertionAlias
-            | RegexAssertionNamedRegexArg
-            | RegexAssertionLookahead
-            | RegexAssertionInterpolatedVar
-            | RegexAssertionCallable
-            | RegexAssertionPredicateBlock
-            | RegexAssertionInterpolatedBlock
-            | RegexInterpolation
-            | RegexWithWhitespace
-            | RegexBlock => &[
-                "RakuAST::Regex::Atom",
-                "RakuAST::Regex::Term",
-                "RakuAST::Regex",
-            ],
-            RegexSequence
-            | RegexAlternation
-            | RegexSequentialAlternation
-            | RegexConjunction
-            | RegexSequentialConjunction => {
-                &["RakuAST::Regex"]
-            }
-            RegexQuantifiedAtom | RegexBacktrackModifiedAtom => {
-                &["RakuAST::Regex::Term", "RakuAST::Regex"]
-            }
-            OnlyStar => &[
-                "RakuAST::Blockoid",
-                "RakuAST::Term",
-                "RakuAST::Termish",
-                "RakuAST::Expression",
-            ],
-            RegexMatchFrom | RegexMatchTo | RegexNested | RegexStatement => {
-                &["RakuAST::Regex::Atom", "RakuAST::Regex::Term", "RakuAST::Regex"]
-            }
-            RegexBackReferenceNamed | RegexBackReferencePositional => &[
-                "RakuAST::Regex::BackReference",
-                "RakuAST::Regex::Atom",
-                "RakuAST::Regex::Term",
-                "RakuAST::Regex",
-            ],
-            RegexAssertionPass | RegexAssertionFail | RegexAssertionRecurse => &[
-                "RakuAST::Regex::Assertion",
-                "RakuAST::Regex::Atom",
-                "RakuAST::Regex::Term",
-                "RakuAST::Regex",
-            ],
-            RegexCharClass(kind) => regex_char_class::ancestors(kind),
-            RegexAssertionCharClass => &[
-                "RakuAST::Regex::Assertion",
-                "RakuAST::Regex::Atom",
-                "RakuAST::Regex::Term",
-                "RakuAST::Regex",
-            ],
-            RegexCharClassElementEnumeration
-            | RegexCharClassElementRule
-            | RegexCharClassElementProperty => {
-                &["RakuAST::Regex::CharClassElement"]
-            }
-            RegexInternalModifierIgnoreCase
-            | RegexInternalModifierIgnoreMark
-            | RegexInternalModifierSigspace
-            | RegexInternalModifierRatchet => &[
-                "RakuAST::Regex::InternalModifier",
-                "RakuAST::Regex::Atom",
-                "RakuAST::Regex::Term",
-                "RakuAST::Regex",
-            ],
-            RegexAnchorBeginningOfString
-            | RegexAnchorBeginningOfLine
-            | RegexAnchorEndOfString
-            | RegexAnchorEndOfLine
-            | RegexAnchorLeftWordBoundary
-            | RegexAnchorRightWordBoundary => &[
-                "RakuAST::Regex::Anchor",
-                "RakuAST::Regex::Atom",
-                "RakuAST::Regex::Term",
-                "RakuAST::Regex",
-            ],
-            Grammar => &[
-                "RakuAST::Class",
-                "RakuAST::Package",
-                "RakuAST::Term",
-                "RakuAST::Expression",
-            ],
-            ColonPairTrue | ColonPairFalse | ColonPairValue | ColonPairNumber => {
-                &["RakuAST::Term", "RakuAST::Expression"]
-            }
-            Substitution | Transliteration => &[
-                "RakuAST::QuotedMatchConstruct",
-                "RakuAST::Term",
-                "RakuAST::Termish",
-                "RakuAST::Expression",
-            ],
-            StatementPrefixStart => &[
-                "RakuAST::StatementPrefix::Blorst",
-                "RakuAST::StatementPrefix",
-                "RakuAST::Term",
-                "RakuAST::Termish",
-                "RakuAST::Expression",
-            ],
-            StatementPrefixQuietly => &[
-                "RakuAST::StatementPrefix",
-                "RakuAST::Term",
-                "RakuAST::Termish",
-                "RakuAST::Expression",
-            ],
-            StatementPrefixSink
-            | StatementPrefixLazy
-            | StatementPrefixHyper
-            | StatementPrefixRace => &[
-                "RakuAST::StatementPrefix::CallMethod",
-                "RakuAST::StatementPrefix",
-                "RakuAST::Term",
-                "RakuAST::Termish",
-                "RakuAST::Expression",
-            ],
-            Mixin => &["RakuAST::Infix", "RakuAST::Infixish"],
-            PrefixMultislice => &["RakuAST::Prefix", "RakuAST::Prefixish"],
-            Nqp | NqpConst => EXPR,
-            VarAttribute => &[
-                "RakuAST::Var",
-                "RakuAST::Term",
-                "RakuAST::Termish",
-                "RakuAST::Expression",
-            ],
-            VarAttributePublic => &[
-                "RakuAST::Term",
-                "RakuAST::Termish",
-                "RakuAST::Expression",
-            ],
-            CallPrivateMethod => &["RakuAST::Call::Methodish", "RakuAST::Postfixish"],
-            StatementPrefixReact | StatementPrefixSupply => &[
-                "RakuAST::StatementPrefix::Wheneverable",
-                "RakuAST::StatementPrefix::Blorst",
-                "RakuAST::StatementPrefix",
-                "RakuAST::Term",
-                "RakuAST::Termish",
-                "RakuAST::Expression",
-            ],
-            Pragma
-            | StatementUse
-            | StatementRequire
-            | StatementNeed
-            | StatementTrusts
-            | StatementImport
-            | StatementLanguageVersion
-            | StatementAlso
-            | StatementWhenever => {
-                &["RakuAST::Statement"]
-            }
-            RegexQuantifierZeroOrMore
-            | RegexQuantifierOneOrMore
-            | RegexQuantifierZeroOrOne
-            | RegexQuantifierRange
-            | RegexQuantifierBlockRange => &["RakuAST::Regex::Quantifier"],
-            RegexBacktrackFrugal | RegexBacktrackGreedy | RegexBacktrackRatchet => {
-                &["RakuAST::Regex::Backtrack"]
-            }
-            _ => &[],
-        }
-    }
 }
 
-/// Whether a registered RakuAST type object is a subtype of another RakuAST
-/// type object. This mirrors [`Value::isa_check`] for node instances while also
-/// covering abstract registry entries such as `RakuAST::Node` and
-/// `RakuAST::Expression`.
+/// Whether a RakuAST type object lists another in its MRO (`.^isa`; roles
+/// excluded). The hierarchy is rakudo's measured one ([`hierarchy`]); a
+/// mutsu-only node class answers through the rakudo class it stands in for.
 pub fn type_object_isa(actual: &str, expected: &str) -> bool {
-    if !is_registered_type_object(actual) || !is_registered_type_object(expected) {
-        return false;
-    }
-    // A `Name::Part` is not a `RakuAST::Node` in Rakudo (its MRO is
-    // `(Simple) (Part) (Any) (Mu)`), nor a `RakuAST::Name` despite the
-    // `RakuAST::Name::` namespace prefix.
-    let is_name_part =
-        actual == "RakuAST::Name::Part" || actual.starts_with("RakuAST::Name::Part::");
-    if actual == expected || (expected == "RakuAST::Node" && !is_name_part) {
-        return true;
-    }
-    if is_name_part && expected == "RakuAST::Name" {
-        return false;
-    }
-    if crate::qualified::is_inside_package(
-        crate::symbol::Symbol::intern(actual),
-        crate::symbol::Symbol::intern(expected),
-    ) {
-        return true;
-    }
-    if semantic_type_object_ancestors(actual).contains(&expected) {
-        return true;
-    }
-    match expected {
-        "RakuAST::Expression" => {
-            actual == "RakuAST::Term"
-                || actual.starts_with("RakuAST::Term::")
-                || semantic_type_object_ancestors(actual).contains(&expected)
-        }
-        "RakuAST::Term" => semantic_type_object_ancestors(actual).contains(&expected),
-        _ => false,
-    }
+    hierarchy::isa(measured_name(actual), expected).unwrap_or(false)
+        || (actual == expected && is_registered_type_object(actual))
 }
 
-/// The model-layer MRO for a registered RakuAST type object. This intentionally
-/// reflects mutsu's documented RakuAST hierarchy rather than pretending these
-/// model types are ordinary entries in the runtime class registry.
-pub fn type_object_mro(class_name: &str) -> Option<Vec<String>> {
-    if !is_registered_type_object(class_name) {
-        return None;
-    }
+/// Whether a RakuAST type object or node of class `actual` smartmatches the
+/// RakuAST type `expected`: itself, an MRO entry or a role it does.
+pub fn type_object_does(actual: &str, expected: &str) -> bool {
+    hierarchy::does(measured_name(actual), expected).unwrap_or(false)
+        || (actual == expected && is_registered_type_object(actual))
+}
 
-    let mut mro = vec![class_name.to_string()];
-    let is_name_part =
-        class_name == "RakuAST::Name::Part" || class_name.starts_with("RakuAST::Name::Part::");
-    let mut namespace = crate::symbol::Symbol::intern(class_name);
-    while let Some(parent) = crate::qualified::package_parent(namespace) {
-        let parent_sym = parent;
-        let parent = parent_sym.as_str();
-        if parent == "RakuAST" {
-            break;
-        }
-        if is_name_part && parent == "RakuAST::Name" {
-            break;
-        }
-        if is_registered_type_object(parent) && !mro.iter().any(|name| name == parent) {
-            mro.push(parent.to_string());
-        }
-        namespace = parent_sym;
+/// The `.^mro` of a RakuAST type object, as rakudo prints it.
+pub fn type_object_mro(class_name: &str) -> Option<Vec<String>> {
+    let measured = measured_name(class_name);
+    let mut mro = hierarchy::mro(measured)?;
+    if measured != class_name {
+        mro.insert(0, class_name.to_string());
     }
-    for ancestor in semantic_type_object_ancestors(class_name) {
-        if !mro.iter().any(|name| name == ancestor) {
-            mro.push((*ancestor).to_string());
-        }
-    }
-    if class_name == "RakuAST::Term" && !mro.iter().any(|name| name == "RakuAST::Expression") {
-        mro.push("RakuAST::Expression".to_string());
-    }
-    if class_name != "RakuAST::Node" && !is_name_part {
-        mro.push("RakuAST::Node".to_string());
-    }
-    mro.push("Any".to_string());
-    mro.push("Mu".to_string());
     Some(mro)
+}
+
+/// The `.^roles` of a RakuAST type object, as rakudo prints them.
+pub fn type_object_roles(class_name: &str) -> Option<Vec<&'static str>> {
+    hierarchy::entry(measured_name(class_name)).map(|e| e.roles.clone())
+}
+
+/// Whether a RakuAST name is a role (`RakuAST::Code`, `RakuAST::Sinkable`).
+pub fn type_object_is_role(class_name: &str) -> bool {
+    hierarchy::entry(class_name).is_some_and(|e| e.kind == hierarchy::Kind::Role)
+}
+
+/// Whether a RakuAST name is a bare namespace (`RakuAST::IMPL`), not a type.
+pub fn type_object_is_package(class_name: &str) -> bool {
+    hierarchy::entry(class_name).is_some_and(|e| e.kind == hierarchy::Kind::Package)
+}
+
+/// The rakudo class a mutsu-only node class answers the hierarchy as. mutsu
+/// models two spellings rakudo folds into another class: `Call::BlockMethod`
+/// (rakudo renders `$x.&{...}` as a `Call::TermAsMethod`) and
+/// `Name::Part::EmptyEdge` (an `Empty` part at a name's edge).
+fn measured_name(class_name: &str) -> &str {
+    match class_name {
+        "RakuAST::Call::BlockMethod" => "RakuAST::Call::TermAsMethod",
+        "RakuAST::Name::Part::EmptyEdge" => "RakuAST::Name::Part::Empty",
+        _ => class_name,
+    }
 }
 
 /// The immediate parent in mutsu's linearized RakuAST model hierarchy.
@@ -1288,178 +1028,10 @@ pub fn type_object_direct_parent(class_name: &str) -> Option<String> {
     type_object_mro(class_name)?.into_iter().nth(1)
 }
 
-fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
-    const TERM: &[&str] = &["RakuAST::Term", "RakuAST::Expression"];
-    const EXPR: &[&str] = &["RakuAST::Expression"];
-    match class_name {
-        "RakuAST::IntLiteral"
-        | "RakuAST::NumLiteral"
-        | "RakuAST::RatLiteral"
-        | "RakuAST::VersionLiteral"
-        | "RakuAST::ComplexLiteral"
-        | "RakuAST::FakeSignature"
-        | "RakuAST::StrLiteral"
-        | "RakuAST::QuotedString"
-        | "RakuAST::Heredoc"
-        | "RakuAST::Type::Enum"
-        | "RakuAST::Var::Lexical"
-        | "RakuAST::Var::Compiler::Block"
-        | "RakuAST::Var::Compiler::Routine"
-        | "RakuAST::Var::Package"
-        | "RakuAST::Var::Dynamic"
-        | "RakuAST::Term::Reduce"
-        | "RakuAST::Sub"
-        | "RakuAST::Block"
-        | "RakuAST::PointyBlock"
-        | "RakuAST::VarDeclaration::Placeholder::Positional"
-        | "RakuAST::VarDeclaration::Placeholder::Named"
-        | "RakuAST::VarDeclaration::Placeholder::SlurpyArray"
-        | "RakuAST::VarDeclaration::Placeholder::SlurpyHash"
-        | "RakuAST::Call::Name"
-        | "RakuAST::Call::Name::WithoutParentheses"
-        | "RakuAST::QuotedRegex"
-        // Same "not RakuAST::Term::"-prefixed" gap as the instance-level
-        // `semantic_ancestors` above.
-        | "RakuAST::WhateverCode::Argument" => TERM,
-        "RakuAST::ApplyInfix"
-        | "RakuAST::ApplyPrefix"
-        | "RakuAST::ApplyPostfix"
-        | "RakuAST::ApplyListInfix"
-        | "RakuAST::ApplyDottyInfix"
-        | "RakuAST::Ternary" => EXPR,
-        "RakuAST::Grammar" => &[
-            "RakuAST::Class",
-            "RakuAST::Package",
-            "RakuAST::Term",
-            "RakuAST::Expression",
-        ],
-        "RakuAST::Native" => &["RakuAST::Package", "RakuAST::Term", "RakuAST::Expression"],
-        "RakuAST::Regex::Literal"
-        | "RakuAST::Regex::Quote"
-        | "RakuAST::Regex::Group"
-        | "RakuAST::Regex::CapturingGroup"
-        | "RakuAST::Regex::NamedCapture"
-        | "RakuAST::Regex::Assertion::Named"
-        | "RakuAST::Regex::Assertion::Named::Args"
-        | "RakuAST::Regex::Assertion::Alias"
-        | "RakuAST::Regex::Assertion::Named::RegexArg"
-        | "RakuAST::Regex::Assertion::Lookahead"
-        | "RakuAST::Regex::Assertion::InterpolatedVar"
-        | "RakuAST::Regex::Assertion::Callable"
-        | "RakuAST::Regex::Assertion::PredicateBlock"
-        | "RakuAST::Regex::Assertion::InterpolatedBlock"
-        | "RakuAST::Regex::Interpolation"
-        | "RakuAST::Regex::WithWhitespace"
-        | "RakuAST::Regex::Nested"
-        | "RakuAST::Regex::Statement"
-        | "RakuAST::Regex::Block" => &[
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-        ],
-        "RakuAST::Regex::BackReference::Named" | "RakuAST::Regex::BackReference::Positional" => &[
-            "RakuAST::Regex::BackReference",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-        ],
-        "RakuAST::Regex::Assertion::Recurse" => &[
-            "RakuAST::Regex::Assertion",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-        ],
-        "RakuAST::Regex::Sequence"
-        | "RakuAST::Regex::Alternation"
-        | "RakuAST::Regex::SequentialAlternation"
-        | "RakuAST::Regex::Conjunction"
-        | "RakuAST::Regex::SequentialConjunction" => {
-            &["RakuAST::Regex"]
-        },
-        "RakuAST::Regex::QuantifiedAtom" | "RakuAST::Regex::BacktrackModifiedAtom" =>
-            &["RakuAST::Regex::Term", "RakuAST::Regex"],
-        "RakuAST::Regex::InternalModifier" => &[
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-        ],
-        "RakuAST::ColonPair::True"
-        | "RakuAST::ColonPair::False"
-        | "RakuAST::ColonPair::Variable"
-        | "RakuAST::ColonPair::Value"
-        | "RakuAST::ColonPair::Number" => {
-            &["RakuAST::Term", "RakuAST::Expression"]
-        }
-        "RakuAST::Substitution" | "RakuAST::Transliteration" => &[
-            "RakuAST::QuotedMatchConstruct",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-        ],
-        "RakuAST::Pragma"
-        | "RakuAST::Statement::Use"
-        | "RakuAST::Statement::Require"
-        | "RakuAST::Statement::LanguageVersion"
-        | "RakuAST::Statement::Also" => &["RakuAST::Statement"],
-        "RakuAST::RegexDeclaration"
-        | "RakuAST::TokenDeclaration"
-        | "RakuAST::RuleDeclaration" => &[
-            "RakuAST::Term",
-            "RakuAST::Expression",
-        ],
-        // A node class answers what its instances do.
-        _ => class_from_name(class_name).map_or(&[], RakuAstClass::semantic_ancestors),
-    }
-}
-
 /// Whether `class_name` names a RakuAST type object mutsu models (a node
 /// class or one of its abstract ancestors).
 pub(crate) fn is_registered_type_object(class_name: &str) -> bool {
-    if matches!(
-        class_name,
-        "RakuAST::Node"
-            | "RakuAST::Expression"
-            | "RakuAST::Term"
-            | "RakuAST::Statement"
-            | "RakuAST::Call"
-            | "RakuAST::Var"
-            | "RakuAST::Var::Compiler"
-            | "RakuAST::Call::Methodish"
-            | "RakuAST::Postfixish"
-            | "RakuAST::VarDeclaration"
-            | "RakuAST::Initializer"
-            | "RakuAST::Type"
-            | "RakuAST::Trait"
-            | "RakuAST::ParameterTarget"
-            | "RakuAST::Parameter::Slurpy"
-            | "RakuAST::Name::Part"
-            | "RakuAST::Postcircumfix"
-            | "RakuAST::Circumfix"
-            | "RakuAST::StatementModifier"
-            // The two abstract halves of the StatementModifier hierarchy: an
-            // absent `condition-modifier` / `loop-modifier` answers with one of
-            // these type objects, so they have to be nameable.
-            | "RakuAST::StatementModifier::Condition"
-            | "RakuAST::StatementModifier::Loop"
-            | "RakuAST::StatementPrefix"
-            | "RakuAST::MetaPostfix"
-            | "RakuAST::MetaPrefix"
-            | "RakuAST::Prefixish"
-            | "RakuAST::MetaInfix"
-            | "RakuAST::Regex"
-            | "RakuAST::Regex::Atom"
-            | "RakuAST::Regex::Term"
-            | "RakuAST::Regex::Assertion"
-            | "RakuAST::Regex::Quantifier"
-            | "RakuAST::Regex::CharClass"
-            | "RakuAST::Regex::CharClass::Negatable"
-            | "RakuAST::Regex::CharClassElement"
-            | "RakuAST::Regex::Anchor"
-            | "RakuAST::Regex::Backtrack"
-            | "RakuAST::ColonPair"
-            | "RakuAST::QuotePair"
-            | "RakuAST::Package"
-    ) {
+    if hierarchy::entry(class_name).is_some() {
         return true;
     }
     RAKUAST_CLASSES

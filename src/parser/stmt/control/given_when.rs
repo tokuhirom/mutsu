@@ -143,6 +143,14 @@ fn bareword_names_known_term(name: &str) -> bool {
     if name == "self" || name == "X" {
         return true;
     }
+    // A RakuAST model class is a CORE type object (`when RakuAST::Infix { }`),
+    // abstract ones such as `RakuAST::Literal` included.
+    if name.starts_with("RakuAST::")
+        && (crate::core_type_names::contains(name)
+            || crate::rakuast::is_registered_type_object(name))
+    {
+        return true;
+    }
     // A type smiley (`when Map:D { }`, `when Channel:U { }`) can only attach to
     // a type name, so the name is never a routine call whatever the base is —
     // an undeclared base is a different diagnostic ("Type ... is not declared").

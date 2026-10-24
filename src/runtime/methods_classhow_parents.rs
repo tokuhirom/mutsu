@@ -164,6 +164,22 @@ impl Interpreter {
         // Detect whether the invocant is an instance (Mixin or Instance) vs a
         // type object (Package). For punned role instances, the role itself
         // should be included in the result.
+        // A RakuAST type object or node answers rakudo's measured roles.
+        let rakuast_class = match args[0].view() {
+            ValueView::RakuAst(node) => Some(node.class.printed_name().to_string()),
+            ValueView::Package(name) => Some(name.resolve()),
+            _ => None,
+        };
+        if args.len() == 1
+            && let Some(roles) = rakuast_class.and_then(|c| crate::rakuast::type_object_roles(&c))
+        {
+            return Ok(Value::array(
+                roles
+                    .into_iter()
+                    .map(|r| Value::package(Symbol::intern(r)))
+                    .collect(),
+            ));
+        }
         let is_instance = matches!(
             args[0].view(),
             ValueView::Instance { .. } | ValueView::Mixin(_, _)

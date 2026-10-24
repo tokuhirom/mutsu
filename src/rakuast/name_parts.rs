@@ -22,7 +22,7 @@ pub(crate) fn is_name_part(value: &Value) -> bool {
     }
 }
 
-pub(crate) fn is_name_part_class(class: RakuAstClass) -> bool {
+fn is_name_part_class(class: RakuAstClass) -> bool {
     matches!(
         class,
         RakuAstClass::NamePartSimple

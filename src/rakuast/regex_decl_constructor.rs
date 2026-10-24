@@ -38,7 +38,7 @@ fn build(class: RakuAstClass, args: &[Value]) -> Result<Value, RuntimeError> {
         let traits = rakuast_node_list(&value, &constructor, "traits")?;
         for value in &traits {
             if !matches!(value.view(), ValueView::RakuAst(node)
-                if node.class.semantic_ancestors().contains(&"RakuAST::Trait"))
+                if super::type_object_does(node.class.printed_name(), "RakuAST::Trait"))
             {
                 return Err(RuntimeError::new(format!(
                     "{constructor} expects trait nodes"
