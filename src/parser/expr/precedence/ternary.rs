@@ -264,6 +264,16 @@ pub(crate) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((r2, crate::parser::expr::wrap_finished_expr(compound)));
         }
     }
+    if let Some((after_op, set_tok, spelling)) =
+        crate::parser::stmt::assign::parse_set_compound_assign_op(r)
+    {
+        let (after_ws, _) = ws(after_op)?;
+        if let Ok((r2, rhs)) = call_arg_ternary_expr(after_ws) {
+            let compound =
+                crate::parser::stmt::assign::written_set_assignment(expr, spelling, set_tok, rhs);
+            return Ok((r2, crate::parser::expr::wrap_finished_expr(compound)));
+        }
+    }
 
     // Handle simple assignment (=) in call-arg context.
     if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
