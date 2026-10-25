@@ -78,15 +78,6 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
         .take_while(|stmt| stmt.is_routine_traits() || matches!(stmt, Stmt::DoesDecl { also: false, .. }))
         .count();
     let written = crate::ast::routine_trait::get(role.body).unwrap_or_default();
-    let composed = role.body[..header_len]
-        .iter()
-        .filter(|stmt| matches!(stmt, Stmt::DoesDecl { .. }))
-        .count();
-    let is_written = |wanted: &str| {
-        written.iter().any(
-            |t| matches!(t, crate::ast::routine_trait::RoutineTrait::Is { name, .. } if name == wanted),
-        )
-    };
     let expected: usize = written
         .iter()
         .map(|t| match t {
@@ -99,17 +90,45 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             _ => 0,
         })
         .sum();
-    // An `also is Parent;` or `also is rw;` lifted out of the body is not a
-    // header spelling and remains the existing normalization boundary.
-    if composed != expected
-        || role.is_rw != is_written("rw")
-        || role.is_export != is_written("export")
-    {
+    let composed: Vec<&Stmt> = role.body[..header_len]
+        .iter()
+        .filter(|stmt| matches!(stmt, Stmt::DoesDecl { .. }))
+        .collect();
+    if composed.len() < expected || role.is_export != super::convert::has_is(written, "export") {
         return Err(unsupported(
             "role header the written-trait record does not account for",
         ));
     }
-    let traits = super::routine_source::header_traits(role.body)?;
+    let mut traits = super::routine_source::header_traits(role.body)?;
+    // What follows the written clauses is `also is Parent;` / `also is rw;`
+    // lifted out of the body: a parent without a header spelling renders as
+    // a trailing `is` trait, which lowers back to the same clause.
+    for stmt in &composed[expected..] {
+        let Stmt::DoesDecl {
+            name,
+            args,
+            from_is: true,
+            ..
+        } = stmt
+        else {
+            return Err(unsupported(
+                "role header the written-trait record does not account for",
+            ));
+        };
+        let parent = crate::ast::routine_trait::RoutineTrait::Parent {
+            kind: crate::ast::routine_trait::ParentKind::Is,
+            name: name.resolve(),
+            args: args.clone(),
+        };
+        traits.push(Value::rakuast(Box::new(
+            super::routine_source::trait_node(&parent)?,
+        )));
+    }
+    if role.is_rw && !super::convert::has_is(written, "rw") {
+        traits.push(Value::rakuast(Box::new(super::routine_traits::trait_is(
+            "rw", None,
+        ))));
+    }
     let scope = if super::convert::is_anon_package(role.custom_traits) {
         Some("anon")
     } else {

@@ -914,10 +914,23 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 } else {
                     parents
                 };
-                let traits = header_trait_values(
+                // An `also is Parent;` lifted out of the body has no header
+                // spelling; it renders as a trailing `is` trait, which lowers
+                // back to the same parent.
+                let mut header_parents = written.to_vec();
+                let mut also_traits = Vec::new();
+                for parent in body_parents {
+                    if let Some(at) = header_parents.iter().rposition(|p| p == parent) {
+                        header_parents.remove(at);
+                    }
+                    also_traits.push(Value::rakuast(Box::new(
+                        super::routine_source::trait_node(&also_parent(parent, parent_args))?,
+                    )));
+                }
+                let mut traits = header_trait_values(
                     body,
                     &HeaderFields {
-                        parents: written,
+                        parents: &header_parents,
                         does_parents,
                         hidden_parents,
                         is_rw: false,
@@ -925,6 +938,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                         custom_traits: &[],
                     },
                 )?;
+                traits.extend(also_traits);
                 if !traits.is_empty() {
                     fields.push(RakuAstField {
                         name: Some("traits"),
@@ -1003,15 +1017,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 if let Some(at) = header_parents.iter().rposition(|p| p == parent) {
                     header_parents.remove(at);
                 }
-                let written = crate::ast::routine_trait::RoutineTrait::Parent {
-                    kind: crate::ast::routine_trait::ParentKind::Is,
-                    name: parent.clone(),
-                    args: parent_args
-                        .iter()
-                        .find(|(name, _)| name == parent)
-                        .map(|(_, args)| args.clone()),
-                };
-                let node = super::routine_source::trait_node(&written)?;
+                let node = super::routine_source::trait_node(&also_parent(parent, parent_args))?;
                 also_statements.push(super::role::also_is_statement(Value::rakuast(Box::new(
                     node,
                 ))));
@@ -1027,18 +1033,6 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     custom_traits: &visible_custom_traits,
                 },
             )?;
-            // `also is rw;` in the body is a statement too, not a header trait.
-            if *class_is_rw
-                && !crate::ast::routine_trait::get(body).is_some_and(|written| {
-                    written.iter().any(|t| {
-                        matches!(t, crate::ast::routine_trait::RoutineTrait::Is { name, .. } if name == "rw")
-                    })
-                })
-            {
-                also_statements.push(super::role::also_is_statement(Value::rakuast(Box::new(
-                    routine_traits::trait_is("rw", None),
-                ))));
-            }
             if !traits.is_empty() {
                 fields.push(RakuAstField {
                     name: Some("traits"),
@@ -5251,6 +5245,23 @@ fn without_composed_header<'a>(body: &'a [Stmt], does_parents: &[String]) -> &'a
     &body[header..]
 }
 
+/// The `is` clause an `also is Parent;` statement of a class or grammar body
+/// stands for.
+// Cost: O(p), p = parents with arguments.
+fn also_parent(
+    parent: &str,
+    parent_args: &[(String, Vec<Expr>)],
+) -> crate::ast::routine_trait::RoutineTrait {
+    crate::ast::routine_trait::RoutineTrait::Parent {
+        kind: crate::ast::routine_trait::ParentKind::Is,
+        name: parent.to_string(),
+        args: parent_args
+            .iter()
+            .find(|(name, _)| name == parent)
+            .map(|(_, args)| args.clone()),
+    }
+}
+
 /// What the parser folded a class or grammar header into, to check against the
 /// record of what was written.
 struct HeaderFields<'a> {
@@ -5268,9 +5279,9 @@ struct HeaderFields<'a> {
 /// written was not built by a parse that keeps spellings, and is refused.
 // Cost: O(t + a), t = written traits, a = size of their arguments.
 fn header_trait_values(body: &[Stmt], fields: &HeaderFields<'_>) -> Result<Vec<Value>, RuntimeError> {
-    if crate::ast::routine_trait::get(body).is_none()
-        && (fields.is_rw
-            || fields.is_hidden
+    let written = crate::ast::routine_trait::get(body);
+    if written.is_none()
+        && (fields.is_hidden
             || !fields.parents.is_empty()
             || !fields.does_parents.is_empty()
             || !fields.hidden_parents.is_empty()
@@ -5281,7 +5292,21 @@ fn header_trait_values(body: &[Stmt], fields: &HeaderFields<'_>) -> Result<Vec<V
     {
         return Err(unsupported("class traits without a written-trait record"));
     }
-    super::routine_source::header_traits(body)
+    let mut traits = super::routine_source::header_traits(body)?;
+    // `also is rw;` in the body sets the flag without a header spelling; it
+    // renders as the trailing `is rw` trait, which lowers back to the flag.
+    if fields.is_rw && !written.is_some_and(|w| has_is(w, "rw")) {
+        traits.push(Value::rakuast(Box::new(routine_traits::trait_is("rw", None))));
+    }
+    Ok(traits)
+}
+
+/// Whether the written traits include `is NAME`.
+// Cost: O(t), t = written traits.
+pub(super) fn has_is(written: &[crate::ast::routine_trait::RoutineTrait], wanted: &str) -> bool {
+    written.iter().any(
+        |t| matches!(t, crate::ast::routine_trait::RoutineTrait::Is { name, .. } if name == wanted),
+    )
 }
 
 /// The `RakuAST::StatementPrefix::Phaser::<Kind>` class for a phaser kind.
