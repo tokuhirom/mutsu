@@ -156,3 +156,13 @@ This supersedes the narrower rationale recorded in the code when `.version` was
 first aligned to `CARGO_PKG_VERSION` (so that `.version` and `.id` would not
 disagree about a build). That consistency requirement is preserved, but between
 `.release` and `.id` — which is where build identity belongs.
+
+## Amendment (2026-10-25): the core repo's `rakudo` distribution uses the same coordinate
+
+Rakudo's `core` Installation repository holds one distribution named `rakudo` whose `ver` equals
+`$*RAKU.compiler.version`. mutsu's `core` repo presents its bundled core battery the same way
+([#14907](https://github.com/tokuhirom/mutsu/issues/14907)): `name` is `rakudo` and `ver` is
+derived from `RAKUDO_COMPAT_VERSION`, so a `rakudo:ver<...>` dependency and a
+`$*RAKU.compiler.version` gate cannot disagree. This extends no new claim: the identity fields stay
+as above (`$*RAKU.compiler.name` is `mutsu`, `.release` is the crate version). The vendored
+`modules/Rakudo-Core` tree and its directory name are unchanged.
