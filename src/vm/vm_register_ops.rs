@@ -492,6 +492,16 @@ impl Interpreter {
                 let Some(method_code) = &def.compiled_code else {
                     return;
                 };
+                // A method a closure installed through the MOP
+                // (`^add_multi_method`, `^add_method`) already carries the
+                // environment of the closure itself; the class declaration
+                // frame's capture is not its scope (it lacks the `$attr` /
+                // `$name` the closure read from its creator).
+                if def.captured_env.as_ref().is_some_and(|env| {
+                    env.contains_key("__mutsu_declared_method_capture")
+                }) {
+                    return;
+                }
                 let key = std::sync::Arc::as_ptr(method_code) as usize;
                 if let Some(env) = captures_pop(&captures, key) {
                     def.captured_env = Some(env);
