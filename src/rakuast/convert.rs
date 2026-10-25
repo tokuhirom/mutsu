@@ -393,15 +393,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Some(crate::ast::SourceForm::SignatureDecl(decl)) => Ok(Some(statement_expression(
                 super::signature_decl::convert(decl)?,
             ))),
-            Some(crate::ast::SourceForm::AttributeGroup(attributes)) => Ok(Some(
-                statement_expression(super::attribute_group::to_signature(attributes)?),
-            )),
-            Some(crate::ast::SourceForm::AttributeColonArglist(attributes)) => Ok(Some(
-                statement_expression(super::attribute_group::convert_colon(attributes)?),
-            )),
-            Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => Ok(Some(statement_expression(
-                super::method_assign_decl::convert(decl)?,
-            ))),
             // `my $x OP= EXPR`: the declaration as the left operand.
             Some(crate::ast::SourceForm::DeclarationCompoundAssign) => {
                 declaration_compound_assign_statement(stmt).map(Some)
@@ -3506,7 +3497,9 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             ) || matches!(
                 stmt.as_ref(),
                 Stmt::Ast(node)
-                    if matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::BindDecl(_) | crate::ast::parsed::ParsedStmt::SigillessDecl(_))
+                    if matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::BindDecl(_) | crate::ast::parsed::ParsedStmt::SigillessDecl(_)
+                        | crate::ast::parsed::ParsedStmt::AttributeGroup(_) | crate::ast::parsed::ParsedStmt::AttributeColonArglist(_)
+                        | crate::ast::parsed::ParsedStmt::MethodAssignDecl(_))
             ) =>
         {
             let statement = convert_stmt(stmt)?.ok_or_else(|| unsupported("declaration term"))?;
@@ -3628,15 +3621,6 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
             Some(crate::ast::SourceForm::SignatureDecl(decl)) => {
                 super::signature_decl::convert(decl)
-            }
-            Some(crate::ast::SourceForm::AttributeGroup(attributes)) => {
-                super::attribute_group::to_signature(attributes)
-            }
-            Some(crate::ast::SourceForm::AttributeColonArglist(attributes)) => {
-                super::attribute_group::convert_colon(attributes)
-            }
-            Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => {
-                super::method_assign_decl::convert(decl)
             }
             Some(crate::ast::SourceForm::DeclarationCompoundAssign) => {
                 declaration_compound_assign(stmt)

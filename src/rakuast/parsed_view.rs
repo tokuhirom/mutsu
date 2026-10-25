@@ -100,6 +100,15 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
             condition,
             kind,
         } => declaration_modifier_node(decl, condition, *kind)?,
+        ParsedStmt::AttributeGroup(attributes) => {
+            statement_expression(super::attribute_group::to_signature(attributes)?)
+        }
+        ParsedStmt::AttributeColonArglist(attributes) => {
+            statement_expression(super::attribute_group::convert_colon(attributes)?)
+        }
+        ParsedStmt::MethodAssignDecl(form) => {
+            statement_expression(super::method_assign_decl::convert(form)?)
+        }
         ParsedStmt::SigillessDecl(d) => {
             let call_assign = match (&d.form, &d.expr) {
                 (

@@ -1,50 +1,37 @@
 use v6;
 use experimental :rakuast;
+use MONKEY-SEE-NO-EVAL;
 use Test;
 
-# Binding and `does` declarations are typed parser nodes (ADR-10723 Stage 2):
-# `.AST` renders them from the node, execution lowers the same node.
+# Declarations the parser keeps as written nodes: a parenthesized `has`
+# group, an attribute colon argument list and a `.=` declaration. Each is one
+# node for `.AST`, and lowers (via EVAL) to the same program as the source.
 
-plan 18;
+plan 12;
 
-my $bind = Q|my @a := (1, 2)|.AST.statements[0].expression;
-is $bind.^name, 'RakuAST::VarDeclaration::Simple', 'bound array declaration';
-is $bind.initializer.^name, 'RakuAST::Initializer::Bind', 'with a bind initializer';
+sub declaration-of(Str $source) { $source.AST.statements[0].expression }
+sub attribute-of(Str $source) { ('class C { ' ~ $source ~ ' }').AST.statements[0].expression.body.body.statement-list.statements[0].expression }
 
-my $does = Q|my %h does Role = :a(1)|.AST.statements[0].expression;
-is $does.^name, 'RakuAST::VarDeclaration::Simple', 'does declaration';
-is $does.traits[0].^name, 'RakuAST::Trait::Does', 'with a Trait::Does';
-is $does.initializer.^name, 'RakuAST::Initializer::Assign', 'and its initializer';
+is attribute-of('has Int ($.a, $.b);').^name, 'RakuAST::VarDeclaration::Signature',
+    'a grouped has is one signature declaration';
+is declaration-of('my Int $s .= new(3);').^name, 'RakuAST::VarDeclaration::Simple',
+    'a .= declaration is a simple declaration';
+is declaration-of('my Int $s .= new(3);').initializer.^name,
+    'RakuAST::Initializer::CallAssign', 'its initializer is the call-assign';
 
-my @src = 1, 2;
-my @b := @src;
-@b.push(3);
-is @src.elems, 3, 'array bind aliases';
-my $y = 5;
-my $z := $y;
-$z = 6;
-is $y, 6, 'scalar bind aliases';
-my \lit := 7;
-is lit, 7, 'sigilless bind';
+my $group = 'class G { has Int ($.p, $.q); }; G.new(:p(2), :q(4)).q + G.new(:p(2)).p'.AST.EVAL;
+is $group, 6, 'a grouped has installs both attributes';
 
-role R { method hi { 'hi' } }
-my %h does R = :a(1);
-is %h.hi, 'hi', 'role mixed into a hash';
-is %h<a>, 1, 'initializer kept after the mixin';
-my @c does R = 1, 2;
-is @c.hi ~ @c.elems, 'hi2', 'array does with initializer';
-is (my $d := 3), 3, 'a bind is still an expression';
+my $colon = 'class D { has Int $.gid: has Str @.m; }; D.new.^attributes.elems'.AST.EVAL;
+is $colon, 2, 'the declaration in a colon argument list still declares';
 
-# will, loose tail and sigilless declarations are typed nodes too
-my $will = Q|my $x will leave { 1 }|.AST.statements[0].expression;
-is $will.traits[0].^name, 'RakuAST::Trait::Will', 'will trait';
-my $tail = Q|my $t = 1 and 2|.AST.statements[0].expression;
-is $tail.^name, 'RakuAST::ApplyInfix', 'loose tail makes one infix application';
-my $term = Q|my \s = 5|.AST.statements[0].expression;
-is $term.^name, 'RakuAST::VarDeclaration::Term', 'sigilless declaration';
-my \sl = 7;
-is sl, 7, 'sigilless term value';
-my $r = (my $u = 4 and 9);
-is $r, 9, 'loose tail value';
-my $w will leave { $_ = 1 } = 2;
-is $w, 2, 'will declaration still declares and assigns';
+is 'my Int $s .= new(7); $s'.AST.EVAL, 7, 'a typed .= declaration runs';
+is 'my $o .= new; $o.^name'.AST.EVAL, 'Any', 'an untyped .= declaration runs';
+is 'my @a .= new(1, 2); @a.elems'.AST.EVAL, 2, 'an array .= declaration runs';
+is 'my Int $s .= new(-3).abs; $s'.AST.EVAL, -3, 'a .= declaration with a chain keeps the call result';
+
+is (my Int $e .= new(4)).^name, 'Int', 'a .= declaration in expression position';
+is ('(my Int $i .= new(5)).^name'.AST.EVAL), 'Int', 'its RakuAST lowering runs';
+
+my $round = 'class H { has Int ($.m, $.n); }; H.new(:m(1), :n(2)).n'.AST.EVAL;
+is $round, 2, 'a grouped has round-trips through RakuAST';

@@ -123,6 +123,18 @@ pub(crate) enum ParsedStmt {
         condition: Expr,
         kind: super::decl_modifier::DeclarationModifier,
     },
+    /// `has Type ($.a, $.b)`: one visible RakuAST signature declaration over
+    /// the attribute declarations as written. `rakuast::lower` installs each
+    /// listed attribute separately (a block of the declarations).
+    AttributeGroup(Vec<Stmt>),
+    /// A declaration parsed inside a public attribute's colon argument list
+    /// (`has Int $.gid: has Str @.m;`), with the declaration that introduced
+    /// the list last. The nested declarations execute, but RakuAST displays the
+    /// declaration that introduced the colon list. Lowers to a block of them.
+    AttributeColonArglist(Vec<Stmt>),
+    /// `my [Type] $x .= method(...)`: the declaration as written.
+    /// `rakuast::lower` expands it (`ast::method_assign_decl::expand`).
+    MethodAssignDecl(Box<super::method_assign_decl::MethodAssignDecl>),
 }
 
 /// `STMT if COND`, `STMT for LIST`, `STMT if COND for LIST`: the statement as
@@ -539,6 +551,9 @@ impl ParsedStmt {
             | ParsedStmt::BindDecl(_)
             | ParsedStmt::TempDecl(_)
             | ParsedStmt::BarePhaser(_)
+            | ParsedStmt::AttributeGroup(_)
+            | ParsedStmt::AttributeColonArglist(_)
+            | ParsedStmt::MethodAssignDecl(_)
             | ParsedStmt::CommaDecls(_) => Vec::new(),
             ParsedStmt::TakeLogicalTail { value, right, .. } => vec![value, right],
             ParsedStmt::ImmediateCall { args, .. } => args.iter().collect(),
@@ -580,6 +595,9 @@ impl ParsedStmt {
             | ParsedStmt::BarePhaser(_)
             | ParsedStmt::ImmediateCall { .. }
             | ParsedStmt::AttributeModifier { .. }
+            | ParsedStmt::AttributeGroup(_)
+            | ParsedStmt::AttributeColonArglist(_)
+            | ParsedStmt::MethodAssignDecl(_)
             | ParsedStmt::CommaDecls(_)
             | ParsedStmt::TakeLogicalTail { .. }
             | ParsedStmt::Modified(_) => Vec::new(),

@@ -143,7 +143,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         };
         attributes.push(super::attribute_decl::lower(member)?);
     }
-    Ok(crate::ast::signature_decl::attribute_group_expansion(
+    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::AttributeGroup(
         attributes,
     ))
 }
@@ -168,7 +168,7 @@ pub(super) fn lower_colon(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         };
         attributes.push(super::attribute_decl::lower(member)?);
     }
-    Ok(crate::ast::signature_decl::attribute_colon_expansion(
+    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::AttributeColonArglist(
         attributes,
     ))
 }
