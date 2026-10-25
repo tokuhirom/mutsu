@@ -1,24 +1,7 @@
-//! The source form of a signature declaration, `my ($a, @b) = …`.
-//!
-//! The parser expands a declarator list into ordinary declarations reading a
-//! staging temporary (`parser::stmt::decl::destructure::desugar`). The
-//! expansion is all the compiler needs, but it is not what the source said:
-//! RakuAST models the declaration as one `VarDeclaration::Signature` node
-//! (ADR-10723 Stage 1). So the expansion carries this record, as a
-//! [`Stmt::SourceForm`] marker that is its first
-//! statement, and the RakuAST layer reads the declaration from it instead of
-//! reverse-engineering the expansion; `rakuast::lower` hands it back to the same
-//! expansion function the parser uses.
+//! The source form of a signature declaration, `my ($a, @b) = …`
+//! (`ParsedStmt::SignatureDecl`, ADR-10723 Stage 2).
 
 use super::{Expr, Stmt};
-
-/// A parsed source construct that the parser expanded, recorded inside its
-/// expansion. The compiler skips it.
-#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) enum SourceForm {
-    /// Traits written on a routine, in source order; opens its body.
-    RoutineTraits(Vec<super::routine_trait::RoutineTrait>),
-}
 
 /// `my|our|state [TYPE] (VARS) [is default(EXPR)] [= RHS | := RHS]`.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
@@ -120,12 +103,12 @@ impl SignatureVar {
 }
 
 /// The expansion of a bare group declaration `my ($a, @b);`: plain
-/// declarations, opened by the expansion's source-form record.
+/// declarations.
 pub(crate) fn is_group_declaration(inner: &[Stmt]) -> bool {
     inner.iter().any(|s| matches!(s, Stmt::VarDecl { .. }))
         && inner
             .iter()
-            .all(|s| matches!(s, Stmt::VarDecl { .. } | Stmt::SourceForm(_)))
+            .all(|s| matches!(s, Stmt::VarDecl { .. }))
 }
 
 /// The statements of the scope `stmts` makes up, with every

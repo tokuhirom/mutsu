@@ -9,6 +9,11 @@ use crate::ast::parsed::{BlockParams, ParsedBlock, ParsedExpr, ParsedStmt};
 /// Visits every child of `node`.
 // Cost: O(n), n = size of `node`'s subtree.
 pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast ParsedStmt) {
+    if let ParsedStmt::RoutineTraits(traits) = node {
+        // Not code: the execution fields hold the same expressions.
+        v.visit_routine_traits(traits);
+        return;
+    }
     if let ParsedStmt::Conditional(c) = node {
         // Each clause's condition comes before its block.
         v.visit_expr(&c.condition);
@@ -186,6 +191,7 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
         | ParsedStmt::BindDecl(stmt)
         | ParsedStmt::TempDecl(stmt)
         | ParsedStmt::BarePhaser(stmt) => super::walk_stmt_mut(v, stmt),
+        ParsedStmt::RoutineTraits(_) => {}
         ParsedStmt::TakeLogicalTail { value, right, .. } => {
             v.visit_expr_mut(value);
             v.visit_expr_mut(right);

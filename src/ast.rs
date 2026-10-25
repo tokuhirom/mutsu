@@ -2993,11 +2993,6 @@ pub(crate) enum Stmt {
         #[serde(default)]
         is_attribute: bool,
     },
-    /// The source form of the parser expansion this statement opens (see
-    /// `ast::signature_decl`): a record for the RakuAST layer, not code. It
-    /// is the first statement of the `SyntheticBlock` that holds the
-    /// expansion, and the compiler emits nothing for it.
-    SourceForm(Box<SourceForm>),
     /// A construct the parser built in its RakuAST shape, kept only by a parse
     /// whose tree the RakuAST conversion reads (ADR-10723 Stage 2,
     /// [`parsed`]). Every other parse lowers it where it is built, so the
@@ -3075,14 +3070,19 @@ impl Default for SrcSpan {
 }
 
 impl Stmt {
+    /// The written-traits record that opens a routine's body
+    /// (`ast::routine_trait`): compiler-inert.
+    pub(crate) fn is_routine_traits(&self) -> bool {
+        matches!(self, Stmt::Ast(node) if matches!(node.as_ref(), parsed::ParsedStmt::RoutineTraits(_)))
+    }
+
     /// A statement that exists for the program's diagnostics, not for what it
     /// computes: a source-line marker or a `use trace` hook. Code that
     /// recognises a body by its *shape* (a stub `{...}`, a dispatcher `{*}`)
     /// looks past these, which is what lets a pragma add them without changing
     /// what the body means.
     pub(crate) fn is_marker(&self) -> bool {
-        matches!(self, Stmt::SetLine(..) | Stmt::Trace { .. })
-            || matches!(self, Stmt::SourceForm(form) if matches!(form.as_ref(), SourceForm::RoutineTraits(_)))
+        matches!(self, Stmt::SetLine(..) | Stmt::Trace { .. }) || self.is_routine_traits()
     }
 }
 
@@ -3162,7 +3162,7 @@ pub(crate) mod var_does;
 pub(crate) mod var_will;
 mod where_match;
 pub(crate) use signature_decl::{
-    ParamTrait, SignatureDecl, SignatureGroup, SignatureInit, SignatureVar, SourceForm,
+    ParamTrait, SignatureDecl, SignatureGroup, SignatureInit, SignatureVar,
     is_group_declaration, scope_statements,
 };
 pub(crate) mod regex_placeholders;

@@ -188,6 +188,7 @@ impl VisitMut for Ctx {
             | ParsedStmt::SignatureDecl(_)
             | ParsedStmt::Temporize(_)
                     | ParsedStmt::TakeLogicalTail { .. }
+                    | ParsedStmt::RoutineTraits(_)
                     | ParsedStmt::ImmediateCall { .. }
                     | ParsedStmt::AttributeModifier { .. } => {
                         crate::ast_visit::walk_parsed_mut(self, node)

@@ -18,6 +18,12 @@ use super::{Expr, ParamDef, SrcSpan, Stmt};
 /// A statement-level construct kept in its RakuAST shape.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ParsedStmt {
+    /// The traits written on a routine or package, in source order; opens
+    /// its body. Compiler-inert: the execution fields the parser folds them
+    /// into are the code, this is what the source said. Analyses skip it
+    /// unless they opt in (`Visit::visit_routine_traits`); lowering it
+    /// produces no statement.
+    RoutineTraits(Vec<super::routine_trait::RoutineTrait>),
     /// `if` / `unless` / `with` / `without` and their clause chain.
     Conditional(Conditional),
     /// `given TOPIC BLOCK` (`Statement::Given`); the block's topic parameter,

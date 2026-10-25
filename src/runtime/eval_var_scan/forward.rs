@@ -196,12 +196,6 @@ impl UndeclaredVars<'_> {
 struct DeclaredNames(HashMap<String, usize>, HashSet<String>);
 
 impl<'ast> Visit<'ast> for DeclaredNames {
-    // A pointy `given`'s parameters live only in its source form: the
-    // lowering binds a destructured one (`-> ($a, |rest)`) by assignment.
-    fn visit_source_form(&mut self, form: &'ast crate::ast::SourceForm) {
-        crate::ast_visit::walk_source_form(self, form);
-    }
-
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         match kind {
             NameKind::VarDecl | NameKind::Param | NameKind::BlockParam => {

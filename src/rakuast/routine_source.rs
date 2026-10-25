@@ -284,7 +284,7 @@ pub(super) fn retain(node: &RakuAstNode, body: &mut Vec<Stmt>) -> Result<(), Run
         };
         traits.push(source);
     }
-    crate::ast::routine_trait::attach(body, traits);
+    crate::ast::routine_trait::retain(body, traits);
     Ok(())
 }
 

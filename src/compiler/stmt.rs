@@ -977,9 +977,10 @@ impl Compiler {
             self.note_import_in_scope();
         }
         match stmt {
-            // A record for the RakuAST layer (`ast::signature_decl`); the
-            // expansion that follows it is the code.
-            Stmt::SourceForm(_) => {}
+            // The written-traits record (`ast::routine_trait`) is not code.
+            Stmt::Ast(node) if stmt.is_routine_traits() => {
+                let _ = node;
+            }
             // Only a parse whose tree the RakuAST conversion reads keeps a
             // parser node; every other parse lowers it where it is built.
             Stmt::Ast(_) => {
