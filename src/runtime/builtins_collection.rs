@@ -411,11 +411,15 @@ impl Interpreter {
     /// records the key objects in `original_keys`), then tags the `Mu` key type
     /// and re-keys by `.WHICH`. Uses the warning-free builder: an object hash
     /// KEEPS a type-object key distinct (no ""-stringification warning).
-    pub(super) fn builtin_object_hash(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_object_hash(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut flat_values = Vec::new();
         for arg in args {
             flat_values.extend(Self::value_to_list(arg));
         }
+        // A key object whose class declares `WHICH` is filed under that answer
+        // (`:{ $a => 1 }` then `%h{$b} = 2` is one entry when they agree), so
+        // the user's method runs before the pure keying layer asks for it.
+        self.warm_which_identity_all(&flat_values);
         // An object hash is keyed by each key object's `.WHICH`, not by its
         // stringification.  Keeping that identity during construction matters
         // when two distinct objects have the same fallback `.Str`: stringifying
