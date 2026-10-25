@@ -153,6 +153,15 @@ pub(crate) fn lower_dotty_assignment(
     stmt::assign::lower_dotty(node, as_statement, is_term)
 }
 
+/// [`lower_dotty_assignment`] written as a statement.
+// Cost: O(n), n = size of the target and the call.
+pub(crate) fn lower_dotty_statement(
+    node: crate::ast::parsed::CompoundAssign,
+    is_term: fn(&str) -> bool,
+) -> crate::ast::Stmt {
+    stmt::assign::lower_dotty_statement(node, is_term)
+}
+
 /// Whether `op` is the base infix of a compound assignment the compound
 /// lowering takes (`+` of `+=`).
 // Cost: O(k), k = number of compound operators.

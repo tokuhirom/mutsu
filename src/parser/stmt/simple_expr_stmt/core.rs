@@ -436,16 +436,12 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 ));
                 return parse_statement_modifier(r, stmt);
             }
-            Expr::BareWord(ref name) => {
-                // BareWord .= method: e.g. `Foo .= new` tries to assign to a type object,
-                // which is immutable. Emit an assignment so the runtime can throw the
-                // appropriate "Cannot modify an immutable type object" error.
-                let stmt = Stmt::Assign {
-                    name: name.clone(),
-                    expr: make_rhs(expr.clone()),
-                    op: AssignOp::Assign,
-                    target_is_sigilless: false,
-                };
+            Expr::BareWord(_) => {
+                // BareWord .= method: e.g. `Foo .= new` tries to assign to a type
+                // object, which the lowering turns into the assignment that throws
+                // "Cannot modify an immutable type object".
+                let call = make_rhs(expr.clone());
+                let stmt = crate::parser::stmt::assign::written_dotty_assignment_stmt(expr, call);
                 return parse_statement_modifier(r, stmt);
             }
             _ => {

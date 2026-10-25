@@ -55,11 +55,10 @@ pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PE
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_compound_statement(node: CompoundAssign) -> Result<Stmt, PError> {
     if matches!(node.meta, CompoundMeta::Dotty | CompoundMeta::TopicDotty) {
-        return Ok(Stmt::Expr(lower_dotty(
+        return Ok(lower_dotty_statement(
             node,
-            true,
             crate::parser::stmt::simple::is_user_declared_value_term,
-        )));
+        ));
     }
     if let CompoundMeta::BracketedMeta(..) = node.meta {
         if !is_variable(&node.target) {
@@ -373,6 +372,43 @@ pub(crate) fn lower_dotty(
         target,
         |invocant| crate::parser::expr::retarget_dotty_call(&call, invocant),
         is_term,
+    )
+}
+
+/// `TARGET .= meth(args);` written as a statement. A bareword that names no
+/// sigilless term is a type object (`C .= new`): the statement assigns to it,
+/// which dies as on rakudo ("Cannot modify an immutable 'C' type object").
+// Cost: O(n), n = size of the target and the call.
+pub(crate) fn lower_dotty_statement(node: CompoundAssign, is_term: fn(&str) -> bool) -> Stmt {
+    if let Expr::BareWord(name) = &node.target
+        && !is_term(name)
+    {
+        return Stmt::Assign {
+            name: name.clone(),
+            expr: node.source,
+            op: AssignOp::Assign,
+            // The bareword itself is the target, as in `C = C.new`.
+            target_is_sigilless: true,
+        };
+    }
+    Stmt::Expr(lower_dotty(node, true, is_term))
+}
+
+/// [`written_dotty_assignment`] written as a statement.
+// Cost: O(n), n = size of the target and the call.
+pub(crate) fn written_dotty_assignment_stmt(target: Expr, call: Expr) -> Stmt {
+    let node = CompoundAssign {
+        target,
+        op: ".".to_string(),
+        meta: CompoundMeta::Dotty,
+        source: call,
+    };
+    if crate::ast::spelled::keeping() {
+        return Stmt::Expr(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node))));
+    }
+    lower_dotty_statement(
+        node,
+        crate::parser::stmt::simple::is_user_declared_value_term,
     )
 }
 
