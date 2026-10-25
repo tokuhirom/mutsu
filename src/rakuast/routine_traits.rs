@@ -16,27 +16,20 @@
 //! `sub infix:<+++>($a, $b) is assoc<left>` carries its associativity as
 //! `Trait::Is(name => assoc, argument => QuotedString(<words val>, "left"))` and
 //! `is tighter(&infix:<+>)` (also `looser`, `equiv`) a parenthesised
-//! `Var::Lexical("&infix:<+>")`. The parser keeps the first in `associativity`
-//! and the second in `precedence_trait` (also copying its kind into
-//! `associativity`). The written source list in `routine_source` preserves both.
+//! `Var::Lexical("&infix:<+>")`.
 //!
 //! `multiness` and `private` precede `name`; a trait sits in `traits` before
-//! `body`. Parsed routines use `routine_source` for written order and argument
-//! spelling. The normalized-field helpers here also serve synthesized trees,
-//! for which a combination whose order is unknown remains a refusal.
+//! `body`. The traits of a parsed routine are rendered from the list the
+//! source wrote, in written order (`routine_source`); the execution fields the
+//! parser folds them into (`is_rw`, `associativity`, `custom_traits`) are not
+//! read back. The helpers here serve the flags and the lowering direction.
 //!
 //! Any other `is NAME` / `is NAME(ARGS)` on a sub (`is native("libc")`,
 //! `is test-assertion`, a user `trait_mod:<is>`) is a `Trait::Is` too, with
-//! the argument as a `Circumfix::Parentheses`. The parser keeps these in
-//! `custom_traits` in source order, beside the `returns`/`of` marker, so they
-//! render in that order around the return-type trait. A list argument
-//! `(a, b)` is the parser's `Grouped(ArrayLiteral)`, and the parentheses are
-//! the circumfix. Written angle arguments retain their word-quote form through
-//! `routine_source`; normalized custom arguments use the helpers here.
-//! `is DEPRECATED` / `is DEPRECATED("message")` is a `Trait::Is` too:
-//! the parser keeps it as the custom trait `DEPRECATED` / `DEPRECATED:message`,
-//! and a method's `is default` and `is DEPRECATED` as fields of their own, which
-//! [`method_custom_traits`] puts back among the custom traits.
+//! the argument as a `Circumfix::Parentheses`. A list argument `(a, b)` is the
+//! parser's `Grouped(ArrayLiteral)`, and the parentheses are the circumfix.
+//! `is DEPRECATED` / `is DEPRECATED("message")` is a `Trait::Is` too: the
+//! parser keeps it as the custom trait `DEPRECATED` / `DEPRECATED:message`.
 
 use super::convert::{
     leaf_field, name_from_identifier, node_field, statement_expression, unsupported,
