@@ -303,3 +303,36 @@ fn reset_atomic_var_key_decl_removes_only_retired_value_key_from_dirty_set() {
         "declaration retirement must not clear the bare name"
     );
 }
+
+fn env_str(interp: &Interpreter, name: &str) -> Option<String> {
+    interp.env.get(name).and_then(|v| match v.view() {
+        ValueView::Str(s) => Some(s.to_string()),
+        _ => None,
+    })
+}
+
+/// A sigilless binding (`\type`) is bound once and never assigned, so the
+/// store's entry for its bare name is only a snapshot of whichever frame last
+/// bound that name. Pulling it into the env ahead of an inline `.protect`
+/// block hid the running frame's own binding (#14867: Red's `Model.alias`
+/// read `type` as `Mu` on its second call).
+#[test]
+fn protect_sync_leaves_a_sigilless_binding_alone() {
+    let mut interp = Interpreter::new();
+    interp.threads.shared_vars_active = true;
+    interp
+        .threads
+        .shared_vars
+        .declare("\\type", Value::str("stale".to_string()));
+    interp
+        .threads
+        .shared_vars
+        .declare("count", Value::str("shared".to_string()));
+    interp.env.insert("\\type".to_string(), Value::str("live".to_string()));
+    interp.env.insert("count".to_string(), Value::str("live".to_string()));
+
+    interp.sync_shared_vars_for_names(["\\type", "count"]);
+
+    assert_eq!(env_str(&interp, "\\type"), Some("live".to_string()));
+    assert_eq!(env_str(&interp, "count"), Some("shared".to_string()));
+}
