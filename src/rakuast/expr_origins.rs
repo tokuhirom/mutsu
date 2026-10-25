@@ -11,8 +11,9 @@
 //! the slot itself. The table is dropped with the conversion.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+
+use rustc_hash::{FxHashMap as HashMap, FxHasher};
 
 use crate::ast::spelled::Spelling;
 use crate::ast::{Expr, SrcSpan, Stmt};
@@ -71,7 +72,7 @@ impl Drop for Scope {
 
 // Cost: O(n), n = size of `expr`.
 fn fingerprint(expr: &Expr) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut hasher = FxHasher::default();
     expr.hash(&mut hasher);
     hasher.finish()
 }
@@ -120,7 +121,7 @@ impl VisitMut for Print<'_> {
 /// the returned scope ends.
 // Cost: O(n·d), n = expressions in the tree, d = their depth.
 pub(super) fn strip(stmts: &mut [Stmt]) -> Scope {
-    let mut strip = Strip(HashMap::new());
+    let mut strip = Strip(HashMap::default());
     crate::ast_visit::walk_stmts_mut(&mut strip, stmts);
     let mut print = Print {
         spans: &strip.0,
