@@ -44,7 +44,7 @@ pub(crate) fn head_name(head: &Stmt) -> Option<&str> {
         // The same compound assignment as a `.AST` parse keeps it.
         Stmt::Expr(Expr::Ast(node)) => match node.as_ref() {
             super::parsed::ParsedExpr::CompoundAssign(a) => variable_name(&a.target),
-            super::parsed::ParsedExpr::Assign(_) => None,
+            _ => None,
         },
         _ => None,
     }
