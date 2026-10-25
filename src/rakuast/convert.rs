@@ -223,26 +223,7 @@ fn is_modifier_statement(stmt: &Stmt) -> bool {
 /// Convert one statement. Returns `Ok(None)` for non-semantic bookkeeping
 /// statements (e.g. `SetLine`) that carry no RakuAST representation.
 pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
-    // A synthetic block is the parser's desugaring; the conversion recognizes
-    // it by the shape of the statements inside, which must stay as parsed.
-    // Assignments and declarations lower from the class of their source.
-    let _desugared =
-        matches!(stmt, Stmt::SyntheticBlock(_)).then(super::passthrough::Desugared::enter);
-    // Every other statement lowers from the class of the expressions it holds
-    // (traits, defaults, sources, headers).
-    let _sources = (!matches!(
-        stmt,
-        Stmt::Expr(_)
-            | Stmt::Call { .. }
-            | Stmt::Say(_)
-            | Stmt::Put(_)
-            | Stmt::Print(_)
-            | Stmt::Note(_)
-            | Stmt::Return(_)
-            | Stmt::Take(..)
-            | Stmt::SetLine(..)
-    ))
-    .then(super::passthrough::Inspecting::enter);
+    let _guards = super::passthrough::stmt_guards(stmt);
     convert_stmt_node(stmt)
 }
 
@@ -2662,22 +2643,7 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     if let Some(leaf) = super::passthrough::expr_leaf(expr) {
         return Ok(leaf);
     }
-    // `lower` reads the operands of an infix (the loose logical operators in
-    // particular) by their node class.
-    let _operands = matches!(
-        expr,
-        Expr::Binary { .. }
-            | Expr::AssignExpr { .. }
-            | Expr::CompoundAssign { .. }
-            | Expr::IndexAssign { .. }
-            | Expr::MultiDimIndexAssign { .. }
-            | Expr::SymbolicDerefAssign { .. }
-            | Expr::Ast(_)
-    )
-    .then(super::passthrough::Inspecting::enter);
-    let _desugared =
-        matches!(expr, Expr::DoStmt(inner) if matches!(inner.as_ref(), Stmt::SyntheticBlock(_)))
-            .then(super::passthrough::Desugared::enter);
+    let _guards = super::passthrough::expr_guards(expr);
     convert_expr_node(expr)
 }
 

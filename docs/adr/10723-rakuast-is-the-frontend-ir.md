@@ -2186,3 +2186,53 @@ this container too; the other 13 came down to these causes, now fixed:
 The contract is `t/rakuast/rakuast-roast-tap-cohort.t`, which passes on rakudo and on
 both frontends.
 
+
+### 6.109 Frontend cost: the executing round trip carries lossless families as the parser's tree (2026-10-25, [#15011](https://github.com/tokuhirom/mutsu/issues/15011))
+
+§2.4's budget (the `MUTSU_RAKUAST=1` frontend within 10% of the ordinary one, callgrind Ir of
+`mutsu -c FILE`, release/profiling build, warm) was at 1.12-1.20 on the Zef, `S32-exceptions` and
+`emoji-test` cases after the Fx-hash slices. What was left was the round trip itself: one
+`Arc<RakuAstNode>` per source node, built by `convert`, read by `lower` and freed, with a `Value` per
+field and an origin table per statement.
+
+For the families whose `Expr`/`Stmt` already is the node `lower` would hand the compiler (§4: "for a
+family whose `Expr` is already lossless, the typed node is that `Expr` plus its positions"), the
+executing round trip now carries the parser's tree itself. `rakuast::passthrough` makes one
+`RakuAstClass::ParsedLeaf` per maximal pure subtree (a statement, a call argument, an expression
+inside a statement `convert` does not read by class) and `lower` hands the tree back; `.AST`,
+`EVAL($ast)` and hand-built trees never see a leaf (a leaf exists only inside
+`frontend::round_trip`). The test for "pure" is a `Visit` over the subtree
+(`passthrough/pure.rs`) that names the variants it accepts and refuses every other one: literals
+(not regex/sub/instance values), plain variables, calls, method calls, operators, interpolation,
+closures, hashes, regexes without code, the kept conditional/loop/modifier/assignment constructs
+(lowered by their one lowering, `lower_parsed_stmt` / `lower_*_assign`, when the leaf is read), and
+the statements around them. A leaf drops the spelling annotations (`Expr::Spelled`), which only
+`convert` reads.
+
+Guards keep a leaf out of the conversions whose caller reads the class of the node it gets back:
+the operands of an infix or assignment, the sources of a declaration, trait and default
+expressions, a heredoc body, subscript adverbs, and anything inside the parser's desugaring
+(`Stmt::SyntheticBlock`, which `convert` recognizes by the shape of its statements). The statements
+of a block inside such a conversion are converted on their own again (`Block` guard).
+
+A spelled parse no longer notes the ranges of its terms unless the code that asked for it is
+`.AST` (`term_origins::Wanted`): the executing round trip never reads them.
+
+Measured (callgrind Ir of `-c`, warm, ordinary / `MUTSU_RAKUAST=1`, profiling build, 4 cores):
+
+| file | before | after |
+| --- | ---: | ---: |
+| `vendor/zef/lib/Zef/CLI.rakumod` | 1.16 | 1.063 |
+| `roast/S32-exceptions/misc.t` | 1.16 | 1.038 |
+| `t/rakuast/rakuast-source-forms.t` | 1.12 | 1.058 |
+| `roast/S05-mass/rx.t` | 1.01 | 1.003 |
+| `roast/S15-nfg/emoji-test.t` (all 7,653 lines) | 1.76 (wall) | 1.052 |
+| `vendor/zef/lib/Zef/Client.rakumod` | - | 0.992 |
+| `vendor/zef/lib/Zef/Utils/FileSystem.rakumod` | - | 1.083 |
+| `roast/S12-class/attributes.t` | - | 1.063 |
+
+What this does not do: the `convert` arms and the `lower` arms of the carried families stay, because
+`.AST` and `EVAL($ast)` still need them; they are no longer reached by an executing unit for a pure
+subtree, so the Stage 0 ratchet exercises them only through the files whose subtree is not pure.
+Routine declarations, packages, signatures and the constructs the guards name still go through
+`RakuAstNode`; their typed nodes (Stage 2) are the next place the round trip shrinks.

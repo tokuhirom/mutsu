@@ -17,8 +17,8 @@
 use std::cell::{Cell, RefCell};
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::parsed::{Assign, BlockParams, ParsedBlock, ParsedExpr, ParsedStmt};
-use crate::ast::{CallArg, Expr, ParamDef, Stmt};
+use crate::ast::parsed::{Assign, ParsedExpr};
+use crate::ast::{Expr, Stmt};
 use crate::ast_visit::VisitMut;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -36,8 +36,6 @@ struct Slot {
 
 thread_local! {
     static TABLE: RefCell<Option<Vec<Option<Slot>>>> = const { RefCell::new(None) };
-    /// Set by the purity test on meeting a spelling or a kept construct.
-    static FIXUP: Cell<bool> = const { Cell::new(false) };
     /// Conversions of the operands a parent reads by node class.
     static INSPECTING: Cell<u32> = const { Cell::new(0) };
     /// Conversions of the parser's desugaring, recognized by statement shape.
@@ -85,6 +83,56 @@ impl Drop for Desugared {
         DESUGARED.with(|c| c.set(c.get() - 1));
     }
 }
+
+/// The guards a conversion of `stmt` holds: the parser's desugaring is
+/// recognized by the shape of the statements inside it, and every statement
+/// but the plain ones lowers from the class of the expressions it holds
+/// (traits, defaults, sources, headers).
+// Cost: O(1).
+pub(super) fn stmt_guards(stmt: &Stmt) -> Guards {
+    Guards(
+        matches!(stmt, Stmt::SyntheticBlock(_)).then(Desugared::enter),
+        (!matches!(
+            stmt,
+            Stmt::Expr(_)
+                | Stmt::Call { .. }
+                | Stmt::Say(_)
+                | Stmt::Put(_)
+                | Stmt::Print(_)
+                | Stmt::Note(_)
+                | Stmt::Return(_)
+                | Stmt::Take(..)
+                | Stmt::SetLine(..)
+        ))
+        .then(Inspecting::enter),
+    )
+}
+
+/// [`stmt_guards`] for an expression: `lower` reads the operands of an infix
+/// (the loose logical operators in particular), of an assignment and of a
+/// kept construct by their node class.
+// Cost: O(1).
+pub(super) fn expr_guards(expr: &Expr) -> Guards {
+    Guards(
+        matches!(expr, Expr::DoStmt(inner) if matches!(inner.as_ref(), Stmt::SyntheticBlock(_)))
+            .then(Desugared::enter),
+        matches!(
+            expr,
+            Expr::Binary { .. }
+                | Expr::AssignExpr { .. }
+                | Expr::CompoundAssign { .. }
+                | Expr::IndexAssign { .. }
+                | Expr::MultiDimIndexAssign { .. }
+                | Expr::SymbolicDerefAssign { .. }
+                | Expr::Ast(_)
+        )
+        .then(Inspecting::enter),
+    )
+}
+
+/// What [`stmt_guards`] and [`expr_guards`] hold until dropped.
+#[allow(dead_code)] // held for its drop
+pub(super) struct Guards(Option<Desugared>, Option<Inspecting>);
 
 /// The statements of a block: whatever operand its parent reads by class, the
 /// statements are converted on their own.
@@ -153,11 +201,8 @@ pub(super) fn expr_leaf(expr: &Expr) -> Option<RakuAstNode> {
     if blocked() || !TABLE.with(|t| t.borrow().is_some()) {
         return None;
     }
-    FIXUP.with(|f| f.set(false));
-    if !pure_expr(expr) {
-        return None;
-    }
-    leaf_node(Held::Expr(expr.clone()), FIXUP.with(Cell::get), None)
+    let fixup = analyse_expr(expr)?;
+    leaf_node(Held::Expr(expr.clone()), fixup, None)
 }
 
 /// [`expr_leaf`] for a call argument, whose parent reads no class from it.
@@ -172,11 +217,8 @@ pub(super) fn stmt_leaf(stmt: &Stmt, line: Option<i64>) -> Option<RakuAstNode> {
     if blocked() || !TABLE.with(|t| t.borrow().is_some()) {
         return None;
     }
-    FIXUP.with(|f| f.set(false));
-    if !pure_stmt(stmt) {
-        return None;
-    }
-    leaf_node(Held::Stmt(stmt.clone()), FIXUP.with(Cell::get), line)
+    let fixup = analyse_stmt(stmt)?;
+    leaf_node(Held::Stmt(stmt.clone()), fixup, line)
 }
 
 // Cost: O(1).
@@ -330,249 +372,8 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
 }
 
-// Cost: O(s), s = nodes of `stmt`.
-fn pure_stmt(stmt: &Stmt) -> bool {
-    match stmt {
-        Stmt::SetLine(..) | Stmt::Last(_) | Stmt::Next(_) | Stmt::Redo(_) => true,
-        Stmt::Block(body) => body.iter().all(pure_stmt),
-        Stmt::Ast(node) => {
-            FIXUP.with(|f| f.set(true));
-            pure_parsed(node)
-        }
-        Stmt::For {
-            iterable,
-            param_def,
-            params_def,
-            body,
-            ..
-        } => {
-            pure_expr(iterable)
-                && param_def.as_ref().as_ref().is_none_or(pure_param)
-                && params_def.iter().all(pure_param)
-                && body.iter().all(pure_stmt)
-        }
-        Stmt::Expr(e) => pure_expr(e),
-        Stmt::Say(args) | Stmt::Put(args) | Stmt::Print(args) | Stmt::Note(args) => {
-            args.iter().all(pure_expr)
-        }
-        Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) => pure_expr(e),
-        Stmt::Assign {
-            name,
-            expr,
-            target_is_sigilless: false,
-            ..
-        } => declared_name(name) && pure_expr(expr),
-        Stmt::VarDecl {
-            name,
-            anonymous: false,
-            expr,
-            is_export: false,
-            export_tags,
-            custom_traits,
-            where_constraint: None,
-            ..
-        } => {
-            declared_name(name)
-                && export_tags.is_empty()
-                && custom_traits
-                    .iter()
-                    .all(|(name, arg)| name == "__has_initializer" && arg.is_none())
-                && pure_expr(expr)
-        }
-        Stmt::Call { args, .. } => args.iter().all(|a| match a {
-            CallArg::Positional(e) => pure_expr(e),
-            CallArg::Named { value, .. } => value.as_ref().is_none_or(pure_expr),
-            _ => false,
-        }),
-        _ => false,
-    }
-}
+mod pure;
+#[cfg(test)]
+mod tests;
 
-// Cost: O(n), n = nodes of the construct.
-fn pure_parsed(node: &ParsedStmt) -> bool {
-    match node {
-        ParsedStmt::Conditional(c) => {
-            pure_expr(&c.condition)
-                && pure_block(&c.then)
-                && c.clauses
-                    .iter()
-                    .all(|k| pure_expr(&k.condition) && pure_block(&k.then))
-                && c.else_block.as_ref().is_none_or(pure_block)
-        }
-        ParsedStmt::Given { topic, block } => pure_expr(topic) && pure_block(block),
-        ParsedStmt::When { condition, block } => pure_expr(condition) && pure_block(block),
-        ParsedStmt::Default(block) | ParsedStmt::BareBlock(block) => pure_block(block),
-        ParsedStmt::WhileLoop(w) => pure_expr(&w.condition) && pure_block(&w.block),
-        ParsedStmt::For { stmt, .. } => pure_stmt(stmt),
-        ParsedStmt::Modified(m) => {
-            pure_stmt(&m.stmt)
-                && m.condition.as_ref().is_none_or(|c| pure_expr(&c.expr))
-                && m.loop_.as_ref().is_none_or(|c| pure_expr(&c.expr))
-        }
-        _ => false,
-    }
-}
-
-// Cost: O(n), n = nodes of the block.
-fn pure_block(block: &ParsedBlock) -> bool {
-    (match &block.params {
-        BlockParams::None => true,
-        BlockParams::List(params) => params.iter().all(pure_param),
-        BlockParams::Topic { def, .. } => def.as_deref().is_none_or(pure_param),
-    }) && block.body.iter().all(pure_stmt)
-}
-
-/// A parameter with a name and, at most, a type: nothing the lowering reads
-/// the signature of.
-// Cost: O(1).
-fn pure_param(param: &ParamDef) -> bool {
-    param.default.is_none()
-        && param.where_constraint.is_none()
-        && param.sub_signature.is_none()
-        && param.outer_sub_signature.is_none()
-        && param.code_signature.is_none()
-        && param.shape_constraints.is_none()
-        && param.literal_value.is_none()
-        && param.type_capture.is_none()
-        && param.traits.is_empty()
-        && param.trait_args.is_empty()
-}
-
-// Cost: O(e), e = nodes of `expr`.
-fn pure_expr(expr: &Expr) -> bool {
-    match expr {
-        Expr::Literal(v) => !matches!(
-            v.view(),
-            ValueView::Regex(_)
-                | ValueView::RegexWithAdverbs(_)
-                | ValueView::Sub(_)
-                | ValueView::WeakSub(_)
-                | ValueView::Instance { .. }
-        ),
-        Expr::AnonSub { body, .. } | Expr::DoBlock { body, .. } | Expr::Lambda { body, .. } => {
-            body.iter().all(pure_stmt)
-        }
-        Expr::WhateverCurry(inner)
-        | Expr::PositionalPair(inner)
-        | Expr::IndirectTypeLookup(inner)
-        | Expr::Eager(inner)
-        | Expr::Itemize(inner) => pure_expr(inner),
-        Expr::IndirectTypeLookupTail { head, .. } => pure_expr(head),
-        Expr::Contextualizer { inner, .. } => pure_expr(inner),
-        Expr::Reduction { expr, .. } => pure_expr(expr),
-        Expr::MetaOp { left, right, .. } | Expr::HyperOp { left, right, .. } => {
-            pure_expr(left) && pure_expr(right)
-        }
-        Expr::InfixFunc { left, right, .. } => pure_expr(left) && right.iter().all(pure_expr),
-        Expr::Gather(body) | Expr::Once { body } | Expr::PhaserExpr { body, .. } => {
-            body.iter().all(pure_stmt)
-        }
-        Expr::Spelled(spelled) => {
-            FIXUP.with(|f| f.set(true));
-            pure_expr(&spelled.expr)
-        }
-        Expr::Ast(node) => {
-            FIXUP.with(|f| f.set(true));
-            match node.as_ref() {
-                ParsedExpr::Assign(a) => pure_expr(&a.target) && pure_expr(&a.source),
-                _ => false,
-            }
-        }
-        Expr::PostfixOp { expr, .. } => pure_expr(expr),
-        Expr::DoStmt(stmt) => pure_stmt(stmt),
-        Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => !has_code(tree),
-        Expr::Exists { target, arg, .. } => {
-            pure_expr(target) && arg.as_deref().is_none_or(pure_expr)
-        }
-        Expr::Try { body, catch } => {
-            body.iter().all(pure_stmt) && catch.as_ref().is_none_or(|c| c.iter().all(pure_stmt))
-        }
-        Expr::HyperMethodCall { target, args, .. } | Expr::CallOn { target, args } => {
-            pure_expr(target) && args.iter().all(pure_expr)
-        }
-        Expr::DynamicMethodCall {
-            target,
-            name_expr,
-            args,
-            ..
-        } => pure_expr(target) && pure_expr(name_expr) && args.iter().all(pure_expr),
-        Expr::AnonSubParams {
-            param_defs,
-            body,
-            custom_traits,
-            ..
-        } => {
-            custom_traits.as_slice().is_empty()
-                && param_defs.iter().all(pure_param)
-                && body.iter().all(pure_stmt)
-        }
-        Expr::Whatever | Expr::WhateverArg => true,
-        Expr::Hash(items, _) => items
-            .iter()
-            .all(|(_, value)| value.as_ref().is_none_or(pure_expr)),
-        Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name) | Expr::CodeVar(name) => {
-            plain_name(name)
-        }
-        // A type name: the spelled parse leaves a lowercase bareword to the
-        // lowering, which resolves it against what the unit imported.
-        Expr::BareWord(word) => {
-            word.starts_with(|c: char| c.is_uppercase())
-                && word
-                    .chars()
-                    .all(|c| c.is_alphanumeric() || matches!(c, ':' | '-' | '_'))
-        }
-        Expr::StringInterpolation(parts) => parts.iter().all(pure_expr),
-        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => args.iter().all(pure_expr),
-        Expr::MethodCall { target, args, .. } => pure_expr(target) && args.iter().all(pure_expr),
-        Expr::Binary { left, right, .. } => pure_expr(left) && pure_expr(right),
-        Expr::Unary { expr, .. } => pure_expr(expr),
-        Expr::Ternary {
-            cond,
-            then_expr,
-            else_expr,
-        } => pure_expr(cond) && pure_expr(then_expr) && pure_expr(else_expr),
-        Expr::Index { target, index, .. } => pure_expr(target) && pure_expr(index),
-        Expr::ArrayLiteral(items) | Expr::BracketArray(items, _) => items.iter().all(pure_expr),
-        Expr::Grouped(inner) => pure_expr(inner),
-        _ => false,
-    }
-}
-
-/// A variable name the parser's tree and the lowering agree on: not a
-/// placeholder, a match variable or a desugaring's temporary.
-fn plain_name(name: &str) -> bool {
-    if name == "_" {
-        return true;
-    }
-    let mut chars = name.chars();
-    match chars.next() {
-        Some('*' | '?') => chars.next().is_some_and(|c| c.is_alphabetic()),
-        Some(c) => c.is_alphabetic(),
-        None => false,
-    }
-}
-
-/// Whether a regex holds code (a block, an assertion, an interpolation): the
-/// regex `Value` keeps its own copy of that code, which still carries the
-/// spelled parse's annotations.
-// Cost: O(n), n = nodes of the regex.
-fn has_code(tree: &crate::regex_tree::RegexTree) -> bool {
-    struct Code(bool);
-    impl<'ast> crate::ast_visit::Visit<'ast> for Code {
-        fn visit_stmt(&mut self, _stmt: &'ast Stmt) {
-            self.0 = true;
-        }
-        fn visit_expr(&mut self, _expr: &'ast Expr) {
-            self.0 = true;
-        }
-    }
-    let mut code = Code(false);
-    crate::ast_visit::walk_regex_tree(&mut code, tree);
-    code.0
-}
-
-/// The name a declaration or assignment carries: the sigil of an array, hash
-/// or code variable is part of it.
-fn declared_name(name: &str) -> bool {
-    plain_name(name.strip_prefix(['@', '%', '&']).unwrap_or(name))
-}
+use pure::{analyse_expr, analyse_stmt};
