@@ -337,20 +337,17 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 remaining_len: err.remaining_len.or(Some(rest.len())),
                 exception: None,
             })?;
-        let stmt = Stmt::Assign {
-            name: name.clone(),
-            expr: Expr::InfixFunc {
-                name: op_name,
-                left: Box::new(var_expr),
-                right: vec![rhs],
-                modifier: None,
-            },
-            op: AssignOp::Assign,
-            target_is_sigilless: false,
-        };
+        if crate::ast::spelled::keeping() {
+            let (rest, expr) =
+                crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
+                    rest,
+                    super::written_routine_compound_assignment(var_expr, op_name, rhs)?,
+                )?;
+            return parse_statement_modifier(rest, Stmt::Expr(expr));
+        }
         let (rest, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
             rest,
-            stmt,
+            super::written_routine_compound_assignment_stmt(var_expr, op_name, rhs)?,
             crate::parser::stmt::word_logical_split::seed_read_expr(&name),
         )?;
         return parse_statement_modifier(rest, stmt);
