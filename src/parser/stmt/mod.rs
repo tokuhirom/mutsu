@@ -21,8 +21,8 @@ pub(crate) mod word_logical_split;
 
 use super::memo::{MemoEntry, MemoKey, MemoStats, ParseMemo};
 use super::parse_result::{MISSING_BLOCK, PError, PResult, parse_char, update_best_error};
-use std::cell::RefCell;
 use rustc_hash::FxHashMap as HashMap;
+use std::cell::RefCell;
 
 use crate::ast::Stmt;
 

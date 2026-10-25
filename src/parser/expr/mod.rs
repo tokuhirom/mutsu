@@ -19,8 +19,8 @@ mod tests_postfix;
 
 use super::memo::{MemoEntry, MemoKey, MemoStats, ParseMemo};
 use super::parse_result::PResult;
-use std::cell::RefCell;
 use rustc_hash::FxHashMap as HashMap;
+use std::cell::RefCell;
 
 use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;

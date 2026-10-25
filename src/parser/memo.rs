@@ -5,8 +5,8 @@
 //! thread-local storage.
 
 use super::parse_result::{PError, PResult};
-use std::cell::{Cell, RefCell};
 use rustc_hash::FxHashMap as HashMap;
+use std::cell::{Cell, RefCell};
 
 #[derive(Debug, Clone)]
 pub(super) enum MemoEntry<T: Clone> {

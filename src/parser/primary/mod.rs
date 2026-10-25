@@ -27,8 +27,8 @@ pub(in crate::parser) use source_regions::{register_leaked_region_with_jump, sou
 
 use super::memo::{MemoEntry, MemoKey, MemoStats, ParseMemo};
 use super::parse_result::{PError, PResult, update_best_error};
-use std::cell::RefCell;
 use rustc_hash::FxHashMap as HashMap;
+use std::cell::RefCell;
 
 use crate::ast::Expr;
 use crate::value::Value;
