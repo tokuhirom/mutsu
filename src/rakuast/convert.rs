@@ -122,6 +122,13 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
             }
             continue;
         }
+        if trace.is_none()
+            && let Some(leaf) = super::passthrough::stmt_leaf(stmt, line.map(|(n, _)| n))
+        {
+            line = None;
+            fields.push(node_field(None, leaf));
+            continue;
+        }
         if let Some(mut node) = convert_stmt(stmt)? {
             super::routine_origins::package_origins(&mut node, stmt);
             if let Some(field) = trace.take().and_then(origin::trace_field) {
@@ -2626,6 +2633,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
 }
 
 fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    if let Some(leaf) = super::passthrough::expr_leaf(expr) {
+        return Ok(leaf);
+    }
     if let Some(node) = super::deferred_name::convert(expr) {
         return node;
     }

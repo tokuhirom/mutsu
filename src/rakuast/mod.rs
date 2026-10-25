@@ -90,6 +90,7 @@ mod parameter_destructure;
 mod parameter_shape;
 mod parameter_signature;
 mod phaser_condition;
+mod passthrough;
 mod placeholder;
 mod postfix_grouping;
 mod prefix_call;
@@ -204,6 +205,9 @@ pub enum RakuAstClass {
     StatementList,
     StatementExpression,
     StatementEmpty,
+    // Internal: a subtree the executing round trip passes through untouched
+    // (`passthrough`); never rendered, never reachable from user code.
+    ParsedLeaf,
     StatementAlso,
     StatementPrefixReact,
     StatementPrefixSupply,
@@ -594,6 +598,7 @@ impl RakuAstClass {
         match self {
             CompUnit => "RakuAST::CompUnit",
             StatementList => "RakuAST::StatementList",
+            ParsedLeaf => "RakuAST::Internal::ParsedLeaf",
             StatementExpression => "RakuAST::Statement::Expression",
             StatementEmpty => "RakuAST::Statement::Empty",
             StatementAlso => "RakuAST::Statement::Also",

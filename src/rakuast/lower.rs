@@ -102,6 +102,13 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
                     continue;
                 }
                 let child = child_node(&f.value)?;
+                if super::passthrough::is_leaf(child) {
+                    if let Some(line) = super::passthrough::line_of(child) {
+                        stmts.push(Stmt::SetLine(line, crate::ast::SrcSpan::NONE));
+                    }
+                    stmts.push(super::passthrough::lower_stmt(child)?);
+                    continue;
+                }
                 // An empty statement runs nothing and is no block's value.
                 if child.class == RakuAstClass::StatementEmpty {
                     continue;
@@ -130,6 +137,9 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
 }
 
 pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    if super::passthrough::is_leaf(node) {
+        return super::passthrough::lower_stmt(node);
+    }
     let label = node_label(node)?;
     let _label_scope = super::label_context::enter(label.as_deref())?;
     if let Some(doc) = super::doc_phaser::lower(node) {
@@ -4146,6 +4156,9 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
 }
 
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    if super::passthrough::is_leaf(node) {
+        return super::passthrough::lower_expr(node);
+    }
     // The priming scope the parser planted here (see `thunk`).
     if super::thunk::is_thunk(node) {
         let body = lower_expr(&super::thunk::unmark(node))?;
