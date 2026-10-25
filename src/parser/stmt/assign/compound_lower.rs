@@ -31,14 +31,7 @@ pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PE
                 crate::parser::stmt::simple::is_user_declared_value_term,
             ));
         }
-        CompoundMeta::BracketedMeta(..) => {
-            let (name, value) = meta_assignment(node)?;
-            return Ok(Expr::AssignExpr {
-                name,
-                expr: Box::new(value),
-                is_bind: false,
-            });
-        }
+        CompoundMeta::BracketedMeta(..) => return bracketed_meta_expression(node),
         CompoundMeta::Plain if is_routine_infix(&node.op) => {
             return build_custom_compound_assign_expr(node.target, node.op, node.source);
         }
@@ -69,6 +62,9 @@ pub(crate) fn lower_compound_statement(node: CompoundAssign) -> Result<Stmt, PEr
         )));
     }
     if let CompoundMeta::BracketedMeta(..) = node.meta {
+        if !is_variable(&node.target) {
+            return Ok(Stmt::Expr(bracketed_meta_expression(node)?));
+        }
         let (name, value) = meta_assignment(node)?;
         return Ok(
             match rewrite_scalar_assignment_stmt_as_sink(name.clone(), value.clone()) {
@@ -191,8 +187,73 @@ pub(crate) fn written_routine_compound_assignment_stmt(
     lower_routine_statement(node)
 }
 
+/// Whether `target` is a plain variable (`$x`, `@a`, `%h`).
+// Cost: O(1).
+fn is_variable(target: &Expr) -> bool {
+    matches!(target, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_))
+}
+
+/// `TARGET [X+]= SOURCE` in expression position. A variable is assigned
+/// `VAR X+ SOURCE`; an element (`%h<k> [R//]= v`, `@a[i] [X+]= v`) stores the
+/// metaoperator's value through its subscript.
+// Cost: O(n), n = size of the target and source.
+fn bracketed_meta_expression(node: CompoundAssign) -> Result<Expr, PError> {
+    if !is_variable(&node.target) {
+        let CompoundMeta::BracketedMeta(meta, _) = node.meta else {
+            return Err(PError::expected("bracketed metaoperator assignment"));
+        };
+        return build_meta_assign_expr(
+            node.target,
+            meta.spelling().to_string(),
+            node.op,
+            node.source,
+        );
+    }
+    let (name, value) = meta_assignment(node)?;
+    Ok(Expr::AssignExpr {
+        name,
+        expr: Box::new(value),
+        is_bind: false,
+    })
+}
+
+/// `TARGET [OP]= SOURCE` as `parse_bracket_meta_assign_op` read it, over a
+/// subscripted (`%h<k> [R//]= v`) or parenthesized target: `meta` is `X`,
+/// `Z`, `R` or `reduce`, and `depth` the bracket nesting. A plain bracketed
+/// compound operator (`@a[1] [+]= 10`) is the bracketed compound node.
+// Cost: O(n), n = size of the target and source.
+pub(crate) fn written_bracketed_meta_assignment(
+    target: Expr,
+    meta: &str,
+    depth: usize,
+    op: String,
+    source: Expr,
+) -> Result<Expr, PError> {
+    let depth = u8::try_from(depth)
+        .map_err(|_| PError::expected("a bracketed infix nested at most 255 levels"))?;
+    if meta == "reduce"
+        && let Some(compound) = compound_assign_op_from_name(&op)
+    {
+        return written_compound_assignment(
+            target,
+            compound,
+            CompoundMeta::Bracketed(depth),
+            source,
+        );
+    }
+    // TODO: `[Z=]` on a variable is element-wise assignment
+    // (`__mutsu_zip_assign`), which the node does not lower yet; it keeps the
+    // expansion until the bracketed metaoperator lowering learns it.
+    if meta == "Z" && op == "=" {
+        return build_meta_assign_expr(target, meta.to_string(), op, source);
+    }
+    let kind = crate::ast::parsed::BracketedMeta::from_spelling(meta)
+        .ok_or_else(|| PError::expected("bracketed metaoperator"))?;
+    written_meta_assignment(target, kind, depth, op, source)
+}
+
 /// `VAR [X+]= SOURCE` assigns `VAR X+ SOURCE` to the variable: its name and
-/// that value. Only a variable takes a bracketed metaoperator assignment.
+/// that value.
 // Cost: O(n), n = size of the source.
 fn meta_assignment(node: CompoundAssign) -> Result<(String, Expr), PError> {
     let CompoundMeta::BracketedMeta(meta, _) = node.meta else {
@@ -236,6 +297,15 @@ pub(crate) fn written_meta_assignment(
         source,
     };
     if crate::ast::spelled::keeping() {
+        // A `.AST` parse accepts the same targets the lowering does.
+        if !is_variable(&node.target) {
+            build_meta_assign_expr(
+                node.target.clone(),
+                meta.spelling().to_string(),
+                node.op.clone(),
+                node.source.clone(),
+            )?;
+        }
         return Ok(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node))));
     }
     lower_compound_expression(node)
