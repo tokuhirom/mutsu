@@ -631,11 +631,15 @@ impl Interpreter {
                 "__mutsu_declared_method_capture",
             ));
             for (sym, val) in captured.iter() {
+                // A dynamic variable (`$*FLAG`) is the CALLER's, never the
+                // declaring scope's: a snapshot of it taken when the method
+                // was defined must not hide the binding the call runs under.
                 if !sym.with_str(|name| {
                     matches!(
                         name,
                         "self" | "?CLASS" | "?ROLE" | "__mutsu_declared_method_capture"
-                    )
+                    ) || name.starts_with('*')
+                        || name.get(1..).is_some_and(|rest| rest.starts_with('*'))
                 }) && (authoritative || !env.contains_key_sym(*sym))
                 {
                     env.insert_sym(*sym, val.clone());
