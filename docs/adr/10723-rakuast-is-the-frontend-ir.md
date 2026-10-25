@@ -2240,7 +2240,7 @@ Routine declarations, packages, signatures and the constructs the guards name st
 ### 6.110 Routine and package traits are rendered from the written record only (2026-10-26, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
 
 The first deletion after §6.109. Rendering the traits of a routine or package had two mechanisms:
-the record of the traits as written (`ast::routine_trait`, §6.5), and a reconstruction from the
+the record of the traits as written (`ast::routine_trait`, §6.2), and a reconstruction from the
 execution fields the parser folds them into (`is_rw`, `is_raw`, `export_tags`, the precedence
 fields, `custom_traits`, the `__return_via_*` spelling markers). A spelling-keeping parse always
 records the traits that were written, so the second mechanism could only serve a tree no keeping
