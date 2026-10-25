@@ -228,10 +228,20 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
     // Assignments and declarations lower from the class of their source.
     let _desugared =
         matches!(stmt, Stmt::SyntheticBlock(_)).then(super::passthrough::Desugared::enter);
-    let _sources = matches!(
+    // Every other statement lowers from the class of the expressions it holds
+    // (traits, defaults, sources, headers).
+    let _sources = (!matches!(
         stmt,
-        Stmt::Assign { .. } | Stmt::VarDecl { .. } | Stmt::Ast(_)
-    )
+        Stmt::Expr(_)
+            | Stmt::Call { .. }
+            | Stmt::Say(_)
+            | Stmt::Put(_)
+            | Stmt::Print(_)
+            | Stmt::Note(_)
+            | Stmt::Return(_)
+            | Stmt::Take(..)
+            | Stmt::SetLine(..)
+    ))
     .then(super::passthrough::Inspecting::enter);
     convert_stmt_node(stmt)
 }

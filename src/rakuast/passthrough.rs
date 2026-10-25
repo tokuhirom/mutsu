@@ -222,6 +222,7 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 // Cost: O(s), s = nodes of `stmt`.
 fn pure_stmt(stmt: &Stmt) -> bool {
     match stmt {
+        Stmt::SetLine(..) => true,
         Stmt::Expr(e) => pure_expr(e),
         Stmt::Say(args) | Stmt::Put(args) | Stmt::Print(args) | Stmt::Note(args) => {
             args.iter().all(pure_expr)
@@ -260,16 +261,33 @@ fn pure_stmt(stmt: &Stmt) -> bool {
 // Cost: O(e), e = nodes of `expr`.
 fn pure_expr(expr: &Expr) -> bool {
     match expr {
-        Expr::Literal(v) => matches!(
+        Expr::Literal(v) => !matches!(
             v.view(),
-            ValueView::Int(_) | ValueView::Num(_) | ValueView::Str(_) | ValueView::Bool(_)
+            ValueView::Regex(_)
+                | ValueView::RegexWithAdverbs(_)
+                | ValueView::Sub(_)
+                | ValueView::WeakSub(_)
+                | ValueView::Instance { .. }
         ),
+        Expr::AnonSub { body, .. } | Expr::DoBlock { body, .. } | Expr::Lambda { body, .. } => {
+            body.iter().all(pure_stmt)
+        }
+        Expr::WhateverCurry(inner) => pure_expr(inner),
+        Expr::Whatever | Expr::WhateverArg => true,
+        Expr::Hash(items, _) => items
+            .iter()
+            .all(|(_, value)| value.as_ref().is_none_or(pure_expr)),
         Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name) | Expr::CodeVar(name) => {
             plain_name(name)
         }
-        Expr::BareWord(word) => word
-            .chars()
-            .all(|c| c.is_alphanumeric() || matches!(c, ':' | '-' | '_')),
+        // A type name: the spelled parse leaves a lowercase bareword to the
+        // lowering, which resolves it against what the unit imported.
+        Expr::BareWord(word) => {
+            word.starts_with(|c: char| c.is_uppercase())
+                && word
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || matches!(c, ':' | '-' | '_'))
+        }
         Expr::StringInterpolation(parts) => parts.iter().all(pure_expr),
         Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => args.iter().all(pure_expr),
         Expr::MethodCall { target, args, .. } => pure_expr(target) && args.iter().all(pure_expr),

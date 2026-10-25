@@ -4156,9 +4156,6 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
 }
 
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
-    if super::passthrough::is_leaf(node) {
-        return super::passthrough::lower_expr(node);
-    }
     // The priming scope the parser planted here (see `thunk`).
     if super::thunk::is_thunk(node) {
         let body = lower_expr(&super::thunk::unmark(node))?;
@@ -4166,6 +4163,11 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     }
     if let Some(expr) = super::deferred_name::lower(node) {
         return expr;
+    }
+    // A leaf carries the parser's own tree (`passthrough`); a deferred term
+    // wraps one, so it is read first.
+    if super::passthrough::is_leaf(node) {
+        return super::passthrough::lower_expr(node);
     }
     // `⚛$x`, `$x ⚛= 5`, `$x⚛++`, ...: plain operator nodes, the parser's calls.
     if let Some(call) = super::atomic_op::lower(node) {
