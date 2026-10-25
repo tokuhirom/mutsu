@@ -785,7 +785,16 @@ pub(crate) const DOTTY_ASSIGN_OP: &str = ".=";
 /// and the `OP=` compound assignments, so it is the one assignment-like
 /// expression that may appear unparenthesized inside a ternary branch.
 pub(crate) fn is_dotty_assign(expr: &Expr) -> bool {
-    matches!(expr, Expr::CompoundAssign { op, .. } if op == DOTTY_ASSIGN_OP)
+    match expr {
+        Expr::CompoundAssign { op, .. } => op == DOTTY_ASSIGN_OP,
+        // The same `.=` as a `.AST` parse keeps it (ADR-10723 Stage 2).
+        Expr::Ast(node) => matches!(
+            node.as_ref(),
+            crate::ast::parsed::ParsedExpr::CompoundAssign(a)
+                if a.meta == crate::ast::parsed::CompoundMeta::Dotty
+        ),
+        _ => false,
+    }
 }
 
 pub(crate) fn build_custom_compound_assign_expr(

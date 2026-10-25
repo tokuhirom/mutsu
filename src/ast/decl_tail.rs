@@ -31,7 +31,7 @@ pub(crate) fn is_head(head: &Stmt) -> bool {
         return false;
     }
     matches!(head, Stmt::VarDecl { .. } | Stmt::Assign { .. })
-        || matches!(head, Stmt::Expr(Expr::CompoundAssign { target, .. }) if variable_name(target).is_some())
+        || head_name(head).is_some()
         || signature_declaration(head).is_some()
 }
 
@@ -41,6 +41,11 @@ pub(crate) fn head_name(head: &Stmt) -> Option<&str> {
     match head {
         Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name),
         Stmt::Expr(Expr::CompoundAssign { target, .. }) => variable_name(target),
+        // The same compound assignment as a `.AST` parse keeps it.
+        Stmt::Expr(Expr::Ast(node)) => match node.as_ref() {
+            super::parsed::ParsedExpr::CompoundAssign(a) => variable_name(&a.target),
+            super::parsed::ParsedExpr::Assign(_) => None,
+        },
         _ => None,
     }
 }
