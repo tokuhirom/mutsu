@@ -1,6 +1,6 @@
 //! Routine traits in written order, independently of their execution fields.
 
-use super::convert::{ReturnSpelling, blockoid, name_from_identifier, signature};
+use super::convert::{blockoid, name_from_identifier, signature};
 use super::convert::{leaf_field, node_field, unsupported};
 use super::lower::{
     list_field, lower_signature_parameters, named_child, named_child_or_positional, positional_leaf,
@@ -288,60 +288,25 @@ pub(super) fn retain(node: &RakuAstNode, body: &mut Vec<Stmt>) -> Result<(), Run
     Ok(())
 }
 
-/// Which spelling a routine's return type used, read off the parser markers.
-/// `returns X of Y` leaves both markers (mutsu folds them into one
-/// `X[Y]` return type); raku models that as a single trait.
-pub(super) fn return_type_spelling(
-    custom_traits: &[(String, Option<Expr>)],
-) -> Result<ReturnSpelling, RuntimeError> {
-    let returns = custom_traits.iter().any(|(t, _)| t == "__return_via_trait");
-    let of = custom_traits.iter().any(|(t, _)| t == "__return_via_of");
-    match (returns, of) {
-        (false, false) => Ok(ReturnSpelling::Arrow),
-        (true, false) => Ok(ReturnSpelling::ReturnsTrait),
-        (false, true) => Ok(ReturnSpelling::OfTrait),
-        (true, true) => Ok(ReturnSpelling::ReturnsTrait),
-    }
-}
-
-/// A named routine with its signature, return spelling and body.
+/// A named routine with its signature and body. The return type is rendered as
+/// the signature's `-->`; a `returns` / `of` trait the source wrote replaces
+/// that when [`apply`] puts the written traits on the node.
 // Cost: O(n), n = size of the declaration.
 pub(super) fn routine_node(
     class: RakuAstClass,
     name: &str,
     param_defs: &[ParamDef],
     body: &[Stmt],
-    return_type: Option<(&str, ReturnSpelling)>,
+    returns: Option<&str>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let _underscore_scope = super::underscore_bindings::Scope::parameters(param_defs);
     let name_node = name_parts::operator_name(name).unwrap_or_else(|| name_from_identifier(name));
     let mut fields = vec![node_field(Some("name"), name_node)];
-    let arrow_returns = match return_type {
-        Some((t, ReturnSpelling::Arrow)) => Some(t),
-        _ => None,
-    };
-    if !param_defs.is_empty() || arrow_returns.is_some() {
+    if !param_defs.is_empty() || returns.is_some() {
         fields.push(node_field(
             Some("signature"),
-            signature(param_defs, true, arrow_returns)?,
+            signature(param_defs, true, returns)?,
         ));
-    }
-    if let Some((t, spelling)) = return_type
-        && spelling != ReturnSpelling::Arrow
-    {
-        let trait_class = match spelling {
-            ReturnSpelling::OfTrait => RakuAstClass::TraitOf,
-            _ => RakuAstClass::TraitReturns,
-        };
-        let trait_node = RakuAstNode {
-            origin: Default::default(),
-            class: trait_class,
-            fields: vec![node_field(None, return_constraint_node(t)?)],
-        };
-        fields.push(RakuAstField {
-            name: Some("traits"),
-            value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(trait_node))]),
-        });
     }
     fields.push(node_field(Some("body"), blockoid(body)?));
     Ok(RakuAstNode {

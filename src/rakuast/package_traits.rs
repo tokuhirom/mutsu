@@ -79,32 +79,9 @@ pub(super) fn apply(
     if super::routine_source::apply(node, body)? || traits.is_empty() {
         return Ok(());
     }
-    let mut values = Vec::new();
-    for (name, argument) in traits {
-        let argument = argument
-            .as_ref()
-            .map(super::attribute::paren_argument)
-            .transpose()?;
-        let trait_node = if super::routine_traits::is_type_trait_name(name) {
-            super::routine_traits::trait_is_type(name, argument)?
-        } else {
-            super::routine_traits::trait_is(name, argument)
-        };
-        values.push(Value::rakuast(Box::new(trait_node)));
-    }
-    let at = node
-        .fields
-        .iter()
-        .position(|field| field.name == Some("body"))
-        .unwrap_or(node.fields.len());
-    node.fields.insert(
-        at,
-        RakuAstField {
-            name: Some("traits"),
-            value: RakuAstFieldValue::List(values),
-        },
-    );
-    Ok(())
+    // The traits are the ones the source wrote, in written order; the custom
+    // traits the parser folded them into are not read back.
+    Err(unsupported("package traits without a written-trait record"))
 }
 
 pub(super) fn has_export(node: &RakuAstNode) -> bool {
