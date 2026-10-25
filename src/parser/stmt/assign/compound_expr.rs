@@ -791,11 +791,7 @@ pub(crate) fn is_dotty_assign(expr: &Expr) -> bool {
         Expr::Ast(node) => matches!(
             node.as_ref(),
             crate::ast::parsed::ParsedExpr::CompoundAssign(a)
-                if matches!(
-                    a.meta,
-                    crate::ast::parsed::CompoundMeta::Dotty
-                        | crate::ast::parsed::CompoundMeta::TopicDotty
-                )
+                if a.meta == crate::ast::parsed::CompoundMeta::Dotty
         ),
         _ => false,
     }

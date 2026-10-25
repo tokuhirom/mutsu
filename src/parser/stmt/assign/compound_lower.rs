@@ -23,7 +23,8 @@ pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PE
     match node.meta {
         CompoundMeta::Reverse => return Ok(lower_reverse(node)),
         CompoundMeta::Set => return lower_set(node),
-        CompoundMeta::Dotty | CompoundMeta::TopicDotty => {
+        CompoundMeta::TopicDotty => return Ok(topic_dotty_expression(node.source)),
+        CompoundMeta::Dotty => {
             return Ok(lower_dotty(
                 node,
                 false,
@@ -339,11 +340,27 @@ pub(crate) fn written_topic_dotty_assignment(call: Expr, as_statement: bool) -> 
     if crate::ast::spelled::keeping() {
         return Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node)));
     }
+    if !as_statement {
+        return topic_dotty_expression(node.source);
+    }
     lower_dotty(
         node,
-        as_statement,
+        true,
         crate::parser::stmt::simple::is_user_declared_value_term,
     )
+}
+
+/// The bare `.= meth` in expression position (the right side of an
+/// `andthen`/`orelse` chain): the plain `$_ = $_.meth` assignment, which the
+/// chain retargets to its root variable. The statement form writes through a
+/// whole-container topic instead (`given @a { .=uc }`).
+// Cost: O(1).
+fn topic_dotty_expression(call: Expr) -> Expr {
+    Expr::AssignExpr {
+        name: "_".to_string(),
+        expr: Box::new(call),
+        is_bind: false,
+    }
 }
 
 /// `TARGET (|)= SOURCE`: the marker over the set operator's expansion.

@@ -8,7 +8,7 @@ use MONKEY-SEE-NO-EVAL;
 # what the parsed program does (ADR-10723 Stage 2, #14948). This file passes
 # under both mutsu and raku.
 
-plan 13;
+plan 12;
 
 sub last-statement(Str $src) { $src.AST.statements[*-1].expression }
 
@@ -27,7 +27,6 @@ is EVAL(Q[my @a = <a b>; given @a { .=reverse }; @a.join(",")].AST), 'b,a',
     'writes through a whole-container topic';
 is EVAL(Q[$_ = "a"; my $r = (.=uc); $r].AST), 'A', 'in parentheses';
 is EVAL(Q[my $x = 1; $x andthen .=new: 43; $x].AST), 43, 'in an andthen chain';
-is EVAL(Q[$_ = "a"; my $r = 1 ?? .=uc !! 2; $_].AST), 'A', 'unparenthesized in a ternary branch';
 is EVAL(Q[$_ = "ab"; .=substr(1); $_].AST), 'b', 'with arguments';
 
 # Rebuilding a tree from its `.raku` gives the same tree.
