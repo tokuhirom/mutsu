@@ -333,6 +333,10 @@ struct SupplierRuntimeState {
     /// drive loop has not registered its sink yet (`react_setup.rs`). Their
     /// producers wait for the registration — Rakudo taps at the `whenever`.
     setup_holds: Vec<crate::value::waker::ReactWaker>,
+    /// `emitted.len()` when each setup hold (by waker id) was taken: what a
+    /// plain `Supplier` emitted before its react tapped it is dropped, as in
+    /// Rakudo, so the sink registering for that hold replays only from here.
+    hold_starts: rustc_hash::FxHashMap<usize, usize>,
     /// A `done`/`quit` asked for [`supplier_reset`] while `setup_holds` was
     /// non-empty: a react body that tapped this supplier and then ended it
     /// itself (`$s.done` in the body) has not registered its sink yet, and the
@@ -358,12 +362,24 @@ impl SupplierRuntimeState {
         self.emitted.clear();
         self.emitted_seq.clear();
         self.replay_from = 0;
+        self.hold_starts.clear();
+    }
+
+    /// Where a sink for `waker_id` starts replaying `emitted`: after what an
+    /// earlier react consumed (`replay_from`) and after what was emitted
+    /// before this waker's own `whenever` tapped the supplier (its hold).
+    // Cost: O(1).
+    fn replay_start(&self, waker_id: usize) -> usize {
+        self.hold_starts
+            .get(&waker_id)
+            .map_or(self.replay_from, |start| (*start).max(self.replay_from))
     }
 
     /// Drop `waker_id`'s setup hold; the last one out runs a deferred reset.
     // Cost: O(h + e), h = setup holds, e = buffered emits.
     fn release_setup_hold(&mut self, waker_id: usize) {
         self.setup_holds.retain(|w| w.id() != waker_id);
+        self.hold_starts.remove(&waker_id);
         if self.reset_deferred && self.setup_holds.is_empty() {
             self.reset_terminal();
         }
@@ -397,11 +413,20 @@ impl SupplierRuntimeState {
 
 /// A `react` body's `whenever` tapped `supplier_id`: hold its producers until
 /// the drive loop registers the sink (see `SupplierRuntimeState::setup_holds`).
-pub(crate) fn supplier_add_setup_hold(supplier_id: u64, waker: &crate::value::waker::ReactWaker) {
+pub(crate) fn supplier_add_setup_hold(
+    supplier_id: u64,
+    waker: &crate::value::waker::ReactWaker,
+    preserving: bool,
+) {
     if let Ok(mut map) = supplier_state_map().lock() {
-        let holds = &mut map.entry(supplier_id).or_default().setup_holds;
-        if !holds.iter().any(|w| w.id() == waker.id()) {
-            holds.push(waker.clone());
+        let state = map.entry(supplier_id).or_default();
+        if !state.setup_holds.iter().any(|w| w.id() == waker.id()) {
+            state.setup_holds.push(waker.clone());
+            // A `Supplier::Preserving` keeps what was emitted before its first
+            // tap for that tap; only a plain `Supplier` drops it.
+            if !preserving {
+                state.hold_starts.insert(waker.id(), state.emitted.len());
+            }
         }
     }
 }
@@ -463,7 +488,7 @@ pub(crate) fn supplier_sink_register(
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
         if replay {
-            for (i, v) in state.emitted.iter().enumerate().skip(state.replay_from) {
+            for (i, v) in state.emitted.iter().enumerate().skip(state.replay_start(waker.id())) {
                 let seq = state.emitted_seq.get(i).copied().unwrap_or(0);
                 waker.push_at(key, crate::value::waker::SinkEvent::Emit(v.clone()), seq);
             }
@@ -517,7 +542,7 @@ pub(crate) fn supplier_sinks_register_batch(
         for &(supplier_id, key) in regs {
             let sink_id = next_sink_id();
             let state = map.entry(supplier_id).or_default();
-            for (i, v) in state.emitted.iter().enumerate().skip(state.replay_from) {
+            for (i, v) in state.emitted.iter().enumerate().skip(state.replay_start(waker.id())) {
                 let seq = state.emitted_seq.get(i).copied().unwrap_or(0);
                 replay.push((seq, key, crate::value::waker::SinkEvent::Emit(v.clone())));
             }
