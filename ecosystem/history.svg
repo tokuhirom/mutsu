@@ -31,7 +31,7 @@
 </style>
 <rect class="bg" width="100%" height="100%"/>
 <text class="title" x="78" y="34">mutsu ecosystem parity against rakudo</text>
-<text class="subtitle" x="78" y="55">latest sweep 2026-10-24  ·  1651 of 1658 distributions measured  ·  7 blocked on dependencies  ·  baseline rakudo 2026.09</text>
+<text class="subtitle" x="78" y="55">latest sweep 2026-10-25  ·  1652 of 1659 distributions measured  ·  7 blocked on dependencies  ·  baseline rakudo 2026.09</text>
 <line class="grid" x1="78" y1="548.0" x2="1070" y2="548.0"/>
 <text class="tick" x="68" y="552.0" text-anchor="end">0%</text>
 <line class="grid" x1="78" y1="500.6" x2="1070" y2="500.6"/>
@@ -56,161 +56,164 @@
 <text class="tick" x="68" y="78.0" text-anchor="end">100%</text>
 <line class="axis" x1="78" y1="548" x2="1070" y2="548"/>
 <line class="axis" x1="78" y1="74" x2="78" y2="548"/>
-<line class="rebase" x1="493.3" y1="74" x2="493.3" y2="548"/>
-<text class="rebase-label" x="498.3" y="87">rakudo 2026.09 &#8212; baseline re-based</text>
+<line class="rebase" x1="483.8" y1="74" x2="483.8" y2="548"/>
+<text class="rebase-label" x="488.8" y="87">rakudo 2026.09 &#8212; baseline re-based</text>
 <text class="tick" x="78.0" y="570" text-anchor="middle">2026-09-11</text>
-<text class="tick" x="193.3" y="570" text-anchor="middle">2026-09-16</text>
-<text class="tick" x="354.8" y="570" text-anchor="middle">2026-09-23</text>
-<text class="tick" x="493.3" y="570" text-anchor="middle">2026-09-29</text>
-<text class="tick" x="654.7" y="570" text-anchor="middle">2026-10-06</text>
-<text class="tick" x="770.1" y="570" text-anchor="middle">2026-10-11</text>
-<text class="tick" x="931.6" y="570" text-anchor="middle">2026-10-18</text>
-<text class="tick" x="1070.0" y="570" text-anchor="middle">2026-10-24</text>
-<polyline class="series-a" points="78.0,352.7 78.0,353.2 101.1,341.3 124.1,341.3 147.2,336.6 170.3,331.9 193.3,312.9 216.4,304.8 239.5,301.0 262.6,294.9 285.6,286.8 308.7,276.9 331.8,269.3 354.8,262.7 377.9,257.9 401.0,247.5 424.0,237.1 447.1,228.0 493.3,224.3 493.3,218.6 516.3,220.5 562.5,209.6 562.5,202.0 585.5,172.1 608.6,168.8 654.7,170.2 677.8,163.6 700.9,157.9 724.0,153.6 747.0,147.0 747.0,139.9 770.1,136.1 816.2,133.7 839.3,133.7 839.3,133.2 862.4,131.4 885.4,130.9 908.5,134.2 931.6,130.9 977.7,130.9 977.7,136.6 1000.8,151.3 1023.9,143.2 1046.9,136.6 1070.0,136.6" fill="none" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
+<text class="tick" x="190.7" y="570" text-anchor="middle">2026-09-16</text>
+<text class="tick" x="348.5" y="570" text-anchor="middle">2026-09-23</text>
+<text class="tick" x="483.8" y="570" text-anchor="middle">2026-09-29</text>
+<text class="tick" x="664.2" y="570" text-anchor="middle">2026-10-07</text>
+<text class="tick" x="799.5" y="570" text-anchor="middle">2026-10-13</text>
+<text class="tick" x="957.3" y="570" text-anchor="middle">2026-10-20</text>
+<text class="tick" x="1070.0" y="570" text-anchor="middle">2026-10-25</text>
+<polyline class="series-a" points="78.0,352.7 78.0,353.2 100.5,341.3 123.1,341.3 145.6,336.6 168.2,331.9 190.7,312.9 213.3,304.8 235.8,301.0 258.4,294.9 280.9,286.8 303.5,276.9 326.0,269.3 348.5,262.7 371.1,257.9 393.6,247.5 416.2,237.1 438.7,228.0 483.8,224.3 483.8,218.6 506.4,220.5 551.5,209.6 551.5,202.0 574.0,172.1 596.5,168.8 641.6,170.2 664.2,163.6 686.7,157.9 709.3,153.6 731.8,147.0 731.8,139.9 754.4,136.1 799.5,133.7 822.0,133.7 822.0,133.2 844.5,131.4 867.1,130.9 889.6,134.2 912.2,130.9 957.3,130.9 957.3,136.6 979.8,151.3 1002.4,143.2 1024.9,136.6 1047.5,136.6 1070.0,136.6" fill="none" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
 <circle class="series-a" cx="78.0" cy="352.7" r="3.4" stroke="none"/>
 <circle class="series-a" cx="78.0" cy="353.2" r="3.4" stroke="none"/>
-<circle class="series-a" cx="101.1" cy="341.3" r="3.4" stroke="none"/>
-<circle class="series-a" cx="124.1" cy="341.3" r="3.4" stroke="none"/>
-<circle class="series-a" cx="147.2" cy="336.6" r="3.4" stroke="none"/>
-<circle class="series-a" cx="170.3" cy="331.9" r="3.4" stroke="none"/>
-<circle class="series-a" cx="193.3" cy="312.9" r="3.4" stroke="none"/>
-<circle class="series-a" cx="216.4" cy="304.8" r="3.4" stroke="none"/>
-<circle class="series-a" cx="239.5" cy="301.0" r="3.4" stroke="none"/>
-<circle class="series-a" cx="262.6" cy="294.9" r="3.4" stroke="none"/>
-<circle class="series-a" cx="285.6" cy="286.8" r="3.4" stroke="none"/>
-<circle class="series-a" cx="308.7" cy="276.9" r="3.4" stroke="none"/>
-<circle class="series-a" cx="331.8" cy="269.3" r="3.4" stroke="none"/>
-<circle class="series-a" cx="354.8" cy="262.7" r="3.4" stroke="none"/>
-<circle class="series-a" cx="377.9" cy="257.9" r="3.4" stroke="none"/>
-<circle class="series-a" cx="401.0" cy="247.5" r="3.4" stroke="none"/>
-<circle class="series-a" cx="424.0" cy="237.1" r="3.4" stroke="none"/>
-<circle class="series-a" cx="447.1" cy="228.0" r="3.4" stroke="none"/>
-<circle class="series-a" cx="493.3" cy="224.3" r="3.4" stroke="none"/>
-<circle class="series-a" cx="493.3" cy="218.6" r="3.4" stroke="none"/>
-<circle class="series-a" cx="516.3" cy="220.5" r="3.4" stroke="none"/>
-<circle class="series-a" cx="562.5" cy="209.6" r="3.4" stroke="none"/>
-<circle class="series-a" cx="562.5" cy="202.0" r="3.4" stroke="none"/>
-<circle class="series-a" cx="585.5" cy="172.1" r="3.4" stroke="none"/>
-<circle class="series-a" cx="608.6" cy="168.8" r="3.4" stroke="none"/>
-<circle class="series-a" cx="654.7" cy="170.2" r="3.4" stroke="none"/>
-<circle class="series-a" cx="677.8" cy="163.6" r="3.4" stroke="none"/>
-<circle class="series-a" cx="700.9" cy="157.9" r="3.4" stroke="none"/>
-<circle class="series-a" cx="724.0" cy="153.6" r="3.4" stroke="none"/>
-<circle class="series-a" cx="747.0" cy="147.0" r="3.4" stroke="none"/>
-<circle class="series-a" cx="747.0" cy="139.9" r="3.4" stroke="none"/>
-<circle class="series-a" cx="770.1" cy="136.1" r="3.4" stroke="none"/>
-<circle class="series-a" cx="816.2" cy="133.7" r="3.4" stroke="none"/>
-<circle class="series-a" cx="839.3" cy="133.7" r="3.4" stroke="none"/>
-<circle class="series-a" cx="839.3" cy="133.2" r="3.4" stroke="none"/>
-<circle class="series-a" cx="862.4" cy="131.4" r="3.4" stroke="none"/>
-<circle class="series-a" cx="885.4" cy="130.9" r="3.4" stroke="none"/>
-<circle class="series-a" cx="908.5" cy="134.2" r="3.4" stroke="none"/>
-<circle class="series-a" cx="931.6" cy="130.9" r="3.4" stroke="none"/>
-<circle class="series-a" cx="977.7" cy="130.9" r="3.4" stroke="none"/>
-<circle class="series-a" cx="977.7" cy="136.6" r="3.4" stroke="none"/>
-<circle class="series-a" cx="1000.8" cy="151.3" r="3.4" stroke="none"/>
-<circle class="series-a" cx="1023.9" cy="143.2" r="3.4" stroke="none"/>
-<circle class="series-a" cx="1046.9" cy="136.6" r="3.4" stroke="none"/>
+<circle class="series-a" cx="100.5" cy="341.3" r="3.4" stroke="none"/>
+<circle class="series-a" cx="123.1" cy="341.3" r="3.4" stroke="none"/>
+<circle class="series-a" cx="145.6" cy="336.6" r="3.4" stroke="none"/>
+<circle class="series-a" cx="168.2" cy="331.9" r="3.4" stroke="none"/>
+<circle class="series-a" cx="190.7" cy="312.9" r="3.4" stroke="none"/>
+<circle class="series-a" cx="213.3" cy="304.8" r="3.4" stroke="none"/>
+<circle class="series-a" cx="235.8" cy="301.0" r="3.4" stroke="none"/>
+<circle class="series-a" cx="258.4" cy="294.9" r="3.4" stroke="none"/>
+<circle class="series-a" cx="280.9" cy="286.8" r="3.4" stroke="none"/>
+<circle class="series-a" cx="303.5" cy="276.9" r="3.4" stroke="none"/>
+<circle class="series-a" cx="326.0" cy="269.3" r="3.4" stroke="none"/>
+<circle class="series-a" cx="348.5" cy="262.7" r="3.4" stroke="none"/>
+<circle class="series-a" cx="371.1" cy="257.9" r="3.4" stroke="none"/>
+<circle class="series-a" cx="393.6" cy="247.5" r="3.4" stroke="none"/>
+<circle class="series-a" cx="416.2" cy="237.1" r="3.4" stroke="none"/>
+<circle class="series-a" cx="438.7" cy="228.0" r="3.4" stroke="none"/>
+<circle class="series-a" cx="483.8" cy="224.3" r="3.4" stroke="none"/>
+<circle class="series-a" cx="483.8" cy="218.6" r="3.4" stroke="none"/>
+<circle class="series-a" cx="506.4" cy="220.5" r="3.4" stroke="none"/>
+<circle class="series-a" cx="551.5" cy="209.6" r="3.4" stroke="none"/>
+<circle class="series-a" cx="551.5" cy="202.0" r="3.4" stroke="none"/>
+<circle class="series-a" cx="574.0" cy="172.1" r="3.4" stroke="none"/>
+<circle class="series-a" cx="596.5" cy="168.8" r="3.4" stroke="none"/>
+<circle class="series-a" cx="641.6" cy="170.2" r="3.4" stroke="none"/>
+<circle class="series-a" cx="664.2" cy="163.6" r="3.4" stroke="none"/>
+<circle class="series-a" cx="686.7" cy="157.9" r="3.4" stroke="none"/>
+<circle class="series-a" cx="709.3" cy="153.6" r="3.4" stroke="none"/>
+<circle class="series-a" cx="731.8" cy="147.0" r="3.4" stroke="none"/>
+<circle class="series-a" cx="731.8" cy="139.9" r="3.4" stroke="none"/>
+<circle class="series-a" cx="754.4" cy="136.1" r="3.4" stroke="none"/>
+<circle class="series-a" cx="799.5" cy="133.7" r="3.4" stroke="none"/>
+<circle class="series-a" cx="822.0" cy="133.7" r="3.4" stroke="none"/>
+<circle class="series-a" cx="822.0" cy="133.2" r="3.4" stroke="none"/>
+<circle class="series-a" cx="844.5" cy="131.4" r="3.4" stroke="none"/>
+<circle class="series-a" cx="867.1" cy="130.9" r="3.4" stroke="none"/>
+<circle class="series-a" cx="889.6" cy="134.2" r="3.4" stroke="none"/>
+<circle class="series-a" cx="912.2" cy="130.9" r="3.4" stroke="none"/>
+<circle class="series-a" cx="957.3" cy="130.9" r="3.4" stroke="none"/>
+<circle class="series-a" cx="957.3" cy="136.6" r="3.4" stroke="none"/>
+<circle class="series-a" cx="979.8" cy="151.3" r="3.4" stroke="none"/>
+<circle class="series-a" cx="1002.4" cy="143.2" r="3.4" stroke="none"/>
+<circle class="series-a" cx="1024.9" cy="136.6" r="3.4" stroke="none"/>
+<circle class="series-a" cx="1047.5" cy="136.6" r="3.4" stroke="none"/>
 <circle class="series-a" cx="1070.0" cy="136.6" r="3.4" stroke="none"/>
 <text class="value series-a" x="1079.0" y="140.6" stroke="none">86.8%</text>
 <line class="series-a" x1="1094" y1="80.0" x2="1118" y2="80.0" stroke-width="3.2"/>
 <text class="legend" x="1124" y="84.0">dist parity (published)</text>
-<polyline class="series-b" points="78.0,293.9 78.0,294.9 101.1,294.4 124.1,287.3 147.2,283.0 170.3,275.5 193.3,270.2 216.4,264.5 239.5,261.2 262.6,252.7 285.6,244.2 308.7,236.1 331.8,229.0 354.8,216.7 377.9,208.1 401.0,202.0 424.0,202.9 447.1,199.1 493.3,195.3 493.3,184.4 516.3,183.0 562.5,171.6 562.5,162.2 585.5,154.6 608.6,143.7 654.7,145.6 677.8,138.5 700.9,139.4 724.0,138.0 747.0,131.8 747.0,127.6 770.1,125.2 816.2,122.8 839.3,126.6 839.3,125.2 862.4,119.0 885.4,125.2 908.5,127.1 931.6,124.7 977.7,123.3 977.7,125.2 1000.8,128.0 1023.9,124.2 1046.9,115.7 1070.0,113.3" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline class="series-b" points="78.0,293.9 78.0,294.9 100.5,294.4 123.1,287.3 145.6,283.0 168.2,275.5 190.7,270.2 213.3,264.5 235.8,261.2 258.4,252.7 280.9,244.2 303.5,236.1 326.0,229.0 348.5,216.7 371.1,208.1 393.6,202.0 416.2,202.9 438.7,199.1 483.8,195.3 483.8,184.4 506.4,183.0 551.5,171.6 551.5,162.2 574.0,154.6 596.5,143.7 641.6,145.6 664.2,138.5 686.7,139.4 709.3,138.0 731.8,131.8 731.8,127.6 754.4,125.2 799.5,122.8 822.0,126.6 822.0,125.2 844.5,119.0 867.1,125.2 889.6,127.1 912.2,124.7 957.3,123.3 957.3,125.2 979.8,128.0 1002.4,124.2 1024.9,115.7 1047.5,113.3 1070.0,111.9" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
 <circle class="series-b" cx="78.0" cy="293.9" r="2.6" stroke="none"/>
 <circle class="series-b" cx="78.0" cy="294.9" r="2.6" stroke="none"/>
-<circle class="series-b" cx="101.1" cy="294.4" r="2.6" stroke="none"/>
-<circle class="series-b" cx="124.1" cy="287.3" r="2.6" stroke="none"/>
-<circle class="series-b" cx="147.2" cy="283.0" r="2.6" stroke="none"/>
-<circle class="series-b" cx="170.3" cy="275.5" r="2.6" stroke="none"/>
-<circle class="series-b" cx="193.3" cy="270.2" r="2.6" stroke="none"/>
-<circle class="series-b" cx="216.4" cy="264.5" r="2.6" stroke="none"/>
-<circle class="series-b" cx="239.5" cy="261.2" r="2.6" stroke="none"/>
-<circle class="series-b" cx="262.6" cy="252.7" r="2.6" stroke="none"/>
-<circle class="series-b" cx="285.6" cy="244.2" r="2.6" stroke="none"/>
-<circle class="series-b" cx="308.7" cy="236.1" r="2.6" stroke="none"/>
-<circle class="series-b" cx="331.8" cy="229.0" r="2.6" stroke="none"/>
-<circle class="series-b" cx="354.8" cy="216.7" r="2.6" stroke="none"/>
-<circle class="series-b" cx="377.9" cy="208.1" r="2.6" stroke="none"/>
-<circle class="series-b" cx="401.0" cy="202.0" r="2.6" stroke="none"/>
-<circle class="series-b" cx="424.0" cy="202.9" r="2.6" stroke="none"/>
-<circle class="series-b" cx="447.1" cy="199.1" r="2.6" stroke="none"/>
-<circle class="series-b" cx="493.3" cy="195.3" r="2.6" stroke="none"/>
-<circle class="series-b" cx="493.3" cy="184.4" r="2.6" stroke="none"/>
-<circle class="series-b" cx="516.3" cy="183.0" r="2.6" stroke="none"/>
-<circle class="series-b" cx="562.5" cy="171.6" r="2.6" stroke="none"/>
-<circle class="series-b" cx="562.5" cy="162.2" r="2.6" stroke="none"/>
-<circle class="series-b" cx="585.5" cy="154.6" r="2.6" stroke="none"/>
-<circle class="series-b" cx="608.6" cy="143.7" r="2.6" stroke="none"/>
-<circle class="series-b" cx="654.7" cy="145.6" r="2.6" stroke="none"/>
-<circle class="series-b" cx="677.8" cy="138.5" r="2.6" stroke="none"/>
-<circle class="series-b" cx="700.9" cy="139.4" r="2.6" stroke="none"/>
-<circle class="series-b" cx="724.0" cy="138.0" r="2.6" stroke="none"/>
-<circle class="series-b" cx="747.0" cy="131.8" r="2.6" stroke="none"/>
-<circle class="series-b" cx="747.0" cy="127.6" r="2.6" stroke="none"/>
-<circle class="series-b" cx="770.1" cy="125.2" r="2.6" stroke="none"/>
-<circle class="series-b" cx="816.2" cy="122.8" r="2.6" stroke="none"/>
-<circle class="series-b" cx="839.3" cy="126.6" r="2.6" stroke="none"/>
-<circle class="series-b" cx="839.3" cy="125.2" r="2.6" stroke="none"/>
-<circle class="series-b" cx="862.4" cy="119.0" r="2.6" stroke="none"/>
-<circle class="series-b" cx="885.4" cy="125.2" r="2.6" stroke="none"/>
-<circle class="series-b" cx="908.5" cy="127.1" r="2.6" stroke="none"/>
-<circle class="series-b" cx="931.6" cy="124.7" r="2.6" stroke="none"/>
-<circle class="series-b" cx="977.7" cy="123.3" r="2.6" stroke="none"/>
-<circle class="series-b" cx="977.7" cy="125.2" r="2.6" stroke="none"/>
-<circle class="series-b" cx="1000.8" cy="128.0" r="2.6" stroke="none"/>
-<circle class="series-b" cx="1023.9" cy="124.2" r="2.6" stroke="none"/>
-<circle class="series-b" cx="1046.9" cy="115.7" r="2.6" stroke="none"/>
-<circle class="series-b" cx="1070.0" cy="113.3" r="2.6" stroke="none"/>
-<text class="value series-b" x="1079.0" y="117.3" stroke="none">91.7%</text>
+<circle class="series-b" cx="100.5" cy="294.4" r="2.6" stroke="none"/>
+<circle class="series-b" cx="123.1" cy="287.3" r="2.6" stroke="none"/>
+<circle class="series-b" cx="145.6" cy="283.0" r="2.6" stroke="none"/>
+<circle class="series-b" cx="168.2" cy="275.5" r="2.6" stroke="none"/>
+<circle class="series-b" cx="190.7" cy="270.2" r="2.6" stroke="none"/>
+<circle class="series-b" cx="213.3" cy="264.5" r="2.6" stroke="none"/>
+<circle class="series-b" cx="235.8" cy="261.2" r="2.6" stroke="none"/>
+<circle class="series-b" cx="258.4" cy="252.7" r="2.6" stroke="none"/>
+<circle class="series-b" cx="280.9" cy="244.2" r="2.6" stroke="none"/>
+<circle class="series-b" cx="303.5" cy="236.1" r="2.6" stroke="none"/>
+<circle class="series-b" cx="326.0" cy="229.0" r="2.6" stroke="none"/>
+<circle class="series-b" cx="348.5" cy="216.7" r="2.6" stroke="none"/>
+<circle class="series-b" cx="371.1" cy="208.1" r="2.6" stroke="none"/>
+<circle class="series-b" cx="393.6" cy="202.0" r="2.6" stroke="none"/>
+<circle class="series-b" cx="416.2" cy="202.9" r="2.6" stroke="none"/>
+<circle class="series-b" cx="438.7" cy="199.1" r="2.6" stroke="none"/>
+<circle class="series-b" cx="483.8" cy="195.3" r="2.6" stroke="none"/>
+<circle class="series-b" cx="483.8" cy="184.4" r="2.6" stroke="none"/>
+<circle class="series-b" cx="506.4" cy="183.0" r="2.6" stroke="none"/>
+<circle class="series-b" cx="551.5" cy="171.6" r="2.6" stroke="none"/>
+<circle class="series-b" cx="551.5" cy="162.2" r="2.6" stroke="none"/>
+<circle class="series-b" cx="574.0" cy="154.6" r="2.6" stroke="none"/>
+<circle class="series-b" cx="596.5" cy="143.7" r="2.6" stroke="none"/>
+<circle class="series-b" cx="641.6" cy="145.6" r="2.6" stroke="none"/>
+<circle class="series-b" cx="664.2" cy="138.5" r="2.6" stroke="none"/>
+<circle class="series-b" cx="686.7" cy="139.4" r="2.6" stroke="none"/>
+<circle class="series-b" cx="709.3" cy="138.0" r="2.6" stroke="none"/>
+<circle class="series-b" cx="731.8" cy="131.8" r="2.6" stroke="none"/>
+<circle class="series-b" cx="731.8" cy="127.6" r="2.6" stroke="none"/>
+<circle class="series-b" cx="754.4" cy="125.2" r="2.6" stroke="none"/>
+<circle class="series-b" cx="799.5" cy="122.8" r="2.6" stroke="none"/>
+<circle class="series-b" cx="822.0" cy="126.6" r="2.6" stroke="none"/>
+<circle class="series-b" cx="822.0" cy="125.2" r="2.6" stroke="none"/>
+<circle class="series-b" cx="844.5" cy="119.0" r="2.6" stroke="none"/>
+<circle class="series-b" cx="867.1" cy="125.2" r="2.6" stroke="none"/>
+<circle class="series-b" cx="889.6" cy="127.1" r="2.6" stroke="none"/>
+<circle class="series-b" cx="912.2" cy="124.7" r="2.6" stroke="none"/>
+<circle class="series-b" cx="957.3" cy="123.3" r="2.6" stroke="none"/>
+<circle class="series-b" cx="957.3" cy="125.2" r="2.6" stroke="none"/>
+<circle class="series-b" cx="979.8" cy="128.0" r="2.6" stroke="none"/>
+<circle class="series-b" cx="1002.4" cy="124.2" r="2.6" stroke="none"/>
+<circle class="series-b" cx="1024.9" cy="115.7" r="2.6" stroke="none"/>
+<circle class="series-b" cx="1047.5" cy="113.3" r="2.6" stroke="none"/>
+<circle class="series-b" cx="1070.0" cy="111.9" r="2.6" stroke="none"/>
+<text class="value series-b" x="1079.0" y="115.9" stroke="none">92.0%</text>
 <line class="series-b" x1="1094" y1="101.0" x2="1118" y2="101.0" stroke-width="2.0"/>
 <text class="legend" x="1124" y="105.0">file parity (steers the work)</text>
-<polyline class="series-c" points="78.0,252.2 78.0,248.9 101.1,242.3 124.1,231.8 147.2,229.9 170.3,229.0 193.3,226.2 216.4,224.7 239.5,223.8 262.6,219.0 285.6,216.7 308.7,212.9 331.8,186.8 354.8,180.2 377.9,153.2 401.0,150.3 424.0,152.2 447.1,151.7 493.3,128.5 493.3,126.6 516.3,124.7 562.5,119.5 562.5,116.7 585.5,109.5 608.6,106.7 654.7,107.2 677.8,101.5 700.9,94.4 724.0,90.1 747.0,88.7 747.0,88.2 770.1,86.8 816.2,86.3 839.3,87.7 839.3,96.3 862.4,94.9 885.4,97.2 908.5,97.7 931.6,96.3 977.7,95.8 977.7,96.3 1000.8,97.2 1023.9,96.8 1046.9,94.9 1070.0,93.9" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline class="series-c" points="78.0,252.2 78.0,248.9 100.5,242.3 123.1,231.8 145.6,229.9 168.2,229.0 190.7,226.2 213.3,224.7 235.8,223.8 258.4,219.0 280.9,216.7 303.5,212.9 326.0,186.8 348.5,180.2 371.1,153.2 393.6,150.3 416.2,152.2 438.7,151.7 483.8,128.5 483.8,126.6 506.4,124.7 551.5,119.5 551.5,116.7 574.0,109.5 596.5,106.7 641.6,107.2 664.2,101.5 686.7,94.4 709.3,90.1 731.8,88.7 731.8,88.2 754.4,86.8 799.5,86.3 822.0,87.7 822.0,96.3 844.5,94.9 867.1,97.2 889.6,97.7 912.2,96.3 957.3,95.8 957.3,96.3 979.8,97.2 1002.4,96.8 1024.9,94.9 1047.5,93.9 1070.0,93.0" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
 <circle class="series-c" cx="78.0" cy="252.2" r="2.6" stroke="none"/>
 <circle class="series-c" cx="78.0" cy="248.9" r="2.6" stroke="none"/>
-<circle class="series-c" cx="101.1" cy="242.3" r="2.6" stroke="none"/>
-<circle class="series-c" cx="124.1" cy="231.8" r="2.6" stroke="none"/>
-<circle class="series-c" cx="147.2" cy="229.9" r="2.6" stroke="none"/>
-<circle class="series-c" cx="170.3" cy="229.0" r="2.6" stroke="none"/>
-<circle class="series-c" cx="193.3" cy="226.2" r="2.6" stroke="none"/>
-<circle class="series-c" cx="216.4" cy="224.7" r="2.6" stroke="none"/>
-<circle class="series-c" cx="239.5" cy="223.8" r="2.6" stroke="none"/>
-<circle class="series-c" cx="262.6" cy="219.0" r="2.6" stroke="none"/>
-<circle class="series-c" cx="285.6" cy="216.7" r="2.6" stroke="none"/>
-<circle class="series-c" cx="308.7" cy="212.9" r="2.6" stroke="none"/>
-<circle class="series-c" cx="331.8" cy="186.8" r="2.6" stroke="none"/>
-<circle class="series-c" cx="354.8" cy="180.2" r="2.6" stroke="none"/>
-<circle class="series-c" cx="377.9" cy="153.2" r="2.6" stroke="none"/>
-<circle class="series-c" cx="401.0" cy="150.3" r="2.6" stroke="none"/>
-<circle class="series-c" cx="424.0" cy="152.2" r="2.6" stroke="none"/>
-<circle class="series-c" cx="447.1" cy="151.7" r="2.6" stroke="none"/>
-<circle class="series-c" cx="493.3" cy="128.5" r="2.6" stroke="none"/>
-<circle class="series-c" cx="493.3" cy="126.6" r="2.6" stroke="none"/>
-<circle class="series-c" cx="516.3" cy="124.7" r="2.6" stroke="none"/>
-<circle class="series-c" cx="562.5" cy="119.5" r="2.6" stroke="none"/>
-<circle class="series-c" cx="562.5" cy="116.7" r="2.6" stroke="none"/>
-<circle class="series-c" cx="585.5" cy="109.5" r="2.6" stroke="none"/>
-<circle class="series-c" cx="608.6" cy="106.7" r="2.6" stroke="none"/>
-<circle class="series-c" cx="654.7" cy="107.2" r="2.6" stroke="none"/>
-<circle class="series-c" cx="677.8" cy="101.5" r="2.6" stroke="none"/>
-<circle class="series-c" cx="700.9" cy="94.4" r="2.6" stroke="none"/>
-<circle class="series-c" cx="724.0" cy="90.1" r="2.6" stroke="none"/>
-<circle class="series-c" cx="747.0" cy="88.7" r="2.6" stroke="none"/>
-<circle class="series-c" cx="747.0" cy="88.2" r="2.6" stroke="none"/>
-<circle class="series-c" cx="770.1" cy="86.8" r="2.6" stroke="none"/>
-<circle class="series-c" cx="816.2" cy="86.3" r="2.6" stroke="none"/>
-<circle class="series-c" cx="839.3" cy="87.7" r="2.6" stroke="none"/>
-<circle class="series-c" cx="839.3" cy="96.3" r="2.6" stroke="none"/>
-<circle class="series-c" cx="862.4" cy="94.9" r="2.6" stroke="none"/>
-<circle class="series-c" cx="885.4" cy="97.2" r="2.6" stroke="none"/>
-<circle class="series-c" cx="908.5" cy="97.7" r="2.6" stroke="none"/>
-<circle class="series-c" cx="931.6" cy="96.3" r="2.6" stroke="none"/>
-<circle class="series-c" cx="977.7" cy="95.8" r="2.6" stroke="none"/>
-<circle class="series-c" cx="977.7" cy="96.3" r="2.6" stroke="none"/>
-<circle class="series-c" cx="1000.8" cy="97.2" r="2.6" stroke="none"/>
-<circle class="series-c" cx="1023.9" cy="96.8" r="2.6" stroke="none"/>
-<circle class="series-c" cx="1046.9" cy="94.9" r="2.6" stroke="none"/>
-<circle class="series-c" cx="1070.0" cy="93.9" r="2.6" stroke="none"/>
-<text class="value series-c" x="1079.0" y="97.9" stroke="none">95.8%</text>
+<circle class="series-c" cx="100.5" cy="242.3" r="2.6" stroke="none"/>
+<circle class="series-c" cx="123.1" cy="231.8" r="2.6" stroke="none"/>
+<circle class="series-c" cx="145.6" cy="229.9" r="2.6" stroke="none"/>
+<circle class="series-c" cx="168.2" cy="229.0" r="2.6" stroke="none"/>
+<circle class="series-c" cx="190.7" cy="226.2" r="2.6" stroke="none"/>
+<circle class="series-c" cx="213.3" cy="224.7" r="2.6" stroke="none"/>
+<circle class="series-c" cx="235.8" cy="223.8" r="2.6" stroke="none"/>
+<circle class="series-c" cx="258.4" cy="219.0" r="2.6" stroke="none"/>
+<circle class="series-c" cx="280.9" cy="216.7" r="2.6" stroke="none"/>
+<circle class="series-c" cx="303.5" cy="212.9" r="2.6" stroke="none"/>
+<circle class="series-c" cx="326.0" cy="186.8" r="2.6" stroke="none"/>
+<circle class="series-c" cx="348.5" cy="180.2" r="2.6" stroke="none"/>
+<circle class="series-c" cx="371.1" cy="153.2" r="2.6" stroke="none"/>
+<circle class="series-c" cx="393.6" cy="150.3" r="2.6" stroke="none"/>
+<circle class="series-c" cx="416.2" cy="152.2" r="2.6" stroke="none"/>
+<circle class="series-c" cx="438.7" cy="151.7" r="2.6" stroke="none"/>
+<circle class="series-c" cx="483.8" cy="128.5" r="2.6" stroke="none"/>
+<circle class="series-c" cx="483.8" cy="126.6" r="2.6" stroke="none"/>
+<circle class="series-c" cx="506.4" cy="124.7" r="2.6" stroke="none"/>
+<circle class="series-c" cx="551.5" cy="119.5" r="2.6" stroke="none"/>
+<circle class="series-c" cx="551.5" cy="116.7" r="2.6" stroke="none"/>
+<circle class="series-c" cx="574.0" cy="109.5" r="2.6" stroke="none"/>
+<circle class="series-c" cx="596.5" cy="106.7" r="2.6" stroke="none"/>
+<circle class="series-c" cx="641.6" cy="107.2" r="2.6" stroke="none"/>
+<circle class="series-c" cx="664.2" cy="101.5" r="2.6" stroke="none"/>
+<circle class="series-c" cx="686.7" cy="94.4" r="2.6" stroke="none"/>
+<circle class="series-c" cx="709.3" cy="90.1" r="2.6" stroke="none"/>
+<circle class="series-c" cx="731.8" cy="88.7" r="2.6" stroke="none"/>
+<circle class="series-c" cx="731.8" cy="88.2" r="2.6" stroke="none"/>
+<circle class="series-c" cx="754.4" cy="86.8" r="2.6" stroke="none"/>
+<circle class="series-c" cx="799.5" cy="86.3" r="2.6" stroke="none"/>
+<circle class="series-c" cx="822.0" cy="87.7" r="2.6" stroke="none"/>
+<circle class="series-c" cx="822.0" cy="96.3" r="2.6" stroke="none"/>
+<circle class="series-c" cx="844.5" cy="94.9" r="2.6" stroke="none"/>
+<circle class="series-c" cx="867.1" cy="97.2" r="2.6" stroke="none"/>
+<circle class="series-c" cx="889.6" cy="97.7" r="2.6" stroke="none"/>
+<circle class="series-c" cx="912.2" cy="96.3" r="2.6" stroke="none"/>
+<circle class="series-c" cx="957.3" cy="95.8" r="2.6" stroke="none"/>
+<circle class="series-c" cx="957.3" cy="96.3" r="2.6" stroke="none"/>
+<circle class="series-c" cx="979.8" cy="97.2" r="2.6" stroke="none"/>
+<circle class="series-c" cx="1002.4" cy="96.8" r="2.6" stroke="none"/>
+<circle class="series-c" cx="1024.9" cy="94.9" r="2.6" stroke="none"/>
+<circle class="series-c" cx="1047.5" cy="93.9" r="2.6" stroke="none"/>
+<circle class="series-c" cx="1070.0" cy="93.0" r="2.6" stroke="none"/>
+<text class="value series-c" x="1079.0" y="97.0" stroke="none">96.0%</text>
 <line class="series-c" x1="1094" y1="122.0" x2="1118" y2="122.0" stroke-width="2.0"/>
 <text class="legend" x="1124" y="126.0">assertion parity</text>
 </svg>

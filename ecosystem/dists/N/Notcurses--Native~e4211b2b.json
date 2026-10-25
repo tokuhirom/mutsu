@@ -1,5 +1,5 @@
 {
-  "axis": "native",
+  "axis": "guts",
   "deps": {
     "bundled_would_supply": [],
     "mode": "flat-closure",
@@ -12,11 +12,11 @@
       "cmp": "no_baseline",
       "path": "t/10-channel-exhaustive.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-cmkytzx9/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r16/lib/libnotcurses-ffi.so': /home/runner/.cach",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-jpjvy8c7/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r17/lib/libnotcurses-ffi.so': /home/runner/.cach",
         "nok": 0,
         "ok": 0,
         "plan": 20,
-        "secs": 15.62,
+        "secs": 16.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -26,11 +26,11 @@
       "cmp": "no_baseline",
       "path": "t/14-input-exhaustive.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-cmkytzx9/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r16/lib/libnotcurses-ffi.so': /home/runner/.cach",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-jpjvy8c7/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r17/lib/libnotcurses-ffi.so': /home/runner/.cach",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 2.98,
+        "secs": 3.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -42,7 +42,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.69,
+        "secs": 1.77,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.53,
+        "secs": 1.76,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -64,7 +64,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 0.31,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -74,7 +74,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 5.93,
+        "secs": 6.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,9 +84,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 773,
-        "plan": 773,
-        "secs": 0.27,
+        "ok": 1101,
+        "plan": 1101,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,9 +94,9 @@
       "path": "t/17-third-party-manifest.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 773,
-        "plan": 773,
-        "secs": 2.58,
+        "ok": 1101,
+        "plan": 1101,
+        "secs": 3.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -110,7 +110,7 @@
         "nok": 3,
         "ok": 4,
         "plan": 7,
-        "secs": 1.36,
+        "secs": 1.32,
         "skip": 1,
         "todo": 0,
         "verdict": "fail"
@@ -122,7 +122,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.27,
+        "secs": 1.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -132,7 +132,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.74,
+        "secs": 0.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -144,7 +144,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.11,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -154,7 +154,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.75,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -166,7 +166,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.29,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -176,7 +176,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.11,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -186,11 +186,11 @@
       "cmp": "no_baseline",
       "path": "t/22-windows-load-contract.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/notcurses-load-contract-2-1792877354-83545/Notcurses-Native/binaries-notcurses-3.0.17-r16/lib' with mode '0o777': Failed to mkdir: no such file or directory",
+        "first_failure": "Failed to create directory '/tmp/notcurses-load-contract-2-1792963818-84944/Notcurses-Native/binaries-notcurses-3.0.17-r17/lib' with mode '0o777': Failed to mkdir: no such file or directory",
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 4.94,
+        "secs": 5.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -202,7 +202,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.31,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -212,7 +212,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.5,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -224,148 +224,12 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.82,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
       "path": "t/24-input-error-sentinel.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.68,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 0.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/25-multimedia-not-optional.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 0.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/26-path-is-prepended-not-replaced.rakutest",
-      "raku": {
-        "first_failure": "Failed to open file /tmp/nc-path-probe-2.raku: Read-only file system",
-        "nok": 0,
-        "ok": 0,
-        "plan": 4,
-        "secs": 0.52,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/27-staged-lib-single-image.rakutest",
-      "raku": {
-        "first_failure": "staged lib dir not found: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-cmkytzx9/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r16/lib",
-        "nok": 1,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.65,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/28-prebuilt-alias-normalization.rakutest",
-      "raku": {
-        "first_failure": "Type check failed in binding to parameter '$path'; expected IO::Path but got Any (Any)",
-        "nok": 0,
-        "ok": 0,
-        "plan": 3,
-        "secs": 3.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/29-cold-start-race.rakutest",
-      "raku": {
-        "first_failure": "Failed to open file /tmp/notcurses-native-cold-2-1792877380.raku: Read-only file system",
-        "nok": 0,
-        "ok": 5,
-        "plan": 15,
-        "secs": 0.86,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/30-paste-keys.rakutest",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-cmkytzx9/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r16/lib/libnotcurses-ffi.so': /home/runner/.cach",
-        "nok": 0,
-        "ok": 2,
-        "plan": 7,
-        "secs": 0.62,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 1.93,
-        "skip": 1,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/31-terminal-guard.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 3.54,
-        "skip": 1,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.41,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/33-ncstyle-constants.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
@@ -382,7 +246,143 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.51,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/25-multimedia-not-optional.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/26-path-is-prepended-not-replaced.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/nc-path-probe-2.raku: Read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/27-staged-lib-single-image.rakutest",
+      "raku": {
+        "first_failure": "staged lib dir not found: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-jpjvy8c7/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r17/lib",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/28-prebuilt-alias-normalization.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$path'; expected IO::Path but got Any (Any)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 3.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/29-cold-start-race.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/notcurses-native-cold-2-1792963846.raku: Read-only file system",
+        "nok": 0,
+        "ok": 5,
+        "plan": 15,
+        "secs": 0.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/30-paste-keys.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-jpjvy8c7/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r17/lib/libnotcurses-ffi.so': /home/runner/.cach",
+        "nok": 0,
+        "ok": 2,
+        "plan": 7,
+        "secs": 0.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.92,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/31-terminal-guard.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.91,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/33-ncstyle-constants.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -392,7 +392,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.89,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -404,7 +404,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.36,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -414,7 +414,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.91,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -424,11 +424,11 @@
       "cmp": "no_baseline",
       "path": "t/36-render-to-buffer-borrowed.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/notcurses-native-headless-2-1752416773-0.raku: Read-only file system",
+        "first_failure": "Failed to open file /tmp/notcurses-native-headless-2-1531315017-0.raku: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 4.17,
+        "secs": 4.39,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -440,7 +440,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.65,
+        "secs": 2.64,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -450,7 +450,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.08,
+        "secs": 1.26,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -460,11 +460,11 @@
       "cmp": "no_baseline",
       "path": "t/38-caller-owned-returns.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/notcurses-native-headless-2-1688300830-0.raku: Read-only file system",
+        "first_failure": "Failed to open file /tmp/notcurses-native-headless-2-2088660990-0.raku: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 1.06,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -474,11 +474,11 @@
       "cmp": "no_baseline",
       "path": "t/39-test-headless-helper.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/notcurses-native-headless-2-1024370441-0.raku: Read-only file system",
+        "first_failure": "Failed to open file /tmp/notcurses-native-headless-2-1765195408-0.raku: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.89,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -488,11 +488,11 @@
       "cmp": "no_baseline",
       "path": "t/40-printf-without-varargs.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/notcurses-native-headless-2-2125958246-0.raku: Read-only file system",
+        "first_failure": "Failed to open file /tmp/notcurses-native-headless-2-1831043570-0.raku: Read-only file system",
         "nok": 0,
         "ok": 1,
         "plan": 5,
-        "secs": 7.72,
+        "secs": 8.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -502,11 +502,11 @@
       "cmp": "no_baseline",
       "path": "t/41-struct-owned-strings.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/notcurses-native-headless-2-2092443426-0.raku: Read-only file system",
+        "first_failure": "Failed to open file /tmp/notcurses-native-headless-2-201547489-0.raku: Read-only file system",
         "nok": 0,
         "ok": 20,
         "plan": 23,
-        "secs": 3.26,
+        "secs": 4.93,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -518,7 +518,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 22.08,
+        "secs": 21.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -528,7 +528,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.08,
+        "secs": 2.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -538,11 +538,11 @@
       "cmp": "no_baseline",
       "path": "t/43-null-pin-wrappers.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/notcurses-native-headless-2-1707482394-0.raku: Read-only file system",
+        "first_failure": "Failed to open file /tmp/notcurses-native-headless-2-724616610-0.raku: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 1.01,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -556,10 +556,98 @@
         "nok": 0,
         "ok": 1,
         "plan": 10,
-        "secs": 4.35,
+        "secs": 4.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/45-distro-handles.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/46-distro-stand-in.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/47-binary-tag-agreement.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/48-windows-shell-env.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 2.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
       }
     }
   ],
@@ -580,10 +668,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-24",
+    "date": "2026-10-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "068dff0f",
+    "mutsu_commit": "200ca6c2",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -592,15 +680,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/N/OT/NOTCURSES_NATIVE/660b27fd696666a8d8e90f80baa2713216507011.tar.gz"
+    "url": "https://360.zef.pm/N/OT/NOTCURSES_NATIVE/2fe4a6d1469906847ca2b678afeadba6700ce647.tar.gz"
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 856,
-    "baseline_files": 15,
-    "mutsu_assertions": 856,
-    "parity_files": 15,
+    "baseline_assertions": 1205,
+    "baseline_files": 19,
+    "mutsu_assertions": 1205,
+    "parity_files": 19,
     "regressed_files": 0
   },
-  "version": "0.7.0"
+  "version": "0.8.0"
 }

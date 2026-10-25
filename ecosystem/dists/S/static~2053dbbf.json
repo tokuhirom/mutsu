@@ -9,18 +9,18 @@
   "dist": "static",
   "files": [],
   "load": {
-    "static": "An exception occurred while evaluating a BEGIN",
+    "static": "ok",
     "static::Analyzer": "ok",
-    "static::CLI": "An exception occurred while evaluating a BEGIN",
+    "static::CLI": "Dynamic variable $*CU not found",
     "static::Predicates": "ok",
     "static::Types": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-24",
+    "date": "2026-10-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "068dff0f",
+    "mutsu_commit": "200ca6c2",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
