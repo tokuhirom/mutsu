@@ -413,12 +413,20 @@ impl SupplierRuntimeState {
 
 /// A `react` body's `whenever` tapped `supplier_id`: hold its producers until
 /// the drive loop registers the sink (see `SupplierRuntimeState::setup_holds`).
-pub(crate) fn supplier_add_setup_hold(supplier_id: u64, waker: &crate::value::waker::ReactWaker) {
+pub(crate) fn supplier_add_setup_hold(
+    supplier_id: u64,
+    waker: &crate::value::waker::ReactWaker,
+    preserving: bool,
+) {
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
         if !state.setup_holds.iter().any(|w| w.id() == waker.id()) {
             state.setup_holds.push(waker.clone());
-            state.hold_starts.insert(waker.id(), state.emitted.len());
+            // A `Supplier::Preserving` keeps what was emitted before its first
+            // tap for that tap; only a plain `Supplier` drops it.
+            if !preserving {
+                state.hold_starts.insert(waker.id(), state.emitted.len());
+            }
         }
     }
 }

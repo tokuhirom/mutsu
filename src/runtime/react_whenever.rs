@@ -340,7 +340,12 @@ impl Interpreter {
                         attributes.as_map().get("supplier_id").map(Value::view)
                     && sid > 0
                 {
-                    super::react_setup::ReactSetup::hold(&mut last.react_setup, sid as u64);
+                    let preserving = attributes.as_map().contains_key("preserving");
+                    super::react_setup::ReactSetup::hold(
+                        &mut last.react_setup,
+                        sid as u64,
+                        preserving,
+                    );
                 }
                 last.push(sub);
             } else {

@@ -41,10 +41,14 @@ impl ReactSetup {
     /// Hold `supplier_id`'s producers for this react, creating the setup on
     /// its first live `whenever`.
     // Cost: O(s), s = suppliers this react body has tapped so far.
-    pub(crate) fn hold(setup: &mut Option<Self>, supplier_id: u64) {
+    pub(crate) fn hold(setup: &mut Option<Self>, supplier_id: u64, preserving: bool) {
         let setup = setup.get_or_insert_with(Self::new);
         if !setup.suppliers.contains(&supplier_id) {
-            crate::runtime::native_methods::supplier_add_setup_hold(supplier_id, &setup.waker);
+            crate::runtime::native_methods::supplier_add_setup_hold(
+                supplier_id,
+                &setup.waker,
+                preserving,
+            );
             setup.suppliers.push(supplier_id);
         }
     }
