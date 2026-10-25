@@ -156,7 +156,7 @@ pub(crate) fn walk_signature_var<'ast, V: Visit<'ast> + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Expr, Stmt};
+    use crate::ast::Stmt;
 
     #[derive(Default)]
     struct Names {
