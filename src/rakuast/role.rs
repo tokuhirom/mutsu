@@ -75,7 +75,9 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     let header_len = role
         .body
         .iter()
-        .take_while(|stmt| stmt.is_routine_traits() || matches!(stmt, Stmt::DoesDecl { also: false, .. }))
+        .take_while(|stmt| {
+            stmt.is_routine_traits() || matches!(stmt, Stmt::DoesDecl { also: false, .. })
+        })
         .count();
     let written = crate::ast::routine_trait::get(role.body).unwrap_or_default();
     let expected: usize = written
@@ -120,9 +122,9 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             name: name.resolve(),
             args: args.clone(),
         };
-        traits.push(Value::rakuast(Box::new(
-            super::routine_source::trait_node(&parent)?,
-        )));
+        traits.push(Value::rakuast(Box::new(super::routine_source::trait_node(
+            &parent,
+        )?)));
     }
     if role.is_rw && !super::convert::has_is(written, "rw") {
         traits.push(Value::rakuast(Box::new(super::routine_traits::trait_is(

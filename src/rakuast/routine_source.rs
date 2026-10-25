@@ -102,11 +102,9 @@ pub(super) fn trait_node(item: &RoutineTrait) -> Result<RakuAstNode, RuntimeErro
                 Some(TraitArgument::ExportTags(tags)) => {
                     super::routine_traits::explicit_export_argument(tags)
                 }
-                Some(TraitArgument::Operator(reference)) => {
-                    Some(super::attribute::paren_argument(&Expr::CodeVar(
-                        crate::op_prec::trait_target_name(reference),
-                    ))?)
-                }
+                Some(TraitArgument::Operator(reference)) => Some(super::attribute::paren_argument(
+                    &Expr::CodeVar(crate::op_prec::trait_target_name(reference)),
+                )?),
                 Some(TraitArgument::Parentheses(expr)) => {
                     let expr = match expr {
                         Expr::Grouped(inner) => inner,

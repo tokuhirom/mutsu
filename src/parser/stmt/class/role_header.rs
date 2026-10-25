@@ -54,7 +54,12 @@ pub(super) fn parse<'a>(
             if let Some(args) = &args {
                 parent_args.push((full_name.clone(), args.clone()));
             }
-            super::class_decl::note_parent(&mut written, ParentKind::Does, &full_name, &parent_args);
+            super::class_decl::note_parent(
+                &mut written,
+                ParentKind::Does,
+                &full_name,
+                &parent_args,
+            );
             parent_roles.push((full_name, args, false));
             rest = r;
             continue;

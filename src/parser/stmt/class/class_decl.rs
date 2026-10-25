@@ -735,7 +735,11 @@ pub(crate) fn class_decl_body_opt(
                 // (e.g. `is ctype<long>`), as used by NativeCall-style traits.
                 if r2.starts_with('<') {
                     let (r3, arg) = parse_trait_angle_arg(r2)?;
-                    note_is(&mut written, &parent, Some(TraitArgument::Words(arg.clone())));
+                    note_is(
+                        &mut written,
+                        &parent,
+                        Some(TraitArgument::Words(arg.clone())),
+                    );
                     custom_traits.push((parent.clone(), Some(Expr::Literal(Value::str(arg)))));
                     let (r3, _) = ws(r3)?;
                     r = r3;
@@ -816,7 +820,12 @@ pub(crate) fn class_decl_body_opt(
             if let Some(exprs) = parse_bracket_arg_exprs(bracket_suffix) {
                 parent_args.push((hidden_parent.clone(), exprs));
             }
-            note_parent(&mut written, ParentKind::Hides, &hidden_parent, &parent_args);
+            note_parent(
+                &mut written,
+                ParentKind::Hides,
+                &hidden_parent,
+                &parent_args,
+            );
             parents.push(hidden_parent.clone());
             hidden_parents.push(hidden_parent);
             let (r2, _) = ws(r2)?;

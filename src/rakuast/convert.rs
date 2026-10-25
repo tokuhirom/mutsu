@@ -923,9 +923,9 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     if let Some(at) = header_parents.iter().rposition(|p| p == parent) {
                         header_parents.remove(at);
                     }
-                    also_traits.push(Value::rakuast(Box::new(
-                        super::routine_source::trait_node(&also_parent(parent, parent_args))?,
-                    )));
+                    also_traits.push(Value::rakuast(Box::new(super::routine_source::trait_node(
+                        &also_parent(parent, parent_args),
+                    )?)));
                 }
                 let mut traits = header_trait_values(
                     body,
@@ -5278,7 +5278,10 @@ struct HeaderFields<'a> {
 /// not read back; a header whose fields name a trait that no record says was
 /// written was not built by a parse that keeps spellings, and is refused.
 // Cost: O(t + a), t = written traits, a = size of their arguments.
-fn header_trait_values(body: &[Stmt], fields: &HeaderFields<'_>) -> Result<Vec<Value>, RuntimeError> {
+fn header_trait_values(
+    body: &[Stmt],
+    fields: &HeaderFields<'_>,
+) -> Result<Vec<Value>, RuntimeError> {
     let written = crate::ast::routine_trait::get(body);
     if written.is_none()
         && (fields.is_hidden
@@ -5296,7 +5299,9 @@ fn header_trait_values(body: &[Stmt], fields: &HeaderFields<'_>) -> Result<Vec<V
     // `also is rw;` in the body sets the flag without a header spelling; it
     // renders as the trailing `is rw` trait, which lowers back to the flag.
     if fields.is_rw && !written.is_some_and(|w| has_is(w, "rw")) {
-        traits.push(Value::rakuast(Box::new(routine_traits::trait_is("rw", None))));
+        traits.push(Value::rakuast(Box::new(routine_traits::trait_is(
+            "rw", None,
+        ))));
     }
     Ok(traits)
 }
