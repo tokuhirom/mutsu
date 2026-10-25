@@ -5,8 +5,8 @@
 //! thread-local storage.
 
 use super::parse_result::{PError, PResult};
+use rustc_hash::FxHashMap as HashMap;
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub(super) enum MemoEntry<T: Clone> {
@@ -301,7 +301,7 @@ mod tests {
     use super::*;
 
     thread_local! {
-        static TEST_MEMO_TLS: MemoMap<i32> = RefCell::new(HashMap::new());
+        static TEST_MEMO_TLS: MemoMap<i32> = RefCell::new(HashMap::default());
         static TEST_MEMO_STATS_TLS: RefCell<MemoStats> = RefCell::new(MemoStats::default());
     }
     static TEST_MEMO: ParseMemo<i32> = ParseMemo::new(&TEST_MEMO_TLS, &TEST_MEMO_STATS_TLS);

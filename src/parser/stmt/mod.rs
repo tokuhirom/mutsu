@@ -21,8 +21,8 @@ pub(crate) mod word_logical_split;
 
 use super::memo::{MemoEntry, MemoKey, MemoStats, ParseMemo};
 use super::parse_result::{MISSING_BLOCK, PError, PResult, parse_char, update_best_error};
+use rustc_hash::FxHashMap as HashMap;
 use std::cell::RefCell;
-use std::collections::HashMap;
 
 use crate::ast::Stmt;
 
@@ -77,7 +77,7 @@ pub(super) use pub_shims::{
 };
 
 thread_local! {
-    static STMT_MEMO_TLS: RefCell<HashMap<MemoKey, MemoEntry<Stmt>>> = RefCell::new(HashMap::new());
+    static STMT_MEMO_TLS: RefCell<HashMap<MemoKey, MemoEntry<Stmt>>> = RefCell::new(HashMap::default());
     static STMT_MEMO_STATS_TLS: RefCell<MemoStats> = RefCell::new(MemoStats::default());
     /// The anonymous-state names (`__ANON_STATE#<id>__`) each memoized statement
     /// minted into its ENCLOSING block's scope, keyed exactly like `STMT_MEMO`.
@@ -89,7 +89,7 @@ thread_local! {
     /// them here the surviving block would emit no implicit `state` declaration
     /// for its bare `$` — see `simple::take_anon_state_decls`.
     static STMT_ANON_STATES_TLS: RefCell<HashMap<MemoKey, Vec<String>>> =
-        RefCell::new(HashMap::new());
+        RefCell::new(HashMap::default());
 }
 
 static STMT_MEMO: ParseMemo<Stmt> = ParseMemo::new(&STMT_MEMO_TLS, &STMT_MEMO_STATS_TLS);

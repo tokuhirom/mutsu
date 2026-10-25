@@ -27,14 +27,14 @@ pub(in crate::parser) use source_regions::{register_leaked_region_with_jump, sou
 
 use super::memo::{MemoEntry, MemoKey, MemoStats, ParseMemo};
 use super::parse_result::{PError, PResult, update_best_error};
+use rustc_hash::FxHashMap as HashMap;
 use std::cell::RefCell;
-use std::collections::HashMap;
 
 use crate::ast::Expr;
 use crate::value::Value;
 
 thread_local! {
-    static PRIMARY_MEMO_TLS: RefCell<HashMap<MemoKey, MemoEntry<Expr>>> = RefCell::new(HashMap::new());
+    static PRIMARY_MEMO_TLS: RefCell<HashMap<MemoKey, MemoEntry<Expr>>> = RefCell::new(HashMap::default());
     static PRIMARY_MEMO_STATS_TLS: RefCell<MemoStats> = RefCell::new(MemoStats::default());
     /// Original source pointer, length and newline index, set at parse_program
     /// start for $?LINE computation.

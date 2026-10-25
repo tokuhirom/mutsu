@@ -19,8 +19,8 @@ mod tests_postfix;
 
 use super::memo::{MemoEntry, MemoKey, MemoStats, ParseMemo};
 use super::parse_result::PResult;
+use rustc_hash::FxHashMap as HashMap;
 use std::cell::RefCell;
-use std::collections::HashMap;
 
 use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
@@ -64,7 +64,7 @@ pub(crate) fn lower_composition(expr: Expr) -> Expr {
 }
 
 thread_local! {
-    static EXPR_MEMO_TLS: RefCell<HashMap<MemoKey, MemoEntry<Expr>>> = RefCell::new(HashMap::new());
+    static EXPR_MEMO_TLS: RefCell<HashMap<MemoKey, MemoEntry<Expr>>> = RefCell::new(HashMap::default());
     static EXPR_MEMO_STATS_TLS: RefCell<MemoStats> = RefCell::new(MemoStats::default());
 }
 
