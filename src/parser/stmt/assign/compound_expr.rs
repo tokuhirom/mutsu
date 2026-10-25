@@ -825,8 +825,11 @@ pub(crate) fn build_custom_compound_assign_expr(
         Expr::Var(name) => Expr::AssignExpr {
             name: name.clone(),
             expr: Box::new(Expr::InfixFunc {
+                left: Box::new(super::op::autoviv_routine_compound_lhs(
+                    Expr::Var(name),
+                    &op_name,
+                )),
                 name: op_name,
-                left: Box::new(Expr::Var(name)),
                 right: vec![rhs],
                 modifier: None,
             }),

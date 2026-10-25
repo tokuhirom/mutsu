@@ -127,8 +127,11 @@ fn lower_routine_statement(node: CompoundAssign) -> Result<Stmt, PError> {
     Ok(Stmt::Assign {
         name,
         expr: Expr::InfixFunc {
+            left: Box::new(super::op::autoviv_routine_compound_lhs(
+                node.target,
+                &node.op,
+            )),
             name: node.op,
-            left: Box::new(node.target),
             right: vec![node.source],
             modifier: None,
         },
