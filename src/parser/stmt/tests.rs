@@ -233,7 +233,7 @@ fn parse_if_else_with_binding_var_desugars_to_var_decl() {
             let source = binding_var.as_ref().expect("generated if binding var");
             assert!(source.starts_with("$__mutsu_if_bind_"));
             assert!(matches!(
-                else_branch.get(1),
+                else_branch.first(),
                 Some(Stmt::VarDecl { name, expr, .. })
                     if name == "c"
                         && matches!(
