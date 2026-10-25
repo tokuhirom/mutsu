@@ -409,16 +409,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Some(crate::ast::SourceForm::SignatureBind { signature, rhs }) => {
                 signature_bind_node(signature, rhs).map(|node| Some(statement_expression(node)))
             }
-            // Only the on-demand lambda opens with a supply record.
             Some(
-                crate::ast::SourceForm::SupplyBlock(_)
-                | crate::ast::SourceForm::WithPointy { .. }
+                crate::ast::SourceForm::WithPointy { .. }
                 | crate::ast::SourceForm::GivenPointy { .. }
                 | crate::ast::SourceForm::IfPointy { .. }
-                | crate::ast::SourceForm::HyperAssign { .. }
-                | crate::ast::SourceForm::InlineSubsetTerm(_)
-                | crate::ast::SourceForm::RoutineTraits(_)
-                | crate::ast::SourceForm::StartBlock,
+                | crate::ast::SourceForm::RoutineTraits(_),
             )
             | None => Err(unsupported("source form")),
         },
@@ -1471,7 +1466,7 @@ pub(super) fn nqp_op(name: &str) -> Option<&str> {
 /// [dwim-left,] infix, [dwim-right]), right)`; raku omits a dwim field whose
 /// value is False, and the hyper assignment's infix is the `Assignment` node.
 // Cost: O(n), n = nodes of the operands.
-fn hyper_infix(
+pub(super) fn hyper_infix(
     left: &Expr,
     op: &str,
     right: &Expr,
@@ -2805,13 +2800,6 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     if let Some(node) = subscript_adverb::convert(expr) {
         return node;
     }
-    // `supply { … }`: the parser's on-demand expansion opens its emitter
-    // lambda with the written body.
-    if let Expr::MethodCall { args, .. } = expr
-        && let Some(body) = super::react::supply_record(args)
-    {
-        return super::react::convert_supply(body);
-    }
     match expr {
         // An expression the parser built in its RakuAST shape (ADR-10723
         // Stage 2): rendered, not reconstructed.
@@ -3341,42 +3329,8 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // it would hand back a node with block semantics (`let`/`temp`
             // resolution) the original never had -- GH-7635.
             if origin != &crate::ast::DoBlockOrigin::SourceBlock {
-                if let Some(Stmt::SourceForm(form)) = body.first()
-                    && let crate::ast::SourceForm::SupplyBlock(source_body) = form.as_ref()
-                {
-                    return super::react::convert_supply(source_body);
-                }
                 if let Some(node) = super::hyper_dotty_writeback::convert(body)? {
                     return Ok(node);
-                }
-                if let Some(declaration) =
-                    crate::ast::inline_subset_term::inline_subset_declaration(body)
-                {
-                    let statement = convert_stmt(declaration)?
-                        .ok_or_else(|| unsupported("inline subset declaration"))?;
-                    return statement
-                        .fields
-                        .iter()
-                        .find(|field| field.name == Some("expression"))
-                        .and_then(|field| match &field.value {
-                            RakuAstFieldValue::Node(value) => match value.view() {
-                                ValueView::RakuAst(node) => Some(node.clone()),
-                                _ => None,
-                            },
-                            _ => None,
-                        })
-                        .ok_or_else(|| unsupported("inline subset declaration"));
-                }
-                // `(LVALUES) »=» VALUE`: the record that opens the expansion.
-                if let Some(Stmt::SourceForm(form)) = body.first()
-                    && let crate::ast::SourceForm::HyperAssign {
-                        target,
-                        value,
-                        dwim_left,
-                        dwim_right,
-                    } = form.as_ref()
-                {
-                    return hyper_infix(target, "=", value, *dwim_left, *dwim_right);
                 }
                 // `120 = 3`: the written assignment to an immutable literal.
                 if let Some((literal, rhs)) = crate::parser::literal_assign_ro_parts(expr) {
@@ -3690,16 +3644,11 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Some(crate::ast::SourceForm::SignatureBind { signature, rhs }) => {
                 signature_bind_node(signature, rhs)
             }
-            // Only the on-demand lambda opens with a supply record.
             Some(
-                crate::ast::SourceForm::SupplyBlock(_)
-                | crate::ast::SourceForm::WithPointy { .. }
+                crate::ast::SourceForm::WithPointy { .. }
                 | crate::ast::SourceForm::GivenPointy { .. }
                 | crate::ast::SourceForm::IfPointy { .. }
-                | crate::ast::SourceForm::HyperAssign { .. }
-                | crate::ast::SourceForm::InlineSubsetTerm(_)
-                | crate::ast::SourceForm::RoutineTraits(_)
-                | crate::ast::SourceForm::StartBlock,
+                | crate::ast::SourceForm::RoutineTraits(_),
             )
             | None => Err(unsupported("source form")),
         },

@@ -97,9 +97,10 @@ pub(super) fn insert_subset_shape(
         return Err(unsupported_source("inline subset hash key type"));
     }
     let declaration = match expression {
-        Expr::DoBlock { body, .. } => {
-            crate::ast::inline_subset_term::inline_subset_declaration(body)
-        }
+        Expr::Ast(node) => match node.as_ref() {
+            crate::ast::parsed::ParsedExpr::InlineSubset(declaration) => Some(declaration.as_ref()),
+            _ => None,
+        },
         _ => None,
     }
     .ok_or_else(|| unsupported_source("inline subset hash key type"))?;

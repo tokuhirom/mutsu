@@ -219,6 +219,33 @@ pub(crate) enum ParsedExpr {
     Assign(Assign),
     /// `TARGET OP= SOURCE` (`ApplyInfix` over `MetaInfix::Assign`).
     CompoundAssign(CompoundAssign),
+    /// `supply { BODY }`: the body as written, before the expansion rewrites
+    /// its `emit` / `done` onto the on-demand emitter
+    /// (`StatementPrefix::Supply`). It lowers to that expansion
+    /// (`parser::supply_method_call`).
+    Supply(Vec<Stmt>),
+    /// The body of a `start { BODY }` whose placeholder Raku rejects, as
+    /// written. It lowers to a do-block, so the compiler reports the
+    /// diagnostic instead of `make_anon_sub` consuming the placeholder as a
+    /// parameter.
+    StartBody(Vec<Stmt>),
+    /// `(LVALUES) »=» VALUE` over a literal list of lvalues (`ApplyInfix`
+    /// over `Assignment` under a hyper meta-infix). It lowers to the
+    /// element-wise expansion (`parser::hyper_assignment_expr`).
+    HyperAssign(HyperAssign),
+    /// An inline `subset` used as a term, `subset :: of Int where * > 0`: the
+    /// declaration as written. It lowers to the declaration followed by a
+    /// read of its generated name (`ast::inline_subset_term::lower`).
+    InlineSubset(Box<Stmt>),
+}
+
+/// `(LVALUES) »=» VALUE`: the target, the value and the dwim flags as written.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct HyperAssign {
+    pub(crate) target: Expr,
+    pub(crate) value: Expr,
+    pub(crate) dwim_left: bool,
+    pub(crate) dwim_right: bool,
 }
 
 /// A compound assignment as written: the target, the infix it applies, how
@@ -624,5 +651,17 @@ impl ParsedStmt {
             },
             other => vec![other],
         }
+    }
+}
+
+impl ParsedExpr {
+    /// The body of a `start { BODY }` the compiler must reject for its
+    /// placeholder: kept as written by a `.AST` parse, a do-block otherwise.
+    // Cost: O(1).
+    pub(crate) fn start_body(body: Vec<Stmt>) -> Expr {
+        if super::spelled::keeping() {
+            return Expr::Ast(Box::new(ParsedExpr::StartBody(body)));
+        }
+        Expr::desugar_block(body)
     }
 }

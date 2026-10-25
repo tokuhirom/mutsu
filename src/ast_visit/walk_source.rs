@@ -26,22 +26,11 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
             v.visit_param(param_def);
             walk_stmts(v, body);
         }
-        SourceForm::SupplyBlock(body) => walk_stmts(v, body),
-        SourceForm::HyperAssign {
-            target,
-            value,
-            dwim_left: _,
-            dwim_right: _,
-        } => {
-            v.visit_expr(target);
-            v.visit_expr(value);
-        }
         SourceForm::SignatureDecl(declaration) => v.visit_signature_decl(declaration),
         SourceForm::SignatureBind { signature, rhs } => {
             v.visit_expr(signature);
             v.visit_expr(rhs);
         }
-        SourceForm::InlineSubsetTerm(declaration) => v.visit_stmt(declaration),
         SourceForm::AttributeGroup(attributes) => walk_stmts(v, attributes),
         SourceForm::AttributeColonArglist(attributes) => walk_stmts(v, attributes),
         SourceForm::MethodAssignDecl(declaration) => {
@@ -106,7 +95,7 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
                 }
             }
         }
-        SourceForm::DeclarationCompoundAssign | SourceForm::StartBlock => {}
+        SourceForm::DeclarationCompoundAssign => {}
     }
 }
 
@@ -194,9 +183,9 @@ mod tests {
 
     #[test]
     fn source_records_are_opt_in_and_walk_their_original_declarations() {
-        let record = Stmt::SourceForm(Box::new(SourceForm::InlineSubsetTerm(Box::new(
-            Stmt::Expr(Expr::Var("written".into())),
-        ))));
+        let record = Stmt::SourceForm(Box::new(SourceForm::AttributeGroup(vec![Stmt::Expr(
+            Expr::Var("written".into()),
+        )])));
         let mut ordinary = Names::default();
         ordinary.visit_stmt(&record);
         assert!(ordinary.names.is_empty());

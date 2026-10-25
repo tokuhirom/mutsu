@@ -30,6 +30,7 @@ use crate::ast::{Expr, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 
 use super::SUPPLY_EMITTER_PREFIX;
+use crate::ast::parsed::ParsedExpr;
 
 /// Returns the 1-based source line of the first `whenever` block found outside
 /// the scope of a `react`/`supply` block, or `None` if every `whenever` is
@@ -84,6 +85,10 @@ impl<'ast> Visit<'ast> for WheneverScope {
             // { ... })`, where the emitter closure's parameter name marks a
             // genuine supply scope. Any other closure keeps the current scope.
             Expr::Lambda { param, .. } if param.starts_with(SUPPLY_EMITTER_PREFIX) => {
+                self.scoped(true, |v| walk_expr(v, expr))
+            }
+            // The same scope, as a `.AST` parse keeps the written `supply`.
+            Expr::Ast(node) if matches!(node.as_ref(), ParsedExpr::Supply(_)) => {
                 self.scoped(true, |v| walk_expr(v, expr))
             }
             _ => walk_expr(self, expr),
