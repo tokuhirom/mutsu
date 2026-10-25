@@ -69,6 +69,7 @@ t/collections/array/array-value-path-mutation.t
 t/collections/array/immutable-list-delete-and-pair-index.t
 t/collections/array/immutable-list-literal-store.t
 t/collections/array/is-copy-array.t
+t/collections/array/nested-array-gist-raku-cycles.t
 t/collections/array/pop-shift-sub-empty-failure.t
 t/collections/array/push-array-reference.t
 t/collections/array/push-env-dirty.t
@@ -95,6 +96,7 @@ t/collections/container-raku-user-elements.t
 t/collections/cool-numeric-range-seq.t
 t/collections/count-only.t
 t/collections/deep-element-bind-writeback-coherence.t
+t/collections/destructure-bind-array-target-takes-seq.t
 t/collections/dot-self-element-store.t
 t/collections/dynamic-var-element-bind-walk.t
 t/collections/elem-identity-element-container.t
@@ -109,6 +111,7 @@ t/collections/element-share-holder-itemized.t
 t/collections/element-store-declared-slot-constraint.t
 t/collections/element-store-ignores-caller-type-of-same-name.t
 t/collections/element-store-itemization.t
+t/collections/element-store-slot-env-mirror.t
 t/collections/eqv-fetches-nested-proxy-elements.t
 t/collections/exists-itemized-hash-element.t
 t/collections/fast-array-element-assign.t
@@ -224,6 +227,8 @@ t/collections/hash/object-hash-instance-key-raku.t
 t/collections/hash/object-hash-key-display.t
 t/collections/hash/object-hash-key-is-deitemized.t
 t/collections/hash/object-hash-key-store-validation.t
+t/collections/hash/object-hash-literal-bound-with-colon-equals-keeps-object-keys.t
+t/collections/hash/object-hash-literal-user-which-keys.t
 t/collections/hash/object-hash-raku-key-parens.t
 t/collections/hash/object-hash-which-keys.t
 t/collections/hash/reduce-x-xx-left-associative.t
@@ -251,6 +256,7 @@ t/collections/itemized-list-hash-coerce.t
 t/collections/itemized-share-holder-producers.t
 t/collections/itemized-slip-raku-still-flattens.t
 t/collections/iterable-instance-list-methods.t
+t/collections/json-to-json-mutated-container-element.t
 t/collections/lazy-seq/are-user-iterator.t
 t/collections/lazy-seq/bind-decl-in-parens-fresh-cell-per-iteration.t
 t/collections/lazy-seq/blob-for-iteration.t
@@ -369,6 +375,7 @@ t/collections/lazy-seq/lazy-marked-finite-pipe-coercion.t
 t/collections/lazy-seq/lazy-marker-rows.t
 t/collections/lazy-seq/lazy-pairs-kv-antipairs.t
 t/collections/lazy-seq/lazy-pipe-coercion-lanes.t
+t/collections/lazy-seq/lazy-pipe-pure-int-callbacks.t
 t/collections/lazy-seq/lazy-positional-views-and-combinatorics.t
 t/collections/lazy-seq/lazy-rat-index.t
 t/collections/lazy-seq/lazy-receiver-pulls.t
@@ -524,6 +531,7 @@ t/collections/nth-whatevercode.t
 t/collections/num32-array-element-store.t
 t/collections/ords-returns-seq.t
 t/collections/positional-read-of-a-non-positional.t
+t/collections/proxy-bound-element-expr-assign.t
 t/collections/proxy-element-assign-autovivifies.t
 t/collections/proxy-fetch-result-holds-bound-proxy-elements.t
 t/collections/range-pair/pair-cyclic-gist.t
@@ -553,6 +561,7 @@ t/collections/range-pair/pair-value-single-element-slice.t
 t/collections/range-pair/pair-value-writethrough-coherence.t
 t/collections/range-pair/pair-view-rows.t
 t/collections/range-pair/pair-which-is-value-identity.t
+t/collections/range-pair/pair-with-gather-key-keys-hash-by-its-values.t
 t/collections/range-pair/pairs-element-container.t
 t/collections/range-pair/pairs-value-writeback-array-kind.t
 t/collections/range-pair/pairup-pair-aware.t
@@ -642,6 +651,7 @@ t/collections/set-bag-mix/set-bag-mix-which-keys.t
 t/collections/set-bag-mix/set-build-dynamic-hash-live.t
 t/collections/set-bag-mix/set-compare-ops-junction-operands.t
 t/collections/set-bag-mix/set-compound-assign-array-target.t
+t/collections/set-bag-mix/set-compound-assign-expression.t
 t/collections/set-bag-mix/set-elem-identity.t
 t/collections/set-bag-mix/set-elem-scalar-rhs.t
 t/collections/set-bag-mix/set-element-objat-identity.t
@@ -696,6 +706,7 @@ t/collections/subscript/buf-range-slice.t
 t/collections/subscript/callers-stash-subscript.t
 t/collections/subscript/chained-interpolation-subscript.t
 t/collections/subscript/chained-subscript-assign-bool-index.t
+t/collections/subscript/chained-subscript-store-into-object-hash-element-keeps-object-key.t
 t/collections/subscript/chained-subscript-store-refuses-defined-value.t
 t/collections/subscript/compound-assign-parenthesized-subscript.t
 t/collections/subscript/compound-assign-user-positional-subscript.t
@@ -818,6 +829,7 @@ t/collections/subscript/slice-v-adverb-containers.t
 t/collections/subscript/subscript-adverb-conflict-what.t
 t/collections/subscript/subscript-adverb-forces-gather.t
 t/collections/subscript/subscript-adverb-lazy-truncate.t
+t/collections/subscript/subscript-adverb-slipped-key-list.t
 t/collections/subscript/subscript-adverb-whatever-missing.t
 t/collections/subscript/subscript-adverbs.t
 t/collections/subscript/subscript-bind-rows.t
@@ -891,6 +903,7 @@ t/collections/transform/flat-itemized-range.t
 t/collections/transform/flat-lazy-nested.t
 t/collections/transform/flat-seq-nested-array.t
 t/collections/transform/flatmap-gather-result.t
+t/collections/transform/flatmap-hash-result-flattens-to-pairs.t
 t/collections/transform/flatmap-range.t
 t/collections/transform/flatten-hyper-prefix.t
 t/collections/transform/grep-array-delete-holes.t
@@ -923,6 +936,7 @@ t/collections/transform/map-feed-limit-prefix.t
 t/collections/transform/map-first-lazy-range.t
 t/collections/transform/map-gist.t
 t/collections/transform/map-grep-chain-interleave.t
+t/collections/transform/map-grep-destructuring-block-next-last.t
 t/collections/transform/map-grep-first-compile-cache.t
 t/collections/transform/map-grep-itemized-arg.t
 t/collections/transform/map-grep-loop-phasers.t
@@ -935,6 +949,7 @@ t/collections/transform/map-list-writeback.t
 t/collections/transform/map-missing-key-nil.t
 t/collections/transform/map-nested-call-rw-writeback-slot.t
 t/collections/transform/map-phasers-per-seq.t
+t/collections/transform/map-pull-pure-int-callbacks.t
 t/collections/transform/map-returns-gather.t
 t/collections/transform/map-returns-seq.t
 t/collections/transform/map-rw-empty-and-compile-cache.t
@@ -992,6 +1007,7 @@ t/collections/transform/sum-range-bigint-no-overflow.t
 t/collections/transform/sum-type-promotion.t
 t/collections/transform/triangle-reduce-over-a-lazy-pipe.t
 t/collections/transform/triangle-reduce-stays-lazy-on-array-assign.t
+t/collections/transform/unique-repeated-bucketed-kinds.t
 t/collections/transform/unique-repeated-scale.t
 t/collections/transform/unique-squish-repeated-listop.t
 t/collections/transform/unique-squish-slip-args.t
@@ -1030,6 +1046,7 @@ t/concurrency/concurrent-compound-assign.t
 t/concurrency/concurrent-hash-assign.t
 t/concurrency/concurrent-lane-decline-routes.t
 t/concurrency/concurrent-map-grep-rw-writes-reach-live-container.t
+t/concurrency/concurrent-mixin-set-name.t
 t/concurrency/concurrent-nested-subscript-store.t
 t/concurrency/concurrent-param-array-reader-families.t
 t/concurrency/concurrent-param-container-mutation.t
@@ -1164,6 +1181,8 @@ t/concurrency/supply/supplier-preserving-backlog.t
 t/concurrency/supply/supplier-preserving-derived-race.t
 t/concurrency/supply/supplier-preserving-derived-replay.t
 t/concurrency/supply/supplier-preserving-done-replay.t
+t/concurrency/supply/supplier-react-does-not-replay-values-a-finished-react-consumed.t
+t/concurrency/supply/supplier-react-does-not-replay-values-emitted-before-it-tapped.t
 t/concurrency/supply/supplier-scheduler-method-rows.t
 t/concurrency/supply/supplier-subclass-rows.t
 t/concurrency/supply/supply-act-serializes.t
@@ -1505,6 +1524,7 @@ t/control/do-block-my-is-lexical.t
 t/control/do-block-newline-then-loop-keyword.t
 t/control/do-for-imported-sub-value.t
 t/control/do-given-pointy.t
+t/control/do-if-branch-my-scope.t
 t/control/do-if-nested-without-modifier.t
 t/control/do-stmt-modifier-belongs-to-outer.t
 t/control/do-stmt-modifier-rvalue.t
@@ -1530,6 +1550,7 @@ t/control/eval-begin-phaser.t
 t/control/eval-topic-write-through.t
 t/control/eval-type-decl-and-phaser-message.t
 t/control/for-array-destructure.t
+t/control/for-array-topic-alias-elision.t
 t/control/for-bind-typed-array-deitemize.t
 t/control/for-body-sigiled-eval-leak.t
 t/control/for-body-typed-my-leak.t
@@ -1556,6 +1577,7 @@ t/control/for-scalar-list-rw-writeback.t
 t/control/for-scalar-source-alias.t
 t/control/for-sigilless-destructure-followed-by-sub.t
 t/control/for-sigilless-rw.t
+t/control/for-topic-bind-alias.t
 t/control/for-topic-dotassign-readonly.t
 t/control/for-topic-given-array.t
 t/control/for-topic-index-mutate.t
@@ -1613,6 +1635,7 @@ t/control/loop-label-in-expression-control.t
 t/control/loop-phaser-value-position-result.t
 t/control/loop-phasers-dynamic-next.t
 t/control/loop-spec-malformed.t
+t/control/loop-state-sync-many-outer-states.t
 t/control/modifier-cond-block-terminates-statement.t
 t/control/modifier-cond-ending-in-block.t
 t/control/named-alias-and-loop-then-while.t
@@ -1721,6 +1744,7 @@ t/exceptions/begin-phaser-catch-handler.t
 t/exceptions/begin-phaser-error-name.t
 t/exceptions/begin-prologue-error-skips-end.t
 t/exceptions/bitwise-failure-operand-throws.t
+t/exceptions/bool-method-error-unwinds-the-statement.t
 t/exceptions/bug-coverage-6c.t
 t/exceptions/caller-error-var-survives-call.t
 t/exceptions/catch-block-implicit-return.t
@@ -1730,6 +1754,7 @@ t/exceptions/catch-control-inline-handler-writes.t
 t/exceptions/catch-handler-cyclic-same-name-lexical.t
 t/exceptions/catch-in-blocks.t
 t/exceptions/catch-in-lazy-gather-suspend.t
+t/exceptions/catch-in-method-with-deeper-throw.t
 t/exceptions/catch-inline-installing-unit-and-anon-return.t
 t/exceptions/catch-reads-unreached-my-as-undefined.t
 t/exceptions/catch-resume-across-jit-frame.t
@@ -1789,6 +1814,7 @@ t/exceptions/exception-rows-owner-chain.t
 t/exceptions/exception-str-gist-message.t
 t/exceptions/exception-str-via-user-message.t
 t/exceptions/exception-throw-rows.t
+t/exceptions/exception-throw-with-backtrace-argument.t
 t/exceptions/exception-types.t
 t/exceptions/exceptions-comp-group-unknown-parent.t
 t/exceptions/extension-null.t
@@ -1901,6 +1927,7 @@ t/exceptions/undeclared-when-type.t
 t/exceptions/unthrown-backtrace.t
 t/exceptions/untyped-error-adhoc.t
 t/exceptions/user-at-pos-exception-propagates.t
+t/exceptions/user-control-exception-resume-continues-after-throw.t
 t/exceptions/vcs-conflict-marker.t
 t/exceptions/warn-backtrace-names-routine-frame.t
 t/exceptions/warn-cross-frame-control-resume.t
@@ -2148,6 +2175,7 @@ t/io/custom-out-print-accumulation.t
 t/io/date-io-instant-base-rows.t
 t/io/dir-and-file-test-one-body.t
 t/io/dir-gist-truncation.t
+t/io/dir-recurse.t
 t/io/dir-seq-map-gist.t
 t/io/double-slurpy-implicit-named.t
 t/io/eval-method-implicit-slurpy-not-undeclared.t
@@ -2189,6 +2217,7 @@ t/io/io-handle-tier1-methods.t
 t/io/io-handle-tier2a-file-output.t
 t/io/io-handle-tier2b-printf-flush.t
 t/io/io-handle-tier2c-write-spurt.t
+t/io/io-handle-unopened-path-cwd.t
 t/io/io-handle-user-method-latch-late-registration.t
 t/io/io-handle-user-subclass.t
 t/io/io-handle-words-seek-resets-buffer.t
@@ -2401,6 +2430,8 @@ t/lang/operators/compound-assign-as-call-argument.t
 t/lang/operators/compound-assign-immutable-value-message.t
 t/lang/operators/compound-assign-indexed-lvalue.t
 t/lang/operators/compound-assign-item-precedence.t
+t/lang/operators/compound-assign-logical-operand.t
+t/lang/operators/compound-assign-logical-or-lvalue-defined-or.t
 t/lang/operators/compound-assign-ops.t
 t/lang/operators/compound-assign-paren-rhs-infix.t
 t/lang/operators/compound-assign-precedence.t
@@ -2690,6 +2721,7 @@ t/lang/word-logical-lvalue-precedence.t
 t/lang/zprintf-g-exponent.t
 t/lang/zprintf-g-strip-zeros.t
 t/modules/add-method-module-lexical-type.t
+t/modules/add-multi-method-closure-sees-declaring-module-imports.t
 t/modules/adr0110-trir-module-linkage.t
 t/modules/also-is-parent-name-under-a-loaded-class-package.t
 t/modules/anon-package-decl-no-symbol.t
@@ -2699,10 +2731,12 @@ t/modules/attr-default-closure-module-imports.t
 t/modules/attr-default-closure-package.t
 t/modules/attr-default-declaring-package-scope.t
 t/modules/attr-default-reads-module-imported-constant.t
+t/modules/attribute-new-package-returns-the-type-object.t
 t/modules/attribute-package.t
 t/modules/attribute-trait-imported-into-module-sibling-class.t
 t/modules/attribute-trait-sees-dynamic-package.t
 t/modules/attribute-where-module-private-sub.t
+t/modules/augment-reads-module-file-scope-constant.t
 t/modules/backtrace-frame-code-package-and-callsite.t
 t/modules/backtrace-module-block-file.t
 t/modules/backtrace-module-file.t
@@ -2746,6 +2780,7 @@ t/modules/block-import-operator-unit-module-scope.t
 t/modules/block-use-keeps-nested-module-imports.t
 t/modules/block-use-package-var-outside-block-is-unmerged.t
 t/modules/builtin-args-package-body-lexical-cell.t
+t/modules/callers-routine-lookup-ignores-unimported-module-unit.t
 t/modules/callframe-my-package.t
 t/modules/captured-multi-candidate-module-statics.t
 t/modules/class-body-typed-hash-static-per-module.t
@@ -2758,6 +2793,10 @@ t/modules/code-file-module-package-suffix.t
 t/modules/compound-declared-type-does-not-shadow-core-in-module.t
 t/modules/compunit/builtin-distribution-role.t
 t/modules/compunit/compunit-can-install.t
+t/modules/compunit/compunit-core-repo-candidates-by-provides.t
+t/modules/compunit/compunit-core-repo-rakudo-dist.t
+t/modules/compunit/compunit-depspec-subclass-user-matchers.t
+t/modules/compunit/compunit-depspec-subclass.t
 t/modules/compunit/compunit-filesystem-meta6-provides.t
 t/modules/compunit/compunit-handle-export-how-package.t
 t/modules/compunit/compunit-handle-export-package.t
@@ -2773,11 +2812,15 @@ t/modules/compunit/compunit-repository-distribution.t
 t/modules/compunit/compunit-repository-filesystem.t
 t/modules/compunit/compunit-repository-for-name.t
 t/modules/compunit/compunit-repository-required-methods.t
+t/modules/compunit/compunit-repository-spec.t
+t/modules/compunit/compunit-repository-subclass.t
 t/modules/compunit/compunit-resources-object-type.t
 t/modules/compunit/compunit.t
 t/modules/compunit/cross-compunit-multi-vs-plain-sub-name-collision.t
 t/modules/compunit/cur-install-content-api.t
 t/modules/compunit/cur-resolve-compunit.t
+t/modules/compunit/distribution-locally-role-method-param.t
+t/modules/compunit/distribution-locally-role.t
 t/modules/compunit/distribution-meta-version.t
 t/modules/compunit/distribution-method-rows.t
 t/modules/compunit/distribution-resource-split.t
@@ -2825,6 +2868,7 @@ t/modules/core-type-name-beats-loaded-package-type-in-signature.t
 t/modules/cross-module-short-name-types.t
 t/modules/declarator-doc-why-module-declarations.t
 t/modules/does-role-init-module-lexical-role.t
+t/modules/dynamic-var-falls-back-to-global-package-var.t
 t/modules/dynamic-var-not-package-qualified.t
 t/modules/end-phaser-module-order.t
 t/modules/enum-alias-qualified-member-cross-module.t
@@ -2877,6 +2921,7 @@ t/modules/import-export/export-hook-hands-over-main.t
 t/modules/import-export/export-hook-local-operator-reduction.t
 t/modules/import-export/export-hook-local-prefix-operator.t
 t/modules/import-export/export-hook-multi-named-args.t
+t/modules/import-export/export-hook-qualified-type-in-gather-method.t
 t/modules/import-export/export-hook-raw-param-container.t
 t/modules/import-export/export-hook-reexport-over-own-import.t
 t/modules/import-export/export-hook-reexports-imported-operators.t
@@ -2895,6 +2940,7 @@ t/modules/import-export/export-stash-named-keyed-assign.t
 t/modules/import-export/export-stash-our-bind-computed.t
 t/modules/import-export/export-stash-our-bind-literal.t
 t/modules/import-export/export-stash-our-var.t
+t/modules/import-export/export-stash-tag-rebind.t
 t/modules/import-export/export-sub-infix-operator-closure.t
 t/modules/import-export/export-sub-returns-stash.t
 t/modules/import-export/export-sub-selective-lexical-multi.t
@@ -2940,6 +2986,7 @@ t/modules/import-export/exporthow-invalid-directive.t
 t/modules/import-export/exporthow-supersede-builtin.t
 t/modules/import-export/exporthow-supersede-errors.t
 t/modules/import-export/import-constant-writeback-coherence.t
+t/modules/import-export/import-declared-package-without-exports.t
 t/modules/import-export/import-only-sub-hides-outer-family.t
 t/modules/import-export/import-operator-method.t
 t/modules/import-export/import-scope-keeps-registered-classes.t
@@ -2949,6 +2996,7 @@ t/modules/import-export/import-then-local-class-shadows-short-name.t
 t/modules/import-export/imported-attribute-trait-role-composition.t
 t/modules/import-export/imported-call-expression-prefix.t
 t/modules/import-export/imported-candidate-less-proto.t
+t/modules/import-export/imported-class-attribute-type-constraint.t
 t/modules/import-export/imported-class-definite-type.t
 t/modules/import-export/imported-constant-nested-frame-indirect-call.t
 t/modules/import-export/imported-constant-shadows-type-in-block.t
@@ -2978,6 +3026,7 @@ t/modules/import-export/imported-type-and-term-in-my-stash.t
 t/modules/import-export/imported-type-name-in-coercion.t
 t/modules/import-export/imported-type-smiley-grouped.t
 t/modules/import-export/imported-value-term-declarators.t
+t/modules/import-export/incdec-with-exported-operator-map-no-candidate.t
 t/modules/import-export/indirect-lookup-unit-own-export-package.t
 t/modules/import-export/inline-module-is-export.t
 t/modules/import-export/inline-module-lexical-class-export.t
@@ -3009,6 +3058,7 @@ t/modules/import-export/nested-block-exported-lexical-class.t
 t/modules/import-export/nested-decl-is-export.t
 t/modules/import-export/nested-export-declarations.t
 t/modules/import-export/nested-export-sub-block-capture.t
+t/modules/import-export/nested-export-sub-in-method.t
 t/modules/import-export/nested-export-sub-scoping.t
 t/modules/import-export/nested-module-exported-lexical-class.t
 t/modules/import-export/nested-operator-is-export.t
@@ -3349,9 +3399,11 @@ t/modules/qualified-class-in-package-relative.t
 t/modules/qualified-package-visible-after-use-ok-first-load.t
 t/modules/qualified-role-in-unit-module.t
 t/modules/quote-colon-delim-package-qualified-collision.t
+t/modules/rakudo-internals-json-positional-pair.t
 t/modules/rakudo-internals-json.t
 t/modules/resources-in-required-module.t
 t/modules/resources-second-use-module.t
+t/modules/return-type-lowercase-module-import.t
 t/modules/role-body-sub-sees-module-imports-in-eval.t
 t/modules/role-body-use-imports-into-role-package.t
 t/modules/role-body-use-module-imports-own-operator.t
@@ -3383,6 +3435,7 @@ t/modules/typed-decl-package-qualified-constraint.t
 t/modules/uncached-module-mainline-binds-like-cached.t
 t/modules/variable-trailing-package-separator.t
 t/modules/vendored-telemetry-module.t
+t/modules/wrap-imported-multi-called-from-module.t
 t/modules/x-pseudo-package-in-declaration.t
 t/nativecall/adr0019-e2a-native-row-regressions.t
 t/nativecall/any-base-native-deferral.t
@@ -3401,6 +3454,7 @@ t/nativecall/buf-native-sized-pun.t
 t/nativecall/buf-write-native.t
 t/nativecall/callmethod-env-pure-native-gate.t
 t/nativecall/carray-allocate-upstream.t
+t/nativecall/carray-any-list-methods.t
 t/nativecall/carray-base-type-match.t
 t/nativecall/carray-constant-alias-smiley.t
 t/nativecall/carray-iteration-methods.t
@@ -3412,6 +3466,7 @@ t/nativecall/carray-repr-bind-before-start.t
 t/nativecall/carray-repr-nqp-create.t
 t/nativecall/carray-repr-ref-elems.t
 t/nativecall/carray-return-slice-blob.t
+t/nativecall/carray-tail-count-and-reverse.t
 t/nativecall/carray-untyped-new.t
 t/nativecall/classhow-native-method-signature-default.t
 t/nativecall/closure-lexical-self-native-dispatch.t
@@ -3426,11 +3481,13 @@ t/nativecall/cstruct-carray-expr-index-write.t
 t/nativecall/cstruct-create-set-value-body.t
 t/nativecall/cstruct-field-constant-type-alias.t
 t/nativecall/cstruct-field-enum-write.t
+t/nativecall/cstruct-method-attribute-seed.t
 t/nativecall/cstruct-new-native-body.t
 t/nativecall/cstruct-new-reference-fields.t
 t/nativecall/cstruct-pointer-field-module-class.t
 t/nativecall/cstruct-private-attr-read.t
 t/nativecall/cstruct-returned-arg-body.t
+t/nativecall/cstruct-rw-field-reference.t
 t/nativecall/cunion-cppstruct-native-body.t
 t/nativecall/dynamic-array-parameterization-push-wrap.t
 t/nativecall/export-native-rw-writeback.t
@@ -3500,6 +3557,7 @@ t/nativecall/native-decl-type-binds-int.t
 t/nativecall/native-default-new.t
 t/nativecall/native-doesrole-construct.t
 t/nativecall/native-encode-decode.t
+t/nativecall/native-exit-gate.t
 t/nativecall/native-failure-accessors.t
 t/nativecall/native-failure-ctor.t
 t/nativecall/native-instant-duration-render.t
@@ -3513,6 +3571,7 @@ t/nativecall/native-int-coerce-methods-are-cool-only.t
 t/nativecall/native-int-num-str-slip-construct.t
 t/nativecall/native-int-optional-default-multi.t
 t/nativecall/native-int-param-binding.t
+t/nativecall/native-int-push-scalar-held.t
 t/nativecall/native-int-shift-left-wraps.t
 t/nativecall/native-int-store-unboxes-allomorph.t
 t/nativecall/native-io-coercion.t
@@ -3600,6 +3659,7 @@ t/nativecall/nativecall-exports-are-routines.t
 t/nativecall/nativecall-has-array-shape-constant.t
 t/nativecall/nativecall-has-embedded-struct.t
 t/nativecall/nativecall-helpers-are-not-reexported.t
+t/nativecall/nativecall-import-not-reexported.t
 t/nativecall/nativecall-in-module.t
 t/nativecall/nativecall-method-implicit-invocant.t
 t/nativecall/nativecall-method-rw-out-and-cast-str.t
@@ -3707,6 +3767,7 @@ t/oo/attribute/attr-bind-list.t
 t/oo/attribute/attr-bind-local-visible-to-accessor.t
 t/oo/attribute/attr-bind-reconcile-many-attrs.t
 t/oo/attribute/attr-bind-topic-alias-does-not-leak.t
+t/oo/attribute/attr-bound-container-type.t
 t/oo/attribute/attr-bound-vs-assigned-aggregate-var.t
 t/oo/attribute/attr-default-construction-itemizes.t
 t/oo/attribute/attr-default-declaring-scope-cells.t
@@ -3714,9 +3775,11 @@ t/oo/attribute/attr-default-file-scoped-call.t
 t/oo/attribute/attr-default-trailing-comma.t
 t/oo/attribute/attr-default-user-subset-deferred.t
 t/oo/attribute/attr-definite-required-assignment.t
+t/oo/attribute/attr-definite-smiley-assign.t
 t/oo/attribute/attr-empty-list-hash-coercion.t
 t/oo/attribute/attr-handles-angle-word.t
 t/oo/attribute/attr-hash-assign-nested-method-call.t
+t/oo/attribute/attr-is-default-nil-in-build.t
 t/oo/attribute/attr-nil-default-bless.t
 t/oo/attribute/attr-nil-reset-typed.t
 t/oo/attribute/attr-param-empty-default-is-array.t
@@ -3740,6 +3803,8 @@ t/oo/attribute/attribute-auto-viv-scalar-type.t
 t/oo/attribute/attribute-bind-does-not-leak-to-callee.t
 t/oo/attribute/attribute-bind-proxy-array-hash.t
 t/oo/attribute/attribute-bind-proxy.t
+t/oo/attribute/attribute-bound-type-object-read-through-mixin-invocant.t
+t/oo/attribute/attribute-build-thunk-is-method.t
 t/oo/attribute/attribute-build-unset-is-mu.t
 t/oo/attribute/attribute-built-trait-raku.t
 t/oo/attribute/attribute-colon-arglist.t
@@ -3754,6 +3819,7 @@ t/oo/attribute/attribute-does-reblesses-in-place.t
 t/oo/attribute/attribute-element-assign-proxy-no-store.t
 t/oo/attribute/attribute-get-value-container.t
 t/oo/attribute/attribute-get-value-on-type-object.t
+t/oo/attribute/attribute-get-value-var-view.t
 t/oo/attribute/attribute-holding-proxy-accessor-store.t
 t/oo/attribute/attribute-in-list-literal-nested-call.t
 t/oo/attribute/attribute-initializer-copies-its-container.t
@@ -3773,6 +3839,7 @@ t/oo/attribute/attribute-required-reason.t
 t/oo/attribute/attribute-required.t
 t/oo/attribute/attribute-seed-default-memo.t
 t/oo/attribute/attribute-set-build-args.t
+t/oo/attribute/attribute-set-value-binds-container.t
 t/oo/attribute/attribute-set-value-binds-scalar.t
 t/oo/attribute/attribute-sigil-collision.t
 t/oo/attribute/attribute-subclass-metaobject.t
@@ -3802,6 +3869,7 @@ t/oo/attribute/attributive-callable-param-twigil.t
 t/oo/attribute/attributive-code-param-writable.t
 t/oo/attribute/attributive-param-nested-sub.t
 t/oo/attribute/attrinited-introspection-vivify.t
+t/oo/attribute/bind-public-accessor-copy.t
 t/oo/attribute/bless-ignores-private-attribute-named-arg.t
 t/oo/attribute/bless-list-attribute.t
 t/oo/attribute/bless-typed-hash-attributes.t
@@ -3817,6 +3885,7 @@ t/oo/attribute/class-level-attribute-of.t
 t/oo/attribute/class-scoped-accessor-shadows-builtin.t
 t/oo/attribute/classhow-can-attribute-accessor-rw.t
 t/oo/attribute/collation-attribute-method-rows.t
+t/oo/attribute/colonpair-code-attribute-accessor-shorthand.t
 t/oo/attribute/datetime-attributes-unmarshal.t
 t/oo/attribute/definite-attribute-checked-after-traits.t
 t/oo/attribute/dollar-dot-underscore-accessor.t
@@ -3841,13 +3910,16 @@ t/oo/attribute/instance-eqv-private-attribute-and-user-raku.t
 t/oo/attribute/instance-eqv-qualified-attributes.t
 t/oo/attribute/interp-attribute-array-hash-method.t
 t/oo/attribute/interp-self-accessor-call.t
+t/oo/attribute/is-type-attribute-fetches-proxy-initial.t
 t/oo/attribute/let-temp-attribute-and-term-forms.t
 t/oo/attribute/lvalue-invocant-attribute-accessor-container.t
 t/oo/attribute/map-to-hash-attribute-construction.t
+t/oo/attribute/metamodel-new-type-same-name-attribute-mixin.t
 t/oo/attribute/method-accessor-element-bind.t
 t/oo/attribute/method-table-reports-rw-accessor.t
 t/oo/attribute/mixin-attribute-get-value.t
 t/oo/attribute/mixin-attribute-shadowed-by-builtin-method.t
+t/oo/attribute/mixin-type-find-method-accessor.t
 t/oo/attribute/mixin-wrapped-accessor-named-like-any-method.t
 t/oo/attribute/multi-method-mixed-attribute-type-object-specificity.t
 t/oo/attribute/multi-method-where-invocant-attribute.t
@@ -3860,6 +3932,7 @@ t/oo/attribute/object-hash-attr-accessor-assign.t
 t/oo/attribute/parent-attributes.t
 t/oo/attribute/placeholder-attribute.t
 t/oo/attribute/prefix-incdec-on-an-rw-accessor.t
+t/oo/attribute/proxy-attr-ro-accessor-message.t
 t/oo/attribute/proxy-subclass-accessor-answers-value.t
 t/oo/attribute/proxy-subclass-attributes-methods.t
 t/oo/attribute/quanthash-attribute-assign-in-place.t
@@ -3908,6 +3981,7 @@ t/oo/class/augment-inside-class-body.t
 t/oo/class/augment-multi-invocant-only-outranks-builtin.t
 t/oo/class/augment-multi-ranked-with-builtin-candidates.t
 t/oo/class/augment-nosuchtype.t
+t/oo/class/bool-of-but-mixin-uses-inner-class-bool.t
 t/oo/class/builtin-catalog-mro.t
 t/oo/class/builtin-inheritable-parent-types.t
 t/oo/class/builtin-mro-all-candidates.t
@@ -3973,10 +4047,12 @@ t/oo/class/classify-list-plain-hash-keys.t
 t/oo/class/classify-object-hash.t
 t/oo/class/classify-pair-iteration.t
 t/oo/class/classify-whatever-identity.t
+t/oo/class/code-class-mro.t
 t/oo/class/code-object-return-type-not-inherited.t
 t/oo/class/coerce-into-class-inheriting-builtin.t
 t/oo/class/composition-advanced.t
 t/oo/class/composition-not-composable.t
+t/oo/class/custom-class-how-create-buildplan-mixin.t
 t/oo/class/date-subclass-qualified-and-inherited-new.t
 t/oo/class/deep-mro-dispatch.t
 t/oo/class/defer-inherited-chain.t
@@ -4002,6 +4078,7 @@ t/oo/class/parents-list-render.t
 t/oo/class/parents-tree.t
 t/oo/class/private-attr-wrong-class.t
 t/oo/class/private-class-return-constraint.t
+t/oo/class/private-hash-attr-bind-keeps-map-subclass.t
 t/oo/class/private-nested-lexical-class.t
 t/oo/class/proto-star-cross-mro-candidates.t
 t/oo/class/qualified-name-pair-key.t
@@ -4037,6 +4114,7 @@ t/oo/construct/build-attr-default-order.t
 t/oo/construct/build-callsame-nil.t
 t/oo/construct/build-sibling-writeback-coherence.t
 t/oo/construct/build-tweak.t
+t/oo/construct/buildplan-built-bind.t
 t/oo/construct/buildplan-hook-runs-extra-task.t
 t/oo/construct/buildplan-matches-rakudo.t
 t/oo/construct/builtin-constructor-table.t
@@ -4091,6 +4169,7 @@ t/oo/eval-does-not-leak-use-fatal.t
 t/oo/eval-my-term-named-like-builtin-does-not-leak.t
 t/oo/exists-adverb-on-mixin.t
 t/oo/fatal-mode-does-not-leak-into-callee.t
+t/oo/for-param-restore-does-not-leak-caller-binding.t
 t/oo/forward-declaration.t
 t/oo/free-var-bind-does-not-alias-caller-lexical.t
 t/oo/given-readonly-topic-does-not-leak-into-routine.t
@@ -4102,6 +4181,7 @@ t/oo/issue-7779-clone-type-object.t
 t/oo/issue-8884-hash-mixin-assign-key-nextsame.t
 t/oo/itemized-scalar-sink-does-not-force-lazy.t
 t/oo/junction-nqp-getattr-mixin-base.t
+t/oo/loop-body-bind-does-not-mark-outer-readonly.t
 t/oo/loop-body-my-does-not-outlive-the-block.t
 t/oo/method/accepts-method-builtin-instances.t
 t/oo/method/accepts-method-open-rows.t
@@ -4115,6 +4195,7 @@ t/oo/method/add-method-pointy-invocant.t
 t/oo/method/add-method-qualified-and-invocant.t
 t/oo/method/add-method-sub-can-signature.t
 t/oo/method/add-method-sub-keeps-outer-self.t
+t/oo/method/add-multi-method-closure-captures-creator-sigilless.t
 t/oo/method/add-private-method.t
 t/oo/method/addmethod-multi-alias.t
 t/oo/method/aggregate-complex-version-method-rows.t
@@ -4155,6 +4236,7 @@ t/oo/method/callframe-code-name-method-unit.t
 t/oo/method/capture-method-rows.t
 t/oo/method/capture-param-method-forwards-caller-containers.t
 t/oo/method/capture-slip-container-method-args.t
+t/oo/method/capture-subsignature-named-not-a-capture-method.t
 t/oo/method/captured-outer-method-compiled-gate.t
 t/oo/method/carried-state-subclass-method-rows.t
 t/oo/method/chained-method-lvalue-assign.t
@@ -4172,6 +4254,7 @@ t/oo/method/classhow-methods-declared-coercers.t
 t/oo/method/classhow-methods-no-duplicate-names.t
 t/oo/method/closure-capture-class-in-block-method.t
 t/oo/method/closure-captures-method-arg-decl.t
+t/oo/method/closure-method-fixed-names-without-env-keys.t
 t/oo/method/closure-named-arg-method-escape.t
 t/oo/method/code-set-name-and-add-method-sub.t
 t/oo/method/code-str-method-rows.t
@@ -4238,6 +4321,7 @@ t/oo/method/fatrat-base-method-rows.t
 t/oo/method/fatrat-base-repeating-method-rows.t
 t/oo/method/find-method-builtin-call.t
 t/oo/method/find-method-datetime-declared.t
+t/oo/method/find-method-object-identity.t
 t/oo/method/find-private-method.t
 t/oo/method/flat-levels-method-rows.t
 t/oo/method/flat-method.t
@@ -4329,6 +4413,7 @@ t/oo/method/method-empty-body-explicit-invocant-nil.t
 t/oo/method/method-env-dirty.t
 t/oo/method/method-env-merge-unchanged-globals.t
 t/oo/method/method-explicit-invocant.t
+t/oo/method/method-fixed-names-without-env-keys.t
 t/oo/method/method-in-nested-block-of-class-body.t
 t/oo/method/method-in-nested-block-of-unit-class.t
 t/oo/method/method-late-rows-cascade-one.t
@@ -4379,6 +4464,7 @@ t/oo/method/method-self-assign-aggregate.t
 t/oo/method/method-self-sigil-context.t
 t/oo/method/method-seq-arg-positional-over-coercion.t
 t/oo/method/method-set-name.t
+t/oo/method/method-snapshot-lazy-owner-facts.t
 t/oo/method/method-subset-param-predicate-runs-once.t
 t/oo/method/method-table-cascade-decline.t
 t/oo/method/method-table-compose-timing.t
@@ -4398,6 +4484,8 @@ t/oo/method/missing-method-on-code-dies.t
 t/oo/method/mixin-inherited-method-self-dispatch.t
 t/oo/method/mixin-method-compiled.t
 t/oo/method/mixin-private-method-self-dispatch.t
+t/oo/method/mixin-type-object-add-method.t
+t/oo/method/mixin-value-user-seq-method-is-called.t
 t/oo/method/monitor-method-does-not-leak-topic-or-self.t
 t/oo/method/mu-emit-method-row.t
 t/oo/method/mu-isa-method-rows.t
@@ -4438,6 +4526,7 @@ t/oo/method/mut-method-receiver-writeback-coherence.t
 t/oo/method/mutating-method-colon.t
 t/oo/method/my-class-method-captures-own-type.t
 t/oo/method/my-decl-bare-dot-method-call.t
+t/oo/method/my-method-not-callable-as-method-on-other-types.t
 t/oo/method/my-multi-method.t
 t/oo/method/name-method-on-builtin-instances.t
 t/oo/method/named-method-declaration-keeps-its-declarator.t
@@ -4463,10 +4552,12 @@ t/oo/method/opaque-instance-method-rows.t
 t/oo/method/perl5-unary-topic-method-arg.t
 t/oo/method/placeholder-named-in-method-do.t
 t/oo/method/plain-method-dispatch-boundary.t
+t/oo/method/plain-method-early-lane.t
 t/oo/method/plain-method-lane-with-arguments.t
 t/oo/method/plain-method-lane.t
 t/oo/method/positional-method-rows.t
 t/oo/method/postfix-i-vs-method-i.t
+t/oo/method/prefix-bool-fallback-uses-user-bool-method.t
 t/oo/method/private-call-from-anon-method-value.t
 t/oo/method/private-method-apostrophe-name.t
 t/oo/method/private-method-call-in-closure.t
@@ -4486,9 +4577,12 @@ t/oo/method/prologue-method-rows.t
 t/oo/method/proto-method-body-type-object-invocant.t
 t/oo/method/proto-method-body.t
 t/oo/method/proto-method-buf8-narrowness.t
+t/oo/method/proto-method-redispatch-cache.t
 t/oo/method/proto-method-rw-redispatch.t
+t/oo/method/proto-method-sees-imported-routines.t
 t/oo/method/proto-method-visible-to-find-method.t
 t/oo/method/proxy-invocant-user-method.t
+t/oo/method/proxy-var-method-call.t
 t/oo/method/q-adverb-array-method-interp.t
 t/oo/method/qualified-method-call.t
 t/oo/method/qualified-name-method-multi-part-qualifier.t
@@ -4532,6 +4626,7 @@ t/oo/method/scoped-overlay-method.t
 t/oo/method/self-longname-method-call.t
 t/oo/method/self-method-decontainerizes.t
 t/oo/method/self-term-in-method-closure.t
+t/oo/method/seq-arg-array-param-repeated-method-call.t
 t/oo/method/seq-method-rows.t
 t/oo/method/set-op-after-method.t
 t/oo/method/shapeless-any-list-method-rows.t
@@ -4596,6 +4691,7 @@ t/oo/mixin-list-array-assign.t
 t/oo/mixin-list-iteration.t
 t/oo/mixin-multidim-call-arg.t
 t/oo/mixin-name-application-order.t
+t/oo/mixin-scalar-at-pos-zero.t
 t/oo/mixin-set-name-reaches-instances.t
 t/oo/mixin-str-gist-dispatch.t
 t/oo/mixin-type-constant-constraint.t
@@ -4610,6 +4706,7 @@ t/oo/mop/can-anonymous-class-dynamic-method.t
 t/oo/mop/can-built-in-mro-candidates.t
 t/oo/mop/can-builtin-rakudo-declared.t
 t/oo/mop/can-does.t
+t/oo/mop/can-hides-multi-method-until-compose.t
 t/oo/mop/can-introspection-reads-rakudo-snapshot.t
 t/oo/mop/can-method.t
 t/oo/mop/can-methods-declared-catalog-rows.t
@@ -4624,6 +4721,7 @@ t/oo/mop/how-metaobject-identity.t
 t/oo/mop/how-mutation-persists.t
 t/oo/mop/hyper-seq-mu-introspection.t
 t/oo/mop/introspection-capture-cando.t
+t/oo/mop/isa-concrete-scalar-container.t
 t/oo/mop/isa-parameterized-buf-name.t
 t/oo/mop/isa-parameterized-container-type.t
 t/oo/mop/metamodel-add-fallback.t
@@ -4641,6 +4739,7 @@ t/oo/mop/metamodel-how-subclass-new-type.t
 t/oo/mop/metamodel-introspection.t
 t/oo/mop/metamodel-is-pun.t
 t/oo/mop/metamodel-naming-stashing.t
+t/oo/mop/metamodel-new-type-same-name-distinct.t
 t/oo/mop/metamodel-nqp-parameterizer-ops.t
 t/oo/mop/metamodel-primitives-method-cache.t
 t/oo/mop/metamodel-private-methods.t
@@ -4667,6 +4766,7 @@ t/oo/private-trusts.t
 t/oo/private-typed-hash-set-union.t
 t/oo/qualified-call-does-not-alias-builtin.t
 t/oo/qualified-runtime-does.t
+t/oo/role/add-attribute-keeps-role-mixin.t
 t/oo/role/add-method-alias-unpunned-role-multi.t
 t/oo/role/add-role-declaration-expression.t
 t/oo/role/allomorph-role-mixin-what.t
@@ -4689,6 +4789,9 @@ t/oo/role/but-on-role-type.t
 t/oo/role/but-role-list.t
 t/oo/role/but-role-on-list-array-name-and-join-flatten.t
 t/oo/role/but-role-type-object-new.t
+t/oo/role/but-type-object-role-how-specialize.t
+t/oo/role/callers-scope-sees-parametric-role-file-level-sub.t
+t/oo/role/callers-scope-sees-role-file-level-sub.t
 t/oo/role/callsame-punned-role-and-hyper-infix-sub.t
 t/oo/role/can-methods-composed-role-methods.t
 t/oo/role/can-role-declared-methods.t
@@ -4725,6 +4828,7 @@ t/oo/role/eval-declared-lexical-role-does-not-leak.t
 t/oo/role/eval-use-role-body-import-visibility.t
 t/oo/role/forward-declared-role-stub-upgrade.t
 t/oo/role/hash-role-store-at-key.t
+t/oo/role/how-does-role-on-new-type-persists-and-qualified-compose.t
 t/oo/role/imperative-does-parameterized-role.t
 t/oo/role/infix-is-default-beats-core-for-role-mixin.t
 t/oo/role/isa-does-role-nominal-split.t
@@ -4739,6 +4843,7 @@ t/oo/role/lexical-role-two-modules.t
 t/oo/role/local-role-parameter-identity.t
 t/oo/role/map-rejects-role-mixed-sub-as-callable.t
 t/oo/role/metamodel-role-how-taxonomy.t
+t/oo/role/method-explicit-role-invocant-narrower-than-mu.t
 t/oo/role/method-trait-proto-and-role-dispatch.t
 t/oo/role/method-trait-role-def-identity.t
 t/oo/role/method-trait-role-introspection.t
@@ -4754,6 +4859,7 @@ t/oo/role/mixin-role-group-candidate.t
 t/oo/role/mixin-role-group-method-shadows-builtin.t
 t/oo/role/mixin-role-transitive-does.t
 t/oo/role/mixin-roles-introspection.t
+t/oo/role/mixin-value-parameterized-role-identity.t
 t/oo/role/mro-excludes-composed-roles.t
 t/oo/role/mro-role-hides.t
 t/oo/role/mro-roles-last-declared-first.t
@@ -4768,6 +4874,7 @@ t/oo/role/my-role-in-role.t
 t/oo/role/nested-class-runs-role-body-at-compile-time.t
 t/oo/role/nested-my-role-same-name-in-two-roles.t
 t/oo/role/nextsame-role-mixin.t
+t/oo/role/objat-role-mixin-raku.t
 t/oo/role/parameterize-role-with-value.t
 t/oo/role/parameterized-role-composes-base-candidate.t
 t/oo/role/parameterized-role-static-scope.t
@@ -4820,6 +4927,7 @@ t/oo/role/role-attr-shadows-builtin-method.t
 t/oo/role/role-attribute-built-bind.t
 t/oo/role/role-attribute-custom-trait.t
 t/oo/role/role-attribute-is-default-nil-restore.t
+t/oo/role/role-attribute-trait-per-composition.t
 t/oo/role/role-attribute-trait-specialize-hook.t
 t/oo/role/role-attribute-type-constraint.t
 t/oo/role/role-augment-method-deprecated-message.t
@@ -4850,6 +4958,7 @@ t/oo/role/role-body-sub-proto.t
 t/oo/role/role-body-sub-shadowed-by-class.t
 t/oo/role/role-body-sub-state-per-composer.t
 t/oo/role/role-body-use-at-declaration.t
+t/oo/role/role-body-use-fatal-scope.t
 t/oo/role/role-body-use-flat-role-name.t
 t/oo/role/role-body-use-survives-block-scope-rollback.t
 t/oo/role/role-body-writes-declaration-site-lexicals.t
@@ -4882,7 +4991,9 @@ t/oo/role/role-double-parametric-args-distinct.t
 t/oo/role/role-double-parametric-multi-dispatch.t
 t/oo/role/role-enum-coercion-param-type.t
 t/oo/role/role-expr-hyphenated-name.t
+t/oo/role/role-expression-mixin-attributes.t
 t/oo/role/role-how-specialize-hook.t
+t/oo/role/role-how-specialize-mixin-type-object.t
 t/oo/role/role-initialization.t
 t/oo/role/role-instantiation.t
 t/oo/role/role-is-hash-var-tie.t
@@ -4915,12 +5026,15 @@ t/oo/role/role-my-class-level-attr-accessor.t
 t/oo/role/role-my-subset.t
 t/oo/role/role-name-does-not-run-body.t
 t/oo/role/role-named-param-type-object-class-check.t
+t/oo/role/role-nested-class-closure-sees-class-subs.t
 t/oo/role/role-nested-in-class-sees-sibling-after-composition.t
 t/oo/role/role-nonmulti-class-multi-override.t
+t/oo/role/role-optional-code-param-is-callable-type-object.t
 t/oo/role/role-our-scoped-attribute.t
 t/oo/role/role-own-members-introspection.t
 t/oo/role/role-param-binding-does-not-shadow-caller.t
 t/oo/role/role-param-binding-leaves-outer-lexical-writable.t
+t/oo/role/role-param-code-var-captured-by-escaping-closure.t
 t/oo/role/role-param-composition-no-leak.t
 t/oo/role/role-param-default-declaring-scope.t
 t/oo/role/role-param-escaping-closure.t
@@ -4991,6 +5105,7 @@ t/oo/role/run-nested-role-body.t
 t/oo/role/runtime-parametric-role-value-args.t
 t/oo/role/same-name-parametric-and-plain-role.t
 t/oo/role/seq-does-sequence-role.t
+t/oo/role/sequence-role-instance-under-but-mixin.t
 t/oo/role/sequence-role-user-iterator.t
 t/oo/role/set-op-role-mixin-scalar-operand.t
 t/oo/role/tied-container-attribute-and-role.t
@@ -5001,6 +5116,7 @@ t/oo/role/uppercase-is-trait-reaches-trait-mod-on-a-role.t
 t/oo/role/var-trait-curried-role.t
 t/oo/role/variable-trait-role-body.t
 t/oo/role/walk-mixin-role.t
+t/oo/role/which-does-role-in-place.t
 t/oo/role/wrapped-accessor-role-method-rw-wrapper.t
 t/oo/route-block-dsl.t
 t/oo/routine-does-identity.t
@@ -5052,6 +5168,7 @@ t/oo/trait/class-expression-is-rw-trait.t
 t/oo/trait/class-how-compose-override-from-method-trait.t
 t/oo/trait/class-is-array-type-trait.t
 t/oo/trait/class-trait-how-mixin-compose.t
+t/oo/trait/class-traits-see-classhow-after-child-namespace.t
 t/oo/trait/custom-parameter-trait-argument-dispatch.t
 t/oo/trait/custom-parameter-trait.t
 t/oo/trait/custom-var-trait-store-initializer.t
@@ -5063,6 +5180,7 @@ t/oo/trait/do-decl-container-trait-once.t
 t/oo/trait/enum-trait-arg-and-trait-mod-call.t
 t/oo/trait/eval-load-cached-trait.t
 t/oo/trait/handles-container-attr-writeback.t
+t/oo/trait/handles-delegation-on-but-mixin.t
 t/oo/trait/handles-dynamic-list.t
 t/oo/trait/handles-fat-arrow-rename.t
 t/oo/trait/handles-paren-strings.t
@@ -5096,6 +5214,7 @@ t/oo/trait/shadow-slot-var-trait.t
 t/oo/trait/signature-literal-custom-param-trait.t
 t/oo/trait/sub-trait-mod-user-dispatch.t
 t/oo/trait/subset-trait-after-of.t
+t/oo/trait/superseded-how-keeps-attr-trait-mixin.t
 t/oo/trait/trait-arg-declaration-phase.t
 t/oo/trait/trait-argless-declaration-phase.t
 t/oo/trait/trait-decl-kinds-declaration-phase.t
@@ -5145,6 +5264,7 @@ t/rakuast/rakuast-anonymous-subsignature.t
 t/rakuast/rakuast-anonymous-variables.t
 t/rakuast/rakuast-any-definedness.t
 t/rakuast/rakuast-array-context-seq-reread.t
+t/rakuast/rakuast-assignment-item.t
 t/rakuast/rakuast-ast.t
 t/rakuast/rakuast-atomic-operators.t
 t/rakuast/rakuast-attribute-bind.t
@@ -5166,6 +5286,8 @@ t/rakuast/rakuast-bareword-scope-shadowing.t
 t/rakuast/rakuast-bind-declaration.t
 t/rakuast/rakuast-bind-where.t
 t/rakuast/rakuast-blocks.t
+t/rakuast/rakuast-bracketed-meta-assign-node.t
+t/rakuast/rakuast-built-bind-decl-postfix.t
 t/rakuast/rakuast-call-assign-declaration-list.t
 t/rakuast/rakuast-call-assign-initializer.t
 t/rakuast/rakuast-call-lvalue-assign.t
@@ -5173,11 +5295,15 @@ t/rakuast/rakuast-callable-and-slurpy-signatures.t
 t/rakuast/rakuast-callable-lvalue.t
 t/rakuast/rakuast-caller-scope-names.t
 t/rakuast/rakuast-calls-assign.t
+t/rakuast/rakuast-chained-assignment-node.t
 t/rakuast/rakuast-class-traits-multi-constant.t
 t/rakuast/rakuast-class.t
 t/rakuast/rakuast-colonpair-allomorph.t
 t/rakuast/rakuast-colonpair-literal.t
+t/rakuast/rakuast-comma-declarations.t
+t/rakuast/rakuast-compiler-variables.t
 t/rakuast/rakuast-complex-literal-parameters.t
+t/rakuast/rakuast-compound-assign-node.t
 t/rakuast/rakuast-compound-assign.t
 t/rakuast/rakuast-compunit.t
 t/rakuast/rakuast-computed-package-adverbs.t
@@ -5202,14 +5328,17 @@ t/rakuast/rakuast-control-signature-cohort.t
 t/rakuast/rakuast-control-words.t
 t/rakuast/rakuast-control.t
 t/rakuast/rakuast-core-type-names.t
+t/rakuast/rakuast-decl-compound-node.t
 t/rakuast/rakuast-decl-default-trait.t
 t/rakuast/rakuast-decl-postfix-tail.t
+t/rakuast/rakuast-decl-subscript-assign-node.t
 t/rakuast/rakuast-declaration-compound-assign.t
 t/rakuast/rakuast-declaration-feeds.t
 t/rakuast/rakuast-declaration-given-modifier.t
 t/rakuast/rakuast-declaration-headers.t
 t/rakuast/rakuast-declaration-loose-tail.t
 t/rakuast/rakuast-declaration-modifier-cohort.t
+t/rakuast/rakuast-declaration-nodes.t
 t/rakuast/rakuast-declaration-postfix-term.t
 t/rakuast/rakuast-declaration-traits.t
 t/rakuast/rakuast-declaration-user-compound-assign.t
@@ -5220,14 +5349,20 @@ t/rakuast/rakuast-declared-name.t
 t/rakuast/rakuast-declared-nil-and-grouped-decl.t
 t/rakuast/rakuast-declared-sub-bareword.t
 t/rakuast/rakuast-deprecated-anon-sub-call.t
+t/rakuast/rakuast-derived-methods-2.t
+t/rakuast/rakuast-derived-methods.t
 t/rakuast/rakuast-desugar-boundary.t
 t/rakuast/rakuast-do-whenever.t
+t/rakuast/rakuast-dotty-assign-node.t
+t/rakuast/rakuast-dotty-infix-call.t
 t/rakuast/rakuast-dotty-term-method.t
 t/rakuast/rakuast-dunder-variable-trait.t
 t/rakuast/rakuast-dynamic-match-adverbs.t
+t/rakuast/rakuast-dynamic-trait-argument.t
 t/rakuast/rakuast-elsif.t
 t/rakuast/rakuast-empty-deprecated-message.t
 t/rakuast/rakuast-empty-role-application.t
+t/rakuast/rakuast-empty-statements.t
 t/rakuast/rakuast-enum-term.t
 t/rakuast/rakuast-enum.t
 t/rakuast/rakuast-eval-andthen.t
@@ -5280,7 +5415,9 @@ t/rakuast/rakuast-exported-declarations.t
 t/rakuast/rakuast-exporthow-supersede-builtin.t
 t/rakuast/rakuast-expr-dot-assign-decl.t
 t/rakuast/rakuast-expr.t
+t/rakuast/rakuast-expression-assignment-node.t
 t/rakuast/rakuast-expression-context-cohort.t
+t/rakuast/rakuast-expression-nodes.t
 t/rakuast/rakuast-fake-signature-whatevercode-where.t
 t/rakuast/rakuast-fat-arrow-key.t
 t/rakuast/rakuast-fat-arrow-whatever.t
@@ -5325,13 +5462,18 @@ t/rakuast/rakuast-indirect-code-lookup.t
 t/rakuast/rakuast-indirect-declarator-name.t
 t/rakuast/rakuast-indirect-name.t
 t/rakuast/rakuast-indirect-type-capture.t
+t/rakuast/rakuast-inf-nan-parameter.t
 t/rakuast/rakuast-infix-adverbs.t
 t/rakuast/rakuast-inline-subset-term.t
 t/rakuast/rakuast-internal-arg-and-range-ops.t
 t/rakuast/rakuast-interp-code-block.t
+t/rakuast/rakuast-interpolated-angle-index.t
+t/rakuast/rakuast-interpolated-empty-block.t
+t/rakuast/rakuast-interpolated-zen-slice.t
 t/rakuast/rakuast-interpolating-angle-subscript.t
 t/rakuast/rakuast-interpolating-word-quotes.t
 t/rakuast/rakuast-invocant-parameters.t
+t/rakuast/rakuast-item-contextualizer-assign.t
 t/rakuast/rakuast-itemize-anonymous.t
 t/rakuast/rakuast-itemize-variable-kinds.t
 t/rakuast/rakuast-keyed-hash-declaration.t
@@ -5343,6 +5485,7 @@ t/rakuast/rakuast-lexical-package.t
 t/rakuast/rakuast-list-infix-adverbs.t
 t/rakuast/rakuast-list-infix.t
 t/rakuast/rakuast-listinfix-bind.t
+t/rakuast/rakuast-listop-arg-assign-node.t
 t/rakuast/rakuast-long-infix-chain.t
 t/rakuast/rakuast-loop-condition-declaration.t
 t/rakuast/rakuast-loop-control-value.t
@@ -5351,6 +5494,7 @@ t/rakuast/rakuast-loop.t
 t/rakuast/rakuast-lowering-semantics.t
 t/rakuast/rakuast-lvalue-contracts.t
 t/rakuast/rakuast-lvalue-expression-assign.t
+t/rakuast/rakuast-lvalue-shapes.t
 t/rakuast/rakuast-match-modifier-aliases.t
 t/rakuast/rakuast-members-traits.t
 t/rakuast/rakuast-meta-assignment-forms.t
@@ -5369,6 +5513,7 @@ t/rakuast/rakuast-multidim-splat.t
 t/rakuast/rakuast-multiple-inline-list-declarations.t
 t/rakuast/rakuast-name-part-empty.t
 t/rakuast/rakuast-named-anon-declarations.t
+t/rakuast/rakuast-named-constructors.t
 t/rakuast/rakuast-named-param-outer-signature.t
 t/rakuast/rakuast-named-parameters.t
 t/rakuast/rakuast-named-submethod.t
@@ -5376,8 +5521,11 @@ t/rakuast/rakuast-named-subscript-adverbs.t
 t/rakuast/rakuast-named-type-arguments.t
 t/rakuast/rakuast-names-and-literals.t
 t/rakuast/rakuast-native-declarations.t
+t/rakuast/rakuast-negated-set-ops.t
 t/rakuast/rakuast-nested-declaration-groups.t
 t/rakuast/rakuast-nf-quote-literals.t
+t/rakuast/rakuast-node-list-kv-loop.t
+t/rakuast/rakuast-node-tree-helpers.t
 t/rakuast/rakuast-nonlvalue-assignment.t
 t/rakuast/rakuast-nonplain-word-quotes.t
 t/rakuast/rakuast-nqp-terms.t
@@ -5385,15 +5533,41 @@ t/rakuast/rakuast-object-hash.t
 t/rakuast/rakuast-obsolete-interpolation.t
 t/rakuast/rakuast-operator-name-colonpairs.t
 t/rakuast/rakuast-operators.t
+t/rakuast/rakuast-origin-anonymous-parameters.t
+t/rakuast/rakuast-origin-arglists.t
 t/rakuast/rakuast-origin-block-statements.t
 t/rakuast/rakuast-origin-conditional.t
+t/rakuast/rakuast-origin-declaration-traits.t
+t/rakuast/rakuast-origin-expression-blocks.t
+t/rakuast/rakuast-origin-infix.t
+t/rakuast/rakuast-origin-interpolation.t
+t/rakuast/rakuast-origin-lists.t
+t/rakuast/rakuast-origin-method-calls.t
+t/rakuast/rakuast-origin-operators.t
+t/rakuast/rakuast-origin-packages.t
+t/rakuast/rakuast-origin-phasers.t
+t/rakuast/rakuast-origin-quoted-text.t
 t/rakuast/rakuast-origin-ranges.t
+t/rakuast/rakuast-origin-regex.t
+t/rakuast/rakuast-origin-routines.t
+t/rakuast/rakuast-origin-signature-declarations.t
+t/rakuast/rakuast-origin-statement-lists.t
+t/rakuast/rakuast-origin-statement-modifiers.t
+t/rakuast/rakuast-origin-subscript-adverbs.t
+t/rakuast/rakuast-origin-terms.t
+t/rakuast/rakuast-origin-traits.t
+t/rakuast/rakuast-origin-type-decls.t
+t/rakuast/rakuast-origin-whatever.t
+t/rakuast/rakuast-origin-word-quotes.t
 t/rakuast/rakuast-outer-slurpy-bindings.t
 t/rakuast/rakuast-package-indirect-lookup.t
 t/rakuast/rakuast-package-namespaces-traits.t
 t/rakuast/rakuast-package-our-bindings.t
 t/rakuast/rakuast-parameter-optional-traits.t
+t/rakuast/rakuast-paren-assign-arg.t
 t/rakuast/rakuast-paren-list-assign.t
+t/rakuast/rakuast-paren-pair-postfix.t
+t/rakuast/rakuast-paren-semilist.t
 t/rakuast/rakuast-parser-decisions-kept.t
 t/rakuast/rakuast-phaser.t
 t/rakuast/rakuast-placeholder-blocks.t
@@ -5415,6 +5589,7 @@ t/rakuast/rakuast-qualified-variable-declaration.t
 t/rakuast/rakuast-quietly-sigilless-callassign.t
 t/rakuast/rakuast-quoted-method-dispatch.t
 t/rakuast/rakuast-quoted-method.t
+t/rakuast/rakuast-rat-literal-raku.t
 t/rakuast/rakuast-react-whenever-done.t
 t/rakuast/rakuast-reduction.t
 t/rakuast/rakuast-regex-arg-expressions.t
@@ -5469,6 +5644,7 @@ t/rakuast/rakuast-require-import-list.t
 t/rakuast/rakuast-require-statement.t
 t/rakuast/rakuast-residual-source-terms.t
 t/rakuast/rakuast-return-type.t
+t/rakuast/rakuast-reverse-set-compound-node.t
 t/rakuast/rakuast-roast-tap-cohort.t
 t/rakuast/rakuast-role-arg-blocks.t
 t/rakuast/rakuast-role-composition-boundaries.t
@@ -5476,8 +5652,10 @@ t/rakuast/rakuast-role-hidden-traits.t
 t/rakuast/rakuast-role-parameterization-traits.t
 t/rakuast/rakuast-role.t
 t/rakuast/rakuast-routine-custom-traits.t
+t/rakuast/rakuast-routine-infix-compound-node.t
 t/rakuast/rakuast-routine-scope.t
 t/rakuast/rakuast-routine-trait-order.t
+t/rakuast/rakuast-routine-traits-node.t
 t/rakuast/rakuast-s03-infix-forms.t
 t/rakuast/rakuast-semantic-hierarchy.t
 t/rakuast/rakuast-sequential-interpolation.t
@@ -5487,6 +5665,7 @@ t/rakuast/rakuast-sigilled-constant.t
 t/rakuast/rakuast-sigilless-declarator-init.t
 t/rakuast/rakuast-sigilless-pointy-container.t
 t/rakuast/rakuast-signature-decl.t
+t/rakuast/rakuast-signature-declaration-node.t
 t/rakuast/rakuast-signature-literal-bind.t
 t/rakuast/rakuast-signature-literal.t
 t/rakuast/rakuast-signature-members.t
@@ -5498,7 +5677,9 @@ t/rakuast/rakuast-smiley-pragma.t
 t/rakuast/rakuast-source-declaration-boundaries.t
 t/rakuast/rakuast-source-forms.t
 t/rakuast/rakuast-source-identifiers.t
+t/rakuast/rakuast-statement-assignment-node.t
 t/rakuast/rakuast-statement-block-bindings.t
+t/rakuast/rakuast-statement-modifier-node.t
 t/rakuast/rakuast-statement-origin.t
 t/rakuast/rakuast-statement-prefix-binding.t
 t/rakuast/rakuast-statement-prefix-blorst.t
@@ -5511,6 +5692,7 @@ t/rakuast/rakuast-subclass-node-class.t
 t/rakuast/rakuast-subscript-adverb-conflicts.t
 t/rakuast/rakuast-subscript-adverbs.t
 t/rakuast/rakuast-subscript-exists-hyperslice.t
+t/rakuast/rakuast-subscript-meta-assign-node.t
 t/rakuast/rakuast-subscript.t
 t/rakuast/rakuast-subscripts-and-dynamic-calls.t
 t/rakuast/rakuast-subsig.t
@@ -5524,10 +5706,12 @@ t/rakuast/rakuast-supply-placeholder-rejection.t
 t/rakuast/rakuast-take-logical-tail.t
 t/rakuast/rakuast-temp-and-let.t
 t/rakuast/rakuast-temp-method-assign.t
+t/rakuast/rakuast-temporize-node.t
 t/rakuast/rakuast-term-constant.t
 t/rakuast/rakuast-term-name-math-constants.t
 t/rakuast/rakuast-ternary.t
 t/rakuast/rakuast-topic-call.t
+t/rakuast/rakuast-topic-dotty-call-node.t
 t/rakuast/rakuast-trait-does-new-name-parts.t
 t/rakuast/rakuast-trait-is-new.t
 t/rakuast/rakuast-trait-will-trusts-new.t
@@ -5537,15 +5721,20 @@ t/rakuast/rakuast-type-capture.t
 t/rakuast/rakuast-type-coercion.t
 t/rakuast/rakuast-type-definedness-new.t
 t/rakuast/rakuast-type-definite.t
+t/rakuast/rakuast-type-hierarchy.t
 t/rakuast/rakuast-type-lookup.t
 t/rakuast/rakuast-type-method-table.t
 t/rakuast/rakuast-type-methods.t
+t/rakuast/rakuast-type-object-dotty-node.t
 t/rakuast/rakuast-type-objects.t
+t/rakuast/rakuast-type-parameterized-ctor.t
 t/rakuast/rakuast-type-parameterized.t
 t/rakuast/rakuast-type-shape-cohort.t
 t/rakuast/rakuast-typed-container-attribute.t
 t/rakuast/rakuast-underscore-operator-name.t
+t/rakuast/rakuast-unicode-infix-spelling.t
 t/rakuast/rakuast-uninitialized-decl-default.t
+t/rakuast/rakuast-unless-term.t
 t/rakuast/rakuast-unless.t
 t/rakuast/rakuast-unresolved-bareword.t
 t/rakuast/rakuast-unresolved-qualified-name.t
@@ -5563,7 +5752,9 @@ t/rakuast/rakuast-vardecl-scoped.t
 t/rakuast/rakuast-variable-container-traits.t
 t/rakuast/rakuast-variable-does-trait.t
 t/rakuast/rakuast-variable-handles-terms.t
+t/rakuast/rakuast-variable-name-colonpairs.t
 t/rakuast/rakuast-visit-children-origin.t
+t/rakuast/rakuast-visit-children-rakudo-shape.t
 t/rakuast/rakuast-visit-traversal.t
 t/rakuast/rakuast-whatever-code.t
 t/rakuast/rakuast-whatever-compound-assign.t
@@ -5581,6 +5772,7 @@ t/rakuast/rakuast-yada-stubs.t
 t/rakuast/rakuast-zen-slice-adverbs.t
 t/rakuast/rakuast-zen-slice-exists.t
 t/rakuast/rakuast-zip-metaassignment.t
+t/rakuast/when-rakuast-core-type-name.t
 t/regex/anon-regex-declarator-signature.t
 t/regex/associative-at-key-regex-subscript.t
 t/regex/contains-regex.t
@@ -5778,6 +5970,7 @@ t/regex/regex-array-interp-imported-constant.t
 t/regex/regex-array-sigil-alias.t
 t/regex/regex-assertion-outer-scalar-write.t
 t/regex/regex-assertion-quoted-angle.t
+t/regex/regex-assuming.t
 t/regex/regex-atom-run-giveback-prune.t
 t/regex/regex-attribute-twigil-rejected.t
 t/regex/regex-backref-in-group.t
@@ -6253,6 +6446,7 @@ t/routines/call/typed-container-capture-cell.t
 t/routines/callable-bracket-array-literal.t
 t/routines/callable-can-list.t
 t/routines/callable-set-subset-operators.t
+t/routines/callers-routine-lookup-sees-import-and-file-scope.t
 t/routines/closure/anon-container-cell-inplace-reassign.t
 t/routines/closure/anon-declarator-name-and-gist.t
 t/routines/closure/anon-enum-value-map.t
@@ -6361,6 +6555,7 @@ t/routines/closure/pointy-block-arity-for-statement-modifier.t
 t/routines/closure/pointy-block-light-bind.t
 t/routines/closure/pointy-block-placeholder.t
 t/routines/closure/pointy-block-return-type.t
+t/routines/closure/pointy-conditional-no-source-record.t
 t/routines/closure/protect-block-nested-closure-sees-later-write.t
 t/routines/closure/proxy-fetch-closure-scope.t
 t/routines/closure/qqx-closure-interpolation.t
@@ -6373,6 +6568,7 @@ t/routines/closure/state-closure-clone-lifetime.t
 t/routines/closure/subrule-argument-closure-shares-caller-cell.t
 t/routines/closure/typed-hash-assign-in-closure-keeps-type.t
 t/routines/closure/user-class-instance-element-write-through-closure.t
+t/routines/closure/user-declared-prefix-operator-keeps-whatevercode-currying.t
 t/routines/closure/user-infix-closure-arg-writeback.t
 t/routines/closure/user-infix-closure-operand-escapes.t
 t/routines/closure/whatever-rw-and-currying.t
@@ -6525,6 +6721,7 @@ t/routines/dispatch/multi-sub.t
 t/routines/dispatch/multi-subset-base-type-narrowing.t
 t/routines/dispatch/multi-subset-default-rejects-candidate.t
 t/routines/dispatch/multi-subset-predicate-runs-once.t
+t/routines/dispatch/multi-tier-literal-trial-bind.t
 t/routines/dispatch/multi-type-dispatch-regressions.t
 t/routines/dispatch/multi-udismiley-ambiguity-leak.t
 t/routines/dispatch/multi-unreached-optional-ranking.t
@@ -6579,6 +6776,7 @@ t/routines/dispatch/nextsame-rw-redispatch.t
 t/routines/dispatch/nextwith-fewer-args-arity-mismatch.t
 t/routines/dispatch/nontrivial-proto-body-nested-sub-compiled.t
 t/routines/dispatch/nqp-dispatch-fast-path.t
+t/routines/dispatch/nqp-getlexcaller-proto.t
 t/routines/dispatch/object-hash-multidim-subscript.t
 t/routines/dispatch/overloading-fallbacks-deep.t
 t/routines/dispatch/parallel-dispatch-regression.t
@@ -6616,6 +6814,7 @@ t/routines/dispatch/routine-code-object-dispatch.t
 t/routines/dispatch/routine-local-multi-dispatcher.t
 t/routines/dispatch/routine-value-dispatch.t
 t/routines/dispatch/rw-multi-dispatch-cache.t
+t/routines/dispatch/samewith-after-qualified-mu-new-call.t
 t/routines/dispatch/samewith-assuming-grep.t
 t/routines/dispatch/samewith-inside-lazy-gather.t
 t/routines/dispatch/samewith-only-sub.t
@@ -6656,6 +6855,7 @@ t/routines/dynamic-callable-var-scope.t
 t/routines/emit-from-a-nested-sub.t
 t/routines/enter-phaser-expr-hoisted-in-routine.t
 t/routines/eval-context-caller-routine-attr.t
+t/routines/eval-in-other-routine-lexicals.t
 t/routines/eval-mainline-placeholder.t
 t/routines/eval-named-sub-placeholder-arity.t
 t/routines/eval-return-target-needs-a-real-routine.t
@@ -6738,6 +6938,7 @@ t/routines/routine-local-hash-key-type-scope.t
 t/routines/routine-name-line-file-rows.t
 t/routines/routine-nested-sub-shadowed-free-var.t
 t/routines/routine-of-returns-rows.t
+t/routines/routine-onlystar-and-soft-rows.t
 t/routines/routine-own-bind-ignores-caller-binding.t
 t/routines/routine-own-my-not-seeded-from-caller.t
 t/routines/routine-owned-topic.t
@@ -6745,6 +6946,7 @@ t/routines/routine-prec.t
 t/routines/routine-precedence-associative.t
 t/routines/routine-scoped-use-rolls-back-each-call.t
 t/routines/routine-set-name-qualified.t
+t/routines/routine-topic-ignores-callers-typed-topic.t
 t/routines/routine-topic-is-fresh-any-not-caller.t
 t/routines/routine-uses-var-declared-later-is-undeclared.t
 t/routines/routine-value-self-recursion-after-import-scope-pop.t
@@ -6795,6 +6997,7 @@ t/routines/signature/closure-shared-signature.t
 t/routines/signature/code-call-topic-sigilless-param-writes.t
 t/routines/signature/code-signature-attr-bind.t
 t/routines/signature/code-signature-param-otf.t
+t/routines/signature/code-value-sigilless-param-aliases-scalar.t
 t/routines/signature/coercion-param-dispatch-and-where.t
 t/routines/signature/coercion-param-scalar-rebind-no-recoerce.t
 t/routines/signature/coercion-target-smiley-param.t
@@ -6886,6 +7089,7 @@ t/routines/signature/literal-param-return-arrow.t
 t/routines/signature/lol-param-is-raw-binds-list.t
 t/routines/signature/loop-param-keeps-outer-capture.t
 t/routines/signature/map-array-optional-trailing-param.t
+t/routines/signature/map-multi-arity-dollar-underscore-param.t
 t/routines/signature/map-sigilless-param-readonly-leak.t
 t/routines/signature/map-signature-block-compiled-call.t
 t/routines/signature/map-signature-last-late.t
@@ -6908,7 +7112,9 @@ t/routines/signature/multi-sub-signature-tie-declaration-order.t
 t/routines/signature/multi-subsignature-bind-check-tie-declaration-order.t
 t/routines/signature/multi-subsignature-destructures-an-associative.t
 t/routines/signature/multi-subsignature-object-named.t
+t/routines/signature/multi-subsignature-where-names-earlier-subparam.t
 t/routines/signature/multi-typed-array-param.t
+t/routines/signature/multi-untyped-named-param-rejects-mu-type-object.t
 t/routines/signature/multi-where-optional-param.t
 t/routines/signature/multiple-signatures.t
 t/routines/signature/named-arg-alias-external-key.t
@@ -6957,7 +7163,9 @@ t/routines/signature/param-bind-symbol-keys.t
 t/routines/signature/param-default-before-return-arrow.t
 t/routines/signature/param-default-bool-conforms-int.t
 t/routines/signature/param-default-keeps-code-lexicals.t
+t/routines/signature/param-default-nil-and-type-object.t
 t/routines/signature/param-default-self-scoping.t
+t/routines/signature/param-default-whatever-and-empty-capture.t
 t/routines/signature/param-exprs-compile-once.t
 t/routines/signature/param-invalid-type-suggestions.t
 t/routines/signature/param-is-required.t
@@ -7020,6 +7228,7 @@ t/routines/signature/quanthash-parameterized-pair-elements.t
 t/routines/signature/quanthash-parameterized.t
 t/routines/signature/race-aggregate-param-shadow.t
 t/routines/signature/raw-aggregate-parameter-assignment.t
+t/routines/signature/raw-param-alias-type-check.t
 t/routines/signature/raw-param-binds-bare-proxy.t
 t/routines/signature/raw-param-binds-caller-container.t
 t/routines/signature/readonly-param-and-no-autoflatten.t
@@ -7039,6 +7248,7 @@ t/routines/signature/rw-dynamic-param-callee-write-with-eval.t
 t/routines/signature/rw-param-buf-element-assign.t
 t/routines/signature/rw-param-forwarded-through-capture.t
 t/routines/signature/rw-param-forwarded-to-raw-callee.t
+t/routines/signature/rw-param-ignores-callers-same-named-param-type.t
 t/routines/signature/rw-param-in-sigilless-block.t
 t/routines/signature/rw-param-incdec-arg-container.t
 t/routines/signature/rw-param-rebind-detaches-from-caller.t
@@ -7090,11 +7300,13 @@ t/routines/signature/signature-pseudo-type-anon-param.t
 t/routines/signature/signature-return-only-space.t
 t/routines/signature/signature-return-type-comment.t
 t/routines/signature/signature-returns.t
+t/routines/signature/signature-sigil-named-implicit-positional.t
 t/routines/signature/signature-str-form.t
 t/routines/signature/signature-type-alias-constant.t
 t/routines/signature/signature-type-only-invocant-anonymous.t
 t/routines/signature/signature-unpack-object.t
 t/routines/signature/signature-variadic-seq-item.t
+t/routines/signature/signature-where-fetches-rw-proxy-argument.t
 t/routines/signature/smiley-params.t
 t/routines/signature/star-array-flattens-hash.t
 t/routines/signature/start-body-param-compiled.t
@@ -7149,6 +7361,7 @@ t/routines/sub-call-supertype-arg-runtime.t
 t/routines/sub-expression-name.t
 t/routines/sub-hoisted-free-var-before-declaration.t
 t/routines/sub-immediate-call.t
+t/routines/sub-named-like-builtin-is-rw-assign.t
 t/routines/sub-rw-writeback-attr-source-no-leak.t
 t/routines/sub-trailing-decl-code-object.t
 t/routines/subdata-nested-sub-compiled-fns.t
@@ -7163,6 +7376,7 @@ t/routines/whatever-curry-list-infix-operator.t
 t/routines/with-statement-modifier-placeholder-scope.t
 t/tooling/bail-out-exit-status.t
 t/tooling/buildplan-replaced-keeps-is-default.t
+t/tooling/cli-compile-only-flag.t
 t/tooling/cli-lib-repo-chain.t
 t/tooling/cli-lines-regressions.t
 t/tooling/cli-mvm-coverage-log.t
@@ -7435,6 +7649,7 @@ t/types/enum-subset/enum-in-class-body-scoped.t
 t/types/enum-subset/enum-int-overflow.t
 t/types/enum-subset/enum-key-class-body-scope.t
 t/types/enum-subset/enum-key-vs-same-named-scalar.t
+t/types/enum-subset/enum-list-valued-pair-values.t
 t/types/enum-subset/enum-member-shadows-math-constant.t
 t/types/enum-subset/enum-member-shape-rows.t
 t/types/enum-subset/enum-name-not-leaked-to-foreign-code.t
@@ -7625,6 +7840,7 @@ t/types/numeric/signal-enum-type-constraint.t
 t/types/numeric/signal-pipe-cloexec.t
 t/types/numeric/spaceship-edge-cases.t
 t/types/prefix-numeric-type-object-warning.t
+t/types/proxy-assigned-from-called-block-is-fetched-for-typed-variable.t
 t/types/proxy-typed-scalar-bind.t
 t/types/rindex.t
 t/types/sequence-nonnumeric-regression.t
@@ -7686,6 +7902,7 @@ t/types/string/sprintf-utf8-literal.t
 t/types/string/str-accepts-user-stringify.t
 t/types/string/str-arith-failure.t
 t/types/string/str-bitwise-compound-assign.t
+t/types/string/str-chomp-needle.t
 t/types/string/str-complex-real-coercion.t
 t/types/string/str-complex-string-coercion.t
 t/types/string/str-count-arg-rows.t
@@ -7696,9 +7913,12 @@ t/types/string/str-encode-normalization-form.t
 t/types/string/str-encode-strict-adverb-false.t
 t/types/string/str-enum-numeric-comparison-failure.t
 t/types/string/str-enum-pair-raku.t
+t/types/string/str-grep-applies-the-matcher.t
 t/types/string/str-indent-huge-count.t
 t/types/string/str-int-radix-coerce.t
+t/types/string/str-interp-hyper-call.t
 t/types/string/str-interp-scalar-colon-digits.t
+t/types/string/str-leading-trailing-whitespace.t
 t/types/string/str-mutator-rows.t
 t/types/string/str-naive-word-wrapper.t
 t/types/string/str-num-inf-nan.t
@@ -7789,6 +8009,7 @@ t/types/temporal/dateish-builtin-roles.t
 t/types/temporal/dateish-methods.t
 t/types/temporal/datetime-date-only-string.t
 t/types/temporal/datetime-formatter-conversions.t
+t/types/temporal/datetime-later-unknown-unit-is-ignored.t
 t/types/temporal/datetime-offset-in-minutes.t
 t/types/temporal/datetime-regressions.t
 t/types/temporal/datetime-subclass-arithmetic.t
@@ -7807,6 +8028,7 @@ t/types/temporal/time-localtime.t
 t/types/temporal/version-compare-flags.t
 t/types/temporal/version-parts-plus.t
 t/types/temporal/version-parts-whatever-str.t
+t/types/temporal/version-range.t
 t/types/temporal/version-source-spelling.t
 t/types/temporal/version-subclass-dynamic-operators.t
 t/types/temporal/version-subclass-identity.t
@@ -7865,6 +8087,7 @@ t/vm/binding/bind-to-declaration-shares-container.t
 t/vm/binding/bind-to-whatever-index.t
 t/vm/binding/bound-array-for-rw.t
 t/vm/binding/bound-container-pair-writethrough.t
+t/vm/binding/bound-decont-marker-is-per-name.t
 t/vm/binding/bound-hash-elem-push-autoviv.t
 t/vm/binding/bound-hash-for-values-rw.t
 t/vm/binding/bound-hash-name-stays-writable.t
@@ -7891,6 +8114,7 @@ t/vm/binding/constant-type-alias-smiley-term.t
 t/vm/binding/constant-type-alias.t
 t/vm/binding/constant.t
 t/vm/binding/decl-as-expression.t
+t/vm/binding/decl-bind-with-modifier.t
 t/vm/binding/decl-block-init-not-stmt-modifier.t
 t/vm/binding/decl-marker-fusion.t
 t/vm/binding/declarator-null-name.t
@@ -7967,6 +8191,7 @@ t/vm/codegen/adr0112-trir-short-circuit.t
 t/vm/codegen/adr0112-trir-string-path.t
 t/vm/codegen/adr0116-trir-op-bodies.t
 t/vm/codegen/adr0116-trir-peephole.t
+t/vm/codegen/adr14632-index-assign-local.t
 t/vm/codegen/bench-det-warmup.t
 t/vm/codegen/compile-time-vars.t
 t/vm/codegen/compiler-id.t
@@ -8065,6 +8290,7 @@ t/vm/named-call-env-dirty.t
 t/vm/named-sub-bounded-env-sync.t
 t/vm/nested-frame-container-mutation-reaches-owner.t
 t/vm/non-variable-dollar.t
+t/vm/nqp-arg-decl-gets-a-slot.t
 t/vm/nqp-array-sorted-ops.t
 t/vm/nqp-atkey-rebind-null.t
 t/vm/nqp-atpos-high-level-array.t
@@ -8148,6 +8374,7 @@ t/vm/object-hash-key-survives-container-value.t
 t/vm/per-class-same-name-attr.t
 t/vm/protect-block-redeclared-aggregate.t
 t/vm/protect-block-self.t
+t/vm/rakulib-env.t
 t/vm/say-env-roundtrip.t
 t/vm/scope/add-parent-lexically-imported-class.t
 t/vm/scope/amp-name-ignores-caller-lexical-same-unit.t
@@ -8169,6 +8396,7 @@ t/vm/scope/dynamic-codevar-chdir.t
 t/vm/scope/dynamic-codevar-unbound.t
 t/vm/scope/dynamic-collection-decl-init.t
 t/vm/scope/dynamic-mutator-on-type-object.t
+t/vm/scope/dynamic-my-in-branch-is-scoped-to-the-branch.t
 t/vm/scope/dynamic-scope-pragma.t
 t/vm/scope/dynamic-stash-key-walks-dynamic-scope.t
 t/vm/scope/dynamic-var-bound-missing-elem-push-autoviv.t
@@ -8305,6 +8533,7 @@ t/vm/scope/state-block-loop-body.t
 t/vm/scope/state-decl-nested-in-expression.t
 t/vm/scope/state-eval-unit-isolation.t
 t/vm/scope/state-in-loop-body-accumulates.t
+t/vm/scope/state-init-steady-state.t
 t/vm/scope/state-map-initializer.t
 t/vm/scope/state-nested-block-non-for-loops.t
 t/vm/scope/state-nested-block-value-position-for.t
@@ -8423,6 +8652,7 @@ t/vm/writeback/prefix-incdec-slot-writeback.t
 t/vm/writeback/proxy-at-key-decontainerized-args.t
 t/vm/writeback/proxy-bind-with-begin-in-unit.t
 t/vm/writeback/proxy-binds-container-not-value.t
+t/vm/writeback/proxy-bound-rw-container.t
 t/vm/writeback/proxy-fetch-gets-proxy-object.t
 t/vm/writeback/proxy-fetch-in-sink-context.t
 t/vm/writeback/proxy-fetch-returns-rw-container.t
@@ -8433,6 +8663,7 @@ t/vm/writeback/proxy-operand-user-infix-decline.t
 t/vm/writeback/proxy-renders-through-fetch.t
 t/vm/writeback/proxy-store-boundary.t
 t/vm/writeback/proxy-store-receives-nil.t
+t/vm/writeback/proxy-subclass-attr-raw-arg.t
 t/vm/writeback/proxy-subclass-getattr-and-mu-bind.t
 t/vm/writeback/proxy-subclass-lexical-name.t
 t/vm/writeback/proxy-subclass-user-methods.t
@@ -8453,6 +8684,7 @@ t/vm/writeback/scalar-bind-unrelated-store-semantics.t
 t/vm/writeback/scalar-clone.t
 t/vm/writeback/scalar-held-array-splice.t
 t/vm/writeback/scalar-incdec-forms-agree.t
+t/vm/writeback/scalar-incdec-slot-fast-path.t
 t/vm/writeback/scalar-itemize-raku.t
 t/vm/writeback/scalar-positional-exists.t
 t/vm/writeback/scalar-share-holder-cell.t

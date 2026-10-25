@@ -126,6 +126,9 @@ impl AttributeTraits {
                         "built",
                         Some(paren_argument(&Expr::Literal(Value::truth(false)))?),
                     ),
+                    Some(crate::ast::BuiltTrait::Bind) => {
+                        trait_is("built", Some(paren_argument(&bind_adverb_expr())?))
+                    }
                     _ => trait_is("built", None),
                 },
                 AttrTrait::Deprecated => match self.deprecated_message.as_deref() {
@@ -420,6 +423,10 @@ fn lower_trait_is(
             });
             traits.order.push(AttrTrait::Built);
         }
+        ("built", Some(argument)) if is_bind_adverb(&argument) => {
+            traits.is_built = Some(crate::ast::BuiltTrait::Bind);
+            traits.order.push(AttrTrait::Built);
+        }
         ("DEPRECATED", None) => {
             traits.deprecated_message = Some(DEPRECATED_DEFAULT.to_string());
             traits.order.push(AttrTrait::Deprecated);
@@ -443,6 +450,32 @@ fn lower_trait_is(
         }
     }
     Ok(())
+}
+
+/// The `:bind` of `is built(:bind)`, as the parser spells a colon pair.
+// Cost: O(1).
+fn bind_adverb_expr() -> Expr {
+    Expr::Binary {
+        left: Box::new(Expr::Literal(Value::str("bind".to_string()))),
+        op: crate::token_kind::TokenKind::FatArrow,
+        right: Box::new(Expr::Literal(Value::truth(true))),
+        form: crate::ast::BinaryForm::ColonPairTrue,
+    }
+}
+
+// Cost: O(1).
+fn is_bind_adverb(argument: &Expr) -> bool {
+    let Expr::Binary {
+        left,
+        op: crate::token_kind::TokenKind::FatArrow,
+        right,
+        form: crate::ast::BinaryForm::ColonPairTrue,
+    } = argument
+    else {
+        return false;
+    };
+    matches!(left.as_ref(), Expr::Literal(v) if matches!(v.view(), ValueView::Str(s) if s.as_str() == "bind"))
+        && matches!(right.as_ref(), Expr::Literal(v) if matches!(v.view(), ValueView::Bool(true)))
 }
 
 /// The gist of an attribute omits the implicit `WillBuild` its default adds
