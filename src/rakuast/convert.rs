@@ -1410,17 +1410,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 node_field(Some("right"), convert_expr(expr)?),
             ],
         }))),
-        Stmt::Assign {
-            name,
-            expr: Expr::Spelled(spelled),
-            op: AssignOp::Assign,
-            ..
-        } if let Spelling::BracketedAssignment { depth } = &spelled.spelling => {
-            Ok(Some(statement_expression(super::compound_stmt::mark(
-                super::meta_infix::convert_bracketed_assignment(&spelled.expr, *depth)?,
-                name,
-            ))))
-        }
         Stmt::Assign { name, expr, op, .. } => match op {
             // `$x = EXPR` — the special `Assignment` infix (slice 2).
             AssignOp::Assign => Ok(Some(statement_expression(assignment_infix(name, expr)?))),
@@ -1807,11 +1796,6 @@ fn declaration_compound_assign_statement(stmt: &Stmt) -> Result<RakuAstNode, Run
     if assignment.class != RakuAstClass::ApplyInfix {
         return Err(unsupported("source form"));
     }
-    // The statement-assignment mark names the variable the loop body
-    // assigns; the declaration statement it now sits in is not one.
-    assignment
-        .fields
-        .retain(|f| !super::compound_stmt::is_source_field(f));
     for f in assignment.fields.iter_mut() {
         if f.name == Some("left") {
             *f = node_field(Some("left"), decl.clone());
@@ -3001,9 +2985,6 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     return Err(unsupported("left-exclusive sequence without its skip"));
                 };
                 left_exclusive_sequence_node(written, target)
-            }
-            Spelling::BracketedAssignment { depth } => {
-                super::meta_infix::convert_bracketed_assignment(&spelled.expr, *depth)
             }
             Spelling::LoopStepComma => {
                 let Expr::DoBlock { body, .. } = &spelled.expr else {

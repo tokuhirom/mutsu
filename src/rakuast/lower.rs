@@ -498,7 +498,7 @@ fn lower_stmt_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 return crate::parser::lower_compound_statement(compound)
                     .map_err(RuntimeError::new);
             }
-            super::compound_stmt::restore_stmt(node, lower_compound_assign_expr(node)?)
+            Ok(Stmt::Expr(lower_compound_assign_expr(node)?))
         }
         // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
         // a `Stmt::Assign`, not a general binary expression.
@@ -2497,7 +2497,7 @@ fn compound_assign_base(assign: &RakuAstNode) -> Option<(String, usize)> {
 
 /// The metaoperator and base infix nested inside a bracketed assignment.
 // Cost: O(d), d = bracket depth, bounded at 128.
-fn bracketed_meta_assign(assign: &RakuAstNode) -> Option<(&'static str, String)> {
+fn bracketed_meta_assign(assign: &RakuAstNode) -> Option<(&'static str, String, usize)> {
     if assign.class != RakuAstClass::MetaInfixAssign {
         return None;
     }
@@ -2524,7 +2524,7 @@ fn bracketed_meta_assign(assign: &RakuAstNode) -> Option<(&'static str, String)>
         return None;
     }
     match positional_leaf(base).ok()?.view() {
-        ValueView::Str(op) => Some((meta, op.to_string())),
+        ValueView::Str(op) => Some((meta, op.to_string(), depth)),
         _ => None,
     }
 }
@@ -2564,6 +2564,15 @@ fn compound_assign_node(
     let infix = named_child(node, "infix")?;
     let (op, meta) = match reverse_assign_base(infix) {
         Some(op) => (op, crate::ast::parsed::CompoundMeta::Reverse),
+        None if let Some((meta, op, depth)) = bracketed_meta_assign(infix) => {
+            let kind = crate::ast::parsed::BracketedMeta::from_spelling(meta)
+                .ok_or_else(|| unsupported(node))?;
+            let depth = u8::try_from(depth).map_err(|_| unsupported(node))?;
+            (
+                op,
+                crate::ast::parsed::CompoundMeta::BracketedMeta(kind, depth),
+            )
+        }
         None => {
             let Some((op, depth)) = compound_assign_base(infix) else {
                 return Ok(None);
@@ -2573,6 +2582,14 @@ fn compound_assign_node(
                     && !crate::parser::is_compound_assign_op(&op) =>
                 {
                     crate::ast::parsed::CompoundMeta::Set
+                }
+                // `$x [foo]= 1`: a bracketed infix that is no compound
+                // operator applies as a reduction.
+                depth if depth > 0 && !crate::parser::is_compound_assign_op(&op) => {
+                    crate::ast::parsed::CompoundMeta::BracketedMeta(
+                        crate::ast::parsed::BracketedMeta::Reduce,
+                        u8::try_from(depth).map_err(|_| unsupported(node))?,
+                    )
                 }
                 _ if !crate::parser::is_compound_assign_op(&op) => return Ok(None),
                 0 => crate::ast::parsed::CompoundMeta::Plain,
@@ -2608,29 +2625,6 @@ pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, Run
     let target =
         super::compound_stmt::restore_conditional_target(lower_expr(named_child(node, "left")?)?);
     let meta = named_child(node, "infix")?;
-    if let Some((operator, base)) = bracketed_meta_assign(meta) {
-        let rhs = lower_expr(named_child(node, "right")?)?;
-        let expression = Expr::MetaOp {
-            meta: operator.to_string(),
-            op: base,
-            left: Box::new(target),
-            right: Box::new(rhs),
-        };
-        if node
-            .fields
-            .iter()
-            .any(super::compound_stmt::is_source_field)
-        {
-            return Ok(expression);
-        }
-        let raw = variable_spelling(named_child(node, "left")?)?;
-        let name = raw.strip_prefix('$').unwrap_or(&raw).to_string();
-        return Ok(Expr::AssignExpr {
-            name,
-            expr: Box::new(expression),
-            is_bind: false,
-        });
-    }
     let (op, _) = compound_assign_base(meta).ok_or_else(|| unsupported(node))?;
     let rhs = lower_expr(named_child(node, "right")?)?;
     // `* *= 2` curries to `{ $_ *= 2 }`; the parser expands a bare `*` target

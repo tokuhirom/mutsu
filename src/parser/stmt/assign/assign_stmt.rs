@@ -153,27 +153,13 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             )?;
             return parse_statement_modifier(rest, stmt);
         }
-        let expr = Expr::spelled(
-            Expr::MetaOp {
-                meta,
-                op,
-                left: Box::new(var_expr),
-                right: Box::new(rhs),
-            },
-            || crate::ast::spelled::Spelling::BracketedAssignment {
-                depth: bracket_depth,
-            },
-        );
-        let stmt = match rewrite_scalar_assignment_stmt_as_sink(name.clone(), expr.clone()) {
-            Some(stmt) => stmt,
-            None => Stmt::Assign {
-                name,
-                expr,
-                op: AssignOp::Assign,
-                target_is_sigilless: false,
-            },
-        };
-        return parse_statement_modifier(rest, stmt);
+        if let Some(kind) = crate::ast::parsed::BracketedMeta::from_spelling(&meta) {
+            let depth = u8::try_from(bracket_depth)
+                .map_err(|_| PError::expected("a bracketed infix nested at most 255 levels"))?;
+            let stmt = super::written_meta_assignment_stmt(var_expr, kind, depth, op, rhs)?;
+            return parse_statement_modifier(rest, stmt);
+        }
+        return Err(PError::expected("bracketed metaoperator"));
     }
 
     // Meta-op assignment: @a X*= 10 → @a = @a X* 10

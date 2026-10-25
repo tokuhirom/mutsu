@@ -249,6 +249,15 @@ fn compound_assignment_node(
     if a.meta == CompoundMeta::Dotty {
         return super::convert::dotty_assignment(&a.target, &a.source);
     }
+    if let CompoundMeta::BracketedMeta(kind, depth) = a.meta {
+        let written = crate::ast::Expr::MetaOp {
+            meta: kind.spelling().to_string(),
+            op: a.op.clone(),
+            left: Box::new(a.target.clone()),
+            right: Box::new(a.source.clone()),
+        };
+        return super::meta_infix::convert_bracketed_assignment(&written, usize::from(depth));
+    }
     let node =
         super::convert::compound_assignment_infix(&a.target, &compound_spelling(a), &a.source)?;
     with_compound_meta(node, a.meta)
@@ -279,7 +288,11 @@ pub(super) fn with_compound_meta(
     };
     if matches!(
         meta,
-        CompoundMeta::Plain | CompoundMeta::Reverse | CompoundMeta::Set | CompoundMeta::Dotty
+        CompoundMeta::Plain
+            | CompoundMeta::Reverse
+            | CompoundMeta::Set
+            | CompoundMeta::Dotty
+            | CompoundMeta::BracketedMeta(..)
     ) {
         return Ok(node);
     }
@@ -309,7 +322,8 @@ pub(super) fn with_compound_meta(
             CompoundMeta::Plain
             | CompoundMeta::Reverse
             | CompoundMeta::Set
-            | CompoundMeta::Dotty => {}
+            | CompoundMeta::Dotty
+            | CompoundMeta::BracketedMeta(..) => {}
             CompoundMeta::Bracketed(depth) => {
                 for _ in 0..depth {
                     inner = wrap(inner, RakuAstClass::BracketedInfix);
