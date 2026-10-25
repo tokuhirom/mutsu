@@ -390,10 +390,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Ok(Some(statement_expression(declaration)))
         }
         Stmt::SyntheticBlock(_) if source_form(stmt).is_some() => match source_form(stmt) {
-            // `my $x OP= EXPR`: the declaration as the left operand.
-            Some(crate::ast::SourceForm::DeclarationCompoundAssign) => {
-                declaration_compound_assign_statement(stmt).map(Some)
-            }
             Some(
                 crate::ast::SourceForm::WithPointy { .. }
                 | crate::ast::SourceForm::GivenPointy { .. }
@@ -1735,52 +1731,18 @@ fn public_attribute_call(target: &Expr) -> Option<&str> {
     }
 }
 
-/// `my $x OP= EXPR` (`ast::decl_compound_assign`) -> `ApplyInfix(left =>
+/// `my $x OP= EXPR` (`ParsedStmt::DeclCompound`) -> `ApplyInfix(left =>
 /// VarDeclaration, infix => MetaInfix::Assign(OP), right => EXPR)`, as
 /// measured on rakudo 2026.09.
 // Cost: O(n), n = size of the declaration and the right-hand side.
-fn declaration_compound_assign(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
-    let (decl, op, rhs) =
-        crate::ast::decl_compound_assign::parts(stmt).ok_or_else(|| unsupported("source form"))?;
+pub(super) fn declaration_compound_assign(
+    decl: &Stmt,
+    op: &str,
+    rhs: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     let statement = convert_stmt(decl)?.ok_or_else(|| unsupported("source form"))?;
     let decl = expression_of(&statement).ok_or_else(|| unsupported("source form"))?;
-    compound_assignment_with_left(decl, op, rhs)
-}
-
-/// [`declaration_compound_assign`] as a statement, including the postfix `for`
-/// the parser hoisted the declaration out of: the loop renders as the
-/// assignment's statement with its `loop-modifier`, whose assignment then
-/// takes the declaration as its left operand.
-// Cost: O(n), n = size of the declaration, the loop and the right-hand side.
-fn declaration_compound_assign_statement(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
-    let Some((decl, loop_stmt)) = crate::ast::decl_compound_assign::for_modifier_parts(stmt) else {
-        return Ok(statement_expression(declaration_compound_assign(stmt)?));
-    };
-    let mut statement = convert_stmt(loop_stmt)?.ok_or_else(|| unsupported("source form"))?;
-    let decl_statement = convert_stmt(decl)?.ok_or_else(|| unsupported("source form"))?;
-    let decl = expression_of(&decl_statement).ok_or_else(|| unsupported("source form"))?;
-    let field = statement
-        .fields
-        .iter_mut()
-        .find(|f| f.name == Some("expression"))
-        .ok_or_else(|| unsupported("source form"))?;
-    let RakuAstFieldValue::Node(value) = &field.value else {
-        return Err(unsupported("source form"));
-    };
-    let ValueView::RakuAst(assignment) = value.view() else {
-        return Err(unsupported("source form"));
-    };
-    let mut assignment = (*assignment).clone();
-    if assignment.class != RakuAstClass::ApplyInfix {
-        return Err(unsupported("source form"));
-    }
-    for f in assignment.fields.iter_mut() {
-        if f.name == Some("left") {
-            *f = node_field(Some("left"), decl.clone());
-        }
-    }
-    *field = node_field(Some("expression"), assignment);
-    Ok(statement)
+    compound_assignment_with_left(decl, &format!("{op}="), rhs)
 }
 
 /// [`compound_assignment_infix`] over an already converted left side.
@@ -3627,9 +3589,6 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // A signature declaration in expression position (`if my ($a, $b) = …`).
         Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
-            Some(crate::ast::SourceForm::DeclarationCompoundAssign) => {
-                declaration_compound_assign(stmt)
-            }
             Some(
                 crate::ast::SourceForm::WithPointy { .. }
                 | crate::ast::SourceForm::GivenPointy { .. }

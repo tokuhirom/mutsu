@@ -102,6 +102,11 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         v.visit_expr(tail);
         return;
     }
+    if let ParsedStmt::DeclCompound { decl, source, .. } = node {
+        super::walk_stmt(v, decl);
+        v.visit_expr(source);
+        return;
+    }
     if let ParsedStmt::WillDecl { decl, phasers } = node {
         super::walk_stmt(v, decl);
         for (_, body) in phasers {
@@ -233,6 +238,10 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
         ParsedStmt::DeclTail { head, tail } => {
             super::walk_stmt_mut(v, head);
             v.visit_expr_mut(tail);
+        }
+        ParsedStmt::DeclCompound { decl, source, .. } => {
+            super::walk_stmt_mut(v, decl);
+            v.visit_expr_mut(source);
         }
         ParsedStmt::WillDecl { decl, phasers } => {
             super::walk_stmt_mut(v, decl);

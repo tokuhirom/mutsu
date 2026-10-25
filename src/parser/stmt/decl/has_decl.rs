@@ -1319,22 +1319,34 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // assignment node) for a public one, so a `$.g` target still goes
     // through the real accessor and dies the same way rakudo's does when it
     // isn't `is rw`.
+    // A `.AST` parse keeps a private attribute's `has $!g //= EXPR` as the
+    // declaration compound node RakuAST makes of it.
+    let (kept_compound, compound_assign_after_decl) = match compound_assign_after_decl {
+        Some(compound)
+            if crate::ast::spelled::keeping() && !is_public && modifier_sink.is_none() =>
+        {
+            (Some(compound), None)
+        }
+        other => (None, other),
+    };
     let assign_stmt = compound_assign_after_decl.map(|(op, rhs)| {
-        super::has_compound_assign::attribute_compound_assign(
-            &name,
-            is_public,
-            is_alias,
-            op,
-            rhs,
-            crate::ast::spelled::keeping(),
-        )
+        super::has_compound_assign::attribute_compound_assign(&name, is_public, is_alias, op, rhs)
     });
     // Combine into ONE flat `SyntheticBlock` — never a `SyntheticBlock`
     // nested inside another — since the class-body attribute-discovery walk
     // (`class_own_attribute_names`/`compile_class_attr_decls`) only flattens
     // one level at the top of a class body, and would miss `decl` entirely
     // if it sat inside a doubly-nested block.
-    let stmt = if let (None, Some(_), Some((_, (condition, kind)))) = (
+    let stmt = if let Some((op, rhs)) = kept_compound {
+        crate::parser::stmt::control::parsed_block::finish(
+            crate::ast::parsed::ParsedStmt::DeclCompound {
+                decl: Box::new(decl),
+                op: op.symbol().trim_end_matches('=').to_string(),
+                source: rhs,
+            },
+        )
+        .map_err(PError::from_typed)?
+    } else if let (None, Some(_), Some((_, (condition, kind)))) = (
         assign_stmt.as_ref(),
         modifier_sink.as_ref(),
         modifier_source,

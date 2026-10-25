@@ -417,16 +417,8 @@ fn closure_signature_as_for_params(
 /// `my $x OP= EXPR for LIST`: the declaration belongs outside the loop while
 /// the assignment runs once per item; otherwise the loop body would redeclare
 /// and reset the variable on every iteration (`my $product *= $_ for @values`).
-///
-/// A spelling-keeping parse records the declaration's source form
-/// (`ast::decl_compound_assign`); the hoisted part is then the record and the
-/// declaration, as a synthetic block the caller flattens.
 // Cost: O(s), s = statements of a synthetic block.
 fn split_compound_decl(stmt: Stmt) -> (Option<Stmt>, Stmt) {
-    let stmt = match crate::ast::decl_compound_assign::split_for_modifier(stmt) {
-        (Some(hoisted), assign) => return (Some(Stmt::SyntheticBlock(hoisted)), assign),
-        (None, stmt) => stmt,
-    };
     let Stmt::SyntheticBlock(mut stmts) = stmt else {
         return (None, stmt);
     };

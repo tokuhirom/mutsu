@@ -1,15 +1,15 @@
 //! `my $x OP= EXPR` ↔ `ApplyInfix(left => VarDeclaration::Simple, infix =>
 //! MetaInfix::Assign(Infix(OP)), right => EXPR)` (measured on rakudo 2026.09).
 //!
-//! Lowering hands the node back to the parser's own expansion
-//! (`ast::decl_compound_assign`): the declaration with its default value, then
-//! one assignment of the operator applied to it. Lowering it as an ordinary
+//! The parser keeps it as `ParsedStmt::DeclCompound` and [`lower_parsed`] is
+//! its one lowering: the declaration with its default value, then one
+//! assignment of the operator applied to it. Lowering it as an ordinary
 //! compound assignment over a declaration term instead re-ran the declaration
 //! with every iteration of a postfix `for`.
 
 use super::lower::{lower_expr, lower_stmt, named_child, named_child_or_positional, unsupported};
 use super::{RakuAstClass, RakuAstNode};
-use crate::ast::Stmt;
+use crate::ast::{Expr, Stmt};
 use crate::value::{RuntimeError, ValueView};
 
 /// Whether `node` is a compound assignment whose left side is a variable
@@ -24,7 +24,8 @@ pub(super) fn is_declaration_compound_assign(node: &RakuAstNode) -> bool {
         })
 }
 
-/// The parser's expansion of an [`is_declaration_compound_assign`] node.
+/// An [`is_declaration_compound_assign`] node as the parser's
+/// `ParsedStmt::DeclCompound`, lowered.
 // Cost: O(n), n = size of the declaration and the right-hand side.
 pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let decl = lower_stmt(named_child(node, "left")?)?;
@@ -33,33 +34,32 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         ValueView::Str(op) => op.to_string(),
         _ => return Err(unsupported(node)),
     };
-    let rhs = lower_expr(named_child(node, "right")?)?;
-    // A user-declared operator (`my $x foo= 6`) is the parser's `InfixFunc`
-    // over the declared variable; only the built-in operators have a compound
-    // assignment kind.
+    let source = lower_expr(named_child(node, "right")?)?;
+    lower_parsed(decl, op, source)
+}
+
+/// The expansion of `ParsedStmt::DeclCompound`: `decl`, then the assignment
+/// of `op` applied to the declared variable and `source`.
+// Cost: O(n), n = size of the declaration and the right-hand side.
+pub(crate) fn lower_parsed(decl: Stmt, op: String, source: Expr) -> Result<Stmt, RuntimeError> {
+    // A user-declared or word operator (`my $x foo= 6`, `my $n mod= 5`) is
+    // the parser's `InfixFunc` over the declared variable; only the built-in
+    // operators have a compound assignment kind.
     let Some(compound) = crate::parser::compound_assign_op_from_name(&op) else {
         let Stmt::VarDecl { name, .. } = &decl else {
-            return Err(unsupported(node));
+            return Err(RuntimeError::new("a compound declaration of this target"));
         };
         let name = name.clone();
-        let value = crate::ast::Expr::InfixFunc {
-            name: op.clone(),
-            left: Box::new(crate::ast::Expr::Var(name.clone())),
-            right: vec![rhs.clone()],
+        let value = Expr::InfixFunc {
+            name: op,
+            left: Box::new(Expr::Var(name.clone())),
+            right: vec![source],
             modifier: None,
         };
-        return Ok(crate::ast::decl_compound_assign::expand(
-            decl,
-            name,
-            value,
-            Some(crate::ast::decl_compound_assign::Source {
-                op: format!("{op}="),
-                rhs,
-            }),
-        ));
+        return Ok(crate::ast::decl_compound_assign::expand(decl, name, value));
     };
     // `has $!g //= 5`: the attribute's own expansion. A public `$.g` keeps no
-    // source in the parser, so the converter never renders one.
+    // node in the parser, so this never sees one.
     if let Stmt::HasDecl {
         name,
         is_public: false,
@@ -73,29 +73,17 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             false,
             *is_alias,
             compound,
-            rhs,
-            true,
+            source,
         );
         return Ok(crate::parser::expand_attribute_compound_assign(
             decl, assign,
         ));
     }
     let Stmt::VarDecl { name, .. } = &decl else {
-        return Err(unsupported(node));
+        return Err(RuntimeError::new("a compound declaration of this target"));
     };
     let name = name.clone();
-    let value = crate::parser::compound_assigned_value_expr(
-        crate::ast::Expr::Var(name.clone()),
-        compound,
-        rhs.clone(),
-    );
-    Ok(crate::ast::decl_compound_assign::expand(
-        decl,
-        name,
-        value,
-        Some(crate::ast::decl_compound_assign::Source {
-            op: format!("{op}="),
-            rhs,
-        }),
-    ))
+    let value =
+        crate::parser::compound_assigned_value_expr(Expr::Var(name.clone()), compound, source);
+    Ok(crate::ast::decl_compound_assign::expand(decl, name, value))
 }

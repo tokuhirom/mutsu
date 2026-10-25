@@ -74,6 +74,9 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
         ParsedStmt::DeclTail { head, tail } => {
             statement_expression(super::decl_tail::convert(head, tail)?)
         }
+        ParsedStmt::DeclCompound { decl, op, source } => statement_expression(
+            super::convert::declaration_compound_assign(decl, op, source)?,
+        ),
         ParsedStmt::PackageHeader { decl, header, .. } => {
             let statement = super::convert::convert_stmt(decl)?
                 .ok_or_else(|| super::convert::unsupported("a declaration with a header"))?;

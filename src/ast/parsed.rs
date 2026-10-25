@@ -66,6 +66,18 @@ pub(crate) enum ParsedStmt {
     /// operand re-reads the variable the head declares. RakuAST makes the
     /// whole one expression with the head as that operand.
     DeclTail { head: Box<Stmt>, tail: Expr },
+    /// A declaration whose initializer is a compound assignment, `my $x *= 5`
+    /// / `has $!g //= 5`: the declaration (a `Stmt::VarDecl` or a private
+    /// `Stmt::HasDecl`), the base infix (`*`, or a word or user infix such as
+    /// `foo`) and the right-hand side. RakuAST makes the declaration the
+    /// assignment's left operand; `rakuast::lower` expands it into the
+    /// declaration followed by the compound assignment to it
+    /// (`ast::decl_compound_assign::expand`).
+    DeclCompound {
+        decl: Box<Stmt>,
+        op: String,
+        source: Expr,
+    },
     /// A sigilless declaration, `my \x = 5` / `my Int \x := $s` /
     /// `my \x .= new`, as written. `rakuast::lower` adds the bookkeeping the
     /// compiler needs (`parser::build_sigilless_bind_stmt`).
@@ -626,6 +638,7 @@ impl ParsedStmt {
             ParsedStmt::DoesDecl { role, init, .. } => std::iter::once(role).chain(init).collect(),
             ParsedStmt::WillDecl { .. } => Vec::new(),
             ParsedStmt::DeclTail { tail, .. } => vec![tail],
+            ParsedStmt::DeclCompound { source, .. } => vec![source],
             ParsedStmt::SigillessDecl(d) => vec![&d.expr],
             ParsedStmt::PackageHeader { header, .. } => {
                 header.adverbs.iter().map(|(_, value)| value).collect()
@@ -654,6 +667,7 @@ impl ParsedStmt {
             | ParsedStmt::DoesDecl { .. }
             | ParsedStmt::WillDecl { .. }
             | ParsedStmt::DeclTail { .. }
+            | ParsedStmt::DeclCompound { .. }
             | ParsedStmt::SigillessDecl(_)
             | ParsedStmt::PackageHeader { .. }
             | ParsedStmt::TempDecl(_)
