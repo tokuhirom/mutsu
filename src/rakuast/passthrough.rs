@@ -17,7 +17,9 @@
 use std::cell::{Cell, RefCell};
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{CallArg, Expr, Stmt};
+use crate::ast::parsed::{BlockParams, ParsedBlock, ParsedStmt};
+use crate::ast::{CallArg, Expr, ParamDef, Stmt};
+use crate::ast_visit::VisitMut;
 use crate::value::{RuntimeError, Value, ValueView};
 
 enum Held {
@@ -190,14 +192,55 @@ pub(super) fn line_of(node: &RakuAstNode) -> Option<i64> {
 
 fn held(node: &RakuAstNode) -> Result<Held, RuntimeError> {
     let at = slot(node)?;
-    TABLE.with(|t| {
+    let held = TABLE.with(|t| {
         let table = t.borrow();
         match table.as_ref().and_then(|t| t.get(at)) {
             Some(Held::Expr(e)) => Ok(Held::Expr(e.clone())),
             Some(Held::Stmt(s)) => Ok(Held::Stmt(s.clone())),
             None => Err(RuntimeError::new("round-trip leaf outside its scope")),
         }
+    })?;
+    // The spelled parse keeps the constructs of a migrated family in their
+    // RakuAST shape; an executing parse lowers each where it is built.
+    let mut lowering = Kept(None);
+    Ok(match held {
+        Held::Expr(mut e) => {
+            lowering.visit_expr_mut(&mut e);
+            lowering.finish(Held::Expr(e))?
+        }
+        Held::Stmt(mut s) => {
+            lowering.visit_stmt_mut(&mut s);
+            lowering.finish(Held::Stmt(s))?
+        }
     })
+}
+
+/// Lowers every kept [`ParsedStmt`] of a tree, innermost first.
+struct Kept(Option<RuntimeError>);
+
+impl Kept {
+    fn finish(self, held: Held) -> Result<Held, RuntimeError> {
+        match self.0 {
+            Some(err) => Err(err),
+            None => Ok(held),
+        }
+    }
+}
+
+impl VisitMut for Kept {
+    fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
+        crate::ast_visit::walk_stmt_mut(self, stmt);
+        if matches!(stmt, Stmt::Ast(_))
+            && let Stmt::Ast(node) = std::mem::replace(stmt, Stmt::Last(None))
+        {
+            match super::lower_parsed_stmt(*node) {
+                Ok(lowered) => *stmt = lowered,
+                Err(err) => {
+                    self.0.get_or_insert(err);
+                }
+            }
+        }
+    }
 }
 
 /// The expression a leaf carries.
@@ -223,6 +266,19 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 fn pure_stmt(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::SetLine(..) => true,
+        Stmt::Ast(node) => pure_parsed(node),
+        Stmt::For {
+            iterable,
+            param_def,
+            params_def,
+            body,
+            ..
+        } => {
+            pure_expr(iterable)
+                && param_def.as_ref().as_ref().is_none_or(pure_param)
+                && params_def.iter().all(pure_param)
+                && body.iter().all(pure_stmt)
+        }
         Stmt::Expr(e) => pure_expr(e),
         Stmt::Say(args) | Stmt::Put(args) | Stmt::Print(args) | Stmt::Note(args) => {
             args.iter().all(pure_expr)
@@ -258,6 +314,51 @@ fn pure_stmt(stmt: &Stmt) -> bool {
     }
 }
 
+// Cost: O(n), n = nodes of the construct.
+fn pure_parsed(node: &ParsedStmt) -> bool {
+    match node {
+        ParsedStmt::Conditional(c) => {
+            pure_expr(&c.condition)
+                && pure_block(&c.then)
+                && c.clauses
+                    .iter()
+                    .all(|k| pure_expr(&k.condition) && pure_block(&k.then))
+                && c.else_block.as_ref().is_none_or(pure_block)
+        }
+        ParsedStmt::Given { topic, block } => pure_expr(topic) && pure_block(block),
+        ParsedStmt::When { condition, block } => pure_expr(condition) && pure_block(block),
+        ParsedStmt::Default(block) | ParsedStmt::BareBlock(block) => pure_block(block),
+        ParsedStmt::WhileLoop(w) => pure_expr(&w.condition) && pure_block(&w.block),
+        ParsedStmt::For { stmt, .. } => pure_stmt(stmt),
+        _ => false,
+    }
+}
+
+// Cost: O(n), n = nodes of the block.
+fn pure_block(block: &ParsedBlock) -> bool {
+    (match &block.params {
+        BlockParams::None => true,
+        BlockParams::List(params) => params.iter().all(pure_param),
+        BlockParams::Topic { def, .. } => def.as_deref().is_none_or(pure_param),
+    }) && block.body.iter().all(pure_stmt)
+}
+
+/// A parameter with a name and, at most, a type: nothing the lowering reads
+/// the signature of.
+// Cost: O(1).
+fn pure_param(param: &ParamDef) -> bool {
+    param.default.is_none()
+        && param.where_constraint.is_none()
+        && param.sub_signature.is_none()
+        && param.outer_sub_signature.is_none()
+        && param.code_signature.is_none()
+        && param.shape_constraints.is_none()
+        && param.literal_value.is_none()
+        && param.type_capture.is_none()
+        && param.traits.is_empty()
+        && param.trait_args.is_empty()
+}
+
 // Cost: O(e), e = nodes of `expr`.
 fn pure_expr(expr: &Expr) -> bool {
     match expr {
@@ -272,7 +373,35 @@ fn pure_expr(expr: &Expr) -> bool {
         Expr::AnonSub { body, .. } | Expr::DoBlock { body, .. } | Expr::Lambda { body, .. } => {
             body.iter().all(pure_stmt)
         }
-        Expr::WhateverCurry(inner) => pure_expr(inner),
+        Expr::WhateverCurry(inner) | Expr::PositionalPair(inner) => pure_expr(inner),
+        Expr::PostfixOp { expr, .. } => pure_expr(expr),
+        Expr::DoStmt(stmt) => pure_stmt(stmt),
+        Expr::RegexLiteral { .. } | Expr::MatchRegexTree { .. } => true,
+        Expr::Exists { target, arg, .. } => {
+            pure_expr(target) && arg.as_deref().is_none_or(pure_expr)
+        }
+        Expr::Try { body, catch } => {
+            body.iter().all(pure_stmt) && catch.as_ref().is_none_or(|c| c.iter().all(pure_stmt))
+        }
+        Expr::HyperMethodCall { target, args, .. } | Expr::CallOn { target, args } => {
+            pure_expr(target) && args.iter().all(pure_expr)
+        }
+        Expr::DynamicMethodCall {
+            target,
+            name_expr,
+            args,
+            ..
+        } => pure_expr(target) && pure_expr(name_expr) && args.iter().all(pure_expr),
+        Expr::AnonSubParams {
+            param_defs,
+            body,
+            custom_traits,
+            ..
+        } => {
+            custom_traits.as_slice().is_empty()
+                && param_defs.iter().all(pure_param)
+                && body.iter().all(pure_stmt)
+        }
         Expr::Whatever | Expr::WhateverArg => true,
         Expr::Hash(items, _) => items
             .iter()
