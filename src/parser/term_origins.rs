@@ -455,7 +455,10 @@ mod tests {
             vec![(1, sp(3, 5)), (1, sp(3, 5)), (2, sp(3, 5)), (1, sp(3, 5))],
             vec![sp(0, 12)],
         );
-        assert_eq!(out, vec![(sp(0, 12), 1, sp(3, 5)), (sp(0, 12), 2, sp(3, 5))]);
+        assert_eq!(
+            out,
+            vec![(sp(0, 12), 1, sp(3, 5)), (sp(0, 12), 2, sp(3, 5))]
+        );
     }
 
     #[test]
