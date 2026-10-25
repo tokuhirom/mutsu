@@ -19,12 +19,6 @@ pub(crate) enum SourceForm {
     /// Traits written on a routine, in source order; opens its body.
     RoutineTraits(Vec<super::routine_trait::RoutineTrait>),
     SignatureDecl(SignatureDecl),
-    /// `:(...) := RHS`: the parser expands the signature bind into temporary
-    /// declarations and assignments; the model layer keeps the written bind.
-    SignatureBind {
-        signature: Expr,
-        rhs: Expr,
-    },
     /// `with COND -> PARAM { BODY }`: the written parameter and body, which
     /// open the then-branch of the expansion `with_then_branch` builds.
     WithPointy {

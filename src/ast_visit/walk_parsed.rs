@@ -57,6 +57,11 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         super::walk_stmts(v, declarations);
         return;
     }
+    if let ParsedStmt::SignatureBind { signature, rhs } = node {
+        v.visit_expr(signature);
+        v.visit_expr(rhs);
+        return;
+    }
     if let ParsedStmt::MethodAssignDecl(form) = node {
         super::walk_source::walk_method_assign_decl(v, form);
         return;
@@ -168,6 +173,10 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
         ParsedStmt::CommaDecls(declarations)
         | ParsedStmt::AttributeGroup(declarations)
         | ParsedStmt::AttributeColonArglist(declarations) => super::walk_stmts_mut(v, declarations),
+        ParsedStmt::SignatureBind { signature, rhs } => {
+            v.visit_expr_mut(signature);
+            v.visit_expr_mut(rhs);
+        }
         ParsedStmt::MethodAssignDecl(form) => walk_method_assign_decl_mut(v, form),
         ParsedStmt::ImmediateCall { decl, args } => {
             super::walk_stmt_mut(v, decl);

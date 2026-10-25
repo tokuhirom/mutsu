@@ -183,6 +183,7 @@ impl VisitMut for Ctx {
                     | ParsedStmt::AttributeGroup(_)
                     | ParsedStmt::AttributeColonArglist(_)
                     | ParsedStmt::MethodAssignDecl(_)
+            | ParsedStmt::SignatureBind { .. }
                     | ParsedStmt::TakeLogicalTail { .. }
                     | ParsedStmt::ImmediateCall { .. }
                     | ParsedStmt::AttributeModifier { .. } => {

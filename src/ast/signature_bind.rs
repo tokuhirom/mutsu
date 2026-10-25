@@ -2,7 +2,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::{AssignOp, Expr, SourceForm, Stmt};
+use super::{AssignOp, Expr, Stmt};
 use crate::value::{Value, ValueView};
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
@@ -14,7 +14,8 @@ struct ParamInfo {
     named_keys: Vec<String>,
 }
 
-/// Record a signature literal bind and build the statements used by execution.
+/// The statements that execute a signature literal bind: the one lowering of
+/// `ParsedStmt::SignatureBind`.
 // Cost: O(p + e), p = signature parameters, e = expression nodes in RHS.
 pub(crate) fn expand(signature: Expr, rhs: Expr) -> Option<Stmt> {
     let params = param_infos(&signature)?;
@@ -36,10 +37,6 @@ pub(crate) fn expand(signature: Expr, rhs: Expr) -> Option<Stmt> {
         where_constraint: None,
     };
     let mut statements = Vec::with_capacity(params.len() + 3);
-    statements.push(Stmt::SourceForm(Box::new(SourceForm::SignatureBind {
-        signature: signature.clone(),
-        rhs: rhs.clone(),
-    })));
     statements.push(decl(temp_name.clone(), rhs));
     statements.push(decl(
         bound_name.clone(),

@@ -27,10 +27,6 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
             walk_stmts(v, body);
         }
         SourceForm::SignatureDecl(declaration) => v.visit_signature_decl(declaration),
-        SourceForm::SignatureBind { signature, rhs } => {
-            v.visit_expr(signature);
-            v.visit_expr(rhs);
-        }
         SourceForm::RoutineTraits(items) => {
             for item in items {
                 match item {
@@ -187,10 +183,9 @@ mod tests {
 
     #[test]
     fn source_records_are_opt_in_and_walk_their_original_declarations() {
-        let record = Stmt::SourceForm(Box::new(SourceForm::SignatureBind {
-            signature: Expr::Var("written".into()),
-            rhs: Expr::Literal(crate::value::Value::NIL),
-        }));
+        let record = Stmt::SourceForm(Box::new(SourceForm::RoutineTraits(vec![
+            RoutineTrait::Unsupported("written".into()),
+        ])));
         let mut ordinary = Names::default();
         ordinary.visit_stmt(&record);
         assert!(ordinary.names.is_empty());
