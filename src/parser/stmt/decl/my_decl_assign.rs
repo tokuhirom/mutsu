@@ -788,24 +788,28 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         None => (rest, None),
     };
     let stmt = if s.apply_modifier && !has_trailing_comma {
-        crate::ast::method_assign_decl::expand(crate::ast::method_assign_decl::MethodAssignDecl {
-            name: s.name,
-            anonymous: s.anonymous,
-            type_constraint: s.type_constraint,
-            is_state: s.is_state,
-            is_our: s.is_our,
-            is_dynamic: s.has_dynamic_trait,
-            is_export: s.has_export_trait,
-            export_tags: s.export_tags,
-            custom_traits: s.custom_traits,
-            where_constraint: s.where_constraint,
-            method: Symbol::intern(&method_name),
-            callee: source_callee.map(Box::new),
-            args: source_args,
-            chain: chain.clone().map(Box::new),
-            shape: s.shape_dims.clone(),
-            is_v6c: crate::parser::current_language_version_starts_with("6.c"),
-        })
+        crate::parser::stmt::control::parsed_block::finish_total(
+            crate::ast::parsed::ParsedStmt::MethodAssignDecl(Box::new(
+                crate::ast::method_assign_decl::MethodAssignDecl {
+                    name: s.name,
+                    anonymous: s.anonymous,
+                    type_constraint: s.type_constraint,
+                    is_state: s.is_state,
+                    is_our: s.is_our,
+                    is_dynamic: s.has_dynamic_trait,
+                    is_export: s.has_export_trait,
+                    export_tags: s.export_tags,
+                    custom_traits: s.custom_traits,
+                    where_constraint: s.where_constraint,
+                    method: Symbol::intern(&method_name),
+                    callee: source_callee.map(Box::new),
+                    args: source_args,
+                    chain: chain.clone().map(Box::new),
+                    shape: s.shape_dims.clone(),
+                    is_v6c: crate::parser::current_language_version_starts_with("6.c"),
+                },
+            )),
+        )
     } else {
         // Without the statement-level source-form record (an expression-position
         // declaration, or a list continuing it) the `.=` initializer keeps its

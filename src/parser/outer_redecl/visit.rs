@@ -180,6 +180,9 @@ impl VisitMut for Ctx {
                     | ParsedStmt::TempDecl(_)
                     | ParsedStmt::BarePhaser(_)
                     | ParsedStmt::CommaDecls(_)
+                    | ParsedStmt::AttributeGroup(_)
+                    | ParsedStmt::AttributeColonArglist(_)
+                    | ParsedStmt::MethodAssignDecl(_)
                     | ParsedStmt::TakeLogicalTail { .. }
                     | ParsedStmt::ImmediateCall { .. }
                     | ParsedStmt::AttributeModifier { .. } => {

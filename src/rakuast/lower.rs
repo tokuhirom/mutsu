@@ -301,6 +301,23 @@ const SHADOWABLE_STATEMENTS: [&str; 14] = [
 ];
 
 fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    finish_kept(lower_stmt_kept(node)?)
+}
+
+/// The statement a lowering built, lowered if it is a parser node kept in its
+/// written shape ([`lower_stmt_kept`]).
+// Cost: O(n), n = size of the statement.
+fn finish_kept(stmt: Stmt) -> Result<Stmt, RuntimeError> {
+    match stmt {
+        Stmt::Ast(node) => super::lower_parsed_stmt(*node),
+        other => Ok(other),
+    }
+}
+
+/// [`lower_stmt_inner`], except that a `.=` declaration comes back as its
+/// written [`crate::ast::parsed::ParsedStmt::MethodAssignDecl`] (in `Stmt::Ast`), which an
+/// expression-position declaration lowers differently.
+fn lower_stmt_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // A feed keeps declarations as operands until compiler lowering. The
     // loose-tail declaration splitter would turn a leftwards sink into an
     // initializer executed on every modifier iteration.
@@ -356,7 +373,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         {
             super::attribute_group::lower_colon(node)
         }
-        RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
+        RakuAstClass::VarDeclarationSimple => lower_var_decl_kept(node),
         // `my $o .= $m.uc`: a postfix chain over a `.=` declaration.
         RakuAstClass::ApplyPostfix if super::method_assign_decl::is_chained_declaration(node) => {
             super::method_assign_decl::lower_chained(node)
@@ -2926,6 +2943,12 @@ pub(super) fn arg_list_exprs(arglist: &RakuAstNode) -> Result<Vec<Expr>, Runtime
 /// attribute forms (which carry `scope`/`type`/`twigil`/`traits` fields) are the
 /// coverage boundary.
 pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    finish_kept(lower_var_decl_kept(node)?)
+}
+
+/// [`lower_var_decl`], except that a `.=` declaration comes back as its
+/// written [`crate::ast::parsed::ParsedStmt::MethodAssignDecl`] (in `Stmt::Ast`).
+pub(super) fn lower_var_decl_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // `my %h does R`: the role is a trait the parser expands separately. An
     // attribute (`has $.x does R`) reads its own traits.
     let is_attribute = matches!(leaf_str(node, "scope").as_deref(), Ok("has" | "HAS"))
@@ -3081,28 +3104,30 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         return Err(unsupported(node));
     }
     if let Some((method, callee, args)) = call_assign {
-        return Ok(crate::ast::method_assign_decl::expand(
-            crate::ast::method_assign_decl::MethodAssignDecl {
-                name,
-                anonymous,
-                type_constraint,
-                is_state,
-                is_our,
-                is_dynamic,
-                is_export,
-                export_tags: export_tags.clone(),
-                custom_traits,
-                where_constraint: None,
-                method: crate::symbol::Symbol::intern(&method),
-                callee: callee.map(Box::new),
-                args,
-                chain: None,
-                // The parser keeps a shaped `.=` declaration's dimensions for
-                // its source only (`my @c[2;2] .= new(:shape(2,2), …)`).
-                shape: shape_dims,
-                is_v6c: crate::parser::current_language_version_starts_with("6.c"),
-            },
-        ));
+        return Ok(Stmt::Ast(Box::new(
+            crate::ast::parsed::ParsedStmt::MethodAssignDecl(Box::new(
+                crate::ast::method_assign_decl::MethodAssignDecl {
+                    name,
+                    anonymous,
+                    type_constraint,
+                    is_state,
+                    is_our,
+                    is_dynamic,
+                    is_export,
+                    export_tags: export_tags.clone(),
+                    custom_traits,
+                    where_constraint: None,
+                    method: crate::symbol::Symbol::intern(&method),
+                    callee: callee.map(Box::new),
+                    args,
+                    chain: None,
+                    // The parser keeps a shaped `.=` declaration's dimensions for
+                    // its source only (`my @c[2;2] .= new(:shape(2,2), …)`).
+                    shape: shape_dims,
+                    is_v6c: crate::parser::current_language_version_starts_with("6.c"),
+                },
+            )),
+        )));
     }
     let expr = match shape_dims {
         Some(dims) if has_initializer => {
@@ -4320,17 +4345,20 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         | RakuAstClass::VarDeclarationSignature
                 )
             {
-                let mut statement = lower_stmt_inner(declaration)?;
                 // A `.=` declaration is one expression-position declaration,
-                // not the statement-level source-form record plus expansion.
-                if let Stmt::SyntheticBlock(parts) = &statement
-                    && let Some(Stmt::SourceForm(form)) = parts.first()
-                    && let crate::ast::SourceForm::MethodAssignDecl(form) = form.as_ref()
-                    && let Some(single) =
-                        crate::ast::method_assign_decl::expression_declaration(form)
-                {
-                    statement = single;
-                }
+                // not the statement-level expansion.
+                let statement = match lower_stmt_kept(declaration)? {
+                    Stmt::Ast(node) => match *node {
+                        crate::ast::parsed::ParsedStmt::MethodAssignDecl(form) => {
+                            match crate::ast::method_assign_decl::expression_declaration(&form) {
+                                Some(single) => single,
+                                None => crate::ast::method_assign_decl::expand(*form),
+                            }
+                        }
+                        other => super::lower_parsed_stmt(other)?,
+                    },
+                    other => other,
+                };
                 return Ok(Expr::Grouped(Box::new(Expr::DoStmt(Box::new(statement)))));
             }
             let lowered = lower_expr(inner)?;

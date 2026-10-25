@@ -1,6 +1,6 @@
 //! Preserve a declaration's `.=` initializer until the RakuAST boundary.
 
-use super::{Expr, SourceForm, Stmt};
+use super::{Expr, Stmt};
 use crate::symbol::Symbol;
 
 /// An untyped `.=` initializer reads its own container as the invocant;
@@ -222,14 +222,12 @@ fn method_call(form: &MethodAssignDecl, target: Expr) -> Expr {
     }
 }
 
-/// Keep the source form ahead of its bytecode-ready expansion.
+/// The bytecode-ready expansion of a written `.=` declaration: the
+/// declaration, then the postfix chain (if any). The one lowering of
+/// `ParsedStmt::MethodAssignDecl`.
+// Cost: O(n), n = size of the declaration and its call.
 pub(crate) fn expand(form: MethodAssignDecl) -> Stmt {
-    let declaration = expanded_declaration(&form);
-    let chain = form.chain.clone();
-    let mut stmts = vec![Stmt::SourceForm(Box::new(SourceForm::MethodAssignDecl(
-        form,
-    )))];
-    stmts.extend(declaration);
-    stmts.extend(chain.map(|chain| Stmt::Expr(*chain)));
+    let mut stmts = expanded_declaration(&form);
+    stmts.extend(form.chain.map(|chain| Stmt::Expr(*chain)));
     Stmt::SyntheticBlock(stmts)
 }

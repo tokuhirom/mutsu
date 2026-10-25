@@ -105,6 +105,10 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
         } => Ok(crate::ast::attribute_modifier::expand(
             *decl, condition, kind,
         )),
+        ParsedStmt::AttributeGroup(attributes) | ParsedStmt::AttributeColonArglist(attributes) => {
+            Ok(Stmt::SyntheticBlock(attributes))
+        }
+        ParsedStmt::MethodAssignDecl(form) => Ok(crate::ast::method_assign_decl::expand(*form)),
         ParsedStmt::SigillessDecl(d) => {
             lower_sigilless(*d, crate::parser::is_user_declared_value_term)
         }

@@ -25,14 +25,6 @@ pub(crate) enum SourceForm {
         signature: Expr,
         rhs: Expr,
     },
-    /// `has Type ($.a, $.b)`: one visible RakuAST signature declaration,
-    /// whose parser expansion installs each listed attribute separately.
-    AttributeGroup(Vec<Stmt>),
-    /// A declaration parsed inside a public attribute's colon argument list.
-    /// The nested declarations execute, but Rakudo's RakuAST gist displays the
-    /// declaration that introduced the colon list.
-    AttributeColonArglist(Vec<Stmt>),
-    MethodAssignDecl(super::method_assign_decl::MethodAssignDecl),
     /// `with COND -> PARAM { BODY }`: the written parameter and body, which
     /// open the then-branch of the expansion `with_then_branch` builds.
     WithPointy {
@@ -59,31 +51,6 @@ pub(crate) enum SourceForm {
     /// declaration, then the assignment, whose `Expr::CompoundAssign` keeps
     /// the written operator and right-hand side).
     DeclarationCompoundAssign,
-}
-
-/// Open the parser expansion of one parenthesized `has` declaration with its
-/// source declarations. The marker lets RakuAST keep the single signature
-/// declaration that Rakudo exposes while the compiler still installs each
-/// attribute separately.
-// Cost: O(a), a = total size of the grouped declarations and their expressions.
-pub(crate) fn attribute_group_expansion(attributes: Vec<Stmt>) -> Stmt {
-    let mut statements = Vec::with_capacity(attributes.len() + 1);
-    statements.push(Stmt::SourceForm(Box::new(SourceForm::AttributeGroup(
-        attributes.clone(),
-    ))));
-    statements.extend(attributes);
-    Stmt::SyntheticBlock(statements)
-}
-
-/// Open the class-body expansion produced by a colon argument list.
-// Cost: O(a), a = total size of the nested declarations and their expressions.
-pub(crate) fn attribute_colon_expansion(attributes: Vec<Stmt>) -> Stmt {
-    let mut statements = Vec::with_capacity(attributes.len() + 1);
-    statements.push(Stmt::SourceForm(Box::new(
-        SourceForm::AttributeColonArglist(attributes.clone()),
-    )));
-    statements.extend(attributes);
-    Stmt::SyntheticBlock(statements)
 }
 
 /// `my|our|state [TYPE] (VARS) [is default(EXPR)] [= RHS | := RHS]`.

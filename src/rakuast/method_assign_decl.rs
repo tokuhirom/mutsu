@@ -3,7 +3,8 @@
 use super::convert::{Initializer, arg_list, leaf_field, node_field, unsupported, var_declaration};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode, decl_traits};
 use crate::ast::method_assign_decl::MethodAssignDecl;
-use crate::ast::{Expr, SourceForm, Stmt};
+use crate::ast::parsed::ParsedStmt;
+use crate::ast::{Expr, Stmt};
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// A declaration with a source-level `.=` initializer.
@@ -112,14 +113,10 @@ pub(super) fn lower_chained(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     while declaration.class == RakuAstClass::ApplyPostfix {
         declaration = super::lower::named_child(&declaration, "operand")?.clone();
     }
-    let lowered = super::lower::lower_var_decl(&declaration)?;
-    let Stmt::SyntheticBlock(stmts) = &lowered else {
+    let Stmt::Ast(kept) = super::lower::lower_var_decl_kept(&declaration)? else {
         return Err(unsupported("a `.=` declaration chain"));
     };
-    let Some(Stmt::SourceForm(form)) = stmts.first() else {
-        return Err(unsupported("a `.=` declaration chain"));
-    };
-    let SourceForm::MethodAssignDecl(form) = form.as_ref() else {
+    let ParsedStmt::MethodAssignDecl(form) = kept.as_ref() else {
         return Err(unsupported("a `.=` declaration chain"));
     };
     if form.name.starts_with(['@', '%', '&']) {
@@ -129,7 +126,7 @@ pub(super) fn lower_chained(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let chain = super::lower::lower_expr(&with_innermost_operand(node, variable)?)?;
     let mut form = form.clone();
     form.chain = Some(Box::new(chain));
-    Ok(crate::ast::method_assign_decl::expand(form))
+    super::lower_parsed_stmt(ParsedStmt::MethodAssignDecl(form))
 }
 
 /// `.method` / `.method(args)` -> `Call::Method(name => Name, [args => ArgList])`.
