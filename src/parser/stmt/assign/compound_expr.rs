@@ -787,6 +787,21 @@ pub(crate) const DOTTY_ASSIGN_OP: &str = ".=";
 pub(crate) fn is_dotty_assign(expr: &Expr) -> bool {
     match expr {
         Expr::CompoundAssign { op, .. } => op == DOTTY_ASSIGN_OP,
+        // A bare `.=meth` in expression position stays the plain `$_ = $_.meth`
+        // an `andthen` chain retargets (`compound_lower::topic_dotty_expression`);
+        // the topic call it wraps is the sugar a written `$_ = $_.meth` lacks.
+        Expr::AssignExpr {
+            name,
+            expr,
+            is_bind: false,
+        } => {
+            name == "_"
+                && matches!(
+                    expr.as_ref(),
+                    Expr::MethodCall { target, sugar: true, .. }
+                        if matches!(target.as_ref(), Expr::Var(v) if v == "_")
+                )
+        }
         // The same `.=` as a `.AST` parse keeps it (ADR-10723 Stage 2).
         Expr::Ast(node) => matches!(
             node.as_ref(),
