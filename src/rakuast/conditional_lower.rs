@@ -108,6 +108,10 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
         ParsedStmt::AttributeGroup(attributes) | ParsedStmt::AttributeColonArglist(attributes) => {
             Ok(Stmt::SyntheticBlock(attributes))
         }
+        ParsedStmt::SignatureBind { signature, rhs } => {
+            crate::ast::signature_bind::expand(signature, rhs)
+                .ok_or_else(|| RuntimeError::new("signature bind without a signature literal"))
+        }
         ParsedStmt::MethodAssignDecl(form) => Ok(crate::ast::method_assign_decl::expand(*form)),
         ParsedStmt::SigillessDecl(d) => {
             lower_sigilless(*d, crate::parser::is_user_declared_value_term)

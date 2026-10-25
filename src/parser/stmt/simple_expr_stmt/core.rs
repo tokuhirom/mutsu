@@ -929,9 +929,14 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 remaining_len: err.remaining_len.or(Some(r.len())),
                 exception: None,
             })?;
-            if let Some(stmt) = crate::ast::signature_bind::expand(expr.clone(), rhs) {
-                return parse_statement_modifier(r, stmt);
-            }
+            // `supports` held, so the lowering cannot fail.
+            let stmt = crate::parser::stmt::control::parsed_block::finish_total(
+                crate::ast::parsed::ParsedStmt::SignatureBind {
+                    signature: expr.clone(),
+                    rhs,
+                },
+            );
+            return parse_statement_modifier(r, stmt);
         }
         // Reject binding to a zen slice: `@a[] := ...` / `%a{} := ...` → X::Bind::ZenSlice
         if let Expr::ZenSlice(inner) = &expr {

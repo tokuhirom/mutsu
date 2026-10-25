@@ -270,9 +270,9 @@ fn lower_signature_bind(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError
     }
     let signature = lower_expr(left)?;
     let rhs = lower_expr(named_child(node, "right")?)?;
-    crate::ast::signature_bind::expand(signature, rhs)
+    super::lower_parsed_stmt(crate::ast::parsed::ParsedStmt::SignatureBind { signature, rhs })
         .map(Some)
-        .ok_or_else(|| unsupported(node))
+        .map_err(|_| unsupported(node))
 }
 
 /// The modifier a `StatementModifier::*` node is.
