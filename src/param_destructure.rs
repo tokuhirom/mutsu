@@ -302,7 +302,11 @@ pub(crate) fn destructure_binds(
                 ],
                 true,
             );
-            bind_stmts.push(bind_stmt(sub.name.clone(), capture_expr));
+            // A fresh sigilless lexical: the declaration (not an assignment) is
+            // what names it for the scope passes, and the marker is what makes
+            // a later bare `rest` resolve to it.
+            bind_stmts.push(decl_stmt(sub.name.clone(), capture_expr));
+            bind_stmts.push(Stmt::MarkSigillessReadonly(sub.name.clone()));
             // No need to increment positional_index; capture consumes all remaining
         } else if sub.is_variadic() && sub.name.starts_with('%') {
             // `*%rest`: the named part of the value's Capture minus the keys
