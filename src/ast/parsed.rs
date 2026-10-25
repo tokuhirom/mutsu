@@ -112,6 +112,11 @@ pub(crate) enum ParsedStmt {
     /// order, with no new lexical scope (RakuAST's `ApplyListInfix` over the
     /// declarations).
     CommaDecls(Vec<Stmt>),
+    /// `temp` / `let` over a variable or an element, with the assignment that
+    /// follows, if any: RakuAST's prefix operator over the lvalue.
+    /// `rakuast::lower` saves the variable and assigns inside the save
+    /// (`ast::temporize::expand`).
+    Temporize(Box<super::temporize::Temporized>),
     /// `has $.x if COND` / `unless` / `with` / `without` / `when`: the
     /// attribute declaration (a `Stmt::VarDecl` or a declaration list) and its
     /// postfix modifier. The modifier cannot gate the declaration (attributes
@@ -613,6 +618,7 @@ impl ParsedStmt {
             | ParsedStmt::MethodAssignDecl(_)
             | ParsedStmt::SignatureBind { .. }
             | ParsedStmt::SignatureDecl(_)
+            | ParsedStmt::Temporize(_)
             | ParsedStmt::CommaDecls(_) => Vec::new(),
             ParsedStmt::TakeLogicalTail { value, right, .. } => vec![value, right],
             ParsedStmt::ImmediateCall { args, .. } => args.iter().collect(),
@@ -659,6 +665,7 @@ impl ParsedStmt {
             | ParsedStmt::MethodAssignDecl(_)
             | ParsedStmt::SignatureBind { .. }
             | ParsedStmt::SignatureDecl(_)
+            | ParsedStmt::Temporize(_)
             | ParsedStmt::CommaDecls(_)
             | ParsedStmt::TakeLogicalTail { .. }
             | ParsedStmt::Modified(_) => Vec::new(),

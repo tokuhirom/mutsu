@@ -61,6 +61,17 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         v.visit_signature_decl(decl);
         return;
     }
+    if let ParsedStmt::Temporize(t) = node {
+        if let crate::ast::temporize::Target::Element(element) = &t.target {
+            v.visit_expr(element);
+        }
+        if let crate::ast::temporize::Assigned::Plain(e)
+        | crate::ast::temporize::Assigned::Compound(e) = &t.assigned
+        {
+            v.visit_expr(e);
+        }
+        return;
+    }
     if let ParsedStmt::SignatureBind { signature, rhs } = node {
         v.visit_expr(signature);
         v.visit_expr(rhs);
@@ -178,6 +189,16 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
         | ParsedStmt::AttributeGroup(declarations)
         | ParsedStmt::AttributeColonArglist(declarations) => super::walk_stmts_mut(v, declarations),
         ParsedStmt::SignatureDecl(decl) => walk_signature_decl_mut(v, decl),
+        ParsedStmt::Temporize(t) => {
+            if let crate::ast::temporize::Target::Element(element) = &mut t.target {
+                v.visit_expr_mut(element);
+            }
+            if let crate::ast::temporize::Assigned::Plain(e)
+            | crate::ast::temporize::Assigned::Compound(e) = &mut t.assigned
+            {
+                v.visit_expr_mut(e);
+            }
+        }
         ParsedStmt::SignatureBind { signature, rhs } => {
             v.visit_expr_mut(signature);
             v.visit_expr_mut(rhs);

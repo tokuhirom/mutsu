@@ -111,6 +111,8 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
         ParsedStmt::AttributeGroup(attributes) | ParsedStmt::AttributeColonArglist(attributes) => {
             Ok(Stmt::SyntheticBlock(attributes))
         }
+        ParsedStmt::Temporize(t) => crate::ast::temporize::expand(*t)
+            .ok_or_else(|| RuntimeError::new("temp/let of something that is not a variable")),
         ParsedStmt::SignatureDecl(decl) => crate::parser::signature_decl_expansion(*decl),
         ParsedStmt::SignatureBind { signature, rhs } => {
             crate::ast::signature_bind::expand(signature, rhs)

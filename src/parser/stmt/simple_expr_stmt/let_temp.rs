@@ -1,3 +1,4 @@
+use crate::ast::temporize::{Assigned, Target, Temporized};
 use crate::ast::{Expr, Stmt};
 use crate::parser::expr::expression;
 use crate::parser::helpers::{ws, ws1};
@@ -6,6 +7,21 @@ use crate::parser::stmt::idents::{ident, keyword};
 use crate::parser::stmt::modifier::parse_statement_modifier;
 use crate::parser::stmt::pub_shims::ident_pub;
 use crate::value::Value;
+
+/// A `temp` / `let` the parser builds in its RakuAST shape: the prefix over its
+/// lvalue and the assignment that follows (`ParsedStmt::Temporize`), lowered
+/// to the save the compiler runs.
+// Cost: O(n), n = size of the lvalue and the assigned expression.
+fn temporize(is_temp: bool, target: Target, assigned: Assigned) -> Result<Stmt, PError> {
+    crate::parser::stmt::control::parsed_block::finish(crate::ast::parsed::ParsedStmt::Temporize(
+        Box::new(Temporized {
+            is_temp,
+            target,
+            assigned,
+        }),
+    ))
+    .map_err(PError::from_typed)
+}
 
 /// A `let`/`temp` whose variable is followed by a COMPOUND assignment
 /// (`let %h .= push: @v`, `temp $x //= 5`).
@@ -36,17 +52,11 @@ fn let_compound_assign_stmt<'a>(
         let (r, assign_expr) = expression(var_start)?;
         parse_statement_modifier(
             r,
-            Stmt::SyntheticBlock(vec![
-                Stmt::Let {
-                    name: full_name,
-                    index: None,
-                    value: None,
-                    is_temp,
-                    undefine_first: false,
-                    nested_lvalue: false,
-                },
-                Stmt::Expr(assign_expr),
-            ]),
+            temporize(
+                is_temp,
+                Target::Variable(full_name),
+                Assigned::Compound(assign_expr),
+            )?,
         )
     })())
 }
@@ -94,37 +104,25 @@ fn let_subscript_stmt<'a>(
         if r.starts_with(".=") || crate::parser::stmt::assign::parse_compound_assign_op(r).is_some()
         {
             let (r, assign_expr) = expression(var_start)?;
-            let save = Stmt::Let {
-                name: full_name.to_string(),
-                index: Some(Box::new(index)),
-                value: None,
-                is_temp,
-                undefine_first: false,
-                nested_lvalue: false,
-            };
+            let element = crate::ast::temporize::element_expr(full_name, &index);
             return parse_statement_modifier(
                 r,
-                Stmt::SyntheticBlock(vec![save, Stmt::Expr(assign_expr)]),
+                temporize(
+                    is_temp,
+                    Target::Element(element),
+                    Assigned::Compound(assign_expr),
+                )?,
             );
         }
         let (r, value) = if r.starts_with('=') && !r.starts_with("==") {
             let (r, _) = ws(&r[1..])?;
             let (r, value) = expression(r)?;
-            (r, Some(Box::new(value)))
+            (r, Assigned::Plain(value))
         } else {
-            (r, None)
+            (r, Assigned::No)
         };
-        parse_statement_modifier(
-            r,
-            Stmt::Let {
-                name: full_name.to_string(),
-                index: Some(Box::new(index)),
-                value,
-                is_temp,
-                undefine_first: false,
-                nested_lvalue: false,
-            },
-        )
+        let element = crate::ast::temporize::element_expr(full_name, &index);
+        parse_statement_modifier(r, temporize(is_temp, Target::Element(element), value)?)
     })())
 }
 
@@ -189,28 +187,18 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
         let (val_rest, val_expr) = assigned_value(sigil, val_rest)?;
         return parse_statement_modifier(
             val_rest,
-            Stmt::Let {
-                name: full_name,
-                index: None,
-                value: Some(Box::new(val_expr)),
-                is_temp: false,
-                undefine_first: false,
-                nested_lvalue: false,
-            },
+            temporize(
+                false,
+                Target::Variable(full_name),
+                Assigned::Plain(val_expr),
+            )?,
         );
     }
 
     // Bare let: let $var / let @arr / let %hash
     parse_statement_modifier(
         rest,
-        Stmt::Let {
-            name: full_name,
-            index: None,
-            value: None,
-            is_temp: false,
-            undefine_first: false,
-            nested_lvalue: false,
-        },
+        temporize(false, Target::Variable(full_name), Assigned::No)?,
     )
 }
 
@@ -307,20 +295,29 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         // `temp @a[i] = v` / `temp %h<k> = v` forms below cannot represent this
         // chain, so the `Let` carries the whole assignment as its value and the
         // compiler temporizes the element that assignment's target names.
-        if let Expr::IndexAssign { target, .. } = &expr
+        if let Expr::IndexAssign {
+            target,
+            index,
+            value,
+            is_positional,
+            ..
+        } = &expr
             && is_compound_elem_container(target)
-            && let Some(save_name) = crate::ast::temporize::base_name(target)
+            && crate::ast::temporize::base_name(target).is_some()
         {
+            let element = Expr::Index {
+                target: target.clone(),
+                index: index.clone(),
+                is_positional: *is_positional,
+                spelling: Default::default(),
+            };
             return parse_statement_modifier(
                 expr_rest,
-                Stmt::Let {
-                    name: save_name,
-                    index: None,
-                    value: Some(Box::new(expr)),
-                    is_temp: true,
-                    undefine_first: false,
-                    nested_lvalue: true,
-                },
+                temporize(
+                    true,
+                    Target::Element(element),
+                    Assigned::Plain((**value).clone()),
+                )?,
             );
         }
         // A bare element temp with no assignment over the same compound
@@ -328,18 +325,11 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         // element expression itself and the compiler saves that element.
         if let Expr::Index { target, .. } = &expr
             && is_compound_elem_container(target)
-            && let Some(save_name) = crate::ast::temporize::base_name(target)
+            && crate::ast::temporize::base_name(target).is_some()
         {
             return parse_statement_modifier(
                 expr_rest,
-                Stmt::Let {
-                    name: save_name,
-                    index: None,
-                    value: Some(Box::new(expr)),
-                    is_temp: true,
-                    undefine_first: false,
-                    nested_lvalue: true,
-                },
+                temporize(true, Target::Element(expr), Assigned::No)?,
             );
         }
         // temp on lvalue method call: `temp $obj.method = value`, where the
@@ -473,14 +463,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
             let (rhs_rest, rhs_expr) = expression(rhs_rest)?;
             return parse_statement_modifier(
                 rhs_rest,
-                Stmt::Let {
-                    name: var_name,
-                    index: None,
-                    value: Some(Box::new(rhs_expr)),
-                    is_temp: true,
-                    undefine_first: true,
-                    nested_lvalue: false,
-                },
+                temporize(true, Target::Undefine(var_name), Assigned::Plain(rhs_expr))?,
             );
         }
         // Bare: temp undefine($c) — just undefine (no temp wrapping)
@@ -526,27 +509,13 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
             let (val_rest, val_expr) = expression(val_rest)?;
             return parse_statement_modifier(
                 val_rest,
-                Stmt::Let {
-                    name: full_name,
-                    index: None,
-                    value: Some(Box::new(val_expr)),
-                    is_temp: true,
-                    undefine_first: false,
-                    nested_lvalue: false,
-                },
+                temporize(true, Target::Variable(full_name), Assigned::Plain(val_expr))?,
             );
         }
         // Bare temp: temp $/
         return parse_statement_modifier(
             rest_after,
-            Stmt::Let {
-                name: full_name,
-                index: None,
-                value: None,
-                is_temp: true,
-                undefine_first: false,
-                nested_lvalue: false,
-            },
+            temporize(true, Target::Variable(full_name), Assigned::No)?,
         );
     }
     // Handle twigils: $*CWD, $?FILE, etc.
@@ -596,26 +565,12 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         let (val_rest, val_expr) = assigned_value(sigil, val_rest)?;
         return parse_statement_modifier(
             val_rest,
-            Stmt::Let {
-                name: full_name,
-                index: None,
-                value: Some(Box::new(val_expr)),
-                is_temp: true,
-                undefine_first: false,
-                nested_lvalue: false,
-            },
+            temporize(true, Target::Variable(full_name), Assigned::Plain(val_expr))?,
         );
     }
     // Bare temp: temp $var
     parse_statement_modifier(
         rest,
-        Stmt::Let {
-            name: full_name,
-            index: None,
-            value: None,
-            is_temp: true,
-            undefine_first: false,
-            nested_lvalue: false,
-        },
+        temporize(true, Target::Variable(full_name), Assigned::No)?,
     )
 }

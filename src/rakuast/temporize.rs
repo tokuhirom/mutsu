@@ -8,7 +8,7 @@
 //! it (see `ast::temporize`); this module renders that as the prefix node and
 //! rebuilds the same statement from it.
 
-use super::convert::{assignment_around, convert_expr, leaf_field, node_field};
+use super::convert::{convert_expr, leaf_field, node_field};
 use super::lower::{
     infix_is_assignment, infix_is_compound_assignment, lower_compound_assign_expr,
     lower_dotty_assign, lower_expr, lower_var_decl, named_child, named_child_or_positional,
@@ -45,11 +45,12 @@ fn prefix_node(is_temp: bool, operand: RakuAstNode) -> RakuAstNode {
 fn operand_node(target: &Target) -> Result<RakuAstNode, RuntimeError> {
     match target {
         Target::Variable(key) => convert_expr(&temporize::variable_expr(key)),
+        Target::Undefine(key) => convert_expr(&Expr::Call {
+            name: crate::symbol::Symbol::intern("undefine"),
+            args: vec![temporize::variable_expr(key)],
+            listop: false,
+        }),
         Target::Element(element) => convert_expr(element),
-        Target::Declaration(decl) => {
-            // The declaration is a term here, as it is inside any expression.
-            convert_expr(&Expr::DoStmt(decl.clone()))
-        }
     }
 }
 
@@ -59,40 +60,13 @@ fn is_scalar_variable(target: &Target) -> bool {
     matches!(target, Target::Variable(key) if !key.starts_with(['@', '%']))
 }
 
-/// The expression node a `temp` / `let` statement is, or `None` when `stmt`
-/// is not one the parser builds.
-// Cost: O(n), n = size of the statement.
-pub(super) fn convert(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> {
-    if let Stmt::Let {
-        name,
-        index: None,
-        value: Some(value),
-        is_temp: true,
-        undefine_first: true,
-        nested_lvalue: false,
-    } = stmt
-    {
-        return Some((|| {
-            let call = Expr::Call {
-                name: crate::symbol::Symbol::intern("undefine"),
-                args: vec![temporize::variable_expr(name)],
-                listop: false,
-            };
-            assignment_around(prefix_node(true, convert_expr(&call)?), false, value)
-        })());
-    }
-    let temporized = temporize::recognize(stmt)?;
-    Some(convert_temporized(&temporized))
-}
-
 /// `temp my $x`: the declaration under a `temp` prefix.
 // Cost: O(n), n = size of the declaration.
 pub(super) fn convert_declaration(decl: &Stmt) -> Result<RakuAstNode, RuntimeError> {
-    convert_temporized(&Temporized {
-        is_temp: true,
-        target: Target::Declaration(Box::new(decl.clone())),
-        assigned: Assigned::No,
-    })
+    Ok(prefix_node(
+        true,
+        convert_expr(&Expr::DoStmt(Box::new(decl.clone())))?,
+    ))
 }
 
 /// `temp $obj.method = value` / `temp $.attribute OP= value` as the written
@@ -152,7 +126,9 @@ pub(super) fn convert_method_assign(
     super::convert::assignment_around(left, is_attribute, value)
 }
 
-fn convert_temporized(t: &Temporized) -> Result<RakuAstNode, RuntimeError> {
+/// The prefix over the lvalue, with the assignment around it.
+// Cost: O(n), n = size of the lvalue and the assigned expression.
+pub(super) fn convert_temporized(t: &Temporized) -> Result<RakuAstNode, RuntimeError> {
     match &t.assigned {
         Assigned::No => Ok(prefix_node(t.is_temp, operand_node(&t.target)?)),
         Assigned::Plain(value) => super::convert::assignment_around(
@@ -279,6 +255,11 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         return Ok(Stmt::SyntheticBlock(vec![decl, saved]));
     }
     let lvalue = lower_expr(operand)?;
+    let lower_temporized = |temporized: Temporized| {
+        super::lower_parsed_stmt(crate::ast::parsed::ParsedStmt::Temporize(Box::new(
+            temporized,
+        )))
+    };
     if let Expr::Call { name, args, .. } = &lvalue
         && *name == crate::symbol::Symbol::intern("undefine")
         && let [var] = args.as_slice()
@@ -286,24 +267,18 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         && is_temp
         && let After::Value(value) = &after
     {
-        return Ok(Stmt::Let {
-            name,
-            index: None,
-            value: Some(Box::new(value.clone())),
+        return lower_temporized(Temporized {
             is_temp: true,
-            undefine_first: true,
-            nested_lvalue: false,
+            target: Target::Undefine(name),
+            assigned: Assigned::Plain(value.clone()),
         });
     }
-    let (name, index) = match &lvalue {
-        Expr::Index { target, index, .. } => (
-            temporize::base_name(target).ok_or_else(|| unsupported(node))?,
-            Some(index.as_ref()),
-        ),
-        other => (
-            other.container_var_key().ok_or_else(|| unsupported(node))?,
-            None,
-        ),
+    let target = match &lvalue {
+        Expr::Index { target, .. } => {
+            temporize::base_name(target).ok_or_else(|| unsupported(node))?;
+            Target::Element(lvalue.clone())
+        }
+        other => Target::Variable(other.container_var_key().ok_or_else(|| unsupported(node))?),
     };
     // A compound or dotty assignment re-parses from the variable on: lower the
     // assignment node over the bare lvalue and run it after the save.
@@ -313,49 +288,24 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         _ => None,
     };
     if let Some(assignment) = compound {
-        let single = single_level(&lvalue);
-        if index.is_some() && !single {
+        if matches!(target, Target::Element(_)) && !single_level(&lvalue) {
             return Err(unsupported(node));
         }
-        return Ok(Stmt::SyntheticBlock(vec![
-            temporize::save(&name, index, None, is_temp),
-            Stmt::Expr(assignment),
-        ]));
+        return lower_temporized(Temporized {
+            is_temp,
+            target,
+            assigned: Assigned::Compound(assignment),
+        });
     }
-    let value = match after {
-        After::Value(value) => Some(value),
-        _ => None,
+    let assigned = match after {
+        After::Value(value) => Assigned::Plain(value),
+        _ => Assigned::No,
     };
-    match (&lvalue, index) {
-        // A single-level element of a plain variable.
-        (Expr::Index { .. }, Some(index)) if single_level(&lvalue) => {
-            Ok(temporize::save(&name, Some(index), value, is_temp))
-        }
-        // A deeper subscript or a parenthesised container: the element
-        // assignment (or the bare element) rides in the save.
-        (
-            Expr::Index {
-                target,
-                index,
-                is_positional,
-                ..
-            },
-            Some(_),
-        ) => {
-            let carried = match value {
-                Some(value) => Expr::IndexAssign {
-                    target: target.clone(),
-                    index: index.clone(),
-                    value: Box::new(value),
-                    is_positional: *is_positional,
-                    spelling: Default::default(),
-                },
-                None => lvalue.clone(),
-            };
-            Ok(temporize::save_nested(&name, carried, is_temp))
-        }
-        _ => Ok(temporize::save(&name, None, value, is_temp)),
-    }
+    lower_temporized(Temporized {
+        is_temp,
+        target,
+        assigned,
+    })
 }
 
 /// A temporary method/attribute lvalue is already represented as the source
