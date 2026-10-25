@@ -637,6 +637,7 @@ impl ParsedStmt {
             | ParsedStmt::SignatureBind { .. }
             | ParsedStmt::SignatureDecl(_)
             | ParsedStmt::Temporize(_)
+            | ParsedStmt::RoutineTraits(_)
             | ParsedStmt::CommaDecls(_) => Vec::new(),
             ParsedStmt::TakeLogicalTail { value, right, .. } => vec![value, right],
             ParsedStmt::ImmediateCall { args, .. } => args.iter().collect(),
@@ -688,6 +689,7 @@ impl ParsedStmt {
             | ParsedStmt::Temporize(_)
             | ParsedStmt::CommaDecls(_)
             | ParsedStmt::TakeLogicalTail { .. }
+            | ParsedStmt::RoutineTraits(_)
             | ParsedStmt::Modified(_) => Vec::new(),
         }
     }
