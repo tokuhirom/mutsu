@@ -65,10 +65,9 @@ fn next_if_bind_tmp_name() -> String {
 }
 
 /// The expansion of `if COND -> PARAMS { BODY }`: the `binding_var` the
-/// compiler binds the condition to, and the then-branch, which opens with a
-/// [`crate::ast::SourceForm::IfPointy`] record of the parameters and body as
-/// written. `rakuast::lower` calls it too, so a hand-built `Statement::If`
-/// over a `PointyBlock` expands the same way.
+/// compiler binds the condition to, and the then-branch. `rakuast::lower`
+/// calls it too, so a hand-built `Statement::If` over a `PointyBlock` expands
+/// the same way.
 // Cost: O(n), n = size of the body.
 pub(crate) fn if_pointy_clause(
     param_defs: Vec<ParamDef>,
@@ -77,14 +76,7 @@ pub(crate) fn if_pointy_clause(
     if param_defs.is_empty() {
         return Ok((None, then_branch));
     }
-    super::source_body::check(&Expr::Literal(Value::NIL), &param_defs, &then_branch)?;
-    let record = Stmt::SourceForm(Box::new(crate::ast::SourceForm::IfPointy {
-        param_defs: param_defs.clone(),
-        body: then_branch.clone(),
-    }));
-    let (binding, mut stmts) = expand_if_pointy(param_defs, then_branch);
-    stmts.insert(0, record);
-    Ok((binding, stmts))
+    Ok(expand_if_pointy(param_defs, then_branch))
 }
 
 fn expand_if_pointy(
@@ -185,20 +177,7 @@ pub(super) fn lower_else_binding(
     source_binding: &str,
     else_clause: ElseClause,
 ) -> Result<Vec<Stmt>, crate::value::RuntimeError> {
-    if let Some(params) = &else_clause.binding_params {
-        super::source_body::check(&Expr::Literal(Value::NIL), params, &else_clause.body)?;
-    }
-    let record = else_clause.binding_params.as_ref().map(|params| {
-        Stmt::SourceForm(Box::new(crate::ast::SourceForm::IfPointy {
-            param_defs: params.clone(),
-            body: else_clause.body.clone(),
-        }))
-    });
-    let mut body = expand_else_binding(source_binding, else_clause);
-    if let Some(record) = record {
-        body.insert(0, record);
-    }
-    Ok(body)
+    Ok(expand_else_binding(source_binding, else_clause))
 }
 
 fn expand_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt> {

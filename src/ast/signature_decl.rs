@@ -18,27 +18,6 @@ use super::{Expr, Stmt};
 pub(crate) enum SourceForm {
     /// Traits written on a routine, in source order; opens its body.
     RoutineTraits(Vec<super::routine_trait::RoutineTrait>),
-    /// `with COND -> PARAM { BODY }`: the written parameter and body, which
-    /// open the then-branch of the expansion `with_then_branch` builds.
-    WithPointy {
-        param_name: String,
-        param_def: Option<super::ParamDef>,
-        body: Vec<Stmt>,
-    },
-    /// `given EXPR -> PARAM { BODY }`: the written parameter and body, which
-    /// follow the parameter bind at the head of the expansion
-    /// `given_pointy_body` builds.
-    GivenPointy {
-        param_def: super::ParamDef,
-        body: Vec<Stmt>,
-    },
-    /// `if COND -> PARAMS { BODY }` (and `elsif`): the written parameters and
-    /// body, which open the then-branch of the expansion
-    /// `lower_if_clause_binding` builds.
-    IfPointy {
-        param_defs: Vec<super::ParamDef>,
-        body: Vec<Stmt>,
-    },
 }
 
 /// `my|our|state [TYPE] (VARS) [is default(EXPR)] [= RHS | := RHS]`.

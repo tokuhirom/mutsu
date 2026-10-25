@@ -40,7 +40,6 @@ pub(crate) fn get(body: &[Stmt]) -> Option<&[RoutineTrait]> {
     body.iter().find_map(|stmt| match stmt {
         Stmt::SourceForm(form) => match form.as_ref() {
             SourceForm::RoutineTraits(traits) => Some(traits.as_slice()),
-            _ => None,
         },
         _ => None,
     })

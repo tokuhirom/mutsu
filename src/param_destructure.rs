@@ -485,3 +485,33 @@ fn nested_temp_name(target_name: &str, sub_name: &str, position: usize) -> Strin
     let base = target_name.trim_start_matches(['$', '@', '%', '&', '\\']);
     format!("__destructure_{base}_{sub_name}_{position}")
 }
+
+/// [`destructure_binds`] for a construct whose parameters the scope passes read
+/// from the lowered statements alone (`given`/`with`): a `|rest` capture is a
+/// fresh sigilless lexical, so it is declared and marked rather than assigned.
+// Cost: O(n), n = statements produced plus sub-parameters.
+pub(crate) fn destructure_declaring(
+    target_name: &str,
+    sub_params: &[crate::ast::ParamDef],
+    bind_stmts: &mut Vec<Stmt>,
+) {
+    let from = bind_stmts.len();
+    destructure_binds(target_name, sub_params, bind_stmts);
+    let mut marks = Vec::new();
+    for stmt in &mut bind_stmts[from..] {
+        let Stmt::Assign { name, expr, .. } = stmt else {
+            continue;
+        };
+        if sub_params
+            .iter()
+            .any(|p| p.slurpy && p.sigilless && p.name == *name)
+        {
+            marks.push(Stmt::MarkSigillessReadonly(name.clone()));
+            *stmt = decl_stmt(
+                name.clone(),
+                std::mem::replace(expr, Expr::Literal(Value::NIL)),
+            );
+        }
+    }
+    bind_stmts.extend(marks);
+}

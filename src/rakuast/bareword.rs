@@ -320,25 +320,6 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                 | Stmt::RoleDecl { name, .. }
                 | Stmt::SubsetDecl { name, .. }
                 | Stmt::Package { name, .. } => self.insert_nested_type(*name),
-                // `given X -> \y { y }`: the parameter is declared by the
-                // expansion's bind, which the record keeps as written.
-                Stmt::SourceForm(form) => {
-                    match form.as_ref() {
-                        crate::ast::SourceForm::GivenPointy { param_def, .. } => {
-                            self.visit_param(param_def)
-                        }
-                        // `with X -> \y { y }` likewise.
-                        crate::ast::SourceForm::WithPointy {
-                            param_def: Some(param_def),
-                            ..
-                        } => self.visit_param(param_def),
-                        // `if X -> \y { y }` likewise.
-                        crate::ast::SourceForm::IfPointy { param_defs, .. } => {
-                            param_defs.iter().for_each(|p| self.visit_param(p))
-                        }
-                        _ => {}
-                    }
-                }
                 // `my \x = 5` / `my \x := $s` declares the term `x`.
                 Stmt::Ast(node) => {
                     match node.as_ref() {
