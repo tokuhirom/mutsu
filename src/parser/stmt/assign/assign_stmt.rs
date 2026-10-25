@@ -122,26 +122,12 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 quoted: false,
                 sugar: false,
             };
-            let marker_rhs = rhs.clone();
-            let updated_value = compound_assigned_value_expr(source_target.clone(), op, rhs);
-            let assign_call = Expr::Call {
-                name: Symbol::intern("__mutsu_assign_method_lvalue"),
-                args: vec![
-                    var_expr,
-                    Expr::Literal(Value::str(method_name)),
-                    Expr::ArrayLiteral(Vec::new()),
-                    updated_value,
-                    Expr::Literal(Value::str(name)),
-                    Expr::Literal(Value::truth(true)),
-                ],
-                listop: false,
-            };
-            let stmt = Stmt::Expr(compound_assign_marker(
+            let stmt = super::written_compound_assignment_stmt(
                 source_target,
                 op,
-                marker_rhs,
-                assign_call,
-            ));
+                crate::ast::parsed::CompoundMeta::Plain,
+                rhs,
+            )?;
             return parse_statement_modifier(rest, stmt);
         }
     }
