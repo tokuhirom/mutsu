@@ -371,6 +371,17 @@ pub(crate) fn lower_dotty(
     if as_statement && matches!(&target, Expr::Var(topic) if topic == "_") {
         return crate::parser::stmt::simple_expr_stmt::topic_dot_assign(call);
     }
+    // A bareword that names no sigilless term is a type object: the
+    // assignment to it dies ("Cannot modify an immutable 'C' type object").
+    if let Expr::BareWord(name) = &target
+        && !is_term(name)
+    {
+        return Expr::AssignExpr {
+            name: crate::term_names::bareword_target_key(name),
+            expr: Box::new(call),
+            is_bind: false,
+        };
+    }
     crate::parser::expr::wrap_dot_assign_with_terms(
         target,
         |invocant| crate::parser::expr::retarget_dotty_call(&call, invocant),
