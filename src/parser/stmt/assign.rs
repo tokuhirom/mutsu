@@ -182,7 +182,8 @@ pub(in crate::parser) use comma::{
     parse_comma_or_expr_item_no_word_logical, parse_comma_or_expr_no_word_logical,
 };
 pub(crate) use compound_lower::{
-    lower_compound_expression, lower_compound_statement, lower_dotty, written_compound_assignment,
+    lower_compound_expression, lower_compound_statement, lower_dotty,
+    written_bracketed_meta_assignment, written_compound_assignment,
     written_compound_assignment_stmt, written_dotty_assignment, written_meta_assignment,
     written_meta_assignment_stmt, written_reverse_assignment, written_routine_compound_assignment,
     written_routine_compound_assignment_stmt, written_set_assignment,

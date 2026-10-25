@@ -144,6 +144,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         ));
     }
     if let Some((stripped, meta, op)) = parse_bracket_meta_assign_op(rest) {
+        let depth = rest.chars().take_while(|ch| *ch == '[').count();
         let (rest, _) = ws(stripped)?;
         let (rest, rhs) = match try_parse_assign_expr(rest) {
             Ok(r) => r,
@@ -151,7 +152,10 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         };
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
-        return Ok((rest, build_meta_assign_expr(lhs, meta, op, rhs)?));
+        return Ok((
+            rest,
+            super::written_bracketed_meta_assignment(lhs, &meta, depth, op, rhs)?,
+        ));
     }
     if let Some(stripped) = rest.strip_prefix("::=").or_else(|| rest.strip_prefix(":=")) {
         let (rest, _) = ws(stripped)?;

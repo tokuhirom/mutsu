@@ -293,10 +293,16 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         && let Some((after_op, meta, op)) =
             crate::parser::stmt::assign::parse_bracket_meta_assign_op(r)
     {
+        let depth = r.chars().take_while(|ch| *ch == '[').count();
         let (after_ws, _) = ws(after_op)?;
         if let Ok((r, rhs)) = parse_assignment_rhs_mode(after_ws, mode)
-            && let Ok(result) =
-                crate::parser::stmt::assign::build_meta_assign_expr(expr.clone(), meta, op, rhs)
+            && let Ok(result) = crate::parser::stmt::assign::written_bracketed_meta_assignment(
+                expr.clone(),
+                &meta,
+                depth,
+                op,
+                rhs,
+            )
         {
             return Ok((r, result));
         }

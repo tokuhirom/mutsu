@@ -111,7 +111,7 @@ impl Interpreter {
                 let map = attributes.as_map();
                 match (map.get("__mutsu_attr_owner"), map.get("__mutsu_attr_name")) {
                     (Some(owner), Some(attr)) => {
-                        let owner = owner.to_string_value();
+                        let owner = crate::value::attribute_class::attr_owner_key(owner);
                         let attr = attr.to_string_value();
                         (!owner.is_empty() && !attr.is_empty()).then_some((owner, attr))
                     }
