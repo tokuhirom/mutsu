@@ -5702,14 +5702,14 @@ fn zip_declaration_assign(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeErro
         return None;
     }
     let operands = list_field(node, "operands").ok()?;
-    let [declaration, source] = operands.as_slice() else {
+    if operands.len() != 2 {
         return Some(Err(unsupported(node)));
-    };
-    let declaration = rakuast_node_of(declaration)?;
+    }
+    let declaration = rakuast_node_of(&operands[0])?;
     if declaration.class != RakuAstClass::VarDeclarationSimple {
         return None;
     }
-    let source = rakuast_node_of(source)?;
+    let source = rakuast_node_of(&operands[1])?;
     Some((|| {
         super::decl_compound_assign::lower_parsed(
             lower_stmt(declaration)?,

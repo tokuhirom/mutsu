@@ -345,11 +345,11 @@ fn lower_eq_meta_assignment(
     depth: u8,
 ) -> Result<Expr, RuntimeError> {
     let operands = list_field(node, "operands")?;
-    let [target, source] = operands.as_slice() else {
+    if operands.len() != 2 {
         return Err(unsupported(node));
-    };
-    let target = rakuast_node_of(target).ok_or_else(|| unsupported(node))?;
-    let source = rakuast_node_of(source).ok_or_else(|| unsupported(node))?;
+    }
+    let target = rakuast_node_of(&operands[0]).ok_or_else(|| unsupported(node))?;
+    let source = rakuast_node_of(&operands[1]).ok_or_else(|| unsupported(node))?;
     crate::parser::lower_compound_expression(crate::ast::parsed::CompoundAssign {
         target: lower_expr(target)?,
         op: "=".to_string(),
