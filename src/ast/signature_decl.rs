@@ -18,7 +18,6 @@ use super::{Expr, Stmt};
 pub(crate) enum SourceForm {
     /// Traits written on a routine, in source order; opens its body.
     RoutineTraits(Vec<super::routine_trait::RoutineTrait>),
-    SignatureDecl(SignatureDecl),
     /// `with COND -> PARAM { BODY }`: the written parameter and body, which
     /// open the then-branch of the expansion `with_then_branch` builds.
     WithPointy {

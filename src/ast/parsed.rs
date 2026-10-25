@@ -132,6 +132,13 @@ pub(crate) enum ParsedStmt {
     /// the list last. The nested declarations execute, but RakuAST displays the
     /// declaration that introduced the colon list. Lowers to a block of them.
     AttributeColonArglist(Vec<Stmt>),
+    /// `my ($a, @b) = RHS` (also `:=`, `state`, `our`, a typed or nested
+    /// group): the declaration as written. `rakuast::lower` expands it into
+    /// ordinary declarations reading a staging temporary
+    /// (`parser::signature_decl_expansion`). The parser holds it unlowered
+    /// (see `parser::stmt::decl::destructure::desugar::pending`) until the
+    /// statement modifiers and loose tails that read it have been parsed.
+    SignatureDecl(Box<super::SignatureDecl>),
     /// `:(...) := RHS`: the signature literal and the right-hand side as
     /// written. `rakuast::lower` expands the bind into temporary declarations
     /// and assignments (`ast::signature_bind::expand`).
@@ -605,6 +612,7 @@ impl ParsedStmt {
             | ParsedStmt::AttributeColonArglist(_)
             | ParsedStmt::MethodAssignDecl(_)
             | ParsedStmt::SignatureBind { .. }
+            | ParsedStmt::SignatureDecl(_)
             | ParsedStmt::CommaDecls(_) => Vec::new(),
             ParsedStmt::TakeLogicalTail { value, right, .. } => vec![value, right],
             ParsedStmt::ImmediateCall { args, .. } => args.iter().collect(),
@@ -650,6 +658,7 @@ impl ParsedStmt {
             | ParsedStmt::AttributeColonArglist(_)
             | ParsedStmt::MethodAssignDecl(_)
             | ParsedStmt::SignatureBind { .. }
+            | ParsedStmt::SignatureDecl(_)
             | ParsedStmt::CommaDecls(_)
             | ParsedStmt::TakeLogicalTail { .. }
             | ParsedStmt::Modified(_) => Vec::new(),

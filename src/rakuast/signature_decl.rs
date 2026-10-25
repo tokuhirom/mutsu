@@ -279,7 +279,8 @@ fn trait_name(param_trait: ParamTrait) -> &'static str {
     }
 }
 
-/// `VarDeclaration::Signature` -> the parser's expansion of the declaration.
+/// `VarDeclaration::Signature` -> the declaration as the parser holds it
+/// (`Stmt::Ast`), which the caller lowers.
 pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let signature = named_child(node, "signature")?;
     let type_constraint = match signature
@@ -339,7 +340,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             rhs: lower_expr(named_child_or_positional(init)?)?,
         }),
     };
-    crate::parser::signature_decl_expansion(SignatureDecl {
+    crate::parser::pending_declaration(SignatureDecl {
         vars,
         group_shape: has_nested_group.then_some(shape),
         is_state,

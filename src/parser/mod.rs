@@ -116,6 +116,8 @@ pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws, role_
 /// initializer; the RakuAST lowering re-plants the same one.
 pub(crate) use stmt::decl::attribute_type_seed;
 pub(crate) use stmt::decl::build_sigilless_bind_stmt;
+pub(crate) use stmt::decl::destructure::desugar::lower_pending as lower_pending_declaration;
+pub(crate) use stmt::decl::destructure::desugar::pending as pending_declaration;
 pub(crate) use stmt::decl::destructure::desugar::signature_decl as signature_decl_expansion;
 pub(crate) use stmt::decl::wrap_with_will_phasers;
 pub(crate) use stmt::decl::{attribute_compound_assign, expand_attribute_compound_assign};

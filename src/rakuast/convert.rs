@@ -390,9 +390,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Ok(Some(statement_expression(declaration)))
         }
         Stmt::SyntheticBlock(_) if source_form(stmt).is_some() => match source_form(stmt) {
-            Some(crate::ast::SourceForm::SignatureDecl(decl)) => Ok(Some(statement_expression(
-                super::signature_decl::convert(decl)?,
-            ))),
             // `my $x OP= EXPR`: the declaration as the left operand.
             Some(crate::ast::SourceForm::DeclarationCompoundAssign) => {
                 declaration_compound_assign_statement(stmt).map(Some)
@@ -3530,7 +3527,7 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 Stmt::Ast(node)
                     if matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::BindDecl(_) | crate::ast::parsed::ParsedStmt::SigillessDecl(_)
                         | crate::ast::parsed::ParsedStmt::AttributeGroup(_) | crate::ast::parsed::ParsedStmt::AttributeColonArglist(_)
-                        | crate::ast::parsed::ParsedStmt::MethodAssignDecl(_) | crate::ast::parsed::ParsedStmt::SignatureBind { .. })
+                        | crate::ast::parsed::ParsedStmt::MethodAssignDecl(_) | crate::ast::parsed::ParsedStmt::SignatureBind { .. } | crate::ast::parsed::ParsedStmt::SignatureDecl(_))
             ) =>
         {
             let statement = convert_stmt(stmt)?.ok_or_else(|| unsupported("declaration term"))?;
@@ -3650,9 +3647,6 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // A signature declaration in expression position (`if my ($a, $b) = …`).
         Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
-            Some(crate::ast::SourceForm::SignatureDecl(decl)) => {
-                super::signature_decl::convert(decl)
-            }
             Some(crate::ast::SourceForm::DeclarationCompoundAssign) => {
                 declaration_compound_assign(stmt)
             }

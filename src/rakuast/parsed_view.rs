@@ -106,6 +106,9 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
         ParsedStmt::AttributeColonArglist(attributes) => {
             statement_expression(super::attribute_group::convert_colon(attributes)?)
         }
+        ParsedStmt::SignatureDecl(decl) => {
+            statement_expression(super::signature_decl::convert(decl)?)
+        }
         ParsedStmt::SignatureBind { signature, rhs } => {
             statement_expression(super::convert::signature_bind_node(signature, rhs)?)
         }

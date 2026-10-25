@@ -26,7 +26,6 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
             v.visit_param(param_def);
             walk_stmts(v, body);
         }
-        SourceForm::SignatureDecl(declaration) => v.visit_signature_decl(declaration),
         SourceForm::RoutineTraits(items) => {
             for item in items {
                 match item {
