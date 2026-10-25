@@ -311,12 +311,11 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
     if let Some((after_op, op_name)) = parse_custom_compound_assign_op(r) {
         let (after_ws, _) = ws(after_op)?;
         if let Ok((r, rhs)) = parse_compound_assign_rhs_mode(after_ws, false, mode)
-            && let Ok(result) =
-                crate::parser::stmt::assign::written_routine_compound_assignment(
-                    expr.clone(),
-                    op_name,
-                    rhs,
-                )
+            && let Ok(result) = crate::parser::stmt::assign::written_routine_compound_assignment(
+                expr.clone(),
+                op_name,
+                rhs,
+            )
         {
             return Ok((r, result));
         }
