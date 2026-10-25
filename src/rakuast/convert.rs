@@ -6775,6 +6775,10 @@ pub(super) fn arg_list(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
         if is_injected_named_arg(a) {
             continue;
         }
+        if let Some(leaf) = super::passthrough::arg_leaf(a) {
+            fields.push(node_field(None, leaf));
+            continue;
+        }
         fields.push(node_field(None, convert_expr(a)?));
     }
     Ok(RakuAstNode {

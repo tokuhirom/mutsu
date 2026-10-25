@@ -82,6 +82,12 @@ pub(super) fn expr_leaf(expr: &Expr) -> Option<RakuAstNode> {
     leaf_node(Held::Expr(expr.clone()), None)
 }
 
+/// [`expr_leaf`] for a call argument, whose parent reads no class from it.
+// Cost: as [`expr_leaf`].
+pub(super) fn arg_leaf(expr: &Expr) -> Option<RakuAstNode> {
+    expr_leaf(expr)
+}
+
 /// The leaf for `stmt` written on `line`, as [`expr_leaf`].
 // Cost: O(s) to test and clone, s = nodes of `stmt`; O(1) outside a scope.
 pub(super) fn stmt_leaf(stmt: &Stmt, line: Option<i64>) -> Option<RakuAstNode> {
@@ -156,6 +162,7 @@ fn pure_stmt(stmt: &Stmt) -> bool {
         Stmt::Expr(e) => pure_expr(e),
         Stmt::Call { args, .. } => args.iter().all(|a| match a {
             CallArg::Positional(e) => pure_expr(e),
+            CallArg::Named { value, .. } => value.as_ref().is_none_or(pure_expr),
             _ => false,
         }),
         _ => false,
@@ -172,6 +179,9 @@ fn pure_expr(expr: &Expr) -> bool {
         Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name) | Expr::CodeVar(name) => {
             plain_name(name)
         }
+        Expr::BareWord(word) => word
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, ':' | '-' | '_')),
         Expr::StringInterpolation(parts) => parts.iter().all(pure_expr),
         Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => args.iter().all(pure_expr),
         Expr::MethodCall { target, args, .. } => pure_expr(target) && args.iter().all(pure_expr),
