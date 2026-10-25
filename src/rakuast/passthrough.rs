@@ -14,7 +14,7 @@
 //! [`stmt_leaf`] return `None`, and `convert` renders every construct as it
 //! always did.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{CallArg, Expr, Stmt};
@@ -27,6 +27,69 @@ enum Held {
 
 thread_local! {
     static TABLE: RefCell<Option<Vec<Held>>> = const { RefCell::new(None) };
+    /// Conversions of the operands a parent reads by node class.
+    static INSPECTING: Cell<u32> = const { Cell::new(0) };
+    /// Conversions of the parser's desugaring, recognized by statement shape.
+    static DESUGARED: Cell<u32> = const { Cell::new(0) };
+}
+
+fn blocked() -> bool {
+    INSPECTING.with(|c| c.get()) > 0 || DESUGARED.with(|c| c.get()) > 0
+}
+
+/// Marks a conversion whose caller reads the class of the node it gets back
+/// (a heredoc body must be a `QuotedString`, the operands of an assignment):
+/// no leaf is made inside it, except in the statements of a block it holds
+/// ([`Block`]).
+pub(super) struct Inspecting;
+
+impl Inspecting {
+    // Cost: O(1).
+    pub(super) fn enter() -> Self {
+        INSPECTING.with(|c| c.set(c.get() + 1));
+        Inspecting
+    }
+}
+
+impl Drop for Inspecting {
+    fn drop(&mut self) {
+        INSPECTING.with(|c| c.set(c.get() - 1));
+    }
+}
+
+/// Marks the conversion of a synthetic block: the statements inside keep the
+/// shape the parser gave them, however deep.
+pub(super) struct Desugared;
+
+impl Desugared {
+    // Cost: O(1).
+    pub(super) fn enter() -> Self {
+        DESUGARED.with(|c| c.set(c.get() + 1));
+        Desugared
+    }
+}
+
+impl Drop for Desugared {
+    fn drop(&mut self) {
+        DESUGARED.with(|c| c.set(c.get() - 1));
+    }
+}
+
+/// The statements of a block: whatever operand its parent reads by class, the
+/// statements are converted on their own.
+pub(super) struct Block(u32);
+
+impl Block {
+    // Cost: O(1).
+    pub(super) fn enter() -> Self {
+        Block(INSPECTING.with(|c| c.replace(0)))
+    }
+}
+
+impl Drop for Block {
+    fn drop(&mut self) {
+        INSPECTING.with(|c| c.set(self.0));
+    }
 }
 
 const LINE: &str = "leaf-line";
@@ -76,7 +139,7 @@ fn leaf_node(held: Held, line: Option<i64>) -> Option<RakuAstNode> {
 /// a lossless hot family.
 // Cost: O(e) to test and clone, e = nodes of `expr`; O(1) outside a scope.
 pub(super) fn expr_leaf(expr: &Expr) -> Option<RakuAstNode> {
-    if !TABLE.with(|t| t.borrow().is_some()) || !pure_expr(expr) {
+    if blocked() || !TABLE.with(|t| t.borrow().is_some()) || !pure_expr(expr) {
         return None;
     }
     leaf_node(Held::Expr(expr.clone()), None)
@@ -91,7 +154,7 @@ pub(super) fn arg_leaf(expr: &Expr) -> Option<RakuAstNode> {
 /// The leaf for `stmt` written on `line`, as [`expr_leaf`].
 // Cost: O(s) to test and clone, s = nodes of `stmt`; O(1) outside a scope.
 pub(super) fn stmt_leaf(stmt: &Stmt, line: Option<i64>) -> Option<RakuAstNode> {
-    if !TABLE.with(|t| t.borrow().is_some()) || !pure_stmt(stmt) {
+    if blocked() || !TABLE.with(|t| t.borrow().is_some()) || !pure_stmt(stmt) {
         return None;
     }
     leaf_node(Held::Stmt(stmt.clone()), line)
@@ -180,7 +243,10 @@ fn pure_stmt(stmt: &Stmt) -> bool {
             where_constraint: None,
             ..
         } => {
-            plain_name(name) && export_tags.is_empty() && custom_traits.is_empty() && pure_expr(expr)
+            plain_name(name)
+                && export_tags.is_empty()
+                && custom_traits.is_empty()
+                && pure_expr(expr)
         }
         Stmt::Call { args, .. } => args.iter().all(|a| match a {
             CallArg::Positional(e) => pure_expr(e),
