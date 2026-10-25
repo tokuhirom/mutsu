@@ -276,7 +276,10 @@ impl Interpreter {
         }
         // `(C = C.new)`: a bareword that names a type object, `Nil` or an
         // enum value is not a container, as in the statement form.
-        let store_name = self.package_container_store_name(code.const_sym(name_idx));
+        // A bareword target is keyed as a term (`\C`); the check reads the name
+        // the statement form stores under.
+        let store_name = crate::runtime::term_names::term_spelling(&name)
+            .map_or_else(|| name.clone(), str::to_string);
         let store_sym = crate::symbol::Symbol::intern(&store_name);
         self.check_bareword_store(&store_name, store_sym, &name, false)?;
         self.check_readonly_for_modify(&name)?;
