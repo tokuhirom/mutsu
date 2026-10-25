@@ -387,7 +387,8 @@ pub(crate) fn lower_dotty_statement(node: CompoundAssign, is_term: fn(&str) -> b
             name: name.clone(),
             expr: node.source,
             op: AssignOp::Assign,
-            target_is_sigilless: false,
+            // The bareword itself is the target, as in `C = C.new`.
+            target_is_sigilless: true,
         };
     }
     Stmt::Expr(lower_dotty(node, true, is_term))

@@ -12,6 +12,10 @@ sigilless term into that same assignment. So the program still dies as on
 rakudo, and `.AST` gives `ApplyDottyInfix(left => Type::Simple, infix => DottyInfix::CallAssign)`,
 as rakudo 2026.09 does.
 
+The assignment now marks its target sigilless, as `C = C.new` does. So
+inside `EVAL` (`EVAL Q[class D {}; D .= new]`) it dies with the same
+`X::Assignment::RO`, where it used to report `Variable '$D' is not declared`.
+
 `rakuast::lower` lowers a statement `ApplyDottyInfix` through the same
 statement form. It reads the node in one place (`dotty_parts`), whether the
 result is an expression or a statement.
