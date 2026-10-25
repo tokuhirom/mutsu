@@ -161,7 +161,8 @@ impl Interpreter {
     /// the bundled Rakudo-Core battery, which stays a FileSystem link elsewhere
     /// in the chain (upgradable through `mzef`, see the module docs). Only
     /// `core` reports it as installed; every other bundled battery stays out.
-    // Cost: O(f), f = files named by the distribution's META6.json.
+    // Cost: O(f), f = files named by the distribution's META6.json; the
+    // `name`/`ver` overwrite is O(1).
     pub(crate) fn bundled_core_distribution(&self) -> Option<Value> {
         let lib = self.module.bundled_lib_paths.iter().find(|lib| {
             Path::new(lib.as_str())
@@ -180,6 +181,13 @@ impl Interpreter {
             ValueView::Hash(map) => {
                 let mut m = (**map).clone();
                 m.insert("files".to_string(), files.clone());
+                // Rakudo's core repo holds the `rakudo` distribution, at the
+                // compiler's version (ADR-0104). The vendored battery keeps its
+                // own name and version; only this view of it is renamed.
+                let compat = Value::version_from_str(Self::RAKUDO_COMPAT_VERSION);
+                m.insert("name".to_string(), Value::str_from("rakudo"));
+                m.insert("ver".to_string(), compat.clone());
+                m.insert("version".to_string(), compat);
                 Value::hash_with_data(Value::hash_arc(m))
             }
             _ => meta,
