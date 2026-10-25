@@ -8,7 +8,7 @@ use MONKEY-SEE-NO-EVAL;
 # Stage 2, #14948). Multi-dimensional subscript assignments keep their shape.
 # This file passes under both mutsu and raku.
 
-plan 9;
+plan 10;
 
 sub last-statement(Str $src) { $src.AST.statements[*-1].expression }
 
@@ -27,6 +27,10 @@ is EVAL(Q[sub one($x) { $x }; my $x; one $x = 2 > 1 ?? "P" !! "Q"; $x].AST), 'P'
     'the variable holds it';
 is EVAL(Q[my @a; @a[0;1] = 5; @a[0][1]].AST), 5, 'a multi-dimensional subscript assignment';
 is EVAL(Q[my @a; @a[0;1] = 5; my $r = (@a[1;0] = 7); $r].AST), 7, '... in parentheses';
+
+# An immutable target in the argument still dies when the assignment runs.
+throws-like { EVAL Q[sub called($x) { $x }; called pi = 4] }, X::Assignment::RO,
+    'assigning to a constant in a call argument';
 
 # Rebuilding a tree from its `.raku` gives the same tree.
 my $ast = Q[sub one($x) { $x }; my $x; one $x = 1].AST;

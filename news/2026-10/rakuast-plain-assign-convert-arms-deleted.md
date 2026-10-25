@@ -6,6 +6,11 @@ now goes through `written_assignment`, like every other plain assignment
 (#14948). The `.AST` text and the results are unchanged; they match rakudo
 2026.09.
 
+The expression lowering of the typed node (`rakuast::assign_lower::lower_expression`)
+no longer has an unreachable arm. A target it does not name goes through the
+parser's general target expansion, so `called pi = 4` dies with
+`X::Assignment::RO` as before instead of panicking.
+
 A probe run over the RakuAST ratchet list and `t/rakuast` found that nothing
 reached the plain-assignment arms of `rakuast::convert` any more, so they are
 deleted:

@@ -71,9 +71,7 @@ pub(crate) fn is_item_target(target: &Expr) -> bool {
     }
 }
 
-/// Lower an assignment in expression position whose target
-/// [`is_expression_target`], [`is_callable_lvalue_target`] or
-/// [`is_item_target`].
+/// Lower an assignment in expression position.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_expression(node: Assign) -> Expr {
     let Assign { target, source } = node;
@@ -172,7 +170,10 @@ pub(crate) fn lower_expression(node: Assign) -> Expr {
         // `-$x = 5`, `c ?? $a !! $b = 1`, `$<c> = $0`, `($a || $b) = 1`,
         // `(my $v) = 1, 2`: write through the expression's result.
         target if is_callable_lvalue_target(&target) => callable_lvalue(target, Vec::new(), source),
-        other => unreachable!("not an assignment target: {other:?}"),
+        // Anything else (`pi = 4` in a call argument, a literal) is what the
+        // parser's general target expansion makes of it: an immutable target
+        // dies with `X::Assignment::RO` when the assignment runs.
+        other => crate::parser::assign_to_target_expr(other, source),
     }
 }
 
