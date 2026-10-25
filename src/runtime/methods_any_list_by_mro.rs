@@ -165,6 +165,11 @@ impl Interpreter {
                     ValueView::Array(..) | ValueView::Seq(..) => {
                         crate::builtins::flat_val(&item, &mut flat_items, true);
                     }
+                    // A bare Hash flattens to its pairs; an itemized one (`$h`,
+                    // an element of a `[...]`) stays single.
+                    ValueView::Hash(_) if !item.hash_is_itemized() => {
+                        crate::builtins::flat_val(&item, &mut flat_items, true);
+                    }
                     // Ranges are iterable values too. A mapper can
                     // return a Range (for example, `* * 2` applied to
                     // a Range), and `.flatmap` must flatten that
