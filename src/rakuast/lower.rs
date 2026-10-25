@@ -4310,9 +4310,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // A declaration used as a term (`push my @u, 1`, `@a[1] := my $x`,
         // `foo(my $e = %())`): the parser carries a statement in expression
         // position as a `DoStmt`.
-        RakuAstClass::VarDeclarationSimple => Ok(Expr::DoStmt(Box::new(
-            lower_expression_declaration(node)?,
-        ))),
+        RakuAstClass::VarDeclarationSimple => {
+            Ok(Expr::DoStmt(Box::new(lower_expression_declaration(node)?)))
+        }
         RakuAstClass::VarDeclarationTerm
         | RakuAstClass::VarDeclarationConstant
         | RakuAstClass::TypeEnum
