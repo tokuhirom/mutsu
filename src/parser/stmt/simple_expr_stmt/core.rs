@@ -78,8 +78,16 @@ fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
                 rhs,
             )
         }
-        Expr::Call { name, args, .. } => named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
+        // The assignment node, target as written; its lowering
+        // (`rakuast::assign_lower`) makes the same writeback.
+        call @ Expr::Call { .. } => crate::parser::stmt::assign::written_assignment(call, rhs),
+        spelled @ Expr::Spelled(_) if crate::rakuast::is_expression_assign_target(&spelled) => {
+            crate::parser::stmt::assign::written_assignment(spelled, rhs)
+        }
         Expr::CallOn { target, args } => callable_lvalue_assign_expr(*target, args, rhs),
+        other if crate::rakuast::is_callable_lvalue_assign_target(&other) => {
+            crate::parser::stmt::assign::written_assignment(other, rhs)
+        }
         other => callable_lvalue_assign_expr(other, Vec::new(), rhs),
     }
 }
@@ -825,6 +833,29 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     body: vec![Stmt::Expr(lvalue_assign_to_expr(inner, rhs))],
                     catch,
                 })
+            }
+            // The same for the `try` a `.AST` parse spells as written.
+            Expr::Spelled(spelled)
+                if matches!(
+                    spelled.spelling,
+                    crate::ast::spelled::Spelling::BareStatement
+                ) && matches!(&spelled.expr, Expr::Try { body, .. }
+                        if matches!(body.as_slice(), [Stmt::Expr(_)])) =>
+            {
+                let Expr::Try { body, catch } = spelled.expr else {
+                    unreachable!("matched above");
+                };
+                let inner = match body.into_iter().next() {
+                    Some(Stmt::Expr(e)) => e,
+                    _ => unreachable!(),
+                };
+                Stmt::Expr(Expr::spelled(
+                    Expr::Try {
+                        body: vec![Stmt::Expr(lvalue_assign_to_expr(inner, rhs))],
+                        catch,
+                    },
+                    || crate::ast::spelled::Spelling::BareStatement,
+                ))
             }
             // `-$x = 5`, `$<c> = $0`, `($a || $b) = 1`, `(my $v) = 1, 2`: the
             // assignment node, written through the target's result.
