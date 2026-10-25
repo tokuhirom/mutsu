@@ -27,8 +27,17 @@ enum Held {
     Stmt(Stmt),
 }
 
+/// A tree a leaf carries, and whether it holds a spelling or a kept
+/// construct that has to be undone before the compiler sees it.
+struct Slot {
+    held: Held,
+    fixup: bool,
+}
+
 thread_local! {
-    static TABLE: RefCell<Option<Vec<Held>>> = const { RefCell::new(None) };
+    static TABLE: RefCell<Option<Vec<Option<Slot>>>> = const { RefCell::new(None) };
+    /// Set by the purity test on meeting a spelling or a kept construct.
+    static FIXUP: Cell<bool> = const { Cell::new(false) };
     /// Conversions of the operands a parent reads by node class.
     static INSPECTING: Cell<u32> = const { Cell::new(0) };
     /// Conversions of the parser's desugaring, recognized by statement shape.
@@ -98,7 +107,7 @@ const LINE: &str = "leaf-line";
 
 /// The table of trees a round trip is carrying; installed by the executing
 /// round trip, restored (so a nested one is independent) when dropped.
-pub(super) struct Scope(Option<Vec<Held>>);
+pub(super) struct Scope(Option<Vec<Option<Slot>>>);
 
 impl Scope {
     // Cost: O(1).
@@ -113,11 +122,11 @@ impl Drop for Scope {
     }
 }
 
-fn leaf_node(held: Held, line: Option<i64>) -> Option<RakuAstNode> {
+fn leaf_node(held: Held, fixup: bool, line: Option<i64>) -> Option<RakuAstNode> {
     let slot = TABLE.with(|t| {
         let mut table = t.borrow_mut();
         let table = table.as_mut()?;
-        table.push(held);
+        table.push(Some(Slot { held, fixup }));
         Some(table.len() as i64 - 1)
     })?;
     let mut fields = vec![RakuAstField {
@@ -141,10 +150,14 @@ fn leaf_node(held: Held, line: Option<i64>) -> Option<RakuAstNode> {
 /// a lossless hot family.
 // Cost: O(e) to test and clone, e = nodes of `expr`; O(1) outside a scope.
 pub(super) fn expr_leaf(expr: &Expr) -> Option<RakuAstNode> {
-    if blocked() || !TABLE.with(|t| t.borrow().is_some()) || !pure_expr(expr) {
+    if blocked() || !TABLE.with(|t| t.borrow().is_some()) {
         return None;
     }
-    leaf_node(Held::Expr(expr.clone()), None)
+    FIXUP.with(|f| f.set(false));
+    if !pure_expr(expr) {
+        return None;
+    }
+    leaf_node(Held::Expr(expr.clone()), FIXUP.with(Cell::get), None)
 }
 
 /// [`expr_leaf`] for a call argument, whose parent reads no class from it.
@@ -156,10 +169,14 @@ pub(super) fn arg_leaf(expr: &Expr) -> Option<RakuAstNode> {
 /// The leaf for `stmt` written on `line`, as [`expr_leaf`].
 // Cost: O(s) to test and clone, s = nodes of `stmt`; O(1) outside a scope.
 pub(super) fn stmt_leaf(stmt: &Stmt, line: Option<i64>) -> Option<RakuAstNode> {
-    if blocked() || !TABLE.with(|t| t.borrow().is_some()) || !pure_stmt(stmt) {
+    if blocked() || !TABLE.with(|t| t.borrow().is_some()) {
         return None;
     }
-    leaf_node(Held::Stmt(stmt.clone()), line)
+    FIXUP.with(|f| f.set(false));
+    if !pure_stmt(stmt) {
+        return None;
+    }
+    leaf_node(Held::Stmt(stmt.clone()), FIXUP.with(Cell::get), line)
 }
 
 // Cost: O(1).
@@ -192,14 +209,21 @@ pub(super) fn line_of(node: &RakuAstNode) -> Option<i64> {
 
 fn held(node: &RakuAstNode) -> Result<Held, RuntimeError> {
     let at = slot(node)?;
-    let held = TABLE.with(|t| {
-        let table = t.borrow();
-        match table.as_ref().and_then(|t| t.get(at)) {
-            Some(Held::Expr(e)) => Ok(Held::Expr(e.clone())),
-            Some(Held::Stmt(s)) => Ok(Held::Stmt(s.clone())),
-            None => Err(RuntimeError::new("round-trip leaf outside its scope")),
-        }
-    })?;
+    // Some lowerings read a node more than once, so the tree is cloned out.
+    let (held, fixup) = TABLE
+        .with(|t| {
+            let table = t.borrow();
+            let slot = table.as_ref()?.get(at)?.as_ref()?;
+            let held = match &slot.held {
+                Held::Expr(e) => Held::Expr(e.clone()),
+                Held::Stmt(s) => Held::Stmt(s.clone()),
+            };
+            Some((held, slot.fixup))
+        })
+        .ok_or_else(|| RuntimeError::new("round-trip leaf outside its scope"))?;
+    if !fixup {
+        return Ok(held);
+    }
     // The spelled parse keeps the constructs of a migrated family in their
     // RakuAST shape; an executing parse lowers each where it is built.
     let mut lowering = Kept(None);
@@ -311,7 +335,10 @@ fn pure_stmt(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::SetLine(..) | Stmt::Last(_) | Stmt::Next(_) | Stmt::Redo(_) => true,
         Stmt::Block(body) => body.iter().all(pure_stmt),
-        Stmt::Ast(node) => pure_parsed(node),
+        Stmt::Ast(node) => {
+            FIXUP.with(|f| f.set(true));
+            pure_parsed(node)
+        }
         Stmt::For {
             iterable,
             param_def,
@@ -440,11 +467,17 @@ fn pure_expr(expr: &Expr) -> bool {
         Expr::Gather(body) | Expr::Once { body } | Expr::PhaserExpr { body, .. } => {
             body.iter().all(pure_stmt)
         }
-        Expr::Spelled(spelled) => pure_expr(&spelled.expr),
-        Expr::Ast(node) => match node.as_ref() {
-            ParsedExpr::Assign(a) => pure_expr(&a.target) && pure_expr(&a.source),
-            _ => false,
-        },
+        Expr::Spelled(spelled) => {
+            FIXUP.with(|f| f.set(true));
+            pure_expr(&spelled.expr)
+        }
+        Expr::Ast(node) => {
+            FIXUP.with(|f| f.set(true));
+            match node.as_ref() {
+                ParsedExpr::Assign(a) => pure_expr(&a.target) && pure_expr(&a.source),
+                _ => false,
+            }
+        }
         Expr::PostfixOp { expr, .. } => pure_expr(expr),
         Expr::DoStmt(stmt) => pure_stmt(stmt),
         Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => !has_code(tree),
