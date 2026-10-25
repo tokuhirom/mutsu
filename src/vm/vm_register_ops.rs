@@ -497,9 +497,11 @@ impl Interpreter {
                 // environment of the closure itself; the class declaration
                 // frame's capture is not its scope (it lacks the `$attr` /
                 // `$name` the closure read from its creator).
-                if def.captured_env.as_ref().is_some_and(|env| {
-                    env.contains_key("__mutsu_declared_method_capture")
-                }) {
+                if def
+                    .captured_env
+                    .as_ref()
+                    .is_some_and(|env| env.contains_key("__mutsu_declared_method_capture"))
+                {
                     return;
                 }
                 let key = std::sync::Arc::as_ptr(method_code) as usize;
