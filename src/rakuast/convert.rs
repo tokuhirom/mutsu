@@ -2633,9 +2633,6 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
 }
 
 fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    if let Some(leaf) = super::passthrough::expr_leaf(expr) {
-        return Ok(leaf);
-    }
     if let Some(node) = super::deferred_name::convert(expr) {
         return node;
     }
