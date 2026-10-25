@@ -74,7 +74,7 @@ pub(crate) fn round_trip_if_enabled(
     if !covers(unit) {
         return Ok(stmts);
     }
-    round_trip(&stmts).map_err(refusal)
+    round_trip_owned(stmts).map_err(refusal)
 }
 
 /// A refusal of the round trip as the mode reports it. An error that already
@@ -94,9 +94,15 @@ fn refusal(err: RuntimeError) -> RuntimeError {
 /// `parse → RakuAST → lower`, the pipeline the RakuAST frontend replaces the
 /// parser's tree with.
 pub(crate) fn round_trip(stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
+    round_trip_owned(stmts.to_vec())
+}
+
+/// [`round_trip`] for a unit the caller owns: the origins come off the tree
+/// in place, with no copy of it.
+// Cost: O(n), n = size of the unit.
+pub(crate) fn round_trip_owned(mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
     // The conversion matches expressions by shape, so the term origins the
     // spelled parse kept come off first (`expr_origins`).
-    let mut stmts = stmts.to_vec();
     let _origins = super::expr_origins::strip(&mut stmts);
     let node = super::convert::statement_list(&stmts)?;
     let mut lowered = super::lower(&node)?;

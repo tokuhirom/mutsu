@@ -650,8 +650,10 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
 /// calls.  Used for operands of tight prefix operators like `^` so that
 /// `^10 .batch(3)` parses as `(^10).batch(3)` rather than `^(10.batch(3))`.
 fn postfix_expr_tight(input: &str) -> PResult<'_, Expr> {
-    let (rest, expr) = postfix_expr_inner(input, false)?;
-    crate::parser::primary::note_origin(input, rest, &expr);
+    let (rest, (expr, postfixed)) = postfix_expr_inner(input, false)?;
+    if postfixed {
+        crate::parser::primary::note_origin(input, rest, &expr);
+    }
     Ok((rest, expr))
 }
 
@@ -690,13 +692,19 @@ pub(in crate::parser) fn postfix_expr_continue_from<'a>(
 
 /// Postfix: method calls (.method), indexing ([]), ++, --
 pub(super) fn postfix_expr(input: &str) -> PResult<'_, Expr> {
-    let (rest, expr) = postfix_expr_inner(input, true)?;
-    crate::parser::primary::note_origin(input, rest, &expr);
+    let (rest, (expr, postfixed)) = postfix_expr_inner(input, true)?;
+    if postfixed {
+        crate::parser::primary::note_origin(input, rest, &expr);
+    }
     Ok((rest, expr))
 }
 
-fn postfix_expr_inner(input: &str, allow_ws_dot: bool) -> PResult<'_, Expr> {
+/// The term, and whether the postfix loop moved the remainder past what
+/// `primary` read: when it did not, the term is the one `primary` already
+/// noted at the same range.
+fn postfix_expr_inner(input: &str, allow_ws_dot: bool) -> PResult<'_, (Expr, bool)> {
     let (rest, expr) = primary(input)?;
+    let primary_rest = rest.as_ptr();
 
     // Type smiley: Any:U, Int:D, Str:D etc.
     // Consume and ignore — runtime doesn't use definedness constraints yet.
@@ -730,14 +738,15 @@ fn postfix_expr_inner(input: &str, allow_ws_dot: bool) -> PResult<'_, Expr> {
     // `my $x`, the `gather EXPR` statement prefix); record it so a following
     // `{ ... }` is still recognised as a separate block, not a subscript.
     let ends_with_ws = consumed.is_some_and(|c| c.ends_with(char::is_whitespace));
-    postfix_expr_loop_from(
+    let (rest, expr) = postfix_expr_loop_from(
         rest,
         expr,
         allow_ws_dot,
         brace_state,
         ends_with_ws,
         Some(input),
-    )
+    )?;
+    Ok((rest, (expr, rest.as_ptr() != primary_rest)))
 }
 
 /// The span of `input` consumed to reach `rest`, IF `rest` really is a suffix

@@ -31,8 +31,10 @@
 //! term that has one; a range that does not is dropped.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
+
+use rustc_hash::{FxHashMap as HashMap, FxHasher};
 
 use crate::ast::spelled::{Spelled, Spelling};
 use crate::ast::{Expr, SrcSpan, Stmt};
@@ -72,7 +74,7 @@ pub(crate) fn begin(keep: bool) -> Recording {
 /// without them.
 // Cost: O(n), n = size of `expr` (twice when it holds a marker).
 fn fingerprint(expr: &Expr) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut hasher = FxHasher::default();
     if HasMarker::in_expr(expr) {
         let mut plain = expr.clone();
         Uncurry.visit_expr_mut(&mut plain);
@@ -128,6 +130,26 @@ impl VisitMut for Uncurry {
     }
 }
 
+thread_local! {
+    /// The source positions and node kind of the term noted last.
+    static LAST: std::cell::Cell<(usize, usize, Option<std::mem::Discriminant<Expr>>)> =
+        const { std::cell::Cell::new((0, 0, None)) };
+}
+
+/// Whether `expr`, read from `input` up to `rest`, is not the term noted just
+/// before: a term passes through several parsers (`primary`, the postfix
+/// loop, the prefix level) that each note what they return, and a parser that
+/// added nothing returns the term it was given. Remembers the term.
+// Cost: O(1).
+pub(crate) fn is_new(input: &str, rest: &str, expr: &Expr) -> bool {
+    let this = (
+        input.as_ptr() as usize,
+        rest.as_ptr() as usize,
+        Some(std::mem::discriminant(expr)),
+    );
+    LAST.with(|last| last.replace(this) != this)
+}
+
 /// Note that the parser read `expr` from `span`.
 // Cost: O(1) when not noting, O(n) otherwise, n = size of `expr`.
 pub(crate) fn note(expr: &Expr, span: SrcSpan) {
@@ -156,7 +178,7 @@ pub(crate) fn attach(stmts: &mut [Stmt]) {
         terms: Vec::new(),
         statements: Vec::new(),
         next: 0,
-        ranges: HashMap::new(),
+        ranges: HashMap::default(),
         enclosing: Vec::new(),
     };
     crate::ast_visit::walk_stmts_mut(&mut walk, stmts);
@@ -188,12 +210,12 @@ fn matched_ranges(
     notes: Vec<(u64, SrcSpan)>,
     terms: &[(SrcSpan, u64)],
     statements: Vec<SrcSpan>,
-) -> HashMap<Key, std::collections::VecDeque<SrcSpan>> {
-    let mut wanted: HashMap<Key, usize> = HashMap::new();
+) -> HashMap<Key, VecDeque<SrcSpan>> {
+    let mut wanted: HashMap<Key, usize> = HashMap::default();
     for &(statement, print) in terms {
         *wanted.entry(key(statement, print)).or_default() += 1;
     }
-    let mut noted: HashMap<Key, Vec<SrcSpan>> = HashMap::new();
+    let mut noted: HashMap<Key, Vec<SrcSpan>> = HashMap::default();
     for (statement, print, span) in bucket_by_statement(notes, statements) {
         noted.entry(key(statement, print)).or_default().push(span);
     }
@@ -216,7 +238,12 @@ fn bucket_by_statement(
     mut notes: Vec<(u64, SrcSpan)>,
     mut statements: Vec<SrcSpan>,
 ) -> Vec<(SrcSpan, u64, SrcSpan)> {
-    notes.sort_by_key(|(_, s)| (s.from, s.to));
+    // A parse reads the same term at the same place many times over (every
+    // precedence level, every abandoned alternative); only the distinct
+    // (fingerprint, range) pairs say anything, and `matched_ranges` dedups
+    // the ranges per fingerprint anyway.
+    notes.sort_unstable_by_key(|(print, s)| (s.from, s.to, *print));
+    notes.dedup();
     statements.retain(|s| s.is_some());
     statements.sort_by_key(|s| (s.from, std::cmp::Reverse(s.to)));
     statements.dedup();
@@ -271,7 +298,7 @@ struct Walk {
     /// Pass 2: the index into `terms` of the next term.
     next: usize,
     /// Pass 2: the ranges still to attach per (statement, fingerprint).
-    ranges: HashMap<Key, std::collections::VecDeque<SrcSpan>>,
+    ranges: HashMap<Key, VecDeque<SrcSpan>>,
     /// Pass 2: the ranges of the attached terms enclosing the current one.
     enclosing: Vec<SrcSpan>,
 }
@@ -419,6 +446,28 @@ mod tests {
             out,
             vec![(sp(3, 5), 1, sp(3, 5)), (sp(0, 12), 1, sp(9, 11))]
         );
+    }
+
+    #[test]
+    fn a_term_read_again_is_noted_once() {
+        // The same fingerprint at the same range, read by several parsers.
+        let out = bucket_by_statement(
+            vec![(1, sp(3, 5)), (1, sp(3, 5)), (2, sp(3, 5)), (1, sp(3, 5))],
+            vec![sp(0, 12)],
+        );
+        assert_eq!(out, vec![(sp(0, 12), 1, sp(3, 5)), (sp(0, 12), 2, sp(3, 5))]);
+    }
+
+    #[test]
+    fn is_new_skips_only_the_term_just_noted() {
+        let text = "1 + 2";
+        let (a, b) = (&text[0..1], &text[1..]);
+        let one = Expr::Literal(crate::value::Value::int(1));
+        let two = Expr::Literal(crate::value::Value::int(2));
+        assert!(is_new(a, b, &one));
+        assert!(!is_new(a, b, &one));
+        assert!(!is_new(a, b, &two), "same range and kind: the same term");
+        assert!(is_new(b, a, &one), "another range is another term");
     }
 
     #[test]
