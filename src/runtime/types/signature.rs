@@ -625,6 +625,70 @@ pub(in crate::runtime) fn sub_signature_matches_value(
     sub_params: &[ParamDef],
     value: &Value,
 ) -> bool {
+    // A `where` of one sub-parameter may name the sub-parameters bound before
+    // it (`:left($rl) where { compare $ll, $rl }`), so each candidate is bound
+    // by name while the match runs; the env is put back afterwards.
+    if !sub_params.iter().any(|pd| pd.where_constraint.is_some()) {
+        return sub_signature_matches_value_unbound(interpreter, sub_params, value);
+    }
+    let saved = interpreter.env.clone();
+    let matched = sub_signature_matches_value_unbound(interpreter, sub_params, value);
+    interpreter.env = saved;
+    matched
+}
+
+/// Bind the variables a destructuring sub-signature introduces to the parts of
+/// `value` they take, so a LATER parameter's `where` can name them during
+/// multi dispatch (`GeGt $r (:left($rl) where { compare $ll, $rl }, |)` after
+/// `GeGt $l (:left($ll), |)`). Names only: no readonly marks, no checks (the
+/// caller has just matched `value` against `sub_params`).
+// Cost: O(p), p = the sub-signature's parameters.
+pub(in crate::runtime) fn bind_sub_signature_names_for_dispatch(
+    interpreter: &mut Interpreter,
+    sub_params: &[ParamDef],
+    value: &Value,
+) {
+    let value = &interpreter.coerce_via_user_capture(&value.deref_container());
+    let positional = drop_pairs_captured_as_named(value, positional_values_from_unpack_target(value));
+    let mut positional_idx = 0usize;
+    for pd in sub_params {
+        if pd.slurpy {
+            continue;
+        }
+        let candidate = if pd.named {
+            extract_named_from_unpack_target(interpreter, value, &pd.name)
+        } else {
+            let v = positional.get(positional_idx).cloned();
+            positional_idx += 1;
+            v
+        };
+        if let Some(candidate) = candidate {
+            bind_sub_param_candidate_names(interpreter, pd, &candidate);
+        }
+    }
+}
+
+/// Bind the variables a sub-parameter introduces (its own name, or the
+/// `:key($var)` rename targets) to its candidate for later `where` checks.
+fn bind_sub_param_candidate_names(interpreter: &mut Interpreter, pd: &ParamDef, candidate: &Value) {
+    if is_named_rename_sub_signature(pd) {
+        if let Some(sub) = &pd.sub_signature {
+            for leaf in sub {
+                bind_sub_param_candidate_names(interpreter, leaf, candidate);
+            }
+        }
+    } else if !pd.name.is_empty() && !pd.name.starts_with("__") {
+        interpreter
+            .env
+            .insert(pd.storage_name().into_owned(), candidate.clone());
+    }
+}
+
+fn sub_signature_matches_value_unbound(
+    interpreter: &mut Interpreter,
+    sub_params: &[ParamDef],
+    value: &Value,
+) -> bool {
     let value = &interpreter.coerce_via_user_capture(value);
     let mut positional = positional_values_from_unpack_target(value);
     // A `Pair` element of a list is a named part of that list's Capture
@@ -718,6 +782,9 @@ pub(in crate::runtime) fn sub_signature_matches_value(
             && !named_param_parens_accept(interpreter, pd, sub, &candidate)
         {
             return false;
+        }
+        if sub_params.iter().any(|p| p.where_constraint.is_some()) {
+            bind_sub_param_candidate_names(interpreter, pd, &candidate);
         }
         if let Some(where_expr) = &pd.where_constraint
             && !where_constraint_matches(interpreter, where_expr, pd, &candidate)
@@ -1342,6 +1409,11 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
         // A `where` clause on a destructured leaf (`*@ ($x where { ... })`)
         // rejects the value like a top-level parameter's does (#10989).
         if sub_pd.where_constraint.is_some() && !sub_pd.name.is_empty() {
+            // `:left($ll) where { $ll == 5 }`: the `where` names the rename
+            // target, which is bound only after the checks below.
+            if is_named_rename_sub_signature(sub_pd) {
+                bind_sub_param_candidate_names(interpreter, sub_pd, &candidate);
+            }
             let name_sym = Symbol::intern(&sub_pd.name);
             interpreter.check_positional_param_where_constraint(
                 sub_pd,

@@ -804,6 +804,13 @@ impl Interpreter {
                     if !sub_signature_matches_value(self, sub_params, arg) {
                         return false;
                     }
+                    // A later parameter's `where` may name what this
+                    // destructure bound (`:left($rl) where { compare $ll, $rl }`).
+                    if needs_outer_bind {
+                        super::signature::bind_sub_signature_names_for_dispatch(
+                            self, sub_params, arg,
+                        );
+                    }
                     // `is rw` narrowing for subsignature params: an `is rw`
                     // parameter only binds to a writable variable argument, so a
                     // candidate whose subsignature requires `is rw` must not match
