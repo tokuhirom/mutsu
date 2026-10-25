@@ -3119,24 +3119,24 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         return Ok(Stmt::Ast(Box::new(
             crate::ast::parsed::ParsedStmt::MethodAssignDecl(Box::new(
                 crate::ast::method_assign_decl::MethodAssignDecl {
-                name,
-                anonymous,
-                type_constraint,
-                is_state,
-                is_our,
-                is_dynamic,
-                is_export,
-                export_tags: export_tags.clone(),
-                custom_traits,
-                where_constraint: None,
-                method: crate::symbol::Symbol::intern(&method),
-                callee: callee.map(Box::new),
-                args,
-                chain: None,
-                // The parser keeps a shaped `.=` declaration's dimensions for
-                // its source only (`my @c[2;2] .= new(:shape(2,2), …)`).
-                shape: shape_dims,
-                is_v6c: crate::parser::current_language_version_starts_with("6.c"),
+                    name,
+                    anonymous,
+                    type_constraint,
+                    is_state,
+                    is_our,
+                    is_dynamic,
+                    is_export,
+                    export_tags: export_tags.clone(),
+                    custom_traits,
+                    where_constraint: None,
+                    method: crate::symbol::Symbol::intern(&method),
+                    callee: callee.map(Box::new),
+                    args,
+                    chain: None,
+                    // The parser keeps a shaped `.=` declaration's dimensions for
+                    // its source only (`my @c[2;2] .= new(:shape(2,2), …)`).
+                    shape: shape_dims,
+                    is_v6c: crate::parser::current_language_version_starts_with("6.c"),
                 },
             )),
         )));
