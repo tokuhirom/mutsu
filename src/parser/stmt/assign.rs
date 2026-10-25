@@ -182,12 +182,12 @@ pub(in crate::parser) use comma::{
     parse_comma_or_expr_item_no_word_logical, parse_comma_or_expr_no_word_logical,
 };
 pub(crate) use compound_lower::{
-    lower_compound_expression, lower_compound_statement, lower_dotty,
+    lower_compound_expression, lower_compound_statement, lower_dotty, lower_dotty_statement,
     written_bracketed_meta_assignment, written_compound_assignment,
-    written_compound_assignment_stmt, written_dotty_assignment, written_meta_assignment,
-    written_meta_assignment_stmt, written_reverse_assignment, written_routine_compound_assignment,
-    written_routine_compound_assignment_stmt, written_set_assignment,
-    written_topic_dotty_assignment,
+    written_compound_assignment_stmt, written_dotty_assignment, written_dotty_assignment_stmt,
+    written_meta_assignment, written_meta_assignment_stmt, written_reverse_assignment,
+    written_routine_compound_assignment, written_routine_compound_assignment_stmt,
+    written_set_assignment, written_topic_dotty_assignment,
 };
 pub(in crate::parser) use try_assign::{paren_assign_rhs_is_complete, try_parse_assign_expr};
 

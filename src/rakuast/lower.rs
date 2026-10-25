@@ -381,7 +381,7 @@ fn lower_stmt_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::VarDeclarationConstant => lower_constant(node),
         RakuAstClass::VarDeclarationTerm => lower_term_declaration(node),
         RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_statement(node),
-        RakuAstClass::ApplyDottyInfix => Ok(Stmt::Expr(lower_dotty_assign(node, true)?)),
+        RakuAstClass::ApplyDottyInfix => lower_dotty_statement(node),
         RakuAstClass::TermTopicCall if let Some(compound) = topic_dotty_node(node)? => {
             crate::parser::lower_compound_statement(compound).map_err(RuntimeError::new)
         }
@@ -1020,10 +1020,6 @@ fn lower_term_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     )
 }
 
-/// `ApplyDottyInfix(left, DottyInfix::CallAssign, Call::Method)` -> the
-/// parser's `.=` expansion. As a statement, `$_ .= meth` is the topic form that
-/// can write through a read-only whole-container topic.
-// Cost: O(n), n = size of the target and the arguments.
 /// `Term::TopicCall` over a method call with the `.=` dispatch (`.= meth`
 /// written with no target) as the typed node the parser builds for it;
 /// `None` for any other topic call.
@@ -1060,10 +1056,45 @@ fn topic_dotty_node(
     }))
 }
 
+/// `ApplyDottyInfix(left, DottyInfix::CallAssign, Call::Method)` -> the
+/// parser's `.=` expansion. As a statement, `$_ .= meth` is the topic form that
+/// can write through a read-only whole-container topic.
+// Cost: O(n), n = size of the target and the arguments.
 pub(super) fn lower_dotty_assign(
     node: &RakuAstNode,
     as_statement: bool,
 ) -> Result<Expr, RuntimeError> {
+    Ok(match dotty_parts(node)? {
+        Dotty::Call(call) => call,
+        Dotty::Assign(compound) => crate::parser::lower_dotty_assignment(
+            compound,
+            as_statement,
+            super::shadowed_terms::is_declared_term,
+        ),
+    })
+}
+
+/// [`lower_dotty_assign`] written as a statement, which a type object's `.=`
+/// (`C .= new`) lowers to the assignment to it.
+// Cost: O(n), n = size of the target and the arguments.
+fn lower_dotty_statement(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    Ok(match dotty_parts(node)? {
+        Dotty::Call(call) => Stmt::Expr(call),
+        Dotty::Assign(compound) => {
+            crate::parser::lower_dotty_statement(compound, super::shadowed_terms::is_declared_term)
+        }
+    })
+}
+
+/// What an `ApplyDottyInfix` reads as: the method call itself (`TERM .meth`),
+/// or the typed `.=` node.
+enum Dotty {
+    Call(Expr),
+    Assign(crate::ast::parsed::CompoundAssign),
+}
+
+// Cost: O(n), n = size of the target and the arguments.
+fn dotty_parts(node: &RakuAstNode) -> Result<Dotty, RuntimeError> {
     let target = lower_expr(named_child(node, "left")?)?;
     let call = named_child(node, "right")?;
     // `TERM .meth`: the dotty infix call is the method call itself.
@@ -1071,7 +1102,7 @@ pub(super) fn lower_dotty_assign(
         if !is_method_call(call) && !super::dynamic_method::is_dynamic(call) {
             return Err(unsupported(node));
         }
-        return lower_method_postfix(target, call);
+        return Ok(Dotty::Call(lower_method_postfix(target, call)?));
     }
     let template = if call.class == RakuAstClass::MetaPostfixHyper {
         let inner = named_child_or_positional(call)?;
@@ -1100,16 +1131,12 @@ pub(super) fn lower_dotty_assign(
         lower_method_postfix(Expr::Literal(Value::NIL), call)?
     };
     let call = crate::parser::retarget_dotty_call(&template, target.clone());
-    Ok(crate::parser::lower_dotty_assignment(
-        crate::ast::parsed::CompoundAssign {
-            target,
-            op: ".".to_string(),
-            meta: crate::ast::parsed::CompoundMeta::Dotty,
-            source: call,
-        },
-        as_statement,
-        super::shadowed_terms::is_declared_term,
-    ))
+    Ok(Dotty::Assign(crate::ast::parsed::CompoundAssign {
+        target,
+        op: ".".to_string(),
+        meta: crate::ast::parsed::CompoundMeta::Dotty,
+        source: call,
+    }))
 }
 
 fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
