@@ -52,12 +52,17 @@ enum Mode {
 /// The `MUTSU_RAKUAST` setting. Read once per process.
 fn mode() -> Mode {
     static MODE: OnceLock<Mode> = OnceLock::new();
-    *MODE.get_or_init(|| match std::env::var("MUTSU_RAKUAST").as_deref() {
-        Ok("1") => Mode::ProgramUnits,
-        Ok("all") => Mode::All,
-        Ok("convert") => Mode::Convert,
+    *MODE.get_or_init(|| parse_mode(std::env::var("MUTSU_RAKUAST").ok().as_deref()))
+}
+
+// Cost: O(1).
+fn parse_mode(value: Option<&str>) -> Mode {
+    match value {
+        Some("1") => Mode::ProgramUnits,
+        Some("all") => Mode::All,
+        Some("convert") => Mode::Convert,
         _ => Mode::Off,
-    })
+    }
 }
 
 /// Whether the `MUTSU_RAKUAST` mode runs a unit of this kind through the round
@@ -153,6 +158,15 @@ pub(crate) fn with_caller_names<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn convert_mode_covers_program_units_without_the_passthrough() {
+        assert_eq!(parse_mode(Some("convert")), Mode::Convert);
+        assert_eq!(parse_mode(Some("1")), Mode::ProgramUnits);
+        assert_eq!(parse_mode(Some("all")), Mode::All);
+        assert_eq!(parse_mode(None), Mode::Off);
+        assert_eq!(parse_mode(Some("0")), Mode::Off);
+    }
 
     #[test]
     fn unmodelled_literal_refuses_instead_of_falling_back() {
