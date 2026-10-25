@@ -33,7 +33,11 @@ TMP="$OUT.partial"
 
 printf 'path\tplan\tok\tnotok\ttodo\tsorry\texit\traku_status\twhitelisted\n' > "$TMP"
 
-while read -r f; do
+# One file -> one TSV row. Run in parallel (RAKU_BASELINE_JOBS, default 1 to keep
+# timings comparable with older captures); rows are sorted by path afterwards, so
+# the output does not depend on the job count.
+baseline_row() {
+  f=$1
   out=$(timeout "$TIMEOUT" "$RAKU" "$f" </dev/null 2>&1)
   ec=$?
   plan=$(printf '%s\n' "$out" | grep -oE '^1\.\.[0-9]+' | head -1 | sed 's/1\.\.//')
@@ -54,8 +58,14 @@ while read -r f; do
   if grep -qxF "$f" roast-whitelist.txt; then wl=1; else wl=0; fi
 
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$f" "$plan" "$ok" "$notok" "$todo" "$sorry" "$ec" "$st" "$wl" >> "$TMP"
-done < <(find roast -name '*.t' -type f | LC_ALL=C sort)
+    "$f" "$plan" "$ok" "$notok" "$todo" "$sorry" "$ec" "$st" "$wl"
+}
+export -f baseline_row
+export RAKU TIMEOUT
+
+find roast -name '*.t' -type f | LC_ALL=C sort \
+  | xargs -P "${RAKU_BASELINE_JOBS:-1}" -I{} bash -c 'baseline_row "$1"' _ {} \
+  | LC_ALL=C sort -t "$(printf '\t')" -k1,1 >> "$TMP"
 
 mv "$TMP" "$OUT"
 echo "DONE: $(($(wc -l < "$OUT") - 1)) rows -> $OUT"
