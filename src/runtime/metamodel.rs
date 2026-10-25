@@ -497,14 +497,6 @@ impl Interpreter {
                 .user_method_overloads(c.as_str(), "compose")
                 .is_some()
         });
-        // A nested declaration's shell already installed the metaobject and ran
-        // the class's traits on it (#12708), which do not run again: what they
-        // mixed into it (`$class.HOW does R[Arg]`, role arguments included) is
-        // the metaobject now, and re-deriving it from the mixin's role names
-        // below would lose the arguments.
-        if keep_shell_how && self.registry().class_how_values.contains_key(class_name) {
-            return Ok(has_user_compose);
-        }
         let mut instance = self.call_method_with_values(how_type, "new", Vec::new())?;
         // A hoisted forward declaration composed the class's roles (and ran
         // their attribute traits, once) under the default HOW before this
@@ -522,13 +514,38 @@ impl Interpreter {
                 .collect(),
             _ => Vec::new(),
         };
-        for role in earlier_mixins {
-            instance = self.eval_does_values(instance, Value::package(Symbol::intern(&role)))?;
+        // A nested declaration's shell already ran the class's traits on its
+        // metaobject (#12708), and they do not run again. What they mixed in
+        // (`$class.HOW does R[Arg]`) travels with the mixin's overrides --
+        // role arguments included, which re-mixing the bare role names below
+        // would lose -- so it is moved onto the fresh instance, whose own state
+        // (the shell's composed columns, relationships, ...) is not carried.
+        let shell_mixins = if keep_shell_how {
+            match self
+                .registry()
+                .class_how_values
+                .get(class_name)
+                .map(Value::view)
+            {
+                Some(ValueView::Mixin(_, mixins)) => Some(mixins.clone()),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if shell_mixins.is_none() {
+            for role in earlier_mixins {
+                instance =
+                    self.eval_does_values(instance, Value::package(Symbol::intern(&role)))?;
+            }
         }
         // Names the type the metaobject describes, so a `nqp::getattr` of its
         // `@!BUILDPLAN` (AttrX::Mooish's `create_BUILDPLAN`) finds the class.
         if let ValueView::Instance { attributes, .. } = instance.view() {
             attributes.insert("__mutsu_how_target", Value::str(class_name.to_string()));
+        }
+        if let Some(mixins) = shell_mixins {
+            instance = Value::mixin_parts(std::sync::Arc::new(instance), mixins);
         }
         self.registry_mut()
             .class_how_values
