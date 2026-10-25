@@ -284,7 +284,10 @@ pub(crate) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
         let r_eq = &r[1..];
         let (r_eq, _) = ws(r_eq)?;
         if let Ok((r2, rhs)) = call_arg_ternary_expr(r_eq) {
-            return Ok((r2, assign_to_target_expr(expr, rhs)));
+            return Ok((
+                r2,
+                crate::parser::stmt::assign::written_assignment(expr, rhs),
+            ));
         }
     }
 

@@ -1404,13 +1404,14 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 node_field(Some("right"), convert_expr(expr)?),
             ],
         }))),
-        Stmt::Assign { name, expr, op, .. } => match op {
-            // `$x = EXPR` — the special `Assignment` infix (slice 2).
-            AssignOp::Assign => Ok(Some(statement_expression(assignment_infix(name, expr)?))),
-            // `$x := EXPR` — a plain `:=` infix (slice 9).
-            AssignOp::Bind => Ok(Some(statement_expression(bind_infix(name, expr)?))),
-            AssignOp::MatchAssign => Err(unsupported("`~~` match-assignment")),
-        },
+        // `$x := EXPR` — a plain `:=` infix (slice 9). `$x = EXPR` is the typed
+        // assignment node a `.AST` parse keeps (ADR-10723 Stage 2).
+        Stmt::Assign {
+            name,
+            expr,
+            op: AssignOp::Bind,
+            ..
+        } => Ok(Some(statement_expression(bind_infix(name, expr)?))),
         // A `LABEL: STMT` wrapper (mutsu uses this for labelled `repeat`/C-style
         // loops, where the inner loop's own `label` field is None). Convert the
         // inner statement and prepend its `labels` field — raku renders labels
@@ -1495,14 +1496,6 @@ pub(super) fn hyper_infix(
             node_field(Some("right"), convert_expr(right)?),
         ],
     })
-}
-
-/// `$x = EXPR` -> `ApplyInfix(left => Var::Lexical, infix => Assignment, right)`.
-/// The `Assignment` node carries `:item` for scalar (`$`) targets; the list form
-/// (`@`/`%`) has no adverb.
-fn assignment_infix(name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let (sigil, desigil) = split_sigil(name);
-    assignment_around(var_lexical(sigil, desigil), sigil == "$", rhs)
 }
 
 /// `LEFT = EXPR` over an already converted left side; `is_item` marks the
@@ -3741,8 +3734,8 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 fields: vec![node_field(None, semilist)],
             })
         }
-        // `($x = EXPR)` / `($x := EXPR)` as an expression -> the same
-        // `ApplyInfix` as the statement form.
+        // `($x := EXPR)`, a term's assignment, and a `*` lvalue as an expression
+        // -> the same `ApplyInfix` as the statement form.
         Expr::AssignExpr {
             name,
             expr,
@@ -3779,13 +3772,15 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if *is_bind {
                 return bind_infix(name, expr);
             }
-            if let Some((target, rhs)) = super::star_lvalue::parts(name, expr) {
-                return Ok(method_lvalue_assignment(
+            match super::star_lvalue::parts(name, expr) {
+                Some((target, rhs)) => Ok(method_lvalue_assignment(
                     convert_expr(&target)?,
                     convert_expr(&rhs)?,
-                ));
+                )),
+                // `$x = EXPR` is the typed assignment node a `.AST` parse keeps
+                // (ADR-10723 Stage 2).
+                None => Err(unsupported("source form")),
             }
-            assignment_infix(name, expr)
         }
         Expr::CompoundAssign {
             target, op, rhs, ..
@@ -4337,51 +4332,6 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             None,
             Vec::new(),
         ),
-        // `@a[|| @i] = 5`: like `@a[0] = 5`, a one-statement subscript takes
-        // the value as its `assignee`.
-        Expr::MultiDimIndexAssign {
-            target,
-            dimensions,
-            value,
-            is_positional,
-        } if dimensions.len() == 1 => subscript_dims_node(
-            target,
-            &splat_dimensions(dimensions),
-            *is_positional,
-            Some(value),
-            Vec::new(),
-        ),
-        // `@a[0;1] = 5` keeps an `Assignment` infix over the subscript.
-        Expr::MultiDimIndexAssign {
-            target,
-            dimensions,
-            value,
-            is_positional,
-        } => Ok(RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::ApplyInfix,
-            fields: vec![
-                node_field(
-                    Some("left"),
-                    subscript_dims_node(
-                        target,
-                        &splat_dimensions(dimensions),
-                        *is_positional,
-                        None,
-                        Vec::new(),
-                    )?,
-                ),
-                node_field(
-                    Some("infix"),
-                    RakuAstNode {
-                        origin: Default::default(),
-                        class: RakuAstClass::Assignment,
-                        fields: Vec::new(),
-                    },
-                ),
-                node_field(Some("right"), convert_expr(value)?),
-            ],
-        }),
         // Measured on 2026.09: rakudo folds an assignment to `@a[…]` or
         // `%h<…>` into the postcircumfix as its `assignee`, but keeps an
         // `Assignment` infix over a `%h{…}` subscript.
