@@ -39,7 +39,7 @@ pub(super) struct ProtoDecl<'a> {
 fn is_onlystar_body(body: &[Stmt]) -> bool {
     let mut statements = body
         .iter()
-        .filter(|stmt| !matches!(stmt, Stmt::SetLine(..) | Stmt::SourceForm(_)));
+        .filter(|stmt| !matches!(stmt, Stmt::SetLine(..)) && !stmt.is_routine_traits());
     matches!(
         (statements.next(), statements.next()),
         (Some(Stmt::Expr(Expr::Whatever)), None)

@@ -312,6 +312,11 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// count as. `t/run-nested-role-body.t`'s `$side = @outer.elems * 100`
     /// caught a regression here: memoising the shell's run left the real
     /// declaration's run skipped, so `$side` never got set.
+    /// The declaration's compile-time shell already dispatched its
+    /// `trait_mod:<is>` traits (#12708), so a role those traits mixed into
+    /// the class's HOW (`$class.HOW does R`) is current, not stale: the
+    /// in-place registration must keep it, since the traits do not run again.
+    pub(crate) traits_ran_in_shell: bool,
     pub(crate) is_hoisted_shell: HoistedShell,
 }
 

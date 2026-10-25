@@ -2,8 +2,8 @@
 
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::ast_visit::{
-    Visit, walk_expr, walk_param, walk_regex_node, walk_signature_var, walk_source_form, walk_stmt,
-    walk_stmts,
+    Visit, walk_expr, walk_param, walk_regex_node, walk_routine_traits, walk_signature_var,
+    walk_stmt, walk_stmts,
 };
 use crate::value::RuntimeError;
 
@@ -38,8 +38,8 @@ impl<'ast> Visit<'ast> for Budget {
         self.depth -= 1;
     }
 
-    fn visit_source_form(&mut self, form: &'ast crate::ast::SourceForm) {
-        walk_source_form(self, form);
+    fn visit_routine_traits(&mut self, traits: &'ast [crate::ast::routine_trait::RoutineTrait]) {
+        walk_routine_traits(self, traits);
     }
 
     fn visit_signature_var(&mut self, var: &'ast crate::ast::SignatureVar) {

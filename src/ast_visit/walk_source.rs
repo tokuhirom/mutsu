@@ -2,12 +2,15 @@
 
 use super::{NameKind, Visit, exprs, names, traits};
 use crate::ast::routine_trait::{RoutineTrait, TraitArgument};
-use crate::ast::{SignatureDecl, SignatureInit, SignatureVar, SourceForm};
+use crate::ast::{SignatureDecl, SignatureInit, SignatureVar};
 
-// Cost: O(n), n = source-record subtree nodes.
-pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &'ast SourceForm) {
-    match form {
-        SourceForm::RoutineTraits(items) => {
+// Cost: O(n), n = nodes of the written traits.
+pub(crate) fn walk_routine_traits<'ast, V: Visit<'ast> + ?Sized>(
+    v: &mut V,
+    items: &'ast [RoutineTrait],
+) {
+    {
+        {
             for item in items {
                 match item {
                     RoutineTrait::Is { name, argument } => {
@@ -152,8 +155,8 @@ mod tests {
     struct CopyingNames(Names);
 
     impl<'ast> Visit<'ast> for CopyingNames {
-        fn visit_source_form(&mut self, form: &'ast SourceForm) {
-            walk_source_form(self, form);
+        fn visit_routine_traits(&mut self, traits: &'ast [RoutineTrait]) {
+            walk_routine_traits(self, traits);
         }
         fn visit_name(&mut self, name: &str, kind: NameKind) {
             self.0.visit_name(name, kind);
@@ -162,9 +165,9 @@ mod tests {
 
     #[test]
     fn source_records_are_opt_in_and_walk_their_original_declarations() {
-        let record = Stmt::SourceForm(Box::new(SourceForm::RoutineTraits(vec![
-            RoutineTrait::Unsupported("written".into()),
-        ])));
+        let record = Stmt::Ast(Box::new(crate::ast::parsed::ParsedStmt::RoutineTraits(
+            vec![RoutineTrait::Unsupported("written".into())],
+        )));
         let mut ordinary = Names::default();
         ordinary.visit_stmt(&record);
         assert!(ordinary.names.is_empty());

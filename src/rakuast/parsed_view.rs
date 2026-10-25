@@ -87,6 +87,9 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
         ParsedStmt::TempDecl(decl) => {
             statement_expression(super::temporize::convert_declaration(decl)?)
         }
+        ParsedStmt::RoutineTraits(_) => {
+            return Err(super::convert::unsupported("routine traits outside a body"));
+        }
         ParsedStmt::TakeLogicalTail { value, op, right } => {
             statement_expression(super::convert::take_logical_tail_node(value, op, right)?)
         }

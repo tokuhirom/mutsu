@@ -105,6 +105,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
         does_roles,
         parent_args,
         is_rw: clauses_is_rw,
+        custom_traits: clause_traits,
     } = clauses;
     // Same `also is Parent` / `also is rw` extraction the statement path does:
     // `PDF::COS.loader = class PDF::Class::Loader { also is PDF::COS::Loader; … }`
@@ -144,7 +145,11 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             repr: None,
             body,
             language_version: crate::parser::current_language_version(),
-            custom_traits: colons_marker(colons, "class"),
+            custom_traits: {
+                let mut traits = colons_marker(colons, "class");
+                traits.extend(clause_traits);
+                traits
+            },
             is_unit: false,
             implicit_grammar_parent: false,
             is_grammar: false,
@@ -163,6 +168,22 @@ struct AnonClassClauses {
     parent_args: Vec<(String, Vec<Expr>)>,
     /// `is rw`: a class trait, not a parent class.
     is_rw: bool,
+    /// A lowercase `is trait(arg)` / `is trait<arg>` the statement form hands
+    /// to `trait_mod:<is>` with its argument (`class C is rs-class(MyRS) { }`).
+    custom_traits: Vec<(String, Option<Expr>)>,
+}
+
+/// The argument of a lowercase class trait: `(expr)` or `<word>`, as the
+/// statement form parses `is trait-name(arg)` / `is trait-name<arg>`.
+fn parse_trait_argument(input: &str) -> Option<(&str, Expr)> {
+    if input.starts_with('<') {
+        let (rest, arg) = crate::parser::helpers::parse_trait_angle_arg(input).ok()?;
+        return Some((rest, Expr::Literal(crate::value::Value::str(arg))));
+    }
+    let inner = input.strip_prefix('(')?;
+    let (after_expr, expr) = crate::parser::expr::expression(inner).ok()?;
+    let after = after_expr.trim_start().strip_prefix(')')?;
+    Some((after, expr))
 }
 
 /// Parse the `is` / `does` clauses after a class expression's name (or `::`).
@@ -177,6 +198,13 @@ fn parse_anon_class_clauses(mut r: &str) -> PResult<'_, AnonClassClauses> {
             let (r2, parent) = parse_qualified_ident_with_hyphens(r2)?;
             if parent == "rw" {
                 clauses.is_rw = true;
+            } else if parent.starts_with(|c: char| c.is_ascii_lowercase())
+                && let Some((after, arg)) = parse_trait_argument(r2)
+            {
+                clauses.custom_traits.push((parent, Some(arg)));
+                let (after, _) = ws(after)?;
+                r = after;
+                continue;
             } else {
                 clauses.parents.push(parent);
             }

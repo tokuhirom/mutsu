@@ -194,6 +194,21 @@ fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
                     walk_stmt(&m.stmt, m.condition.is_none() && m.loop_.is_some(), line);
                 }
             }
+            // A declaration with a tail (`my $x = 1, 123`, `my $x = 1 and 2`) is
+            // sunk like the plain `SyntheticBlock([head, tail])` it lowers to.
+            ParsedStmt::DeclTail { head, tail } => {
+                walk_stmt(head, false, line);
+                match tail {
+                    Expr::ArrayLiteral(elems)
+                        if is_decl_value_head(std::slice::from_ref(head.as_ref()), elems) =>
+                    {
+                        for e in &elems[1..] {
+                            warn_expr_sink(e, nil_hint, line.get());
+                        }
+                    }
+                    _ => warn_expr_sink(tail, nil_hint, line.get()),
+                }
+            }
             other if other.inner_stmt().is_some() => {
                 if let Some(stmt) = other.inner_stmt() {
                     walk_stmt(stmt, nil_hint, line);
@@ -239,11 +254,8 @@ pub(crate) fn is_destructure_block(body: &[Stmt]) -> bool {
     }
     // Plain targets are predeclared (default-initialized) ahead of the temp so
     // the RHS sees them; skip those leading declarations.
-    // The source-form record (`Stmt::SourceForm`) is not a statement either.
-    let is_predecl = |s: &Stmt| {
-        matches!(s, Stmt::SourceForm(_))
-            || matches!(s, Stmt::VarDecl { name, .. } if !name.contains("__destructure_tmp__"))
-    };
+    let is_predecl =
+        |s: &Stmt| matches!(s, Stmt::VarDecl { name, .. } if !name.contains("__destructure_tmp__"));
     match body.iter().find(|s| !is_predecl(s)) {
         Some(Stmt::SyntheticBlock(inner)) => {
             matches!(inner.as_slice(), [Stmt::MarkBind, decl] if is_tmp_decl(decl))

@@ -475,7 +475,7 @@ impl Interpreter {
             .get("EXPORTHOW::$class")
             .or_else(|| self.env.get("EXPORTHOW::class"))
             .cloned()
-            && self.install_custom_class_how(name, how_type)?
+            && self.install_custom_class_how(name, how_type, false)?
         {
             self.registry_mut()
                 .pending_class_compose

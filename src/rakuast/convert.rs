@@ -229,14 +229,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         // The `use trace` hook is bookkeeping too: rakudo models the trace as a
         // flag on the traced statement, not as a statement of its own.
         Stmt::SetLine(..) | Stmt::Trace { .. } => Ok(None),
+        // The written traits are rendered by the routine they open.
+        Stmt::Ast(_) if stmt.is_routine_traits() => Ok(None),
         // A construct the parser built in its RakuAST shape (ADR-10723
         // Stage 2): rendered, not reconstructed.
         Stmt::Ast(node) => super::parsed_view::parsed_node(node).map(Some),
-        Stmt::SourceForm(form)
-            if matches!(form.as_ref(), crate::ast::SourceForm::RoutineTraits(_)) =>
-        {
-            Ok(None)
-        }
         // An expression statement modified by `with`/`without` is wrapped in a
         // `DoStmt` so it keeps expression semantics. The wrapper has no RakuAST
         // counterpart, so convert the `Given` it carries instead of rendering a
@@ -383,11 +380,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             super::regex_declaration::retain_source(&mut declaration, body);
             Ok(Some(statement_expression(declaration)))
         }
-        Stmt::SyntheticBlock(_) if source_form(stmt).is_some() => match source_form(stmt) {
-            Some(crate::ast::SourceForm::RoutineTraits(_)) | None => {
-                Err(unsupported("source form"))
-            }
-        },
         // `use` / `no` statements: `RakuAST::Pragma`, `Statement::Use` or
         // `Statement::LanguageVersion`. The `if` distribution's condition is
         // source provenance: the visible RakuAST use node omits it.
@@ -2703,17 +2695,6 @@ pub(super) fn subscript_dims_node(
     super::postfix_grouping::convert(target, index_node)
 }
 
-/// The source-form record a parser expansion opens with (`ast::signature_decl`).
-fn source_form(stmt: &Stmt) -> Option<&crate::ast::SourceForm> {
-    match stmt {
-        Stmt::SyntheticBlock(stmts) => match stmts.first() {
-            Some(Stmt::SourceForm(form)) => Some(form),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
 pub(super) fn take_logical_tail_node(
     value: &Expr,
     op: &crate::token_kind::TokenKind,
@@ -3586,12 +3567,6 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::DoStmt(stmt) if is_modifier_statement(stmt) => {
             convert_stmt(stmt)?.ok_or_else(|| unsupported("empty modified expression"))
         }
-        // A signature declaration in expression position (`if my ($a, $b) = …`).
-        Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
-            Some(crate::ast::SourceForm::RoutineTraits(_)) | None => {
-                Err(unsupported("source form"))
-            }
-        },
         // `()` -> `Circumfix::Parentheses(SemiList.new)`: no statement inside.
         Expr::Grouped(inner) if matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty()) => {
             Ok(RakuAstNode {

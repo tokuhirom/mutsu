@@ -176,10 +176,26 @@ fn autoviv_compound_lhs(lhs: Expr, op: CompoundAssignOp) -> Expr {
         CompoundAssignOp::Concat => MetaAssignIdentity::EmptyStr,
         CompoundAssignOp::Div => MetaAssignIdentity::NoZeroArgDiv,
         CompoundAssignOp::Mod => MetaAssignIdentity::NoZeroArgMod,
+        CompoundAssignOp::IntDiv => MetaAssignIdentity::TooFewPositionals,
+        CompoundAssignOp::Gcd => MetaAssignIdentity::NoZeroArgGcd,
         _ => return lhs,
     };
     Expr::Unary {
         op: TokenKind::MetaAssignIdentity(identity),
+        expr: Box::new(lhs),
+        word: false,
+    }
+}
+
+/// [`autoviv_compound_lhs`] for a word infix called by name (`mod=`): `mod`
+/// has no zero-argument candidate either.
+// Cost: O(1).
+pub(crate) fn autoviv_routine_compound_lhs(lhs: Expr, op: &str) -> Expr {
+    if op != "mod" || !matches!(lhs, Expr::Var(_)) {
+        return lhs;
+    }
+    Expr::Unary {
+        op: TokenKind::MetaAssignIdentity(MetaAssignIdentity::TooFewPositionals),
         expr: Box::new(lhs),
         word: false,
     }

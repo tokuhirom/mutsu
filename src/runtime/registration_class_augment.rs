@@ -973,6 +973,7 @@ impl Interpreter {
             compiled_fns: &crate::opcode::CompiledFns::default(),
             body_plan: &[],
             is_hoisted_shell: crate::runtime::HoistedShell::No,
+            traits_ran_in_shell: false,
         };
         self.register_class_decl(&pun_name, &parents, modifiers)?;
         if from_defaults {

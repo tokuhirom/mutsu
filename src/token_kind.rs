@@ -45,6 +45,11 @@ pub(crate) enum MetaAssignIdentity {
     NoZeroArgDiv,
     /// `infix:<%>` has no zero-argument candidate.
     NoZeroArgMod,
+    /// The word infixes `mod` and `div` have no zero-argument candidate: the
+    /// call dies with "Too few positionals passed; expected 2 arguments".
+    TooFewPositionals,
+    /// `infix:<gcd>()` has no zero-argument meaning.
+    NoZeroArgGcd,
     /// `infix:<(|)>()`, `(&)`, `(-)` and `(^)` are `set()`: `my $s; $s ∪= 0`
     /// unions from the empty set.
     EmptySet,
@@ -67,6 +72,8 @@ impl MetaAssignIdentity {
             MetaAssignIdentity::EmptyStr => 4,
             MetaAssignIdentity::EmptySet => 5,
             MetaAssignIdentity::EmptyBag => 6,
+            MetaAssignIdentity::TooFewPositionals => 7,
+            MetaAssignIdentity::NoZeroArgGcd => 8,
         }
     }
 
@@ -76,7 +83,10 @@ impl MetaAssignIdentity {
     pub(crate) fn is_infallible(self) -> bool {
         !matches!(
             self,
-            MetaAssignIdentity::NoZeroArgDiv | MetaAssignIdentity::NoZeroArgMod
+            MetaAssignIdentity::NoZeroArgDiv
+                | MetaAssignIdentity::NoZeroArgMod
+                | MetaAssignIdentity::TooFewPositionals
+                | MetaAssignIdentity::NoZeroArgGcd
         )
     }
 
@@ -90,6 +100,8 @@ impl MetaAssignIdentity {
             4 => MetaAssignIdentity::EmptyStr,
             5 => MetaAssignIdentity::EmptySet,
             6 => MetaAssignIdentity::EmptyBag,
+            7 => MetaAssignIdentity::TooFewPositionals,
+            8 => MetaAssignIdentity::NoZeroArgGcd,
             _ => MetaAssignIdentity::Zero,
         }
     }
