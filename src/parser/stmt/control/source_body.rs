@@ -2,8 +2,8 @@
 
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::ast_visit::{
-    Visit, walk_expr, walk_param, walk_regex_node, walk_signature_var, walk_routine_traits, walk_stmt,
-    walk_stmts,
+    Visit, walk_expr, walk_param, walk_regex_node, walk_routine_traits, walk_signature_var,
+    walk_stmt, walk_stmts,
 };
 use crate::value::RuntimeError;
 

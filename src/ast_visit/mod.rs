@@ -29,7 +29,7 @@ mod walk_mut_stmt;
 mod walk_parsed;
 mod walk_source;
 mod walk_stmt;
-pub(crate) use walk_source::{walk_signature_decl, walk_signature_var, walk_routine_traits};
+pub(crate) use walk_source::{walk_routine_traits, walk_signature_decl, walk_signature_var};
 
 pub(crate) use legacy_args::{legacy_arg_reads, legacy_arg_uses, legacy_arg_writes};
 pub(crate) use visit_mut::{VisitMut, walk_param_mut, walk_regex_node_mut};

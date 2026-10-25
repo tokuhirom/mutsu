@@ -106,9 +106,7 @@ impl SignatureVar {
 /// declarations.
 pub(crate) fn is_group_declaration(inner: &[Stmt]) -> bool {
     inner.iter().any(|s| matches!(s, Stmt::VarDecl { .. }))
-        && inner
-            .iter()
-            .all(|s| matches!(s, Stmt::VarDecl { .. }))
+        && inner.iter().all(|s| matches!(s, Stmt::VarDecl { .. }))
 }
 
 /// The statements of the scope `stmts` makes up, with every
