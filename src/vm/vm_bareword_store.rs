@@ -119,8 +119,8 @@ impl Interpreter {
             if unbound_type_slot && name == "Nil" {
                 return Err(RuntimeError::assignment_ro_nil());
             }
-            if unbound_type_slot && (self.has_class(&name) || Self::is_builtin_type(&name)) {
-                return Err(RuntimeError::assignment_ro_type_object(&name));
+            if unbound_type_slot && (self.has_class(name) || Self::is_builtin_type(name)) {
+                return Err(RuntimeError::assignment_ro_type_object(name));
             }
             // A GENUINE enum-constant reassignment (`Red = 5`) writes to
             // the bareword that IS the constant's own binding. That
@@ -143,7 +143,7 @@ impl Interpreter {
             // the package must not make immutable (#14019).
             if name_str.starts_with('\\')
                 && let Some(ValueView::Enum { enum_type, key, .. }) =
-                    self.enum_bare_value(&name).map(Value::view)
+                    self.enum_bare_value(name).map(Value::view)
                 && name == key.resolve()
             {
                 return Err(RuntimeError::assignment_ro_typename(

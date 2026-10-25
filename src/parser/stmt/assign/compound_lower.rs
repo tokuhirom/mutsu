@@ -408,24 +408,6 @@ pub(crate) fn lower_dotty_statement(node: CompoundAssign, is_term: fn(&str) -> b
     Stmt::Expr(lower_dotty(node, true, is_term))
 }
 
-/// [`written_dotty_assignment`] written as a statement.
-// Cost: O(n), n = size of the target and the call.
-pub(crate) fn written_dotty_assignment_stmt(target: Expr, call: Expr) -> Stmt {
-    let node = CompoundAssign {
-        target,
-        op: ".".to_string(),
-        meta: CompoundMeta::Dotty,
-        source: call,
-    };
-    if crate::ast::spelled::keeping() {
-        return Stmt::Expr(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node))));
-    }
-    lower_dotty_statement(
-        node,
-        crate::parser::stmt::simple::is_user_declared_value_term,
-    )
-}
-
 /// `TARGET .= meth(args)`, kept in its RakuAST shape by a `.AST` parse and
 /// lowered at once otherwise. `call` is the method call over the target.
 // Cost: O(n), n = size of the target and the call.
