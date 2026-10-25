@@ -17,11 +17,12 @@ use crate::symbol::Symbol;
 // Cost: O(d), d = levels of parentheses around the target.
 pub(crate) fn is_expression_target(target: &Expr) -> bool {
     let mut target = target;
-    while let Expr::Grouped(inner) = target {
-        target = inner;
-    }
-    if let Expr::Spelled(spelled) = target {
-        return is_expression_target(&spelled.expr);
+    loop {
+        match target {
+            Expr::Grouped(inner) => target = inner,
+            Expr::Spelled(spelled) => target = &spelled.expr,
+            _ => break,
+        }
     }
     match target {
         Expr::MethodCall { name, args, .. } => !(name == "item" && args.is_empty()),
@@ -48,8 +49,11 @@ pub(crate) fn is_expression_target(target: &Expr) -> bool {
 /// is written.
 // Cost: O(d), d = levels of parentheses around the target.
 pub(crate) fn is_callable_lvalue_target(target: &Expr) -> bool {
-    match target.peel_parens() {
-        Expr::Spelled(spelled) => is_callable_lvalue_target(&spelled.expr),
+    let mut target = target.peel_parens();
+    while let Expr::Spelled(spelled) = target {
+        target = spelled.expr.peel_parens();
+    }
+    match target {
         Expr::Unary { .. }
         | Expr::Ternary { .. }
         | Expr::CaptureVar(_)
