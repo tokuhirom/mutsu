@@ -1442,6 +1442,7 @@ pub(crate) fn lower_parsed_stmt(
 
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
 pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
+    let _origins_wanted = crate::parser::term_origins::Wanted::enter();
     let (mut stmts, _finish) = crate::parse_dispatch::parse_source_spelled(source)?;
     // The origins of the tree index this text (ADR-10723 §4).
     let _source = unit_source::Scope::enter(source);
