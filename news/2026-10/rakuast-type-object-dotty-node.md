@@ -20,5 +20,9 @@ inside `EVAL` (`EVAL Q[class D {}; D .= new]`) it dies with the same
 statement form. It reads the node in one place (`dotty_parts`), whether the
 result is an expression or a statement.
 
+`rakuast::shadowed_terms` now records `constant term:<$box> = …` as the term
+`$box`, not as `term:<$box>`. So a read-back `$box .= plus(1)` writes through
+the term, as the parsed program does, and is not taken for a type object.
+
 `t/rakuast/rakuast-type-object-dotty-node.t` pins the shape and the
 exception.

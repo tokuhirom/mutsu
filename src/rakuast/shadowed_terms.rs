@@ -156,9 +156,16 @@ fn visit_terms(node: &RakuAstNode, found: &mut HashSet<String>) {
     }
     if node.class == RakuAstClass::VarDeclarationConstant
         && let Ok(name) = leaf_str(node, "name")
-        && !name.starts_with(['$', '@', '%', '&'])
     {
-        found.insert(name);
+        // `constant term:<$box> = …` declares the term `$box`, sigil and all.
+        if let Some(term) = name
+            .strip_prefix("term:<")
+            .and_then(|rest| rest.strip_suffix('>'))
+        {
+            found.insert(term.to_string());
+        } else if !name.starts_with(['$', '@', '%', '&']) {
+            found.insert(name);
+        }
     }
     for field in &node.fields {
         match &field.value {
