@@ -374,14 +374,14 @@ fn handle_compound_assign(stripped: &str, s: MyDeclState, op: DeclCompoundOp) ->
             },
         )
         .map_err(PError::from_typed)?,
-        DeclCompoundOp::ZipAssign => {
-            let value = Expr::Call {
-                name: Symbol::intern("__mutsu_zip_assign"),
-                args: vec![Expr::Var(s.name.clone()), rhs],
-                listop: false,
-            };
-            crate::ast::decl_compound_assign::expand(decl_stmt, s.name.clone(), value)
-        }
+        DeclCompoundOp::ZipAssign => crate::parser::stmt::control::parsed_block::finish(
+            crate::ast::parsed::ParsedStmt::DeclCompound {
+                decl: Box::new(decl_stmt),
+                op: crate::rakuast::ZIP_ASSIGN.to_string(),
+                source: rhs,
+            },
+        )
+        .map_err(PError::from_typed)?,
     };
     if s.apply_modifier {
         return parse_statement_modifier(rest, stmt);

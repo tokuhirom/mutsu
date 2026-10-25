@@ -604,6 +604,14 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 },
             ));
         }
+        if (meta == "X" || meta == "Z") && op == "=" {
+            let kind = crate::ast::parsed::BracketedMeta::from_spelling(&meta)
+                .ok_or_else(|| PError::expected("metaoperator"))?;
+            return Ok((
+                rest,
+                super::written_meta_assignment(var_expr, kind, 0, op, rhs)?,
+            ));
+        }
         return Ok((
             rest,
             Expr::AssignExpr {

@@ -272,6 +272,16 @@ fn compound_assignment_node(
     if a.meta == CompoundMeta::TopicDotty {
         return super::convert::topic_dotty_assignment(&a.source);
     }
+    if let CompoundMeta::BracketedMeta(kind, depth) = a.meta
+        && a.op == "="
+    {
+        return meta_assignment_eq_node(
+            kind,
+            depth,
+            target_node(&a.target)?,
+            convert_expr(&a.source)?,
+        );
+    }
     if let CompoundMeta::BracketedMeta(kind, depth) = a.meta {
         let written = crate::ast::Expr::MetaOp {
             meta: kind.spelling().to_string(),
@@ -284,6 +294,59 @@ fn compound_assignment_node(
     let node =
         super::convert::compound_assignment_infix(&a.target, &compound_spelling(a), &a.source)?;
     with_compound_meta(node, a.meta)
+}
+
+/// `TARGET X= SOURCE`, `TARGET Z= SOURCE`, `TARGET [Z=] SOURCE`: the
+/// metaoperator over rakudo's `Assignment` (`:item`), inside `depth`
+/// brackets, applied as a list infix (measured on 2026.09).
+// Cost: O(d), d = bracket depth.
+pub(super) fn meta_assignment_eq_node(
+    kind: crate::ast::parsed::BracketedMeta,
+    depth: u8,
+    target: RakuAstNode,
+    source: RakuAstNode,
+) -> Result<RakuAstNode, RuntimeError> {
+    let class = match kind {
+        crate::ast::parsed::BracketedMeta::Cross => RakuAstClass::MetaInfixCross,
+        crate::ast::parsed::BracketedMeta::Zip => RakuAstClass::MetaInfixZip,
+        _ => return Err(super::convert::unsupported("this metaoperator assignment")),
+    };
+    let mut infix = RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields: vec![node_field(
+            None,
+            RakuAstNode {
+                origin: Default::default(),
+                class: RakuAstClass::Assignment,
+                fields: vec![RakuAstField {
+                    name: None,
+                    value: RakuAstFieldValue::Adverb("item"),
+                }],
+            },
+        )],
+    };
+    for _ in 0..depth {
+        infix = RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::BracketedInfix,
+            fields: vec![node_field(None, infix)],
+        };
+    }
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::ApplyListInfix,
+        fields: vec![
+            node_field(Some("infix"), infix),
+            RakuAstField {
+                name: Some("operands"),
+                value: RakuAstFieldValue::List(vec![
+                    Value::rakuast(Box::new(target)),
+                    Value::rakuast(Box::new(source)),
+                ]),
+            },
+        ],
+    })
 }
 
 /// The assignment infix a compound marker spells: `+=`, or `R-=` for the

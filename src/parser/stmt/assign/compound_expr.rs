@@ -931,6 +931,18 @@ pub(crate) fn build_custom_compound_assign_expr(
     })
 }
 
+/// The element-wise assignment of `source` into the container `target`
+/// names: `__mutsu_zip_assign` rebuilds the container, and the assignment
+/// around it stores it back.
+// Cost: O(1).
+pub(crate) fn zip_assign_call(target: Expr, source: Expr) -> Expr {
+    Expr::Call {
+        name: Symbol::intern("__mutsu_zip_assign"),
+        args: vec![target, source],
+        listop: false,
+    }
+}
+
 /// The sigil-qualified assignment-target name for a `Z=` element-wise assign,
 /// or `None` for an LHS shape `Z=` does not element-wise-assign (only plain
 /// variables are supported; an `Index` LHS keeps the value-producing path).
@@ -960,11 +972,7 @@ pub(crate) fn build_meta_assign_expr(
         && op == "="
         && let Some(name) = zip_assign_target_name(&lhs)
     {
-        let zip_call = Expr::Call {
-            name: Symbol::intern("__mutsu_zip_assign"),
-            args: vec![lhs, rhs],
-            listop: false,
-        };
+        let zip_call = zip_assign_call(lhs, rhs);
         return Ok(Expr::AssignExpr {
             name,
             expr: Box::new(zip_call),

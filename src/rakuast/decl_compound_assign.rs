@@ -38,6 +38,10 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     lower_parsed(decl, op, source)
 }
 
+/// The `op` of a `ParsedStmt::DeclCompound` that is a zip metaoperator
+/// assignment (`my @a Z= EXPR`) rather than a compound assignment.
+pub(crate) const ZIP_ASSIGN: &str = "Z=";
+
 /// The expansion of `ParsedStmt::DeclCompound`: `decl`, then the assignment
 /// of `op` applied to the declared variable and `source`.
 // Cost: O(n), n = size of the declaration and the right-hand side.
@@ -45,6 +49,17 @@ pub(crate) fn lower_parsed(decl: Stmt, op: String, source: Expr) -> Result<Stmt,
     // A user-declared or word operator (`my $x foo= 6`, `my $n mod= 5`) is
     // the parser's `InfixFunc` over the declared variable; only the built-in
     // operators have a compound assignment kind.
+    // `my @a Z= rhs` element-wise assigns into the fresh declaration, which is
+    // the only way to flat-fill a shaped array (plain `=` to one is
+    // `X::Assignment::ToShaped`).
+    if op == ZIP_ASSIGN {
+        let Stmt::VarDecl { name, .. } = &decl else {
+            return Err(RuntimeError::new("a zip assignment of this declaration"));
+        };
+        let name = name.clone();
+        let value = crate::parser::zip_assign_call(Expr::Var(name.clone()), source);
+        return Ok(crate::ast::decl_compound_assign::expand(decl, name, value));
+    }
     let Some(compound) = crate::parser::compound_assign_op_from_name(&op) else {
         let Stmt::VarDecl { name, .. } = &decl else {
             return Err(RuntimeError::new("a compound declaration of this target"));

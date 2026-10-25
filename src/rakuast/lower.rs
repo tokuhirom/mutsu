@@ -348,7 +348,7 @@ pub(super) fn lower_stmt_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> 
     if super::decl_compound_assign::is_declaration_compound_assign(node) {
         return super::decl_compound_assign::lower(node);
     }
-    if let Some(zip_declaration) = super::zip_assign::lower_declaration(node) {
+    if let Some(zip_declaration) = zip_declaration_assign(node) {
         return zip_declaration;
     }
     // `my $x = 1 and 2`: a declaration is the leftmost operand of the statement.
@@ -5696,4 +5696,35 @@ fn take_does_roles(node: &RakuAstNode) -> Result<(RakuAstNode, Vec<String>), Run
         stripped.fields.retain(|f| f.name != Some("traits"));
     }
     Ok((stripped, roles))
+}
+
+/// `my @a Z= EXPR`: `ApplyListInfix(MetaInfix::Zip(Assignment))` whose first
+/// operand is a variable declaration, as the parser's `DeclCompound`.
+// Cost: O(n), n = size of the declaration and the right-hand side.
+fn zip_declaration_assign(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
+    if node.class != RakuAstClass::ApplyListInfix {
+        return None;
+    }
+    let infix = named_child(node, "infix").ok()?;
+    if super::meta_infix::eq_meta_assignment(infix)
+        != Some((crate::ast::parsed::BracketedMeta::Zip, 0))
+    {
+        return None;
+    }
+    let operands = list_field(node, "operands").ok()?;
+    if operands.len() != 2 {
+        return Some(Err(unsupported(node)));
+    }
+    let declaration = rakuast_node_of(&operands[0])?;
+    if declaration.class != RakuAstClass::VarDeclarationSimple {
+        return None;
+    }
+    let source = rakuast_node_of(&operands[1])?;
+    Some((|| {
+        super::decl_compound_assign::lower_parsed(
+            lower_stmt(declaration)?,
+            super::decl_compound_assign::ZIP_ASSIGN.to_string(),
+            lower_expr(source)?,
+        )
+    })())
 }

@@ -215,12 +215,6 @@ fn is_modifier_statement(stmt: &Stmt) -> bool {
 /// Convert one statement. Returns `Ok(None)` for non-semantic bookkeeping
 /// statements (e.g. `SetLine`) that carry no RakuAST representation.
 pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
-    if let Some(zip) = super::zip_assign::convert_zip_assign(stmt) {
-        return zip.map(|node| Some(statement_expression(node)));
-    }
-    if let Some(cross) = super::cross_assign::convert(stmt) {
-        return cross.map(|node| Some(statement_expression(node)));
-    }
     match stmt {
         Stmt::SyntheticBlock(stmts)
             if matches!(stmts.as_slice(), [Stmt::ProtoDecl { .. }, Stmt::Use { .. }]) =>
@@ -1730,6 +1724,15 @@ pub(super) fn declaration_compound_assign(
 ) -> Result<RakuAstNode, RuntimeError> {
     let statement = convert_stmt(decl)?.ok_or_else(|| unsupported("source form"))?;
     let decl = expression_of(&statement).ok_or_else(|| unsupported("source form"))?;
+    // `my @a Z= EXPR`: the zip metaoperator over the assignment.
+    if op == super::decl_compound_assign::ZIP_ASSIGN {
+        return super::parsed_view::meta_assignment_eq_node(
+            crate::ast::parsed::BracketedMeta::Zip,
+            0,
+            decl,
+            convert_expr(rhs)?,
+        );
+    }
     compound_assignment_with_left(decl, &format!("{op}="), rhs)
 }
 
