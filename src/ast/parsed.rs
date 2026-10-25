@@ -272,6 +272,9 @@ pub(crate) enum CompoundMeta {
     Zip,
     /// `$s (|)= 5`, `$s ∪= 5`: a set operator, as `op` spells it.
     Set,
+    /// `$x .= meth(args)`: `source` is the method call applied to the target
+    /// as written, and `op` is `.`.
+    Dotty,
     /// `$x R-= $y`: the reversed infix, which assigns to its right operand
     /// (`$y -= $x`). Its `op` may be `=` (`$x R= $y`).
     Reverse,

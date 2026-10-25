@@ -134,17 +134,6 @@ pub(super) fn call_assign_initializer(
     }
 }
 
-/// `template`, a lowered method call, over `invocant` instead of its target:
-/// the call a `.=` makes on each target the parser's expansion reaches.
-// Cost: O(n), n = size of `template` (one clone).
-pub(super) fn retarget(template: &Expr, invocant: Expr) -> Expr {
-    let mut call = template.clone();
-    if let Expr::MethodCall { target, .. } | Expr::DynamicMethodCall { target, .. } = &mut call {
-        **target = invocant;
-    }
-    call
-}
-
 /// `$o.$name(args)` / `$o.&f(args)`.
 // Cost: O(n), n = nodes of the target, name and arguments.
 pub(super) fn convert(

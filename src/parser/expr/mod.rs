@@ -33,12 +33,13 @@ pub(in crate::parser) use postfix::is_atomic_elem_target;
 pub(in crate::parser) use postfix::is_conservative_angle_key_char;
 pub(in crate::parser) use postfix::is_subscript_expr;
 pub(in crate::parser) use postfix::parse_superscript_exp;
+pub(in crate::parser) use postfix::parse_trailing_call_adverbs;
 pub(in crate::parser) use postfix::postfix_expr_continue;
 pub(in crate::parser) use postfix::without_pending_prefix;
 pub(in crate::parser) use postfix::{ParsedBracketIndex, parse_bracket_indices_inner};
 pub(in crate::parser) use postfix::{QuotedMethodName, parse_quoted_method_name};
-pub(crate) use postfix::{atomic_elem_update, wrap_dot_assign, wrap_dot_assign_with_terms};
-pub(in crate::parser) use postfix::{dot_assign_to_name, parse_trailing_call_adverbs};
+pub(crate) use postfix::{atomic_elem_update, wrap_dot_assign_with_terms};
+pub(crate) use postfix::{dot_assign_target, retarget_dotty_call};
 use precedence::ternary;
 
 // Re-exports for WhateverCode priming-scope detection (`whatever.rs`). These

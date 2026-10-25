@@ -705,11 +705,9 @@ fn assignment_statement(rest: &str, target: Expr, source: Expr, seed: Expr) -> P
 /// marked `.=` expansion the expression form builds, so the RakuAST conversion
 /// sees one shape whichever way the parser reached it.
 fn dot_assign_stmt(name: String, method_call: Expr) -> Stmt {
-    if name == "_" {
-        Stmt::Expr(crate::parser::stmt::simple_expr_stmt::topic_dot_assign(
-            method_call,
-        ))
-    } else {
-        Stmt::Expr(crate::parser::expr::dot_assign_to_name(name, method_call))
-    }
+    Stmt::Expr(super::written_dotty_assignment(
+        crate::parser::expr::dot_assign_target(&name),
+        method_call,
+        true,
+    ))
 }

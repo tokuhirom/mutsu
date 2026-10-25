@@ -105,7 +105,7 @@ mod stmt;
 pub(crate) fn is_raku_identifier(input: &str) -> bool {
     stmt::parse_raku_ident(input).is_ok_and(|(rest, _)| rest.is_empty())
 }
-pub(crate) use expr::{atomic_elem_update, wrap_dot_assign, wrap_dot_assign_with_terms};
+pub(crate) use expr::{atomic_elem_update, retarget_dotty_call};
 pub(crate) use outer_redecl::{find_scope_diagnostic, scope_diagnostic_error};
 pub(crate) use stmt::assign::{
     DOTTY_ASSIGN_OP, compound_assign_op_from_name, compound_assigned_value_expr,
@@ -121,7 +121,6 @@ pub(crate) use stmt::decl::wrap_with_will_phasers;
 pub(crate) use stmt::decl::{attribute_compound_assign, expand_attribute_compound_assign};
 pub(crate) use stmt::simple::is_user_declared_value_term;
 pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutable;
-pub(crate) use stmt::simple_expr_stmt::topic_dot_assign;
 pub(crate) use stmt::{conditional_declaration, topical_declaration};
 
 /// Parse a regex callable's argument list without exposing the parser's
@@ -138,6 +137,18 @@ pub(crate) fn lower_compound_expression(
     node: crate::ast::parsed::CompoundAssign,
 ) -> Result<crate::ast::Expr, String> {
     stmt::assign::lower_compound_expression(node).map_err(|error| error.to_string())
+}
+
+/// Lower `TARGET .= meth(args)` (`stmt::assign::compound_lower`): the one
+/// lowering of the `.=` assignment, for a hand-built tree. `is_term` names
+/// the barewords the tree declares as sigilless terms.
+// Cost: O(n), n = size of the target and the call.
+pub(crate) fn lower_dotty_assignment(
+    node: crate::ast::parsed::CompoundAssign,
+    as_statement: bool,
+    is_term: fn(&str) -> bool,
+) -> crate::ast::Expr {
+    stmt::assign::lower_dotty(node, as_statement, is_term)
 }
 
 /// Whether `op` is the base infix of a compound assignment the compound

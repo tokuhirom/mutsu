@@ -1034,7 +1034,8 @@ pub(super) fn lower_dotty_assign(
             target: Box::new(Expr::Literal(Value::NIL)),
             name: crate::symbol::Symbol::intern(&name),
             args: arg_exprs(inner)?,
-            modifier: dispatch_modifier(inner)?,
+            // The method of `@a>>.=uc` carries the `.=` dispatch itself.
+            modifier: dispatch_modifier(inner)?.filter(|m| *m != '='),
             quoted,
         }
     } else {
@@ -1045,28 +1046,15 @@ pub(super) fn lower_dotty_assign(
         // gets its own copy.
         lower_method_postfix(Expr::Literal(Value::NIL), call)?
     };
-    let method_call = move |invocant: Expr| match &template {
-        Expr::HyperMethodCall {
-            name,
-            args,
-            modifier,
-            quoted,
-            ..
-        } => Expr::HyperMethodCall {
-            target: Box::new(invocant),
-            name: *name,
-            args: args.clone(),
-            modifier: *modifier,
-            quoted: *quoted,
+    let call = crate::parser::retarget_dotty_call(&template, target.clone());
+    Ok(crate::parser::lower_dotty_assignment(
+        crate::ast::parsed::CompoundAssign {
+            target,
+            op: ".".to_string(),
+            meta: crate::ast::parsed::CompoundMeta::Dotty,
+            source: call,
         },
-        _ => super::dynamic_method::retarget(&template, invocant),
-    };
-    if as_statement && matches!(&target, Expr::Var(topic) if topic == "_") {
-        return Ok(crate::parser::topic_dot_assign(method_call(target)));
-    }
-    Ok(crate::parser::wrap_dot_assign_with_terms(
-        target,
-        method_call,
+        as_statement,
         super::shadowed_terms::is_declared_term,
     ))
 }

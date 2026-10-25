@@ -1,5 +1,3 @@
-use std::sync::atomic::Ordering;
-
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::parser::expr::expression;
 use crate::parser::helpers::ws;
@@ -12,9 +10,7 @@ use crate::parser::stmt::assign::{
     parse_compound_assign_op, parse_set_compound_assign_op,
 };
 use crate::parser::stmt::modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
-use crate::parser::stmt::simple::{
-    TMP_INDEX_COUNTER, add_xor_sink_warnings, parse_hyper_assign_op,
-};
+use crate::parser::stmt::simple::{add_xor_sink_warnings, parse_hyper_assign_op};
 use crate::parser::term_boundary::{is_pure_value_expr, starts_with_unambiguous_term};
 use crate::symbol::Symbol;
 use crate::value::Value;
@@ -147,7 +143,11 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             quoted: false,
             sugar: false,
         };
-        let stmt = Stmt::Expr(topic_dot_assign(call));
+        let stmt = Stmt::Expr(crate::parser::stmt::assign::written_dotty_assignment(
+            Expr::Var("_".to_string()),
+            call,
+            true,
+        ));
         return parse_statement_modifier(rest, stmt);
     }
 
@@ -324,75 +324,14 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             modifier: None,
             quoted: false,
         };
+        // The typed `.=` node over the hyper call; its lowering writes each
+        // result back through a variable or (index bound once) an element.
         match expr {
-            Expr::Var(name) => {
-                let stmt = Stmt::Assign {
-                    name: name.clone(),
-                    expr: make_rhs(Expr::Var(name)),
-                    op: AssignOp::Assign,
-                    target_is_sigilless: false,
-                };
-                return parse_statement_modifier(r, stmt);
-            }
-            Expr::ArrayVar(name) => {
-                let stmt = Stmt::Assign {
-                    name: format!("@{}", name),
-                    expr: make_rhs(Expr::ArrayVar(name)),
-                    op: AssignOp::Assign,
-                    target_is_sigilless: false,
-                };
-                return parse_statement_modifier(r, stmt);
-            }
-            Expr::HashVar(name) => {
-                let stmt = Stmt::Assign {
-                    name: format!("%{}", name),
-                    expr: make_rhs(Expr::HashVar(name)),
-                    op: AssignOp::Assign,
-                    target_is_sigilless: false,
-                };
-                return parse_statement_modifier(r, stmt);
-            }
-            Expr::Index {
-                target,
-                index,
-                is_positional,
-                spelling,
-                ..
-            } => {
-                let tmp_idx = format!(
-                    "__mutsu_idx_{}",
-                    TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
-                );
-                let tmp_idx_expr = Expr::Var(tmp_idx.clone());
-                let lhs_expr = Expr::Index {
-                    target: target.clone(),
-                    index: Box::new(tmp_idx_expr.clone()),
-                    is_positional,
-                    spelling: Default::default(),
-                };
-                let assigned_value = make_rhs(lhs_expr);
-                let stmt = Stmt::Expr(Expr::desugar_block(vec![
-                    Stmt::VarDecl {
-                        anonymous: false,
-                        name: tmp_idx,
-                        expr: *index,
-                        type_constraint: None,
-                        is_state: false,
-                        is_our: false,
-                        is_dynamic: false,
-                        is_export: false,
-                        export_tags: Vec::new(),
-                        custom_traits: Vec::new(),
-                        where_constraint: None,
-                    },
-                    Stmt::Expr(Expr::IndexAssign {
-                        target,
-                        index: Box::new(tmp_idx_expr),
-                        value: Box::new(assigned_value),
-                        is_positional: true,
-                        spelling,
-                    }),
-                ]));
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::Index { .. } => {
+                let call = make_rhs(expr.clone());
+                let stmt = Stmt::Expr(crate::parser::stmt::assign::written_dotty_assignment(
+                    expr, call, true,
+                ));
                 return parse_statement_modifier(r, stmt);
             }
             _ => {
@@ -482,13 +421,21 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             // `$_ .= meth`: route the topic metaop through `__mutsu_topic_dotassign`
             // (see the leading-dot case above).
             Expr::Var(name) if name == "_" => {
-                let stmt = Stmt::Expr(topic_dot_assign(make_rhs(Expr::Var("_".to_string()))));
+                let topic = Expr::Var("_".to_string());
+                let stmt = Stmt::Expr(crate::parser::stmt::assign::written_dotty_assignment(
+                    topic.clone(),
+                    make_rhs(topic),
+                    true,
+                ));
                 return parse_statement_modifier(r, stmt);
             }
             // A variable or an element: the same `.=` expansion (and marker) the
             // expression form builds, so the RakuAST conversion sees one shape.
             Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::Index { .. } => {
-                let stmt = Stmt::Expr(crate::parser::wrap_dot_assign(expr, make_rhs));
+                let call = make_rhs(expr.clone());
+                let stmt = Stmt::Expr(crate::parser::stmt::assign::written_dotty_assignment(
+                    expr, call, true,
+                ));
                 return parse_statement_modifier(r, stmt);
             }
             Expr::BareWord(ref name) => {

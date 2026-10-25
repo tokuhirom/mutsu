@@ -171,6 +171,12 @@ fn convert_temporized(t: &Temporized) -> Result<RakuAstNode, RuntimeError> {
             }
         }
         Assigned::Compound(Expr::Ast(node)) => match node.as_ref() {
+            crate::ast::parsed::ParsedExpr::CompoundAssign(a)
+                if a.meta == crate::ast::parsed::CompoundMeta::Dotty =>
+            {
+                let left = prefix_node(t.is_temp, convert_expr(&a.target)?);
+                super::convert::dotty_assignment_with_left(left, &a.source)
+            }
             crate::ast::parsed::ParsedExpr::CompoundAssign(a) => {
                 let left = prefix_node(t.is_temp, convert_expr(&a.target)?);
                 super::parsed_view::with_compound_meta(
