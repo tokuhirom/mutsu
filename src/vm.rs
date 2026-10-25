@@ -211,6 +211,7 @@ mod vm_attr_share;
 mod vm_backtrace;
 pub(crate) use vm_backtrace::setting_frame;
 mod vm_backtrace_lazy;
+pub(crate) mod vm_bareword_store;
 mod vm_check_read_only;
 pub(crate) mod vm_class_body_static_types;
 mod vm_closure_build;

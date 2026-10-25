@@ -1134,19 +1134,12 @@ fn postfix_expr_loop_from<'a>(
             let r = &rest[1..];
             // Consume unspace after dot: `.\ method` or `.\ (args)`
             let r = consume_unspace(r);
-            // `.=` mutating method call in expression context
-            // For BareWord targets (type objects like `Foo .= new`), defer to
-            // statement-level handler which correctly handles read-only type objects.
-            // A sigilless term (`my \foo`) is a variable, not a type object: its
-            // `foo.=m` parses here like `$x.=m`, so it also works as a call
-            // argument (`is(foo.=ror(2), ...)`, #9551).
-            if r.starts_with('=')
-                && !r.starts_with("==")
-                && matches!(&expr, Expr::BareWord(n)
-                    if !crate::parser::stmt::simple::is_user_declared_value_term(n))
-            {
-                break;
-            }
+            // `.=` mutating method call in expression context. A bareword that
+            // names no sigilless term is a type object (`Foo .= new`): the
+            // assignment dies as on rakudo, in a statement and in a nested
+            // expression alike (`say(Foo .= new)`). A sigilless term (`my \foo`)
+            // is a variable: its `foo.=m` parses like `$x.=m`, so it also works
+            // as a call argument (`is(foo.=ror(2), ...)`, #9551).
             if r.starts_with('=') && !r.starts_with("==") {
                 if let Ok((r_final, new_expr)) = parse_dot_assign(&r[1..], expr) {
                     expr = new_expr;
