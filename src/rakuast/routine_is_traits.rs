@@ -1,5 +1,5 @@
 //! Execution flags read from written routine traits.
-use super::convert::{leaf_field, node_field, statement_expression, unsupported};
+use super::convert::{leaf_field, node_field, statement_expression};
 use super::lower::{named_child, named_child_or_positional, positional_leaf};
 use super::routine_traits::{export_argument, export_tags, trait_is};
 use super::{RakuAstClass, RakuAstNode};
@@ -101,43 +101,6 @@ impl IsTraits {
         }
         nodes
     }
-
-    /// The traits a `SubDecl` records in `associativity` and `precedence_trait`.
-    /// A precedence trait also copies its kind into `associativity`, so the two
-    /// fields name two traits only when they disagree, whose order is not kept.
-    // Cost: O(|reference|).
-    pub(super) fn with_precedence(
-        mut self,
-        associativity: Option<&String>,
-        precedence_trait: Option<&(String, String)>,
-    ) -> Result<Self, RuntimeError> {
-        match (associativity, precedence_trait) {
-            (None, None) => {}
-            (Some(assoc), None) if !is_precedence_kind(assoc) => self.assoc = Some(assoc.clone()),
-            (Some(kind), Some(precedence)) if *kind == precedence.0 => {
-                self.precedence = Some(precedence.clone());
-            }
-            (None, Some(precedence)) => self.precedence = Some(precedence.clone()),
-            (Some(kind), None) if is_precedence_kind(kind) => {}
-            _ => {
-                return Err(unsupported(
-                    "routine with `is assoc` and a precedence trait (their source order is not kept)",
-                ));
-            }
-        }
-        if let Some((_, reference)) = &self.precedence
-            && !is_operator_reference(reference)
-        {
-            return Err(unsupported(
-                "precedence trait with a reference that is not `&category:<op>`",
-            ));
-        }
-        Ok(self)
-    }
-}
-
-fn is_precedence_kind(name: &str) -> bool {
-    matches!(name, "looser" | "tighter" | "equiv")
 }
 
 /// Whether `reference` is the `&infix:<+>` spelling of an operator sub.

@@ -10,6 +10,10 @@
 //!   `EVAL` string.
 //! - `MUTSU_RAKUAST=all`: those, plus every `use`d module and `require`d file,
 //!   bundled ones included.
+//! - `MUTSU_RAKUAST=convert`: as `1`, but no subtree crosses as the parser's own
+//!   tree ([`super::passthrough`]): every node goes through `convert` and `lower`,
+//!   as `.AST` and `EVAL($ast)` do. `1` is the cost-measured mode; this one keeps
+//!   the coverage of the `convert` and `lower` arms of the carried families.
 //!
 //! The two levels exist because a module is shared by every program that uses
 //! it: while `Test.rakumod` itself does not round-trip, `all` fails every test
@@ -41,16 +45,24 @@ enum Mode {
     Off,
     ProgramUnits,
     All,
+    /// [`Mode::ProgramUnits`] without the passthrough leaves.
+    Convert,
 }
 
 /// The `MUTSU_RAKUAST` setting. Read once per process.
 fn mode() -> Mode {
     static MODE: OnceLock<Mode> = OnceLock::new();
-    *MODE.get_or_init(|| match std::env::var("MUTSU_RAKUAST").as_deref() {
-        Ok("1") => Mode::ProgramUnits,
-        Ok("all") => Mode::All,
+    *MODE.get_or_init(|| parse_mode(std::env::var("MUTSU_RAKUAST").ok().as_deref()))
+}
+
+// Cost: O(1).
+fn parse_mode(value: Option<&str>) -> Mode {
+    match value {
+        Some("1") => Mode::ProgramUnits,
+        Some("all") => Mode::All,
+        Some("convert") => Mode::Convert,
         _ => Mode::Off,
-    })
+    }
 }
 
 /// Whether the `MUTSU_RAKUAST` mode runs a unit of this kind through the round
@@ -60,7 +72,7 @@ fn mode() -> Mode {
 pub(crate) fn covers(unit: Unit) -> bool {
     match mode() {
         Mode::Off => false,
-        Mode::ProgramUnits => unit != Unit::Module,
+        Mode::ProgramUnits | Mode::Convert => unit != Unit::Module,
         Mode::All => true,
     }
 }
@@ -103,7 +115,7 @@ pub(crate) fn round_trip(stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
 pub(crate) fn round_trip_owned(mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
     // The conversion matches expressions by shape, so the term origins the
     // spelled parse kept come off first (`expr_origins`).
-    let _leaves = super::passthrough::Scope::enter();
+    let _leaves = (mode() != Mode::Convert).then(super::passthrough::Scope::enter);
     let _origins = super::expr_origins::strip(&mut stmts);
     let node = super::convert::statement_list(&stmts)?;
     let mut lowered = super::lower(&node)?;
@@ -146,6 +158,15 @@ pub(crate) fn with_caller_names<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn convert_mode_covers_program_units_without_the_passthrough() {
+        assert_eq!(parse_mode(Some("convert")), Mode::Convert);
+        assert_eq!(parse_mode(Some("1")), Mode::ProgramUnits);
+        assert_eq!(parse_mode(Some("all")), Mode::All);
+        assert_eq!(parse_mode(None), Mode::Off);
+        assert_eq!(parse_mode(Some("0")), Mode::Off);
+    }
 
     #[test]
     fn unmodelled_literal_refuses_instead_of_falling_back() {

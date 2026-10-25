@@ -13,7 +13,6 @@ use super::placeholder::{is_placeholder_name, placeholder_node};
 use super::regex_declaration::{
     convert as regex_declaration, with_body as regex_declaration_with_body,
 };
-use super::routine_source::return_type_spelling;
 pub(super) use super::routine_source::routine_node;
 use super::source_identifier::{named_routine_call, written_identifier, written_variable};
 use super::{
@@ -695,7 +694,6 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // Multi, export and operator subs carry their public RakuAST shape.
             // The S13 alternate-signature and supersede forms have no Rakudo
             // node shape; their execution data stays as hidden source metadata.
-            let spelling = return_type_spelling(custom_traits)?;
             let deferred = [
                 (
                     *is_export != !export_tags.is_empty(),
@@ -722,17 +720,12 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             if let Some((_, what)) = deferred.iter().find(|(hit, _)| *hit) {
                 return Err(unsupported(what));
             }
-            if return_type.is_none() && spelling != ReturnSpelling::Arrow {
-                // A `__return_via_*` marker without a return type would be a
-                // parser inconsistency; refuse rather than render a wrong node.
-                return Err(unsupported("sub with a return trait but no return type"));
-            }
             let mut node = routine_node(
                 RakuAstClass::Sub,
                 &name.resolve(),
                 param_defs,
                 body,
-                return_type.as_deref().map(|t| (t, spelling)),
+                return_type.as_deref(),
             )?;
             super::routine_origins::apply(&mut node, spans.as_deref(), param_defs);
             super::routine_source::mark_legacy_sub_forms(
@@ -741,24 +734,20 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 *supersede,
             )?;
             super::symbolic_deref::replace_declarator_name(&mut node, name_expr.as_ref())?;
-            if super::routine_source::apply(&mut node, body)? {
-                routine_traits::add_flags(&mut node, *multi, false, &Default::default())?;
-                if let Some(scope) = sub_scope(custom_traits) {
-                    node.fields
-                        .insert(0, leaf_field(Some("scope"), Value::str_from(scope)));
-                }
-                super::routine_origins::traits(&mut node, spans.as_deref());
-                return Ok(Some(statement_expression(node)));
+            // The traits are the ones the source wrote, in written order; the
+            // execution fields the parser folded them into are not read back.
+            let written = super::routine_source::apply(&mut node, body)?;
+            if !written
+                && (*is_rw
+                    || *is_raw
+                    || !export_tags.is_empty()
+                    || associativity.is_some()
+                    || precedence_trait.is_some()
+                    || custom_traits.iter().any(|(t, _)| !t.starts_with("__")))
+            {
+                return Err(unsupported("sub with traits and no written-trait record"));
             }
-            let flags = routine_traits::IsTraits {
-                is_rw: *is_rw,
-                is_raw: *is_raw,
-                export_tags: export_tags.clone(),
-                ..Default::default()
-            }
-            .with_precedence(associativity.as_ref(), precedence_trait.as_ref())?;
-            routine_traits::add_flags(&mut node, *multi, false, &flags)?;
-            routine_traits::add_custom(&mut node, custom_traits, !flags.nodes().is_empty())?;
+            routine_traits::add_flags(&mut node, *multi, false, &Default::default())?;
             if let Some(scope) = sub_scope(custom_traits) {
                 // `scope => "our"` / `"anon"` leads the node; `my` is the
                 // default scope and renders no field.
@@ -801,7 +790,6 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // signature differ only in the class name). Private/multi/our/my
             // forms, user traits, and delegation carry extra shape; `multi`,
             // `!private`, `is rw` and `is raw` are `rakuast::routine_traits`.
-            let spelling = return_type_spelling(custom_traits)?;
             let declared_my = *is_my;
             let deferred = [
                 (
@@ -824,11 +812,6 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             if let Some((_, what)) = deferred.iter().find(|(hit, _)| *hit) {
                 return Err(unsupported(what));
             }
-            if return_type.is_none() && spelling != ReturnSpelling::Arrow {
-                // A `__return_via_*` marker without a return type would be a
-                // parser inconsistency; refuse rather than render a wrong node.
-                return Err(unsupported("method with a return trait but no return type"));
-            }
             let mut node = routine_node(
                 if *is_submethod {
                     RakuAstClass::Submethod
@@ -838,28 +821,27 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 &name.resolve(),
                 param_defs,
                 body,
-                return_type.as_deref().map(|t| (t, spelling)),
+                return_type.as_deref(),
             )?;
             super::routine_origins::apply(&mut node, spans.as_deref(), param_defs);
             super::symbolic_deref::replace_declarator_name(&mut node, name_expr.as_ref())?;
-            let source_traits = super::routine_source::apply(&mut node, body)?;
-            let flags = routine_traits::IsTraits {
-                is_rw: *is_rw,
-                is_raw: *is_raw,
-                export_tags: export_tags.clone(),
-                ..Default::default()
-            };
-            if source_traits {
-                routine_traits::add_flags(&mut node, *multi, *is_private, &Default::default())?;
-            } else {
-                routine_traits::add_flags(&mut node, *multi, *is_private, &flags)?;
-                let custom = routine_traits::method_custom_traits(
-                    custom_traits,
-                    *is_default_candidate,
-                    deprecated_message.as_deref(),
-                )?;
-                routine_traits::add_custom(&mut node, &custom, !flags.nodes().is_empty())?;
+            // The traits are the ones the source wrote, in written order; the
+            // execution fields the parser folded them into are not read back.
+            let written = super::routine_source::apply(&mut node, body)?;
+            if !written
+                && (*is_rw
+                    || *is_raw
+                    || !export_tags.is_empty()
+                    || *is_default_candidate
+                    || deprecated_message.is_some()
+                    || !handles.is_empty()
+                    || custom_traits.iter().any(|(t, _)| !t.starts_with("__")))
+            {
+                return Err(unsupported(
+                    "method with traits and no written-trait record",
+                ));
             }
+            routine_traits::add_flags(&mut node, *multi, *is_private, &Default::default())?;
             // `scope => "my"` / `"our"` leads the node, ahead of `multiness`.
             // Submethod's constructor rendering omits even a written scope,
             // but its accessor still distinguishes `my` and `our`. Keep the
@@ -1277,7 +1259,6 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             return_type,
             body,
             is_export,
-            export_tags,
             custom_traits,
             trait_args,
             is_method,
@@ -1290,15 +1271,8 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 return_type: return_type.as_deref(),
                 body,
                 is_export: *is_export,
-                export_tags,
                 has_traits: custom_traits.iter().any(|t| !is_return_spelling_marker(t))
                     || !trait_args.is_empty(),
-                spelling: return_type_spelling(
-                    &custom_traits
-                        .iter()
-                        .map(|t| (t.clone(), None))
-                        .collect::<Vec<_>>(),
-                )?,
                 is_method: *is_method,
                 is_our: *is_our,
             },
@@ -5383,20 +5357,6 @@ fn phaser_class(kind: &crate::ast::PhaserKind) -> Option<RakuAstClass> {
 /// reads them for the spelling instead of treating them as a coverage boundary.
 fn is_return_spelling_marker(trait_name: &str) -> bool {
     matches!(trait_name, "__return_via_trait" | "__return_via_of")
-}
-
-/// How a routine's return type was written in the source. raku models the two
-/// spellings with different nodes, and mutsu's internal AST keeps them apart
-/// (the `returns`/`of` forms leave a `__return_via_*` marker in `custom_traits`),
-/// so the converter never has to guess.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum ReturnSpelling {
-    /// `sub f(--> Int)` — part of the signature (`Signature.returns`).
-    Arrow,
-    /// `sub f() returns Int` — a routine trait (`Trait::Returns`).
-    ReturnsTrait,
-    /// `sub f() of Int` — a routine trait (`Trait::Of`).
-    OfTrait,
 }
 
 /// `Signature(parameters => (Parameter, ...)[, returns => Type])`. `type_setting`

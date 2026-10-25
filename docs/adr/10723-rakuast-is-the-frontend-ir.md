@@ -2236,3 +2236,23 @@ What this does not do: the `convert` arms and the `lower` arms of the carried fa
 subtree, so the Stage 0 ratchet exercises them only through the files whose subtree is not pure.
 Routine declarations, packages, signatures and the constructs the guards name still go through
 `RakuAstNode`; their typed nodes (Stage 2) are the next place the round trip shrinks.
+
+### 6.110 Routine and package traits are rendered from the written record only (2026-10-26, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+The first deletion after §6.109. Rendering the traits of a routine or package had two mechanisms:
+the record of the traits as written (`ast::routine_trait`, §6.2), and a reconstruction from the
+execution fields the parser folds them into (`is_rw`, `is_raw`, `export_tags`, the precedence
+fields, `custom_traits`, the `__return_via_*` spelling markers). A spelling-keeping parse always
+records the traits that were written, so the second mechanism could only serve a tree no keeping
+parse built; measured over the ratchet's 8,702 `t/` files under `MUTSU_RAKUAST=1` it was reached by
+none, and it is deleted: `routine_traits::{add_custom, method_custom_traits, custom_argument,
+has_generic_traits}`, `IsTraits::with_precedence`, `routine_source::return_type_spelling`,
+`convert::ReturnSpelling`, and the `export_tags` / `spelling` fields of `proto::ProtoDecl`.
+`routine_node` renders the return type as the signature's `-->` and `routine_source::apply`
+replaces it with the written `returns` / `of` trait, as it already did. A routine whose folded
+fields name a trait with no written record is refused ("... and no written-trait record"). The
+`__return_via_*` markers stay: `X::InvalidType` versus `X::Undeclared` reads them at run time.
+
+`MUTSU_RAKUAST=convert` is the §6.109 coverage answer. It runs the executing round trip without
+the passthrough leaves, so the `convert` and `lower` arms of the carried families run on every
+ratchet file as they do for `.AST` and `EVAL($ast)`. All 531 `t/rakuast/*.t` files pass in it.

@@ -16,27 +16,20 @@
 //! `sub infix:<+++>($a, $b) is assoc<left>` carries its associativity as
 //! `Trait::Is(name => assoc, argument => QuotedString(<words val>, "left"))` and
 //! `is tighter(&infix:<+>)` (also `looser`, `equiv`) a parenthesised
-//! `Var::Lexical("&infix:<+>")`. The parser keeps the first in `associativity`
-//! and the second in `precedence_trait` (also copying its kind into
-//! `associativity`). The written source list in `routine_source` preserves both.
+//! `Var::Lexical("&infix:<+>")`.
 //!
 //! `multiness` and `private` precede `name`; a trait sits in `traits` before
-//! `body`. Parsed routines use `routine_source` for written order and argument
-//! spelling. The normalized-field helpers here also serve synthesized trees,
-//! for which a combination whose order is unknown remains a refusal.
+//! `body`. The traits of a parsed routine are rendered from the list the
+//! source wrote, in written order (`routine_source`); the execution fields the
+//! parser folds them into (`is_rw`, `associativity`, `custom_traits`) are not
+//! read back. The helpers here serve the flags and the lowering direction.
 //!
 //! Any other `is NAME` / `is NAME(ARGS)` on a sub (`is native("libc")`,
 //! `is test-assertion`, a user `trait_mod:<is>`) is a `Trait::Is` too, with
-//! the argument as a `Circumfix::Parentheses`. The parser keeps these in
-//! `custom_traits` in source order, beside the `returns`/`of` marker, so they
-//! render in that order around the return-type trait. A list argument
-//! `(a, b)` is the parser's `Grouped(ArrayLiteral)`, and the parentheses are
-//! the circumfix. Written angle arguments retain their word-quote form through
-//! `routine_source`; normalized custom arguments use the helpers here.
-//! `is DEPRECATED` / `is DEPRECATED("message")` is a `Trait::Is` too:
-//! the parser keeps it as the custom trait `DEPRECATED` / `DEPRECATED:message`,
-//! and a method's `is default` and `is DEPRECATED` as fields of their own, which
-//! [`method_custom_traits`] puts back among the custom traits.
+//! the argument as a `Circumfix::Parentheses`. A list argument `(a, b)` is the
+//! parser's `Grouped(ArrayLiteral)`, and the parentheses are the circumfix.
+//! `is DEPRECATED` / `is DEPRECATED("message")` is a `Trait::Is` too: the
+//! parser keeps it as the custom trait `DEPRECATED` / `DEPRECATED:message`.
 
 use super::convert::{
     leaf_field, name_from_identifier, node_field, statement_expression, unsupported,
@@ -268,156 +261,6 @@ pub(super) fn deprecated_message(name: &str) -> Option<&str> {
         return Some("");
     }
     name.strip_prefix("DEPRECATED:")
-}
-
-/// Whether the converter renders the custom trait `name` as a `Trait::Is`.
-fn is_renderable_trait_name(name: &str) -> bool {
-    name == "__hidden_from_backtrace"
-        || is_type_trait_name(name)
-        || is_generic_trait_name(name)
-        || deprecated_message(name).is_some()
-}
-
-/// Whether `custom_traits` holds a trait that renders as a plain `Trait::Is`.
-// Cost: O(t), t = custom traits.
-pub(super) fn has_generic_traits(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits
-        .iter()
-        .any(|(t, _)| is_renderable_trait_name(t))
-}
-
-/// A method's custom traits with its `is default` and `is DEPRECATED`, which
-/// the parser keeps in fields of their own, put back: those traits carry no
-/// order among the custom ones, so they are accepted only alone.
-// Cost: O(t), t = custom traits.
-pub(super) fn method_custom_traits(
-    custom_traits: &[(String, Option<Expr>)],
-    is_default: bool,
-    deprecated: Option<&str>,
-) -> Result<Vec<(String, Option<Expr>)>, RuntimeError> {
-    let mut all = custom_traits.to_vec();
-    let extras = usize::from(is_default) + usize::from(deprecated.is_some());
-    if extras > 0 && (extras > 1 || has_generic_traits(custom_traits)) {
-        return Err(unsupported(
-            "method with several traits (their source order is not kept)",
-        ));
-    }
-    if is_default {
-        all.push(("default".to_string(), None));
-    }
-    if let Some(message) = deprecated {
-        let name = if message.is_empty() {
-            "DEPRECATED".to_string()
-        } else {
-            format!("DEPRECATED:{message}")
-        };
-        all.push((name, None));
-    }
-    Ok(all)
-}
-
-/// The parser's argument of a custom trait, as the `(…)` circumfix rakudo
-/// renders: `Grouped(ArrayLiteral)` is `(a, b)` and any other expression is
-/// `(EXPR)`. `None` for a spelling the lowering would not rebuild.
-// Cost: O(e), e = size of the argument.
-fn custom_argument(argument: &Expr) -> Result<Option<RakuAstNode>, RuntimeError> {
-    match argument {
-        Expr::Grouped(inner) if matches!(**inner, Expr::ArrayLiteral(_)) => {
-            Ok(Some(super::attribute::paren_argument(inner)?))
-        }
-        Expr::Grouped(_) | Expr::ArrayLiteral(_) => Ok(None),
-        other => Ok(Some(super::attribute::paren_argument(other)?)),
-    }
-}
-
-/// Add a sub's plain custom traits (`is native("libc")`) to `node`'s
-/// `traits`, around the return-type trait as `custom_traits` orders them.
-/// `flags` says whether `add_flags` wrote an `is rw` / `raw` / `export`, whose
-/// place among these the parser does not keep.
-// Cost: O(t + a), t = custom traits, a = size of their arguments.
-pub(super) fn add_custom(
-    node: &mut RakuAstNode,
-    custom_traits: &[(String, Option<Expr>)],
-    flags: bool,
-) -> Result<(), RuntimeError> {
-    if !has_generic_traits(custom_traits) {
-        return Ok(());
-    }
-    if flags {
-        return Err(unsupported(
-            "routine with several traits (their source order is not kept)",
-        ));
-    }
-    let mut before = Vec::new();
-    let mut after = Vec::new();
-    let mut seen_return = false;
-    for (name, argument) in custom_traits {
-        if matches!(name.as_str(), "__return_via_trait" | "__return_via_of") {
-            seen_return = true;
-            continue;
-        }
-        if !is_renderable_trait_name(name) {
-            continue;
-        }
-        let item = if name == "__hidden_from_backtrace" {
-            Value::rakuast(Box::new(trait_is("hidden-from-backtrace", None)))
-        } else if is_type_trait_name(name) {
-            let argument =
-                match argument {
-                    None => None,
-                    Some(argument) => Some(custom_argument(argument)?.ok_or_else(|| {
-                        unsupported("type trait with an angle-word list argument")
-                    })?),
-                };
-            Value::rakuast(Box::new(trait_is_type(name, argument)?))
-        } else if let Some(message) = deprecated_message(name) {
-            let argument = if message.is_empty() {
-                None
-            } else {
-                Some(super::attribute::paren_argument(&Expr::Literal(
-                    Value::str(message.to_string()),
-                ))?)
-            };
-            Value::rakuast(Box::new(trait_is("DEPRECATED", argument)))
-        } else {
-            let argument = match argument {
-                None => None,
-                Some(argument) => Some(
-                    custom_argument(argument)?
-                        .ok_or_else(|| unsupported("trait with an angle-word list argument"))?,
-                ),
-            };
-            Value::rakuast(Box::new(trait_is(name, argument)))
-        };
-        if seen_return {
-            after.push(item)
-        } else {
-            before.push(item)
-        }
-    }
-    if let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("traits")) {
-        let RakuAstFieldValue::List(existing) = &mut field.value else {
-            return Err(unsupported("routine traits field"));
-        };
-        before.append(existing);
-        before.append(&mut after);
-        *existing = before;
-        return Ok(());
-    }
-    before.append(&mut after);
-    let at = node
-        .fields
-        .iter()
-        .position(|f| f.name == Some("body"))
-        .unwrap_or(node.fields.len());
-    node.fields.insert(
-        at,
-        RakuAstField {
-            name: Some("traits"),
-            value: RakuAstFieldValue::List(before),
-        },
-    );
-    Ok(())
 }
 
 /// Lower a `Trait::Is` that names a plain custom trait into the parser's

@@ -12,7 +12,7 @@ use super::lower::{
     call_name_str, lower_routine_stmts, named_child, named_child_or_positional,
     routine_return_type, signature_positional_params,
 };
-use super::routine_traits::{IsTraits, add_flags};
+use super::routine_traits::IsTraits;
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
@@ -25,11 +25,7 @@ pub(super) struct ProtoDecl<'a> {
     pub return_type: Option<&'a str>,
     pub body: &'a [Stmt],
     pub is_export: bool,
-    /// Empty for the untagged `is export`, unlike `SubDecl`'s `DEFAULT`.
-    pub export_tags: &'a [String],
     pub has_traits: bool,
-    /// How the return type, if any, was written.
-    pub spelling: super::convert::ReturnSpelling,
     pub is_method: bool,
     pub is_our: bool,
 }
@@ -64,7 +60,7 @@ pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError>
         &proto.name.resolve(),
         proto.param_defs,
         body,
-        proto.return_type.map(|t| (t, proto.spelling)),
+        proto.return_type,
     )?;
     if onlystar {
         let field = node
@@ -78,17 +74,12 @@ pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError>
             fields: Vec::new(),
         })));
     }
-    let export_tags = match (proto.is_export, proto.export_tags) {
-        (false, _) => Vec::new(),
-        (true, []) => vec!["DEFAULT".to_string()],
-        (true, tags) => tags.to_vec(),
-    };
-    let traits = IsTraits {
-        export_tags,
-        ..IsTraits::default()
-    };
-    if !super::routine_source::apply(&mut node, proto.body)? {
-        add_flags(&mut node, false, false, &traits)?;
+    // The traits are the ones the source wrote; `is export` is folded into
+    // `is_export` / `export_tags`, which are not read back.
+    if !super::routine_source::apply(&mut node, proto.body)? && proto.is_export {
+        return Err(unsupported(
+            "proto with `is export` and no written-trait record",
+        ));
     }
     node.fields
         .insert(0, leaf_field(Some("multiness"), Value::str_from("proto")));
