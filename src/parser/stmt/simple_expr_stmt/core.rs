@@ -831,7 +831,12 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             target if crate::rakuast::is_callable_lvalue_assign_target(&target) => {
                 Stmt::Expr(crate::parser::stmt::assign::written_assignment(target, rhs))
             }
-            target => crate::parser::stmt::assign::written_assignment_stmt(target, rhs),
+            target if crate::rakuast::is_expression_assign_target(&target) => {
+                crate::parser::stmt::assign::written_assignment_stmt(target, rhs)
+            }
+            // TODO: #15012 -- an operator result (`("a" R~ "b") = 1`) is written
+            // through its container here instead of by the typed node.
+            target => Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), rhs)),
         };
         return parse_statement_modifier(r, stmt);
     }
