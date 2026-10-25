@@ -281,7 +281,7 @@ fn held(node: &RakuAstNode) -> Result<Held, RuntimeError> {
     })
 }
 
-/// Lowers every kept [`ParsedStmt`] of a tree, innermost first.
+/// Lowers every kept [`crate::ast::parsed::ParsedStmt`] of a tree, innermost first.
 struct Kept(Option<RuntimeError>);
 
 impl Kept {
