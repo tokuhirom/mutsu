@@ -23,6 +23,7 @@ pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PE
     match node.meta {
         CompoundMeta::Reverse => return Ok(lower_reverse(node)),
         CompoundMeta::Set => return lower_set(node),
+        CompoundMeta::TopicDotty => return Ok(topic_dotty_expression(node.source)),
         CompoundMeta::Dotty => {
             return Ok(lower_dotty(
                 node,
@@ -60,7 +61,7 @@ pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PE
 /// as a statement.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_compound_statement(node: CompoundAssign) -> Result<Stmt, PError> {
-    if node.meta == CompoundMeta::Dotty {
+    if matches!(node.meta, CompoundMeta::Dotty | CompoundMeta::TopicDotty) {
         return Ok(Stmt::Expr(lower_dotty(
             node,
             true,
@@ -323,6 +324,43 @@ pub(crate) fn written_dotty_assignment(target: Expr, call: Expr, as_statement: b
         as_statement,
         crate::parser::stmt::simple::is_user_declared_value_term,
     )
+}
+
+/// `.= meth(args)` written with no target: the topic's `.=`, kept as the
+/// `Term::TopicCall` a `.AST` parse shows and lowered at once otherwise, the
+/// same way `$_ .= meth(args)` is. `call` is the method call over `$_`.
+// Cost: O(n), n = size of the call.
+pub(crate) fn written_topic_dotty_assignment(call: Expr, as_statement: bool) -> Expr {
+    let node = CompoundAssign {
+        target: Expr::Var("_".to_string()),
+        op: ".".to_string(),
+        meta: CompoundMeta::TopicDotty,
+        source: call,
+    };
+    if crate::ast::spelled::keeping() {
+        return Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node)));
+    }
+    if !as_statement {
+        return topic_dotty_expression(node.source);
+    }
+    lower_dotty(
+        node,
+        true,
+        crate::parser::stmt::simple::is_user_declared_value_term,
+    )
+}
+
+/// The bare `.= meth` in expression position (the right side of an
+/// `andthen`/`orelse` chain): the plain `$_ = $_.meth` assignment, which the
+/// chain retargets to its root variable. The statement form writes through a
+/// whole-container topic instead (`given @a { .=uc }`).
+// Cost: O(1).
+fn topic_dotty_expression(call: Expr) -> Expr {
+    Expr::AssignExpr {
+        name: "_".to_string(),
+        expr: Box::new(call),
+        is_bind: false,
+    }
 }
 
 /// `TARGET (|)= SOURCE`: the marker over the set operator's expansion.

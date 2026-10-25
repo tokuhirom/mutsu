@@ -1212,19 +1212,13 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                 quoted: false,
                 sugar: false,
             };
-            // NOTE: a leading-dot `.=meth` in *expression* position (e.g. the RHS
-            // of an `andthen`/`orelse` chain) keeps the plain `AssignExpr` form so
-            // the chain-retarget mechanism can redirect the implied `$_` to the
-            // chain root variable. The whole-container topic write-through (`given
-            // @a { .=uc }`) is handled by the *statement*-level `.=` paths via the
-            // `__mutsu_topic_dotassign` marker instead.
+            // A leading-dot `.=meth` in *expression* position (e.g. the RHS of an
+            // `andthen`/`orelse` chain) is the topic's `.=` in expression form.
+            // The whole-container topic write-through (`given @a { .=uc }`) is
+            // the *statement* form, which `expr_stmt` builds.
             return Ok((
                 r,
-                Expr::AssignExpr {
-                    name: "_".to_string(),
-                    expr: Box::new(method_call),
-                    is_bind: false,
-                },
+                crate::parser::stmt::assign::written_topic_dotty_assignment(method_call, false),
             ));
         }
     }

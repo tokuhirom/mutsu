@@ -382,6 +382,9 @@ fn lower_stmt_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::VarDeclarationTerm => lower_term_declaration(node),
         RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_statement(node),
         RakuAstClass::ApplyDottyInfix => Ok(Stmt::Expr(lower_dotty_assign(node, true)?)),
+        RakuAstClass::TermTopicCall if let Some(compound) = topic_dotty_node(node)? => {
+            crate::parser::lower_compound_statement(compound).map_err(RuntimeError::new)
+        }
         // The conditional family reads the node into the parser's own
         // `Conditional` and lowers that (ADR-10723 Stage 2).
         RakuAstClass::StatementIf => lower_conditional(node, ConditionalKind::If),
@@ -1021,6 +1024,42 @@ fn lower_term_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// parser's `.=` expansion. As a statement, `$_ .= meth` is the topic form that
 /// can write through a read-only whole-container topic.
 // Cost: O(n), n = size of the target and the arguments.
+/// `Term::TopicCall` over a method call with the `.=` dispatch (`.= meth`
+/// written with no target) as the typed node the parser builds for it;
+/// `None` for any other topic call.
+// Cost: O(n), n = size of the call.
+fn topic_dotty_node(
+    node: &RakuAstNode,
+) -> Result<Option<crate::ast::parsed::CompoundAssign>, RuntimeError> {
+    let call = named_child_or_positional(node)?;
+    if !is_method_call(call) || dispatch_modifier(call)? != Some('=') {
+        return Ok(None);
+    }
+    let source = match lower_method_postfix(Expr::Var("_".to_string()), call)? {
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            quoted,
+            ..
+        } => Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: None,
+            quoted,
+            sugar: false,
+        },
+        _ => return Err(unsupported(node)),
+    };
+    Ok(Some(crate::ast::parsed::CompoundAssign {
+        target: Expr::Var("_".to_string()),
+        op: ".".to_string(),
+        meta: crate::ast::parsed::CompoundMeta::TopicDotty,
+        source,
+    }))
+}
+
 pub(super) fn lower_dotty_assign(
     node: &RakuAstNode,
     as_statement: bool,
@@ -4444,6 +4483,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::TermName => super::term_name::lower(node),
         // `.method(...)` on the topic: the same method call `$_.method(...)`
         // compiles to.
+        RakuAstClass::TermTopicCall if let Some(compound) = topic_dotty_node(node)? => {
+            crate::parser::lower_compound_expression(compound).map_err(RuntimeError::new)
+        }
         RakuAstClass::TermTopicCall => {
             let call = named_child_or_positional(node)?;
             match lower_method_postfix(Expr::Var("_".to_string()), call)? {
