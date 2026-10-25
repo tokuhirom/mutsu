@@ -153,10 +153,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 if r2.starts_with('=') && !r2.starts_with("==") && !r2.starts_with("=>") {
                     let (r, _) = ws(&r2[1..])?;
                     let (r, rhs) = parse_assign_expr_or_comma(r)?;
-                    (
-                        r,
-                        crate::parser::expr::precedence::assign_to_target_expr(lhs, rhs),
-                    )
+                    (r, crate::parser::stmt::assign::written_assignment(lhs, rhs))
                 } else {
                     (r2, lhs)
                 };
