@@ -1674,6 +1674,7 @@ t/control/statement-modifiers.t
 t/control/stmt-terminator-colon-block-arg.t
 t/control/succeed-block-boundary-absorption.t
 t/control/succeed-propagates-through-calls.t
+t/control/ternary-bare-dotty-assign.t
 t/control/ternary-builtin-enum-then.t
 t/control/ternary-call-arg.t
 t/control/ternary-container-increment.t
