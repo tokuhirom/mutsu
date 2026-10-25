@@ -188,7 +188,18 @@ pub(crate) fn lower_statement(node: Assign) -> Stmt {
             op: AssignOp::Assign,
             target_is_sigilless: false,
         },
-        None => Stmt::Expr(lower_expression(node)),
+        None => {
+            // `(@a, *) = …`: the statement form extracts the element by position.
+            if let Expr::ArrayLiteral(items) = &node.target
+                && let Some(stmt) = crate::parser::single_target_list_lvalue_stmt(
+                    Expr::ArrayLiteral(items.clone()),
+                    node.source.clone(),
+                )
+            {
+                return stmt;
+            }
+            Stmt::Expr(lower_expression(node))
+        }
     }
 }
 

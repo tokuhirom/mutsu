@@ -121,7 +121,6 @@ mod signature_literal;
 mod source_identifier;
 #[cfg(test)]
 mod source_identifier_tests;
-mod star_lvalue;
 mod string_origins;
 mod subclass;
 mod subscript_adverb;

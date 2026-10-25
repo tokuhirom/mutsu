@@ -782,58 +782,11 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        if let Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier,
-            ..
-        } = &expr
-        {
-            if name == "AT-POS"
-                && args.len() == 1
-                && !matches!(target.as_ref(), Expr::Var(name) | Expr::BareWord(name) if name == "self")
-            {
-                let assigned = Expr::IndexAssign {
-                    target: target.clone(),
-                    index: Box::new(args[0].clone()),
-                    value: Box::new(rhs),
-                    is_positional: true,
-                    spelling: Default::default(),
-                };
-                let stmt = Stmt::Expr(assigned);
-                return parse_statement_modifier(r, stmt);
-            }
-            let target_var_name = method_lvalue_target_name(target);
-            let method_name = if let Some(m @ ('!' | '^')) = *modifier {
-                format!("{m}{}", name.resolve())
-            } else {
-                name.resolve()
-            };
-            let assigned = method_lvalue_assign_expr(
-                (**target).clone(),
-                target_var_name,
-                method_name,
-                args.clone(),
-                rhs,
-            );
-            let stmt = Stmt::Expr(assigned);
-            return parse_statement_modifier(r, stmt);
-        }
-        if let Expr::Call { name, args, .. } = &expr {
-            let stmt = Stmt::Expr(named_sub_lvalue_assign_expr(
-                name.resolve(),
-                args.clone(),
-                rhs,
-            ));
-            return parse_statement_modifier(r, stmt);
-        }
-        if let Expr::CallOn { target, args } = &expr {
-            let stmt = Stmt::Expr(callable_lvalue_assign_expr(
-                (**target).clone(),
-                args.clone(),
-                rhs,
-            ));
+        if matches!(
+            expr,
+            Expr::MethodCall { .. } | Expr::Call { .. } | Expr::CallOn { .. }
+        ) {
+            let stmt = crate::parser::stmt::assign::written_assignment_stmt(expr, rhs);
             return parse_statement_modifier(r, stmt);
         }
         let stmt = match expr {
@@ -878,17 +831,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             target if crate::rakuast::is_callable_lvalue_assign_target(&target) => {
                 Stmt::Expr(crate::parser::stmt::assign::written_assignment(target, rhs))
             }
-            target => {
-                if let Some(stmt) = grouped_assign_lvalue_stmt(&target, rhs.clone()) {
-                    stmt
-                } else if let Some(stmt) =
-                    single_target_list_lvalue_stmt(target.clone(), rhs.clone())
-                {
-                    stmt
-                } else {
-                    Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), rhs))
-                }
-            }
+            target => crate::parser::stmt::assign::written_assignment_stmt(target, rhs),
         };
         return parse_statement_modifier(r, stmt);
     }

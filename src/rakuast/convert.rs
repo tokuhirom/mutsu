@@ -414,12 +414,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 if let Some(stub) = stub_node(name.as_str(), &args) {
                     return Ok(Some(statement_expression(stub?)));
                 }
-                if let Some((call, value)) = method_lvalue_parts(name.as_str(), &args) {
-                    return Ok(Some(statement_expression(method_lvalue_assignment(
-                        convert_expr(&call)?,
-                        convert_expr(value)?,
-                    ))));
-                }
                 return Err(desugared(name.as_str()));
             }
             // `foo $obj: 1` is the method call `$obj.foo(1)`.
@@ -1512,98 +1506,6 @@ fn bind_infix(name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
     })
 }
 
-/// `$o.attr = EXPR` parses to the internal `__mutsu_assign_method_lvalue(target,
-/// "attr", [args], value, var-name)` writeback call. Rakudo models it as a plain
-/// assignment whose left side is the method call: this returns that method call
-/// and the assigned value. `None` when `name` is another marker or the method
-/// name is not a literal (a dynamic `$o."$n"() = v` stays the boundary).
-fn method_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Expr)> {
-    if name != "__mutsu_assign_method_lvalue" {
-        return None;
-    }
-    // The five-argument record comes from `assign_to_target_expr`; the
-    // six-argument record is the method-lvalue compound-assignment expansion.
-    // Both retain the method call and final value needed to rebuild through
-    // the parser's assignment path. A non-true sixth argument is not a source
-    // form this conversion recognizes.
-    let (target, method, method_args, value, write_back) = match args {
-        [
-            target,
-            method,
-            Expr::ArrayLiteral(method_args),
-            value,
-            write_back,
-        ] => (target, method, method_args, value, write_back),
-        [
-            target,
-            method,
-            Expr::ArrayLiteral(method_args),
-            value,
-            write_back,
-            Expr::Literal(flag),
-        ] if matches!(flag.view(), ValueView::Bool(true)) => {
-            (target, method, method_args, value, write_back)
-        }
-        _ => {
-            return None;
-        }
-    };
-    let (method, dynamic_name) = match method {
-        Expr::Literal(method) | Expr::LiteralSrc(method, _) => {
-            let ValueView::Str(method) = method.view() else {
-                return None;
-            };
-            (Some(method.to_string()), None)
-        }
-        name_expr => (None, Some(name_expr)),
-    };
-    let expected_write_back = crate::parser::method_lvalue_target_name(target);
-    let write_back = match write_back {
-        Expr::Literal(v) => match v.view() {
-            ValueView::Str(s) => Some(s.to_string()),
-            _ if v.is_nil() => None,
-            _ => return None,
-        },
-        _ => return None,
-    };
-    if write_back != expected_write_back {
-        return None;
-    }
-    // `$(EXPR) = v` and `$o.AT-POS(i) = v` are assignments the parser routes
-    // elsewhere; a record of them did not come from that function.
-    let is_rerouted = (method.as_deref() == Some("item") && method_args.is_empty())
-        || (method.as_deref() == Some("AT-POS")
-            && method_args.len() == 1
-            && !matches!(target, Expr::Var(n) | Expr::BareWord(n) if n == "self"));
-    if is_rerouted {
-        return None;
-    }
-    let call = if let Some(name_expr) = dynamic_name {
-        Expr::DynamicMethodCall {
-            target: Box::new(target.clone()),
-            name_expr: Box::new(name_expr.clone()),
-            args: method_args.clone(),
-            modifier: None,
-            quoted: matches!(name_expr, Expr::StringInterpolation(_)),
-        }
-    } else {
-        let method = method.as_deref()?;
-        let (modifier, method) = match method.strip_prefix('!') {
-            Some(private) => (Some('!'), private),
-            None => (None, method),
-        };
-        Expr::MethodCall {
-            target: Box::new(target.clone()),
-            name: crate::symbol::Symbol::intern(method),
-            args: method_args.clone(),
-            modifier,
-            quoted: false,
-            sugar: false,
-        }
-    };
-    Some((call, value))
-}
-
 /// A yada-yada stub (`...`, `!!!`, `???`) -> `Stub::Fail` / `Die` / `Warn`,
 /// carrying an `args` list only when the source wrote a message; `None` for
 /// any other call.
@@ -1643,24 +1545,6 @@ fn index_bind_rhs(value: &Expr) -> Option<&Expr> {
             }
         }
         _ => None,
-    }
-}
-
-/// `ApplyInfix(left, Assignment, right)` over already converted operands.
-fn method_lvalue_assignment(left: RakuAstNode, right: RakuAstNode) -> RakuAstNode {
-    let assignment = RakuAstNode {
-        origin: Default::default(),
-        class: RakuAstClass::Assignment,
-        fields: vec![],
-    };
-    RakuAstNode {
-        origin: Default::default(),
-        class: RakuAstClass::ApplyInfix,
-        fields: vec![
-            node_field(Some("left"), left),
-            node_field(Some("infix"), assignment),
-            node_field(Some("right"), right),
-        ],
     }
 }
 
@@ -3083,12 +2967,6 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 ));
             }
             if is_desugar_marker(name.as_str()) {
-                if let Some((call, value)) = method_lvalue_parts(name.as_str(), args) {
-                    return Ok(method_lvalue_assignment(
-                        convert_expr(&call)?,
-                        convert_expr(value)?,
-                    ));
-                }
                 return Err(desugared(name.as_str()));
             }
             if let Some(coercion) = super::type_call::convert(name.as_str(), args)? {
@@ -3688,15 +3566,9 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if *is_bind {
                 return bind_infix(name, expr);
             }
-            match super::star_lvalue::parts(name, expr) {
-                Some((target, rhs)) => Ok(method_lvalue_assignment(
-                    convert_expr(&target)?,
-                    convert_expr(&rhs)?,
-                )),
-                // `$x = EXPR` is the typed assignment node a `.AST` parse keeps
-                // (ADR-10723 Stage 2).
-                None => Err(unsupported("source form")),
-            }
+            // `$x = EXPR` is the typed assignment node a `.AST` parse keeps
+            // (ADR-10723 Stage 2).
+            Err(unsupported("source form"))
         }
         Expr::CompoundAssign {
             target, op, rhs, ..
