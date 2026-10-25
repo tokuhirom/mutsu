@@ -114,8 +114,11 @@ pub(super) fn stmt_guards(stmt: &Stmt) -> Guards {
 // Cost: O(1).
 pub(super) fn expr_guards(expr: &Expr) -> Guards {
     Guards(
-        matches!(expr, Expr::DoStmt(inner) if matches!(inner.as_ref(), Stmt::SyntheticBlock(_)))
-            .then(Desugared::enter),
+        // A kept `supply { }` body is expanded by the shape of its statements
+        // (`emit`, `done`), as the desugaring is.
+        (matches!(expr, Expr::DoStmt(inner) if matches!(inner.as_ref(), Stmt::SyntheticBlock(_)))
+            || matches!(expr, Expr::Ast(node) if !matches!(node.as_ref(), ParsedExpr::Assign(_))))
+        .then(Desugared::enter),
         matches!(
             expr,
             Expr::Binary { .. }

@@ -173,6 +173,10 @@ impl Purity {
                 self.fixup = true;
                 matches!(node.as_ref(), ParsedExpr::Assign(_))
             }
+            // The lowering plants the priming scopes of a `*` itself (a second pass
+            // over a tree the parser already marked wraps it again), and a `||`
+            // dimension splat is a spelled form it rewrites.
+            Expr::Unary { op, .. } => !matches!(op, crate::token_kind::TokenKind::OrOr),
             Expr::AnonSubParams { custom_traits, .. } => custom_traits.as_slice().is_empty(),
             Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => !has_code(tree),
             Expr::StringInterpolation(_)
@@ -183,7 +187,6 @@ impl Purity {
             | Expr::DynamicMethodCall { .. }
             | Expr::CallOn { .. }
             | Expr::Binary { .. }
-            | Expr::Unary { .. }
             | Expr::Ternary { .. }
             | Expr::Index { .. }
             | Expr::ArrayLiteral(_)
@@ -192,9 +195,6 @@ impl Purity {
             | Expr::AnonSub { .. }
             | Expr::DoBlock { .. }
             | Expr::Lambda { .. }
-            | Expr::WhateverCurry(_)
-            | Expr::Whatever
-            | Expr::WhateverArg
             | Expr::Hash(..)
             | Expr::PositionalPair(_)
             | Expr::PostfixOp { .. }
@@ -268,9 +268,10 @@ fn has_code(tree: &crate::regex_tree::RegexTree) -> bool {
     code.0
 }
 
-/// The name a declaration or assignment carries: the sigil of an array, hash
-/// or code variable is part of it.
+/// The name a declaration or assignment carries: the sigil of an array or hash
+/// variable is part of it. A code variable is not carried: `lower` resolves
+/// the calls that follow `my &emit` against the declaration it sees.
 // Cost: O(1).
 fn declared_name(name: &str) -> bool {
-    plain_name(name.strip_prefix(['@', '%', '&']).unwrap_or(name))
+    plain_name(name.strip_prefix(['@', '%']).unwrap_or(name))
 }
