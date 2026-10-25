@@ -647,19 +647,14 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             Ok(r) => r,
             Err(_) => expression_no_sequence(rest)?,
         };
-        let name = format!("{}{}", prefix, var);
+        let var_expr = match sigil {
+            b'@' => Expr::ArrayVar(var),
+            b'%' => Expr::HashVar(var),
+            _ => Expr::Var(format!("{}{}", prefix, var)),
+        };
         return Ok((
             rest,
-            Expr::AssignExpr {
-                name: name.clone(),
-                expr: Box::new(Expr::InfixFunc {
-                    name: op_name,
-                    left: Box::new(Expr::Var(name)),
-                    right: vec![rhs],
-                    modifier: None,
-                }),
-                is_bind: false,
-            },
+            super::written_routine_compound_assignment(var_expr, op_name, rhs)?,
         ));
     }
     if let Some(stripped) = r2.strip_prefix("::=").or_else(|| r2.strip_prefix(":=")) {

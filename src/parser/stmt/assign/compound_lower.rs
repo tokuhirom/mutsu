@@ -38,6 +38,9 @@ pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PE
                 is_bind: false,
             });
         }
+        CompoundMeta::Plain if is_routine_infix(&node.op) => {
+            return build_custom_compound_assign_expr(node.target, node.op, node.source);
+        }
         _ => {}
     }
     let op = operator(&node)?;
@@ -81,6 +84,9 @@ pub(crate) fn lower_compound_statement(node: CompoundAssign) -> Result<Stmt, PEr
     if matches!(node.meta, CompoundMeta::Reverse | CompoundMeta::Set) {
         return Ok(Stmt::Expr(lower_compound_expression(node)?));
     }
+    if node.meta == CompoundMeta::Plain && is_routine_infix(&node.op) {
+        return lower_routine_statement(node);
+    }
     let name = match &node.target {
         // `$.n += 1` writes through the accessor: the expression form's
         // `AssignExpr` is what the compiler reads the `$.` twigil from.
@@ -102,6 +108,86 @@ pub(crate) fn lower_compound_statement(node: CompoundAssign) -> Result<Stmt, PEr
         op: AssignOp::Assign,
         target_is_sigilless: false,
     })
+}
+
+/// Whether `op` is an infix with no built-in compound operator: a word
+/// operator (`mod`) or a user-declared infix (`+%+`, or `×` while a user
+/// `infix:<×>` is in scope), which `OP=` calls by name.
+// Cost: O(k), k = number of compound operators.
+fn is_routine_infix(op: &str) -> bool {
+    compound_assign_op_from_name(op).is_none()
+}
+
+/// `VAR mod= SOURCE;` assigns `VAR mod SOURCE` to the variable; any other
+/// target is the expression form as a statement.
+// Cost: O(n), n = size of the target and source.
+fn lower_routine_statement(node: CompoundAssign) -> Result<Stmt, PError> {
+    let name = match &node.target {
+        Expr::Var(name) if !name.starts_with('.') => name.clone(),
+        Expr::ArrayVar(name) => format!("@{name}"),
+        Expr::HashVar(name) => format!("%{name}"),
+        _ => return Ok(Stmt::Expr(lower_compound_expression(node)?)),
+    };
+    Ok(Stmt::Assign {
+        name,
+        expr: Expr::InfixFunc {
+            name: node.op,
+            left: Box::new(node.target),
+            right: vec![node.source],
+            modifier: None,
+        },
+        op: AssignOp::Assign,
+        target_is_sigilless: false,
+    })
+}
+
+/// `TARGET mod= SOURCE` over an infix [`is_routine_infix`] names: kept in its
+/// RakuAST shape by a `.AST` parse, lowered at once otherwise. A `.AST` parse
+/// still checks that the target takes the operator.
+// Cost: O(n), n = size of the target and source.
+pub(crate) fn written_routine_compound_assignment(
+    target: Expr,
+    op: String,
+    source: Expr,
+) -> Result<Expr, PError> {
+    if crate::ast::spelled::keeping() {
+        build_custom_compound_assign_expr(target.clone(), op.clone(), source.clone())?;
+        return Ok(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(
+            CompoundAssign {
+                target,
+                op,
+                meta: CompoundMeta::Plain,
+                source,
+            },
+        ))));
+    }
+    build_custom_compound_assign_expr(target, op, source)
+}
+
+/// [`written_routine_compound_assignment`] written as a statement.
+// Cost: O(n), n = size of the target and source.
+pub(crate) fn written_routine_compound_assignment_stmt(
+    target: Expr,
+    op: String,
+    source: Expr,
+) -> Result<Stmt, PError> {
+    let node = CompoundAssign {
+        target,
+        op,
+        meta: CompoundMeta::Plain,
+        source,
+    };
+    if crate::ast::spelled::keeping() {
+        build_custom_compound_assign_expr(
+            node.target.clone(),
+            node.op.clone(),
+            node.source.clone(),
+        )?;
+        return Ok(Stmt::Expr(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(
+            node,
+        )))));
+    }
+    lower_routine_statement(node)
 }
 
 /// `VAR [X+]= SOURCE` assigns `VAR X+ SOURCE` to the variable: its name and
