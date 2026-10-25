@@ -274,6 +274,9 @@ impl Interpreter {
                 .push(if assigned_in_place { current } else { val });
             return Ok(());
         }
+        // `(C = C.new)`: a bareword that names a type object, `Nil` or an
+        // enum value is not a container, as in the statement form.
+        self.check_bareword_store(&name, code.const_sym(name_idx), &name, false)?;
         self.check_readonly_for_modify(&name)?;
         if self.check_dot_twigil_accessor_writable(&name, dot_twigil_rmw)? {
             // The write went to the throwaway itemization; the computed value is
