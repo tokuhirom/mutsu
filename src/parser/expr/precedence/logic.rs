@@ -532,10 +532,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
     }
     // The target as written, parentheses included; a `.AST` parse keeps the
     // assignment in its RakuAST shape (ADR-10723 Stage 2).
-    let node = crate::ast::parsed::Assign {
-        target: expr,
-        source: rhs,
-    };
+    let node = crate::ast::parsed::Assign::written(expr, rhs);
     if crate::ast::spelled::keeping() {
         return Ok((
             r,

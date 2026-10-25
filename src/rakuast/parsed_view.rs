@@ -162,7 +162,7 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
 
 /// The RakuAST node of an expression the parser built in its RakuAST shape.
 /// An assignment is an `ApplyInfix` over `Assignment`; whether it is an item
-/// assignment is decided over the whole tree (`assignment_item`). Rakudo
+/// assignment is decided by the parser (`Assign::item`). Rakudo
 /// folds an assignment to a positional or a literal hash subscript into the
 /// subscript's `assignee` (`@a[0] = 1`, `%h<k> = 1`; measured on 2026.09).
 // Cost: O(n), n = size of the expression.
@@ -241,7 +241,14 @@ fn assignment_node(a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, Runtim
                 RakuAstNode {
                     origin: Default::default(),
                     class: RakuAstClass::Assignment,
-                    fields: Vec::new(),
+                    fields: if a.item {
+                        vec![RakuAstField {
+                            name: None,
+                            value: RakuAstFieldValue::Adverb("item"),
+                        }]
+                    } else {
+                        Vec::new()
+                    },
                 },
             ),
             node_field(Some("right"), convert_expr(&a.source)?),

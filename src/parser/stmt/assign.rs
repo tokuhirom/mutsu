@@ -146,7 +146,7 @@ mod assign_stmt;
 /// `.AST` parse, lowered at once otherwise (ADR-10723 Stage 2, #14948).
 // Cost: O(n), n = size of the target and source (lowering only).
 pub(crate) fn written_assignment(target: Expr, source: Expr) -> Expr {
-    let node = crate::ast::parsed::Assign { target, source };
+    let node = crate::ast::parsed::Assign::written(target, source);
     if crate::ast::spelled::keeping() {
         return Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(node)));
     }
@@ -156,7 +156,7 @@ pub(crate) fn written_assignment(target: Expr, source: Expr) -> Expr {
 /// `TARGET = SOURCE;` written as a statement, the same way.
 // Cost: O(n), n = size of the target and source (lowering only).
 pub(crate) fn written_assignment_stmt(target: Expr, source: Expr) -> Stmt {
-    let node = crate::ast::parsed::Assign { target, source };
+    let node = crate::ast::parsed::Assign::written(target, source);
     if crate::ast::spelled::keeping() {
         return Stmt::Expr(Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(
             node,

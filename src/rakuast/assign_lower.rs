@@ -74,7 +74,7 @@ pub(crate) fn is_item_target(target: &Expr) -> bool {
 /// Lower an assignment in expression position.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_expression(node: Assign) -> Expr {
-    let Assign { target, source } = node;
+    let Assign { target, source, .. } = node;
     match crate::parser::unwrap_grouped_lvalue(target) {
         Expr::Var(name) => Expr::AssignExpr {
             name,
