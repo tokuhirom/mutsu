@@ -39,11 +39,6 @@ pub(crate) enum SourceForm {
         param_defs: Vec<super::ParamDef>,
         body: Vec<Stmt>,
     },
-    /// `my $x OP= EXPR`: a declaration initialized by a compound assignment.
-    /// It opens the expansion `decl_compound_assign::expand` builds (the
-    /// declaration, then the assignment, whose `Expr::CompoundAssign` keeps
-    /// the written operator and right-hand side).
-    DeclarationCompoundAssign,
 }
 
 /// `my|our|state [TYPE] (VARS) [is default(EXPR)] [= RHS | := RHS]`.

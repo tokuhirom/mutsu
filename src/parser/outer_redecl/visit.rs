@@ -175,6 +175,7 @@ impl VisitMut for Ctx {
                     ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => unreachable!("peeled above"),
                     ParsedStmt::DoesDecl { .. } => crate::ast_visit::walk_parsed_mut(self, node),
                     ParsedStmt::DeclTail { .. }
+                    | ParsedStmt::DeclCompound { .. }
                     | ParsedStmt::SigillessDecl(_)
                     | ParsedStmt::PackageHeader { .. }
                     | ParsedStmt::TempDecl(_)

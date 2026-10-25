@@ -70,6 +70,9 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
             crate::parser::lower_pending_declaration(*head)?,
             tail,
         )),
+        ParsedStmt::DeclCompound { decl, op, source } => {
+            super::decl_compound_assign::lower_parsed(*decl, op, source)
+        }
         ParsedStmt::PackageHeader { decl, name, header } => {
             Ok(crate::ast::package_header::wrap(*decl, &name, header))
         }

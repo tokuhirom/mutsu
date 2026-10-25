@@ -60,9 +60,8 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
 
     // Compound assignment
     if let Some((stripped, op)) = super::super::assign::parse_compound_assign_op(rest) {
-        return handle_compound_assign(stripped, s, Some(op.symbol()), |var_expr, rhs| {
-            super::super::assign::compound_assigned_value_expr(var_expr, op, rhs)
-        });
+        let op = op.symbol().trim_end_matches('=').to_string();
+        return handle_compound_assign(stripped, s, DeclCompoundOp::Infix(op));
     }
     // `my @a Z= rhs` — a zip metaoperator assignment right after a declaration.
     // Declare `@a` (with its shaped/default init) in a scopeless block, then
@@ -76,22 +75,10 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         && meta == "Z"
         && op == "="
     {
-        return handle_compound_assign(stripped, s, None, |var_expr, rhs| Expr::Call {
-            name: Symbol::intern("__mutsu_zip_assign"),
-            args: vec![var_expr, rhs],
-            listop: false,
-        });
+        return handle_compound_assign(stripped, s, DeclCompoundOp::ZipAssign);
     }
     if let Some((stripped, op_name)) = super::super::assign::parse_custom_compound_assign_op(rest) {
-        let written = format!("{op_name}=");
-        return handle_compound_assign(stripped, s, Some(&written), |var_expr, rhs| {
-            Expr::InfixFunc {
-                name: op_name,
-                left: Box::new(var_expr),
-                right: vec![rhs],
-                modifier: None,
-            }
-        });
+        return handle_compound_assign(stripped, s, DeclCompoundOp::Infix(op_name));
     }
 
     // Assignment
@@ -340,18 +327,17 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
     Ok((rest, stmt))
 }
 
-/// Handle compound assignment operators (e.g. `my $x += expr`). `op` is the
-/// written operator of a built-in compound assignment, which a
-/// spelling-keeping parse records for RakuAST (`ast::decl_compound_assign`).
-fn handle_compound_assign<'a, F>(
-    stripped: &'a str,
-    s: MyDeclState,
-    op: Option<&str>,
-    make_expr: F,
-) -> PResult<'a, Stmt>
-where
-    F: FnOnce(Expr, Expr) -> Expr,
-{
+/// The operator of a declaration's compound assignment.
+enum DeclCompoundOp {
+    /// The base infix as written (`+`, `//`, a word or user infix such as
+    /// `foo`): the declaration compound node (`ParsedStmt::DeclCompound`).
+    Infix(String),
+    /// `my @a Z= rhs`: element-wise assignment into the fresh container.
+    ZipAssign,
+}
+
+/// Handle compound assignment operators (e.g. `my $x += expr`).
+fn handle_compound_assign(stripped: &str, s: MyDeclState, op: DeclCompoundOp) -> PResult<'_, Stmt> {
     let (rest, _) = ws(stripped)?;
     let (rest, rhs) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
         messages: merge_expected_messages(
@@ -379,14 +365,24 @@ where
         custom_traits: s.custom_traits.clone(),
         where_constraint: s.where_constraint.clone(),
     };
-    let source = op.filter(|_| crate::ast::spelled::keeping()).map(|op| {
-        crate::ast::decl_compound_assign::Source {
-            op: op.to_string(),
-            rhs: rhs.clone(),
+    let stmt = match op {
+        DeclCompoundOp::Infix(op) => crate::parser::stmt::control::parsed_block::finish(
+            crate::ast::parsed::ParsedStmt::DeclCompound {
+                decl: Box::new(decl_stmt),
+                op,
+                source: rhs,
+            },
+        )
+        .map_err(PError::from_typed)?,
+        DeclCompoundOp::ZipAssign => {
+            let value = Expr::Call {
+                name: Symbol::intern("__mutsu_zip_assign"),
+                args: vec![Expr::Var(s.name.clone()), rhs],
+                listop: false,
+            };
+            crate::ast::decl_compound_assign::expand(decl_stmt, s.name.clone(), value)
         }
-    });
-    let value = make_expr(Expr::Var(s.name.clone()), rhs);
-    let stmt = crate::ast::decl_compound_assign::expand(decl_stmt, s.name.clone(), value, source);
+    };
     if s.apply_modifier {
         return parse_statement_modifier(rest, stmt);
     }
