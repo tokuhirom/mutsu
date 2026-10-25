@@ -103,6 +103,7 @@ pub(crate) fn round_trip(stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
 pub(crate) fn round_trip_owned(mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
     // The conversion matches expressions by shape, so the term origins the
     // spelled parse kept come off first (`expr_origins`).
+    let _leaves = super::passthrough::Scope::enter();
     let _origins = super::expr_origins::strip(&mut stmts);
     let node = super::convert::statement_list(&stmts)?;
     let mut lowered = super::lower(&node)?;

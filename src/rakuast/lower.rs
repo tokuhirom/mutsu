@@ -102,6 +102,13 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
                     continue;
                 }
                 let child = child_node(&f.value)?;
+                if super::passthrough::is_leaf(child) {
+                    if let Some(line) = super::passthrough::line_of(child) {
+                        stmts.push(Stmt::SetLine(line, crate::ast::SrcSpan::NONE));
+                    }
+                    stmts.push(super::passthrough::lower_stmt(child)?);
+                    continue;
+                }
                 // An empty statement runs nothing and is no block's value.
                 if child.class == RakuAstClass::StatementEmpty {
                     continue;
@@ -130,6 +137,9 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
 }
 
 pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    if super::passthrough::is_leaf(node) {
+        return super::passthrough::lower_stmt(node);
+    }
     let label = node_label(node)?;
     let _label_scope = super::label_context::enter(label.as_deref())?;
     if let Some(doc) = super::doc_phaser::lower(node) {
@@ -4153,6 +4163,11 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     }
     if let Some(expr) = super::deferred_name::lower(node) {
         return expr;
+    }
+    // A leaf carries the parser's own tree (`passthrough`); a deferred term
+    // wraps one, so it is read first.
+    if super::passthrough::is_leaf(node) {
+        return super::passthrough::lower_expr(node);
     }
     // `⚛$x`, `$x ⚛= 5`, `$x⚛++`, ...: plain operator nodes, the parser's calls.
     if let Some(call) = super::atomic_op::lower(node) {

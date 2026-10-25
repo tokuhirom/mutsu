@@ -71,6 +71,7 @@ pub(super) fn block_statements(stmts: &[Stmt]) -> Result<Vec<RakuAstNode>, Runti
 }
 
 fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let _statements = super::passthrough::Block::enter();
     let _underscore_scope = super::underscore_bindings::Scope::block(stmts);
     let _block = bareword::BlockScope::enter(stmts);
     let mut fields = Vec::new();
@@ -120,6 +121,13 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
                     fields.push(node_field(None, node));
                 }
             }
+            continue;
+        }
+        if trace.is_none()
+            && let Some(leaf) = super::passthrough::stmt_leaf(stmt, line.map(|(n, _)| n))
+        {
+            line = None;
+            fields.push(node_field(None, leaf));
             continue;
         }
         if let Some(mut node) = convert_stmt(stmt)? {
@@ -215,6 +223,11 @@ fn is_modifier_statement(stmt: &Stmt) -> bool {
 /// Convert one statement. Returns `Ok(None)` for non-semantic bookkeeping
 /// statements (e.g. `SetLine`) that carry no RakuAST representation.
 pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
+    let _guards = super::passthrough::stmt_guards(stmt);
+    convert_stmt_node(stmt)
+}
+
+fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     match stmt {
         Stmt::SyntheticBlock(stmts)
             if matches!(stmts.as_slice(), [Stmt::ProtoDecl { .. }, Stmt::Use { .. }]) =>
@@ -1766,6 +1779,7 @@ fn dotty_node(left: RakuAstNode, right: RakuAstNode) -> RakuAstNode {
 /// `ApplyDottyInfix(left, DottyInfix::Call, Call::Method)`.
 // Cost: O(n), n = size of the call.
 fn dotty_infix_call(call: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let _inspected = super::passthrough::Inspecting::enter();
     let mut node = convert_expr(call)?;
     if node.class != RakuAstClass::ApplyPostfix {
         return Ok(node);
@@ -2626,10 +2640,23 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
 }
 
 fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    if let Some(leaf) = super::passthrough::expr_leaf(expr) {
+        return Ok(leaf);
+    }
+    let _guards = super::passthrough::expr_guards(expr);
+    convert_expr_node(expr)
+}
+
+fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     if let Some(node) = super::deferred_name::convert(expr) {
         return node;
     }
-    if let Some(node) = subscript_adverb::convert(expr) {
+    // The adverbs of a subscript lower from the class of the subscript.
+    let adverbs = {
+        let _inspected = super::passthrough::Inspecting::enter();
+        subscript_adverb::convert(expr)
+    };
+    if let Some(node) = adverbs {
         return node;
     }
     match expr {
@@ -3768,27 +3795,31 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         Expr::Binary {
             left, op, right, ..
-        } => Ok(RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::ApplyInfix,
-            fields: vec![
-                node_field(Some("left"), convert_expr(left)?),
-                node_field(
-                    Some("infix"),
-                    // `but` and `does` are `Mixin` infixes in raku.
-                    operator_node(
-                        if matches!(op, crate::token_kind::TokenKind::Ident(name) if name == "but" || name == "does")
-                        {
-                            RakuAstClass::Mixin
-                        } else {
-                            RakuAstClass::Infix
-                        },
-                        op,
+        } => {
+            // `lower` reads the operands of an infix by their node class.
+            let _inspected = super::passthrough::Inspecting::enter();
+            Ok(RakuAstNode {
+                origin: Default::default(),
+                class: RakuAstClass::ApplyInfix,
+                fields: vec![
+                    node_field(Some("left"), convert_expr(left)?),
+                    node_field(
+                        Some("infix"),
+                        // `but` and `does` are `Mixin` infixes in raku.
+                        operator_node(
+                            if matches!(op, crate::token_kind::TokenKind::Ident(name) if name == "but" || name == "does")
+                            {
+                                RakuAstClass::Mixin
+                            } else {
+                                RakuAstClass::Infix
+                            },
+                            op,
+                        ),
                     ),
-                ),
-                node_field(Some("right"), convert_expr(right)?),
-            ],
-        }),
+                    node_field(Some("right"), convert_expr(right)?),
+                ],
+            })
+        }
         // A hyper infix `@a >>+<< @b` -> ApplyInfix(left, MetaInfix::Hyper(
         // [dwim-left,] infix, [dwim-right]), right). mutsu keeps the operator
         // text and both dwim flags on `Expr::HyperOp`, so this is a faithful
@@ -6549,7 +6580,10 @@ fn heredoc_node(
     stop: &str,
     written: crate::ast::SrcSpan,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = convert_expr(body)?;
+    let mut node = {
+        let _inspected = super::passthrough::Inspecting::enter();
+        convert_expr(body)?
+    };
     if node.class != RakuAstClass::QuotedString {
         return Err(unsupported("a heredoc that is not quoted text"));
     }
@@ -6768,6 +6802,10 @@ pub(super) fn arg_list(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
         if is_injected_named_arg(a) {
             continue;
         }
+        if let Some(leaf) = super::passthrough::arg_leaf(a) {
+            fields.push(node_field(None, leaf));
+            continue;
+        }
         fields.push(node_field(None, convert_expr(a)?));
     }
     Ok(RakuAstNode {
@@ -6939,7 +6977,10 @@ fn colonpair_variable_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let ValueView::Str(key) = value.view() else {
         return Err(unsupported("colonpair variable key"));
     };
-    let value = convert_expr(right)?;
+    let value = {
+        let _inspected = super::passthrough::Inspecting::enter();
+        convert_expr(right)?
+    };
     if !value.class.is_simple_variable() {
         return Err(unsupported("colonpair variable value"));
     }

@@ -89,6 +89,7 @@ mod package_traits;
 mod parameter_destructure;
 mod parameter_shape;
 mod parameter_signature;
+mod passthrough;
 mod phaser_condition;
 mod placeholder;
 mod postfix_grouping;
@@ -204,6 +205,9 @@ pub enum RakuAstClass {
     StatementList,
     StatementExpression,
     StatementEmpty,
+    // Internal: a subtree the executing round trip passes through untouched
+    // (`passthrough`); never rendered, never reachable from user code.
+    ParsedLeaf,
     StatementAlso,
     StatementPrefixReact,
     StatementPrefixSupply,
@@ -594,6 +598,7 @@ impl RakuAstClass {
         match self {
             CompUnit => "RakuAST::CompUnit",
             StatementList => "RakuAST::StatementList",
+            ParsedLeaf => "RakuAST::Internal::ParsedLeaf",
             StatementExpression => "RakuAST::Statement::Expression",
             StatementEmpty => "RakuAST::Statement::Empty",
             StatementAlso => "RakuAST::Statement::Also",
@@ -1437,6 +1442,7 @@ pub(crate) fn lower_parsed_stmt(
 
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
 pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
+    let _origins_wanted = crate::parser::term_origins::Wanted::enter();
     let (mut stmts, _finish) = crate::parse_dispatch::parse_source_spelled(source)?;
     // The origins of the tree index this text (ADR-10723 §4).
     let _source = unit_source::Scope::enter(source);

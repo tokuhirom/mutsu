@@ -30,7 +30,7 @@
 //! An attached range must also lie inside the range of the nearest enclosing
 //! term that has one; a range that does not is dropped.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
 
@@ -44,6 +44,29 @@ thread_local! {
     /// The notes of the innermost parse that keeps origins, `None` while the
     /// innermost parse does not.
     static NOTES: RefCell<Option<Vec<(u64, SrcSpan)>>> = const { RefCell::new(None) };
+}
+
+thread_local! {
+    /// Whether the code running wants the origins of the terms it parses: only
+    /// `.AST` renders them. The executing round trip lowers the tree and
+    /// reads none, so noting them for it is wasted work.
+    static WANTED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// While alive, spelled parses note the ranges of their terms ([`begin`]).
+pub(crate) struct Wanted(bool);
+
+impl Wanted {
+    // Cost: O(1).
+    pub(crate) fn enter() -> Self {
+        Wanted(WANTED.with(|w| w.replace(true)))
+    }
+}
+
+impl Drop for Wanted {
+    fn drop(&mut self) {
+        WANTED.with(|w| w.set(self.0));
+    }
 }
 
 /// While alive, terms are noted when `keep` was set; restores the enclosing
@@ -63,6 +86,7 @@ impl Drop for Recording {
 /// them for one that does not.
 // Cost: O(1).
 pub(crate) fn begin(keep: bool) -> Recording {
+    let keep = keep && WANTED.with(Cell::get);
     let previous = NOTES.with(|n| n.replace(keep.then(Vec::new)));
     Recording { previous }
 }
