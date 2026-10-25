@@ -588,6 +588,15 @@ impl Interpreter {
                 crate::runtime::HoistedShell::No
             };
             let is_hoisted_shell = hoisted_shell.is_shell();
+            // A nested declaration's shell already ran its traits at compile
+            // time, once (#12708); the in-place registration, repeated on every
+            // entry of the enclosing code, must not repeat them.
+            let traits_ran_in_shell = !is_hoisted_shell
+                && *decl_id != 0
+                && self
+                    .registry()
+                    .nested_shell_traits_applied
+                    .contains(decl_id);
             // A DECLARE'd class can use its HOW while the class body is being
             // registered.  Red's `is relationship` attribute trait is one
             // such case: its trait handler calls `.^add-relationship` on the
@@ -608,7 +617,11 @@ impl Interpreter {
                     if let Some(how_type) = how_type {
                         (
                             true,
-                            self.install_custom_class_how(&storage_name, how_type)?,
+                            self.install_custom_class_how(
+                                &storage_name,
+                                how_type,
+                                traits_ran_in_shell,
+                            )?,
                         )
                     } else {
                         (false, false)
@@ -657,6 +670,7 @@ impl Interpreter {
                         compiled_fns,
                         body_plan,
                         is_hoisted_shell: hoisted_shell,
+                        traits_ran_in_shell,
                     },
                 )
             )
@@ -938,12 +952,6 @@ impl Interpreter {
             // A nested declaration's shell (`HoistedShell::Nested`) already ran
             // them at compile time, once (#12708); the in-place registration,
             // repeated on every entry of the enclosing code, must not.
-            let traits_ran_in_shell = !is_hoisted_shell
-                && *decl_id != 0
-                && self
-                    .registry()
-                    .nested_shell_traits_applied
-                    .contains(decl_id);
             let has_trait_mod = !traits_ran_in_shell
                 && (self.has_proto("trait_mod:<is>")
                     || self.has_multi_candidates("trait_mod:<is>"));
@@ -1667,7 +1675,7 @@ impl Interpreter {
             if let Some(keyword) = declare_how_keyword
                 && let Some(how_type) = self.declarator_how_type(&keyword)
             {
-                self.install_custom_class_how(&qualified_name, how_type)?;
+                self.install_custom_class_how(&qualified_name, how_type, false)?;
                 // The declaration expression (`(role { })`) evaluates to the
                 // candidate-keyed type object, whose `.HOW` is keyed apart from
                 // the group's.

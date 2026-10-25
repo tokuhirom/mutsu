@@ -479,6 +479,7 @@ impl Interpreter {
         &mut self,
         class_name: &str,
         how_type: Value,
+        keep_shell_how: bool,
     ) -> Result<bool, RuntimeError> {
         let how_class = match how_type.view() {
             ValueView::Package(sym) => sym.resolve(),
@@ -496,6 +497,14 @@ impl Interpreter {
                 .user_method_overloads(c.as_str(), "compose")
                 .is_some()
         });
+        // A nested declaration's shell already installed the metaobject and ran
+        // the class's traits on it (#12708), which do not run again: what they
+        // mixed into it (`$class.HOW does R[Arg]`, role arguments included) is
+        // the metaobject now, and re-deriving it from the mixin's role names
+        // below would lose the arguments.
+        if keep_shell_how && self.registry().class_how_values.contains_key(class_name) {
+            return Ok(has_user_compose);
+        }
         let mut instance = self.call_method_with_values(how_type, "new", Vec::new())?;
         // A hoisted forward declaration composed the class's roles (and ran
         // their attribute traits, once) under the default HOW before this

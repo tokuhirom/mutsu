@@ -215,6 +215,7 @@ impl Interpreter {
             compiled_fns,
             body_plan,
             is_hoisted_shell,
+            traits_ran_in_shell,
         } = modifiers;
         let class_lang_rev = language_revision_letter(class_language_version);
         // Normalize parent names: strip leading `::` (indirect name lookup syntax).
@@ -382,7 +383,9 @@ impl Interpreter {
         // first so it takes over the roles a hoisted pre-pass mixed into the
         // default HOW; what is still a bare mixin after that is stale.
         self.install_class_exporthow(name, parents)?;
-        self.clear_stale_how_mixin(name);
+        if !traits_ran_in_shell {
+            self.clear_stale_how_mixin(name);
+        }
         // Compose roles listed in the parents (from "does Role" or "is Role" in class header)
         let RoleCompositionOutcome {
             mut composed_roles_list,
