@@ -2256,3 +2256,36 @@ fields name a trait with no written record is refused ("... and no written-trait
 `MUTSU_RAKUAST=convert` is the §6.109 coverage answer. It runs the executing round trip without
 the passthrough leaves, so the `convert` and `lower` arms of the carried families run on every
 ratchet file as they do for `.AST` and `EVAL($ast)`. All 531 `t/rakuast/*.t` files pass in it.
+
+### 6.111 Class, role and grammar headers record the traits as written (2026-10-26, [#15025](https://github.com/tokuhirom/mutsu/issues/15025))
+
+Second slice of Stage 2 row 2. A `package`, a `module` and a routine already carried the record of
+their written traits (§6.2); a class, a role and a grammar did not, and `convert` rebuilt their
+`traits` from the fields the parser folds a header into, three different ways:
+
+- a class from `parents` (`is`, `does` and `hides` share that list), `does_parents`, `hidden_parents`,
+  `class_is_rw`, `is_hidden` and `custom_traits` (`class_traits`, `decl_traits::class_custom_traits`),
+  deciding per parent whether `is NAME` names a type;
+- a role from the leading `DoesDecl` statements of its body (`__mutsu_role_hidden__`, the
+  `RoleHides` marker statement) plus a `header_order` of positions into those vectors
+  (`role_header::ordered_traits`, `RoleHeaderTrait`);
+- a grammar through the class path.
+
+All three parsers (`class_decl_body_opt`, the grammar and role header loops, the unit-role header and
+the anonymous class expression) now note each header clause as `RoutineTrait` (`Is`, and the new
+`Parent { kind: Is | Does | Hides, name, args }`) while the clause is read, only in a parse that keeps
+spellings, and `routine_trait::attach` puts the record in front of the body. `convert` renders the
+class, role and grammar `traits` from it with `routine_source::header_traits` (the one rendering a
+routine's traits use, `routine_source::trait_node`), so a repeated trait, a flag between two parents and
+an argument list keep their place and their shape. A header whose fields name a trait that no record
+says was written is refused ("class traits without a written-trait record"); an `also is Parent;` /
+`also is rw;` lifted out of a role body stays the existing normalization boundary.
+
+Deleted: `convert::class_traits` and `parent_type_node`, `decl_traits::class_custom_traits`,
+`role_header::{ordered_traits, lower_order}`, `RoleHeaderTrait` and `Stmt::RoleDecl::header_order` (the
+field no longer exists in the tree an ordinary parse builds either), the role arm's `DoesDecl` header
+scan for traits. Three differences from rakudo this removes, each now in
+`t/rakuast/rakuast-package-header-traits.t` (it passes on rakudo 2026.09): a header trait written after
+`does` / `hides` was listed after them (`is rw`, a user trait), `is NAME(1, 2)` dropped its arguments, and
+`is NAME<a b>` rendered as a parenthesised string instead of the words quote. The ordinary frontend
+gained the matching fix: a class's `is NAME(1, 2)` hands the trait the whole list, as a routine's does.

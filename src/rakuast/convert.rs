@@ -914,7 +914,31 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 } else {
                     parents
                 };
-                let traits = class_traits(written, does_parents, parent_args, false, false, &[])?;
+                // An `also is Parent;` lifted out of the body has no header
+                // spelling; it renders as a trailing `is` trait, which lowers
+                // back to the same parent.
+                let mut header_parents = written.to_vec();
+                let mut also_traits = Vec::new();
+                for parent in body_parents {
+                    if let Some(at) = header_parents.iter().rposition(|p| p == parent) {
+                        header_parents.remove(at);
+                    }
+                    also_traits.push(Value::rakuast(Box::new(super::routine_source::trait_node(
+                        &also_parent(parent, parent_args),
+                    )?)));
+                }
+                let mut traits = header_trait_values(
+                    body,
+                    &HeaderFields {
+                        parents: &header_parents,
+                        does_parents,
+                        hidden_parents,
+                        is_rw: false,
+                        is_hidden: false,
+                        custom_traits: &[],
+                    },
+                )?;
+                traits.extend(also_traits);
                 if !traits.is_empty() {
                     fields.push(RakuAstField {
                         name: Some("traits"),
@@ -993,26 +1017,22 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 if let Some(at) = header_parents.iter().rposition(|p| p == parent) {
                     header_parents.remove(at);
                 }
-                for t in class_traits(
-                    std::slice::from_ref(parent),
-                    &[],
-                    parent_args,
-                    false,
-                    false,
-                    &[],
-                )? {
-                    also_statements.push(super::role::also_is_statement(t));
-                }
+                let node = super::routine_source::trait_node(&also_parent(parent, parent_args))?;
+                also_statements.push(super::role::also_is_statement(Value::rakuast(Box::new(
+                    node,
+                ))));
             }
-            let mut traits = class_traits(
-                &header_parents,
-                does_parents,
-                parent_args,
-                *class_is_rw,
-                *is_hidden,
-                hidden_parents,
+            let traits = header_trait_values(
+                body,
+                &HeaderFields {
+                    parents: &header_parents,
+                    does_parents,
+                    hidden_parents,
+                    is_rw: *class_is_rw,
+                    is_hidden: *is_hidden,
+                    custom_traits: &visible_custom_traits,
+                },
             )?;
-            traits.extend(decl_traits::class_custom_traits(&visible_custom_traits)?);
             if !traits.is_empty() {
                 fields.push(RakuAstField {
                     name: Some("traits"),
@@ -1301,7 +1321,6 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         )?)),
         Stmt::RoleDecl {
             name,
-            header_order,
             type_params,
             type_param_defs,
             is_export,
@@ -1313,7 +1332,6 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         } => Ok(Some(statement_expression(super::role::convert(
             super::role::RoleDecl {
                 name: *name,
-                header_order,
                 type_params,
                 type_param_defs,
                 is_export: *is_export,
@@ -5216,117 +5234,84 @@ fn without_composed_header<'a>(body: &'a [Stmt], does_parents: &[String]) -> &'a
     let header = body
         .iter()
         .take_while(|stmt| {
-            matches!(
-                stmt,
-                Stmt::DoesDecl { name, from_is: false, also: false, args: None }
-                    if does_parents.iter().any(|r| r == name.resolve().as_str())
-            )
+            stmt.is_routine_traits()
+                || matches!(
+                    stmt,
+                    Stmt::DoesDecl { name, from_is: false, also: false, args: None }
+                        if does_parents.iter().any(|r| r == name.resolve().as_str())
+                )
         })
         .count();
     &body[header..]
 }
 
-fn class_traits(
-    parents: &[String],
-    does_parents: &[String],
+/// The `is` clause an `also is Parent;` statement of a class or grammar body
+/// stands for.
+// Cost: O(p), p = parents with arguments.
+fn also_parent(
+    parent: &str,
     parent_args: &[(String, Vec<Expr>)],
+) -> crate::ast::routine_trait::RoutineTrait {
+    crate::ast::routine_trait::RoutineTrait::Parent {
+        kind: crate::ast::routine_trait::ParentKind::Is,
+        name: parent.to_string(),
+        args: parent_args
+            .iter()
+            .find(|(name, _)| name == parent)
+            .map(|(_, args)| args.clone()),
+    }
+}
+
+/// What the parser folded a class or grammar header into, to check against the
+/// record of what was written.
+struct HeaderFields<'a> {
+    parents: &'a [String],
+    does_parents: &'a [String],
+    hidden_parents: &'a [String],
     is_rw: bool,
     is_hidden: bool,
-    hidden_parents: &[String],
+    custom_traits: &'a [(String, Option<Expr>)],
+}
+
+/// The `traits` of a class or grammar header: the nodes of the traits the
+/// source wrote, in written order. The fields the parser folds them into are
+/// not read back; a header whose fields name a trait that no record says was
+/// written was not built by a parse that keeps spellings, and is refused.
+// Cost: O(t + a), t = written traits, a = size of their arguments.
+fn header_trait_values(
+    body: &[Stmt],
+    fields: &HeaderFields<'_>,
 ) -> Result<Vec<Value>, RuntimeError> {
-    let mut traits = Vec::new();
-    let does_node = |role: &str| -> Result<Value, RuntimeError> {
-        Ok(Value::rakuast(Box::new(RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::TraitDoes,
-            fields: vec![node_field(None, parent_type_node(role, parent_args)?)],
-        })))
-    };
-    let hides_node = |hidden: &str| -> Result<Value, RuntimeError> {
-        Ok(Value::rakuast(Box::new(RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::TraitHides,
-            fields: vec![node_field(None, parent_type_node(hidden, parent_args)?)],
-        })))
-    };
-    // `parents` is the general composed-type list in the order the header
-    // wrote it: `is P`, `does R` and `hides H` interleave there, and rakudo
-    // keeps that order in `traits` (`class C hides A is B` lists the `hides`
-    // first, measured on 2026.09).
-    let mut seen_does = Vec::new();
-    let mut seen_hides = Vec::new();
-    for parent in parents {
-        // A `does R` role is recorded in BOTH lists (`parents` is the general
-        // composed-type list the dispatcher reads), so it renders where it was
-        // written as a `Trait::Does`; a parent it `hides` is in both too, and
-        // renders as a `Trait::Hides`.
-        if does_parents.iter().any(|r| r == parent) {
-            if !seen_does.contains(&parent) {
-                seen_does.push(parent);
-                traits.push(does_node(parent)?);
-            }
-            continue;
-        }
-        if hidden_parents.iter().any(|h| h == parent) {
-            if !seen_hides.contains(&parent) {
-                seen_hides.push(parent);
-                traits.push(hides_node(parent)?);
-            }
-            continue;
-        }
-        // `is NAME` names a parent only when NAME is a type; the parser keeps
-        // any other name (a `trait_mod:<is>` of the program's own) in
-        // `parents` too, and rakudo renders it by name.
-        let is_parent_type = parent_args.iter().any(|(p, _)| p == parent)
-            || super::bareword::names_type(parent)
-            || parent.contains(['[', ':']);
-        let field = if is_parent_type {
-            node_field(Some("type"), parent_type_node(parent, parent_args)?)
-        } else {
-            node_field(Some("name"), name_from_identifier(parent))
-        };
-        traits.push(Value::rakuast(Box::new(RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::TraitIs,
-            fields: vec![field],
-        })));
+    let written = crate::ast::routine_trait::get(body);
+    if written.is_none()
+        && (fields.is_hidden
+            || !fields.parents.is_empty()
+            || !fields.does_parents.is_empty()
+            || !fields.hidden_parents.is_empty()
+            || fields
+                .custom_traits
+                .iter()
+                .any(|(name, _)| decl_traits::is_class_trait(name)))
+    {
+        return Err(unsupported("class traits without a written-trait record"));
     }
-    // Composed roles and hidden parents the header list does not carry.
-    for role in does_parents {
-        if !seen_does.contains(&role) {
-            traits.push(does_node(role)?);
-        }
-    }
-    if is_rw {
-        traits.push(Value::rakuast(Box::new(RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::TraitIs,
-            fields: vec![node_field(Some("name"), name_from_identifier("rw"))],
-        })));
-    }
-    if is_hidden {
-        traits.push(Value::rakuast(Box::new(RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::TraitIs,
-            fields: vec![node_field(Some("name"), name_from_identifier("hidden"))],
-        })));
-    }
-    for hidden in hidden_parents {
-        if !seen_hides.contains(&hidden) {
-            traits.push(hides_node(hidden)?);
-        }
+    let mut traits = super::routine_source::header_traits(body)?;
+    // `also is rw;` in the body sets the flag without a header spelling; it
+    // renders as the trailing `is rw` trait, which lowers back to the flag.
+    if fields.is_rw && !written.is_some_and(|w| has_is(w, "rw")) {
+        traits.push(Value::rakuast(Box::new(routine_traits::trait_is(
+            "rw", None,
+        ))));
     }
     Ok(traits)
 }
 
-fn parent_type_node(
-    name: &str,
-    parent_args: &[(String, Vec<Expr>)],
-) -> Result<RakuAstNode, RuntimeError> {
-    if let Some((_, args)) = parent_args.iter().find(|(parent, _)| parent == name) {
-        return super::type_args::parameterized_type_node(name, Some(args));
-    }
-    build_type_node(name)
+/// Whether the written traits include `is NAME`.
+// Cost: O(t), t = written traits.
+pub(super) fn has_is(written: &[crate::ast::routine_trait::RoutineTrait], wanted: &str) -> bool {
+    written.iter().any(
+        |t| matches!(t, crate::ast::routine_trait::RoutineTrait::Is { name, .. } if name == wanted),
+    )
 }
 
 /// The `RakuAST::StatementPrefix::Phaser::<Kind>` class for a phaser kind.

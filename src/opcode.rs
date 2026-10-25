@@ -13003,7 +13003,6 @@ impl CompiledCode {
         let Stmt::RoleDecl {
             spans: _,
             name,
-            header_order: _,
             type_params,
             type_param_defs,
             is_export,

@@ -336,7 +336,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
             is_export,
             export_tags,
             mut custom_traits,
-            header_order,
+            written,
         },
     ) = header::parse(rest, &name, &type_params)?;
     rest = after_header;
@@ -416,6 +416,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
             },
         );
     }
+    crate::ast::routine_trait::attach(&mut body, written);
     // `role R { ... }.^name` is one expression; see `reject_trailing_postfix`.
     super::reject_trailing_postfix(rest)?;
 
@@ -427,7 +428,6 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
     let role_stmt = Stmt::RoleDecl {
         spans,
         name: Symbol::intern(&name),
-        header_order,
         type_params,
         type_param_defs,
         is_export,

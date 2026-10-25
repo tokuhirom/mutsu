@@ -8,7 +8,7 @@ use super::lower::{
 use super::name_parts;
 use super::type_build::return_constraint_node;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::routine_trait::{RoutineTrait, TraitArgument};
+use crate::ast::routine_trait::{ParentKind, RoutineTrait, TraitArgument};
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -91,6 +91,99 @@ pub(super) fn is_legacy_source_field(field: &RakuAstField) -> bool {
     )
 }
 
+/// The `Trait::*` node for one trait the source wrote.
+// Cost: O(k + a), k = length of the trait's spelling, a = size of its argument.
+pub(super) fn trait_node(item: &RoutineTrait) -> Result<RakuAstNode, RuntimeError> {
+    Ok(match item {
+        RoutineTrait::Is { name, argument } => {
+            let argument = match argument {
+                None => None,
+                Some(TraitArgument::Words(text)) => Some(super::package_header::words_value(text)),
+                Some(TraitArgument::ExportTags(tags)) => {
+                    super::routine_traits::explicit_export_argument(tags)
+                }
+                Some(TraitArgument::Operator(reference)) => Some(super::attribute::paren_argument(
+                    &Expr::CodeVar(crate::op_prec::trait_target_name(reference)),
+                )?),
+                Some(TraitArgument::Parentheses(expr)) => {
+                    let expr = match expr {
+                        Expr::Grouped(inner) => inner,
+                        other => other,
+                    };
+                    Some(super::attribute::paren_argument(expr)?)
+                }
+            };
+            // A bare lowercase `is NAME` names a type when NAME is one.
+            if super::routine_traits::is_type_trait_name(name)
+                || (argument.is_none() && super::bareword::names_type(name))
+            {
+                super::routine_traits::trait_is_type(name, argument)?
+            } else {
+                super::routine_traits::trait_is(name, argument)
+            }
+        }
+        RoutineTrait::Returns(ty) | RoutineTrait::Of(ty) => RakuAstNode {
+            origin: Default::default(),
+            class: if matches!(item, RoutineTrait::Returns(_)) {
+                RakuAstClass::TraitReturns
+            } else {
+                RakuAstClass::TraitOf
+            },
+            fields: vec![node_field(None, return_constraint_node(ty)?)],
+        },
+        RoutineTrait::Handles(term) => RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::TraitHandles,
+            fields: vec![node_field(None, super::convert::convert_expr(term)?)],
+        },
+        RoutineTrait::Parent { kind, name, args } => {
+            // `is NAME` names a parent only when NAME is a type; any other name
+            // is a trait of the program's own, rendered by name.
+            if *kind == ParentKind::Is
+                && args.is_none()
+                && !super::bareword::names_type(name)
+                && !name.contains(['[', ':'])
+            {
+                return Ok(super::routine_traits::trait_is(name, None));
+            }
+            let type_node = match args {
+                Some(args) => super::type_args::parameterized_type_node(name, Some(args))?,
+                None => super::type_build::build_type_node(name)?,
+            };
+            match kind {
+                ParentKind::Is => RakuAstNode {
+                    origin: Default::default(),
+                    class: RakuAstClass::TraitIs,
+                    fields: vec![node_field(Some("type"), type_node)],
+                },
+                ParentKind::Does => RakuAstNode {
+                    origin: Default::default(),
+                    class: RakuAstClass::TraitDoes,
+                    fields: vec![node_field(None, type_node)],
+                },
+                ParentKind::Hides => RakuAstNode {
+                    origin: Default::default(),
+                    class: RakuAstClass::TraitHides,
+                    fields: vec![node_field(None, type_node)],
+                },
+            }
+        }
+        RoutineTrait::Unsupported(name) => return Err(unsupported(name)),
+    })
+}
+
+/// The `traits` of a class, role or grammar header: the nodes of the traits
+/// written in front of its block, in written order. A class with no record
+/// wrote none.
+// Cost: O(t + a), t = written traits, a = size of their arguments.
+pub(super) fn header_traits(body: &[Stmt]) -> Result<Vec<Value>, RuntimeError> {
+    crate::ast::routine_trait::get(body)
+        .unwrap_or_default()
+        .iter()
+        .map(|item| trait_node(item).map(|node| Value::rakuast(Box::new(node))))
+        .collect()
+}
+
 // Cost: O(b + t + a), b = body statements, t = traits, a = argument size.
 pub(super) fn apply(node: &mut RakuAstNode, body: &[Stmt]) -> Result<bool, RuntimeError> {
     let Some(traits) = crate::ast::routine_trait::get(body) else {
@@ -98,52 +191,7 @@ pub(super) fn apply(node: &mut RakuAstNode, body: &[Stmt]) -> Result<bool, Runti
     };
     let mut nodes = Vec::with_capacity(traits.len());
     for item in traits {
-        let trait_node = match item {
-            RoutineTrait::Is { name, argument } => {
-                let argument = match argument {
-                    None => None,
-                    Some(TraitArgument::Words(text)) => {
-                        Some(super::package_header::words_value(text))
-                    }
-                    Some(TraitArgument::ExportTags(tags)) => {
-                        super::routine_traits::explicit_export_argument(tags)
-                    }
-                    Some(TraitArgument::Operator(reference)) => {
-                        Some(super::attribute::paren_argument(&Expr::CodeVar(
-                            crate::op_prec::trait_target_name(reference),
-                        ))?)
-                    }
-                    Some(TraitArgument::Parentheses(expr)) => {
-                        let expr = match expr {
-                            Expr::Grouped(inner) => inner,
-                            other => other,
-                        };
-                        Some(super::attribute::paren_argument(expr)?)
-                    }
-                };
-                if super::routine_traits::is_type_trait_name(name) {
-                    super::routine_traits::trait_is_type(name, argument)?
-                } else {
-                    super::routine_traits::trait_is(name, argument)
-                }
-            }
-            RoutineTrait::Returns(ty) | RoutineTrait::Of(ty) => RakuAstNode {
-                origin: Default::default(),
-                class: if matches!(item, RoutineTrait::Returns(_)) {
-                    RakuAstClass::TraitReturns
-                } else {
-                    RakuAstClass::TraitOf
-                },
-                fields: vec![node_field(None, return_constraint_node(ty)?)],
-            },
-            RoutineTrait::Handles(term) => RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::TraitHandles,
-                fields: vec![node_field(None, super::convert::convert_expr(term)?)],
-            },
-            RoutineTrait::Unsupported(name) => return Err(unsupported(name)),
-        };
-        nodes.push(Value::rakuast(Box::new(trait_node)));
+        nodes.push(Value::rakuast(Box::new(trait_node(item)?)));
     }
     node.fields.retain(|field| field.name != Some("traits"));
     let at = node

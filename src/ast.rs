@@ -80,16 +80,6 @@ pub(crate) mod decl_id_serde {
     }
 }
 
-/// The source order of the separately stored role-header trait families.
-#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) enum RoleHeaderTrait {
-    Parent(usize),
-    Hidden,
-    Export,
-    Rw,
-    Custom(usize),
-}
-
 /// Specifies how delegation (`handles`) should forward methods.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum HandleSpec {
@@ -2812,8 +2802,6 @@ pub(crate) enum Stmt {
     },
     RoleDecl {
         name: Symbol,
-        /// Written interleaving of the role's header trait families.
-        header_order: Vec<RoleHeaderTrait>,
         type_params: Vec<String>,
         type_param_defs: Vec<ParamDef>,
         is_export: bool,

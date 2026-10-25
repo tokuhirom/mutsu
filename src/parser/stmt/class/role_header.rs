@@ -1,5 +1,6 @@
 //! Role header clauses before their execution fields are separated.
 use super::*;
+use crate::ast::routine_trait::{self, ParentKind, RoutineTrait, TraitArgument};
 
 pub(super) struct Header {
     pub parent_roles: Vec<(String, Option<Vec<Expr>>, bool)>,
@@ -8,7 +9,8 @@ pub(super) struct Header {
     pub is_export: bool,
     pub export_tags: Vec<String>,
     pub custom_traits: Vec<(String, Option<Expr>)>,
-    pub header_order: Vec<crate::ast::RoleHeaderTrait>,
+    /// The header traits as written, for a parse that keeps spellings.
+    pub written: Vec<RoutineTrait>,
 }
 
 pub(super) fn parse<'a>(
@@ -26,8 +28,8 @@ pub(super) fn parse<'a>(
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
     let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
-    let mut header_order = Vec::new();
-    let mut parent_count = 0;
+    let mut written: Vec<RoutineTrait> = Vec::new();
+    let mut parent_args: Vec<(String, Vec<Expr>)> = Vec::new();
 
     // Optional parent/trait clauses in any order.
     loop {
@@ -48,9 +50,17 @@ pub(super) fn parse<'a>(
             }
             let (r, _) = ws(r)?;
             let args = super::class_decl::parse_bracket_arg_exprs(bracket_suffix);
-            parent_roles.push((format!("{}{}", role_name, bracket_suffix), args, false));
-            header_order.push(crate::ast::RoleHeaderTrait::Parent(parent_count));
-            parent_count += 1;
+            let full_name = format!("{}{}", role_name, bracket_suffix);
+            if let Some(args) = &args {
+                parent_args.push((full_name.clone(), args.clone()));
+            }
+            super::class_decl::note_parent(
+                &mut written,
+                ParentKind::Does,
+                &full_name,
+                &parent_args,
+            );
+            parent_roles.push((full_name, args, false));
             rest = r;
             continue;
         }
@@ -69,24 +79,29 @@ pub(super) fn parse<'a>(
                 trait_name.insert_str(0, "::");
             }
             if trait_name == "hidden" {
-                header_order.push(crate::ast::RoleHeaderTrait::Hidden);
+                super::class_decl::note_is(&mut written, &trait_name, None);
                 is_hidden_role = true;
                 let r = skip_balanced_parens(r);
                 let (r, _) = ws(r)?;
                 rest = r;
             } else if trait_name == "rw" {
-                header_order.push(crate::ast::RoleHeaderTrait::Rw);
+                super::class_decl::note_is(&mut written, &trait_name, None);
                 role_is_rw = true;
                 let r = skip_balanced_parens(r);
                 let (r, _) = ws(r)?;
                 rest = r;
             } else if trait_name == "export" {
-                header_order.push(crate::ast::RoleHeaderTrait::Export);
                 // `is export` / `is export(:TAG, :TAG2)`: exactly as for a
                 // class, a bare `is export` uses DEFAULT and a tagged form
                 // declares each named tag (and is importable under `:ALL`).
                 is_export = true;
                 super::class_decl::push_export_tags(r, &mut export_tags);
+                let tags = export_tags.clone();
+                super::class_decl::note_is(
+                    &mut written,
+                    &trait_name,
+                    (!tags.is_empty()).then_some(TraitArgument::ExportTags(tags)),
+                );
                 let r = skip_balanced_parens(r);
                 let (r, _) = ws(r)?;
                 rest = r;
@@ -123,7 +138,11 @@ pub(super) fn parse<'a>(
                 // custom_traits, same as a class's generic `is` fallback.
                 if r.starts_with('<') {
                     let (r2, arg) = parse_trait_angle_arg(r)?;
-                    header_order.push(crate::ast::RoleHeaderTrait::Custom(custom_traits.len()));
+                    super::class_decl::note_is(
+                        &mut written,
+                        &trait_name,
+                        Some(TraitArgument::Words(arg.clone())),
+                    );
                     custom_traits.push((trait_name.clone(), Some(Expr::Literal(Value::str(arg)))));
                     let (r2, _) = ws(r2)?;
                     rest = r2;
@@ -135,8 +154,11 @@ pub(super) fn parse<'a>(
                     if let Ok((after_expr, expr)) = expression(inner_start) {
                         let after_expr = after_expr.trim_start();
                         if let Some(after_paren) = after_expr.strip_prefix(')') {
-                            header_order
-                                .push(crate::ast::RoleHeaderTrait::Custom(custom_traits.len()));
+                            super::class_decl::note_is(
+                                &mut written,
+                                &trait_name,
+                                Some(TraitArgument::Parentheses(expr.clone())),
+                            );
                             custom_traits.push((trait_name.clone(), Some(expr)));
                             let (r2, _) = ws(after_paren)?;
                             rest = r2;
@@ -144,7 +166,9 @@ pub(super) fn parse<'a>(
                         }
                     }
                     let r2 = skip_balanced_parens(r);
-                    header_order.push(crate::ast::RoleHeaderTrait::Custom(custom_traits.len()));
+                    routine_trait::note(&mut written, || {
+                        RoutineTrait::Unsupported(format!("is {trait_name}(...)"))
+                    });
                     custom_traits.push((trait_name.clone(), None));
                     let (r2, _) = ws(r2)?;
                     rest = r2;
@@ -152,9 +176,13 @@ pub(super) fn parse<'a>(
                     // No parens — treat as parent role. If it's actually
                     // a custom trait, the runtime will handle it via
                     // trait_mod:<is> when the role name is not found.
+                    super::class_decl::note_parent(
+                        &mut written,
+                        ParentKind::Is,
+                        &trait_name,
+                        &parent_args,
+                    );
                     parent_roles.push((trait_name, None, true));
-                    header_order.push(crate::ast::RoleHeaderTrait::Parent(parent_count));
-                    parent_count += 1;
                     let (r, _) = ws(r)?;
                     rest = r;
                 }
@@ -166,9 +194,13 @@ pub(super) fn parse<'a>(
             let (r, hidden_name) = qualified_ident(r)?;
             let (r, _) = ws(r)?;
             // Track as a parent relationship
+            super::class_decl::note_parent(
+                &mut written,
+                ParentKind::Hides,
+                &hidden_name,
+                &parent_args,
+            );
             parent_roles.push((hidden_name.clone(), None, false));
-            header_order.push(crate::ast::RoleHeaderTrait::Parent(parent_count));
-            parent_count += 1;
             // Also mark the hidden relationship with a special marker
             parent_roles.push((
                 MetaNs::RoleHides.owned_key_for_str(&hidden_name),
@@ -190,7 +222,7 @@ pub(super) fn parse<'a>(
             is_export,
             export_tags,
             custom_traits,
-            header_order,
+            written,
         },
     ))
 }
