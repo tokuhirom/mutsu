@@ -32,3 +32,16 @@ pub(crate) fn is_composed_meta_object(value: &crate::value::Value) -> bool {
         _ => false,
     }
 }
+
+/// The registry key of the type an Attribute meta-object's
+/// `__mutsu_attr_owner` names: a `:package` type object keeps its storage name
+/// (`Foo\0<digits>` for a second `new_type(:name<Foo>)`, which `to_string_value`
+/// would cut back to the display name `Foo` and so file two distinct types'
+/// attributes under one `(owner, name)` key), anything else its string value.
+// Cost: O(1).
+pub(crate) fn attr_owner_key(owner: &crate::value::Value) -> String {
+    match owner.view() {
+        crate::value::ValueView::Package(name) => name.resolve().to_string(),
+        _ => owner.to_string_value(),
+    }
+}

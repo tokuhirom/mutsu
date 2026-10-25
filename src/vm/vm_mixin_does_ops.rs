@@ -415,7 +415,7 @@ impl Interpreter {
             return None;
         }
         let map = attributes.as_map();
-        let owner = map.get("__mutsu_attr_owner")?.to_string_value();
+        let owner = crate::value::attribute_class::attr_owner_key(map.get("__mutsu_attr_owner")?);
         let attr = map.get("__mutsu_attr_name")?.to_string_value();
         if owner.is_empty() || attr.is_empty() {
             return None;

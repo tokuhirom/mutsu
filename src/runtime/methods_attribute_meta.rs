@@ -21,7 +21,7 @@ fn build_override_key(meta: &InstanceAttrs) -> (String, String) {
     let map = meta.as_map();
     let owner = map
         .get("__mutsu_attr_owner")
-        .map(|v| v.to_string_value())
+        .map(crate::value::attribute_class::attr_owner_key)
         .unwrap_or_default();
     let attr_name = map
         .get("__mutsu_attr_name")
