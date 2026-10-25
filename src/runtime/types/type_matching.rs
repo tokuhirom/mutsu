@@ -226,8 +226,11 @@ impl Interpreter {
         // dispatch, the typed-store cascade -- arrives here directly.
         if Self::any_type_capture_seen() {
             if self.has_type_capture_binding(constraint)
-                && let Some(value) = self.env.get(constraint)
+                && let Some(value) = self.env.get(constraint).map(Value::deref_container)
             {
+                // The capture may sit in a shared cell (a `::T` argument passed
+                // on by name, `self.next(T)`); its display name is not the
+                // type's own name for an anonymous type.
                 return Some(match value.view() {
                     ValueView::Package(name) => name.resolve(),
                     ValueView::ParametricRole {
@@ -254,7 +257,7 @@ impl Interpreter {
             if let Some(suffix_start) = suffix_start
                 && let (base, suffix) = (&constraint[..suffix_start], &constraint[suffix_start..])
                 && self.has_type_capture_binding(base)
-                && let Some(value) = self.env.get(base)
+                && let Some(value) = self.env.get(base).map(Value::deref_container)
             {
                 let resolved_base = match value.view() {
                     ValueView::Package(name) => name.resolve(),
