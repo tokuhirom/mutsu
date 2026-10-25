@@ -160,6 +160,28 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 fn pure_stmt(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Expr(e) => pure_expr(e),
+        Stmt::Say(args) | Stmt::Put(args) | Stmt::Print(args) | Stmt::Note(args) => {
+            args.iter().all(pure_expr)
+        }
+        Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) => pure_expr(e),
+        Stmt::Assign {
+            name,
+            expr,
+            target_is_sigilless: false,
+            ..
+        } => plain_name(name) && pure_expr(expr),
+        Stmt::VarDecl {
+            name,
+            anonymous: false,
+            expr,
+            is_export: false,
+            export_tags,
+            custom_traits,
+            where_constraint: None,
+            ..
+        } => {
+            plain_name(name) && export_tags.is_empty() && custom_traits.is_empty() && pure_expr(expr)
+        }
         Stmt::Call { args, .. } => args.iter().all(|a| match a {
             CallArg::Positional(e) => pure_expr(e),
             CallArg::Named { value, .. } => value.as_ref().is_none_or(pure_expr),
