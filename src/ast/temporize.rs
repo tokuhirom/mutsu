@@ -1,32 +1,32 @@
 //! `temp` / `let` as a prefix operator over an lvalue.
 //!
-//! The parser (`parser::stmt::simple_expr_stmt::let_temp`) turns the prefix
-//! into a [`Stmt::Let`] that saves the variable (or one element of it) and,
-//! when an assignment follows, assigns inside the same node. A compound
-//! assignment (`temp $x ~= "a"`) cannot be spelled in one `Stmt::Let`, so it is
-//! a [`Stmt::SyntheticBlock`] of the save and the ordinary statement. A
-//! declaration (`temp my $x`) is kept as written by the parser
-//! (`ParsedStmt::TempDecl`) and lowered to the declaration plus its save.
-//!
-//! Rakudo has none of that: `temp LVALUE` is an `ApplyPrefix` and the
-//! assignment is the `ApplyInfix` around it. [`recognize`] reads the parser's
-//! forms back as that one shape, for the RakuAST converter, and
-//! [`variable_expr`] / [`element_expr`] rebuild the lvalue.
+//! Rakudo has `temp LVALUE` as an `ApplyPrefix` and the assignment as the
+//! `ApplyInfix` around it. The parser keeps that shape
+//! (`ParsedStmt::Temporize`), and [`expand`] is its one lowering to what the
+//! compiler runs: a [`Stmt::Let`] that saves the variable (or one element of
+//! it) and, when a plain assignment follows, assigns inside the same node. A
+//! compound assignment (`temp $x ~= "a"`) cannot be spelled in one
+//! `Stmt::Let`, so it is a [`Stmt::SyntheticBlock`] of the save and the
+//! ordinary statement. A declaration (`temp my $x`) is kept as written by the
+//! parser (`ParsedStmt::TempDecl`) and lowered to the declaration plus its save.
 
 use super::{Expr, Stmt};
 
 /// What a `temp` / `let` saves.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Target {
     /// A variable, by its environment key (`x`, `@a`, `%h`, `*CWD`, `!attr`).
     Variable(String),
-    /// A declaration: `temp my $x` (kept as `ParsedStmt::TempDecl`).
-    Declaration(Box<Stmt>),
+    /// `temp undefine($x) = VALUE`: the variable is undefined first, then
+    /// saved in that state.
+    Undefine(String),
     /// An element of a variable or a deeper subscript, as the lvalue
     /// expression (`@a[1]`, `%h<k>`, `$s[1]<k>`).
     Element(Expr),
 }
 
 /// The assignment that follows the prefix, if any.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Assigned {
     No,
     /// `= VALUE`.
@@ -35,7 +35,8 @@ pub(crate) enum Assigned {
     Compound(Expr),
 }
 
-/// A `temp` / `let` statement read back as the prefix over its lvalue.
+/// A `temp` / `let` statement: the prefix over its lvalue and what follows.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Temporized {
     pub(crate) is_temp: bool,
     pub(crate) target: Target,
@@ -96,22 +97,6 @@ pub(crate) fn save_nested(name: &str, value: Expr, is_temp: bool) -> Stmt {
     }
 }
 
-/// The save of one variable or element with no assignment, as the first half
-/// of a compound-assignment block.
-fn bare_save(stmt: &Stmt) -> Option<(&str, Option<&Expr>, bool)> {
-    match stmt {
-        Stmt::Let {
-            name,
-            index,
-            value: None,
-            is_temp,
-            undefine_first: false,
-            nested_lvalue: false,
-        } => Some((name, index.as_deref(), *is_temp)),
-        _ => None,
-    }
-}
-
 /// The base variable's environment key under any depth of subscripts and
 /// parentheses (`temp (@a)[0]` and `temp $s[1]<k>` name elements of `@a` and
 /// `$s`), or `None` when the base is not a plain variable.
@@ -126,93 +111,86 @@ pub(crate) fn base_name(expr: &Expr) -> Option<String> {
     }
 }
 
-/// The `temp` / `let` that `stmt` is the parser's expansion of, if it is one.
-// Cost: O(n), n = size of the statement (its parts are cloned).
-pub(crate) fn recognize(stmt: &Stmt) -> Option<Temporized> {
-    match stmt {
-        Stmt::Let {
-            name,
-            index,
-            value,
-            is_temp,
-            undefine_first: false,
-            nested_lvalue,
-        } => {
-            let target;
-            let assigned;
-            if *nested_lvalue {
-                // The value is the whole element assignment, or the element.
-                match value.as_deref()? {
-                    Expr::IndexAssign {
-                        target: container,
-                        index: key,
-                        value: assigned_value,
-                        is_positional,
-                        ..
-                    } => {
-                        target = Target::Element(Expr::Index {
-                            target: container.clone(),
-                            index: key.clone(),
-                            is_positional: *is_positional,
-                            spelling: Default::default(),
-                        });
-                        assigned = Assigned::Plain((**assigned_value).clone());
-                    }
-                    element @ Expr::Index { .. } => {
-                        target = Target::Element(element.clone());
-                        assigned = Assigned::No;
-                    }
-                    _ => return None,
-                }
-            } else {
-                target = match index {
-                    Some(index) => Target::Element(element_expr(name, index)),
-                    None => Target::Variable(name.clone()),
-                };
-                assigned = match value {
-                    Some(value) => Assigned::Plain((**value).clone()),
-                    None => Assigned::No,
-                };
-            }
-            Some(Temporized {
-                is_temp: *is_temp,
-                target,
-                assigned,
-            })
-        }
-        Stmt::SyntheticBlock(parts) => match parts.as_slice() {
-            // `temp $x ~= "a"`: the save, then the assignment parsed from the
-            // variable on.
-            [
-                save,
-                Stmt::Expr(assignment @ (Expr::CompoundAssign { .. } | Expr::Ast(_))),
-            ] if is_compound(assignment) => {
-                let (name, index, is_temp) = bare_save(save)?;
-                Some(Temporized {
-                    is_temp,
-                    target: match index {
-                        Some(index) => Target::Element(element_expr(name, index)),
-                        None => Target::Variable(name.to_string()),
-                    },
-                    assigned: Assigned::Compound(assignment.clone()),
-                })
-            }
-            _ => None,
-        },
-        _ => None,
-    }
+/// Whether the element is a subscript of a plain variable (`@a[1]`, `%h<k>`).
+// Cost: O(1).
+fn single_level(element: &Expr) -> bool {
+    matches!(
+        element,
+        Expr::Index { target, .. }
+            if matches!(target.as_ref(), Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_))
+    )
 }
 
-/// Whether `expr` is a compound assignment: the parser's marker, or the typed
-/// node a `.AST` parse keeps (ADR-10723 Stage 2).
-// Cost: O(1).
-fn is_compound(expr: &Expr) -> bool {
-    match expr {
-        Expr::CompoundAssign { .. } => true,
-        Expr::Ast(node) => matches!(
-            node.as_ref(),
-            crate::ast::parsed::ParsedExpr::CompoundAssign(_)
-        ),
-        _ => false,
+/// The statement the compiler runs for a `temp` / `let`: the one lowering of
+/// `ParsedStmt::Temporize`. `None` when the lvalue names no variable.
+// Cost: O(n), n = size of the lvalue and the assigned expression.
+pub(crate) fn expand(t: Temporized) -> Option<Stmt> {
+    let Temporized {
+        is_temp,
+        target,
+        assigned,
+    } = t;
+    let value = match &assigned {
+        Assigned::Plain(value) => Some(value.clone()),
+        _ => None,
+    };
+    let (stmt, name, index) = match target {
+        Target::Undefine(name) => {
+            return Some(Stmt::Let {
+                name,
+                index: None,
+                value: value.map(Box::new),
+                is_temp: true,
+                undefine_first: true,
+                nested_lvalue: false,
+            });
+        }
+        Target::Variable(name) => (None, name, None),
+        Target::Element(element) => {
+            let Expr::Index {
+                target,
+                index,
+                is_positional,
+                ..
+            } = &element
+            else {
+                return None;
+            };
+            let name = base_name(target)?;
+            if single_level(&element) {
+                (None, name, Some(index.as_ref().clone()))
+            } else {
+                // A deeper subscript or a parenthesised container: the
+                // element assignment (or the bare element) rides in the save,
+                // so a compound assignment cannot.
+                if matches!(assigned, Assigned::Compound(_)) {
+                    return None;
+                }
+                let carried = match value {
+                    Some(value) => Expr::IndexAssign {
+                        target: target.clone(),
+                        index: index.clone(),
+                        value: Box::new(value),
+                        is_positional: *is_positional,
+                        spelling: Default::default(),
+                    },
+                    None => element.clone(),
+                };
+                (Some(save_nested(&name, carried, is_temp)), name, None)
+            }
+        }
+    };
+    if let Some(nested) = stmt {
+        return Some(nested);
     }
+    Some(match assigned {
+        // `temp $x ~= "a"`: the save, then the assignment parsed from the
+        // variable on.
+        Assigned::Compound(assignment) => Stmt::SyntheticBlock(vec![
+            save(&name, index.as_ref(), None, is_temp),
+            Stmt::Expr(assignment),
+        ]),
+        Assigned::Plain(value) => save(&name, index.as_ref(), Some(value), is_temp),
+        Assigned::No => save(&name, index.as_ref(), None, is_temp),
+    })
 }

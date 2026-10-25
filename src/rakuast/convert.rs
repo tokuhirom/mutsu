@@ -523,11 +523,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         // `proceed` / `succeed` without arguments are bare calls as well.
         Stmt::Proceed => Ok(Some(statement_expression(control_call("proceed", &[])?))),
         Stmt::Succeed => Ok(Some(statement_expression(control_call("succeed", &[])?))),
-        // `temp` / `let` over a variable, an element or a declaration.
-        Stmt::Let { .. } => match super::temporize::convert(stmt) {
-            Some(node) => Ok(Some(statement_expression(node?))),
-            None => Err(unsupported("`temp`/`let` of this form")),
-        },
         Stmt::TempMethodAssign {
             var_name,
             method_name,
@@ -543,10 +538,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 *is_attribute,
             )?,
         ))),
-        Stmt::SyntheticBlock(_) if crate::ast::temporize::recognize(stmt).is_some() => {
-            let node = super::temporize::convert(stmt).expect("just checked")?;
-            Ok(Some(statement_expression(node)))
-        }
         // `my Int $c .= new(), 5`: a `.=` declaration with sunk list items.
         Stmt::SyntheticBlock(_)
             if super::decl_tail::convert_call_assign_list(stmt)
@@ -3520,7 +3511,7 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 Stmt::Ast(node)
                     if matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::BindDecl(_) | crate::ast::parsed::ParsedStmt::SigillessDecl(_)
                         | crate::ast::parsed::ParsedStmt::AttributeGroup(_) | crate::ast::parsed::ParsedStmt::AttributeColonArglist(_)
-                        | crate::ast::parsed::ParsedStmt::MethodAssignDecl(_) | crate::ast::parsed::ParsedStmt::SignatureBind { .. } | crate::ast::parsed::ParsedStmt::SignatureDecl(_))
+                        | crate::ast::parsed::ParsedStmt::MethodAssignDecl(_) | crate::ast::parsed::ParsedStmt::SignatureBind { .. } | crate::ast::parsed::ParsedStmt::SignatureDecl(_) | crate::ast::parsed::ParsedStmt::Temporize(_))
             ) =>
         {
             let statement = convert_stmt(stmt)?.ok_or_else(|| unsupported("declaration term"))?;
@@ -3630,10 +3621,6 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 class: RakuAstClass::StatementPrefixDo,
                 fields: vec![node_field(None, statement)],
             })
-        }
-        // `(temp $x)` / `(let $x = 1)` in expression position.
-        Expr::DoStmt(stmt) if super::temporize::convert(stmt).is_some() => {
-            super::temporize::convert(stmt).expect("just checked")
         }
         Expr::DoStmt(stmt) if is_modifier_statement(stmt) => {
             convert_stmt(stmt)?.ok_or_else(|| unsupported("empty modified expression"))
