@@ -1,6 +1,6 @@
 //! Opt-in traversal of compiler-inert written-source records.
 
-use super::{NameKind, Visit, exprs, names, params, traits, walk_stmts};
+use super::{NameKind, Visit, exprs, names, traits};
 use crate::ast::routine_trait::{RoutineTrait, TraitArgument};
 use crate::ast::{SignatureDecl, SignatureInit, SignatureVar, SourceForm};
 

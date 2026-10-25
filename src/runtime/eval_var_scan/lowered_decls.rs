@@ -1,8 +1,7 @@
 //! Declarations the lowered AST does not spell as `my`: a regex's `:my`
-//! statements and a destructuring pointy block's parameters.
+//! statements.
 
 use super::*;
-use crate::ast::SourceForm;
 
 impl UndeclaredVars<'_> {
     /// Declares a regex's `:my` variables, which are in scope after the
@@ -16,21 +15,6 @@ impl UndeclaredVars<'_> {
             self.declare(name);
         }
     }
-}
-
-/// The names of the parameters (and sub-signature parameters) visited.
-#[derive(Default)]
-struct ParamNames(Vec<String>);
-
-impl<'ast> Visit<'ast> for ParamNames {
-    fn visit_name(&mut self, name: &str, kind: NameKind) {
-        if matches!(kind, NameKind::Param | NameKind::BlockParam) {
-            self.0.push(name.to_string());
-        }
-    }
-
-    // A default or `where` is not a declaration.
-    fn visit_expr(&mut self, _expr: &'ast Expr) {}
 }
 
 /// The variables a regex's `:my` statements declare, outside its code
