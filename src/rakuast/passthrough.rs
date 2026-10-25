@@ -24,7 +24,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 enum Held {
     Expr(Expr),
-    Stmt(Stmt),
+    Stmt(Box<Stmt>),
 }
 
 /// A tree a leaf carries, and whether it holds a spelling or a kept
@@ -218,7 +218,7 @@ pub(super) fn stmt_leaf(stmt: &Stmt, line: Option<i64>) -> Option<RakuAstNode> {
         return None;
     }
     let fixup = analyse_stmt(stmt)?;
-    leaf_node(Held::Stmt(stmt.clone()), fixup, line)
+    leaf_node(Held::Stmt(Box::new(stmt.clone())), fixup, line)
 }
 
 // Cost: O(1).
@@ -358,8 +358,10 @@ impl VisitMut for Kept {
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     match held(node)? {
         Held::Expr(e) => Ok(e),
-        Held::Stmt(Stmt::Expr(e)) => Ok(e),
-        Held::Stmt(_) => Err(RuntimeError::new("a statement leaf in expression position")),
+        Held::Stmt(stmt) => match *stmt {
+            Stmt::Expr(e) => Ok(e),
+            _ => Err(RuntimeError::new("a statement leaf in expression position")),
+        },
     }
 }
 
@@ -367,7 +369,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 // Cost: O(s), s = nodes of the tree (one clone).
 pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match held(node)? {
-        Held::Stmt(s) => Ok(s),
+        Held::Stmt(s) => Ok(*s),
         Held::Expr(e) => Ok(Stmt::Expr(e)),
     }
 }
