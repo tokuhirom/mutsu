@@ -92,9 +92,6 @@ pub(crate) enum Spelling {
     /// one list infix with the written spelling. The parser evaluates it as
     /// the plain sequence followed by `.skip(1)`.
     LeftExclusiveSequence(Box<str>),
-    /// `$x [[+]]= 6`: bracket depth of an assignment whose executable form
-    /// folds the bracketed infix into an ordinary compound assignment.
-    BracketedAssignment { depth: usize },
     /// A C-style loop's comma-separated increment expressions, executed as
     /// a do-block but represented as one list infix in RakuAST.
     LoopStepComma,

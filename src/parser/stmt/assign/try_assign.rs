@@ -629,23 +629,15 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         let var_expr = match sigil {
             b'@' => Expr::ArrayVar(var),
             b'%' => Expr::HashVar(var),
-            _ => Expr::Var(name.clone()),
+            _ => Expr::Var(name),
         };
-        let assignment = Expr::AssignExpr {
-            name,
-            expr: Box::new(Expr::MetaOp {
-                meta,
-                op,
-                left: Box::new(var_expr),
-                right: Box::new(rhs),
-            }),
-            is_bind: false,
-        };
+        let kind = crate::ast::parsed::BracketedMeta::from_spelling(&meta)
+            .ok_or_else(|| PError::expected("bracketed metaoperator"))?;
+        let depth = u8::try_from(depth)
+            .map_err(|_| PError::expected("a bracketed infix nested at most 255 levels"))?;
         return Ok((
             rest,
-            Expr::spelled(assignment, || {
-                crate::ast::spelled::Spelling::BracketedAssignment { depth }
-            }),
+            super::written_meta_assignment(var_expr, kind, depth, op, rhs)?,
         ));
     }
     if let Some((stripped, op_name)) = parse_custom_compound_assign_op(r2) {

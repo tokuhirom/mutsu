@@ -290,6 +290,44 @@ pub(crate) enum CompoundMeta {
     /// `$x R-= $y`: the reversed infix, which assigns to its right operand
     /// (`$y -= $x`). Its `op` may be `=` (`$x R= $y`).
     Reverse,
+    /// `@a [X+]= @b`: a metaoperator over `op` inside this many brackets.
+    BracketedMeta(BracketedMeta, u8),
+}
+
+/// The metaoperator of a bracketed compound assignment (`[X+]=`, `[Z~]=`,
+/// `[R-]=`), or none (`Reduce`: a bare infix in brackets that is not a
+/// compound-assignment operator).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum BracketedMeta {
+    Cross,
+    Zip,
+    Reverse,
+    Reduce,
+}
+
+impl BracketedMeta {
+    /// The metaoperator a spelling (`X`, `Z`, `R`, `reduce`) names.
+    // Cost: O(1).
+    pub(crate) fn from_spelling(spelling: &str) -> Option<Self> {
+        match spelling {
+            "X" => Some(Self::Cross),
+            "Z" => Some(Self::Zip),
+            "R" => Some(Self::Reverse),
+            "reduce" => Some(Self::Reduce),
+            _ => None,
+        }
+    }
+
+    /// The metaoperator's spelling, as `Expr::MetaOp` keeps it.
+    // Cost: O(1).
+    pub(crate) fn spelling(self) -> &'static str {
+        match self {
+            Self::Cross => "X",
+            Self::Zip => "Z",
+            Self::Reverse => "R",
+            Self::Reduce => "reduce",
+        }
+    }
 }
 
 /// An assignment as written: the target with its parentheses, and the source.
