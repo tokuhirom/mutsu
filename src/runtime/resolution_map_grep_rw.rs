@@ -120,11 +120,12 @@ impl Interpreter {
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::First, first)?;
                 }
                 let mut i = 0usize;
+                let mut by_last = false;
                 while !src.satisfied(&out.produced, produced_base) && src.has(i + 1) {
                     src.has(i + arity);
                     slot.last_call_args = Some(chunk_at(&src.buf, i));
                     out.consumed = consumed_base + (i + arity).min(src.buf.len());
-                    let value = if rw_param.is_some() {
+                    let called: Result<Value, RuntimeError> = (|| -> Result<Value, RuntimeError> { Ok(if rw_param.is_some() {
                         let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(
                             src.buf[i].clone(),
                         ));
@@ -168,6 +169,29 @@ impl Interpreter {
                             wrote_back.set(true);
                         }
                         v
+                    }) })();
+                    // `next`/`last` in a signature-bearing block (`-> (:$key, :$value)
+                    // { next if ... }`) end the item / the map, as the inline loop
+                    // below does; `next VALUE` / `last VALUE` contribute the value.
+                    let value = match called {
+                        Ok(value) => value,
+                        Err(e) if e.is_next() => {
+                            if let Some(val) = e.return_value {
+                                super::resolution_map_grep::push_map_value(&mut out.produced, val);
+                            }
+                            i += arity;
+                            continue;
+                        }
+                        Err(e) if e.is_last() => {
+                            self.async_state.map_grep_last_depth =
+                                Some(crate::runtime::loop_handler_depth::loop_handler_depth());
+                            if let Some(val) = e.return_value {
+                                super::resolution_map_grep::push_map_value(&mut out.produced, val);
+                            }
+                            by_last = true;
+                            break;
+                        }
+                        Err(e) => return Err(e),
                     };
                     let value = self.reify_finite_pipe_value(value)?;
                     super::resolution_map_grep::push_map_value(&mut out.produced, value);
@@ -175,7 +199,7 @@ impl Interpreter {
                 }
                 self.env.remove_sym(topic_key);
                 if slot.last_call_args.is_some()
-                    && slot.take_last_phaser(src.ran_out(&out.produced, produced_base, i))
+                    && slot.take_last_phaser(by_last || src.ran_out(&out.produced, produced_base, i))
                     && let Some(last) = slot.last_call_args.take()
                 {
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::Last, last)?;

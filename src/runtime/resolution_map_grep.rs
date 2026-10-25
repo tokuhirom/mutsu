@@ -668,6 +668,7 @@ impl Interpreter {
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::First, first_args)?;
                 }
                 let mut i = 0usize;
+                let mut by_last = false;
                 while !src.satisfied(&out.produced, produced_base) && src.has(i + 1) {
                     src.has(i + batch);
                     let end = (i + batch).min(src.buf.len());
@@ -680,13 +681,37 @@ impl Interpreter {
                     let callable = Value::sub_value(data.clone());
                     // A block with its own parameters runs its compiled body
                     // as any closure call does (see the rw twin of this loop).
-                    let value = if !data.assumed_positional.is_empty()
+                    let called = if !data.assumed_positional.is_empty()
                         || !data.assumed_named.is_empty()
                         || super::resolution_map_grep::block_keeps_outer_topic(&data)
                     {
-                        self.vm_call_on_value(callable, chunk, None)?
+                        self.vm_call_on_value(callable, chunk, None)
                     } else {
-                        self.call_sub_value(callable, chunk)?
+                        self.call_sub_value(callable, chunk)
+                    };
+                    // `next`/`last` in a signature-bearing block (a destructuring
+                    // `-> (:$key, :$value) { next if ... }`) ends this item/the map,
+                    // as in the inline loop below; `next VALUE` / `last VALUE`
+                    // contribute the value.
+                    let value = match called {
+                        Ok(value) => value,
+                        Err(e) if e.is_next() => {
+                            if let Some(val) = e.return_value {
+                                push_map_value(&mut out.produced, val);
+                            }
+                            i = end;
+                            continue;
+                        }
+                        Err(e) if e.is_last() => {
+                            self.async_state.map_grep_last_depth =
+                                Some(crate::runtime::loop_handler_depth::loop_handler_depth());
+                            if let Some(val) = e.return_value {
+                                push_map_value(&mut out.produced, val);
+                            }
+                            by_last = true;
+                            break;
+                        }
+                        Err(e) => return Err(e),
                     };
                     let value = self.reify_finite_pipe_value(value)?;
                     push_map_value(&mut out.produced, value);
@@ -695,7 +720,7 @@ impl Interpreter {
                 // A LAST phaser in a signature-bearing map block runs with the
                 // final chunk bound (`call_block_loop_phasers`).
                 if slot.last_call_args.is_some()
-                    && slot.take_last_phaser(src.ran_out(&out.produced, produced_base, i))
+                    && slot.take_last_phaser(by_last || src.ran_out(&out.produced, produced_base, i))
                     && let Some(last_args) = slot.last_call_args.take()
                 {
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::Last, last_args)?;

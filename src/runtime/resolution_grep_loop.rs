@@ -265,12 +265,24 @@ impl Interpreter {
                 for (i, item) in list_items.iter().enumerate() {
                     *consumed = consumed_base + i + 1;
                     let callable = Value::sub_value(data.clone());
-                    let pred =
+                    let called =
                         if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
-                            self.vm_call_on_value(callable, vec![item.clone()], None)?
+                            self.vm_call_on_value(callable, vec![item.clone()], None)
                         } else {
-                            self.call_sub_value(callable, vec![item.clone()])?
+                            self.call_sub_value(callable, vec![item.clone()])
                         };
+                    // `next` skips the element, `last` stops the scan (as in the
+                    // inline loop below), also in a destructuring block.
+                    let pred = match called {
+                        Ok(pred) => pred,
+                        Err(e) if e.is_next() => continue,
+                        Err(e) if e.is_last() => {
+                            self.async_state.map_grep_last_depth =
+                                Some(crate::runtime::loop_handler_depth::loop_handler_depth());
+                            break;
+                        }
+                        Err(e) => return Err(e),
+                    };
                     if self.eval_predicate_truthy(&pred) {
                         result.push(item.clone());
                         matched.push(i);
