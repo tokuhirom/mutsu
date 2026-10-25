@@ -51,8 +51,11 @@ pub(crate) fn lower_parsed(decl: Stmt, op: String, source: Expr) -> Result<Stmt,
         };
         let name = name.clone();
         let value = Expr::InfixFunc {
+            left: Box::new(crate::parser::autoviv_routine_compound_lhs(
+                Expr::Var(name.clone()),
+                &op,
+            )),
             name: op,
-            left: Box::new(Expr::Var(name.clone())),
             right: vec![source],
             modifier: None,
         };
