@@ -11,3 +11,10 @@ case this fixes (`t/01-tdd`).
 The term form's header parser also accepted only `is Parent`: `class B is mp(Int) { }` died with
 "Two terms in a row". A lowercase `is trait(expr)` / `is trait<word>` is now handed to
 `trait_mod:<is>` with its argument, as the statement form does.
+
+A `DECLARE`d declarator (`EXPORTHOW::DECLARE`) took the other route: installing the declaration's HOW
+instance replaced the shell's metaobject with a fresh one and re-mixed the earlier roles by their bare
+names, dropping role arguments (`$type.HOW does Carries[Arg]` came back as `Carries`, so its methods
+read `Any` for the parameter). The in-place registration now keeps the metaobject the shell's traits
+produced. Red's `model C is rs-class(MyResultSet) {}` hit exactly this ("Any should do the
+Red::ResultSeq role").
