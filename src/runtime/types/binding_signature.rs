@@ -3278,12 +3278,24 @@ impl Interpreter {
                                     .env
                                     .get("_")
                                     .is_some_and(|v| matches!(v.view(), ValueView::ContainerRef(_)));
+                            // The cell and the sigilless alias are keyed by the
+                            // caller's name in this frame's env; another parameter
+                            // of this very signature spelled the same (`f(Str $a,
+                            // Int $b is rw)` called as `f("x", $a)`) would be
+                            // replaced by the cell and written through the alias.
+                            // The value still flows back through the rw writeback;
+                            // only the shared-cell aliasing is lost.
+                            let source_names_other_param = param_defs.iter().any(|other| {
+                                other.name != pd.name
+                                    && other.storage_name().as_ref() == source_name.as_str()
+                            });
                             if param_is_plain_scalar
                                 && !bare_topic_value
                                 && source_is_plain_scalar
                                 && !source_is_indexed
                                 && !implicit_raw_veto
                                 && !raw_readonly_source
+                                && !source_names_other_param
                             {
                                 rw_shared_cell_key = Some(source_name.clone());
                             }
@@ -3294,10 +3306,12 @@ impl Interpreter {
                             // bindings (e.g. `$a := $arg`) can transitively
                             // resolve through the `is rw` parameter to the
                             // caller's variable.
-                            let alias_key = sigilless_alias_key(&storage_name);
-                            self.env
-                                .insert_sym_noting(alias_key, Value::str(source_name));
-                            self.lexicals.sigilless_alias_seen = true;
+                            if !source_names_other_param {
+                                let alias_key = sigilless_alias_key(&storage_name);
+                                self.env
+                                    .insert_sym_noting(alias_key, Value::str(source_name));
+                                self.lexicals.sigilless_alias_seen = true;
+                            }
                         } else if matches!(
                             args[positional_idx].unwrap_varref().view(),
                             ValueView::ContainerRef(_)
