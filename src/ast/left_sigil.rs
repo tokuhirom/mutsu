@@ -60,6 +60,13 @@ pub(crate) fn inherit<R>(at: &str, sigil: LeftSigil, parse_operand: impl FnOnce(
     parsed
 }
 
+/// Whether the operand that starts at `at` inherits a sigil: a parse of it
+/// is not the same parse of the same text without one, so it is not memoized.
+// Cost: O(1).
+pub(crate) fn inherits_at(at: &str) -> bool {
+    INHERITED.get().is_some_and(|(ptr, _)| ptr == at.as_ptr() as usize)
+}
+
 /// Whether `TARGET = …` is an item assignment: the sigil is `$` when the `=`
 /// is reached. `at` is where the target starts: what the operators before it
 /// left in the same expression is already in the sigil.
