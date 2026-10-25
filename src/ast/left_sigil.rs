@@ -64,7 +64,9 @@ pub(crate) fn inherit<R>(at: &str, sigil: LeftSigil, parse_operand: impl FnOnce(
 /// is not the same parse of the same text without one, so it is not memoized.
 // Cost: O(1).
 pub(crate) fn inherits_at(at: &str) -> bool {
-    INHERITED.get().is_some_and(|(ptr, _)| ptr == at.as_ptr() as usize)
+    INHERITED
+        .get()
+        .is_some_and(|(ptr, _)| ptr == at.as_ptr() as usize)
 }
 
 /// Whether `TARGET = …` is an item assignment: the sigil is `$` when the `=`

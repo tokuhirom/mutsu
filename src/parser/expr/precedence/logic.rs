@@ -12,7 +12,8 @@ pub(crate) fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let sigil = crate::ast::left_sigil::after(crate::ast::left_sigil::LeftSigil::Unset, &left);
+            let sigil =
+                crate::ast::left_sigil::after(crate::ast::left_sigil::LeftSigil::Unset, &left);
             let (r, right) = crate::ast::left_sigil::inherit(r, sigil, || {
                 if mode == ExprMode::Full {
                     assign_or_and_expr(r, mode).map_err(|err| {
@@ -170,7 +171,8 @@ pub(crate) fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let sigil = crate::ast::left_sigil::after(crate::ast::left_sigil::LeftSigil::Unset, &left);
+            let sigil =
+                crate::ast::left_sigil::after(crate::ast::left_sigil::LeftSigil::Unset, &left);
             let (r, right) = crate::ast::left_sigil::inherit(r, sigil, || {
                 if mode == ExprMode::Full {
                     list_infix_top(r, mode).map_err(|err| {
