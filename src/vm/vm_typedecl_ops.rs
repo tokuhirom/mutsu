@@ -632,6 +632,15 @@ impl Interpreter {
             // and that hook runs when the class composes, below.
             let how_hook_before = self.class_how_compose_hook(&storage_name);
             let attr_type_aliases = self.attr_type_aliases_of(code, attr_decls);
+            // A nested declaration's shell already ran its traits at compile
+            // time, once (#12708); the in-place registration, repeated on every
+            // entry of the enclosing code, must not repeat them.
+            let traits_ran_in_shell = !is_hoisted_shell
+                && *decl_id != 0
+                && self
+                    .registry()
+                    .nested_shell_traits_applied
+                    .contains(decl_id);
             let deferred_traits = loan_env!(
                 self,
                 register_class_decl(
@@ -657,6 +666,7 @@ impl Interpreter {
                         compiled_fns,
                         body_plan,
                         is_hoisted_shell: hoisted_shell,
+                        traits_ran_in_shell,
                     },
                 )
             )
@@ -938,12 +948,6 @@ impl Interpreter {
             // A nested declaration's shell (`HoistedShell::Nested`) already ran
             // them at compile time, once (#12708); the in-place registration,
             // repeated on every entry of the enclosing code, must not.
-            let traits_ran_in_shell = !is_hoisted_shell
-                && *decl_id != 0
-                && self
-                    .registry()
-                    .nested_shell_traits_applied
-                    .contains(decl_id);
             let has_trait_mod = !traits_ran_in_shell
                 && (self.has_proto("trait_mod:<is>")
                     || self.has_multi_candidates("trait_mod:<is>"));
