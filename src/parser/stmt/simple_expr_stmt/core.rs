@@ -889,8 +889,10 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             }
             // The same for the `try` a `.AST` parse spells as written.
             Expr::Spelled(spelled)
-                if matches!(spelled.spelling, crate::ast::spelled::Spelling::BareStatement)
-                    && matches!(&spelled.expr, Expr::Try { body, .. }
+                if matches!(
+                    spelled.spelling,
+                    crate::ast::spelled::Spelling::BareStatement
+                ) && matches!(&spelled.expr, Expr::Try { body, .. }
                         if matches!(body.as_slice(), [Stmt::Expr(_)])) =>
             {
                 let Expr::Try { body, catch } = spelled.expr else {
