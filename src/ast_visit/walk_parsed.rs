@@ -57,6 +57,10 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         super::walk_stmts(v, declarations);
         return;
     }
+    if let ParsedStmt::SignatureDecl(decl) = node {
+        v.visit_signature_decl(decl);
+        return;
+    }
     if let ParsedStmt::SignatureBind { signature, rhs } = node {
         v.visit_expr(signature);
         v.visit_expr(rhs);
@@ -173,6 +177,7 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
         ParsedStmt::CommaDecls(declarations)
         | ParsedStmt::AttributeGroup(declarations)
         | ParsedStmt::AttributeColonArglist(declarations) => super::walk_stmts_mut(v, declarations),
+        ParsedStmt::SignatureDecl(decl) => walk_signature_decl_mut(v, decl),
         ParsedStmt::SignatureBind { signature, rhs } => {
             v.visit_expr_mut(signature);
             v.visit_expr_mut(rhs);
@@ -307,5 +312,29 @@ fn walk_method_assign_decl_mut<V: VisitMut + ?Sized>(
     }
     if let Some(dims) = &mut form.shape {
         super::exprs_mut(v, dims);
+    }
+}
+
+/// [`super::walk_signature_decl`], mutably: the expressions the declaration
+/// holds.
+// Cost: O(n), n = nodes of the declaration.
+fn walk_signature_decl_mut<V: VisitMut + ?Sized>(v: &mut V, decl: &mut crate::ast::SignatureDecl) {
+    for var in &mut decl.vars {
+        for expr in [
+            &mut var.default,
+            &mut var.where_constraint,
+            &mut var.literal_value,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            v.visit_expr_mut(expr);
+        }
+    }
+    if let Some(expr) = &mut decl.group_default {
+        v.visit_expr_mut(expr);
+    }
+    if let Some(init) = &mut decl.init {
+        v.visit_expr_mut(&mut init.rhs);
     }
 }

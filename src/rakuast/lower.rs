@@ -219,7 +219,19 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             let stmt = if expression.class == RakuAstClass::Block {
                 Stmt::Block(lower_block(expression)?)
             } else {
-                lower_stmt_inner(expression)?
+                // A signature declaration stays as written for the modifier
+                // that may split it.
+                match lower_stmt_kept(expression)? {
+                    Stmt::Ast(node)
+                        if matches!(
+                            node.as_ref(),
+                            crate::ast::parsed::ParsedStmt::SignatureDecl(_)
+                        ) =>
+                    {
+                        Stmt::Ast(node)
+                    }
+                    other => finish_kept(other)?,
+                }
             };
             super::modifier_lower::lower(Modified {
                 stmt: Box::new(stmt),
@@ -317,7 +329,7 @@ fn finish_kept(stmt: Stmt) -> Result<Stmt, RuntimeError> {
 /// [`lower_stmt_inner`], except that a `.=` declaration comes back as its
 /// written [`crate::ast::parsed::ParsedStmt::MethodAssignDecl`] (in `Stmt::Ast`), which an
 /// expression-position declaration lowers differently.
-fn lower_stmt_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower_stmt_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // A feed keeps declarations as operands until compiler lowering. The
     // loose-tail declaration splitter would turn a leftwards sink into an
     // initializer executed on every modifier iteration.
@@ -4121,9 +4133,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::StatementPrefixSupply => super::react::lower_supply(node),
         // A signature declaration in expression position (`if my ($a, $b) = …`)
         // is the parser's expansion wrapped in a `DoStmt`.
-        RakuAstClass::VarDeclarationSignature => {
-            Ok(Expr::DoStmt(Box::new(super::signature_decl::lower(node)?)))
-        }
+        RakuAstClass::VarDeclarationSignature => Ok(Expr::DoStmt(Box::new(finish_kept(
+            super::signature_decl::lower(node)?,
+        )?))),
         // `:(Int $x)`: the `Signature` value the parser builds for the literal.
         RakuAstClass::FakeSignature => lower_fake_signature(node),
         RakuAstClass::Signature => lower_signature_value(node, node),

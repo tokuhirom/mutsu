@@ -41,6 +41,8 @@ pub(crate) fn lower(node: Modified) -> Result<Stmt, RuntimeError> {
     if let Some(modifier) = condition {
         stmt = condition_modifier(modifier, stmt)?;
     }
+    // A signature declaration no condition took is lowered whole.
+    stmt = crate::parser::lower_pending_declaration(stmt)?;
     if let Some(modifier) = loop_ {
         stmt = loop_modifier(modifier, stmt);
     }
@@ -67,6 +69,7 @@ fn condition_modifier(modifier: StatementModifier, stmt: Stmt) -> Result<Stmt, R
             if let Some(split) = crate::parser::conditional_declaration(&stmt, &expr, is_unless)? {
                 return Ok(split);
             }
+            let stmt = crate::parser::lower_pending_declaration(stmt)?;
             Ok(Stmt::If {
                 cond: negate_if(expr, is_unless),
                 then_branch: vec![stmt],
@@ -85,7 +88,7 @@ fn condition_modifier(modifier: StatementModifier, stmt: Stmt) -> Result<Stmt, R
             topic: Expr::Var("_".to_string()),
             body: vec![Stmt::When {
                 cond: expr,
-                body: vec![stmt],
+                body: vec![crate::parser::lower_pending_declaration(stmt)?],
                 is_statement_modifier: true,
             }],
             is_statement_modifier: true,
@@ -146,6 +149,7 @@ fn with_modifier(is_without: bool, topic: Expr, stmt: Stmt) -> Result<Stmt, Runt
     if let Some(expanded) = crate::parser::topical_declaration(&stmt, &topic, is_without)? {
         return Ok(expanded);
     }
+    let stmt = crate::parser::lower_pending_declaration(stmt)?;
     Ok(Stmt::Given {
         topic,
         body: vec![if_stmt(stmt)],

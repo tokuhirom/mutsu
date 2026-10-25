@@ -50,15 +50,12 @@ pub(crate) fn head_name(head: &Stmt) -> Option<&str> {
     }
 }
 
-/// The bare grouped declaration opened by a signature-declaration source form.
+/// The bare grouped declaration a head holds as written.
 // Cost: O(1).
 pub(crate) fn signature_declaration(head: &Stmt) -> Option<&super::SignatureDecl> {
-    let Stmt::SyntheticBlock(stmts) = head else {
-        return None;
-    };
-    match stmts.first()? {
-        Stmt::SourceForm(form) => match form.as_ref() {
-            super::SourceForm::SignatureDecl(decl) if decl.init.is_none() => Some(decl),
+    match head {
+        Stmt::Ast(node) => match node.as_ref() {
+            super::parsed::ParsedStmt::SignatureDecl(decl) if decl.init.is_none() => Some(decl),
             _ => None,
         },
         _ => None,

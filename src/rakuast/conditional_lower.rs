@@ -66,7 +66,10 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
             };
             Ok(crate::parser::wrap_with_will_phasers(*decl, &name, phasers))
         }
-        ParsedStmt::DeclTail { head, tail } => Ok(crate::ast::decl_tail::expand(*head, tail)),
+        ParsedStmt::DeclTail { head, tail } => Ok(crate::ast::decl_tail::expand(
+            crate::parser::lower_pending_declaration(*head)?,
+            tail,
+        )),
         ParsedStmt::PackageHeader { decl, name, header } => {
             Ok(crate::ast::package_header::wrap(*decl, &name, header))
         }
@@ -108,6 +111,7 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
         ParsedStmt::AttributeGroup(attributes) | ParsedStmt::AttributeColonArglist(attributes) => {
             Ok(Stmt::SyntheticBlock(attributes))
         }
+        ParsedStmt::SignatureDecl(decl) => crate::parser::signature_decl_expansion(*decl),
         ParsedStmt::SignatureBind { signature, rhs } => {
             crate::ast::signature_bind::expand(signature, rhs)
                 .ok_or_else(|| RuntimeError::new("signature bind without a signature literal"))

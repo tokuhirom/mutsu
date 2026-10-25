@@ -1,26 +1,61 @@
 //! The expansion of a signature declaration (`my ($a, @b) = …`) into
 //! ordinary declarations reading a staging temporary. One implementation,
-//! shared by the parser and by `rakuast::lower` (ADR-10723 Stage 1): the
-//! RakuAST layer reads the declaration from the [`SourceForm`] record the
-//! expansion starts with, and lowers a `VarDeclaration::Signature` back
-//! through [`signature_decl`].
+//! shared by the parser and by `rakuast::lower` (ADR-10723 Stage 2): the
+//! parser keeps the declaration as `ParsedStmt::SignatureDecl`, which lowers
+//! through [`signature_decl`], and `.AST` renders the node.
 
 use super::bind_arity::{optional_param_default, push_bind_arity_check, staged_exists};
 use super::native_type_default;
-use crate::ast::{Expr, ParamTrait, SignatureDecl, SignatureInit, SourceForm, Stmt};
+use crate::ast::parsed::ParsedStmt;
+use crate::ast::{Expr, ParamTrait, SignatureDecl, SignatureInit, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
-/// The source-form record that opens an expansion.
-pub(crate) fn source_form(decl: SignatureDecl) -> Stmt {
-    Stmt::SourceForm(Box::new(SourceForm::SignatureDecl(decl)))
+/// A declaration as written, not yet lowered: the statement the parser hands
+/// to the statement modifiers and loose tails that split or wrap it, which read
+/// the declaration itself. [`settle`] lowers it once nothing else will. The
+/// size check is the only way the lowering fails, so it runs here.
+// Cost: O(n), n = nodes of the declaration.
+pub(crate) fn pending(decl: SignatureDecl) -> Result<Stmt, crate::value::RuntimeError> {
+    crate::parser::stmt::control::source_body::check_signature(&decl)?;
+    Ok(Stmt::Ast(Box::new(ParsedStmt::SignatureDecl(Box::new(
+        decl,
+    )))))
 }
 
-/// The whole expansion of `decl`, opened by its source-form record.
+/// A statement from [`pending`] becomes what the parse produces for it: the
+/// lowered expansion, or, for a parse that keeps the written nodes, the node
+/// once its lowering has been checked. Any other statement is returned as is.
+// Cost: O(n), n = size of the declaration.
+pub(crate) fn settle(stmt: Stmt) -> Result<Stmt, crate::value::RuntimeError> {
+    match stmt {
+        Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::SignatureDecl(_)) => {
+            crate::parser::stmt::control::parsed_block::finish(*node)
+        }
+        other => Ok(other),
+    }
+}
+
+/// A statement from [`pending`] lowered to its expansion, whatever the parse
+/// keeps. Any other statement is returned as is.
+// Cost: O(n), n = size of the declaration.
+pub(crate) fn lower_pending(stmt: Stmt) -> Result<Stmt, crate::value::RuntimeError> {
+    match stmt {
+        Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::SignatureDecl(_)) => {
+            let ParsedStmt::SignatureDecl(decl) = *node else {
+                unreachable!()
+            };
+            signature_decl(*decl)
+        }
+        other => Ok(other),
+    }
+}
+
+/// The whole expansion of `decl`.
 pub(crate) fn signature_decl(decl: SignatureDecl) -> Result<Stmt, crate::value::RuntimeError> {
     crate::parser::stmt::control::source_body::check_signature(&decl)?;
-    let mut stmts = match &decl.init {
+    let stmts = match &decl.init {
         None => expand_bare(&decl),
         Some(_) => {
             let (mut stmts, result) = expand_with_rhs(&decl)?;
@@ -28,7 +63,6 @@ pub(crate) fn signature_decl(decl: SignatureDecl) -> Result<Stmt, crate::value::
             stmts
         }
     };
-    stmts.insert(0, source_form(decl));
     Ok(Stmt::SyntheticBlock(stmts))
 }
 

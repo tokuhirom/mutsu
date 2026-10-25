@@ -202,6 +202,13 @@ fn second_modifier_allowed(first: &str, next: &str) -> bool {
 /// statement and its modifiers are one [`Modified`] node (ADR-10723 Stage 2),
 /// lowered by `rakuast::modifier_lower`.
 pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
+    let (rest, stmt) = parse_statement_modifier_inner(input, stmt)?;
+    // A signature declaration no modifier took stays as written until here.
+    let stmt = super::decl::destructure::desugar::settle(stmt).map_err(PError::from_typed)?;
+    Ok((rest, stmt))
+}
+
+fn parse_statement_modifier_inner(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     let body = crate::parser::primary::trimmed_end(input);
     let (rest, _) = ws(input)?;
     // A trailing comma in the statement's argument list is an empty list slot, not

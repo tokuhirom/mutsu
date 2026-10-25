@@ -1,7 +1,7 @@
 //! Splitting a `my`/`our` declaration out of a statement modifier: the
 //! declaration takes effect unconditionally, only its initializer is gated.
 
-use crate::ast::{Expr, SignatureDecl, SourceForm, Stmt};
+use crate::ast::{Expr, SignatureDecl, Stmt};
 use crate::symbol::Symbol;
 use crate::value::RuntimeError;
 use crate::value::Value;
@@ -86,10 +86,21 @@ pub(crate) fn topical_declaration(
     Ok(Some(expanded))
 }
 
+/// The declaration of a signature declaration the parser holds as written
+/// (`desugar::pending`).
+// Cost: O(1).
+fn written_signature_declaration(stmt: &Stmt) -> Option<&SignatureDecl> {
+    match stmt {
+        Stmt::Ast(node) => match node.as_ref() {
+            crate::ast::parsed::ParsedStmt::SignatureDecl(decl) => Some(decl),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn is_declaration(stmt: &Stmt) -> bool {
-    matches!(stmt, Stmt::VarDecl { .. })
-        || matches!(stmt,
-        Stmt::SyntheticBlock(parts) if matches!(parts.first(), Some(Stmt::SourceForm(form)) if matches!(form.as_ref(), SourceForm::SignatureDecl(_))))
+    matches!(stmt, Stmt::VarDecl { .. }) || written_signature_declaration(stmt).is_some()
 }
 
 /// A `my`/`our` declaration carrying a conditional statement modifier
@@ -115,8 +126,8 @@ fn try_split_decl_modifier(
     effective_cond: &Expr,
     is_unless: bool,
 ) -> Result<Option<Stmt>, RuntimeError> {
-    if let Stmt::SyntheticBlock(parts) = stmt {
-        return split_signature_decl(parts, effective_cond, is_unless);
+    if let Some(decl) = written_signature_declaration(stmt) {
+        return split_signature_decl(decl, effective_cond, is_unless);
     }
     Ok(split_simple_declaration(stmt, effective_cond, is_unless))
 }
@@ -238,16 +249,10 @@ fn split_decl_for_topic_modifier(
 /// list assignment is gated. Only a declarator list of plain `$`/`@`/`%`
 /// elements is split; anything else keeps the generic modifier wrapping.
 fn split_signature_decl(
-    parts: &[Stmt],
+    decl: &SignatureDecl,
     effective_cond: &Expr,
     is_unless: bool,
 ) -> Result<Option<Stmt>, RuntimeError> {
-    let Some(Stmt::SourceForm(form)) = parts.first() else {
-        return Ok(None);
-    };
-    let SourceForm::SignatureDecl(decl) = &**form else {
-        return Ok(None);
-    };
     let Some(init) = decl.init.as_ref() else {
         return Ok(None);
     };
@@ -352,7 +357,6 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, Runtim
             // The block's trailing result expression: the gated statement is
             // sunk, and the staged list would only warn as a useless use.
             Stmt::Expr(_) if i == last => {}
-            Stmt::SourceForm(_) => {}
             Stmt::VarDecl {
                 name,
                 expr,

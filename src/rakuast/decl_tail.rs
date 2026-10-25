@@ -308,7 +308,13 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
     if depth == 0 || (!is_declaration && !is_compound_assignment && !is_signature_declaration) {
         return None;
     }
-    let head = if is_declaration || is_signature_declaration {
+    let head = if is_signature_declaration {
+        // The declaration as written: the seed reads its variables.
+        match super::lower::lower_stmt_kept(bottom) {
+            Ok(head) => head,
+            Err(error) => return Some(Err(error)),
+        }
+    } else if is_declaration {
         match lower_stmt(bottom) {
             Ok(head) => head,
             Err(error) => return Some(Err(error)),

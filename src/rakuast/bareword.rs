@@ -336,19 +336,22 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                         crate::ast::SourceForm::IfPointy { param_defs, .. } => {
                             param_defs.iter().for_each(|p| self.visit_param(p))
                         }
-                        // `my (\a, \b) := …` declares each sigilless element as a term.
-                        crate::ast::SourceForm::SignatureDecl(decl) => {
-                            for var in decl.vars.iter().filter(|v| v.sigilless) {
-                                insert_term(self.0, var.name.clone());
-                            }
-                        }
                         _ => {}
                     }
                 }
                 // `my \x = 5` / `my \x := $s` declares the term `x`.
                 Stmt::Ast(node) => {
-                    if let crate::ast::parsed::ParsedStmt::SigillessDecl(decl) = node.as_ref() {
-                        insert_term(self.0, decl.name.clone());
+                    match node.as_ref() {
+                        crate::ast::parsed::ParsedStmt::SigillessDecl(decl) => {
+                            insert_term(self.0, decl.name.clone());
+                        }
+                        // `my (\a, \b) := …` declares each sigilless element as a term.
+                        crate::ast::parsed::ParsedStmt::SignatureDecl(decl) => {
+                            for var in decl.vars.iter().filter(|v| v.sigilless) {
+                                insert_term(self.0, var.name.clone());
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 // A method literal's folded sigilless invocant is a bind

@@ -359,7 +359,6 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
             .collect(),
     );
     let has_tail = crate::parser::expr::starts_with_loose_word_logical(rest);
-    let decl_stmt_of = |decl: SignatureDecl| desugar::signature_decl(decl);
     let (rest, tail) = if has_tail {
         let (r, tail) = crate::parser::expr::word_logical_tail_pub(rest, seed)?;
         (r, Some(tail))
@@ -378,13 +377,13 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
         has_nested_group,
         init: None,
     };
-    let stmt = decl_stmt_of(decl).map_err(PError::from_typed)?;
+    let stmt = desugar::pending(decl).map_err(PError::from_typed)?;
     match tail {
         Some(tail) => Ok((
             rest,
             crate::parser::stmt::word_logical_split::tail_stmt(stmt, tail),
         )),
-        None => Ok((rest, stmt)),
+        None => Ok((rest, desugar::settle(stmt).map_err(PError::from_typed)?)),
     }
 }
 
@@ -441,7 +440,8 @@ fn parse_destructuring_with_rhs(
         // before parsing the tail destroys the source form and prevents the
         // frontend from retaining the signature contracts.
         let seed = Expr::DoStmt(Box::new(
-            desugar::signature_decl(decl).map_err(PError::from_typed)?,
+            desugar::settle(desugar::pending(decl).map_err(PError::from_typed)?)
+                .map_err(PError::from_typed)?,
         ));
         let (r, tail) = crate::parser::expr::word_logical_tail_pub(r, seed)?;
         let (r_ws, _) = ws(r)?;
@@ -452,14 +452,11 @@ fn parse_destructuring_with_rhs(
             parse_statement_modifier(r_ws, stmt)
         };
     }
-    let (mut stmts, result) = desugar::expand_with_rhs(&decl).map_err(PError::from_typed)?;
-    stmts.push(Stmt::Expr(result));
-    stmts.insert(0, desugar::source_form(decl));
-    let block = Stmt::SyntheticBlock(stmts);
+    let block = desugar::pending(decl).map_err(PError::from_typed)?;
     if has_following_block {
         // In `if my ($a, $b) = f() { ... }`, the braced block belongs to the
         // surrounding conditional, not to this declaration's modifier parser.
-        Ok((rest, block))
+        Ok((rest, desugar::settle(block).map_err(PError::from_typed)?))
     } else {
         parse_statement_modifier(rest, block)
     }
