@@ -1904,6 +1904,27 @@ pub(super) fn dotty_assignment_with_left(
     Ok(dotty_node(left, right))
 }
 
+/// `.= meth(args)` written with no target: `Term::TopicCall` over the method
+/// call, which carries the `.=` dispatch (measured on 2026.09).
+// Cost: O(n), n = size of the arguments.
+pub(super) fn topic_dotty_assignment(call: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let crate::ast::dotty_assign::DottyCall {
+        name,
+        args,
+        modifier,
+        quoted,
+    } = crate::ast::dotty_assign::method_call(call).ok_or_else(|| unsupported("source form"))?;
+    let mut method = method_call_postfix(name, args, modifier, quoted)?;
+    method
+        .fields
+        .push(leaf_field(Some("dispatch"), Value::str(".=".to_string())));
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::TermTopicCall,
+        fields: vec![node_field(None, method)],
+    })
+}
+
 /// `ApplyDottyInfix(left, DottyInfix::CallAssign, right)`.
 // Cost: O(1).
 fn dotty_node(left: RakuAstNode, right: RakuAstNode) -> RakuAstNode {

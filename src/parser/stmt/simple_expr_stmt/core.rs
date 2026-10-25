@@ -143,10 +143,8 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             quoted: false,
             sugar: false,
         };
-        let stmt = Stmt::Expr(crate::parser::stmt::assign::written_dotty_assignment(
-            Expr::Var("_".to_string()),
-            call,
-            true,
+        let stmt = Stmt::Expr(crate::parser::stmt::assign::written_topic_dotty_assignment(
+            call, true,
         ));
         return parse_statement_modifier(rest, stmt);
     }

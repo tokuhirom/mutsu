@@ -23,7 +23,7 @@ pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PE
     match node.meta {
         CompoundMeta::Reverse => return Ok(lower_reverse(node)),
         CompoundMeta::Set => return lower_set(node),
-        CompoundMeta::Dotty => {
+        CompoundMeta::Dotty | CompoundMeta::TopicDotty => {
             return Ok(lower_dotty(
                 node,
                 false,
@@ -60,7 +60,7 @@ pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PE
 /// as a statement.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_compound_statement(node: CompoundAssign) -> Result<Stmt, PError> {
-    if node.meta == CompoundMeta::Dotty {
+    if matches!(node.meta, CompoundMeta::Dotty | CompoundMeta::TopicDotty) {
         return Ok(Stmt::Expr(lower_dotty(
             node,
             true,
@@ -313,6 +313,27 @@ pub(crate) fn written_dotty_assignment(target: Expr, call: Expr, as_statement: b
         target,
         op: ".".to_string(),
         meta: CompoundMeta::Dotty,
+        source: call,
+    };
+    if crate::ast::spelled::keeping() {
+        return Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node)));
+    }
+    lower_dotty(
+        node,
+        as_statement,
+        crate::parser::stmt::simple::is_user_declared_value_term,
+    )
+}
+
+/// `.= meth(args)` written with no target: the topic's `.=`, kept as the
+/// `Term::TopicCall` a `.AST` parse shows and lowered at once otherwise, the
+/// same way `$_ .= meth(args)` is. `call` is the method call over `$_`.
+// Cost: O(n), n = size of the call.
+pub(crate) fn written_topic_dotty_assignment(call: Expr, as_statement: bool) -> Expr {
+    let node = CompoundAssign {
+        target: Expr::Var("_".to_string()),
+        op: ".".to_string(),
+        meta: CompoundMeta::TopicDotty,
         source: call,
     };
     if crate::ast::spelled::keeping() {

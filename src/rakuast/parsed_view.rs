@@ -249,6 +249,9 @@ fn compound_assignment_node(
     if a.meta == CompoundMeta::Dotty {
         return super::convert::dotty_assignment(&a.target, &a.source);
     }
+    if a.meta == CompoundMeta::TopicDotty {
+        return super::convert::topic_dotty_assignment(&a.source);
+    }
     if let CompoundMeta::BracketedMeta(kind, depth) = a.meta {
         let written = crate::ast::Expr::MetaOp {
             meta: kind.spelling().to_string(),
@@ -269,7 +272,7 @@ fn compound_assignment_node(
 pub(super) fn compound_spelling(a: &crate::ast::parsed::CompoundAssign) -> String {
     match a.meta {
         CompoundMeta::Reverse => format!("R{}=", a.op),
-        CompoundMeta::Dotty => ".=".to_string(),
+        CompoundMeta::Dotty | CompoundMeta::TopicDotty => ".=".to_string(),
         _ => format!("{}=", a.op),
     }
 }
@@ -292,6 +295,7 @@ pub(super) fn with_compound_meta(
             | CompoundMeta::Reverse
             | CompoundMeta::Set
             | CompoundMeta::Dotty
+            | CompoundMeta::TopicDotty
             | CompoundMeta::BracketedMeta(..)
     ) {
         return Ok(node);
@@ -323,6 +327,7 @@ pub(super) fn with_compound_meta(
             | CompoundMeta::Reverse
             | CompoundMeta::Set
             | CompoundMeta::Dotty
+            | CompoundMeta::TopicDotty
             | CompoundMeta::BracketedMeta(..) => {}
             CompoundMeta::Bracketed(depth) => {
                 for _ in 0..depth {

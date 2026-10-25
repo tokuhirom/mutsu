@@ -266,7 +266,8 @@ pub(crate) struct HyperAssign {
 pub(crate) struct CompoundAssign {
     pub(crate) target: Expr,
     /// The base infix, as `CompoundAssignOp::from_op_name` reads it (`+`,
-    /// `//`, `min`).
+    /// `//`, `min`), or the name of an infix with no built-in compound
+    /// operator (`mod`, a user-declared `+%+`), which the assignment calls.
     pub(crate) op: String,
     pub(crate) meta: CompoundMeta,
     pub(crate) source: Expr,
@@ -287,6 +288,10 @@ pub(crate) enum CompoundMeta {
     /// `$x .= meth(args)`: `source` is the method call applied to the target
     /// as written, and `op` is `.`.
     Dotty,
+    /// `.= meth(args)` written with no target: the topic's `.=` method call
+    /// (`Term::TopicCall` of a `.=` dispatch). `target` is `$_`, `source` the
+    /// call over it, and `op` is `.`.
+    TopicDotty,
     /// `$x R-= $y`: the reversed infix, which assigns to its right operand
     /// (`$y -= $x`). Its `op` may be `=` (`$x R= $y`).
     Reverse,
