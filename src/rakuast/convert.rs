@@ -247,6 +247,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
 }
 
 fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
+        &format!("{:?}", stmt)
+            .chars()
+            .take_while(|c| c.is_alphanumeric())
+            .collect::<String>(),
+    );
     match stmt {
         Stmt::SyntheticBlock(stmts)
             if matches!(stmts.as_slice(), [Stmt::ProtoDecl { .. }, Stmt::Use { .. }]) =>
