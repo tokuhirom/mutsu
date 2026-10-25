@@ -296,15 +296,10 @@ impl Kept {
 impl Kept {
     /// An assignment kept in its RakuAST shape, lowered as the expression or
     /// the statement it was written as; its operands are lowered first.
-    fn assignment(&mut self, node: Box<ParsedExpr>) -> Result<Assign, Box<ParsedExpr>> {
-        match *node {
-            ParsedExpr::Assign(mut assign) => {
-                self.visit_expr_mut(&mut assign.target);
-                self.visit_expr_mut(&mut assign.source);
-                Ok(assign)
-            }
-            other => Err(Box::new(other)),
-        }
+    fn assignment(&mut self, mut assign: Assign) -> Assign {
+        self.visit_expr_mut(&mut assign.target);
+        self.visit_expr_mut(&mut assign.source);
+        assign
     }
 }
 
@@ -320,10 +315,10 @@ impl VisitMut for Kept {
         if matches!(expr, Expr::Ast(node) if matches!(node.as_ref(), ParsedExpr::Assign(_)))
             && let Expr::Ast(node) = std::mem::replace(expr, Expr::Whatever)
         {
-            *expr = match self.assignment(node) {
-                Ok(assign) => super::lower_expression_assign(assign),
-                Err(node) => Expr::Ast(node),
+            let ParsedExpr::Assign(assign) = *node else {
+                unreachable!("checked above");
             };
+            *expr = super::lower_expression_assign(self.assignment(assign));
             return;
         }
         crate::ast_visit::walk_expr_mut(self, expr);
@@ -333,10 +328,10 @@ impl VisitMut for Kept {
         if matches!(stmt, Stmt::Expr(Expr::Ast(node)) if matches!(node.as_ref(), ParsedExpr::Assign(_)))
             && let Stmt::Expr(Expr::Ast(node)) = std::mem::replace(stmt, Stmt::Last(None))
         {
-            *stmt = match self.assignment(node) {
-                Ok(assign) => super::lower_statement_assign(assign),
-                Err(node) => Stmt::Expr(Expr::Ast(node)),
+            let ParsedExpr::Assign(assign) = *node else {
+                unreachable!("checked above");
             };
+            *stmt = super::lower_statement_assign(self.assignment(assign));
             return;
         }
         crate::ast_visit::walk_stmt_mut(self, stmt);
