@@ -9,6 +9,6 @@ reported the default table name. The in-place registration now keeps the shell's
 
 This reverts the transplant of only the shell's mixin onto a fresh instance (#15016), which fixed a failure of
 Red's `t/61-model-as-type` that turned out to be an unrelated, non-deterministic one (#15020): a recursive
-frame's `my %pars` shared with a nested call once a thread has spawned. The test pins that a nested and a
-term-form class are composed exactly once with the shell's metaobject kept, and that a trait-stored value
-survives.
+frame's `my %pars` shared with a nested call once a thread has spawned. The test pins that a nested class composes once and that a trait-stored value survives for a nested and a
+term-form class. A term-form class's `compose` still runs twice (shell and in place) on the kept metaobject
+(#15022).
