@@ -240,12 +240,6 @@ pub(crate) fn written_bracketed_meta_assignment(
             source,
         );
     }
-    // TODO: `[Z=]` on a variable is element-wise assignment
-    // (`__mutsu_zip_assign`), which the node does not lower yet; it keeps the
-    // expansion until the bracketed metaoperator lowering learns it.
-    if meta == "Z" && op == "=" {
-        return build_meta_assign_expr(target, meta.to_string(), op, source);
-    }
     let kind = crate::ast::parsed::BracketedMeta::from_spelling(meta)
         .ok_or_else(|| PError::expected("bracketed metaoperator"))?;
     written_meta_assignment(target, kind, depth, op, source)
@@ -268,6 +262,10 @@ fn meta_assignment(node: CompoundAssign) -> Result<(String, Expr), PError> {
             ));
         }
     };
+    // `@a Z= rhs`, `@a [Z=] rhs`: element-wise assignment, not `@a = (@a Z rhs)`.
+    if meta == crate::ast::parsed::BracketedMeta::Zip && node.op == "=" {
+        return Ok((name, zip_assign_call(node.target, node.source)));
+    }
     Ok((
         name,
         Expr::MetaOp {

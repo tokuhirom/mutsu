@@ -314,6 +314,51 @@ fn spelling(infix: &RakuAstNode) -> Result<Option<(&'static str, String)>, Runti
     Ok(None)
 }
 
+/// `X=` / `Z=` inside any number of brackets: the metaoperator and its depth
+/// when `infix` applies `MetaInfix::Cross` / `Zip` over an `Assignment`.
+// Cost: O(d), d = bracket depth.
+pub(super) fn eq_meta_assignment(
+    infix: &RakuAstNode,
+) -> Option<(crate::ast::parsed::BracketedMeta, u8)> {
+    let mut depth = 0u8;
+    let mut infix = infix;
+    while infix.class == RakuAstClass::BracketedInfix {
+        infix = super::lower::named_child_or_positional(infix).ok()?;
+        depth = depth.checked_add(1)?;
+    }
+    let kind = match infix.class {
+        RakuAstClass::MetaInfixCross => crate::ast::parsed::BracketedMeta::Cross,
+        RakuAstClass::MetaInfixZip => crate::ast::parsed::BracketedMeta::Zip,
+        _ => return None,
+    };
+    super::lower::named_child_or_positional(infix)
+        .is_ok_and(|child| child.class == RakuAstClass::Assignment)
+        .then_some((kind, depth))
+}
+
+/// The two-operand `ApplyListInfix` of [`eq_meta_assignment`] through the
+/// parser's one lowering of the compound-assignment family.
+// Cost: O(n), n = nodes of the operands.
+fn lower_eq_meta_assignment(
+    node: &RakuAstNode,
+    kind: crate::ast::parsed::BracketedMeta,
+    depth: u8,
+) -> Result<Expr, RuntimeError> {
+    let operands = list_field(node, "operands")?;
+    let [target, source] = operands.as_slice() else {
+        return Err(unsupported(node));
+    };
+    let target = rakuast_node_of(target).ok_or_else(|| unsupported(node))?;
+    let source = rakuast_node_of(source).ok_or_else(|| unsupported(node))?;
+    crate::parser::lower_compound_expression(crate::ast::parsed::CompoundAssign {
+        target: lower_expr(target)?,
+        op: "=".to_string(),
+        meta: crate::ast::parsed::CompoundMeta::BracketedMeta(kind, depth),
+        source: lower_expr(source)?,
+    })
+    .map_err(RuntimeError::new)
+}
+
 /// A metaoperator application node as the parser's [`Expr::MetaOp`] chain, or
 /// `None` when `node` is not one.
 // Cost: O(n), n = nodes of the operands.
@@ -324,14 +369,9 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     }
     let infix = named_child(node, "infix").ok()?;
     if node.class == RakuAstClass::ApplyListInfix
-        && infix.class == RakuAstClass::MetaInfixZip
-        && super::lower::named_child_or_positional(infix)
-            .is_ok_and(|child| child.class == RakuAstClass::Assignment)
+        && let Some((kind, depth)) = eq_meta_assignment(infix)
     {
-        return Some(super::zip_assign::lower(node));
-    }
-    if super::cross_assign::is_cross_assignment(node) {
-        return Some(super::cross_assign::lower(node));
+        return Some(lower_eq_meta_assignment(node, kind, depth));
     }
     if infix.class == RakuAstClass::MetaInfixAssign && node.class == RakuAstClass::ApplyInfix {
         return lower_assign(node, infix);
