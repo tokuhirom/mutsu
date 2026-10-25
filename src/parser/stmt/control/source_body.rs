@@ -1,4 +1,4 @@
-//! Bound the tree copied into a control statement's written-source record.
+//! Bound the tree copied into a declaration's written-source record.
 
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::ast_visit::{
@@ -110,28 +110,22 @@ pub(in crate::parser::stmt) fn check_signature(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::SourceForm;
     use crate::value::Value;
 
     #[test]
-    fn nested_source_copies_are_rejected_before_the_next_clone() {
+    fn deeply_nested_source_is_rejected() {
         let condition = Expr::Literal(Value::FALSE);
         let mut body = vec![Stmt::Expr(Expr::Literal(Value::NIL))];
-        for _ in 0..32 {
-            if check(&condition, &[], &body).is_err() {
-                return;
-            }
-            let record = Stmt::SourceForm(Box::new(SourceForm::IfPointy {
-                param_defs: Vec::new(),
-                body: body.clone(),
-            }));
-            body = vec![record, Stmt::Block(body)];
+        for _ in 0..(MAX_DEPTH + 1) {
+            body = vec![Stmt::Block(body)];
         }
-        panic!("the source copy budget did not reject exponential growth");
+        assert!(check(&condition, &[], &body).is_err());
     }
 
     #[test]
-    fn parsed_nested_control_signatures_report_a_resource_error() {
+    fn nested_pointy_conditionals_copy_nothing() {
+        // A pointy `if`/`with` used to keep a second copy of its body next to
+        // the expansion, which doubled the tree at every nesting level.
         for keyword in [
             "if 1",
             "if 0 {} else",
@@ -140,11 +134,7 @@ mod tests {
             "with Any {} orwith 1",
         ] {
             let source = format!("{keyword} -> $value {{ ").repeat(20) + "1;" + &" }".repeat(20);
-            let error = crate::parser::parse_program(&source).expect_err("bounded source record");
-            assert!(
-                error.message.contains("source form exceeds"),
-                "{keyword}: {error:?}"
-            );
+            crate::parser::parse_program(&source).unwrap_or_else(|e| panic!("{keyword}: {e:?}"));
         }
     }
 

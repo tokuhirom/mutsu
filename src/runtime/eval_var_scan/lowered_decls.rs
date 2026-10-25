@@ -5,34 +5,6 @@ use super::*;
 use crate::ast::SourceForm;
 
 impl UndeclaredVars<'_> {
-    /// Declares the parameters of the pointy `given`/`with`/`if` whose
-    /// lowered body is `body`. The lowering binds a destructured parameter
-    /// (`-> ($a, |rest)`) by assignment, so only its source form names it.
-    // Cost: O(b + p), b = statements of `body`, p = parameters.
-    pub(super) fn declare_pointy_params(&mut self, body: &[Stmt]) {
-        let mut names = ParamNames::default();
-        for stmt in body {
-            if let Stmt::SourceForm(form) = stmt {
-                match form.as_ref() {
-                    SourceForm::GivenPointy { param_def, .. } => names.visit_param(param_def),
-                    SourceForm::WithPointy {
-                        param_def: Some(param_def),
-                        ..
-                    } => names.visit_param(param_def),
-                    SourceForm::IfPointy { param_defs, .. } => {
-                        for param in param_defs {
-                            names.visit_param(param);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        for name in &names.0 {
-            self.declare(name);
-        }
-    }
-
     /// Declares a regex's `:my` variables, which are in scope after the
     /// regex too, as in rakudo ("helps scoping the $c variable within the
     /// regex and beyond").

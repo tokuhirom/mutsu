@@ -390,13 +390,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Ok(Some(statement_expression(declaration)))
         }
         Stmt::SyntheticBlock(_) if source_form(stmt).is_some() => match source_form(stmt) {
-            Some(
-                crate::ast::SourceForm::WithPointy { .. }
-                | crate::ast::SourceForm::GivenPointy { .. }
-                | crate::ast::SourceForm::IfPointy { .. }
-                | crate::ast::SourceForm::RoutineTraits(_),
-            )
-            | None => Err(unsupported("source form")),
+            Some(crate::ast::SourceForm::RoutineTraits(_)) | None => {
+                Err(unsupported("source form"))
+            }
         },
         // `use` / `no` statements: `RakuAST::Pragma`, `Statement::Use` or
         // `Statement::LanguageVersion`. The `if` distribution's condition is
@@ -3589,13 +3585,9 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // A signature declaration in expression position (`if my ($a, $b) = …`).
         Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
-            Some(
-                crate::ast::SourceForm::WithPointy { .. }
-                | crate::ast::SourceForm::GivenPointy { .. }
-                | crate::ast::SourceForm::IfPointy { .. }
-                | crate::ast::SourceForm::RoutineTraits(_),
-            )
-            | None => Err(unsupported("source form")),
+            Some(crate::ast::SourceForm::RoutineTraits(_)) | None => {
+                Err(unsupported("source form"))
+            }
         },
         // `()` -> `Circumfix::Parentheses(SemiList.new)`: no statement inside.
         Expr::Grouped(inner) if matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty()) => {

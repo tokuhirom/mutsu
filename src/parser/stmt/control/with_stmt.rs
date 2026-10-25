@@ -74,12 +74,6 @@ pub(crate) fn with_then_branch(
     param_def: &Option<ParamDef>,
     body: Vec<Stmt>,
 ) -> Result<Vec<Stmt>, crate::value::RuntimeError> {
-    let record_body = if param_name.is_some() {
-        super::source_body::check(cond_expr, param_def.as_slice(), &body)?;
-        body.clone()
-    } else {
-        Vec::new()
-    };
     let cond_expr = cond_expr.clone();
     let tmp_var = tmp_var.clone();
     let param_name = param_name.clone();
@@ -282,33 +276,5 @@ pub(crate) fn with_then_branch(
         with_body.extend(body);
     }
 
-    Ok(with_pointy_record(
-        &param_name,
-        &param_def,
-        record_body,
-        with_body,
-    ))
-}
-
-/// A pointy `with` block keeps its written parameter and body ahead of the
-/// expansion (the compiler skips the record), so the RakuAST layer renders a
-/// `PointyBlock` instead of reverse-engineering the binds.
-// Cost: O(n), n = size of the body.
-fn with_pointy_record(
-    param_name: &Option<String>,
-    param_def: &Option<ParamDef>,
-    body: Vec<Stmt>,
-    mut with_body: Vec<Stmt>,
-) -> Vec<Stmt> {
-    if let Some(name) = param_name {
-        with_body.insert(
-            0,
-            Stmt::SourceForm(Box::new(crate::ast::SourceForm::WithPointy {
-                param_name: name.clone(),
-                param_def: param_def.clone(),
-                body,
-            })),
-        );
-    }
-    with_body
+    Ok(with_body)
 }

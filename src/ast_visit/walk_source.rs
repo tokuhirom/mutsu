@@ -7,25 +7,6 @@ use crate::ast::{SignatureDecl, SignatureInit, SignatureVar, SourceForm};
 // Cost: O(n), n = source-record subtree nodes.
 pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &'ast SourceForm) {
     match form {
-        SourceForm::IfPointy { param_defs, body } => {
-            params(v, param_defs);
-            walk_stmts(v, body);
-        }
-        SourceForm::WithPointy {
-            param_name,
-            param_def,
-            body,
-        } => {
-            v.visit_name(param_name, NameKind::BlockParam);
-            if let Some(param) = param_def {
-                v.visit_param(param);
-            }
-            walk_stmts(v, body);
-        }
-        SourceForm::GivenPointy { param_def, body } => {
-            v.visit_param(param_def);
-            walk_stmts(v, body);
-        }
         SourceForm::RoutineTraits(items) => {
             for item in items {
                 match item {

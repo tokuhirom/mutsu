@@ -510,7 +510,6 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
                         if let Some(b) = binding_var {
                             v.declare(b);
                         }
-                        v.declare_pointy_params(branch);
                         walk_stmts(v, branch);
                     });
                 }
@@ -576,7 +575,6 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             Stmt::Given { topic, body, .. } => self.judging(true, |v| {
                 v.visit_expr(topic);
                 v.in_scope(|v| {
-                    v.declare_pointy_params(body);
                     walk_stmts(v, body);
                 })
             }),

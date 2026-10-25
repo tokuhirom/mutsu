@@ -27,16 +27,11 @@ pub(crate) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// The body of `given EXPR -> PARAM { BODY }` after the parser's expansion: the
-/// parameter bind (or the autothreading call) around the written body, plus a
-/// [`crate::ast::SourceForm::GivenPointy`] record keeping the parameter and body
-/// as written. `rakuast::lower` calls it too, so a hand-built `Statement::Given`
+/// parameter bind (or the autothreading call) around the written body.
+/// `rakuast::lower` calls it too, so a hand-built `Statement::Given`
 /// over a `PointyBlock` expands the same way.
 // Cost: O(n), n = size of the body.
 pub(crate) fn given_pointy_body(pd: crate::ast::ParamDef, body: Vec<Stmt>) -> Vec<Stmt> {
-    let record = Stmt::SourceForm(Box::new(crate::ast::SourceForm::GivenPointy {
-        param_def: pd.clone(),
-        body: body.clone(),
-    }));
     let mut body = body;
     if pointy_param_autothreads(&pd) {
         // `given %r.all.value -> Any $_ { ... }`: the block is CALLED with
@@ -57,12 +52,8 @@ pub(crate) fn given_pointy_body(pd: crate::ast::ParamDef, body: Vec<Stmt>) -> Ve
             }),
             args: vec![Expr::Var("_".to_string())],
         })];
-        body.insert(0, record);
     } else {
-        // The compiler reads the bind at the head of the body, so the record
-        // follows it.
         body.insert(0, pointy_topic_bind(&pd));
-        body.insert(1, record);
     }
     body
 }
