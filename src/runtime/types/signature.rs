@@ -1091,6 +1091,9 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
     // code, which cannot pull -- so every recursion level unpacked the empty
     // seed. Tag-probed, so every other argument shape pays one relaxed check.
     interpreter.reify_map_grep_seq(value)?;
+    // An element that sits in an item container (an Array element a `grep`
+    // already visited) is destructured by its content, not by the container.
+    let value = &value.deref_container();
     let value = &interpreter.coerce_via_user_capture(value);
     let positional =
         drop_pairs_captured_as_named(value, positional_values_from_unpack_target(value));
