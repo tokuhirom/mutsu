@@ -12,17 +12,20 @@ pub(crate) fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = if mode == ExprMode::Full {
-                assign_or_and_expr(r, mode).map_err(|err| {
-                    enrich_expected_error(
-                        err,
-                        "expected expression after 'or'/'xor'/'orelse'",
-                        r.len(),
-                    )
-                })?
-            } else {
-                assign_or_and_expr(r, mode)?
-            };
+            let sigil = crate::ast::left_sigil::after(crate::ast::left_sigil::LeftSigil::Unset, &left);
+            let (r, right) = crate::ast::left_sigil::inherit(r, sigil, || {
+                if mode == ExprMode::Full {
+                    assign_or_and_expr(r, mode).map_err(|err| {
+                        enrich_expected_error(
+                            err,
+                            "expected expression after 'or'/'xor'/'orelse'",
+                            r.len(),
+                        )
+                    })
+                } else {
+                    assign_or_and_expr(r, mode)
+                }
+            })?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: op.token_kind(),
@@ -167,17 +170,20 @@ pub(crate) fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = if mode == ExprMode::Full {
-                list_infix_top(r, mode).map_err(|err| {
-                    enrich_expected_error(
-                        err,
-                        "expected expression after 'and'/'andthen'/'notandthen'",
-                        r.len(),
-                    )
-                })?
-            } else {
-                list_infix_top(r, mode)?
-            };
+            let sigil = crate::ast::left_sigil::after(crate::ast::left_sigil::LeftSigil::Unset, &left);
+            let (r, right) = crate::ast::left_sigil::inherit(r, sigil, || {
+                if mode == ExprMode::Full {
+                    list_infix_top(r, mode).map_err(|err| {
+                        enrich_expected_error(
+                            err,
+                            "expected expression after 'and'/'andthen'/'notandthen'",
+                            r.len(),
+                        )
+                    })
+                } else {
+                    list_infix_top(r, mode)
+                }
+            })?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: op.token_kind(),
@@ -532,7 +538,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
     }
     // The target as written, parentheses included; a `.AST` parse keeps the
     // assignment in its RakuAST shape (ADR-10723 Stage 2).
-    let node = crate::ast::parsed::Assign::written(expr, rhs);
+    let node = crate::ast::parsed::Assign::written_at(Some(input), expr, rhs);
     if crate::ast::spelled::keeping() {
         return Ok((
             r,

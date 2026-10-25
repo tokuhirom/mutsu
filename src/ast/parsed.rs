@@ -376,10 +376,17 @@ pub(crate) struct Assign {
 }
 
 impl Assign {
-    /// The assignment `target = source` as the parser read it.
-    // Cost: O(n), n = size of the target (only a keeping parse reads the sigil).
+    /// [`Assign::written_at`], for a target that starts its own expression.
+    // Cost: O(n), n = size of the target.
     pub(crate) fn written(target: Expr, source: Expr) -> Self {
-        let item = super::spelled::keeping() && super::left_sigil::assignment_is_item(&target);
+        Self::written_at(None, target, source)
+    }
+
+    /// The assignment `target = source` as the parser read it, the target
+    /// starting at `at` when the expression before it may have left a sigil.
+    // Cost: O(n), n = size of the target (only a keeping parse reads the sigil).
+    pub(crate) fn written_at(at: Option<&str>, target: Expr, source: Expr) -> Self {
+        let item = super::spelled::keeping() && super::left_sigil::assignment_is_item(at, &target);
         Self {
             target,
             source,
