@@ -34,6 +34,19 @@ impl Interpreter {
         let raw_key = key.to_string_value();
         let stash_name = Self::const_str(code, stash_name_idx);
         let package = Self::normalize_stash_package(stash_name);
+        // `UNIT::EXPORT::<tag> := Other::EXPORT::<tag2>` re-exports a whole tag.
+        if !package.is_empty()
+            && (package == "EXPORT" || package.ends_with("::EXPORT"))
+            && !raw_key.is_empty()
+            && !raw_key.starts_with(['&', '$', '@', '%'])
+        {
+            let (bound, _) = Self::unwrap_bind_index_value(val.clone());
+            if let Some((src_module, src_tag)) = Self::export_stash_source(&bound) {
+                self.reexport_module_tag(&raw_key, &src_module, &src_tag);
+                self.stack.push(bound);
+                return Ok(());
+            }
+        }
         let Some(bare) = raw_key.strip_prefix('&').filter(|_| !package.is_empty()) else {
             self.push_pseudo_stash_for_key(code, stash_name_idx, &key)?;
             self.stack.push(key);

@@ -892,6 +892,19 @@ impl Compiler {
                 .emit(OpCode::IndexAssignPseudoStashKeyed { stash_name_idx });
             return;
         }
+        // `UNIT::EXPORT::{$tag} := Other::EXPORT::{$tag}` re-exports a whole tag
+        // of another module (see `reexport_module_tag`).
+        if let Expr::PseudoStash(stash_name) = target
+            && stash_name == "UNIT::EXPORT::"
+            && matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value")
+        {
+            self.compile_bind_index_value(value);
+            self.compile_expr(index);
+            let stash_name_idx = self.code.add_constant(Value::str(stash_name.clone()));
+            self.code
+                .emit(OpCode::IndexAssignPseudoStashKeyed { stash_name_idx });
+            return;
+        }
         if self.try_compile_named_package_stash_assign(target, index, value) {
             return;
         }
