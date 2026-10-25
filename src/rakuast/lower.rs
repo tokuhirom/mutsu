@@ -315,7 +315,7 @@ fn finish_kept(stmt: Stmt) -> Result<Stmt, RuntimeError> {
 }
 
 /// [`lower_stmt_inner`], except that a `.=` declaration comes back as its
-/// written [`ParsedStmt::MethodAssignDecl`] (in `Stmt::Ast`), which an
+/// written [`crate::ast::parsed::ParsedStmt::MethodAssignDecl`] (in `Stmt::Ast`), which an
 /// expression-position declaration lowers differently.
 fn lower_stmt_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // A feed keeps declarations as operands until compiler lowering. The
@@ -2959,7 +2959,7 @@ pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 }
 
 /// [`lower_var_decl`], except that a `.=` declaration comes back as its
-/// written [`ParsedStmt::MethodAssignDecl`] (in `Stmt::Ast`).
+/// written [`crate::ast::parsed::ParsedStmt::MethodAssignDecl`] (in `Stmt::Ast`).
 pub(super) fn lower_var_decl_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // `my %h does R`: the role is a trait the parser expands separately. An
     // attribute (`has $.x does R`) reads its own traits.
