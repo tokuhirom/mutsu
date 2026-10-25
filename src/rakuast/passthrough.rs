@@ -228,6 +228,17 @@ impl Kept {
 }
 
 impl VisitMut for Kept {
+    // A spelling only annotates the expression it wraps (ADR-12199): an
+    // executing parse builds the expression alone.
+    fn visit_expr_mut(&mut self, expr: &mut Expr) {
+        while matches!(expr, Expr::Spelled(_)) {
+            if let Expr::Spelled(spelled) = std::mem::replace(expr, Expr::Whatever) {
+                *expr = spelled.expr;
+            }
+        }
+        crate::ast_visit::walk_expr_mut(self, expr);
+    }
+
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
         crate::ast_visit::walk_stmt_mut(self, stmt);
         if matches!(stmt, Stmt::Ast(_))
@@ -376,7 +387,7 @@ fn pure_expr(expr: &Expr) -> bool {
         Expr::WhateverCurry(inner) | Expr::PositionalPair(inner) => pure_expr(inner),
         Expr::PostfixOp { expr, .. } => pure_expr(expr),
         Expr::DoStmt(stmt) => pure_stmt(stmt),
-        Expr::RegexLiteral { .. } | Expr::MatchRegexTree { .. } => true,
+        Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => !has_code(tree),
         Expr::Exists { target, arg, .. } => {
             pure_expr(target) && arg.as_deref().is_none_or(pure_expr)
         }
@@ -444,4 +455,23 @@ fn plain_name(name: &str) -> bool {
         Some(c) => c.is_alphabetic(),
         None => false,
     }
+}
+
+/// Whether a regex holds code (a block, an assertion, an interpolation): the
+/// regex `Value` keeps its own copy of that code, which still carries the
+/// spelled parse's annotations.
+// Cost: O(n), n = nodes of the regex.
+fn has_code(tree: &crate::regex_tree::RegexTree) -> bool {
+    struct Code(bool);
+    impl<'ast> crate::ast_visit::Visit<'ast> for Code {
+        fn visit_stmt(&mut self, _stmt: &'ast Stmt) {
+            self.0 = true;
+        }
+        fn visit_expr(&mut self, _expr: &'ast Expr) {
+            self.0 = true;
+        }
+    }
+    let mut code = Code(false);
+    crate::ast_visit::walk_regex_tree(&mut code, tree);
+    code.0
 }
