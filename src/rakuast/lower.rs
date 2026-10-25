@@ -2798,7 +2798,7 @@ fn expression_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
     }
     let source = lower_expr(named_child(node, "right")?)?;
     Ok(Some(super::assign_lower::lower_expression(
-        crate::ast::parsed::Assign { target, source },
+        crate::ast::parsed::Assign::written(target, source),
     )))
 }
 

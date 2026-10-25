@@ -8,7 +8,6 @@
 mod adverb_origins;
 mod anon_state;
 mod assign_lower;
-mod assignment_item;
 mod atomic_op;
 mod attribute;
 mod attribute_decl;
@@ -1445,7 +1444,6 @@ pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
     let _source = unit_source::Scope::enter(source);
     let _origins = expr_origins::strip(&mut stmts);
     let mut node = convert::statement_list(&stmts)?;
-    assignment_item::derive(&mut node);
     origin::set_span(&mut node, origin::unit_list_span(&stmts, source));
     Ok(Value::rakuast(Box::new(node)))
 }

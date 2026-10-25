@@ -1172,7 +1172,12 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 break;
             }
 
-            let (r2, next_expr) = expression(r2)?;
+            let sigil = exprs
+                .iter()
+                .fold(crate::ast::left_sigil::LeftSigil::Unset, |sigil, e| {
+                    crate::ast::left_sigil::after(sigil, e)
+                });
+            let (r2, next_expr) = crate::ast::left_sigil::inherit(r2, sigil, || expression(r2))?;
             exprs.push(next_expr);
             let (r2, _) = ws(r2)?;
             r = r2;

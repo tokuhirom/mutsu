@@ -36,7 +36,10 @@ fn parse_comma_or_expr_impl(input: &str, item_context: bool) -> PResult<'_, Expr
             return Ok((r, Expr::ArrayLiteral(vec![first])));
         }
         let mut items = vec![first];
-        let (mut r, second) = expression(r)?;
+        let mut sigil =
+            crate::ast::left_sigil::after(crate::ast::left_sigil::LeftSigil::Unset, &items[0]);
+        let (mut r, second) = crate::ast::left_sigil::inherit(r, sigil, || expression(r))?;
+        sigil = crate::ast::left_sigil::after(sigil, &second);
         items.push(second);
         loop {
             let (r2, _) = ws(r)?;
@@ -50,7 +53,8 @@ fn parse_comma_or_expr_impl(input: &str, item_context: bool) -> PResult<'_, Expr
                 let items = normalize_comma_list_items(items);
                 return Ok((r2, finalize_list(items)));
             }
-            let (r2, next) = expression(r2)?;
+            let (r2, next) = crate::ast::left_sigil::inherit(r2, sigil, || expression(r2))?;
+            sigil = crate::ast::left_sigil::after(sigil, &next);
             items.push(next);
             r = r2;
         }
@@ -90,7 +94,11 @@ fn parse_comma_or_expr_no_wl_impl(input: &str, item_context: bool) -> PResult<'_
             return Ok((r, Expr::ArrayLiteral(vec![first])));
         }
         let mut items = vec![first];
-        let (mut r, second) = expression_no_word_logical(r)?;
+        let mut sigil =
+            crate::ast::left_sigil::after(crate::ast::left_sigil::LeftSigil::Unset, &items[0]);
+        let (mut r, second) =
+            crate::ast::left_sigil::inherit(r, sigil, || expression_no_word_logical(r))?;
+        sigil = crate::ast::left_sigil::after(sigil, &second);
         items.push(second);
         loop {
             let (r2, _) = ws(r)?;
@@ -104,7 +112,9 @@ fn parse_comma_or_expr_no_wl_impl(input: &str, item_context: bool) -> PResult<'_
                 let items = normalize_comma_list_items(items);
                 return Ok((r2, finalize_list(items)));
             }
-            let (r2, next) = expression_no_word_logical(r2)?;
+            let (r2, next) =
+                crate::ast::left_sigil::inherit(r2, sigil, || expression_no_word_logical(r2))?;
+            sigil = crate::ast::left_sigil::after(sigil, &next);
             items.push(next);
             r = r2;
         }

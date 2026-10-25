@@ -85,7 +85,8 @@ pub(super) fn structural_operand(input: &str) -> PResult<'_, Expr> {
 }
 
 pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
-    if let Some(cached) = EXPR_MEMO.get(input) {
+    let memoize = !crate::ast::left_sigil::inherits_at(input);
+    if memoize && let Some(cached) = EXPR_MEMO.get(input) {
         return cached;
     }
     let result = (|| {
@@ -170,7 +171,9 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
         Ok((rest, expr))
     })()
     .and_then(|(rest, expr)| absorb_colonpair_adverbs(input, rest, expr));
-    EXPR_MEMO.store(input, &result);
+    if memoize {
+        EXPR_MEMO.store(input, &result);
+    }
     result
 }
 

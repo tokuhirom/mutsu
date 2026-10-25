@@ -368,6 +368,31 @@ impl BracketedMeta {
 pub(crate) struct Assign {
     pub(crate) target: Expr,
     pub(crate) source: Expr,
+    /// Whether it is an item assignment (`Assignment.new(:item)`), decided
+    /// from the target while the parser builds the node
+    /// ([`super::left_sigil`]). Only a keeping parse reads it, so any other
+    /// parse leaves it `false`.
+    pub(crate) item: bool,
+}
+
+impl Assign {
+    /// [`Assign::written_at`], for a target that starts its own expression.
+    // Cost: O(n), n = size of the target.
+    pub(crate) fn written(target: Expr, source: Expr) -> Self {
+        Self::written_at(None, target, source)
+    }
+
+    /// The assignment `target = source` as the parser read it, the target
+    /// starting at `at` when the expression before it may have left a sigil.
+    // Cost: O(n), n = size of the target (only a keeping parse reads the sigil).
+    pub(crate) fn written_at(at: Option<&str>, target: Expr, source: Expr) -> Self {
+        let item = super::spelled::keeping() && super::left_sigil::assignment_is_item(at, &target);
+        Self {
+            target,
+            source,
+            item,
+        }
+    }
 }
 
 /// Where a block was written: the block (from `->` when pointy), its braces and
