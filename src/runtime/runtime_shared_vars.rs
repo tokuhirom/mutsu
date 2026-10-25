@@ -884,6 +884,10 @@ impl Interpreter {
         let entries: Vec<(String, Value)> = names
             .into_iter()
             .filter(|n| !redeclared.contains(*n))
+            // A sigilless binding (`\x`) is bound once and never assigned, so
+            // no thread can have updated it: the store's entry is only ever a
+            // snapshot of whichever frame last bound that bare name (#14867).
+            .filter(|n| !n.starts_with(crate::term_names::TERM_PREFIX))
             .filter_map(|n| self.threads.shared_vars.get(n).map(|v| (n.to_string(), v)))
             .collect();
         drop(redeclared);
