@@ -2997,6 +2997,25 @@ pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     finish_kept(lower_var_decl_kept(node)?)
 }
 
+/// A declaration in expression position (`(my Int $x .= new(4)).^name`,
+/// where rakudo drops the parentheses): a `.=` declaration is the one
+/// expression-position declaration, not the statement-level expansion.
+// Cost: O(n), n = size of the declaration.
+fn lower_expression_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    Ok(match lower_stmt_kept(node)? {
+        Stmt::Ast(kept) => match *kept {
+            crate::ast::parsed::ParsedStmt::MethodAssignDecl(form) => {
+                match crate::ast::method_assign_decl::expression_declaration(&form) {
+                    Some(single) => single,
+                    None => crate::ast::method_assign_decl::expand(*form),
+                }
+            }
+            other => super::lower_parsed_stmt(other)?,
+        },
+        other => other,
+    })
+}
+
 /// [`lower_var_decl`], except that a `.=` declaration comes back as its
 /// written [`crate::ast::parsed::ParsedStmt::MethodAssignDecl`] (in `Stmt::Ast`).
 pub(super) fn lower_var_decl_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
@@ -4291,8 +4310,10 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // A declaration used as a term (`push my @u, 1`, `@a[1] := my $x`,
         // `foo(my $e = %())`): the parser carries a statement in expression
         // position as a `DoStmt`.
-        RakuAstClass::VarDeclarationSimple
-        | RakuAstClass::VarDeclarationTerm
+        RakuAstClass::VarDeclarationSimple => {
+            Ok(Expr::DoStmt(Box::new(lower_expression_declaration(node)?)))
+        }
+        RakuAstClass::VarDeclarationTerm
         | RakuAstClass::VarDeclarationConstant
         | RakuAstClass::TypeEnum
         | RakuAstClass::Module
@@ -4398,18 +4419,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             {
                 // A `.=` declaration is one expression-position declaration,
                 // not the statement-level expansion.
-                let statement = match lower_stmt_kept(declaration)? {
-                    Stmt::Ast(node) => match *node {
-                        crate::ast::parsed::ParsedStmt::MethodAssignDecl(form) => {
-                            match crate::ast::method_assign_decl::expression_declaration(&form) {
-                                Some(single) => single,
-                                None => crate::ast::method_assign_decl::expand(*form),
-                            }
-                        }
-                        other => super::lower_parsed_stmt(other)?,
-                    },
-                    other => other,
-                };
+                let statement = lower_expression_declaration(declaration)?;
                 return Ok(Expr::Grouped(Box::new(Expr::DoStmt(Box::new(statement)))));
             }
             let lowered = lower_expr(inner)?;

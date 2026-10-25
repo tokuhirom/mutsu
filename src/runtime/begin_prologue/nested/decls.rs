@@ -214,8 +214,8 @@ fn is_pure_member(stmt: &Stmt) -> bool {
             !has_user_trait(custom_traits)
         }
         Stmt::SyntheticBlock(inner) => inner.iter().all(is_pure_member),
-        // A source-form record (`ast::signature_decl`) is no code at all.
-        Stmt::SourceForm(_) => true,
+        // The written-traits record (`ast::routine_trait`) is no code at all.
+        stmt if stmt.is_routine_traits() => true,
         other => declared_names(other).is_some() && is_pure_declaration(other),
     }
 }

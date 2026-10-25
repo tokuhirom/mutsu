@@ -394,10 +394,7 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
             unreachable!()
         };
         for member in inner {
-            // The source-form record goes with the group it described.
-            if !matches!(member, Stmt::SourceForm(_)) {
-                partition_stmt(member, prologue, rest);
-            }
+            partition_stmt(member, prologue, rest);
         }
         return;
     }
