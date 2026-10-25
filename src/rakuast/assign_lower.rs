@@ -20,6 +20,9 @@ pub(crate) fn is_expression_target(target: &Expr) -> bool {
     while let Expr::Grouped(inner) = target {
         target = inner;
     }
+    if let Expr::Spelled(spelled) = target {
+        return is_expression_target(&spelled.expr);
+    }
     match target {
         Expr::MethodCall { name, args, .. } => !(name == "item" && args.is_empty()),
         Expr::Var(_)
@@ -40,15 +43,22 @@ pub(crate) fn is_expression_target(target: &Expr) -> bool {
 
 /// Whether `target` is an lvalue expression the statement parser assigns
 /// through at run time (`-$x = 5`, `c ?? $a !! $b = 1`, `$<c> = $0`,
-/// `($a || $b) = 1`, `(my $v) = 1, 2`, `($x = 5) = 6`): the conditional,
+/// `($a || $b) = 1`, `(my $v) = 1, 2`, `($x = 5) = 6`, `("a" R~ "b") = 1`): the conditional,
 /// operator, declaration or assignment is evaluated and its result container
 /// is written.
 // Cost: O(d), d = levels of parentheses around the target.
 pub(crate) fn is_callable_lvalue_target(target: &Expr) -> bool {
     match target.peel_parens() {
-        Expr::Unary { .. } | Expr::Ternary { .. } | Expr::CaptureVar(_) | Expr::Binary { .. } => {
-            true
-        }
+        Expr::Spelled(spelled) => is_callable_lvalue_target(&spelled.expr),
+        Expr::Unary { .. }
+        | Expr::Ternary { .. }
+        | Expr::CaptureVar(_)
+        | Expr::Binary { .. }
+        // `("a" R~ "b") = 1` (dies with `X::Assignment::RO`), `(key => $v) = 1`.
+        | Expr::MetaOp { .. }
+        // `@a[0;1]:!exists = 1` is an immutable `Bool`.
+        | Expr::Exists { .. }
+        | Expr::PositionalPair(_) => true,
         Expr::DoStmt(stmt) => matches!(stmt.as_ref(), Stmt::VarDecl { .. }),
         // `($x = 5) = 6`, `(@a[0] = 5) = 7`: an assignment yields its
         // target's container.
@@ -74,7 +84,14 @@ pub(crate) fn is_item_target(target: &Expr) -> bool {
 /// Lower an assignment in expression position.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_expression(node: Assign) -> Expr {
-    let Assign { target, source, .. } = node;
+    let Assign {
+        mut target, source, ..
+    } = node;
+    // How the target was spelled (`@a[0;1]:foo`'s adverbs) takes no part in
+    // the write.
+    while let Expr::Spelled(spelled) = target {
+        target = spelled.expr;
+    }
     match crate::parser::unwrap_grouped_lvalue(target) {
         Expr::Var(name) => Expr::AssignExpr {
             name,
