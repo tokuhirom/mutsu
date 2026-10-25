@@ -143,7 +143,7 @@ impl Interpreter {
     /// roast baseline are run against (`ecosystem/dists/**` `measured.raku_version`,
     /// `TODO_roast/raku-baseline.md`) — it is a claim about compatibility, so it
     /// must be backed by a measurement, not raised speculatively.
-    pub(in crate::runtime) const RAKUDO_COMPAT_VERSION: &'static str = "2026.07";
+    pub(in crate::runtime) const RAKUDO_COMPAT_VERSION: &'static str = "2026.09";
 
     /// The `Compiler` object `$*RAKU.compiler` is, and `Compiler.new` copies.
     // Cost: O(1).

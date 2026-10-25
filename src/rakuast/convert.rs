@@ -6,10 +6,6 @@
 //! `RuntimeError` (the documented coverage boundary) rather than a
 //! silently-wrong node.
 
-#[path = "convert_conditional.rs"]
-mod conditional;
-use conditional::*;
-
 use super::bareword::simple_type_node;
 use super::method_assign_decl::call_method;
 use super::origin;
@@ -394,58 +390,18 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Ok(Some(statement_expression(declaration)))
         }
         Stmt::SyntheticBlock(_) if source_form(stmt).is_some() => match source_form(stmt) {
-            Some(crate::ast::SourceForm::DeclarationModifier {
-                declaration,
-                condition,
-                kind,
-            }) => declaration_modifier_node(declaration, condition, *kind).map(Some),
             Some(crate::ast::SourceForm::SignatureDecl(decl)) => Ok(Some(statement_expression(
                 super::signature_decl::convert(decl)?,
-            ))),
-            Some(crate::ast::SourceForm::CommaDeclarations(declarations)) => Ok(Some(
-                statement_expression(comma_declarations_node(declarations)?),
-            )),
-            Some(crate::ast::SourceForm::AttributeGroup(attributes)) => Ok(Some(
-                statement_expression(super::attribute_group::to_signature(attributes)?),
-            )),
-            Some(crate::ast::SourceForm::AttributeColonArglist(attributes)) => Ok(Some(
-                statement_expression(super::attribute_group::convert_colon(attributes)?),
-            )),
-            Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => Ok(Some(statement_expression(
-                super::method_assign_decl::convert(decl)?,
             ))),
             // `my $x OP= EXPR`: the declaration as the left operand.
             Some(crate::ast::SourceForm::DeclarationCompoundAssign) => {
                 declaration_compound_assign_statement(stmt).map(Some)
             }
-            Some(crate::ast::SourceForm::TakeLogicalTail { value, op, right }) => {
-                take_logical_tail_node(value, op, right)
-                    .map(|node| Some(statement_expression(node)))
-            }
-            Some(crate::ast::SourceForm::SignatureBind { signature, rhs }) => {
-                signature_bind_node(signature, rhs).map(|node| Some(statement_expression(node)))
-            }
-            // `sub f { … }(ARGS)`: the routine as the operand of its call.
-            Some(crate::ast::SourceForm::ImmediateCall) => super::immediate_call::convert(stmt)
-                .ok_or_else(|| unsupported("source form"))?
-                .map(|node| Some(statement_expression(node))),
-            // `BEGIN say 1`: the phaser (second statement) over its bare statement.
-            Some(crate::ast::SourceForm::BarePhaser) => match stmt {
-                Stmt::SyntheticBlock(stmts) if stmts.len() == 2 => {
-                    super::bare_prefix::bare_phaser_statement(&stmts[1])
-                }
-                _ => Err(unsupported("source form")),
-            },
-            // Only the on-demand lambda opens with a supply record.
             Some(
-                crate::ast::SourceForm::SupplyBlock(_)
-                | crate::ast::SourceForm::WithPointy { .. }
+                crate::ast::SourceForm::WithPointy { .. }
                 | crate::ast::SourceForm::GivenPointy { .. }
                 | crate::ast::SourceForm::IfPointy { .. }
-                | crate::ast::SourceForm::HyperAssign { .. }
-                | crate::ast::SourceForm::InlineSubsetTerm(_)
-                | crate::ast::SourceForm::RoutineTraits(_)
-                | crate::ast::SourceForm::StartBlock,
+                | crate::ast::SourceForm::RoutineTraits(_),
             )
             | None => Err(unsupported("source form")),
         },
@@ -1451,32 +1407,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 node_field(Some("right"), convert_expr(expr)?),
             ],
         }))),
-        Stmt::Assign {
-            name,
-            expr: Expr::Spelled(spelled),
-            op: AssignOp::Assign,
-            ..
-        } if let Spelling::BracketedAssignment { depth } = &spelled.spelling => {
-            Ok(Some(statement_expression(super::compound_stmt::mark(
-                super::meta_infix::convert_bracketed_assignment(&spelled.expr, *depth)?,
-                name,
-            ))))
-        }
         Stmt::Assign { name, expr, op, .. } => match op {
-            // `$x = EXPR` — the special `Assignment` infix (slice 2). A compound
-            // assignment keeps its source-level metaop marker inside the ordinary
-            // assignment expansion used by the compiler.
-            AssignOp::Assign => match expr {
-                Expr::CompoundAssign {
-                    target, op, rhs, ..
-                } if !is_dotty_assign_op(op) && compound_target_matches_name(target, name) => {
-                    Ok(Some(statement_expression(super::compound_stmt::mark(
-                        compound_assignment_infix(target, op, rhs)?,
-                        name,
-                    ))))
-                }
-                _ => Ok(Some(statement_expression(assignment_infix(name, expr)?))),
-            },
+            // `$x = EXPR` — the special `Assignment` infix (slice 2).
+            AssignOp::Assign => Ok(Some(statement_expression(assignment_infix(name, expr)?))),
             // `$x := EXPR` — a plain `:=` infix (slice 9).
             AssignOp::Bind => Ok(Some(statement_expression(bind_infix(name, expr)?))),
             AssignOp::MatchAssign => Err(unsupported("`~~` match-assignment")),
@@ -1510,7 +1443,7 @@ pub(super) fn nqp_op(name: &str) -> Option<&str> {
 /// [dwim-left,] infix, [dwim-right]), right)`; raku omits a dwim field whose
 /// value is False, and the hyper assignment's infix is the `Assignment` node.
 // Cost: O(n), n = nodes of the operands.
-fn hyper_infix(
+pub(super) fn hyper_infix(
     left: &Expr,
     op: &str,
     right: &Expr,
@@ -1788,7 +1721,7 @@ fn is_dotty_assign_op(op: &str) -> bool {
 }
 
 /// `$x OP= EXPR` -> `ApplyInfix(left, MetaInfix::Assign(Infix(OP)), right)`.
-fn compound_assignment_infix(
+pub(super) fn compound_assignment_infix(
     target: &Expr,
     op: &str,
     rhs: &Expr,
@@ -1860,11 +1793,6 @@ fn declaration_compound_assign_statement(stmt: &Stmt) -> Result<RakuAstNode, Run
     if assignment.class != RakuAstClass::ApplyInfix {
         return Err(unsupported("source form"));
     }
-    // The statement-assignment mark names the variable the loop body
-    // assigns; the declaration statement it now sits in is not one.
-    assignment
-        .fields
-        .retain(|f| !super::compound_stmt::is_source_field(f));
     for f in assignment.fields.iter_mut() {
         if f.name == Some("left") {
             *f = node_field(Some("left"), decl.clone());
@@ -1927,7 +1855,7 @@ pub(super) fn compound_assignment_with_left(
 /// Call::Method)`. The marker's `rhs` is the method call applied to the target;
 /// only its name, arguments and dispatch modifier are rendered.
 // Cost: O(n), n = size of the target and the arguments.
-fn dotty_assignment(target: &Expr, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn dotty_assignment(target: &Expr, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
     dotty_assignment_with_left(convert_expr(target)?, call)
 }
 
@@ -1937,6 +1865,29 @@ pub(super) fn dotty_assignment_with_left(
     left: RakuAstNode,
     call: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
+    // `@a>>.=uc`: the hyper of the call, whose method carries the `.=`
+    // dispatch (measured on 2026.09).
+    if let Expr::HyperMethodCall {
+        name,
+        args,
+        modifier,
+        quoted,
+        ..
+    } = call
+    {
+        let mut method = method_call_postfix(name.as_str(), args, *modifier, *quoted)?;
+        if modifier.is_none() {
+            method
+                .fields
+                .push(leaf_field(Some("dispatch"), Value::str(".=".to_string())));
+        }
+        let right = RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::MetaPostfixHyper,
+            fields: vec![node_field(None, method)],
+        };
+        return Ok(dotty_node(left, right));
+    }
     let right = match crate::ast::dotty_assign::method_call(call) {
         Some(crate::ast::dotty_assign::DottyCall {
             name,
@@ -1947,7 +1898,13 @@ pub(super) fn dotty_assignment_with_left(
         // `$x .= &f` / `$x .= $m` / `$x .= "{...}"()`: a term as the method.
         None => super::dynamic_method::call_assign_postfix(call)?,
     };
-    Ok(RakuAstNode {
+    Ok(dotty_node(left, right))
+}
+
+/// `ApplyDottyInfix(left, DottyInfix::CallAssign, right)`.
+// Cost: O(1).
+fn dotty_node(left: RakuAstNode, right: RakuAstNode) -> RakuAstNode {
+    RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ApplyDottyInfix,
         fields: vec![
@@ -1962,7 +1919,7 @@ pub(super) fn dotty_assignment_with_left(
             ),
             node_field(Some("right"), right),
         ],
-    })
+    }
 }
 
 /// `TERM .meth` (`Spelling::DottyInfixCall`): the method call's postfix
@@ -2003,19 +1960,6 @@ fn dotty_infix_call(call: &Expr) -> Result<RakuAstNode, RuntimeError> {
             right,
         ],
     })
-}
-
-/// A compound marker may be nested in the RHS of a separate assignment. Only
-/// the marker that names the statement's own target replaces `Assignment` with
-/// `MetaInfix::Assign`; nested markers stay under the outer assignment node.
-fn compound_target_matches_name(target: &Expr, name: &str) -> bool {
-    match target {
-        Expr::Var(target_name) => target_name == name,
-        Expr::ArrayVar(target_name) => name == format!("@{target_name}"),
-        Expr::HashVar(target_name) => name == format!("%{target_name}"),
-        Expr::CodeVar(target_name) => name == format!("&{target_name}"),
-        _ => false,
-    }
 }
 
 /// A `my`/`our`/`state` declaration with an optional simple type, as a
@@ -2807,7 +2751,7 @@ fn source_form(stmt: &Stmt) -> Option<&crate::ast::SourceForm> {
     }
 }
 
-fn take_logical_tail_node(
+pub(super) fn take_logical_tail_node(
     value: &Expr,
     op: &crate::token_kind::TokenKind,
     right: &Expr,
@@ -2826,7 +2770,10 @@ fn take_logical_tail_node(
     })
 }
 
-fn signature_bind_node(signature: &Expr, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn signature_bind_node(
+    signature: &Expr,
+    rhs: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
@@ -2856,13 +2803,6 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     }
     if let Some(node) = subscript_adverb::convert(expr) {
         return node;
-    }
-    // `supply { … }`: the parser's on-demand expansion opens its emitter
-    // lambda with the written body.
-    if let Expr::MethodCall { args, .. } = expr
-        && let Some(body) = super::react::supply_record(args)
-    {
-        return super::react::convert_supply(body);
     }
     match expr {
         // An expression the parser built in its RakuAST shape (ADR-10723
@@ -3045,9 +2985,6 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     return Err(unsupported("left-exclusive sequence without its skip"));
                 };
                 left_exclusive_sequence_node(written, target)
-            }
-            Spelling::BracketedAssignment { depth } => {
-                super::meta_infix::convert_bracketed_assignment(&spelled.expr, *depth)
             }
             Spelling::LoopStepComma => {
                 let Expr::DoBlock { body, .. } = &spelled.expr else {
@@ -3393,42 +3330,8 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // it would hand back a node with block semantics (`let`/`temp`
             // resolution) the original never had -- GH-7635.
             if origin != &crate::ast::DoBlockOrigin::SourceBlock {
-                if let Some(Stmt::SourceForm(form)) = body.first()
-                    && let crate::ast::SourceForm::SupplyBlock(source_body) = form.as_ref()
-                {
-                    return super::react::convert_supply(source_body);
-                }
                 if let Some(node) = super::hyper_dotty_writeback::convert(body)? {
                     return Ok(node);
-                }
-                if let Some(declaration) =
-                    crate::ast::inline_subset_term::inline_subset_declaration(body)
-                {
-                    let statement = convert_stmt(declaration)?
-                        .ok_or_else(|| unsupported("inline subset declaration"))?;
-                    return statement
-                        .fields
-                        .iter()
-                        .find(|field| field.name == Some("expression"))
-                        .and_then(|field| match &field.value {
-                            RakuAstFieldValue::Node(value) => match value.view() {
-                                ValueView::RakuAst(node) => Some(node.clone()),
-                                _ => None,
-                            },
-                            _ => None,
-                        })
-                        .ok_or_else(|| unsupported("inline subset declaration"));
-                }
-                // `(LVALUES) »=» VALUE`: the record that opens the expansion.
-                if let Some(Stmt::SourceForm(form)) = body.first()
-                    && let crate::ast::SourceForm::HyperAssign {
-                        target,
-                        value,
-                        dwim_left,
-                        dwim_right,
-                    } = form.as_ref()
-                {
-                    return hyper_infix(target, "=", value, *dwim_left, *dwim_right);
                 }
                 // `120 = 3`: the written assignment to an immutable literal.
                 if let Some((literal, rhs)) = crate::parser::literal_assign_ro_parts(expr) {
@@ -3604,7 +3507,9 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             ) || matches!(
                 stmt.as_ref(),
                 Stmt::Ast(node)
-                    if matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::BindDecl(_) | crate::ast::parsed::ParsedStmt::SigillessDecl(_))
+                    if matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::BindDecl(_) | crate::ast::parsed::ParsedStmt::SigillessDecl(_)
+                        | crate::ast::parsed::ParsedStmt::AttributeGroup(_) | crate::ast::parsed::ParsedStmt::AttributeColonArglist(_)
+                        | crate::ast::parsed::ParsedStmt::MethodAssignDecl(_) | crate::ast::parsed::ParsedStmt::SignatureBind { .. })
             ) =>
         {
             let statement = convert_stmt(stmt)?.ok_or_else(|| unsupported("declaration term"))?;
@@ -3634,6 +3539,19 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 unreachable!()
             };
             super::decl_tail::convert(head, tail)
+        }
+        // A comma list of declarations kept in its RakuAST shape.
+        Expr::DoStmt(stmt)
+            if matches!(stmt.as_ref(), Stmt::Ast(node)
+                if matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::CommaDecls(_))) =>
+        {
+            let Stmt::Ast(node) = stmt.as_ref() else {
+                unreachable!()
+            };
+            let crate::ast::parsed::ParsedStmt::CommaDecls(declarations) = node.as_ref() else {
+                unreachable!()
+            };
+            comma_declarations_node(declarations)
         }
         // A parenthesized comma list of declarations is grouped by the parser
         // into one synthetic block. Rakudo keeps each declaration as an
@@ -3711,56 +3629,17 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // A signature declaration in expression position (`if my ($a, $b) = …`).
         Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
-            Some(crate::ast::SourceForm::DeclarationModifier {
-                declaration,
-                condition,
-                kind,
-            }) => declaration_modifier_node(declaration, condition, *kind),
             Some(crate::ast::SourceForm::SignatureDecl(decl)) => {
                 super::signature_decl::convert(decl)
-            }
-            Some(crate::ast::SourceForm::CommaDeclarations(declarations)) => {
-                comma_declarations_node(declarations)
-            }
-            Some(crate::ast::SourceForm::AttributeGroup(attributes)) => {
-                super::attribute_group::to_signature(attributes)
-            }
-            Some(crate::ast::SourceForm::AttributeColonArglist(attributes)) => {
-                super::attribute_group::convert_colon(attributes)
-            }
-            Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => {
-                super::method_assign_decl::convert(decl)
             }
             Some(crate::ast::SourceForm::DeclarationCompoundAssign) => {
                 declaration_compound_assign(stmt)
             }
-            Some(crate::ast::SourceForm::TakeLogicalTail { value, op, right }) => {
-                take_logical_tail_node(value, op, right)
-            }
-            Some(crate::ast::SourceForm::SignatureBind { signature, rhs }) => {
-                signature_bind_node(signature, rhs)
-            }
-            // `do sub f { … }(ARGS)`: the call statement under the prefix.
-            Some(crate::ast::SourceForm::ImmediateCall) => {
-                let node = super::immediate_call::convert(stmt)
-                    .ok_or_else(|| unsupported("source form"))??;
-                Ok(RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::StatementPrefixDo,
-                    fields: vec![node_field(None, statement_expression(node))],
-                })
-            }
-            // Only the on-demand lambda opens with a supply record.
             Some(
-                crate::ast::SourceForm::SupplyBlock(_)
-                | crate::ast::SourceForm::BarePhaser
-                | crate::ast::SourceForm::WithPointy { .. }
+                crate::ast::SourceForm::WithPointy { .. }
                 | crate::ast::SourceForm::GivenPointy { .. }
                 | crate::ast::SourceForm::IfPointy { .. }
-                | crate::ast::SourceForm::HyperAssign { .. }
-                | crate::ast::SourceForm::InlineSubsetTerm(_)
-                | crate::ast::SourceForm::RoutineTraits(_)
-                | crate::ast::SourceForm::StartBlock,
+                | crate::ast::SourceForm::RoutineTraits(_),
             )
             | None => Err(unsupported("source form")),
         },
@@ -7113,7 +6992,7 @@ fn labelled_control_call(name: &'static str, label: &str) -> RakuAstNode {
 /// A comma list `1, 2, 3` -> `ApplyListInfix(infix => ",", operands)`.
 /// The source declarations of `my $x = 1, my $y = 2` as one comma application.
 // Cost: O(n), n = declarations and their nested nodes.
-fn comma_declarations_node(declarations: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn comma_declarations_node(declarations: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     let mut operands = Vec::with_capacity(declarations.len());
     for declaration in declarations {
         let statement = convert_stmt(declaration)?

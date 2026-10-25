@@ -336,7 +336,13 @@ pub(crate) fn take_stmt(input: &str) -> PResult<'_, Stmt> {
         };
         return parse_statement_modifier(
             rest,
-            crate::ast::expand_take_logical_tail(expr, op.clone(), (**right).clone()),
+            crate::parser::stmt::control::parsed_block::finish_total(
+                crate::ast::parsed::ParsedStmt::TakeLogicalTail {
+                    value: expr,
+                    op: op.clone(),
+                    right: (**right).clone(),
+                },
+            ),
         );
     } else {
         Stmt::Take(expr, false)
@@ -511,10 +517,9 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     if bare && crate::ast::spelled::keeping() {
         return Ok((
             rest,
-            Stmt::SyntheticBlock(vec![
-                Stmt::SourceForm(Box::new(crate::ast::SourceForm::BarePhaser)),
-                phaser,
-            ]),
+            crate::parser::stmt::control::parsed_block::finish_total(
+                crate::ast::parsed::ParsedStmt::BarePhaser(Box::new(phaser)),
+            ),
         ));
     }
     Ok((rest, phaser))

@@ -70,6 +70,49 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
         ParsedStmt::PackageHeader { decl, name, header } => {
             Ok(crate::ast::package_header::wrap(*decl, &name, header))
         }
+        ParsedStmt::TempDecl(decl) => {
+            let name = match decl.as_ref() {
+                Stmt::VarDecl { name, .. } => name.clone(),
+                _ => return Err(RuntimeError::new("temp declaration without a variable")),
+            };
+            let save = crate::ast::temporize::save(&name, None, None, true);
+            Ok(Stmt::SyntheticBlock(vec![*decl, save]))
+        }
+        ParsedStmt::BarePhaser(phaser) => Ok(*phaser),
+        ParsedStmt::TakeLogicalTail { value, op, right } => {
+            Ok(crate::ast::expand_take_logical_tail(value, op, right))
+        }
+        ParsedStmt::CommaDecls(declarations) => {
+            let mut expanded = Vec::with_capacity(declarations.len());
+            for declaration in declarations {
+                match declaration {
+                    Stmt::SyntheticBlock(parts) => expanded.extend(parts),
+                    other => expanded.push(other),
+                }
+            }
+            Ok(Stmt::SyntheticBlock(expanded))
+        }
+        ParsedStmt::ImmediateCall { decl, args } => {
+            if !matches!(decl.as_ref(), Stmt::SubDecl { .. }) {
+                return Err(RuntimeError::new("immediate call without a named sub"));
+            }
+            Ok(crate::ast::immediate_call::expand(*decl, args))
+        }
+        ParsedStmt::AttributeModifier {
+            decl,
+            condition,
+            kind,
+        } => Ok(crate::ast::attribute_modifier::expand(
+            *decl, condition, kind,
+        )),
+        ParsedStmt::AttributeGroup(attributes) | ParsedStmt::AttributeColonArglist(attributes) => {
+            Ok(Stmt::SyntheticBlock(attributes))
+        }
+        ParsedStmt::SignatureBind { signature, rhs } => {
+            crate::ast::signature_bind::expand(signature, rhs)
+                .ok_or_else(|| RuntimeError::new("signature bind without a signature literal"))
+        }
+        ParsedStmt::MethodAssignDecl(form) => Ok(crate::ast::method_assign_decl::expand(*form)),
         ParsedStmt::SigillessDecl(d) => {
             lower_sigilless(*d, crate::parser::is_user_declared_value_term)
         }

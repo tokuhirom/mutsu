@@ -417,7 +417,11 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             };
             return Ok((
                 rest,
-                super::super::super::expr::dot_assign_to_name(name, method_expr),
+                super::written_dotty_assignment(
+                    crate::parser::expr::dot_assign_target(&name),
+                    method_expr,
+                    false,
+                ),
             ));
         }
         // Parse regular method name
@@ -493,7 +497,11 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         };
         return Ok((
             r,
-            super::super::super::expr::dot_assign_to_name(name, method_expr),
+            super::written_dotty_assignment(
+                crate::parser::expr::dot_assign_target(&name),
+                method_expr,
+                false,
+            ),
         ));
     }
     if let Some((stripped, op)) = parse_compound_assign_op(r2) {
@@ -521,7 +529,6 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 _ => expression_no_sequence(rest)?,
             }
         };
-        let name = format!("{}{}", prefix, var);
         // Read the current value through the sigil-appropriate lvalue so `%h ,= %g`
         // / `@a ,= 3` treat the LHS as a Hash/Array container (not a scalar
         // `Var("h")`), letting the comma operator merge/append the two containers.
@@ -530,13 +537,15 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             b'%' => Expr::HashVar(var),
             _ => Expr::Var(var),
         };
-        if sigil == b'$'
-            && let Some(short) =
-                short_circuit_compound_assign_expr(&name, lhs_expr.clone(), op, rhs.clone())
-        {
-            return Ok((rest, compound_assign_marker(lhs_expr, op, rhs, short)));
-        }
-        return Ok((rest, preserve_compound_assign(lhs_expr, op, rhs)?));
+        return Ok((
+            rest,
+            super::written_compound_assignment(
+                lhs_expr,
+                op,
+                crate::ast::parsed::CompoundMeta::Plain,
+                rhs,
+            )?,
+        ));
     }
     if let Some((stripped, meta, op)) = parse_meta_compound_assign_op(r2) {
         let (rest, _) = ws(stripped)?;
@@ -573,18 +582,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         // The reverse meta-op assignment `$x R op= $y` assigns to its RIGHT
         // operand (`$y = $y op $x`), so retarget the assignment to `rhs`.
         if meta == "R" {
-            let var_expr_written = var_expr.clone();
-            let value = Expr::MetaOp {
-                meta,
-                op: op.clone(),
-                left: Box::new(var_expr),
-                right: Box::new(rhs.clone()),
-            };
-            let assign = crate::parser::expr::precedence::assign_to_target_expr(rhs.clone(), value);
-            return Ok((
-                rest,
-                reverse_assign_marker(var_expr_written, &op, rhs, assign),
-            ));
+            return Ok((rest, super::written_reverse_assignment(var_expr, &op, rhs)));
         }
         // The expression-position twin of the statement rewrite in
         // `assign_stmt`: `X`/`Z` over an assignment infix accumulates into the
@@ -631,23 +629,15 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         let var_expr = match sigil {
             b'@' => Expr::ArrayVar(var),
             b'%' => Expr::HashVar(var),
-            _ => Expr::Var(name.clone()),
+            _ => Expr::Var(name),
         };
-        let assignment = Expr::AssignExpr {
-            name,
-            expr: Box::new(Expr::MetaOp {
-                meta,
-                op,
-                left: Box::new(var_expr),
-                right: Box::new(rhs),
-            }),
-            is_bind: false,
-        };
+        let kind = crate::ast::parsed::BracketedMeta::from_spelling(&meta)
+            .ok_or_else(|| PError::expected("bracketed metaoperator"))?;
+        let depth = u8::try_from(depth)
+            .map_err(|_| PError::expected("a bracketed infix nested at most 255 levels"))?;
         return Ok((
             rest,
-            Expr::spelled(assignment, || {
-                crate::ast::spelled::Spelling::BracketedAssignment { depth }
-            }),
+            super::written_meta_assignment(var_expr, kind, depth, op, rhs)?,
         ));
     }
     if let Some((stripped, op_name)) = parse_custom_compound_assign_op(r2) {
@@ -657,19 +647,14 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             Ok(r) => r,
             Err(_) => expression_no_sequence(rest)?,
         };
-        let name = format!("{}{}", prefix, var);
+        let var_expr = match sigil {
+            b'@' => Expr::ArrayVar(var),
+            b'%' => Expr::HashVar(var),
+            _ => Expr::Var(format!("{}{}", prefix, var)),
+        };
         return Ok((
             rest,
-            Expr::AssignExpr {
-                name: name.clone(),
-                expr: Box::new(Expr::InfixFunc {
-                    name: op_name,
-                    left: Box::new(Expr::Var(name)),
-                    right: vec![rhs],
-                    modifier: None,
-                }),
-                is_bind: false,
-            },
+            super::written_routine_compound_assignment(var_expr, op_name, rhs)?,
         ));
     }
     if let Some(stripped) = r2.strip_prefix("::=").or_else(|| r2.strip_prefix(":=")) {

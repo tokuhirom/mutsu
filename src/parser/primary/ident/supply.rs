@@ -6,31 +6,14 @@ use crate::symbol::Symbol;
 
 static SUPPLY_EMITTER_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// `supply { BODY }`: the expansion of [`supply_method_call`], carrying the
-/// written body as its [`crate::ast::SourceForm::SupplyBlock`] record so the
-/// RakuAST layer renders the block rather than the expansion (ADR-10723).
+/// `supply { BODY }`: kept in its RakuAST shape by a `.AST` parse, lowered at
+/// once to [`supply_method_call`] otherwise (ADR-10723 Stage 2, #14966).
 // Cost: O(n), n = size of the body.
 pub(crate) fn supply_block(body: Vec<Stmt>) -> Expr {
-    let record = body.clone();
-    let mut expr = supply_method_call(body);
-    match &mut expr {
-        Expr::MethodCall { args, .. } => {
-            if let [Expr::Lambda { body, .. }] = args.as_mut_slice() {
-                body.insert(
-                    0,
-                    Stmt::SourceForm(Box::new(crate::ast::SourceForm::SupplyBlock(record))),
-                );
-            }
-        }
-        Expr::DoBlock { body, .. } => {
-            body.insert(
-                0,
-                Stmt::SourceForm(Box::new(crate::ast::SourceForm::SupplyBlock(record))),
-            );
-        }
-        _ => {}
+    if crate::ast::spelled::keeping() {
+        return Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Supply(body)));
     }
-    expr
+    supply_method_call(body)
 }
 
 pub(crate) fn supply_method_call(body: Vec<Stmt>) -> Expr {

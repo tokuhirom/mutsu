@@ -120,7 +120,15 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         };
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
-        return Ok((rest, preserve_compound_assign(lhs, op, rhs)?));
+        return Ok((
+            rest,
+            super::written_compound_assignment(
+                lhs,
+                op,
+                crate::ast::parsed::CompoundMeta::Plain,
+                rhs,
+            )?,
+        ));
     }
     if let Some((stripped, op_name)) = parse_custom_compound_assign_op(rest) {
         let (rest, _) = ws(stripped)?;
@@ -130,7 +138,10 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         };
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
-        return Ok((rest, build_custom_compound_assign_expr(lhs, op_name, rhs)?));
+        return Ok((
+            rest,
+            super::written_routine_compound_assignment(lhs, op_name, rhs)?,
+        ));
     }
     if let Some((stripped, meta, op)) = parse_bracket_meta_assign_op(rest) {
         let (rest, _) = ws(stripped)?;

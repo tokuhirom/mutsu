@@ -258,12 +258,27 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         let (after_ws, _) = ws(after_op)?;
         let comma_level = matches!(op, crate::parser::stmt::assign::CompoundAssignOp::Comma);
         if let Ok((r, rhs)) = parse_compound_assign_rhs_mode(after_ws, comma_level, mode)
-            && let Ok(result) = build_compound_assign_expr(expr.clone(), op, rhs.clone())
+            && let Ok(compound) = crate::parser::stmt::assign::written_compound_assignment(
+                expr.clone(),
+                op,
+                crate::ast::parsed::CompoundMeta::Plain,
+                rhs,
+            )
         {
-            // Preserve the original lvalue for RakuAST. The marker is
-            // transparent to execution and keeps the established expansion
-            // (including dedicated index/method writeback) underneath it.
-            return Ok((r, compound_assign_marker(expr, op, rhs, result)));
+            return Ok((r, compound));
+        }
+    }
+    // `$s (|)= 1`: a set operator's compound assignment.
+    if !matches!(mode, ExprMode::NoSequenceNoFeed | ExprMode::ListopArg)
+        && let Some((after_op, set_tok, spelling)) =
+            crate::parser::stmt::assign::parse_set_compound_assign_op(r)
+    {
+        let (after_ws, _) = ws(after_op)?;
+        if let Ok((r, rhs)) = parse_compound_assign_rhs_mode(after_ws, false, mode) {
+            return Ok((
+                r,
+                crate::parser::stmt::assign::written_set_assignment(expr, spelling, set_tok, rhs),
+            ));
         }
     }
 
@@ -296,7 +311,11 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
     if let Some((after_op, op_name)) = parse_custom_compound_assign_op(r) {
         let (after_ws, _) = ws(after_op)?;
         if let Ok((r, rhs)) = parse_compound_assign_rhs_mode(after_ws, false, mode)
-            && let Ok(result) = build_custom_compound_assign_expr(expr.clone(), op_name, rhs)
+            && let Ok(result) = crate::parser::stmt::assign::written_routine_compound_assignment(
+                expr.clone(),
+                op_name,
+                rhs,
+            )
         {
             return Ok((r, result));
         }

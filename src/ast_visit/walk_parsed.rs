@@ -30,6 +30,42 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         super::walk_stmt(v, decl);
         return;
     }
+    if let ParsedStmt::ImmediateCall { decl, args } = node {
+        super::walk_stmt(v, decl);
+        for arg in args {
+            v.visit_expr(arg);
+        }
+        return;
+    }
+    if let ParsedStmt::AttributeModifier {
+        decl, condition, ..
+    } = node
+    {
+        super::walk_stmt(v, decl);
+        v.visit_expr(condition);
+        return;
+    }
+    if let ParsedStmt::TakeLogicalTail { value, right, .. } = node {
+        v.visit_expr(value);
+        v.visit_expr(right);
+        return;
+    }
+    if let ParsedStmt::CommaDecls(declarations)
+    | ParsedStmt::AttributeGroup(declarations)
+    | ParsedStmt::AttributeColonArglist(declarations) = node
+    {
+        super::walk_stmts(v, declarations);
+        return;
+    }
+    if let ParsedStmt::SignatureBind { signature, rhs } = node {
+        v.visit_expr(signature);
+        v.visit_expr(rhs);
+        return;
+    }
+    if let ParsedStmt::MethodAssignDecl(form) = node {
+        super::walk_source::walk_method_assign_decl(v, form);
+        return;
+    }
     if let Some(stmt) = node.inner_stmt() {
         super::walk_stmt(v, stmt);
         return;
@@ -126,7 +162,34 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
             block_mut(v, &mut w.block);
         }
         ParsedStmt::Default(block) | ParsedStmt::BareBlock(block) => block_mut(v, block),
-        ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => super::walk_stmt_mut(v, stmt),
+        ParsedStmt::For { stmt, .. }
+        | ParsedStmt::BindDecl(stmt)
+        | ParsedStmt::TempDecl(stmt)
+        | ParsedStmt::BarePhaser(stmt) => super::walk_stmt_mut(v, stmt),
+        ParsedStmt::TakeLogicalTail { value, right, .. } => {
+            v.visit_expr_mut(value);
+            v.visit_expr_mut(right);
+        }
+        ParsedStmt::CommaDecls(declarations)
+        | ParsedStmt::AttributeGroup(declarations)
+        | ParsedStmt::AttributeColonArglist(declarations) => super::walk_stmts_mut(v, declarations),
+        ParsedStmt::SignatureBind { signature, rhs } => {
+            v.visit_expr_mut(signature);
+            v.visit_expr_mut(rhs);
+        }
+        ParsedStmt::MethodAssignDecl(form) => walk_method_assign_decl_mut(v, form),
+        ParsedStmt::ImmediateCall { decl, args } => {
+            super::walk_stmt_mut(v, decl);
+            for arg in args {
+                v.visit_expr_mut(arg);
+            }
+        }
+        ParsedStmt::AttributeModifier {
+            decl, condition, ..
+        } => {
+            super::walk_stmt_mut(v, decl);
+            v.visit_expr_mut(condition);
+        }
         ParsedStmt::DoesDecl { decl, role, init } => {
             super::walk_stmt_mut(v, decl);
             v.visit_expr_mut(role);
@@ -191,6 +254,16 @@ pub(crate) fn walk_parsed_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &
             v.visit_expr(&a.target);
             v.visit_expr(&a.source);
         }
+        ParsedExpr::CompoundAssign(a) => {
+            v.visit_expr(&a.target);
+            v.visit_expr(&a.source);
+        }
+        ParsedExpr::Supply(body) | ParsedExpr::StartBody(body) => super::walk_stmts(v, body),
+        ParsedExpr::HyperAssign(a) => {
+            v.visit_expr(&a.target);
+            v.visit_expr(&a.value);
+        }
+        ParsedExpr::InlineSubset(declaration) => v.visit_stmt(declaration),
     }
 }
 
@@ -202,5 +275,37 @@ pub(crate) fn walk_parsed_expr_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut P
             v.visit_expr_mut(&mut a.target);
             v.visit_expr_mut(&mut a.source);
         }
+        ParsedExpr::CompoundAssign(a) => {
+            v.visit_expr_mut(&mut a.target);
+            v.visit_expr_mut(&mut a.source);
+        }
+        ParsedExpr::Supply(body) | ParsedExpr::StartBody(body) => super::walk_stmts_mut(v, body),
+        ParsedExpr::HyperAssign(a) => {
+            v.visit_expr_mut(&mut a.target);
+            v.visit_expr_mut(&mut a.value);
+        }
+        ParsedExpr::InlineSubset(declaration) => v.visit_stmt_mut(declaration),
+    }
+}
+
+/// [`super::walk_source::walk_method_assign_decl`], mutably.
+// Cost: O(n), n = nodes of the declaration's call.
+fn walk_method_assign_decl_mut<V: VisitMut + ?Sized>(
+    v: &mut V,
+    form: &mut crate::ast::method_assign_decl::MethodAssignDecl,
+) {
+    super::traits_mut(v, &mut form.custom_traits);
+    if let Some(expr) = &mut form.where_constraint {
+        v.visit_expr_mut(expr);
+    }
+    if let Some(callee) = &mut form.callee {
+        v.visit_expr_mut(callee);
+    }
+    super::exprs_mut(v, &mut form.args);
+    if let Some(chain) = &mut form.chain {
+        v.visit_expr_mut(chain);
+    }
+    if let Some(dims) = &mut form.shape {
+        super::exprs_mut(v, dims);
     }
 }

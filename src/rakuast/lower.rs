@@ -270,9 +270,9 @@ fn lower_signature_bind(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError
     }
     let signature = lower_expr(left)?;
     let rhs = lower_expr(named_child(node, "right")?)?;
-    crate::ast::signature_bind::expand(signature, rhs)
+    super::lower_parsed_stmt(crate::ast::parsed::ParsedStmt::SignatureBind { signature, rhs })
         .map(Some)
-        .ok_or_else(|| unsupported(node))
+        .map_err(|_| unsupported(node))
 }
 
 /// The modifier a `StatementModifier::*` node is.
@@ -301,6 +301,23 @@ const SHADOWABLE_STATEMENTS: [&str; 14] = [
 ];
 
 fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    finish_kept(lower_stmt_kept(node)?)
+}
+
+/// The statement a lowering built, lowered if it is a parser node kept in its
+/// written shape ([`lower_stmt_kept`]).
+// Cost: O(n), n = size of the statement.
+fn finish_kept(stmt: Stmt) -> Result<Stmt, RuntimeError> {
+    match stmt {
+        Stmt::Ast(node) => super::lower_parsed_stmt(*node),
+        other => Ok(other),
+    }
+}
+
+/// [`lower_stmt_inner`], except that a `.=` declaration comes back as its
+/// written [`crate::ast::parsed::ParsedStmt::MethodAssignDecl`] (in `Stmt::Ast`), which an
+/// expression-position declaration lowers differently.
+fn lower_stmt_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // A feed keeps declarations as operands until compiler lowering. The
     // loose-tail declaration splitter would turn a leftwards sink into an
     // initializer executed on every modifier iteration.
@@ -356,7 +373,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         {
             super::attribute_group::lower_colon(node)
         }
-        RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
+        RakuAstClass::VarDeclarationSimple => lower_var_decl_kept(node),
         // `my $o .= $m.uc`: a postfix chain over a `.=` declaration.
         RakuAstClass::ApplyPostfix if super::method_assign_decl::is_chained_declaration(node) => {
             super::method_assign_decl::lower_chained(node)
@@ -477,7 +494,8 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // source-level marker while reusing the parser's existing execution
         // expansion.
         RakuAstClass::ApplyInfix if infix_is_compound_assignment(node) => {
-            super::compound_stmt::restore_stmt(node, lower_compound_assign_expr(node)?)
+            let compound = compound_assign_node(node)?.ok_or_else(|| unsupported(node))?;
+            crate::parser::lower_compound_statement(compound).map_err(RuntimeError::new)
         }
         // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
         // a `Stmt::Assign`, not a general binary expression.
@@ -624,24 +642,15 @@ fn lower_comma_declarations(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeE
     {
         return Ok(None);
     }
-    let mut source = Vec::with_capacity(operands.len());
-    let mut expanded = Vec::new();
+    let mut declarations = Vec::with_capacity(operands.len());
     for value in operands {
         let ValueView::RakuAst(child) = value.view() else {
             return Err(unsupported(node));
         };
-        let statement = lower_stmt_inner(child)?;
-        match &statement {
-            Stmt::SyntheticBlock(parts) => expanded.extend(parts.iter().cloned()),
-            _ => expanded.push(statement.clone()),
-        }
-        source.push(statement);
+        declarations.push(lower_stmt_inner(child)?);
     }
-    expanded.insert(
-        0,
-        Stmt::SourceForm(Box::new(crate::ast::SourceForm::CommaDeclarations(source))),
-    );
-    Ok(Some(Stmt::SyntheticBlock(expanded)))
+    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::CommaDecls(declarations))
+        .map(Some)
 }
 
 // Cost: O(n + t), n = Native node fields, t = its traits.
@@ -1039,7 +1048,8 @@ pub(super) fn lower_dotty_assign(
             target: Box::new(Expr::Literal(Value::NIL)),
             name: crate::symbol::Symbol::intern(&name),
             args: arg_exprs(inner)?,
-            modifier: dispatch_modifier(inner)?,
+            // The method of `@a>>.=uc` carries the `.=` dispatch itself.
+            modifier: dispatch_modifier(inner)?.filter(|m| *m != '='),
             quoted,
         }
     } else {
@@ -1050,28 +1060,15 @@ pub(super) fn lower_dotty_assign(
         // gets its own copy.
         lower_method_postfix(Expr::Literal(Value::NIL), call)?
     };
-    let method_call = move |invocant: Expr| match &template {
-        Expr::HyperMethodCall {
-            name,
-            args,
-            modifier,
-            quoted,
-            ..
-        } => Expr::HyperMethodCall {
-            target: Box::new(invocant),
-            name: *name,
-            args: args.clone(),
-            modifier: *modifier,
-            quoted: *quoted,
+    let call = crate::parser::retarget_dotty_call(&template, target.clone());
+    Ok(crate::parser::lower_dotty_assignment(
+        crate::ast::parsed::CompoundAssign {
+            target,
+            op: ".".to_string(),
+            meta: crate::ast::parsed::CompoundMeta::Dotty,
+            source: call,
         },
-        _ => super::dynamic_method::retarget(&template, invocant),
-    };
-    if as_statement && matches!(&target, Expr::Var(topic) if topic == "_") {
-        return Ok(crate::parser::topic_dot_assign(method_call(target)));
-    }
-    Ok(crate::parser::wrap_dot_assign_with_terms(
-        target,
-        method_call,
+        as_statement,
         super::shadowed_terms::is_declared_term,
     ))
 }
@@ -2497,7 +2494,7 @@ fn compound_assign_base(assign: &RakuAstNode) -> Option<(String, usize)> {
 
 /// The metaoperator and base infix nested inside a bracketed assignment.
 // Cost: O(d), d = bracket depth, bounded at 128.
-fn bracketed_meta_assign(assign: &RakuAstNode) -> Option<(&'static str, String)> {
+fn bracketed_meta_assign(assign: &RakuAstNode) -> Option<(&'static str, String, usize)> {
     if assign.class != RakuAstClass::MetaInfixAssign {
         return None;
     }
@@ -2524,7 +2521,7 @@ fn bracketed_meta_assign(assign: &RakuAstNode) -> Option<(&'static str, String)>
         return None;
     }
     match positional_leaf(base).ok()?.view() {
-        ValueView::Str(op) => Some((meta, op.to_string())),
+        ValueView::Str(op) => Some((meta, op.to_string(), depth)),
         _ => None,
     }
 }
@@ -2553,63 +2550,76 @@ fn reverse_assign_base(infix: &RakuAstNode) -> Option<String> {
     }
 }
 
-/// Lower `ApplyInfix(MetaInfix::Assign(Infix(OP)))` to the parser's existing
-/// compound-assignment execution shape while retaining the source marker.
-pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+/// `ApplyInfix(left, MetaInfix::Assign([BracketedInfix…] Infix(OP)), right)`
+/// (a built-in compound operator, a set operator, or an infix called by name),
+/// a bracketed metaoperator, or `MetaInfix::Reverse` around the assignment,
+/// as the typed node the parser builds for it; `None` when the infix is none
+/// of these.
+// Cost: O(n), n = size of the node.
+fn compound_assign_node(
+    node: &RakuAstNode,
+) -> Result<Option<crate::ast::parsed::CompoundAssign>, RuntimeError> {
+    let infix = named_child(node, "infix")?;
+    let (op, meta) = match reverse_assign_base(infix) {
+        Some(op) => (op, crate::ast::parsed::CompoundMeta::Reverse),
+        None if let Some((meta, op, depth)) = bracketed_meta_assign(infix) => {
+            let kind = crate::ast::parsed::BracketedMeta::from_spelling(meta)
+                .ok_or_else(|| unsupported(node))?;
+            let depth = u8::try_from(depth).map_err(|_| unsupported(node))?;
+            (
+                op,
+                crate::ast::parsed::CompoundMeta::BracketedMeta(kind, depth),
+            )
+        }
+        None => {
+            let Some((op, depth)) = compound_assign_base(infix) else {
+                return Ok(None);
+            };
+            let meta = match depth {
+                0 if crate::parser::is_set_compound_op(&op)
+                    && !crate::parser::is_compound_assign_op(&op) =>
+                {
+                    crate::ast::parsed::CompoundMeta::Set
+                }
+                // `$x [foo]= 1`: a bracketed infix that is no compound
+                // operator applies as a reduction.
+                depth if depth > 0 && !crate::parser::is_compound_assign_op(&op) => {
+                    crate::ast::parsed::CompoundMeta::BracketedMeta(
+                        crate::ast::parsed::BracketedMeta::Reduce,
+                        u8::try_from(depth).map_err(|_| unsupported(node))?,
+                    )
+                }
+                // `$n mod= 5`, `$x +%+= 1`: a word or user-declared infix
+                // is called by name.
+                0 => crate::ast::parsed::CompoundMeta::Plain,
+                depth => crate::ast::parsed::CompoundMeta::Bracketed(
+                    u8::try_from(depth).map_err(|_| unsupported(node))?,
+                ),
+            };
+            (op, meta)
+        }
+    };
     let target =
         super::compound_stmt::restore_conditional_target(lower_expr(named_child(node, "left")?)?);
-    let meta = named_child(node, "infix")?;
-    // `$x R-= $y`: assigns to the right operand.
-    if let Some(base) = reverse_assign_base(meta) {
-        let rhs = lower_expr(named_child(node, "right")?)?;
-        let expanded =
-            crate::parser::expand_reverse_assign_expr(target.clone(), &base, rhs.clone());
-        return Ok(Expr::CompoundAssign {
-            target: Box::new(target),
-            op: format!("R{base}="),
-            rhs: Box::new(rhs),
-            expanded: Box::new(expanded),
-        });
-    }
-    if let Some((operator, base)) = bracketed_meta_assign(meta) {
-        let rhs = lower_expr(named_child(node, "right")?)?;
-        let expression = Expr::MetaOp {
-            meta: operator.to_string(),
-            op: base,
-            left: Box::new(target),
-            right: Box::new(rhs),
-        };
-        if node
-            .fields
-            .iter()
-            .any(super::compound_stmt::is_source_field)
-        {
-            return Ok(expression);
-        }
-        let raw = variable_spelling(named_child(node, "left")?)?;
-        let name = raw.strip_prefix('$').unwrap_or(&raw).to_string();
-        return Ok(Expr::AssignExpr {
-            name,
-            expr: Box::new(expression),
-            is_bind: false,
-        });
-    }
-    let (op, _) = compound_assign_base(meta).ok_or_else(|| unsupported(node))?;
-    let rhs = lower_expr(named_child(node, "right")?)?;
     // `* *= 2` curries to `{ $_ *= 2 }`; the parser expands a bare `*` target
     // so, and a read-back tree spells that `*` as a priming argument.
-    let expansion_target = match &target {
+    let target = match target {
         Expr::WhateverArg => Expr::Whatever,
-        other => other.clone(),
+        other => other,
     };
-    let expanded = crate::parser::expand_compound_assign_expr(expansion_target, &op, rhs.clone())
-        .map_err(RuntimeError::new)?;
-    Ok(Expr::CompoundAssign {
-        target: Box::new(target),
-        op: format!("{op}="),
-        rhs: Box::new(rhs),
-        expanded: Box::new(expanded),
-    })
+    Ok(Some(crate::ast::parsed::CompoundAssign {
+        target,
+        op,
+        meta,
+        source: lower_expr(named_child(node, "right")?)?,
+    }))
+}
+
+/// Lower `ApplyInfix(MetaInfix::Assign(Infix(OP)))` through the parser's one
+/// compound-assignment lowering.
+pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    let compound = compound_assign_node(node)?.ok_or_else(|| unsupported(node))?;
+    crate::parser::lower_compound_expression(compound).map_err(RuntimeError::new)
 }
 
 /// The `(name, right)` of an `ApplyInfix(Assignment)`: the target variable name
@@ -2906,6 +2916,12 @@ pub(super) fn arg_list_exprs(arglist: &RakuAstNode) -> Result<Vec<Expr>, Runtime
 /// attribute forms (which carry `scope`/`type`/`twigil`/`traits` fields) are the
 /// coverage boundary.
 pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    finish_kept(lower_var_decl_kept(node)?)
+}
+
+/// [`lower_var_decl`], except that a `.=` declaration comes back as its
+/// written [`crate::ast::parsed::ParsedStmt::MethodAssignDecl`] (in `Stmt::Ast`).
+pub(super) fn lower_var_decl_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // `my %h does R`: the role is a trait the parser expands separately. An
     // attribute (`has $.x does R`) reads its own traits.
     let is_attribute = matches!(leaf_str(node, "scope").as_deref(), Ok("has" | "HAS"))
@@ -3061,28 +3077,30 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         return Err(unsupported(node));
     }
     if let Some((method, callee, args)) = call_assign {
-        return Ok(crate::ast::method_assign_decl::expand(
-            crate::ast::method_assign_decl::MethodAssignDecl {
-                name,
-                anonymous,
-                type_constraint,
-                is_state,
-                is_our,
-                is_dynamic,
-                is_export,
-                export_tags: export_tags.clone(),
-                custom_traits,
-                where_constraint: None,
-                method: crate::symbol::Symbol::intern(&method),
-                callee: callee.map(Box::new),
-                args,
-                chain: None,
-                // The parser keeps a shaped `.=` declaration's dimensions for
-                // its source only (`my @c[2;2] .= new(:shape(2,2), …)`).
-                shape: shape_dims,
-                is_v6c: crate::parser::current_language_version_starts_with("6.c"),
-            },
-        ));
+        return Ok(Stmt::Ast(Box::new(
+            crate::ast::parsed::ParsedStmt::MethodAssignDecl(Box::new(
+                crate::ast::method_assign_decl::MethodAssignDecl {
+                    name,
+                    anonymous,
+                    type_constraint,
+                    is_state,
+                    is_our,
+                    is_dynamic,
+                    is_export,
+                    export_tags: export_tags.clone(),
+                    custom_traits,
+                    where_constraint: None,
+                    method: crate::symbol::Symbol::intern(&method),
+                    callee: callee.map(Box::new),
+                    args,
+                    chain: None,
+                    // The parser keeps a shaped `.=` declaration's dimensions for
+                    // its source only (`my @c[2;2] .= new(:shape(2,2), …)`).
+                    shape: shape_dims,
+                    is_v6c: crate::parser::current_language_version_starts_with("6.c"),
+                },
+            )),
+        )));
     }
     let expr = match shape_dims {
         Some(dims) if has_initializer => {
@@ -4150,7 +4168,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         RakuAstClass::StatementExpression => lower_expr(named_child(node, "expression")?),
         // An inline subset term declares its generated name and yields it.
-        RakuAstClass::TypeSubset => Ok(crate::ast::inline_subset_term::expand(lower_subset(node)?)),
+        RakuAstClass::TypeSubset => Ok(crate::ast::inline_subset_term::lower(lower_subset(node)?)),
         RakuAstClass::VarCompilerBlock => Ok(Expr::CodeVar("?BLOCK".to_string())),
         RakuAstClass::VarCompilerRoutine => Ok(Expr::CodeVar("?ROUTINE".to_string())),
         RakuAstClass::VarCompilerLookup
@@ -4300,17 +4318,20 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         | RakuAstClass::VarDeclarationSignature
                 )
             {
-                let mut statement = lower_stmt_inner(declaration)?;
                 // A `.=` declaration is one expression-position declaration,
-                // not the statement-level source-form record plus expansion.
-                if let Stmt::SyntheticBlock(parts) = &statement
-                    && let Some(Stmt::SourceForm(form)) = parts.first()
-                    && let crate::ast::SourceForm::MethodAssignDecl(form) = form.as_ref()
-                    && let Some(single) =
-                        crate::ast::method_assign_decl::expression_declaration(form)
-                {
-                    statement = single;
-                }
+                // not the statement-level expansion.
+                let statement = match lower_stmt_kept(declaration)? {
+                    Stmt::Ast(node) => match *node {
+                        crate::ast::parsed::ParsedStmt::MethodAssignDecl(form) => {
+                            match crate::ast::method_assign_decl::expression_declaration(&form) {
+                                Some(single) => single,
+                                None => crate::ast::method_assign_decl::expand(*form),
+                            }
+                        }
+                        other => super::lower_parsed_stmt(other)?,
+                    },
+                    other => other,
+                };
                 return Ok(Expr::Grouped(Box::new(Expr::DoStmt(Box::new(statement)))));
             }
             let lowered = lower_expr(inner)?;

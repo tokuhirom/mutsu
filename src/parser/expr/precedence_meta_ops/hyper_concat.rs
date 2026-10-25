@@ -60,6 +60,24 @@ fn lower_hyper_assign_target(target: Expr, source: Expr) -> Expr {
     }
 }
 
+/// `TARGET »=» VALUE` as written: kept in its RakuAST shape by a `.AST` parse
+/// when the target is a literal list of lvalues, lowered at once otherwise
+/// (ADR-10723 Stage 2, #14966).
+// Cost: O(n), n = size of the target and value.
+fn written_hyper_assignment(target: Expr, value: Expr, dwim_left: bool, dwim_right: bool) -> Expr {
+    if crate::ast::spelled::keeping() && matches!(target.peel_parens(), Expr::ArrayLiteral(_)) {
+        return Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::HyperAssign(
+            crate::ast::parsed::HyperAssign {
+                target,
+                value,
+                dwim_left,
+                dwim_right,
+            },
+        )));
+    }
+    lower_hyper_assignment(target, value, dwim_left, dwim_right)
+}
+
 /// `TARGET »=» VALUE` (and the `«=«` / `»=«` / `«=»` dwim spellings), as the
 /// compiler runs it. Built here for the parser and for RakuAST lowering.
 pub(crate) fn lower_hyper_assignment(
@@ -108,12 +126,6 @@ pub(crate) fn lower_hyper_assignment(
     //
     // The RHS still evaluates exactly once: it is this hyper op's right
     // operand, and the result is bound to a temp before any target is touched.
-    let record = crate::ast::Stmt::SourceForm(Box::new(crate::ast::SourceForm::HyperAssign {
-        target: target.clone(),
-        value: value.clone(),
-        dwim_left,
-        dwim_right,
-    }));
     let distributed = Expr::HyperOp {
         op: "=".to_string(),
         left: Box::new(Expr::Var(shape_name.clone())),
@@ -135,7 +147,6 @@ pub(crate) fn lower_hyper_assignment(
         where_constraint: None,
     };
     Expr::desugar_block(vec![
-        record,
         temp_decl(shape_name, hyper_assign_shape(&target)),
         temp_decl(temp_name.clone(), distributed),
         crate::ast::Stmt::Expr(lower_hyper_assign_target(
@@ -186,7 +197,7 @@ fn parse_hyper_rhs(input: &str, parent_prec: i32) -> PResult<'_, Expr> {
                 enrich_expected_error(err, "expected expression after hyper operator", r.len())
             })?;
             left = if op == "=" {
-                lower_hyper_assignment(left, right, dwim_left, dwim_right)
+                written_hyper_assignment(left, right, dwim_left, dwim_right)
             } else {
                 Expr::HyperOp {
                     op,
@@ -242,7 +253,7 @@ pub(crate) fn concat_expr(input: &str) -> PResult<'_, Expr> {
                 enrich_expected_error(err, "expected expression after hyper operator", r.len())
             })?;
             left = if op == "=" {
-                lower_hyper_assignment(left, right, dwim_left, dwim_right)
+                written_hyper_assignment(left, right, dwim_left, dwim_right)
             } else {
                 Expr::HyperOp {
                     op,

@@ -10,9 +10,10 @@ use super::convert::{
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::parsed::{
-    BlockParams, BlockSpans, ClauseKind, Conditional, ConditionalKind, LoopKind, LoopStmt,
-    Modified, ModifierKind, ParsedBlock, ParsedExpr, ParsedStmt,
+    BlockParams, BlockSpans, ClauseKind, CompoundMeta, Conditional, ConditionalKind, LoopKind,
+    LoopStmt, Modified, ModifierKind, ParsedBlock, ParsedExpr, ParsedStmt,
 };
+use crate::ast::{Expr, Stmt};
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The RakuAST node of a construct the parser built in its RakuAST shape.
@@ -79,6 +80,37 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
             let expression = super::convert::expression_of(&statement)
                 .ok_or_else(|| super::convert::unsupported("a declaration with a header"))?;
             statement_expression(super::package_header::apply(&expression, header)?)
+        }
+        ParsedStmt::TempDecl(decl) => {
+            statement_expression(super::temporize::convert_declaration(decl)?)
+        }
+        ParsedStmt::TakeLogicalTail { value, op, right } => {
+            statement_expression(super::convert::take_logical_tail_node(value, op, right)?)
+        }
+        ParsedStmt::CommaDecls(declarations) => {
+            statement_expression(super::convert::comma_declarations_node(declarations)?)
+        }
+        ParsedStmt::BarePhaser(phaser) => super::bare_prefix::bare_phaser_statement(phaser)?
+            .ok_or_else(|| super::convert::unsupported("a phaser over a bare statement"))?,
+        ParsedStmt::ImmediateCall { decl, args } => {
+            statement_expression(super::immediate_call::convert(decl, args)?)
+        }
+        ParsedStmt::AttributeModifier {
+            decl,
+            condition,
+            kind,
+        } => declaration_modifier_node(decl, condition, *kind)?,
+        ParsedStmt::AttributeGroup(attributes) => {
+            statement_expression(super::attribute_group::to_signature(attributes)?)
+        }
+        ParsedStmt::AttributeColonArglist(attributes) => {
+            statement_expression(super::attribute_group::convert_colon(attributes)?)
+        }
+        ParsedStmt::SignatureBind { signature, rhs } => {
+            statement_expression(super::convert::signature_bind_node(signature, rhs)?)
+        }
+        ParsedStmt::MethodAssignDecl(form) => {
+            statement_expression(super::method_assign_decl::convert(form)?)
         }
         ParsedStmt::SigillessDecl(d) => {
             let call_assign = match (&d.form, &d.expr) {
@@ -159,7 +191,34 @@ pub(super) fn parsed_expr_node(node: &ParsedExpr) -> Result<RakuAstNode, Runtime
             ),
             _ => assignment_node(a),
         },
+        ParsedExpr::CompoundAssign(a) => compound_assignment_node(a),
+        ParsedExpr::Supply(body) => super::react::convert_supply(body),
+        ParsedExpr::StartBody(body) => block_node(body),
+        ParsedExpr::HyperAssign(a) => {
+            super::convert::hyper_infix(&a.target, "=", &a.value, a.dwim_left, a.dwim_right)
+        }
+        ParsedExpr::InlineSubset(declaration) => inline_subset_node(declaration),
     }
+}
+
+/// An inline `subset` term: the `Type::Subset` expression of the declaration
+/// as written.
+// Cost: O(n), n = size of the declaration.
+fn inline_subset_node(declaration: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+    let statement = super::convert::convert_stmt(declaration)?
+        .ok_or_else(|| super::convert::unsupported("inline subset declaration"))?;
+    statement
+        .fields
+        .iter()
+        .find(|field| field.name == Some("expression"))
+        .and_then(|field| match &field.value {
+            RakuAstFieldValue::Node(value) => match value.view() {
+                ValueView::RakuAst(node) => Some(node.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .ok_or_else(|| super::convert::unsupported("inline subset declaration"))
 }
 
 /// `TARGET = SOURCE` as an `ApplyInfix` over a plain `Assignment`.
@@ -181,6 +240,103 @@ fn assignment_node(a: &crate::ast::parsed::Assign) -> Result<RakuAstNode, Runtim
             node_field(Some("right"), convert_expr(&a.source)?),
         ],
     })
+}
+
+/// `TARGET OP= SOURCE` as an `ApplyInfix` over `MetaInfix::Assign`, whose
+/// infix is wrapped the way it was written: `[+]=` in a `BracketedInfix` per
+/// bracket, a scalar `Z+=` in `MetaInfix::Zip` (measured on 2026.09).
+// Cost: O(n + d), n = size of the target and source, d = bracket depth.
+fn compound_assignment_node(
+    a: &crate::ast::parsed::CompoundAssign,
+) -> Result<RakuAstNode, RuntimeError> {
+    if a.meta == CompoundMeta::Dotty {
+        return super::convert::dotty_assignment(&a.target, &a.source);
+    }
+    if let CompoundMeta::BracketedMeta(kind, depth) = a.meta {
+        let written = crate::ast::Expr::MetaOp {
+            meta: kind.spelling().to_string(),
+            op: a.op.clone(),
+            left: Box::new(a.target.clone()),
+            right: Box::new(a.source.clone()),
+        };
+        return super::meta_infix::convert_bracketed_assignment(&written, usize::from(depth));
+    }
+    let node =
+        super::convert::compound_assignment_infix(&a.target, &compound_spelling(a), &a.source)?;
+    with_compound_meta(node, a.meta)
+}
+
+/// The assignment infix a compound marker spells: `+=`, or `R-=` for the
+/// reversed infix (`MetaInfix::Reverse` around the assignment).
+// Cost: O(k), k = length of the operator.
+pub(super) fn compound_spelling(a: &crate::ast::parsed::CompoundAssign) -> String {
+    match a.meta {
+        CompoundMeta::Reverse => format!("R{}=", a.op),
+        CompoundMeta::Dotty => ".=".to_string(),
+        _ => format!("{}=", a.op),
+    }
+}
+
+/// `node`, a compound `ApplyInfix` over `MetaInfix::Assign(Infix(OP))`, with
+/// its infix wrapped as `meta` spells it.
+// Cost: O(d), d = bracket depth.
+pub(super) fn with_compound_meta(
+    mut node: RakuAstNode,
+    meta: CompoundMeta,
+) -> Result<RakuAstNode, RuntimeError> {
+    let wrap = |inner: RakuAstNode, class: RakuAstClass| RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields: vec![node_field(None, inner)],
+    };
+    if matches!(
+        meta,
+        CompoundMeta::Plain
+            | CompoundMeta::Reverse
+            | CompoundMeta::Set
+            | CompoundMeta::Dotty
+            | CompoundMeta::BracketedMeta(..)
+    ) {
+        return Ok(node);
+    }
+    let infix = |meta: RakuAstNode| -> Option<RakuAstNode> {
+        let field = meta.fields.into_iter().next()?;
+        let RakuAstFieldValue::Node(value) = field.value else {
+            return None;
+        };
+        let ValueView::RakuAst(inner) = value.view() else {
+            return None;
+        };
+        Some(RakuAstNode::clone(inner))
+    };
+    for field in node.fields.iter_mut() {
+        if field.name != Some("infix") {
+            continue;
+        }
+        let RakuAstFieldValue::Node(value) = &field.value else {
+            continue;
+        };
+        let ValueView::RakuAst(assign) = value.view() else {
+            continue;
+        };
+        let mut inner = infix(RakuAstNode::clone(assign))
+            .ok_or_else(|| super::convert::unsupported("compound assignment infix"))?;
+        match meta {
+            CompoundMeta::Plain
+            | CompoundMeta::Reverse
+            | CompoundMeta::Set
+            | CompoundMeta::Dotty
+            | CompoundMeta::BracketedMeta(..) => {}
+            CompoundMeta::Bracketed(depth) => {
+                for _ in 0..depth {
+                    inner = wrap(inner, RakuAstClass::BracketedInfix);
+                }
+            }
+            CompoundMeta::Zip => inner = wrap(inner, RakuAstClass::MetaInfixZip),
+        }
+        *field = node_field(Some("infix"), wrap(inner, RakuAstClass::MetaInfixAssign));
+    }
+    Ok(node)
 }
 
 /// An assignment's target. A variable is the variable as written, including a
@@ -434,4 +590,32 @@ fn with_block_origins(mut node: RakuAstNode, block: BlockSpans) -> RakuAstNode {
     }
     body.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(blockoid)));
     node
+}
+
+/// An attribute declaration with its postfix modifier: the written
+/// declaration with a `condition-modifier`.
+// Cost: O(n), n = size of the declaration and the condition.
+fn declaration_modifier_node(
+    declaration: &Stmt,
+    condition: &Expr,
+    kind: crate::ast::decl_modifier::DeclarationModifier,
+) -> Result<RakuAstNode, RuntimeError> {
+    use crate::ast::decl_modifier::DeclarationModifier;
+    let mut statement = super::convert::convert_stmt(declaration)?
+        .ok_or_else(|| super::convert::unsupported("empty declaration modifier"))?;
+    statement.fields.push(node_field(
+        Some("condition-modifier"),
+        RakuAstNode {
+            origin: Default::default(),
+            class: match kind {
+                DeclarationModifier::If => RakuAstClass::StatementModifierIf,
+                DeclarationModifier::Unless => RakuAstClass::StatementModifierUnless,
+                DeclarationModifier::With => RakuAstClass::StatementModifierWith,
+                DeclarationModifier::Without => RakuAstClass::StatementModifierWithout,
+                DeclarationModifier::When => RakuAstClass::StatementModifierWhen,
+            },
+            fields: vec![node_field(None, convert_expr(condition)?)],
+        },
+    ));
+    Ok(statement)
 }

@@ -85,6 +85,16 @@ pub(super) fn convert(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> 
     Some(convert_temporized(&temporized))
 }
 
+/// `temp my $x`: the declaration under a `temp` prefix.
+// Cost: O(n), n = size of the declaration.
+pub(super) fn convert_declaration(decl: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+    convert_temporized(&Temporized {
+        is_temp: true,
+        target: Target::Declaration(Box::new(decl.clone())),
+        assigned: Assigned::No,
+    })
+}
+
 /// `temp $obj.method = value` / `temp $.attribute OP= value` as the written
 /// assignment around a `temp` prefix. The parser's statement stores the
 /// already-expanded writeback value for the compiler; its identity marker
@@ -160,6 +170,28 @@ fn convert_temporized(t: &Temporized) -> Result<RakuAstNode, RuntimeError> {
                 super::convert::compound_assignment_with_left(left, op, rhs)
             }
         }
+        Assigned::Compound(Expr::Ast(node)) => match node.as_ref() {
+            crate::ast::parsed::ParsedExpr::CompoundAssign(a)
+                if a.meta == crate::ast::parsed::CompoundMeta::Dotty =>
+            {
+                let left = prefix_node(t.is_temp, convert_expr(&a.target)?);
+                super::convert::dotty_assignment_with_left(left, &a.source)
+            }
+            crate::ast::parsed::ParsedExpr::CompoundAssign(a) => {
+                let left = prefix_node(t.is_temp, convert_expr(&a.target)?);
+                super::parsed_view::with_compound_meta(
+                    super::convert::compound_assignment_with_left(
+                        left,
+                        &super::parsed_view::compound_spelling(a),
+                        &a.source,
+                    )?,
+                    a.meta,
+                )
+            }
+            _ => Err(super::convert::unsupported(
+                "temp with an unrecognised compound assignment",
+            )),
+        },
         Assigned::Compound(_) => Err(super::convert::unsupported(
             "temp with an unrecognised compound assignment",
         )),

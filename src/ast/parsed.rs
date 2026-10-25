@@ -70,6 +70,10 @@ pub(crate) enum ParsedStmt {
     /// `my \x .= new`, as written. `rakuast::lower` adds the bookkeeping the
     /// compiler needs (`parser::build_sigilless_bind_stmt`).
     SigillessDecl(Box<SigillessSource>),
+    /// `temp my $x`: the declaration (a `Stmt::VarDecl`) under a `temp` prefix.
+    /// `rakuast::lower` follows it with the save of the fresh variable
+    /// (`ast::temporize::save`).
+    TempDecl(Box<Stmt>),
     /// A package-like declaration (`class`, `grammar`, `module`, `package`,
     /// `role`) with `:ver<..>` / `:auth<..>` adverbs on its name or an
     /// `is export`: the declaration as written and its header. `rakuast::lower`
@@ -83,6 +87,58 @@ pub(crate) enum ParsedStmt {
     /// A statement with statement modifiers (`Statement::Expression`'s
     /// `condition-modifier` and `loop-modifier`).
     Modified(Modified),
+    /// A phaser written over a bare statement, `BEGIN say 1` (the
+    /// `Stmt::Phaser`); RakuAST keeps the statement as the prefix's child,
+    /// which the phaser's block-less body cannot tell from `BEGIN { say 1 }`.
+    /// It lowers to the phaser itself.
+    BarePhaser(Box<Stmt>),
+    /// A named routine declared and called on the spot, `sub f($n) { ... }(21)`:
+    /// the declaration (a `Stmt::SubDecl`) and the call arguments as written.
+    /// `rakuast::lower` expands it into the declaration and a call of its name
+    /// (`ast::immediate_call::expand`).
+    ImmediateCall { decl: Box<Stmt>, args: Vec<Expr> },
+    /// `take VALUE and|or|xor|andthen|orelse|notandthen TAIL`: the value, the
+    /// loose operator and the tail as written. RakuAST makes the whole one
+    /// infix application with the `take` call as its left operand;
+    /// `rakuast::lower` evaluates the value once into a temporary, takes it,
+    /// and runs the short-circuit tail (`ast::expand_take_logical_tail`).
+    TakeLogicalTail {
+        value: Expr,
+        op: crate::token_kind::TokenKind,
+        right: Expr,
+    },
+    /// A comma list of declarations, `my $x = 1, my $y = 2`, as written: one
+    /// source statement whose execution is the declarations' expansions in
+    /// order, with no new lexical scope (RakuAST's `ApplyListInfix` over the
+    /// declarations).
+    CommaDecls(Vec<Stmt>),
+    /// `has $.x if COND` / `unless` / `with` / `without` / `when`: the
+    /// attribute declaration (a `Stmt::VarDecl` or a declaration list) and its
+    /// postfix modifier. The modifier cannot gate the declaration (attributes
+    /// install when the class is composed), so `rakuast::lower` expands it
+    /// into the declaration and a runtime-only test of the condition
+    /// (`ast::attribute_modifier::expand`).
+    AttributeModifier {
+        decl: Box<Stmt>,
+        condition: Expr,
+        kind: super::decl_modifier::DeclarationModifier,
+    },
+    /// `has Type ($.a, $.b)`: one visible RakuAST signature declaration over
+    /// the attribute declarations as written. `rakuast::lower` installs each
+    /// listed attribute separately (a block of the declarations).
+    AttributeGroup(Vec<Stmt>),
+    /// A declaration parsed inside a public attribute's colon argument list
+    /// (`has Int $.gid: has Str @.m;`), with the declaration that introduced
+    /// the list last. The nested declarations execute, but RakuAST displays the
+    /// declaration that introduced the colon list. Lowers to a block of them.
+    AttributeColonArglist(Vec<Stmt>),
+    /// `:(...) := RHS`: the signature literal and the right-hand side as
+    /// written. `rakuast::lower` expands the bind into temporary declarations
+    /// and assignments (`ast::signature_bind::expand`).
+    SignatureBind { signature: Expr, rhs: Expr },
+    /// `my [Type] $x .= method(...)`: the declaration as written.
+    /// `rakuast::lower` expands it (`ast::method_assign_decl::expand`).
+    MethodAssignDecl(Box<super::method_assign_decl::MethodAssignDecl>),
 }
 
 /// `STMT if COND`, `STMT for LIST`, `STMT if COND for LIST`: the statement as
@@ -177,6 +233,105 @@ pub(crate) enum SigillessForm {
 pub(crate) enum ParsedExpr {
     /// `TARGET = SOURCE` (`ApplyInfix` over `Assignment`).
     Assign(Assign),
+    /// `TARGET OP= SOURCE` (`ApplyInfix` over `MetaInfix::Assign`).
+    CompoundAssign(CompoundAssign),
+    /// `supply { BODY }`: the body as written, before the expansion rewrites
+    /// its `emit` / `done` onto the on-demand emitter
+    /// (`StatementPrefix::Supply`). It lowers to that expansion
+    /// (`parser::supply_method_call`).
+    Supply(Vec<Stmt>),
+    /// The body of a `start { BODY }` whose placeholder Raku rejects, as
+    /// written. It lowers to a do-block, so the compiler reports the
+    /// diagnostic instead of `make_anon_sub` consuming the placeholder as a
+    /// parameter.
+    StartBody(Vec<Stmt>),
+    /// `(LVALUES) »=» VALUE` over a literal list of lvalues (`ApplyInfix`
+    /// over `Assignment` under a hyper meta-infix). It lowers to the
+    /// element-wise expansion (`parser::hyper_assignment_expr`).
+    HyperAssign(HyperAssign),
+    /// An inline `subset` used as a term, `subset :: of Int where * > 0`: the
+    /// declaration as written. It lowers to the declaration followed by a
+    /// read of its generated name (`ast::inline_subset_term::lower`).
+    InlineSubset(Box<Stmt>),
+}
+
+/// `(LVALUES) »=» VALUE`: the target, the value and the dwim flags as written.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct HyperAssign {
+    pub(crate) target: Expr,
+    pub(crate) value: Expr,
+    pub(crate) dwim_left: bool,
+    pub(crate) dwim_right: bool,
+}
+
+/// A compound assignment as written: the target, the infix it applies, how
+/// the infix was spelled, and the source.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct CompoundAssign {
+    pub(crate) target: Expr,
+    /// The base infix, as `CompoundAssignOp::from_op_name` reads it (`+`,
+    /// `//`, `min`).
+    pub(crate) op: String,
+    pub(crate) meta: CompoundMeta,
+    pub(crate) source: Expr,
+}
+
+/// How a compound assignment's infix was written. Every spelling assigns the
+/// same way to a scalar; the tree keeps what the source wrote.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum CompoundMeta {
+    /// `$x += 1`.
+    Plain,
+    /// `$x [+]= 1`, `$x [[+]]= 1`: the infix inside this many brackets.
+    Bracketed(u8),
+    /// `$x Z+= 1` on a scalar.
+    Zip,
+    /// `$s (|)= 5`, `$s ∪= 5`: a set operator, as `op` spells it.
+    Set,
+    /// `$x .= meth(args)`: `source` is the method call applied to the target
+    /// as written, and `op` is `.`.
+    Dotty,
+    /// `$x R-= $y`: the reversed infix, which assigns to its right operand
+    /// (`$y -= $x`). Its `op` may be `=` (`$x R= $y`).
+    Reverse,
+    /// `@a [X+]= @b`: a metaoperator over `op` inside this many brackets.
+    BracketedMeta(BracketedMeta, u8),
+}
+
+/// The metaoperator of a bracketed compound assignment (`[X+]=`, `[Z~]=`,
+/// `[R-]=`), or none (`Reduce`: a bare infix in brackets that is not a
+/// compound-assignment operator).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum BracketedMeta {
+    Cross,
+    Zip,
+    Reverse,
+    Reduce,
+}
+
+impl BracketedMeta {
+    /// The metaoperator a spelling (`X`, `Z`, `R`, `reduce`) names.
+    // Cost: O(1).
+    pub(crate) fn from_spelling(spelling: &str) -> Option<Self> {
+        match spelling {
+            "X" => Some(Self::Cross),
+            "Z" => Some(Self::Zip),
+            "R" => Some(Self::Reverse),
+            "reduce" => Some(Self::Reduce),
+            _ => None,
+        }
+    }
+
+    /// The metaoperator's spelling, as `Expr::MetaOp` keeps it.
+    // Cost: O(1).
+    pub(crate) fn spelling(self) -> &'static str {
+        match self {
+            Self::Cross => "X",
+            Self::Zip => "Z",
+            Self::Reverse => "R",
+            Self::Reduce => "reduce",
+        }
+    }
 }
 
 /// An assignment as written: the target with its parentheses, and the source.
@@ -378,8 +533,13 @@ impl ParsedStmt {
     // Cost: O(1).
     pub(crate) fn inner_stmt(&self) -> Option<&Stmt> {
         match self {
-            ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
-            ParsedStmt::PackageHeader { decl, .. } => Some(decl),
+            ParsedStmt::For { stmt, .. }
+            | ParsedStmt::BindDecl(stmt)
+            | ParsedStmt::BarePhaser(stmt) => Some(stmt),
+            ParsedStmt::PackageHeader { decl, .. }
+            | ParsedStmt::TempDecl(decl)
+            | ParsedStmt::ImmediateCall { decl, .. }
+            | ParsedStmt::AttributeModifier { decl, .. } => Some(decl),
             _ => None,
         }
     }
@@ -409,8 +569,13 @@ impl ParsedStmt {
     // Cost: O(1).
     pub(crate) fn inner_stmt_mut(&mut self) -> Option<&mut Stmt> {
         match self {
-            ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
-            ParsedStmt::PackageHeader { decl, .. } => Some(decl),
+            ParsedStmt::For { stmt, .. }
+            | ParsedStmt::BindDecl(stmt)
+            | ParsedStmt::BarePhaser(stmt) => Some(stmt),
+            ParsedStmt::PackageHeader { decl, .. }
+            | ParsedStmt::TempDecl(decl)
+            | ParsedStmt::ImmediateCall { decl, .. }
+            | ParsedStmt::AttributeModifier { decl, .. } => Some(decl),
             _ => None,
         }
     }
@@ -427,7 +592,18 @@ impl ParsedStmt {
             ParsedStmt::When { condition, .. } => vec![condition],
             ParsedStmt::WhileLoop(w) => vec![&w.condition],
             ParsedStmt::Loop(l) => l.condition.iter().chain(l.step.iter()).collect(),
-            ParsedStmt::For { .. } | ParsedStmt::BindDecl(_) => Vec::new(),
+            ParsedStmt::For { .. }
+            | ParsedStmt::BindDecl(_)
+            | ParsedStmt::TempDecl(_)
+            | ParsedStmt::BarePhaser(_)
+            | ParsedStmt::AttributeGroup(_)
+            | ParsedStmt::AttributeColonArglist(_)
+            | ParsedStmt::MethodAssignDecl(_)
+            | ParsedStmt::SignatureBind { .. }
+            | ParsedStmt::CommaDecls(_) => Vec::new(),
+            ParsedStmt::TakeLogicalTail { value, right, .. } => vec![value, right],
+            ParsedStmt::ImmediateCall { args, .. } => args.iter().collect(),
+            ParsedStmt::AttributeModifier { condition, .. } => vec![condition],
             ParsedStmt::DoesDecl { role, init, .. } => std::iter::once(role).chain(init).collect(),
             ParsedStmt::WillDecl { .. } => Vec::new(),
             ParsedStmt::DeclTail { tail, .. } => vec![tail],
@@ -461,6 +637,16 @@ impl ParsedStmt {
             | ParsedStmt::DeclTail { .. }
             | ParsedStmt::SigillessDecl(_)
             | ParsedStmt::PackageHeader { .. }
+            | ParsedStmt::TempDecl(_)
+            | ParsedStmt::BarePhaser(_)
+            | ParsedStmt::ImmediateCall { .. }
+            | ParsedStmt::AttributeModifier { .. }
+            | ParsedStmt::AttributeGroup(_)
+            | ParsedStmt::AttributeColonArglist(_)
+            | ParsedStmt::MethodAssignDecl(_)
+            | ParsedStmt::SignatureBind { .. }
+            | ParsedStmt::CommaDecls(_)
+            | ParsedStmt::TakeLogicalTail { .. }
             | ParsedStmt::Modified(_) => Vec::new(),
         }
     }
@@ -514,5 +700,33 @@ impl Stmt {
             Stmt::Ast(node) => node.inner_stmt_mut().expect("checked above"),
             _ => unreachable!("checked above"),
         }
+    }
+}
+
+impl ParsedStmt {
+    /// The declarations of a comma list as written, flattening a list that is
+    /// itself one of the operands (`my $a, my $b, my $c` parses as `my $a,
+    /// (my $b, my $c)`).
+    // Cost: O(d), d = declarations.
+    pub(crate) fn comma_operands(stmt: Stmt) -> Vec<Stmt> {
+        match stmt {
+            Stmt::Ast(node) => match *node {
+                ParsedStmt::CommaDecls(declarations) => declarations,
+                other => vec![Stmt::Ast(Box::new(other))],
+            },
+            other => vec![other],
+        }
+    }
+}
+
+impl ParsedExpr {
+    /// The body of a `start { BODY }` the compiler must reject for its
+    /// placeholder: kept as written by a `.AST` parse, a do-block otherwise.
+    // Cost: O(1).
+    pub(crate) fn start_body(body: Vec<Stmt>) -> Expr {
+        if super::spelled::keeping() {
+            return Expr::Ast(Box::new(ParsedExpr::StartBody(body)));
+        }
+        Expr::desugar_block(body)
     }
 }

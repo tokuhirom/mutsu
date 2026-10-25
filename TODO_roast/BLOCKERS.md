@@ -15,6 +15,7 @@ re-run under mutsu (`MUTSU_FUDGE=1`, **release** build, cwd `roast/`, 120 s budg
 the local **Rakudo v2026.09** (unfudged, same cwd). The mutsu and raku columns below are those
 numbers unless a row says otherwise; the per-file diagnoses were re-checked where the numbers
 moved. Previous full re-measurement: 2026-07-14.
+The raku column (and `raku-baseline.tsv`) was re-captured on Rakudo v2026.09 on 2026-10-24 (#14851); see "v2026.09 refresh" in `raku-baseline.md`.
 
 ## How to read this document
 

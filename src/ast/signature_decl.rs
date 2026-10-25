@@ -16,51 +16,9 @@ use super::{Expr, Stmt};
 /// expansion. The compiler skips it.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum SourceForm {
-    /// The declaration and modifier before their shared executable expansion.
-    DeclarationModifier {
-        declaration: Box<Stmt>,
-        condition: Expr,
-        kind: super::decl_modifier::DeclarationModifier,
-    },
     /// Traits written on a routine, in source order; opens its body.
     RoutineTraits(Vec<super::routine_trait::RoutineTrait>),
     SignatureDecl(SignatureDecl),
-    /// `my $x = 1, my $y = 2`: the declarations before their comma-list
-    /// execution expansion is flattened into one synthetic block.
-    CommaDeclarations(Vec<Stmt>),
-    /// `:(...) := RHS`: the parser expands the signature bind into temporary
-    /// declarations and assignments; the model layer keeps the written bind.
-    SignatureBind {
-        signature: Expr,
-        rhs: Expr,
-    },
-    /// An inline `subset` term expands to a declaration followed by a read of
-    /// its generated name. Keep the declaration as written for RakuAST.
-    InlineSubsetTerm(Box<Stmt>),
-    /// `has Type ($.a, $.b)`: one visible RakuAST signature declaration,
-    /// whose parser expansion installs each listed attribute separately.
-    AttributeGroup(Vec<Stmt>),
-    /// A declaration parsed inside a public attribute's colon argument list.
-    /// The nested declarations execute, but Rakudo's RakuAST gist displays the
-    /// declaration that introduced the colon list.
-    AttributeColonArglist(Vec<Stmt>),
-    MethodAssignDecl(super::method_assign_decl::MethodAssignDecl),
-    /// `supply { BODY }`: the body as written, before the expansion rewrites
-    /// its `emit` / `done` onto the on-demand emitter. It opens the emitter
-    /// lambda's body.
-    SupplyBlock(Vec<Stmt>),
-    /// A `start { BODY }` whose placeholder is rejected by Raku. The parser
-    /// keeps this marker when using a desugared block to defer that diagnostic
-    /// until compilation instead of letting `make_anon_sub` consume it.
-    StartBlock,
-    /// `take VALUE and|or|xor|andthen|orelse|notandthen TAIL`: the parser
-    /// expands the value-producing control call into a temporary and a
-    /// `Stmt::Take`, while the model layer keeps the written infix form.
-    TakeLogicalTail {
-        value: Expr,
-        op: crate::token_kind::TokenKind,
-        right: Expr,
-    },
     /// `with COND -> PARAM { BODY }`: the written parameter and body, which
     /// open the then-branch of the expansion `with_then_branch` builds.
     WithPointy {
@@ -82,53 +40,11 @@ pub(crate) enum SourceForm {
         param_defs: Vec<super::ParamDef>,
         body: Vec<Stmt>,
     },
-    /// `(LVALUES) »=» VALUE`: the written target, value and dwim flags, which
-    /// open the expansion `hyper_assignment_expr` builds for a literal list of
-    /// lvalues.
-    HyperAssign {
-        target: Expr,
-        value: Expr,
-        dwim_left: bool,
-        dwim_right: bool,
-    },
-    /// `BEGIN say 1`: a phaser written over a bare statement (ADR-12199). It
-    /// opens a one-statement expansion whose second statement is the phaser;
-    /// only a spelling-keeping parse builds it.
-    BarePhaser,
-    /// `sub foo { … }(ARGS)`: a routine declaration called on the spot. It
-    /// opens the expansion `immediate_call::expand` builds (the declaration,
-    /// then the call); only a spelling-keeping parse builds it.
-    ImmediateCall,
     /// `my $x OP= EXPR`: a declaration initialized by a compound assignment.
     /// It opens the expansion `decl_compound_assign::expand` builds (the
     /// declaration, then the assignment, whose `Expr::CompoundAssign` keeps
     /// the written operator and right-hand side).
     DeclarationCompoundAssign,
-}
-
-/// Open the parser expansion of one parenthesized `has` declaration with its
-/// source declarations. The marker lets RakuAST keep the single signature
-/// declaration that Rakudo exposes while the compiler still installs each
-/// attribute separately.
-// Cost: O(a), a = total size of the grouped declarations and their expressions.
-pub(crate) fn attribute_group_expansion(attributes: Vec<Stmt>) -> Stmt {
-    let mut statements = Vec::with_capacity(attributes.len() + 1);
-    statements.push(Stmt::SourceForm(Box::new(SourceForm::AttributeGroup(
-        attributes.clone(),
-    ))));
-    statements.extend(attributes);
-    Stmt::SyntheticBlock(statements)
-}
-
-/// Open the class-body expansion produced by a colon argument list.
-// Cost: O(a), a = total size of the nested declarations and their expressions.
-pub(crate) fn attribute_colon_expansion(attributes: Vec<Stmt>) -> Stmt {
-    let mut statements = Vec::with_capacity(attributes.len() + 1);
-    statements.push(Stmt::SourceForm(Box::new(
-        SourceForm::AttributeColonArglist(attributes.clone()),
-    )));
-    statements.extend(attributes);
-    Stmt::SyntheticBlock(statements)
 }
 
 /// `my|our|state [TYPE] (VARS) [is default(EXPR)] [= RHS | := RHS]`.

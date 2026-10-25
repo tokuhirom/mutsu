@@ -271,7 +271,6 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
                 || super::declared_routines::is_bareword_field(field)
                 || super::declarator_docs::is_field(field)
                 || super::postfix_grouping::is_source_field(field)
-                || super::compound_stmt::is_source_field(field)
                 || super::routine_source::is_legacy_source_field(field)
                 || field.name == Some("scope")
                     && super::derived_methods::routine_default_scope(node).is_some_and(|default| {

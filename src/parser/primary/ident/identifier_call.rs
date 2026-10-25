@@ -1580,12 +1580,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     .into_iter()
                     .any(|placeholder| placeholder != "%_")
                 {
-                    let mut body = body;
-                    body.insert(
-                        0,
-                        Stmt::SourceForm(Box::new(crate::ast::SourceForm::StartBlock)),
-                    );
-                    Expr::desugar_block(body)
+                    crate::ast::parsed::ParsedExpr::start_body(body)
                 } else {
                     make_anon_sub(body)
                 };

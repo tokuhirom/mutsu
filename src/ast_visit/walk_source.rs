@@ -7,14 +7,6 @@ use crate::ast::{SignatureDecl, SignatureInit, SignatureVar, SourceForm};
 // Cost: O(n), n = source-record subtree nodes.
 pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &'ast SourceForm) {
     match form {
-        SourceForm::DeclarationModifier {
-            declaration,
-            condition,
-            kind: _,
-        } => {
-            v.visit_stmt(declaration);
-            v.visit_expr(condition);
-        }
         SourceForm::IfPointy { param_defs, body } => {
             params(v, param_defs);
             walk_stmts(v, body);
@@ -34,67 +26,7 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
             v.visit_param(param_def);
             walk_stmts(v, body);
         }
-        SourceForm::SupplyBlock(body) => walk_stmts(v, body),
-        SourceForm::TakeLogicalTail { value, right, .. } => {
-            v.visit_expr(value);
-            v.visit_expr(right);
-        }
-        SourceForm::HyperAssign {
-            target,
-            value,
-            dwim_left: _,
-            dwim_right: _,
-        } => {
-            v.visit_expr(target);
-            v.visit_expr(value);
-        }
         SourceForm::SignatureDecl(declaration) => v.visit_signature_decl(declaration),
-        SourceForm::CommaDeclarations(declarations) => walk_stmts(v, declarations),
-        SourceForm::SignatureBind { signature, rhs } => {
-            v.visit_expr(signature);
-            v.visit_expr(rhs);
-        }
-        SourceForm::InlineSubsetTerm(declaration) => v.visit_stmt(declaration),
-        SourceForm::AttributeGroup(attributes) => walk_stmts(v, attributes),
-        SourceForm::AttributeColonArglist(attributes) => walk_stmts(v, attributes),
-        SourceForm::MethodAssignDecl(declaration) => {
-            let crate::ast::method_assign_decl::MethodAssignDecl {
-                name,
-                anonymous: _,
-                type_constraint,
-                is_state: _,
-                is_our: _,
-                is_dynamic: _,
-                is_export: _,
-                export_tags,
-                custom_traits,
-                where_constraint,
-                method,
-                callee,
-                args,
-                chain,
-                shape,
-                is_v6c: _,
-            } = declaration;
-            v.visit_name(name, NameKind::VarDecl);
-            names(v, type_constraint.iter(), NameKind::Type);
-            names(v, export_tags, NameKind::Module);
-            traits(v, custom_traits);
-            if let Some(expr) = where_constraint {
-                v.visit_expr(expr);
-            }
-            match callee {
-                Some(callee) => v.visit_expr(callee),
-                None => v.visit_name(&method.resolve(), NameKind::Method),
-            }
-            exprs(v, args);
-            if let Some(chain) = chain {
-                v.visit_expr(chain);
-            }
-            if let Some(dims) = shape {
-                exprs(v, dims);
-            }
-        }
         SourceForm::RoutineTraits(items) => {
             for item in items {
                 match item {
@@ -119,10 +51,51 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
                 }
             }
         }
-        SourceForm::BarePhaser
-        | SourceForm::ImmediateCall
-        | SourceForm::DeclarationCompoundAssign
-        | SourceForm::StartBlock => {}
+        SourceForm::DeclarationCompoundAssign => {}
+    }
+}
+
+/// The names and expressions of a written `.=` declaration.
+// Cost: O(n), n = nodes of the declaration's call.
+pub(crate) fn walk_method_assign_decl<'ast, V: Visit<'ast> + ?Sized>(
+    v: &mut V,
+    declaration: &'ast crate::ast::method_assign_decl::MethodAssignDecl,
+) {
+    let crate::ast::method_assign_decl::MethodAssignDecl {
+        name,
+        anonymous: _,
+        type_constraint,
+        is_state: _,
+        is_our: _,
+        is_dynamic: _,
+        is_export: _,
+        export_tags,
+        custom_traits,
+        where_constraint,
+        method,
+        callee,
+        args,
+        chain,
+        shape,
+        is_v6c: _,
+    } = declaration;
+    v.visit_name(name, NameKind::VarDecl);
+    names(v, type_constraint.iter(), NameKind::Type);
+    names(v, export_tags, NameKind::Module);
+    traits(v, custom_traits);
+    if let Some(expr) = where_constraint {
+        v.visit_expr(expr);
+    }
+    match callee {
+        Some(callee) => v.visit_expr(callee),
+        None => v.visit_name(&method.resolve(), NameKind::Method),
+    }
+    exprs(v, args);
+    if let Some(chain) = chain {
+        v.visit_expr(chain);
+    }
+    if let Some(dims) = shape {
+        exprs(v, dims);
     }
 }
 
@@ -183,7 +156,7 @@ pub(crate) fn walk_signature_var<'ast, V: Visit<'ast> + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Expr, Stmt};
+    use crate::ast::Stmt;
 
     #[derive(Default)]
     struct Names {
@@ -210,16 +183,14 @@ mod tests {
 
     #[test]
     fn source_records_are_opt_in_and_walk_their_original_declarations() {
-        let record = Stmt::SourceForm(Box::new(SourceForm::DeclarationModifier {
-            declaration: Box::new(Stmt::Expr(Expr::Var("written".into()))),
-            condition: Expr::Var("condition".into()),
-            kind: crate::ast::decl_modifier::DeclarationModifier::If,
-        }));
+        let record = Stmt::SourceForm(Box::new(SourceForm::RoutineTraits(vec![
+            RoutineTrait::Unsupported("written".into()),
+        ])));
         let mut ordinary = Names::default();
         ordinary.visit_stmt(&record);
         assert!(ordinary.names.is_empty());
         let mut copying = CopyingNames::default();
         copying.visit_stmt(&record);
-        assert_eq!(copying.0.names, ["written", "condition"]);
+        assert_eq!(copying.0.names, ["written"]);
     }
 }

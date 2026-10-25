@@ -105,7 +105,7 @@ mod stmt;
 pub(crate) fn is_raku_identifier(input: &str) -> bool {
     stmt::parse_raku_ident(input).is_ok_and(|(rest, _)| rest.is_empty())
 }
-pub(crate) use expr::{atomic_elem_update, wrap_dot_assign, wrap_dot_assign_with_terms};
+pub(crate) use expr::{atomic_elem_update, retarget_dotty_call};
 pub(crate) use outer_redecl::{find_scope_diagnostic, scope_diagnostic_error};
 pub(crate) use stmt::assign::{
     DOTTY_ASSIGN_OP, compound_assign_op_from_name, compound_assigned_value_expr,
@@ -121,7 +121,6 @@ pub(crate) use stmt::decl::wrap_with_will_phasers;
 pub(crate) use stmt::decl::{attribute_compound_assign, expand_attribute_compound_assign};
 pub(crate) use stmt::simple::is_user_declared_value_term;
 pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutable;
-pub(crate) use stmt::simple_expr_stmt::topic_dot_assign;
 pub(crate) use stmt::{conditional_declaration, topical_declaration};
 
 /// Parse a regex callable's argument list without exposing the parser's
@@ -130,14 +129,49 @@ pub(crate) fn parse_regex_call_arg_list(input: &str) -> Option<(&str, Vec<crate:
     primary::parse_call_arg_list(input).ok()
 }
 
-/// The execution shape of the reverse metaop assignment `LHS R<op>= RHS`
-/// (`op` is `-`, or `=` for `R=`): it assigns to its right operand.
-pub(crate) fn expand_reverse_assign_expr(
-    lhs: crate::ast::Expr,
-    op: &str,
-    rhs: crate::ast::Expr,
+/// Lower a compound assignment in expression position: the one lowering of
+/// the compound-assignment family (`stmt::assign::compound_lower`), for
+/// consumers that cannot name the parser's parse-error type.
+// Cost: O(n), n = size of the target and source.
+pub(crate) fn lower_compound_expression(
+    node: crate::ast::parsed::CompoundAssign,
+) -> Result<crate::ast::Expr, String> {
+    stmt::assign::lower_compound_expression(node).map_err(|error| error.to_string())
+}
+
+/// Lower `TARGET .= meth(args)` (`stmt::assign::compound_lower`): the one
+/// lowering of the `.=` assignment, for a hand-built tree. `is_term` names
+/// the barewords the tree declares as sigilless terms.
+// Cost: O(n), n = size of the target and the call.
+pub(crate) fn lower_dotty_assignment(
+    node: crate::ast::parsed::CompoundAssign,
+    as_statement: bool,
+    is_term: fn(&str) -> bool,
 ) -> crate::ast::Expr {
-    expr::precedence::build_compound_assign_target_expr(rhs, op, lhs)
+    stmt::assign::lower_dotty(node, as_statement, is_term)
+}
+
+/// Whether `op` is the base infix of a compound assignment the compound
+/// lowering takes (`+` of `+=`).
+// Cost: O(k), k = number of compound operators.
+pub(crate) fn is_compound_assign_op(op: &str) -> bool {
+    stmt::assign::compound_assign_op_from_name(op).is_some()
+}
+
+/// Whether `op` is a set operator a compound assignment applies (`(|)` of
+/// `(|)=`, `∪` of `∪=`).
+// Cost: O(k), k = number of set operator spellings.
+pub(crate) fn is_set_compound_op(op: &str) -> bool {
+    stmt::assign::set_op_from_spelling(op).is_some()
+}
+
+/// [`lower_compound_expression`] for a compound assignment written as a
+/// statement.
+// Cost: O(n), n = size of the target and source.
+pub(crate) fn lower_compound_statement(
+    node: crate::ast::parsed::CompoundAssign,
+) -> Result<crate::ast::Stmt, String> {
+    stmt::assign::lower_compound_statement(node).map_err(|error| error.to_string())
 }
 
 /// Reuse the parser's proven compound-assignment expansion from consumers that
@@ -401,6 +435,13 @@ pub(crate) fn lowered_assignment(expr: crate::ast::Expr) -> crate::ast::Expr {
     match expr {
         crate::ast::Expr::Ast(node) => match *node {
             crate::ast::parsed::ParsedExpr::Assign(a) => crate::rakuast::lower_expression_assign(a),
+            // A kept compound assignment passed the target check when it was
+            // built, so lowering it cannot fail.
+            crate::ast::parsed::ParsedExpr::CompoundAssign(a) => {
+                stmt::assign::lower_compound_expression(a)
+                    .expect("a kept compound assignment lowers")
+            }
+            other => crate::ast::Expr::Ast(Box::new(other)),
         },
         other => other,
     }

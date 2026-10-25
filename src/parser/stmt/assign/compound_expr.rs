@@ -765,8 +765,8 @@ pub(crate) fn dotty_assign_marker(lhs: Expr, method_call: Expr, expanded: Expr) 
 /// The marker for the reverse metaop assignment `LHS R-= RHS`, which assigns to
 /// its RIGHT operand (`RHS -= LHS`). `op` is the base operator (`-`, or `=` for
 /// `R=`); the marker's `op` is spelled `R-=` the way the source writes it.
-/// Lowering rebuilds the execution shape through
-/// [`crate::parser::expand_reverse_assign_expr`].
+/// The compound lowering (`compound_lower`) builds the execution shape with
+/// [`crate::parser::expr::precedence::build_compound_assign_target_expr`].
 pub(crate) fn reverse_assign_marker(lhs: Expr, op: &str, rhs: Expr, expanded: Expr) -> Expr {
     Expr::CompoundAssign {
         target: Box::new(lhs),
@@ -785,7 +785,16 @@ pub(crate) const DOTTY_ASSIGN_OP: &str = ".=";
 /// and the `OP=` compound assignments, so it is the one assignment-like
 /// expression that may appear unparenthesized inside a ternary branch.
 pub(crate) fn is_dotty_assign(expr: &Expr) -> bool {
-    matches!(expr, Expr::CompoundAssign { op, .. } if op == DOTTY_ASSIGN_OP)
+    match expr {
+        Expr::CompoundAssign { op, .. } => op == DOTTY_ASSIGN_OP,
+        // The same `.=` as a `.AST` parse keeps it (ADR-10723 Stage 2).
+        Expr::Ast(node) => matches!(
+            node.as_ref(),
+            crate::ast::parsed::ParsedExpr::CompoundAssign(a)
+                if a.meta == crate::ast::parsed::CompoundMeta::Dotty
+        ),
+        _ => false,
+    }
 }
 
 pub(crate) fn build_custom_compound_assign_expr(

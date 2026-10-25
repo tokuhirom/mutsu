@@ -219,6 +219,19 @@ fn mark_expr_after_plant(expr: &mut Expr) {
                 mark_expr(&mut a.target);
                 mark_value_leaf(&mut a.source);
             }
+            crate::ast::parsed::ParsedExpr::CompoundAssign(a) => {
+                mark_expr(&mut a.target);
+                mark_expr(&mut a.source);
+            }
+            crate::ast::parsed::ParsedExpr::Supply(body)
+            | crate::ast::parsed::ParsedExpr::StartBody(body) => mark_stmts(body),
+            crate::ast::parsed::ParsedExpr::HyperAssign(a) => {
+                mark_expr(&mut a.target);
+                mark_expr(&mut a.value);
+            }
+            crate::ast::parsed::ParsedExpr::InlineSubset(declaration) => {
+                super::stmt::mark_stmt(declaration)
+            }
         },
         // A source-preserving compound assignment has three views of its
         // children: the source target/RHS used by RakuAST and the expanded

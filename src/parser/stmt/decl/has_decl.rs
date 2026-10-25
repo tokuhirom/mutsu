@@ -189,7 +189,9 @@ fn has_decl_list(
     let (rest, _) = opt_char(rest, ';');
     Ok((
         rest,
-        crate::ast::signature_decl::attribute_group_expansion(stmts),
+        crate::parser::stmt::control::parsed_block::finish_total(
+            crate::ast::parsed::ParsedStmt::AttributeGroup(stmts),
+        ),
     ))
 }
 
@@ -1337,7 +1339,13 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         modifier_sink.as_ref(),
         modifier_source,
     ) {
-        crate::ast::attribute_modifier::expand(decl, condition, kind)
+        crate::parser::stmt::control::parsed_block::finish_total(
+            crate::ast::parsed::ParsedStmt::AttributeModifier {
+                decl: Box::new(decl),
+                condition,
+                kind,
+            },
+        )
     } else {
         match (assign_stmt, modifier_sink) {
             (None, None) => decl,
@@ -1355,13 +1363,12 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // nested declaration comes first: rakudo finishes it while still parsing
     // this one's arglist, so it is the earlier attribute in `.^attributes`.
     let mut stmts = match tail {
-        Some(Stmt::SyntheticBlock(v)) => match v.first() {
-            Some(Stmt::SourceForm(form)) => match form.as_ref() {
-                crate::ast::SourceForm::AttributeGroup(attributes)
-                | crate::ast::SourceForm::AttributeColonArglist(attributes) => attributes.clone(),
-                _ => v,
-            },
-            _ => v,
+        Some(Stmt::SyntheticBlock(v)) => v,
+        // A parse that keeps the written nodes holds the nested group as one.
+        Some(Stmt::Ast(node)) => match *node {
+            crate::ast::parsed::ParsedStmt::AttributeGroup(attributes)
+            | crate::ast::parsed::ParsedStmt::AttributeColonArglist(attributes) => attributes,
+            other => vec![Stmt::Ast(Box::new(other))],
         },
         Some(s) => vec![s],
         None => Vec::new(),
@@ -1372,7 +1379,9 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     }
     Ok((
         colon_rest,
-        crate::ast::signature_decl::attribute_colon_expansion(stmts),
+        crate::parser::stmt::control::parsed_block::finish_total(
+            crate::ast::parsed::ParsedStmt::AttributeColonArglist(stmts),
+        ),
     ))
 }
 

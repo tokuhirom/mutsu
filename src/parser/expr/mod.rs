@@ -33,12 +33,13 @@ pub(in crate::parser) use postfix::is_atomic_elem_target;
 pub(in crate::parser) use postfix::is_conservative_angle_key_char;
 pub(in crate::parser) use postfix::is_subscript_expr;
 pub(in crate::parser) use postfix::parse_superscript_exp;
+pub(in crate::parser) use postfix::parse_trailing_call_adverbs;
 pub(in crate::parser) use postfix::postfix_expr_continue;
 pub(in crate::parser) use postfix::without_pending_prefix;
 pub(in crate::parser) use postfix::{ParsedBracketIndex, parse_bracket_indices_inner};
 pub(in crate::parser) use postfix::{QuotedMethodName, parse_quoted_method_name};
-pub(crate) use postfix::{atomic_elem_update, wrap_dot_assign, wrap_dot_assign_with_terms};
-pub(in crate::parser) use postfix::{dot_assign_to_name, parse_trailing_call_adverbs};
+pub(crate) use postfix::{atomic_elem_update, wrap_dot_assign_with_terms};
+pub(crate) use postfix::{dot_assign_target, retarget_dotty_call};
 use precedence::ternary;
 
 // Re-exports for WhateverCode priming-scope detection (`whatever.rs`). These
@@ -439,16 +440,25 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
     if let Some((after_op, op)) = crate::parser::stmt::assign::parse_compound_assign_op(r) {
         let (after_ws, _) = ws(after_op)?;
         if let Ok((r2, rhs)) = precedence::ternary_mode(after_ws, operators::ExprMode::ListopArg)
-            && let Ok(result) = crate::parser::stmt::assign::build_compound_assign_expr(
+            && let Ok(compound) = crate::parser::stmt::assign::written_compound_assignment(
                 expr.clone(),
                 op,
-                rhs.clone(),
+                crate::ast::parsed::CompoundMeta::Plain,
+                rhs,
             )
         {
+            return Ok((r2, wrap_finished_expr(compound)));
+        }
+    }
+    if let Some((after_op, set_tok, spelling)) =
+        crate::parser::stmt::assign::parse_set_compound_assign_op(r)
+    {
+        let (after_ws, _) = ws(after_op)?;
+        if let Ok((r2, rhs)) = precedence::ternary_mode(after_ws, operators::ExprMode::ListopArg) {
             return Ok((
                 r2,
-                wrap_finished_expr(crate::parser::stmt::assign::compound_assign_marker(
-                    expr, op, rhs, result,
+                wrap_finished_expr(crate::parser::stmt::assign::written_set_assignment(
+                    expr, spelling, set_tok, rhs,
                 )),
             ));
         }
@@ -672,11 +682,13 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
             is_bind,
         },
         // The same, as a `.AST` parse keeps it.
-        Expr::Ast(node) if is_kept_variable_assign_node(&node) => {
-            let crate::ast::parsed::ParsedExpr::Assign(mut a) = *node;
-            a.source = reassociate_fat_arrow_operand(a.source, value);
-            Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(a)))
-        }
+        Expr::Ast(node) if is_kept_variable_assign_node(&node) => match *node {
+            crate::ast::parsed::ParsedExpr::Assign(mut a) => {
+                a.source = reassociate_fat_arrow_operand(a.source, value);
+                Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(a)))
+            }
+            other => reassociated_fat_arrow_pair(Expr::Ast(Box::new(other)), value),
+        },
         // `%h<k> := $x => 1`: `=>` and `:=` share the item-assignment tier and
         // associate right, so the pair is the bound value, not the bind's result.
         Expr::IndexAssign {
@@ -717,7 +729,9 @@ fn is_kept_variable_assign(expr: &Expr) -> bool {
 
 // Cost: O(d), d = levels of parentheses around the target.
 fn is_kept_variable_assign_node(node: &crate::ast::parsed::ParsedExpr) -> bool {
-    let crate::ast::parsed::ParsedExpr::Assign(a) = node;
+    let crate::ast::parsed::ParsedExpr::Assign(a) = node else {
+        return false;
+    };
     matches!(
         a.target.peel_parens(),
         Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::BareWord(_)

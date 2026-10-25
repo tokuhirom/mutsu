@@ -19,6 +19,11 @@ pub(crate) fn is_assignment_expr(expr: &Expr) -> bool {
                     | Expr::Index { .. }
                     | Expr::MultiDimIndex { .. }
             ),
+            crate::ast::parsed::ParsedExpr::CompoundAssign(_) => true,
+            crate::ast::parsed::ParsedExpr::Supply(_)
+            | crate::ast::parsed::ParsedExpr::StartBody(_)
+            | crate::ast::parsed::ParsedExpr::HyperAssign(_)
+            | crate::ast::parsed::ParsedExpr::InlineSubset(_) => false,
         },
         _ => false,
     }
@@ -253,10 +258,23 @@ pub(crate) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
     if let Some((after_op, op)) = parse_compound_assign_op(r) {
         let (after_ws, _) = ws(after_op)?;
         if let Ok((r2, rhs)) = call_arg_ternary_expr(after_ws)
-            && let Ok(result) = build_compound_assign_expr(expr.clone(), op, rhs.clone())
+            && let Ok(compound) = crate::parser::stmt::assign::written_compound_assignment(
+                expr.clone(),
+                op,
+                crate::ast::parsed::CompoundMeta::Plain,
+                rhs,
+            )
         {
+            return Ok((r2, crate::parser::expr::wrap_finished_expr(compound)));
+        }
+    }
+    if let Some((after_op, set_tok, spelling)) =
+        crate::parser::stmt::assign::parse_set_compound_assign_op(r)
+    {
+        let (after_ws, _) = ws(after_op)?;
+        if let Ok((r2, rhs)) = call_arg_ternary_expr(after_ws) {
             let compound =
-                crate::parser::stmt::assign::compound_assign_marker(expr, op, rhs, result);
+                crate::parser::stmt::assign::written_set_assignment(expr, spelling, set_tok, rhs);
             return Ok((r2, crate::parser::expr::wrap_finished_expr(compound)));
         }
     }
@@ -367,8 +385,12 @@ pub(crate) fn ternary_trailing_assignment<'a>(
                 rhs_in.len(),
             )
         })?;
-        let assigned =
-            crate::parser::stmt::assign::preserve_compound_assign(ternary_expr.clone(), op, rhs)?;
+        let assigned = crate::parser::stmt::assign::written_compound_assignment(
+            ternary_expr.clone(),
+            op,
+            crate::ast::parsed::CompoundMeta::Plain,
+            rhs,
+        )?;
         return Ok(Some((r2, assigned)));
     }
     if r.starts_with('=')
