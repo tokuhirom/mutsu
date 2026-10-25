@@ -2685,7 +2685,12 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     if let Some(node) = super::deferred_name::convert(expr) {
         return node;
     }
-    if let Some(node) = subscript_adverb::convert(expr) {
+    // The adverbs of a subscript lower from the class of the subscript.
+    let adverbs = {
+        let _inspected = super::passthrough::Inspecting::enter();
+        subscript_adverb::convert(expr)
+    };
+    if let Some(node) = adverbs {
         return node;
     }
     match expr {
