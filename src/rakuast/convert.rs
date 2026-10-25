@@ -4341,9 +4341,8 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             None,
             Vec::new(),
         ),
-        // Measured on 2026.09: rakudo folds an assignment to `@a[…]` or
-        // `%h<…>` into the postcircumfix as its `assignee`, but keeps an
-        // `Assignment` infix over a `%h{…}` subscript.
+        // `@a[i] = v` is the typed assignment node a `.AST` parse keeps
+        // (ADR-10723 Stage 2).
         // `@a[i] := v` / `%h<k> := v`: an `IndexAssign` whose value is the
         // parser's bind marker, rendered as rakudo does -- a plain `:=` infix
         // over the subscript. A slice or multi-dimensional index
@@ -4379,48 +4378,6 @@ fn convert_expr_at(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 ],
             })
         }
-        Expr::IndexAssign {
-            target,
-            index,
-            value,
-            is_positional: true,
-            ..
-        } => subscript_node(target, index, true, Some(value), Vec::new()),
-        // `%h<k> = v`: the assignment folds into the literal hash index.
-        Expr::IndexAssign {
-            target,
-            index,
-            value,
-            is_positional: false,
-            spelling: crate::ast::IndexSpelling::Angle,
-        } if angle_key_text(index).is_some() => {
-            angle_subscript_node(target, index, Some(value), Vec::new())
-        }
-        Expr::IndexAssign {
-            target,
-            index,
-            value,
-            is_positional: false,
-            ..
-        } => Ok(RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::ApplyInfix,
-            fields: vec![
-                node_field(
-                    Some("left"),
-                    subscript_node(target, index, false, None, Vec::new())?,
-                ),
-                node_field(
-                    Some("infix"),
-                    RakuAstNode {
-                        origin: Default::default(),
-                        class: RakuAstClass::Assignment,
-                        fields: Vec::new(),
-                    },
-                ),
-                node_field(Some("right"), convert_expr(value)?),
-            ],
-        }),
         // A bare `{ ... }` block in expression position.
         Expr::Block(body) => signature_block_node(body),
         Expr::AnonSub {
