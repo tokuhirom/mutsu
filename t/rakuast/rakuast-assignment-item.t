@@ -7,7 +7,7 @@ use experimental :rakuast;
 # own. And `@a X= 1` is a cross metaoperator over the assignment. This file
 # passes under both mutsu and raku.
 
-plan 13;
+plan 15;
 
 sub item-flags(Str $src) {
     $src.AST.statements[*-1].expression.raku.comb(/'Assignment.new' ['(:item)']?/).join(' ')
@@ -24,6 +24,10 @@ is item-flags(Q[my $x; $x.foo = 5]), 'Assignment.new', 'a method call target';
 is item-flags(Q[my ($a, $b); $a = $b = 1]), 'Assignment.new(:item) Assignment.new(:item)',
     'an assignment clears the sigil for the next variable';
 is item-flags(Q[my @a; my $x; @a, $x = 2]), 'Assignment.new', 'an earlier array';
+is item-flags(Q[my @a; my $x; say (@a, $x = 2)]), 'Assignment.new',
+    'an earlier array in a parenthesized list';
+is item-flags(Q[my @a; my $x; my $y = (@a, $x = 2)]), 'Assignment.new',
+    'an earlier array in a nested list';
 is item-flags(Q[my @a; my $x; @a.push: $x = 1]), 'Assignment.new(:item)',
     'an argument list is an expression of its own';
 is item-flags(Q[my $x; say 1, $x = 2]), 'Assignment.new(:item)', 'a listop argument';
