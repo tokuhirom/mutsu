@@ -461,7 +461,14 @@ pub(crate) fn written_topic_dotty_assignment(call: Expr, as_statement: bool) -> 
 /// chain retargets to its root variable. The statement form writes through a
 /// whole-container topic instead (`given @a { .=uc }`).
 // Cost: O(1).
-fn topic_dotty_expression(call: Expr) -> Expr {
+fn topic_dotty_expression(mut call: Expr) -> Expr {
+    // The sugar flag (unread by the compiler) is what tells this assignment
+    // from a written `$_ = $_.meth` to the ternary's precedence check
+    // (`compound_expr::is_dotty_assign`). A written `$_ = .meth` is
+    // indistinguishable from it there.
+    if let Expr::MethodCall { sugar, .. } = &mut call {
+        *sugar = true;
+    }
     Expr::AssignExpr {
         name: "_".to_string(),
         expr: Box::new(call),
