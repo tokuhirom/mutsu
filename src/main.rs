@@ -283,6 +283,14 @@ fn run_main() {
         );
     }
 
+    // RAKULIB: the comma-separated repository specs Rakudo-targeting tools
+    // (Pakku's test/build children, `zef look`) hand to a child interpreter.
+    // Named by the invoking environment like MUTSULIB and searched right
+    // after it, so `-I` and MUTSULIB entries win (docs/security.md).
+    if let Ok(rakulib) = env::var("RAKULIB") {
+        lib_paths.extend(Interpreter::rakulib_specs(&rakulib));
+    }
+
     #[cfg(feature = "native")]
     if repl_flag || (filtered_args.is_empty() && io::stdin().is_terminal()) {
         mutsu::repl::run_repl();

@@ -55,8 +55,11 @@ the user (see the AGENTS.md hard rule on weakening protections), not a judgment 
   run a module's mainline; they must be off whenever the caller is an analysis path. Adding a new
   parse-time execution path (a probe, `BEGIN`, constant folding by running code, trait or slang
   activation) requires the same gate.
-- **No implicit search path.** Module search is exactly: `use lib` → `-I` → `MUTSULIB` → installed
-  → bundled batteries. A new fallback that consults the cwd, the script directory or walks ancestor
+- **No implicit search path.** Module search is exactly: `use lib` → `-I` → `MUTSULIB` → `RAKULIB` →
+  installed → bundled batteries. `RAKULIB` (comma-separated `inst#`/`file#`/bare-path specs, other
+  schemes ignored) is read because Rakudo-targeting tools such as Pakku hand their repository chain
+  to child interpreters through it; like `MUTSULIB` the invoking environment names it, and it is
+  searched after `MUTSULIB` so an explicit setting always wins. Nothing named by neither is searched. A new fallback that consults the cwd, the script directory or walks ancestor
   directories is banned; roast's `packages/` helpers belong behind roast-only configuration.
 - **Caches are keyed and private.** A cache entry is keyed by canonical path, content hash and the
   binary's identity, lives under the user's own cache directory, and is created `0700`/`0600`.
