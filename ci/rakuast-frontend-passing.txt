@@ -5332,6 +5332,7 @@ t/rakuast/rakuast-decl-compound-node.t
 t/rakuast/rakuast-decl-default-trait.t
 t/rakuast/rakuast-decl-postfix-tail.t
 t/rakuast/rakuast-decl-subscript-assign-node.t
+t/rakuast/rakuast-decl-tail-sink-warning.t
 t/rakuast/rakuast-declaration-compound-assign.t
 t/rakuast/rakuast-declaration-feeds.t
 t/rakuast/rakuast-declaration-given-modifier.t
