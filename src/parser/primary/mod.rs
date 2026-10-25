@@ -762,20 +762,25 @@ pub(in crate::parser) use regex::parse_call_arg_list;
 // Cost: O(1) when the parse keeps no origins, O(n) otherwise, n = size of
 // `expr`.
 pub(in crate::parser) fn note_origin(input: &str, rest: &str, expr: &Expr) {
-    if crate::ast::spelled::keeping() {
+    if crate::ast::spelled::keeping() && crate::parser::term_origins::is_new(input, rest, expr) {
         crate::parser::term_origins::note(expr, term_span(input, rest));
     }
 }
 
 pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
-    let (rest, expr) = primary_term(input)?;
-    note_origin(input, rest, &expr);
+    let mut fresh = true;
+    let (rest, expr) = primary_term(input, &mut fresh)?;
+    // A remembered term was noted when it was first read.
+    if fresh {
+        note_origin(input, rest, &expr);
+    }
     Ok((rest, expr))
 }
 
-fn primary_term(input: &str) -> PResult<'_, Expr> {
+fn primary_term<'a>(input: &'a str, fresh: &mut bool) -> PResult<'a, Expr> {
     let _nesting = crate::parser::NestingGuard::enter(input)?;
     if let Some(cached) = PRIMARY_MEMO.get(input) {
+        *fresh = false;
         return cached;
     }
     let result = (|| {
