@@ -1,5 +1,6 @@
 use super::*;
 
+use crate::ast::routine_trait::{self, ParentKind, RoutineTrait};
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
@@ -217,6 +218,8 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
     let mut parent_args: Vec<(String, Vec<Expr>)> = Vec::new();
     let mut export_tags: Vec<String> = Vec::new();
     let mut is_export = false;
+    // The header traits as written, for a parse that keeps spellings.
+    let mut written: Vec<RoutineTrait> = Vec::new();
     while let Some(r2) = keyword("is", r) {
         let (r2, _) = ws1(r2)?;
         let (r2, parent_name) = qualified_ident(r2)?;
@@ -234,6 +237,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
             {
                 parent_args.push((full_name.clone(), exprs));
             }
+            super::class_decl::note_parent(&mut written, ParentKind::Is, &full_name, &parent_args);
             parents.push(full_name);
             let (r2, _) = ws(r2)?;
             r = r2;
@@ -245,7 +249,19 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
                 is_export = true;
                 super::class_decl::push_export_tags(r2, &mut export_tags);
             }
-            let r2 = crate::parser::helpers::skip_balanced_parens(r2);
+            let r2 = if parent_name == "export" {
+                crate::parser::helpers::skip_balanced_parens(r2)
+            } else {
+                let (r2, argument) = super::class_decl::trait_argument(r2);
+                routine_trait::note(&mut written, || match argument {
+                    Ok(argument) => RoutineTrait::Is {
+                        name: parent_name.clone(),
+                        argument,
+                    },
+                    Err(()) => RoutineTrait::Unsupported(format!("is {parent_name}(...)")),
+                });
+                r2
+            };
             let (r2, _) = ws(r2)?;
             r = r2;
         }
@@ -275,6 +291,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
         // and uses `does_parents` only to tell composition from punning, so a
         // `does` role must appear in both — otherwise the grammar composes
         // nothing at all.
+        super::class_decl::note_parent(&mut written, ParentKind::Does, &full_name, &parent_args);
         parents.push(full_name.clone());
         does_parents.push(full_name);
         let (r2, _) = ws(r2)?;
@@ -312,6 +329,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
         // the synthetic export statement, which would make it block-local.
         custom_traits.push(super::class_decl::export_type_marker(&export_tags));
     }
+    routine_trait::attach(&mut body, written);
     let grammar_stmt = Stmt::ClassDecl {
         spans,
         name: Symbol::intern(&name),

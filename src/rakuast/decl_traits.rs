@@ -250,33 +250,3 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<(CustomTraits, bool), RuntimeE
 pub(super) fn is_class_trait(name: &str) -> bool {
     is_custom_name(name)
 }
-
-/// A class's own `is NAME` / `is NAME(ARGS)` traits as `Trait::Is` nodes, in
-/// the order the parser kept them.
-// Cost: O(t + a), t = custom traits, a = size of their arguments.
-pub(super) fn class_custom_traits(
-    custom_traits: &[(String, Option<Expr>)],
-) -> Result<Vec<Value>, RuntimeError> {
-    let mut items = Vec::new();
-    for (name, arg) in custom_traits {
-        if !is_class_trait(name) {
-            continue;
-        }
-        let mut fields = vec![node_field(Some("name"), name_from_identifier(name))];
-        if let Some(arg) = arg {
-            let argument = match arg {
-                Expr::Grouped(inner) if matches!(**inner, Expr::ArrayLiteral(_)) => {
-                    super::attribute::paren_argument(inner)?
-                }
-                other => super::attribute::paren_argument(other)?,
-            };
-            fields.push(node_field(Some("argument"), argument));
-        }
-        items.push(Value::rakuast(Box::new(RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::TraitIs,
-            fields,
-        })));
-    }
-    Ok(items)
-}

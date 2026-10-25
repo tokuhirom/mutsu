@@ -125,7 +125,6 @@ pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut
         Stmt::RoleDecl {
             spans: _,
             name: _,
-            header_order: _,
             type_params: _,
             type_param_defs,
             is_export: _,

@@ -106,6 +106,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
         parent_args,
         is_rw: clauses_is_rw,
         custom_traits: clause_traits,
+        written,
     } = clauses;
     // Same `also is Parent` / `also is rw` extraction the statement path does:
     // `PDF::COS.loader = class PDF::Class::Loader { also is PDF::COS::Loader; … }`
@@ -129,6 +130,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             true
         }
     });
+    crate::ast::routine_trait::attach(&mut body, written);
     prepend_does_header(&mut body, &does_roles);
     Ok((
         rest,
@@ -171,19 +173,32 @@ struct AnonClassClauses {
     /// A lowercase `is trait(arg)` / `is trait<arg>` the statement form hands
     /// to `trait_mod:<is>` with its argument (`class C is rs-class(MyRS) { }`).
     custom_traits: Vec<(String, Option<Expr>)>,
+    /// The clauses as written, for a parse that keeps spellings.
+    written: Vec<crate::ast::routine_trait::RoutineTrait>,
 }
 
 /// The argument of a lowercase class trait: `(expr)` or `<word>`, as the
 /// statement form parses `is trait-name(arg)` / `is trait-name<arg>`.
-fn parse_trait_argument(input: &str) -> Option<(&str, Expr)> {
+fn parse_trait_argument(
+    input: &str,
+) -> Option<(&str, Expr, crate::ast::routine_trait::TraitArgument)> {
+    use crate::ast::routine_trait::TraitArgument;
     if input.starts_with('<') {
         let (rest, arg) = crate::parser::helpers::parse_trait_angle_arg(input).ok()?;
-        return Some((rest, Expr::Literal(crate::value::Value::str(arg))));
+        return Some((
+            rest,
+            Expr::Literal(crate::value::Value::str(arg.clone())),
+            TraitArgument::Words(arg),
+        ));
     }
-    let inner = input.strip_prefix('(')?;
-    let (after_expr, expr) = crate::parser::expr::expression(inner).ok()?;
-    let after = after_expr.trim_start().strip_prefix(')')?;
-    Some((after, expr))
+    let (after, argument) = crate::parser::stmt::class::trait_argument(input);
+    match argument {
+        Ok(Some(TraitArgument::Parentheses(Expr::ArrayLiteral(items)))) if items.is_empty() => None,
+        Ok(Some(TraitArgument::Parentheses(expr))) => {
+            Some((after, expr.clone(), TraitArgument::Parentheses(expr)))
+        }
+        _ => None,
+    }
 }
 
 /// Parse the `is` / `does` clauses after a class expression's name (or `::`).
@@ -198,14 +213,17 @@ fn parse_anon_class_clauses(mut r: &str) -> PResult<'_, AnonClassClauses> {
             let (r2, parent) = parse_qualified_ident_with_hyphens(r2)?;
             if parent == "rw" {
                 clauses.is_rw = true;
+                crate::parser::stmt::class::note_is(&mut clauses.written, &parent, None);
             } else if parent.starts_with(|c: char| c.is_ascii_lowercase())
-                && let Some((after, arg)) = parse_trait_argument(r2)
+                && let Some((after, arg, source)) = parse_trait_argument(r2)
             {
+                crate::parser::stmt::class::note_is(&mut clauses.written, &parent, Some(source));
                 clauses.custom_traits.push((parent, Some(arg)));
                 let (after, _) = ws(after)?;
                 r = after;
                 continue;
             } else {
+                crate::parser::stmt::class::note_is(&mut clauses.written, &parent, None);
                 clauses.parents.push(parent);
             }
             let (r2, _) = ws(r2)?;
@@ -218,6 +236,12 @@ fn parse_anon_class_clauses(mut r: &str) -> PResult<'_, AnonClassClauses> {
             if let Some(exprs) = parse_bracket_arg_exprs(bracket_suffix) {
                 clauses.parent_args.push((role.clone(), exprs));
             }
+            crate::parser::stmt::class::note_parent(
+                &mut clauses.written,
+                crate::ast::routine_trait::ParentKind::Does,
+                &role,
+                &clauses.parent_args,
+            );
             clauses.parents.push(role.clone());
             clauses.does_roles.push(role);
             let (r2, _) = ws(r2)?;
@@ -341,7 +365,6 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
         rest,
         Expr::DoStmt(Box::new(Stmt::RoleDecl {
             spans: Default::default(),
-            header_order: Vec::new(),
             name: Symbol::intern(&name),
             type_params,
             type_param_defs,

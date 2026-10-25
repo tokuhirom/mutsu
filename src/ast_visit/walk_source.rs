@@ -30,6 +30,12 @@ pub(crate) fn walk_routine_traits<'ast, V: Visit<'ast> + ?Sized>(
                         v.visit_name(name, NameKind::Type)
                     }
                     RoutineTrait::Handles(term) => v.visit_expr(term),
+                    RoutineTrait::Parent { name, args, .. } => {
+                        v.visit_name(name, NameKind::Type);
+                        for arg in args.iter().flatten() {
+                            v.visit_expr(arg);
+                        }
+                    }
                     RoutineTrait::Unsupported(source) => v.visit_name(source, NameKind::Source),
                 }
             }

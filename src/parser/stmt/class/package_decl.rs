@@ -256,7 +256,8 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let mut export_tags: Vec<String> = Vec::new();
         let mut role_is_rw = false;
         let mut custom_traits: Vec<(String, Option<crate::ast::Expr>)> = Vec::new();
-        let mut header_order = Vec::new();
+        let mut written: Vec<crate::ast::routine_trait::RoutineTrait> = Vec::new();
+        let mut parent_args: Vec<(String, Vec<crate::ast::Expr>)> = Vec::new();
         loop {
             if let Some(r2) = keyword("does", r) {
                 let (r2, _) = ws1(r2)?;
@@ -265,8 +266,17 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
                 let (r2, _) = ws(r2)?;
                 let args = super::class_decl::parse_bracket_arg_exprs(bracket_suffix);
-                header_order.push(crate::ast::RoleHeaderTrait::Parent(parent_roles.len()));
-                parent_roles.push((format!("{}{}", role_name, bracket_suffix), args, false));
+                let full_name = format!("{}{}", role_name, bracket_suffix);
+                if let Some(args) = &args {
+                    parent_args.push((full_name.clone(), args.clone()));
+                }
+                super::class_decl::note_parent(
+                    &mut written,
+                    crate::ast::routine_trait::ParentKind::Does,
+                    &full_name,
+                    &parent_args,
+                );
+                parent_roles.push((full_name, args, false));
                 r = r2;
                 continue;
             }
@@ -278,15 +288,21 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 // the `::SubsetHOW` suffix is not left as a stray term.
                 let (r2, trait_name) = qualified_ident(r2)?;
                 if trait_name == "rw" {
-                    header_order.push(crate::ast::RoleHeaderTrait::Rw);
+                    super::class_decl::note_is(&mut written, &trait_name, None);
                     role_is_rw = true;
                     let r2 = skip_balanced_parens(r2);
                     let (r2, _) = ws(r2)?;
                     r = r2;
                 } else if trait_name == "export" {
-                    header_order.push(crate::ast::RoleHeaderTrait::Export);
                     is_export = true;
                     super::class_decl::push_export_tags(r2, &mut export_tags);
+                    let tags = export_tags.clone();
+                    super::class_decl::note_is(
+                        &mut written,
+                        &trait_name,
+                        (!tags.is_empty())
+                            .then_some(crate::ast::routine_trait::TraitArgument::ExportTags(tags)),
+                    );
                     let r2 = skip_balanced_parens(r2);
                     let (r2, _) = ws(r2)?;
                     r = r2;
@@ -296,7 +312,11 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     // is recorded via custom_traits like an unrecognized
                     // `is` trait with a parenthesized argument).
                     let (r3, arg) = parse_trait_angle_arg(r2)?;
-                    header_order.push(crate::ast::RoleHeaderTrait::Custom(custom_traits.len()));
+                    super::class_decl::note_is(
+                        &mut written,
+                        &trait_name,
+                        Some(crate::ast::routine_trait::TraitArgument::Words(arg.clone())),
+                    );
                     custom_traits
                         .push((trait_name, Some(crate::ast::Expr::Literal(Value::str(arg)))));
                     let (r3, _) = ws(r3)?;
@@ -309,10 +329,26 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     let has_parens = r2.starts_with('(');
                     let r2 = skip_balanced_parens(r2);
                     if !has_parens && trait_name.starts_with(|c: char| c.is_ascii_uppercase()) {
-                        header_order.push(crate::ast::RoleHeaderTrait::Parent(parent_roles.len()));
+                        super::class_decl::note_parent(
+                            &mut written,
+                            crate::ast::routine_trait::ParentKind::Is,
+                            &trait_name,
+                            &parent_args,
+                        );
                         parent_roles.push((trait_name, None, true));
                     } else {
-                        header_order.push(crate::ast::RoleHeaderTrait::Custom(custom_traits.len()));
+                        crate::ast::routine_trait::note(&mut written, || {
+                            if has_parens {
+                                crate::ast::routine_trait::RoutineTrait::Unsupported(format!(
+                                    "is {trait_name}(...)"
+                                ))
+                            } else {
+                                crate::ast::routine_trait::RoutineTrait::Is {
+                                    name: trait_name.clone(),
+                                    argument: None,
+                                }
+                            }
+                        });
                         custom_traits.push((trait_name, None));
                     }
                     let (r2, _) = ws(r2)?;
@@ -338,6 +374,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 },
             );
         }
+        crate::ast::routine_trait::attach(&mut body, written);
         if role_kw != "role" {
             custom_traits.push(crate::parser::declare_how_marker(role_kw));
         } else if let Some(marker) = super::super::simple::supersede_marker("role") {
@@ -350,7 +387,6 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 Stmt::RoleDecl {
                     spans: Default::default(),
                     name: Symbol::intern(&name),
-                    header_order,
                     type_params,
                     type_param_defs,
                     is_export,

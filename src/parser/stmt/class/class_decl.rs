@@ -1,5 +1,6 @@
 use super::*;
 
+use crate::ast::routine_trait::{self, ParentKind, RoutineTrait, TraitArgument};
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
@@ -90,6 +91,73 @@ pub(crate) fn parse_optional_bracket_suffix(input: &str) -> PResult<'_, &str> {
     }
     let end = end.ok_or_else(|| PError::expected("closing ']'"))?;
     Ok((&input[end..], &input[..end]))
+}
+
+/// Record `is NAME` / `is NAME(ARG)` / `is NAME<WORDS>` as the header wrote it.
+// Cost: O(1) plus the trait, when a parse keeps spellings.
+pub(crate) fn note_is(
+    written: &mut Vec<RoutineTrait>,
+    name: &str,
+    argument: Option<TraitArgument>,
+) {
+    routine_trait::note(written, || RoutineTrait::Is {
+        name: name.to_string(),
+        argument,
+    });
+}
+
+/// Record `is TYPE` / `does ROLE` / `hides TYPE` as the header wrote it, with
+/// the bracketed arguments the parser read for `name`.
+// Cost: O(p), p = parents with arguments, when a parse keeps spellings.
+pub(crate) fn note_parent(
+    written: &mut Vec<RoutineTrait>,
+    kind: ParentKind,
+    name: &str,
+    parent_args: &[(String, Vec<Expr>)],
+) {
+    routine_trait::note(written, || RoutineTrait::Parent {
+        kind,
+        name: name.to_string(),
+        args: parent_args
+            .iter()
+            .find(|(parent, _)| parent == name)
+            .map(|(_, args)| args.clone()),
+    });
+}
+
+/// What follows `is NAME` in a header, read the way it was written: `(EXPR)`
+/// is a parenthesised argument, a comma list `(a, b)` its grouped array
+/// literal (as a routine's `is native("libc", v1)` reads). A spelling the
+/// expression parser cannot read skips its balanced parentheses and is `Err`.
+// Cost: O(n), n = length of the argument.
+pub(crate) fn trait_argument(input: &str) -> (&str, Result<Option<TraitArgument>, ()>) {
+    if !input.starts_with('(') {
+        return (input, Ok(None));
+    }
+    let after = skip_balanced_parens(input);
+    let content = input[1..input.len() - after.len() - 1].trim();
+    if content.is_empty() {
+        return (
+            after,
+            Ok(Some(TraitArgument::Parentheses(Expr::ArrayLiteral(
+                Vec::new(),
+            )))),
+        );
+    }
+    let Ok((rest, expr)) = expression(content) else {
+        return (after, Err(()));
+    };
+    let expr = if rest.trim_start().starts_with(',') {
+        match expression(&format!("({content})")) {
+            Ok((_, list)) => list,
+            Err(_) => return (after, Err(())),
+        }
+    } else if rest.trim().is_empty() {
+        expr
+    } else {
+        return (after, Err(()));
+    };
+    (after, Ok(Some(TraitArgument::Parentheses(expr))))
 }
 
 /// Attempt to parse the inside of an `is`/`does`/`hides` bracket suffix
@@ -562,6 +630,8 @@ pub(crate) fn class_decl_body_opt(
     let mut parent_args: Vec<(String, Vec<Expr>)> = Vec::new();
     let mut is_repr: Option<String> = None;
     let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
+    // The header traits as written, for a parse that keeps spellings.
+    let mut written: Vec<RoutineTrait> = Vec::new();
     if leading_colons {
         custom_traits.push((LEADING_COLONS_TRAIT.to_string(), None));
     }
@@ -582,15 +652,18 @@ pub(crate) fn class_decl_body_opt(
             };
             if parent == "hidden" {
                 is_hidden = true;
+                note_is(&mut written, &parent, None);
             } else if parent == "unsigned" {
                 // `is unsigned`, like `is ctype<...>`, is a NativeHOW trait,
                 // not a parent (`native ulong is Int is unsigned { }`).
+                note_is(&mut written, &parent, None);
                 custom_traits.push((parent.clone(), None));
                 let (r2, _) = ws(r2)?;
                 r = r2;
                 continue;
             } else if parent == "rw" {
                 class_is_rw = true;
+                note_is(&mut written, &parent, None);
             } else if parent == "repr" {
                 // Extract repr value from `is repr('CUnion')` or `is repr<CUnion>`.
                 if r2.starts_with('<') {
@@ -634,6 +707,7 @@ pub(crate) fn class_decl_body_opt(
                 if let Some(exprs) = parse_bracket_arg_exprs(bracket_suffix) {
                     parent_args.push((full_name.clone(), exprs));
                 }
+                note_parent(&mut written, ParentKind::Is, &full_name, &parent_args);
                 parents.push(full_name);
                 r = r2;
                 let (r2, _) = ws(r)?;
@@ -661,6 +735,7 @@ pub(crate) fn class_decl_body_opt(
                 // (e.g. `is ctype<long>`), as used by NativeCall-style traits.
                 if r2.starts_with('<') {
                     let (r3, arg) = parse_trait_angle_arg(r2)?;
+                    note_is(&mut written, &parent, Some(TraitArgument::Words(arg.clone())));
                     custom_traits.push((parent.clone(), Some(Expr::Literal(Value::str(arg)))));
                     let (r3, _) = ws(r3)?;
                     r = r3;
@@ -668,19 +743,30 @@ pub(crate) fn class_decl_body_opt(
                 }
                 // Check for parenthesized argument: `is trait-name('arg')`
                 // This indicates a custom trait_mod:<is> call.
-                if let Some(inner_start) = r2.strip_prefix('(') {
-                    if let Ok((after_expr, expr)) = expression(inner_start) {
-                        let after_expr = after_expr.trim_start();
-                        if let Some(after_paren) = after_expr.strip_prefix(')') {
-                            custom_traits.push((parent.clone(), Some(expr)));
-                            let (r3, _) = ws(after_paren)?;
-                            r = r3;
-                            continue;
+                if r2.starts_with('(') {
+                    let (r3, argument) = trait_argument(r2);
+                    match argument {
+                        Ok(argument) => {
+                            // `is name()` passes the trait no argument.
+                            let executed = match &argument {
+                                Some(TraitArgument::Parentheses(Expr::ArrayLiteral(items)))
+                                    if items.is_empty() =>
+                                {
+                                    None
+                                }
+                                Some(TraitArgument::Parentheses(expr)) => Some(expr.clone()),
+                                _ => None,
+                            };
+                            note_is(&mut written, &parent, argument);
+                            custom_traits.push((parent.clone(), executed));
+                        }
+                        Err(()) => {
+                            routine_trait::note(&mut written, || {
+                                RoutineTrait::Unsupported(format!("is {parent}(...)"))
+                            });
+                            custom_traits.push((parent.clone(), None));
                         }
                     }
-                    // Fallback: skip balanced parens
-                    let r3 = skip_balanced_parens(r2);
-                    custom_traits.push((parent.clone(), None));
                     let (r3, _) = ws(r3)?;
                     r = r3;
                     continue;
@@ -689,6 +775,11 @@ pub(crate) fn class_decl_body_opt(
                 let full_name = format!("{}{}", parent, bracket_suffix);
                 if let Some(exprs) = parse_bracket_arg_exprs(bracket_suffix) {
                     parent_args.push((full_name.clone(), exprs));
+                }
+                if bracket_suffix.is_empty() {
+                    note_is(&mut written, &parent, None);
+                } else {
+                    note_parent(&mut written, ParentKind::Is, &full_name, &parent_args);
                 }
                 parents.push(full_name);
                 r = r2;
@@ -709,6 +800,7 @@ pub(crate) fn class_decl_body_opt(
             if let Some(exprs) = parse_bracket_arg_exprs(bracket_suffix) {
                 parent_args.push((full_name.clone(), exprs));
             }
+            note_parent(&mut written, ParentKind::Does, &full_name, &parent_args);
             parents.push(full_name.clone());
             does_parents.push(full_name);
             let (r2, _) = ws(r2)?;
@@ -724,6 +816,7 @@ pub(crate) fn class_decl_body_opt(
             if let Some(exprs) = parse_bracket_arg_exprs(bracket_suffix) {
                 parent_args.push((hidden_parent.clone(), exprs));
             }
+            note_parent(&mut written, ParentKind::Hides, &hidden_parent, &parent_args);
             parents.push(hidden_parent.clone());
             hidden_parents.push(hidden_parent);
             let (r2, _) = ws(r2)?;
@@ -805,6 +898,7 @@ pub(crate) fn class_decl_body_opt(
             return Err(PError::fatal_with_exception(msg, Box::new(ex)));
         }
     }
+    routine_trait::attach(&mut body, written);
     let mut class_stmt = Stmt::ClassDecl {
         spans,
         name: Symbol::intern(&name),

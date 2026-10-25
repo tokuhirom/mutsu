@@ -27,7 +27,6 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// The fields of a `Stmt::RoleDecl` the RakuAST node is built from.
 pub(super) struct RoleDecl<'a> {
     pub name: Symbol,
-    pub header_order: &'a [crate::ast::RoleHeaderTrait],
     pub type_params: &'a [String],
     pub type_param_defs: &'a [ParamDef],
     pub is_export: bool,
@@ -70,103 +69,47 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     if role.type_params != crate::parser::role_type_param_names(role.type_param_defs) {
         return Err(unsupported("role parameters the signature does not name"));
     }
+    // The header's `does R` / `is P` / `hides H` clauses lead the body as
+    // `DoesDecl`s (a hidden role adds a marker, `hides` a second statement);
+    // the traits themselves are the ones the source wrote, in written order.
     let header_len = role
         .body
         .iter()
-        .take_while(|stmt| matches!(stmt, Stmt::DoesDecl { also: false, .. }))
+        .take_while(|stmt| stmt.is_routine_traits() || matches!(stmt, Stmt::DoesDecl { also: false, .. }))
         .count();
-    let mut traits = Vec::new();
-    let mut index = 0;
-    while index < header_len {
-        let stmt = &role.body[index];
-        let Stmt::DoesDecl {
-            name,
-            args,
-            from_is,
-            ..
-        } = stmt
-        else {
-            unreachable!("counted above");
-        };
-        let name = name.resolve();
-        if name == "__mutsu_role_hidden__" {
-            traits.push(Value::rakuast(Box::new(RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::TraitIs,
-                fields: vec![node_field(
-                    Some("name"),
-                    super::convert::name_from_identifier("hidden"),
-                )],
-            })));
-            index += 1;
-            continue;
-        }
-        let hides_prefix = crate::meta_ns::MetaNs::RoleHides.owned_key_for_str("");
-        if index + 1 < header_len
-            && let Stmt::DoesDecl { name: marker, .. } = &role.body[index + 1]
-        {
-            let marker = marker.resolve();
-            if let Some(hidden_name) = marker.strip_prefix(&hides_prefix) {
-                if hidden_name != name {
-                    return Err(unsupported("role hides marker does not match its parent"));
-                }
-                traits.push(Value::rakuast(Box::new(RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::TraitHides,
-                    fields: vec![node_field(None, build_type_node(&name)?)],
-                })));
-                index += 2;
-                continue;
-            }
-        }
-        let type_node = if let Some(args) = args {
-            super::type_args::parameterized_type_node(&name, Some(args))?
-        } else {
-            build_type_node(&name)?
-        };
-        traits.push(Value::rakuast(Box::new(if *from_is {
-            RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::TraitIs,
-                fields: vec![node_field(Some("type"), type_node)],
-            }
-        } else {
-            RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::TraitDoes,
-                fields: vec![node_field(None, type_node)],
-            }
-        })));
-        index += 1;
-    }
-    // Rakudo lists the traits in source order, which the parser does not keep
-    // between the parent clauses, `is export` and `is rw`.
-    let kinds = usize::from(!traits.is_empty())
-        + usize::from(role.is_export)
-        + usize::from(role.is_rw)
-        + usize::from(!user_traits.is_empty());
-    if kinds > 1 && role.header_order.is_empty() {
+    let written = crate::ast::routine_trait::get(role.body).unwrap_or_default();
+    let composed = role.body[..header_len]
+        .iter()
+        .filter(|stmt| matches!(stmt, Stmt::DoesDecl { .. }))
+        .count();
+    let is_written = |wanted: &str| {
+        written.iter().any(
+            |t| matches!(t, crate::ast::routine_trait::RoutineTrait::Is { name, .. } if name == wanted),
+        )
+    };
+    let expected: usize = written
+        .iter()
+        .map(|t| match t {
+            crate::ast::routine_trait::RoutineTrait::Parent {
+                kind: crate::ast::routine_trait::ParentKind::Hides,
+                ..
+            } => 2,
+            crate::ast::routine_trait::RoutineTrait::Parent { .. } => 1,
+            crate::ast::routine_trait::RoutineTrait::Is { name, .. } if name == "hidden" => 1,
+            _ => 0,
+        })
+        .sum();
+    // An `also is Parent;` or `also is rw;` lifted out of the body is not a
+    // header spelling and remains the existing normalization boundary.
+    if composed != expected
+        || role.is_rw != is_written("rw")
+        || role.is_export != is_written("export")
+    {
         return Err(unsupported(
-            "role traits whose source order is not recorded",
+            "role header the written-trait record does not account for",
         ));
     }
-    let parent_trait_count = traits.len();
-    let flags = IsTraits {
-        is_rw: role.is_rw,
-        is_raw: false,
-        export_tags: role.export_tags.to_vec(),
-        ..Default::default()
-    };
-    traits.extend(
-        flags
-            .nodes()
-            .into_iter()
-            .map(|t| Value::rakuast(Box::new(t))),
-    );
-    traits.extend(super::decl_traits::class_custom_traits(&user_traits)?);
-    if !role.header_order.is_empty() {
-        traits = super::role_header::ordered_traits(&role, traits, parent_trait_count)?;
-    }
+    let traits = super::routine_source::header_traits(role.body)?;
     let scope = if super::convert::is_anon_package(role.custom_traits) {
         Some("anon")
     } else {
@@ -312,7 +255,6 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     Ok(head.finish(Stmt::RoleDecl {
         spans: Default::default(),
         name: Symbol::intern(&head.name),
-        header_order: super::role_header::lower_order(node)?,
         type_params: crate::parser::role_type_param_names(&type_param_defs),
         type_param_defs,
         is_export: !flags.export_tags.is_empty(),

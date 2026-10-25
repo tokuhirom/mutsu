@@ -860,6 +860,17 @@ struct ClassTraits {
     trusts: Vec<String>,
 }
 
+/// The expression of a class trait's argument: a words quote (`is ctype<long>`)
+/// or the parenthesised list of `is trait(ARG)`.
+// Cost: O(n), n = size of the argument.
+fn trait_argument(owner: &RakuAstNode, argument: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    if argument.class == RakuAstClass::QuotedString {
+        lower_expr(argument)
+    } else {
+        super::attribute::lower_paren_argument(owner, argument)
+    }
+}
+
 fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
     let Some(f) = node.fields.iter().find(|f| f.name == Some("traits")) else {
         return Ok(ClassTraits {
@@ -905,9 +916,7 @@ fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
                                 && matches!(s.as_str(), "ctype" | "unsigned" | "nativesize") =>
                         {
                             let argument = match named_child(t, "argument") {
-                                Ok(argument) => {
-                                    Some(super::attribute::lower_paren_argument(t, argument)?)
-                                }
+                                Ok(argument) => Some(trait_argument(t, argument)?),
                                 Err(_) => None,
                             };
                             custom_traits.push((s.to_string(), argument));
@@ -923,8 +932,7 @@ fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
                         ValueView::Str(s) if super::decl_traits::is_class_trait(&s) => {
                             let argument = match named_child(t, "argument") {
                                 Ok(argument) => {
-                                    let value =
-                                        super::attribute::lower_paren_argument(t, argument)?;
+                                    let value = trait_argument(t, argument)?;
                                     // A list `(a, b)` is the parser's grouped array literal.
                                     Some(match value {
                                         Expr::ArrayLiteral(_) => Expr::Grouped(Box::new(value)),
