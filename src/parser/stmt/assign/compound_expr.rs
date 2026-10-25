@@ -424,6 +424,26 @@ pub(crate) fn build_compound_assign_expr(
                 assigned_value,
             )
         }
+        // A short-circuiting operator on a bareword that names a type object
+        // (`Int andthen= $x++`) stores only when it does not keep the target;
+        // storing the kept value back would assign to the type object.
+        // TODO: the store belongs inside the branch that assigns, as
+        // `short_circuit_compound_assign_expr` does for a variable; a branch
+        // that does assign to a type object should die here, and now yields
+        // the value instead.
+        Expr::BareWord(name)
+            if matches!(
+                op,
+                CompoundAssignOp::Andthen
+                    | CompoundAssignOp::Notandthen
+                    | CompoundAssignOp::Orelse
+                    | CompoundAssignOp::DefinedOr
+                    | CompoundAssignOp::LogicalOr
+                    | CompoundAssignOp::LogicalAnd
+            ) && !crate::parser::stmt::simple::is_user_declared_value_term(&name) =>
+        {
+            compound_assigned_value_expr(Expr::BareWord(name), op, rhs)
+        }
         // A bareword target is a term, spelled by its term key (ADR-12441).
         Expr::BareWord(name) => Expr::AssignExpr {
             name: crate::term_names::bareword_target_key(&name),
