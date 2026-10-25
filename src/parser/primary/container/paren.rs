@@ -361,7 +361,11 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
                 finalize_paren_sections(sections, items, saw_semicolon),
             ));
         }
-        let (input, next) = expression_no_sequence(input)?;
+        let sigil = items.iter().fold(crate::ast::left_sigil::LeftSigil::Unset, |sigil, e| {
+            crate::ast::left_sigil::after(sigil, e)
+        });
+        let (input, next) =
+            crate::ast::left_sigil::inherit(input, sigil, || expression_no_sequence(input))?;
         items.push(next);
         input_rest = input;
     }
