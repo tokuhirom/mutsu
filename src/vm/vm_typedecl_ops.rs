@@ -617,7 +617,11 @@ impl Interpreter {
                     if let Some(how_type) = how_type {
                         (
                             true,
-                            self.install_custom_class_how(&storage_name, how_type, traits_ran_in_shell)?,
+                            self.install_custom_class_how(
+                                &storage_name,
+                                how_type,
+                                traits_ran_in_shell,
+                            )?,
                         )
                     } else {
                         (false, false)
