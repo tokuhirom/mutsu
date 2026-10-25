@@ -302,11 +302,7 @@ pub(crate) fn destructure_binds(
                 ],
                 true,
             );
-            // A fresh sigilless lexical: the declaration (not an assignment) is
-            // what names it for the scope passes, and the marker is what makes
-            // a later bare `rest` resolve to it.
-            bind_stmts.push(decl_stmt(sub.name.clone(), capture_expr));
-            bind_stmts.push(Stmt::MarkSigillessReadonly(sub.name.clone()));
+            bind_stmts.push(bind_stmt(sub.name.clone(), capture_expr));
             // No need to increment positional_index; capture consumes all remaining
         } else if sub.is_variadic() && sub.name.starts_with('%') {
             // `*%rest`: the named part of the value's Capture minus the keys
@@ -488,4 +484,34 @@ fn positional_decl_stmt(sub: &crate::ast::ParamDef, value_expr: Expr) -> Stmt {
 fn nested_temp_name(target_name: &str, sub_name: &str, position: usize) -> String {
     let base = target_name.trim_start_matches(['$', '@', '%', '&', '\\']);
     format!("__destructure_{base}_{sub_name}_{position}")
+}
+
+/// [`destructure_binds`] for a construct whose parameters the scope passes read
+/// from the lowered statements alone (`given`/`with`): a `|rest` capture is a
+/// fresh sigilless lexical, so it is declared and marked rather than assigned.
+// Cost: O(n), n = statements produced plus sub-parameters.
+pub(crate) fn destructure_declaring(
+    target_name: &str,
+    sub_params: &[crate::ast::ParamDef],
+    bind_stmts: &mut Vec<Stmt>,
+) {
+    let from = bind_stmts.len();
+    destructure_binds(target_name, sub_params, bind_stmts);
+    let mut marks = Vec::new();
+    for stmt in &mut bind_stmts[from..] {
+        let Stmt::Assign { name, expr, .. } = stmt else {
+            continue;
+        };
+        if sub_params
+            .iter()
+            .any(|p| p.slurpy && p.sigilless && p.name == *name)
+        {
+            marks.push(Stmt::MarkSigillessReadonly(name.clone()));
+            *stmt = decl_stmt(
+                name.clone(),
+                std::mem::replace(expr, Expr::Literal(Value::NIL)),
+            );
+        }
+    }
+    bind_stmts.extend(marks);
 }

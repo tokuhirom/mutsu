@@ -210,7 +210,7 @@ pub(crate) fn with_then_branch(
                     custom_traits: Vec::new(),
                     where_constraint: None,
                 });
-                crate::param_destructure::destructure_binds(pname, sub_params, &mut with_body);
+                crate::param_destructure::destructure_declaring(pname, sub_params, &mut with_body);
             } else {
                 // Simple parameter with possible traits from parse_for_params
                 with_body.push(pointy_param_bind_decl(pdef, &tmp_var));

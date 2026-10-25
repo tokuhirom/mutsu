@@ -204,7 +204,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             custom_traits: vec![("__has_initializer".to_string(), None)],
             where_constraint: None,
         }];
-        crate::param_destructure::destructure_binds(target, sub_params, &mut stmts);
+        crate::param_destructure::destructure_declaring(target, sub_params, &mut stmts);
         return Stmt::SyntheticBlock(stmts);
     }
     let topic = Expr::GivenPointyTopic;
