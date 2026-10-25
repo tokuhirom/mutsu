@@ -437,6 +437,7 @@ pub(crate) use expr::precedence::{
     unwrap_grouped_lvalue,
 };
 pub(crate) use stmt::assign::named_sub_lvalue_assign_expr;
+pub(crate) use stmt::simple_expr_stmt::lvalue::single_target_list_lvalue_stmt;
 
 /// `expr`, with an assignment a `.AST` parse kept in its RakuAST shape
 /// lowered to the executable shape the parser builds otherwise. For a parser
@@ -471,7 +472,7 @@ pub(crate) use stmt::control::{
     with_then_branch,
 };
 pub(crate) use stmt::simple::{fold_use_lib_path, use_lib_args};
-pub(crate) use stmt::simple_expr_stmt::lvalue::{index_bind_expr, method_lvalue_target_name};
+pub(crate) use stmt::simple_expr_stmt::lvalue::index_bind_expr;
 /// Lower a deferred `Expr::Feed` node into its executable (sink-call) form.
 /// Re-exported for the compiler's `Expr::Feed` arm.
 pub(crate) use stmt::sub::is_builtin_param_trait;

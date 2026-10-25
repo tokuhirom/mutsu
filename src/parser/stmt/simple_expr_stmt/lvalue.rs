@@ -158,7 +158,7 @@ pub(crate) fn bind_source_metadata_expr(rhs: &Expr) -> Expr {
     }
 }
 
-pub(super) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stmt> {
+pub(crate) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stmt> {
     let Expr::ArrayLiteral(items) = lhs else {
         return None;
     };
