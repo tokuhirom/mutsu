@@ -32,45 +32,6 @@ pub(crate) fn method_lvalue_target_name(target: &Expr) -> Option<String> {
         .map(LvalueRoot::into_spelled_key)
 }
 
-pub(super) fn method_lvalue_assign_expr(
-    target: Expr,
-    target_var_name: Option<String>,
-    method_name: String,
-    method_args: Vec<Expr>,
-    value: Expr,
-) -> Expr {
-    // `$(EXPR) = value` lowers `$(EXPR)` to `EXPR.item`, but the item
-    // contextualizer is transparent as an lvalue: it names the same container as
-    // `EXPR`. Assign straight through to `EXPR` instead of dispatching a `.item`
-    // method-lvalue (which has no writable slot and threw X::Assignment::RO).
-    if method_name == "item" && method_args.is_empty() {
-        return crate::parser::expr::precedence::assign_to_target_expr(target, value);
-    }
-    let mut args = vec![
-        target,
-        Expr::Literal(Value::str(method_name)),
-        Expr::ArrayLiteral(method_args),
-        value,
-    ];
-    args.push(match target_var_name {
-        Some(name) => Expr::Literal(Value::str(name)),
-        None => Expr::Literal(Value::NIL),
-    });
-    Expr::Call {
-        name: Symbol::intern("__mutsu_assign_method_lvalue"),
-        args,
-        listop: false,
-    }
-}
-
-pub(super) fn named_sub_lvalue_assign_expr(
-    name: String,
-    call_args: Vec<Expr>,
-    value: Expr,
-) -> Expr {
-    crate::parser::stmt::assign::named_sub_lvalue_assign_expr(name, call_args, value)
-}
-
 pub(super) fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, value: Expr) -> Expr {
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_callable_lvalue"),
@@ -241,20 +202,3 @@ pub(crate) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stm
     })
 }
 
-pub(super) fn grouped_assign_lvalue_stmt(target: &Expr, rhs: Expr) -> Option<Stmt> {
-    let Expr::Grouped(inner) = target else {
-        return None;
-    };
-    let Expr::AssignExpr { name, .. } = inner.as_ref() else {
-        return None;
-    };
-    Some(Stmt::Block(vec![
-        Stmt::Expr((**inner).clone()),
-        Stmt::Assign {
-            name: name.clone(),
-            expr: rhs,
-            op: AssignOp::Assign,
-            target_is_sigilless: false,
-        },
-    ]))
-}
