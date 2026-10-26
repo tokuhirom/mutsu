@@ -168,6 +168,7 @@ impl Interpreter {
                     method_params.push("%_".to_string());
                 }
                 let mut method_param_defs = vec![crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                    target: Default::default(),
                     type_capture: None,
                     name: "self".to_string(),
                     default: None,
@@ -201,6 +202,7 @@ impl Interpreter {
                 );
                 if !method_param_defs.iter().any(|p| p.name == "%_") {
                     method_param_defs.push(crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                        target: Default::default(),
                         type_capture: None,
                         name: "%_".to_string(),
                         default: None,

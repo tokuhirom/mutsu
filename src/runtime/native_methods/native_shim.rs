@@ -24,6 +24,7 @@ pub(in crate::runtime) fn native_method_shim(
         (
             vec!["v".to_string()],
             vec![crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                target: Default::default(),
                 type_capture: None,
                 name: "v".to_string(),
                 default: None,

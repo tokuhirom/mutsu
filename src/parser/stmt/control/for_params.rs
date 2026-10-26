@@ -450,6 +450,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             rest,
             ParamDef {
+                target: Default::default(),
                 spans: Default::default(),
                 trait_meta: Default::default(),
                 type_capture: None,
@@ -547,6 +548,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     Ok((
         rest,
         ParamDef {
+            target: Default::default(),
             spans: Default::default(),
             trait_meta: Default::default(),
             type_capture: None,

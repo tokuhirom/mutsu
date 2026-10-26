@@ -5758,10 +5758,7 @@ fn sigilless_slurpy_parameter(pd: &ParamDef, type_setting: bool) -> RakuAstNode 
     if type_setting {
         fields.push(node_field(Some("type"), type_setting_any()));
     }
-    if !matches!(
-        pd.name.as_str(),
-        super::lower::ANONYMOUS_CAPTURE | ANONYMOUS_SUBSIGNATURE
-    ) {
+    if pd.name != super::lower::ANONYMOUS_CAPTURE && pd.target != ParamTarget::Parens {
         fields.push(node_field(
             Some("target"),
             RakuAstNode {

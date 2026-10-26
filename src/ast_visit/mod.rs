@@ -173,6 +173,7 @@ pub(crate) fn walk_param<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, p: &'ast Para
     let ParamDef {
         trait_meta: _,
         name,
+        target: _,
         default,
         multi_invocant: _,
         required: _,
