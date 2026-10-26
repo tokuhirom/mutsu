@@ -2322,3 +2322,23 @@ matcher), `convert::{TYPE_ONLY_PARAM, ANONYMOUS_ARRAY_SUBSIGNATURE, ANONYMOUS_SU
 placeholder comparisons in `convert::parameter`, `named_param` and `lower`, and three hand-written
 `ParamDef` literals in the parser (`for_params`, `pointy_param`). The execution layer still binds
 under the placeholders; dropping them is the last slice of the row (#15025).
+
+### 6.114 Signatures: invocant and does-target are fields, not marker traits (2026-10-26, [#15025](https://github.com/tokuhirom/mutsu/issues/15025))
+
+Step 2 of the §6.113 plan. A parameter's `traits` held three strings that were not written traits:
+`invocant` (a shadow of `ParamDef::is_invocant`, which nearly every reader tested as
+`is_invocant || traits.any("invocant")`), `implicit-invocant` (an invocant the source never named,
+`method (Foo:D:)`) and `does-target` (derived by `does_target::mark_does_targets`, not written).
+`convert::parameter` filtered all three out of the traits it rendered and refused a parameter whose
+bool and marker disagreed.
+
+`traits` now holds only what was written. `is_invocant` is the one invocant flag, `implicit_invocant`
+and `does_target` are fields. Every `is_invocant || traits.any("invocant")` is `is_invocant` (about 55
+sites in the parser, runtime, VM and compiler); `mark_params_as_invocant` sets the flag. Code that
+read `traits.is_empty()` as "nothing special about this parameter" counted a does target through the
+marker, so those ask `ParamDef::no_traits()` / `has_traits()`, which count it.
+
+Deleted: `IMPLICIT_INVOCANT_TRAIT`, `DOES_TARGET_TRAIT`, the trait filters in `convert::parameter` and
+`convert::parameter_traits`, the bool/marker disagreement refusal, the `invocant` / `implicit-invocant`
+/ `does-target` entries of `is_builtin_param_trait` (an `is invocant` written by a program is now an
+ordinary custom trait), and the marker pushes in the parser and `lower`.
