@@ -2342,3 +2342,14 @@ Deleted: `IMPLICIT_INVOCANT_TRAIT`, `DOES_TARGET_TRAIT`, the trait filters in `c
 `convert::parameter_traits`, the bool/marker disagreement refusal, the `invocant` / `implicit-invocant`
 / `does-target` entries of `is_builtin_param_trait` (an `is invocant` written by a program is now an
 ordinary custom trait), and the marker pushes in the parser and `lower`.
+
+### 6.115 Signatures: an anonymous `$` / `@` / `%` parameter records its sigil (2026-10-26, [#15025](https://github.com/tokuhirom/mutsu/issues/15025))
+
+Step 3 of the §6.113 plan. An anonymous scalar, array or hash parameter is bound under a placeholder
+name (`__ANON_STATE#`, `@__ANON_ARRAY__`, `%__ANON_HASH__`); `convert::parameter` and
+`named_param::named_parameter` recognized the name to find the bare sigil. `ParamTarget` gains
+`Anonymous(sigil)`, derived once where a `ParamDef` is built (`ParamDef::blank`, the one constructor
+`make_param` now delegates to, `lower::positional_param`, `named_param::bare_level`), and the two
+readers use it. `parser::sub_param::helpers::make_param`'s hand-written field list is deleted.
+The pointy-lambda single parameter (`Expr::Lambda` holds a name, not a `ParamDef`) and the `my ($, @)`
+declaration elements (`SignatureVar`) still decode the names; they go with their own families.

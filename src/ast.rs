@@ -124,6 +124,22 @@ pub(crate) enum ParamTarget {
     Parens,
     /// An anonymous `[…]` destructuring parameter.
     Brackets,
+    /// A bare sigil with no name: `$`, `@` or `%` (the character).
+    Anonymous(char),
+}
+
+impl ParamTarget {
+    /// The form a parameter bound under the execution name `name` was written
+    /// in, for the placeholder names of an anonymous `$` / `@` / `%`.
+    // Cost: O(1).
+    pub(crate) fn of_name(name: &str) -> Self {
+        match name {
+            ANON_SCALAR_PARAM => ParamTarget::Anonymous('$'),
+            ANON_ARRAY_PARAM => ParamTarget::Anonymous('@'),
+            ANON_HASH_PARAM => ParamTarget::Anonymous('%'),
+            _ => ParamTarget::Variable,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
@@ -314,6 +330,10 @@ pub(crate) fn named_param_external_key(name: &str) -> &str {
         .trim_start_matches(['!', '.'])
 }
 
+/// The execution names of an anonymous `$` / `@` / `%` parameter.
+pub(crate) const ANON_SCALAR_PARAM: &str = "__ANON_STATE#";
+pub(crate) const ANON_ARRAY_PARAM: &str = "@__ANON_ARRAY__";
+pub(crate) const ANON_HASH_PARAM: &str = "%__ANON_HASH__";
 /// The execution name of a parameter written as a bare type (`sub f(Int)`).
 pub(crate) const TYPE_ONLY_PARAM: &str = "__type_only__";
 /// The execution-name prefix of a bare `::T` capture; the capture name follows.
@@ -400,6 +420,7 @@ impl ParamDef {
     // Cost: O(|name|).
     pub(crate) fn blank(name: String) -> Self {
         ParamDef {
+            target: ParamTarget::of_name(&name),
             multi_invocant: true,
             sigilless: false,
             ..Self::sigilless_term(&name)

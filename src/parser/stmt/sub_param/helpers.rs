@@ -28,37 +28,7 @@ pub(crate) fn fold_parenthesised_pointy_params(sub_params: Vec<ParamDef>) -> Vec
 
 /// Helper to construct a default ParamDef with only required fields.
 pub(crate) fn make_param(name: String) -> ParamDef {
-    ParamDef {
-        implicit_invocant: Default::default(),
-        does_target: Default::default(),
-        target: Default::default(),
-        spans: Default::default(),
-        trait_meta: Default::default(),
-        type_capture: None,
-        name,
-        default: None,
-        multi_invocant: true,
-        required: false,
-        named: false,
-        named_alias: false,
-        slurpy: false,
-        double_slurpy: false,
-        onearg: false,
-        sigilless: false,
-        type_constraint: None,
-        literal_value: None,
-        sub_signature: None,
-        where_constraint: None,
-        traits: Vec::new(),
-        optional_marker: false,
-        outer_sub_signature: None,
-        code_signature: None,
-        is_invocant: false,
-        shape_constraints: None,
-        block_param: false,
-        code: Default::default(),
-        trait_args: Vec::new(),
-    }
+    ParamDef::blank(name)
 }
 
 /// Build an `X::Parameter::AfterDefault` error for a trait or post-constraint
