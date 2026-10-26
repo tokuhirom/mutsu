@@ -52,7 +52,7 @@ pub(super) fn convert(pd: &ParamDef, value: &Value) -> Result<RakuAstNode, Runti
 /// rakudo's tree has a `Num` parameter with that value.
 // Cost: O(1).
 pub(super) fn special_num(pd: &ParamDef) -> Option<f64> {
-    if pd.name != super::convert::TYPE_ONLY_PARAM || pd.literal_value.is_some() || pd.named {
+    if pd.target != crate::ast::ParamTarget::TypeOnly || pd.literal_value.is_some() || pd.named {
         return None;
     }
     match pd.type_constraint.as_deref()? {

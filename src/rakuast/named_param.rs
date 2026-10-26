@@ -28,7 +28,7 @@ use super::convert::{
     type_capture_name, type_capture_node, type_captures_field, unsupported,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{Expr, ParamDef};
+use crate::ast::{Expr, ParamDef, ParamTarget};
 use crate::value::{RuntimeError, Value};
 
 /// The parts of a named parameter, read off the parser's alias chain.
@@ -60,7 +60,7 @@ fn flatten(pd: &ParamDef) -> Result<Flat<'_>, RuntimeError> {
     let target = cur;
     let mut names = Vec::with_capacity(aliases.len() + 1);
     if target.named {
-        names.push(if target.name == super::convert::ANONYMOUS_SUBSIGNATURE {
+        names.push(if target.target == ParamTarget::Parens {
             String::new()
         } else {
             split_sigil(&target.name).1.to_string()
@@ -113,10 +113,7 @@ fn inner_level_is_plain(level: &ParamDef, is_target: bool) -> bool {
         && level.outer_sub_signature.is_none()
         && (!is_target
             || level.sub_signature.is_none()
-            || matches!(
-                level.name.as_str(),
-                "@" | super::convert::ANONYMOUS_SUBSIGNATURE
-            ))
+            || matches!(level.target, ParamTarget::Brackets | ParamTarget::Parens))
 }
 
 fn set_once<'a, T: ?Sized>(slot: &mut Option<&'a T>, value: &'a T) -> Result<(), RuntimeError> {
@@ -145,14 +142,15 @@ pub(super) fn named_parameter(
         desigil
     };
     let anonymous = matches!(
-        flat.target.name.as_str(),
-        "@" | super::convert::ANONYMOUS_SUBSIGNATURE
+        flat.target.target,
+        ParamTarget::Brackets | ParamTarget::Parens
     ) && flat.target.sub_signature.is_some();
     let mut fields = Vec::with_capacity(7);
     match flat.type_constraint {
         Some(t) => fields.push(node_field(Some("type"), build_type_node(t)?)),
         None => {
-            if !(anonymous && (flat.target.name == "@" || pd.named && !pd.named_alias))
+            if !(anonymous
+                && (flat.target.target == ParamTarget::Brackets || pd.named && !pd.named_alias))
                 && let Some(implicit) = implicit_parameter_type(sigil, type_setting)
             {
                 fields.push(node_field(Some("type"), implicit));
@@ -241,10 +239,8 @@ pub(super) fn wrap_aliases(
     // `:x($r) ($a, $b)`: with a real target the sub-signature follows the
     // alias chain (the parser's `outer_sub_signature`); an anonymous target
     // destructures itself.
-    let outer = if def.name == "@"
-        || def.name == super::convert::ANONYMOUS_SUBSIGNATURE
-        || def.name == super::convert::ANONYMOUS_ARRAY_SUBSIGNATURE
-    {
+    let outer = if matches!(def.target, ParamTarget::Brackets | ParamTarget::Parens) {
+        inner.target = std::mem::take(&mut def.target);
         inner.sub_signature = def.sub_signature.take();
         None
     } else {
@@ -279,6 +275,7 @@ fn bare_level(name: &str, named: bool, like: &ParamDef) -> ParamDef {
     ParamDef {
         spans: Default::default(),
         trait_meta: Default::default(),
+        target: ParamTarget::Variable,
         name: name.to_string(),
         default: None,
         multi_invocant: like.multi_invocant,

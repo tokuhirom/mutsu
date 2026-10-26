@@ -102,9 +102,34 @@ pub(crate) enum HandleSpec {
     Wildcard,
 }
 
+/// How a parameter's target was written, for the forms whose spelling the
+/// execution `name` only encodes as a placeholder (ADR-10723 Stage 2).
+///
+/// The execution layer still binds under the placeholder (`__type_only__`,
+/// `__subsig__`, `@`, `__type_capture__T`); this records which form the
+/// placeholder stands for, so the RakuAST view reads the form and never has to
+/// recognize a placeholder name.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum ParamTarget {
+    /// A variable or sigilless term: `name` is it.
+    #[default]
+    Variable,
+    /// A bare type with no target: `sub f(Int)`.
+    TypeOnly,
+    /// A bare `::T` capture with no target: `sub f(::T)`.
+    TypeCapture,
+    /// An anonymous `(…)` destructuring parameter.
+    Parens,
+    /// An anonymous `[…]` destructuring parameter.
+    Brackets,
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ParamDef {
     pub(crate) name: String,
+    /// How the target was written; see [`ParamTarget`].
+    #[serde(default)]
+    pub(crate) target: ParamTarget,
     pub(crate) default: Option<Expr>,
     pub(crate) multi_invocant: bool,
     pub(crate) required: bool,
@@ -279,6 +304,15 @@ pub(crate) fn named_param_external_key(name: &str) -> &str {
         .trim_start_matches(['!', '.'])
 }
 
+/// The execution name of a parameter written as a bare type (`sub f(Int)`).
+pub(crate) const TYPE_ONLY_PARAM: &str = "__type_only__";
+/// The execution-name prefix of a bare `::T` capture; the capture name follows.
+pub(crate) const TYPE_CAPTURE_PREFIX: &str = "__type_capture__";
+/// The execution name of an anonymous `(…)` destructuring parameter.
+pub(crate) const PARENS_PARAM: &str = "__subsig__";
+/// The execution name of an anonymous `[…]` destructuring parameter.
+pub(crate) const BRACKETS_PARAM: &str = "@";
+
 /// Trait marker the parser records on an invocant `ParamDef` it *synthesized*
 /// rather than one the user named: `method () { ... }`, `method (Foo:D:)`,
 /// `method (::?CLASS:)`. Both forms are recorded under the name `self`, but only
@@ -358,6 +392,52 @@ pub(crate) fn scalar_var_expr(name: String) -> Expr {
 }
 
 impl ParamDef {
+    /// A parameter with nothing written yet but its execution `name`: what the
+    /// parser starts every parameter from.
+    // Cost: O(|name|).
+    pub(crate) fn blank(name: String) -> Self {
+        ParamDef {
+            multi_invocant: true,
+            sigilless: false,
+            ..Self::sigilless_term(&name)
+        }
+    }
+
+    /// The parameter a bare type is: `sub f(Int)` binds nothing.
+    // Cost: O(1).
+    pub(crate) fn type_only() -> Self {
+        ParamDef {
+            target: ParamTarget::TypeOnly,
+            ..Self::blank(TYPE_ONLY_PARAM.to_string())
+        }
+    }
+
+    /// The parameter a bare `::T` capture is: `sub f(::T)` binds the type
+    /// under the name `T` and no variable.
+    // Cost: O(|capture|).
+    pub(crate) fn bare_type_capture(capture: &str) -> Self {
+        ParamDef {
+            target: ParamTarget::TypeCapture,
+            type_capture: Some(capture.to_string()),
+            ..Self::blank(format!("{TYPE_CAPTURE_PREFIX}{capture}"))
+        }
+    }
+
+    /// The anonymous destructuring parameter `(…)` / `[…]` over `sub_params`.
+    // Cost: O(1).
+    pub(crate) fn destructure(sub_params: Vec<ParamDef>, brackets: bool) -> Self {
+        let (target, name) = if brackets {
+            (ParamTarget::Brackets, BRACKETS_PARAM)
+        } else {
+            (ParamTarget::Parens, PARENS_PARAM)
+        };
+        ParamDef {
+            target,
+            sub_signature: Some(sub_params),
+            ..Self::blank(name.to_string())
+        }
+    }
+
     /// The plain sigilless parameter `\name`: untyped, no default, no traits.
     // Cost: O(|name|).
     pub(crate) fn sigilless_term(name: &str) -> Self {

@@ -150,7 +150,7 @@ pub(crate) fn parse_optional_role_type_params(
         && let Ok((rest, _)) = parse_char(after_params, ']')
     {
         for pd in &param_defs {
-            if pd.name == "__type_only__"
+            if pd.target == crate::ast::ParamTarget::TypeOnly
                 && let Some(tc) = pd.type_constraint.as_deref()
                 && !tc.starts_with("::")
                 && !role_type_param_constraint_is_known(tc)
@@ -243,7 +243,8 @@ pub(crate) fn parse_optional_role_type_params(
                         spans: Default::default(),
                         trait_meta: Default::default(),
                         type_capture: None,
-                        name: format!("__type_capture__{}", name),
+                        name: format!("{}{}", crate::ast::TYPE_CAPTURE_PREFIX, name),
+                        target: crate::ast::ParamTarget::TypeCapture,
                         default: Some(default_expr),
                         multi_invocant: true,
                         required: false,

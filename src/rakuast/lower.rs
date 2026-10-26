@@ -14,7 +14,7 @@ use super::name_parts::{self, NameShape};
 use super::routine_lower::lower_sub;
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::parsed::{ConditionalKind, Modified, ModifierKind, StatementModifier};
-use crate::ast::{ContextKind, Expr, ParamDef, Stmt};
+use crate::ast::{ContextKind, Expr, ParamDef, ParamTarget, Stmt};
 use crate::regex_tree::{RegexNode, RegexTree};
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -846,16 +846,15 @@ fn has_default_rw(block: &RakuAstNode) -> bool {
 /// parameter, numbered by position among several, as the parser does.
 // Cost: O(p), p = parameters.
 pub(super) fn name_for_unpack_params(names: &mut [String], defs: &mut [ParamDef]) {
-    use super::convert::{ANONYMOUS_ARRAY_SUBSIGNATURE, ANONYMOUS_SUBSIGNATURE};
     use crate::parser::{FOR_UNPACK, FOR_UNPACK_ARRAY};
     let several = defs.len() > 1;
     for (index, (name, def)) in names.iter_mut().zip(defs.iter_mut()).enumerate() {
         if def.sub_signature.is_none() || def.slurpy || def.named {
             continue;
         }
-        let form = match def.name.as_str() {
-            ANONYMOUS_ARRAY_SUBSIGNATURE => FOR_UNPACK_ARRAY,
-            ANONYMOUS_SUBSIGNATURE => "",
+        let form = match def.target {
+            ParamTarget::Brackets => FOR_UNPACK_ARRAY,
+            ParamTarget::Parens => "",
             _ => continue,
         };
         let renamed = if several {
@@ -2094,6 +2093,7 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         None => false,
     };
     let has_target = parameter.fields.iter().any(|f| f.name == Some("target"));
+    let mut form = ParamTarget::Variable;
     let name = if let Some(target) = parameter.fields.iter().find(|f| f.name == Some("target")) {
         let target = child_node(&target.value)?;
         match target.class {
@@ -2124,7 +2124,8 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         // `self`.
         "self".to_string()
     } else if let Some(type_capture) = &type_capture {
-        format!("__type_capture__{type_capture}")
+        form = ParamTarget::TypeCapture;
+        format!("{}{type_capture}", crate::ast::TYPE_CAPTURE_PREFIX)
     } else if parameter.fields.iter().any(|f| f.name == Some("type"))
         && !parameter.fields.iter().any(|f| f.name == Some("slurpy"))
         && !parameter
@@ -2132,8 +2133,9 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
             .iter()
             .any(|f| f.name == Some("sub-signature"))
     {
-        // `sub f(Int)`: a parameter of a bare type, which the parser names so.
-        super::convert::TYPE_ONLY_PARAM.to_string()
+        // `sub f(Int)`: a parameter of a bare type.
+        form = ParamTarget::TypeOnly;
+        crate::ast::TYPE_ONLY_PARAM.to_string()
     } else if parameter.fields.iter().any(|f| {
         f.name == Some("slurpy")
             && matches!(&f.value, RakuAstFieldValue::Node(v)
@@ -2147,7 +2149,8 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
             .iter()
             .any(|f| f.name == Some("sub-signature"))
         {
-            super::convert::ANONYMOUS_SUBSIGNATURE.to_string()
+            form = ParamTarget::Parens;
+            crate::ast::PARENS_PARAM.to_string()
         } else {
             ANONYMOUS_CAPTURE.to_string()
         }
@@ -2161,14 +2164,17 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
                 && !parameter.fields.iter().any(|f| f.name == Some("type"))
                 && !super::named_param::is_anonymous_named(parameter)
         {
-            super::convert::ANONYMOUS_ARRAY_SUBSIGNATURE.to_string()
+            form = ParamTarget::Brackets;
+            crate::ast::BRACKETS_PARAM.to_string()
         } else {
-            super::convert::ANONYMOUS_SUBSIGNATURE.to_string()
+            form = ParamTarget::Parens;
+            crate::ast::PARENS_PARAM.to_string()
         }
     } else {
         return Err(unsupported(owner));
     };
     let mut def = positional_param(&name);
+    def.target = form;
     def.sigilless = sigilless;
     if invocant {
         def.is_invocant = true;
@@ -2359,7 +2365,8 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
             && owner.class != RakuAstClass::PointyBlock
         {
             // `sub f(Inf)`: the parser's type-only parameter of type `Inf`.
-            def.name = super::convert::TYPE_ONLY_PARAM.to_string();
+            def.name = crate::ast::TYPE_ONLY_PARAM.to_string();
+            def.target = ParamTarget::TypeOnly;
             def.type_constraint = Some(name.to_string());
         } else {
             def.literal_value = Some(value.clone());
@@ -2388,6 +2395,7 @@ pub(super) fn positional_param(name: &str) -> ParamDef {
         trait_meta: Default::default(),
         type_capture: None,
         name: name.to_string(),
+        target: ParamTarget::Variable,
         default: None,
         multi_invocant: true,
         required: true,
