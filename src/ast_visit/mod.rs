@@ -194,6 +194,8 @@ pub(crate) fn walk_param<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, p: &'ast Para
         outer_sub_signature,
         code_signature,
         is_invocant: _,
+        implicit_invocant: _,
+        does_target: _,
         shape_constraints,
         block_param: _,
         code: _,

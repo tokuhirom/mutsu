@@ -137,7 +137,7 @@ fn param_binds_positionally(pd: &ParamDef) -> bool {
         && pd.literal_value.is_none()
         && pd.type_capture.is_none()
         && pd.shape_constraints.is_none()
-        && pd.traits.is_empty()
+        && pd.no_traits()
         && pd
             .type_constraint
             .as_deref()

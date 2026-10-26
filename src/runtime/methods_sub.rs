@@ -205,6 +205,8 @@ impl Interpreter {
             params
                 .into_iter()
                 .map(|name| ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                    implicit_invocant: Default::default(),
+                    does_target: Default::default(),
                     target: Default::default(),
                     type_capture: None,
                     name,
@@ -342,6 +344,8 @@ impl Interpreter {
             params
                 .into_iter()
                 .map(|name| ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                    implicit_invocant: Default::default(),
+                    does_target: Default::default(),
                     target: Default::default(),
                     type_capture: None,
                     name,

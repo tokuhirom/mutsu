@@ -180,6 +180,14 @@ pub(crate) struct ParamDef {
     pub(crate) code_signature: Option<(Vec<ParamDef>, Option<String>)>,
     /// True when this parameter is the explicit invocant (e.g. `$self:` in a method signature).
     pub(crate) is_invocant: bool,
+    /// True for an invocant the parser synthesized (`method (Foo:D:)`): the
+    /// source never named it. Only meaningful with `is_invocant`.
+    #[serde(default)]
+    pub(crate) implicit_invocant: bool,
+    /// True for a parameter its routine body applies `does` to (ADR-14144);
+    /// derived by `does_target::mark_does_targets`, not written.
+    #[serde(default)]
+    pub(crate) does_target: bool,
     /// Shape constraint for array parameters, e.g. `@a[3]`, `@a[4,4]`, `@a[*]`, `@a[$n]`.
     pub(crate) shape_constraints: Option<Vec<Expr>>,
     /// True when this parameter belongs to a block (pointy/bare), whose
@@ -315,13 +323,6 @@ pub(crate) const PARENS_PARAM: &str = "__subsig__";
 /// The execution name of an anonymous `[…]` destructuring parameter.
 pub(crate) const BRACKETS_PARAM: &str = "@";
 
-/// Trait marker the parser records on an invocant `ParamDef` it *synthesized*
-/// rather than one the user named: `method () { ... }`, `method (Foo:D:)`,
-/// `method (::?CLASS:)`. Both forms are recorded under the name `self`, but only
-/// a user-written `$self:` declares a `$self` lexical in the body — see
-/// [`ParamDef::declares_self_lexical`] and ADR-0061.
-pub(crate) const IMPLICIT_INVOCANT_TRAIT: &str = "implicit-invocant";
-
 /// True when a *signature* declares a parameter the source spelled `$self`,
 /// including one nested in a destructuring sub-signature (`sub f([$self, $x])`).
 ///
@@ -444,6 +445,8 @@ impl ParamDef {
     // Cost: O(|name|).
     pub(crate) fn sigilless_term(name: &str) -> Self {
         ParamDef {
+            implicit_invocant: Default::default(),
+            does_target: Default::default(),
             target: Default::default(),
             spans: Default::default(),
             trait_meta: Default::default(),
@@ -551,9 +554,9 @@ impl ParamDef {
     /// `method (::?CLASS:)`): the source never named it, so it is anonymous
     /// to introspection (`Parameter.name` is empty, `.raku` renders `$:`)
     /// even though it is stored under the env key `self`.
-    // Cost: O(t), t = the parameter's trait count.
+    // Cost: O(1).
     pub(crate) fn is_implicit_invocant(&self) -> bool {
-        self.traits.iter().any(|t| t == IMPLICIT_INVOCANT_TRAIT)
+        self.implicit_invocant
     }
 
     /// The name a `::T` type capture on this parameter binds, if any.
@@ -3479,6 +3482,8 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
             let param_defs = legacy_params
                 .iter()
                 .map(|name| ParamDef {
+                    implicit_invocant: Default::default(),
+                    does_target: Default::default(),
                     target: Default::default(),
                     spans: Default::default(),
                     trait_meta: Default::default(),
@@ -3536,6 +3541,8 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                 // Named placeholders use `:` twigil: $:f, @:f, %:f
                 let is_named = name.contains(':');
                 ParamDef {
+                    implicit_invocant: Default::default(),
+                    does_target: Default::default(),
                     target: Default::default(),
                     spans: Default::default(),
                     trait_meta: Default::default(),
@@ -3569,6 +3576,8 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
         if uses_hash_underscore {
             params.push("%_".to_string());
             param_defs.push(ParamDef {
+                implicit_invocant: Default::default(),
+                does_target: Default::default(),
                 target: Default::default(),
                 spans: Default::default(),
                 trait_meta: Default::default(),

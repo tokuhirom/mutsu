@@ -18,7 +18,7 @@ pub(crate) fn method_sub_form_params(
 ) -> (Vec<String>, Vec<ParamDef>) {
     let has_explicit_invocant = effective_param_defs
         .iter()
-        .any(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"));
+        .any(|p| p.is_invocant);
     if has_explicit_invocant {
         (effective_params.to_vec(), effective_param_defs.to_vec())
     } else {
@@ -32,6 +32,8 @@ pub(crate) fn method_sub_form_params(
                 .cloned(),
         );
         let self_param = crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
+            implicit_invocant: Default::default(),
+            does_target: Default::default(),
             target: Default::default(),
             type_capture: None,
             name: "self".to_string(),
@@ -62,7 +64,7 @@ pub(crate) fn method_sub_form_params(
         sub_param_defs.extend(
             effective_param_defs
                 .iter()
-                .filter(|p| !(p.is_invocant || p.traits.iter().any(|t| t == "invocant")))
+                .filter(|p| !p.is_invocant)
                 .cloned(),
         );
         (sub_params, sub_param_defs)
@@ -90,7 +92,6 @@ impl Interpreter {
         let rest: &[ParamDef] = if method_param_defs.first().is_some_and(|p| p.is_invocant) {
             let mut inv = method_param_defs[0].clone();
             inv.is_invocant = false;
-            inv.traits.retain(|t| t != "invocant");
             if inv.type_constraint.is_none() {
                 inv.type_constraint = Some(class_name.to_string());
             }
@@ -98,6 +99,8 @@ impl Interpreter {
             &method_param_defs[1..]
         } else {
             sub_param_defs.push(ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                implicit_invocant: Default::default(),
+                does_target: Default::default(),
                 target: Default::default(),
                 type_capture: None,
                 name: "self".to_string(),

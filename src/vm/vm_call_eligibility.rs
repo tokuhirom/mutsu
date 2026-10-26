@@ -226,7 +226,7 @@ impl Interpreter {
                     // in `type_constraint` as `"::T"`; now it is its own field
                     // and the gate has to name it (#7984).
                     && pd.captured_type_name().is_none()
-                    && pd.traits.is_empty()
+                    && pd.no_traits()
                     // An attributive parameter (`$!x`/`$.x`/`:$!x`, #8452)
                     // binds straight to `self`'s attribute cell, which only
                     // the general binder's post-bind mirror step performs
@@ -519,8 +519,9 @@ impl Interpreter {
                     // (whether THIS call's argument is actually a caller
                     // lexical). Every other trait (`raw`, `copy`, ...) keeps
                     // the general binder, matching the ADR's declared scope.
-                    && (pd.traits.is_empty()
-                        || (pd.traits.len() == 1
+                    && (pd.no_traits()
+                        || (!pd.does_target
+                            && pd.traits.len() == 1
                             && pd.traits[0] == "rw"
                             && Self::is_plain_scalar_param_name(&pd.name)))
                     && pd.sub_signature.is_none()
@@ -588,7 +589,7 @@ impl Interpreter {
                         && !pd.double_slurpy
                         && !pd.is_invocant
                         && !pd.sigilless
-                        && pd.traits.is_empty()
+                        && pd.no_traits()
                         && pd.sub_signature.is_none()
                 })
         })
@@ -637,7 +638,7 @@ impl Interpreter {
         let arg_sources = self.pending_call_arg_sources();
         let mut arg_idx = 0usize;
         for pd in &method_def.param_defs {
-            if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") || pd.named {
+            if pd.is_invocant || pd.named {
                 continue;
             }
             // Skip named (string-keyed Pair) arguments when aligning positional
@@ -661,7 +662,7 @@ impl Interpreter {
                 && !pd.slurpy
                 && !pd.double_slurpy
                 && !pd.sigilless
-                && pd.traits.is_empty()
+                && pd.no_traits()
                 && pd.sub_signature.is_none();
             if !eligible_scalar_param {
                 continue;
@@ -876,7 +877,7 @@ impl Interpreter {
         args: &[Value],
         base_is_instance: bool,
     ) -> bool {
-        if !pd.traits.is_empty()
+        if pd.has_traits()
             || pd.slurpy
             || pd.double_slurpy
             || pd.onearg

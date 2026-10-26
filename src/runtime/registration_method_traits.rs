@@ -210,7 +210,7 @@ impl Interpreter {
         // it: upstream NativeCall's `$!arity` counts it.
         let has_invocant = param_defs
             .iter()
-            .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
+            .any(|pd| pd.is_invocant);
         let (params, param_defs) = if has_invocant {
             (params.to_vec(), param_defs.to_vec())
         } else {

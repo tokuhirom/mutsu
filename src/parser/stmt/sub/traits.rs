@@ -472,10 +472,7 @@ pub(crate) fn reject_attr_params_in_sub(params: &[ParamDef]) -> Result<(), PErro
 }
 
 pub(crate) fn reject_invocant_in_sub(params: &[ParamDef]) -> Result<(), PError> {
-    if params
-        .iter()
-        .any(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
-    {
+    if params.iter().any(|p| p.is_invocant) {
         return Err(invocant_not_allowed_error());
     }
     Ok(())

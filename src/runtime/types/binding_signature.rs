@@ -1286,7 +1286,7 @@ impl Interpreter {
         // phase 3). Both are fixed per-call method-entry keys with
         // pre-interned symbols (#7736).
         let invocant_captures = param_defs.iter().filter_map(|pd| {
-            (pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
+            pd.is_invocant
                 .then(|| pd.captured_type_name())
                 .flatten()
         });

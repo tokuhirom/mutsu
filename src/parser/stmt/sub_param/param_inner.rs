@@ -424,9 +424,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             let mut p = super::helpers::make_param("self".to_string());
             p.type_constraint = Some(tc);
             p.is_invocant = true;
-            p.traits.push("invocant".to_string());
-            p.traits
-                .push(crate::ast::IMPLICIT_INVOCANT_TRAIT.to_string());
+            p.implicit_invocant = true;
             return Ok((r, p));
         }
         let (r, _) = ws(r)?;
@@ -463,9 +461,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             let mut p = super::helpers::make_param("self".to_string());
             p.type_constraint = Some(tc);
             p.is_invocant = true;
-            p.traits.push("invocant".to_string());
-            p.traits
-                .push(crate::ast::IMPLICIT_INVOCANT_TRAIT.to_string());
+            p.implicit_invocant = true;
             return Ok((r, p));
         } else if r.starts_with('(') {
             // A `(` after the pseudo-type is not this branch's business: it

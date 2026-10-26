@@ -113,7 +113,7 @@ impl Interpreter {
             self.env.insert("self".to_string(), inv.clone());
         }
         for pd in &def.param_defs {
-            if !(pd.is_invocant || pd.traits.iter().any(|t| t == "invocant")) {
+            if !pd.is_invocant {
                 continue;
             }
             // `::?CLASS` / `::?ROLE` are pseudo-types (the current class), NOT

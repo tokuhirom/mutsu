@@ -543,7 +543,7 @@ impl Interpreter {
         let has_explicit_invocant = def
             .param_defs
             .iter()
-            .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
+            .any(|pd| pd.is_invocant);
         let mut full_param_defs = Vec::with_capacity(def.param_defs.len() + 1);
         if !has_explicit_invocant {
             full_param_defs.push(Self::make_invocant_param(owner));
@@ -587,6 +587,8 @@ impl Interpreter {
 
     pub(super) fn make_invocant_param(class_name: &str) -> crate::ast::ParamDef {
         crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
+            implicit_invocant: Default::default(),
+            does_target: Default::default(),
             target: Default::default(),
             type_capture: None,
             name: String::new(),

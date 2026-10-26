@@ -21,7 +21,7 @@ use super::{
 };
 use crate::ast::parsed::ParsedStmt;
 use crate::ast::spelled::Spelling;
-use crate::ast::{AssignOp, Expr, ForMode, IMPLICIT_INVOCANT_TRAIT, ParamDef, ParamTarget, Stmt};
+use crate::ast::{AssignOp, Expr, ForMode, ParamDef, ParamTarget, Stmt};
 use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::regex_tree::{RegexExtension, RegexModifierKind, RegexNode, RegexTree};
 use crate::value::{RuntimeError, Value, ValueView};
@@ -5319,18 +5319,8 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     // The parser records an invocant (`$self:`, `Foo:D:`) as `is_invocant`
     // plus an `invocant` trait, and a synthesized one (no variable) with the
     // `implicit-invocant` trait as well; RakuAST has the one `invocant` flag.
-    let implicit_invocant = pd.traits.iter().any(|t| t == IMPLICIT_INVOCANT_TRAIT);
-    let user_traits: Vec<&str> = pd
-        .traits
-        .iter()
-        .map(String::as_str)
-        .filter(|t| {
-            !matches!(
-                *t,
-                "invocant" | IMPLICIT_INVOCANT_TRAIT | crate::ast::does_target::DOES_TARGET_TRAIT
-            )
-        })
-        .collect();
+    let implicit_invocant = pd.implicit_invocant;
+    let user_traits: Vec<&str> = pd.traits.iter().map(String::as_str).collect();
     let refusal = if pd.literal_value.is_some()
         && (pd.named
             || pd.slurpy
@@ -5342,9 +5332,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         Some("literal-value parameter with more than a value")
     } else if user_traits.iter().any(|t| !is_parameter_trait_name(t)) {
         Some("parameter with a trait the converter does not render")
-    } else if pd.is_invocant != pd.traits.iter().any(|t| t == "invocant")
-        || (implicit_invocant && !pd.is_invocant)
-    {
+    } else if implicit_invocant && !pd.is_invocant {
         Some("invocant marker without an invocant")
     } else if pd.is_invocant && (pd.named || pd.slurpy || pd.double_slurpy) {
         Some("non-scalar invocant parameter")
@@ -5601,17 +5589,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
 /// Render the `traits` field shared by ordinary and anonymous destructuring
 /// parameters.
 pub(super) fn parameter_traits(pd: &ParamDef) -> Result<Option<RakuAstField>, RuntimeError> {
-    let traits: Vec<&str> = pd
-        .traits
-        .iter()
-        .map(String::as_str)
-        .filter(|t| {
-            !matches!(
-                *t,
-                "invocant" | IMPLICIT_INVOCANT_TRAIT | crate::ast::does_target::DOES_TARGET_TRAIT
-            )
-        })
-        .collect();
+    let traits: Vec<&str> = pd.traits.iter().map(String::as_str).collect();
     if traits.is_empty() {
         return Ok(None);
     }

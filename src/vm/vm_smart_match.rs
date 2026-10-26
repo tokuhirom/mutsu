@@ -804,7 +804,7 @@ impl Interpreter {
                 let mut positional_required = 0usize;
                 let mut positional_total = 0usize;
                 for pd in &param_defs {
-                    if pd.named || pd.traits.iter().any(|t| t == "invocant") {
+                    if pd.named || pd.is_invocant {
                         continue;
                     }
                     if pd.slurpy || pd.double_slurpy || pd.onearg {

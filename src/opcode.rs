@@ -5444,6 +5444,8 @@ pub(crate) fn body_uses_return_rw(stmts: &[Stmt]) -> bool {
 
 fn implicit_legacy_param(name: &str) -> ParamDef {
     ParamDef {
+        implicit_invocant: Default::default(),
+        does_target: Default::default(),
         target: Default::default(),
         spans: Default::default(),
         trait_meta: Default::default(),
@@ -13663,7 +13665,7 @@ impl FastParamCheck {
             && pd.type_constraint.is_none()
             && pd.type_capture.is_none()
             && pd.where_constraint.is_none()
-            && pd.traits.is_empty()
+            && pd.no_traits()
             && pd.literal_value.is_none()
             && pd.sub_signature.is_none()
             && pd.outer_sub_signature.is_none()

@@ -176,9 +176,6 @@ pub(crate) fn validate_param_trait_pub<'a>(
 /// in the VM (`check_param_custom_traits`), not here.
 pub(crate) fn is_builtin_param_trait(trait_name: &str) -> bool {
     VALID_PARAM_TRAITS.contains(&trait_name)
-        || trait_name == "invocant"
-        || trait_name == crate::ast::IMPLICIT_INVOCANT_TRAIT
-        || trait_name == crate::ast::does_target::DOES_TARGET_TRAIT
 }
 
 /// Parse-time handling of a parameter trait name. An unknown name is NOT a parse
@@ -364,7 +361,7 @@ pub(crate) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
     // (`method m($self: ...)`). On any later parameter (`sub f($x, $y:)`,
     // `method m($x, $y:)`) Raku raises X::Syntax::Signature::InvocantMarker.
     for pd in params.iter().skip(1) {
-        if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") {
+        if pd.is_invocant {
             let msg = "Can only use : as invocant marker in a signature after the first parameter"
                 .to_string();
             let mut attrs = std::collections::HashMap::new();

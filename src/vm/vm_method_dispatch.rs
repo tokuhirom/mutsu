@@ -175,7 +175,6 @@ impl Interpreter {
         let has_aliasable_container_params = !light_aggregates
             && method_def.param_defs.iter().any(|pd| {
                 !pd.is_invocant
-                    && !pd.traits.iter().any(|t| t == "invocant")
                     && !pd.slurpy
                     && !pd.double_slurpy
                     && !pd.named
@@ -221,8 +220,7 @@ impl Interpreter {
         // first env_mut() call triggers.
         if !has_rw_params && !has_aliasable_container_params && !shares_scalar_container {
             let has_invocant_constraint = method_def.param_defs.iter().any(|pd| {
-                (pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
-                    && (pd.type_constraint.is_some() || pd.type_capture.is_some())
+                pd.is_invocant && (pd.type_constraint.is_some() || pd.type_capture.is_some())
             });
             // A `::T` type capture has to be BOUND before the body runs, and the
             // fast path has no binder step that does it. It used to be kept out
@@ -270,7 +268,7 @@ impl Interpreter {
             // cell). Everything else named-shaped bails via this predicate.
             let base_is_instance = matches!(base.view(), ValueView::Instance { .. });
             let named_params_fast_ok = method_def.param_defs.iter().all(|pd| {
-                if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") || !pd.named {
+                if pd.is_invocant || !pd.named {
                     return true;
                 }
                 Self::named_param_fast_eligible(pd, &args, base_is_instance)
@@ -309,7 +307,7 @@ impl Interpreter {
                     _ => true,
                 });
             let has_complex_params = method_def.param_defs.iter().any(|pd| {
-                if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") {
+                if pd.is_invocant {
                     return false;
                 }
                 // Allow the implicit %_ slurpy that every method gets
@@ -346,12 +344,7 @@ impl Interpreter {
             let needs_default_eval = {
                 let mut pos = 0;
                 method_def.param_defs.iter().any(|pd| {
-                    if pd.is_invocant
-                        || pd.traits.iter().any(|t| t == "invocant")
-                        || pd.named
-                        || pd.slurpy
-                        || pd.double_slurpy
-                    {
+                    if pd.is_invocant || pd.named || pd.slurpy || pd.double_slurpy {
                         return false;
                     }
                     let result = pos >= positional_arg_count && pd.default.is_some();
@@ -365,12 +358,7 @@ impl Interpreter {
             let has_missing_required = {
                 let mut pos = 0;
                 method_def.param_defs.iter().any(|pd| {
-                    if pd.is_invocant
-                        || pd.traits.iter().any(|t| t == "invocant")
-                        || pd.slurpy
-                        || pd.double_slurpy
-                        || pd.named
-                    {
+                    if pd.is_invocant || pd.slurpy || pd.double_slurpy || pd.named {
                         return false;
                     }
                     let missing =
@@ -383,13 +371,7 @@ impl Interpreter {
             let positional_count = method_def
                 .param_defs
                 .iter()
-                .filter(|pd| {
-                    !pd.is_invocant
-                        && !pd.traits.iter().any(|t| t == "invocant")
-                        && !pd.slurpy
-                        && !pd.double_slurpy
-                        && !pd.named
-                })
+                .filter(|pd| !pd.is_invocant && !pd.slurpy && !pd.double_slurpy && !pd.named)
                 .count();
             let has_arg_mismatch = positional_arg_count > positional_count;
 
@@ -667,7 +649,7 @@ impl Interpreter {
             let is_invocant = method_def
                 .param_defs
                 .get(idx)
-                .map(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
+                .map(|pd| pd.is_invocant)
                 .unwrap_or(false);
             if is_invocant {
                 if let Some(pd) = method_def.param_defs.get(idx) {
@@ -1799,7 +1781,7 @@ impl Interpreter {
         param_defs: &[crate::ast::ParamDef],
     ) {
         for pd in param_defs {
-            if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") {
+            if pd.is_invocant {
                 continue;
             }
             if Self::attr_twigil_base(&pd.name).is_some() {
@@ -2087,9 +2069,7 @@ impl Interpreter {
             } else {
                 (param_name.as_str(), param_syms[idx])
             };
-            let is_invocant = pd
-                .map(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
-                .unwrap_or(false);
+            let is_invocant = pd.map(|pd| pd.is_invocant).unwrap_or(false);
             if is_invocant {
                 // ADR-0067 slice 3b — see the twin in `call_compiled_method`.
                 // Which of the two binders runs is decided by the fast-path
