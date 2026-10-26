@@ -93,6 +93,14 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
         ParsedStmt::TakeLogicalTail { value, op, right } => {
             statement_expression(super::convert::take_logical_tail_node(value, op, right)?)
         }
+        ParsedStmt::DoneValue(_) => {
+            return Err(super::convert::unsupported(
+                "`done VALUE` outside a statement list",
+            ));
+        }
+        ParsedStmt::CallAssignList { head, items } => {
+            statement_expression(super::decl_tail::convert_call_assign_list(head, items)?)
+        }
         ParsedStmt::CommaDecls(declarations) => {
             statement_expression(super::convert::comma_declarations_node(declarations)?)
         }

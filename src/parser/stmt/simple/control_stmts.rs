@@ -874,14 +874,9 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
                 crate::parser::stmt::assign::parse_comma_or_expr_no_word_logical(rest)?;
             return parse_statement_modifier(
                 rest,
-                Stmt::SyntheticBlock(vec![
-                    Stmt::Call {
-                        name: Symbol::intern("emit"),
-                        args: vec![crate::ast::CallArg::Positional(value)],
-                        listop: false,
-                    },
-                    Stmt::ReactDone,
-                ]),
+                crate::parser::stmt::control::parsed_block::finish_total(
+                    crate::ast::parsed::ParsedStmt::DoneValue(value),
+                ),
             );
         }
         // Support statement modifiers like `done if $v >= 2`

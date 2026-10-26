@@ -55,6 +55,17 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         v.visit_expr(right);
         return;
     }
+    if let ParsedStmt::DoneValue(value) = node {
+        v.visit_expr(value);
+        return;
+    }
+    if let ParsedStmt::CallAssignList { head, items } = node {
+        super::walk_stmt(v, head);
+        for item in items {
+            v.visit_expr(item);
+        }
+        return;
+    }
     if let ParsedStmt::CommaDecls(declarations)
     | ParsedStmt::AttributeGroup(declarations)
     | ParsedStmt::AttributeColonArglist(declarations) = node
@@ -195,6 +206,13 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
         ParsedStmt::TakeLogicalTail { value, right, .. } => {
             v.visit_expr_mut(value);
             v.visit_expr_mut(right);
+        }
+        ParsedStmt::DoneValue(value) => v.visit_expr_mut(value),
+        ParsedStmt::CallAssignList { head, items } => {
+            super::walk_stmt_mut(v, head);
+            for item in items {
+                v.visit_expr_mut(item);
+            }
         }
         ParsedStmt::CommaDecls(declarations)
         | ParsedStmt::AttributeGroup(declarations)

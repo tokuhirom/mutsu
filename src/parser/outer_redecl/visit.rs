@@ -188,6 +188,8 @@ impl VisitMut for Ctx {
             | ParsedStmt::SignatureDecl(_)
             | ParsedStmt::Temporize(_)
                     | ParsedStmt::TakeLogicalTail { .. }
+                    | ParsedStmt::DoneValue(_)
+                    | ParsedStmt::CallAssignList { .. }
                     | ParsedStmt::RoutineTraits(_)
                     | ParsedStmt::ImmediateCall { .. }
                     | ParsedStmt::AttributeModifier { .. } => {
