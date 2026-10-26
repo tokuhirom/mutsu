@@ -520,7 +520,8 @@ impl Interpreter {
         let mut defs = param_defs.to_vec();
         for pd in &mut defs {
             if pd.is_type_only() {
-                pd.name = "__ANON_STATE#".to_string();
+                pd.name = crate::ast::ANON_SCALAR_PARAM.to_string();
+                pd.target = crate::ast::ParamTarget::Anonymous('$');
             }
         }
         format!(":{}", Self::build_signature_string(&defs))
