@@ -315,7 +315,12 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     // stmt-list parsing) also keeps an unrelated `use Foo proto; sub MAIN`
     // pair from being mistaken for this construct.
     let stmt = if let Some(proto) = inline_proto {
-        Stmt::SyntheticBlock(vec![proto, use_stmt])
+        crate::parser::stmt::control::parsed_block::finish_total(
+            crate::ast::parsed::ParsedStmt::InlineProtoUse {
+                proto: Box::new(proto),
+                use_stmt: Box::new(use_stmt),
+            },
+        )
     } else {
         use_stmt
     };

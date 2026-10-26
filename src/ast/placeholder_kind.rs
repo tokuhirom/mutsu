@@ -164,6 +164,7 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
             | ParsedStmt::CommaDecls(_)
             | ParsedStmt::TakeLogicalTail { .. }
             | ParsedStmt::DoneValue(_)
+            | ParsedStmt::InlineProtoUse { .. }
             | ParsedStmt::CallAssignList { .. }
             | ParsedStmt::RoutineTraits(_)
             | ParsedStmt::ImmediateCall { .. }
