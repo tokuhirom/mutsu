@@ -375,6 +375,7 @@ impl Interpreter {
                 || p.slurpy
                 || p.sigilless
                 || !p.traits.iter().all(plain_trait)
+                || p.does_target
                 || p.where_constraint.is_some()
                 || p.literal_value.is_some()
                 || p.sub_signature.is_some()

@@ -226,6 +226,7 @@ impl Interpreter {
             && pd.literal_value.is_none()
             && pd.type_capture.is_none()
             && pd.traits.is_empty()
+            && !pd.does_target
             && pd.sub_signature.is_none()
             && pd.outer_sub_signature.is_none()
             && pd.code_signature.is_none()
