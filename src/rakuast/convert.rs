@@ -5643,7 +5643,6 @@ pub(super) const ANONYMOUS_SCALAR_PARAM: &str = "__ANON_STATE#";
 pub(super) const ANONYMOUS_ARRAY_PARAM: &str = "@__ANON_ARRAY__";
 pub(super) const ANONYMOUS_HASH_PARAM: &str = "%__ANON_HASH__";
 
-
 /// The `::T` type capture `pd` declares. Unlike `ParamDef::captured_type_name`
 /// (whose binder reading this does not change), a `::?CLASS` / `::?ROLE`
 /// pseudo-type is a nominal type here, the way rakudo's `.AST` shows it.

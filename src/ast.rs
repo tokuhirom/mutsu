@@ -109,7 +109,9 @@ pub(crate) enum HandleSpec {
 /// `__subsig__`, `@`, `__type_capture__T`); this records which form the
 /// placeholder stands for, so the RakuAST view reads the form and never has to
 /// recognize a placeholder name.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub(crate) enum ParamTarget {
     /// A variable or sigilless term: `name` is it.
     #[default]
