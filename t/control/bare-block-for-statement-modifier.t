@@ -1,11 +1,13 @@
 use v6;
 use Test;
 
-plan 24;
+plan 29;
 
 # A bare `{ ... }` block used as the operand of a statement modifier is the
 # statement the modifier modifies -- it is run, not collected as an uncalled
-# closure.  `{ BLOCK } for LIST` is exactly `for LIST { BLOCK }`.
+# closure.  `{ BLOCK } for LIST` is exactly `for LIST { BLOCK }`.  Under `if` /
+# `unless` / `given` / `with` / `without` a block in expression position is a
+# plain term (rakudo 2026.09), and a pointy block is called with the tested value.
 
 # --- `for` modifier, expression position -------------------------------------
 
@@ -69,10 +71,10 @@ plan 24;
 
 # --- other statement modifiers ----------------------------------------------
 
-is ({ 42 } if 1), 42, 'bare block with the `if` modifier is invoked';
-is ({ 42 } unless 0), 42, 'bare block with the `unless` modifier is invoked';
-is ({ $_ * 2 } given 21), 42, 'bare block with the `given` modifier sees the topic';
-is ({ $_ + 1 } with 41), 42, 'bare block with the `with` modifier sees the topic';
+ok ({ 42 } if 1) ~~ Block, 'bare block with the `if` modifier stays a Block in a term';
+ok ({ 42 } unless 0) ~~ Block, 'bare block with the `unless` modifier stays a Block';
+ok ({ $_ * 2 } given 21) ~~ Block, 'bare block with the `given` modifier stays a Block';
+ok ({ $_ + 1 } with 41) ~~ Block, 'bare block with the `with` modifier stays a Block';
 
 {
     my $n = 0;
@@ -101,16 +103,22 @@ is ({ $_ + 1 } with 41), 42, 'bare block with the `with` modifier sees the topic
 }
 
 {
-    # A pointy block is NOT a bare block: the `if` modifier leaves it a term.
-    my $r = (-> $x { $x } if 1);
-    ok $r ~~ Callable, 'a pointy block with `if` stays an uncalled closure';
+    # A pointy block is called with the value `if` / `unless` / `with` tested.
+    is (-> $x { $x } if 1), 1, 'a pointy block with `if` is called with the condition';
+    is (-> $x { $x } unless 0), 0, 'a pointy block with `unless` is called with the condition';
+    is (-> $x { $x } with 42), 42, 'a pointy block with `with` is called with the value';
+    ok (-> $x { $x } given 5) ~~ Callable, 'a pointy block with `given` stays a closure';
+    is (-> $x { $x } if 0).elems, 0, 'a false `if` does not call it';
 }
 
-# `while`/`until` thunk the statement they modify, so a bare block stays an
-# uncalled closure term there.
+# `while`/`until` run a bare block on each pass and collect its value.
 {
     my $i = 0;
-    my @r = ({ 1 } while $i++ < 2);
-    is @r.elems, 2, '`while` modifier still iterates';
-    ok @r.all ~~ Callable, 'a bare block with `while` stays an uncalled closure';
+    is-deeply ({ 1 } while $i++ < 2).List, (1, 1), 'a bare block with `while` is run';
+    $i = 0;
+    is-deeply ({ $i } until $i++ >= 2).List, (1, 2), 'a bare block with `until` is run';
+    $i = 0;
+    my $n = 0;
+    { $n += 2 } while $i++ < 2;
+    is $n, 4, 'at statement level the `while` block runs too';
 }
