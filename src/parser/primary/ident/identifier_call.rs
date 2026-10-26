@@ -1277,7 +1277,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
             if r.starts_with("is ") || r.starts_with("returns ") || r.starts_with("of ") {
                 let (r, traits) = crate::parser::stmt::parse_sub_traits_pub(r)?;
-                let (r, body) = parse_block_body_routine(r)?;
+                let (r, mut body) = parse_block_body_routine(r)?;
+                crate::ast::routine_trait::attach(&mut body, traits.source_traits);
                 let mut expr = Expr::AnonSub {
                     body,
                     is_rw: traits.is_rw,

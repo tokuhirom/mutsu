@@ -1,10 +1,9 @@
 //! Execution flags read from written routine traits.
-use super::convert::{leaf_field, node_field, statement_expression};
 use super::lower::{named_child, named_child_or_positional, positional_leaf};
-use super::routine_traits::{export_argument, export_tags, trait_is};
+use super::routine_traits::export_tags;
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, ValueView};
 const DEFAULT_TAG: &str = "DEFAULT";
 
 /// The flag-valued `is` traits a routine can carry.
@@ -73,34 +72,6 @@ impl IsTraits {
         }
         Ok(true)
     }
-
-    /// The written flag traits, as `Trait::Is` nodes.
-    pub(super) fn nodes(&self) -> Vec<RakuAstNode> {
-        let mut nodes = Vec::new();
-        for (on, name) in [(self.is_rw, "rw"), (self.is_raw, "raw")] {
-            if on {
-                nodes.push(trait_is(name, None));
-            }
-        }
-        if !self.export_tags.is_empty() {
-            nodes.push(trait_is("export", export_argument(&self.export_tags)));
-        }
-        if let Some(value) = &self.assoc {
-            nodes.push(trait_is(
-                "assoc",
-                Some(super::package_header::words_value(value)),
-            ));
-        }
-        if let Some((kind, reference)) = &self.precedence {
-            let variable = RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::VarLexical,
-                fields: vec![leaf_field(None, Value::str(reference.clone()))],
-            };
-            nodes.push(trait_is(kind, Some(paren_around(variable))));
-        }
-        nodes
-    }
 }
 
 /// Whether `reference` is the `&infix:<+>` spelling of an operator sub.
@@ -114,22 +85,6 @@ fn is_operator_reference(reference: &str) -> bool {
                 && !op[..op.len() - 1].contains(['<', '>', ' '])
         })
     })
-}
-
-/// `(NODE)` as a trait argument, for a node already converted.
-fn paren_around(node: RakuAstNode) -> RakuAstNode {
-    RakuAstNode {
-        origin: Default::default(),
-        class: RakuAstClass::CircumfixParentheses,
-        fields: vec![node_field(
-            None,
-            RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::SemiList,
-                fields: vec![node_field(None, statement_expression(node))],
-            },
-        )],
-    }
 }
 
 /// The word of an `is assoc<word>` argument (`QuotedString(<words val>)`).

@@ -2433,6 +2433,7 @@ t/lang/operators/compound-assign-indexed-lvalue.t
 t/lang/operators/compound-assign-item-precedence.t
 t/lang/operators/compound-assign-logical-operand.t
 t/lang/operators/compound-assign-logical-or-lvalue-defined-or.t
+t/lang/operators/compound-assign-no-identity.t
 t/lang/operators/compound-assign-ops.t
 t/lang/operators/compound-assign-paren-rhs-infix.t
 t/lang/operators/compound-assign-precedence.t
@@ -2980,8 +2981,10 @@ t/modules/import-export/exporthow-declare-body-trait.t
 t/modules/import-export/exporthow-declare-expression-position.t
 t/modules/import-export/exporthow-declare-keyword.t
 t/modules/import-export/exporthow-declare-monitor-protocol.t
+t/modules/import-export/exporthow-declare-nested-shell-keeps-its-how.t
 t/modules/import-export/exporthow-declare-private-method.t
 t/modules/import-export/exporthow-declare-set-rw.t
+t/modules/import-export/exporthow-declare-term-form-trait-mixin.t
 t/modules/import-export/exporthow-declare-unit-form.t
 t/modules/import-export/exporthow-invalid-directive.t
 t/modules/import-export/exporthow-supersede-builtin.t
@@ -3851,6 +3854,7 @@ t/oo/attribute/attribute-trait-arg-declared-later-in-composing-class.t
 t/oo/attribute/attribute-trait-compose-sees-later-methods.t
 t/oo/attribute/attribute-trait-core-candidate-redispatch.t
 t/oo/attribute/attribute-trait-how-compose-runs-once.t
+t/oo/attribute/attribute-trait-method-closure-keeps-its-own-scope.t
 t/oo/attribute/attribute-trait-mixin-visible-to-compose-hook.t
 t/oo/attribute/attribute-trait-mod-will-block.t
 t/oo/attribute/attribute-trait-mod.t
@@ -4401,6 +4405,7 @@ t/oo/method/method-captures-enclosing-lexical-type.t
 t/oo/method/method-captures-enclosing-sigilless-term.t
 t/oo/method/method-captures-sigilless-param.t
 t/oo/method/method-closure-env-write-merge.t
+t/oo/method/method-closure-sees-callers-dynamic-var-term-form-declare.t
 t/oo/method/method-declarations-require-block-separator.t
 t/oo/method/method-declared-in-closure-body.t
 t/oo/method/method-declared-in-routine-body.t
@@ -5168,6 +5173,7 @@ t/oo/trait/class-body-trait-multi.t
 t/oo/trait/class-expression-is-rw-trait.t
 t/oo/trait/class-how-compose-override-from-method-trait.t
 t/oo/trait/class-is-array-type-trait.t
+t/oo/trait/class-term-form-trait-keeps-how-mixin.t
 t/oo/trait/class-trait-how-mixin-compose.t
 t/oo/trait/class-traits-see-classhow-after-child-namespace.t
 t/oo/trait/custom-parameter-trait-argument-dispatch.t
@@ -5293,6 +5299,7 @@ t/rakuast/rakuast-call-assign-declaration-list.t
 t/rakuast/rakuast-call-assign-initializer.t
 t/rakuast/rakuast-call-lvalue-assign.t
 t/rakuast/rakuast-callable-and-slurpy-signatures.t
+t/rakuast/rakuast-callable-lvalue-targets.t
 t/rakuast/rakuast-callable-lvalue.t
 t/rakuast/rakuast-caller-scope-names.t
 t/rakuast/rakuast-calls-assign.t
@@ -5562,6 +5569,7 @@ t/rakuast/rakuast-origin-type-decls.t
 t/rakuast/rakuast-origin-whatever.t
 t/rakuast/rakuast-origin-word-quotes.t
 t/rakuast/rakuast-outer-slurpy-bindings.t
+t/rakuast/rakuast-package-header-traits.t
 t/rakuast/rakuast-package-indirect-lookup.t
 t/rakuast/rakuast-package-namespaces-traits.t
 t/rakuast/rakuast-package-our-bindings.t
@@ -5679,6 +5687,7 @@ t/rakuast/rakuast-smiley-pragma.t
 t/rakuast/rakuast-source-declaration-boundaries.t
 t/rakuast/rakuast-source-forms.t
 t/rakuast/rakuast-source-identifiers.t
+t/rakuast/rakuast-statement-assign-targets.t
 t/rakuast/rakuast-statement-assignment-node.t
 t/rakuast/rakuast-statement-block-bindings.t
 t/rakuast/rakuast-statement-modifier-node.t
@@ -5770,6 +5779,7 @@ t/rakuast/rakuast-with-without-modifier.t
 t/rakuast/rakuast-word-list-spelling.t
 t/rakuast/rakuast-word-quotes.t
 t/rakuast/rakuast-words-processor-and-colonpair-words.t
+t/rakuast/rakuast-xz-assignment.t
 t/rakuast/rakuast-yada-stubs.t
 t/rakuast/rakuast-zen-slice-adverbs.t
 t/rakuast/rakuast-zen-slice-exists.t
@@ -6442,6 +6452,7 @@ t/routines/call/tail-function.t
 t/routines/call/tail-stmt-call-named-value.t
 t/routines/call/tied-container-store-through-capture-cell.t
 t/routines/call/type-capture-callee-local.t
+t/routines/call/type-capture-passed-by-name-anon-type.t
 t/routines/call/type-capture.t
 t/routines/call/typed-compound-capture-writeback.t
 t/routines/call/typed-container-capture-cell.t
@@ -7256,6 +7267,7 @@ t/routines/signature/rw-param-incdec-arg-container.t
 t/routines/signature/rw-param-rebind-detaches-from-caller.t
 t/routines/signature/rw-param-scalar-holding-aggregate.t
 t/routines/signature/rw-param-shared-cell.t
+t/routines/signature/rw-param-source-named-like-other-param.t
 t/routines/signature/rw-param-type-follows-caller-container.t
 t/routines/signature/rw-param-writeback-coherence.t
 t/routines/signature/rw-routine-readonly-param-aggregate-tail.t
@@ -7564,6 +7576,7 @@ t/types/coercion/type-constraint-qualified-namesake.t
 t/types/coercion/type-constraints.t
 t/types/coercion/type-instance-eqv.t
 t/types/coercion/type-named-scalar-decl.t
+t/types/coercion/type-object-assign-expression.t
 t/types/coercion/type-object-at-pos.t
 t/types/coercion/type-object-coercion-nested.t
 t/types/coercion/type-object-has-no-coerce.t

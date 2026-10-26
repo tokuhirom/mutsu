@@ -747,7 +747,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             {
                 return Err(unsupported("sub with traits and no written-trait record"));
             }
-            routine_traits::add_flags(&mut node, *multi, false, &Default::default())?;
+            routine_traits::add_flags(&mut node, *multi, false);
             if let Some(scope) = sub_scope(custom_traits) {
                 // `scope => "our"` / `"anon"` leads the node; `my` is the
                 // default scope and renders no field.
@@ -841,7 +841,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     "method with traits and no written-trait record",
                 ));
             }
-            routine_traits::add_flags(&mut node, *multi, *is_private, &Default::default())?;
+            routine_traits::add_flags(&mut node, *multi, *is_private);
             // `scope => "my"` / `"our"` leads the node, ahead of `multiness`.
             // Submethod's constructor rendering omits even a written scope,
             // but its accessor still distinguishes `my` and `our`. Keep the
@@ -1560,12 +1560,6 @@ pub(super) fn plain_infix(op: &str) -> RakuAstNode {
         class: RakuAstClass::Infix,
         fields: vec![leaf_field(None, Value::str(op.to_string()))],
     }
-}
-
-/// Whether a compound-assignment marker's `op` is the `.=` metaop, which rakudo
-/// models as `ApplyDottyInfix`, not as `MetaInfix::Assign` over an infix.
-fn is_dotty_assign_op(op: &str) -> bool {
-    op == crate::parser::DOTTY_ASSIGN_OP
 }
 
 /// `$x OP= EXPR` -> `ApplyInfix(left, MetaInfix::Assign(Infix(OP)), right)`.
@@ -3042,12 +3036,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // `$::($n)` / `@::($n)` -> `Var::Package` over a dynamic name.
         Expr::SymbolicDeref { sigil, expr } => super::symbolic_deref::convert(sigil, expr),
-        Expr::SymbolicDerefAssign { sigil, expr, value } => {
-            super::symbolic_deref::convert_assign(sigil, expr, value)
-        }
-        Expr::IndirectTypeLookupAssign { expr, value } => {
-            super::symbolic_deref::convert_type_assign(expr, value)
-        }
         Expr::IndirectCodeLookup {
             package,
             name,
@@ -3171,9 +3159,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // it would hand back a node with block semantics (`let`/`temp`
             // resolution) the original never had -- GH-7635.
             if origin != &crate::ast::DoBlockOrigin::SourceBlock {
-                if let Some(node) = super::hyper_dotty_writeback::convert(body)? {
-                    return Ok(node);
-                }
                 // `120 = 3`: the written assignment to an immutable literal.
                 if let Some((literal, rhs)) = crate::parser::literal_assign_ro_parts(expr) {
                     return assignment_around(convert_expr(literal)?, false, rhs);
@@ -3394,36 +3379,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             };
             comma_declarations_node(declarations)
         }
-        // A parenthesized comma list of declarations is grouped by the parser
-        // into one synthetic block. Rakudo keeps each declaration as an
-        // operand of the comma ApplyListInfix.
-        Expr::DoStmt(stmt)
-            if matches!(stmt.as_ref(), Stmt::SyntheticBlock(stmts)
-                if stmts.len() > 1 && stmts.iter().all(|stmt| matches!(stmt, Stmt::VarDecl { .. }))) =>
-        {
-            let Stmt::SyntheticBlock(stmts) = stmt.as_ref() else {
-                unreachable!()
-            };
-            let mut operands = Vec::with_capacity(stmts.len());
-            for declaration in stmts {
-                let statement = var_decl_statement(var_decl_parts(declaration)?, false)?
-                    .ok_or_else(|| unsupported("declaration term"))?;
-                let expression =
-                    expression_of(&statement).ok_or_else(|| unsupported("declaration term"))?;
-                operands.push(Value::rakuast(Box::new(expression)));
-            }
-            Ok(RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::ApplyListInfix,
-                fields: vec![
-                    node_field(Some("infix"), plain_infix(",")),
-                    RakuAstField {
-                        name: Some("operands"),
-                        value: RakuAstFieldValue::List(operands),
-                    },
-                ],
-            })
-        }
         // `do for ... { }` / `do if ... { }` / `do given ... { }`: the loop or
         // conditional statement under `StatementPrefix::Do`.
         Expr::DoStmt(stmt) if is_do_statement(stmt) => {
@@ -3588,14 +3543,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // `$x = EXPR` is the typed assignment node a `.AST` parse keeps
             // (ADR-10723 Stage 2).
             Err(unsupported("source form"))
-        }
-        Expr::CompoundAssign {
-            target, op, rhs, ..
-        } => {
-            if is_dotty_assign_op(op) {
-                return dotty_assignment(target, rhs);
-            }
-            compound_assignment_infix(target, op, rhs)
         }
         Expr::ArrayVar(name) => {
             if is_desugar_marker(name) && !crate::ast::anon_state::is_array(name) {
@@ -4212,16 +4159,11 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 if super::routine_source::apply(&mut node, body)? {
                     return Ok(node);
                 }
-                routine_traits::add_flags(
-                    &mut node,
-                    false,
-                    false,
-                    &routine_traits::IsTraits {
-                        is_rw: *is_rw,
-                        is_raw: *is_raw,
-                        ..Default::default()
-                    },
-                )?;
+                if *is_rw || *is_raw {
+                    return Err(unsupported(
+                        "anonymous routine with traits and no written-trait record",
+                    ));
+                }
                 Ok(node)
             }
         }
@@ -4290,16 +4232,11 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 if super::routine_source::apply(&mut node, body)? {
                     return Ok(node);
                 }
-                routine_traits::add_flags(
-                    &mut node,
-                    false,
-                    false,
-                    &routine_traits::IsTraits {
-                        is_rw: *is_rw,
-                        is_raw: *is_raw,
-                        ..Default::default()
-                    },
-                )?;
+                if *is_rw || *is_raw {
+                    return Err(unsupported(
+                        "anonymous routine with traits and no written-trait record",
+                    ));
+                }
                 return Ok(node);
             }
             pointy_block(param_defs, body, return_type.as_deref())
