@@ -175,7 +175,6 @@ impl Interpreter {
         let has_aliasable_container_params = !light_aggregates
             && method_def.param_defs.iter().any(|pd| {
                 !pd.is_invocant
-                    && !pd.is_invocant
                     && !pd.slurpy
                     && !pd.double_slurpy
                     && !pd.named
@@ -345,8 +344,7 @@ impl Interpreter {
             let needs_default_eval = {
                 let mut pos = 0;
                 method_def.param_defs.iter().any(|pd| {
-                    if pd.is_invocant || pd.is_invocant || pd.named || pd.slurpy || pd.double_slurpy
-                    {
+                    if pd.is_invocant || pd.named || pd.slurpy || pd.double_slurpy {
                         return false;
                     }
                     let result = pos >= positional_arg_count && pd.default.is_some();
@@ -360,8 +358,7 @@ impl Interpreter {
             let has_missing_required = {
                 let mut pos = 0;
                 method_def.param_defs.iter().any(|pd| {
-                    if pd.is_invocant || pd.is_invocant || pd.slurpy || pd.double_slurpy || pd.named
-                    {
+                    if pd.is_invocant || pd.slurpy || pd.double_slurpy || pd.named {
                         return false;
                     }
                     let missing =
@@ -374,13 +371,7 @@ impl Interpreter {
             let positional_count = method_def
                 .param_defs
                 .iter()
-                .filter(|pd| {
-                    !pd.is_invocant
-                        && !pd.is_invocant
-                        && !pd.slurpy
-                        && !pd.double_slurpy
-                        && !pd.named
-                })
+                .filter(|pd| !pd.is_invocant && !pd.slurpy && !pd.double_slurpy && !pd.named)
                 .count();
             let has_arg_mismatch = positional_arg_count > positional_count;
 

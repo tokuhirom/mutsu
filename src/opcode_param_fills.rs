@@ -174,6 +174,8 @@ mod param_fill_tests {
 
     fn param(name: &str) -> ParamDef {
         ParamDef {
+            does_target: Default::default(),
+            implicit_invocant: Default::default(),
             target: Default::default(),
             spans: Default::default(),
             trait_meta: Default::default(),

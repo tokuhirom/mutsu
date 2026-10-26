@@ -102,7 +102,7 @@ impl Interpreter {
     ) -> bool {
         let mut arg_idx = 0usize;
         for pd in &method_def.param_defs {
-            if pd.is_invocant || pd.is_invocant || pd.named || pd.slurpy || pd.double_slurpy {
+            if pd.is_invocant || pd.named || pd.slurpy || pd.double_slurpy {
                 continue;
             }
             while args

@@ -1085,16 +1085,13 @@ impl Interpreter {
         let positional_count = method_def
             .param_defs
             .iter()
-            .filter(|pd| {
-                !pd.is_invocant && !pd.is_invocant && !pd.slurpy && !pd.double_slurpy && !pd.named
-            })
+            .filter(|pd| !pd.is_invocant && !pd.slurpy && !pd.double_slurpy && !pd.named)
             .count();
         let required_positional_count = method_def
             .param_defs
             .iter()
             .filter(|pd| {
                 !pd.is_invocant
-                    && !pd.is_invocant
                     && !pd.slurpy
                     && !pd.double_slurpy
                     && !pd.named
