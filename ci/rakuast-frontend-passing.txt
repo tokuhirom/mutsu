@@ -5440,6 +5440,8 @@ t/rakuast/rakuast-for-signature.t
 t/rakuast/rakuast-for.t
 t/rakuast/rakuast-format-quote-setting-types.t
 t/rakuast/rakuast-formatter.t
+t/rakuast/rakuast-frontend-decl-postfix-argument.t
+t/rakuast/rakuast-frontend-empty-statement.t
 t/rakuast/rakuast-frontend-mode.t
 t/rakuast/rakuast-given-pointy-block.t
 t/rakuast/rakuast-given-when.t
@@ -8063,6 +8065,7 @@ t/vm/binding/assign-expr-container-copy.t
 t/vm/binding/assign-key-through-bound-alias.t
 t/vm/binding/assign-plain-scalar-store-fast-path.t
 t/vm/binding/assign-rhs-sequence-op.t
+t/vm/binding/assign-star-lvalue-forms.t
 t/vm/binding/assignment-ro-literal.t
 t/vm/binding/bind-alias-block-exit-sync.t
 t/vm/binding/bind-alias-chain.t
