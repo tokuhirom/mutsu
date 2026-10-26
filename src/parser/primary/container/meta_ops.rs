@@ -746,20 +746,19 @@ pub(crate) fn try_inline_modifier<'a>(input: &'a str, expr: Expr) -> Option<PRes
     if !is_stmt_modifier_after_trailing_comma(input) {
         return None;
     }
-    // A bare `{ ... }` block is the *statement* the modifier modifies, not a
-    // closure value handed to it: `({ $_ + 1 } for 1,2,3)` is `(2 3 4)`, not
-    // three uncalled Blocks. Parenthesised content is parsed as an expression
-    // here, so the block arrives as a closure term; hand it to the modifier as
-    // the `Stmt::Block` that statement position would have produced, so both
-    // spellings share one code path.
+    // A bare `{ ... }` block under `for` / `while` / `until` is the statement
+    // the modifier repeats: `({ $_ + 1 } for 1,2,3)` is `(2 3 4)`, and the
+    // block runs on each pass of a `while`. Parenthesised content is parsed as
+    // an expression, so the block arrives as a closure term; hand it to the
+    // loop as the `Stmt::Block` statement position would have produced.
     //
-    // `while`/`until` are the documented exception -- rakudo thunks the
-    // statement they modify, so a bare block genuinely stays an uncalled term
-    // there (`raku -e 'my $i = 0; say ({ $i } while $i++ < 3)'` prints three
-    // Blocks). Leave those alone.
-    let keeps_block_as_term =
-        keyword("while", input).is_some() || keyword("until", input).is_some();
-    let stmt = match bare_block_body(&expr).filter(|_| !keeps_block_as_term) {
+    // Under `if` / `unless` / `given` / `with` / `without` / `when` rakudo
+    // leaves a block in expression position uncalled -- `({ 42 } if 1)` is the
+    // Block itself -- so it stays a term there.
+    let runs_block = keyword("for", input).is_some()
+        || keyword("while", input).is_some()
+        || keyword("until", input).is_some();
+    let stmt = match bare_block_body(&expr).filter(|_| runs_block) {
         Some(body) => Stmt::Block(body),
         None => Stmt::Expr(expr),
     };

@@ -207,51 +207,80 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             {
                 return Ok(Stmt::Expr(Expr::DoStmt(Box::new(lower_sub(expression)?))));
             }
-            let modifier = |name: &str| -> Result<Option<StatementModifier>, RuntimeError> {
-                let Some(field) = node.fields.iter().find(|f| f.name == Some(name)) else {
-                    return Ok(None);
-                };
-                let modifier = child_node(&field.value)?;
-                let kind = modifier_kind(modifier).ok_or_else(|| unsupported(modifier))?;
-                Ok(Some(StatementModifier {
-                    kind,
-                    expr: lower_expr(named_child_or_positional(modifier)?)?,
-                    span: crate::ast::SrcSpan::NONE,
-                }))
-            };
-            let condition = modifier("condition-modifier")?;
-            let loop_ = modifier("loop-modifier")?;
-            if condition.is_none() && loop_.is_none() {
-                return lower_stmt_inner(expression);
-            }
-            // A bare block under a modifier is the statement the modifier
-            // runs (or, for `while` / `until`, evaluates).
-            let stmt = if expression.class == RakuAstClass::Block {
-                Stmt::Block(lower_block(expression)?)
-            } else {
-                // A signature declaration stays as written for the modifier
-                // that may split it.
-                match lower_stmt_kept(expression)? {
-                    Stmt::Ast(node)
-                        if matches!(
-                            node.as_ref(),
-                            crate::ast::parsed::ParsedStmt::SignatureDecl(_)
-                        ) =>
-                    {
-                        Stmt::Ast(node)
-                    }
-                    other => finish_kept(other)?,
-                }
-            };
-            super::modifier_lower::lower(Modified {
-                stmt: Box::new(stmt),
-                condition,
-                loop_,
-                body: crate::ast::SrcSpan::NONE,
-            })
+            lower_modified(node, expression, false)
         }
         _ => lower_stmt_inner(node),
     }
+}
+
+/// A statement with modifiers. In expression position (`block_as_term`) a bare
+/// block under `if` / `unless` / `given` / `with` / `without` / `when` is the
+/// uncalled Block value, as in rakudo; at statement level it is run.
+// Cost: O(n), n = size of the statement and its modifiers.
+fn lower_modified(
+    node: &RakuAstNode,
+    expression: &RakuAstNode,
+    block_as_term: bool,
+) -> Result<Stmt, RuntimeError> {
+    let modifier = |name: &str| -> Result<Option<StatementModifier>, RuntimeError> {
+        let Some(field) = node.fields.iter().find(|f| f.name == Some(name)) else {
+            return Ok(None);
+        };
+        let modifier = child_node(&field.value)?;
+        let kind = modifier_kind(modifier).ok_or_else(|| unsupported(modifier))?;
+        Ok(Some(StatementModifier {
+            kind,
+            expr: lower_expr(named_child_or_positional(modifier)?)?,
+            span: crate::ast::SrcSpan::NONE,
+        }))
+    };
+    let condition = modifier("condition-modifier")?;
+    let loop_ = modifier("loop-modifier")?;
+    if condition.is_none() && loop_.is_none() {
+        return lower_stmt_inner(expression);
+    }
+    // A bare block under a modifier is the statement the modifier
+    // runs (or, for `while` / `until`, evaluates).
+    let stmt = if expression.class == RakuAstClass::Block {
+        let sole = match (&condition, &loop_) {
+            (Some(m), None) | (None, Some(m)) => Some(m.kind),
+            _ => None,
+        };
+        if block_as_term && sole.is_some_and(keeps_block_as_term) {
+            Stmt::Expr(lower_expr(expression)?)
+        } else {
+            Stmt::Block(lower_block(expression)?)
+        }
+    } else {
+        // A signature declaration stays as written for the modifier
+        // that may split it.
+        match lower_stmt_kept(expression)? {
+            Stmt::Ast(node)
+                if matches!(
+                    node.as_ref(),
+                    crate::ast::parsed::ParsedStmt::SignatureDecl(_)
+                ) =>
+            {
+                Stmt::Ast(node)
+            }
+            other => finish_kept(other)?,
+        }
+    };
+    super::modifier_lower::lower(Modified {
+        stmt: Box::new(stmt),
+        condition,
+        loop_,
+        body: crate::ast::SrcSpan::NONE,
+    })
+}
+
+// Cost: O(1).
+fn keeps_block_as_term(kind: crate::ast::parsed::ModifierKind) -> bool {
+    use crate::ast::parsed::ModifierKind as K;
+    matches!(
+        kind,
+        K::If | K::Unless | K::Given | K::With | K::Without | K::When
+    )
 }
 
 fn lower_take_logical_tail(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError> {
@@ -4284,6 +4313,12 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 )
             }) =>
         {
+            let expression = named_child(node, "expression")?;
+            if node.fields.iter().all(|f| f.name != Some("labels")) {
+                return Ok(Expr::DoStmt(Box::new(lower_modified(
+                    node, expression, true,
+                )?)));
+            }
             Ok(Expr::DoStmt(Box::new(lower_stmt(node)?)))
         }
         RakuAstClass::StatementExpression => lower_expr(named_child(node, "expression")?),

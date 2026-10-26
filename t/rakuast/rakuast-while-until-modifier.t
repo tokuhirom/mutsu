@@ -22,9 +22,9 @@ isa-ok $block.expression, RakuAST::Block,
     'a bare block stays the modified expression';
 
 is EVAL(Q[my $i = 0; my @r = ({ 1 } while $i++ < 2); @r.map(*.^name).join(",")].AST),
-    'Block,Block', 'postfix while evaluates the block as a value';
+    'Int,Int', 'postfix while runs the block and collects its value';
 is EVAL(Q[my $i = 0; my @r = ({ 1 } until $i++ >= 2); @r.map(*.^name).join(",")].AST),
-    'Block,Block', 'postfix until evaluates the block as a value';
+    'Int,Int', 'postfix until runs the block and collects its value';
 is EVAL(Q[my $i = 0; my @r = (7 while $i++ < 2); @r.join(",")].AST),
     '7,7', 'postfix while round-trips a non-block operand';
 is EVAL(Q[my $i = 0; my @r = (7 until $i++ >= 2); @r.join(",")].AST),
