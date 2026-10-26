@@ -38,7 +38,7 @@ impl Interpreter {
 
     /// Stamp every routine declaration in a parsed prelude with the internal
     /// `__mutsu_prelude` trait. Marker traits are `__`-prefixed by convention
-    /// (`__our_scoped`, `__lexical_hoist`) so registration can tell them from a
+    /// (`__lexical_hoist`, `__hoisted`) so registration can tell them from a
     /// user trait and never tries to apply one as a role.
     pub(super) fn mark_prelude_subs(stmts: &mut [Stmt]) {
         for stmt in crate::ast::scope_members_mut(stmts) {
@@ -564,6 +564,7 @@ impl Interpreter {
                     *is_raw,
                     *is_test_assertion,
                     *supersede,
+                    crate::ast::SubScope::My,
                     &[],
                     None,
                     &metadata,
@@ -584,6 +585,7 @@ impl Interpreter {
                         *is_raw,
                         *is_test_assertion,
                         *supersede,
+                        crate::ast::SubScope::My,
                         &[],
                         None,
                         &metadata,

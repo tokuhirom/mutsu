@@ -408,6 +408,7 @@ pub(crate) fn sub_decl_body(
                     export_tags: traits.export_tags.clone(),
                     is_test_assertion: traits.is_test_assertion,
                     supersede,
+                    scope: crate::ast::SubScope::My,
                     custom_traits: traits.custom_traits,
                 },
             ));
@@ -454,6 +455,7 @@ pub(crate) fn sub_decl_body(
                 export_tags: traits.export_tags.clone(),
                 is_test_assertion: traits.is_test_assertion,
                 supersede,
+                scope: crate::ast::SubScope::My,
                 custom_traits: traits.custom_traits,
             },
         ));
@@ -501,6 +503,7 @@ pub(crate) fn sub_decl_body(
                     export_tags: traits.export_tags,
                     is_test_assertion: traits.is_test_assertion,
                     supersede,
+                    scope: crate::ast::SubScope::My,
                     custom_traits: traits.custom_traits,
                 },
             ));
@@ -590,6 +593,7 @@ pub(crate) fn sub_decl_body(
         export_tags: traits.export_tags,
         is_test_assertion: traits.is_test_assertion,
         supersede,
+        scope: crate::ast::SubScope::My,
         custom_traits: traits.custom_traits,
     };
     // Check for immediate invocation: `sub foo(...) { ... }(args)`.

@@ -1100,7 +1100,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 // A NAMED `anon class Foo { ... }` keeps its name (`.^name`,
                 // gist `(Foo)`) but installs no symbol anywhere — not the
                 // enclosing scope, not the current package's stash. Marks the
-                // declaration `__anon_decl` and mangles its registry name so
+                // declaration `anon` (`ANON_DECL_TRAIT`) and mangles its registry name so
                 // no env/alias/stash write it triggers is bareword-reachable.
                 // See `mark_anon_package_decl`'s doc comment for the full
                 // mechanism.
@@ -1183,13 +1183,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 // {...})($y)`). The name is kept on the routine (`.name`, gist
                 // `&NAME`) but `anon` means it is NOT installed in the enclosing
                 // namespace. Parse the full declaration like the plain named-sub
-                // expression form below, and mark it `__anon_decl` so the
+                // expression form below, and mark it `anon` so the
                 // compiler builds the value without registering it.
                 if crate::parser::stmt::parse_sub_name_pub(r_sub).is_ok()
                     && let Ok((r_decl, mut stmt)) = crate::parser::stmt::sub_decl_body_pub(r_sub)
                 {
-                    if let Stmt::SubDecl { custom_traits, .. } = &mut stmt {
-                        custom_traits.push((crate::parser::ANON_DECL_TRAIT.to_string(), None));
+                    if let Stmt::SubDecl { scope, .. } = &mut stmt {
+                        *scope = crate::ast::SubScope::Anon;
                     }
                     return Ok((r_decl, Expr::DoStmt(Box::new(stmt))));
                 }

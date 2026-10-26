@@ -5264,6 +5264,7 @@ pub(crate) struct CompiledSubDeclPlan {
     pub(crate) export_tags: Vec<String>,
     pub(crate) is_test_assertion: bool,
     pub(crate) supersede: bool,
+    pub(crate) scope: crate::ast::SubScope,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
     pub(crate) fingerprint: Option<u64>,
     /// Registration metadata derived once while lowering the declaration.
@@ -5666,11 +5667,10 @@ fn role_body_our_scope_violation(body: &[Stmt]) -> Option<&'static str> {
                     Some("variable")
                 }
             }
-            Stmt::SubDecl { custom_traits, .. }
-                if custom_traits.iter().any(|(t, _)| t == "__our_scoped") =>
-            {
-                Some("sub")
-            }
+            Stmt::SubDecl {
+                scope: crate::ast::SubScope::Our,
+                ..
+            } => Some("sub"),
             Stmt::MethodDecl { is_our: true, .. } => Some("method"),
             // `our $.attr` / `our @.attr` / `our %.attr` — an our-scoped
             // class attribute — is rejected exactly like `our $x`, with the
@@ -12692,6 +12692,7 @@ impl CompiledCode {
             export_tags,
             is_test_assertion,
             supersede,
+            scope,
             custom_traits,
             ..
         } = stmt
@@ -12763,6 +12764,7 @@ impl CompiledCode {
             export_tags: export_tags.clone(),
             is_test_assertion: *is_test_assertion,
             supersede: *supersede,
+            scope: *scope,
             custom_traits: plan_traits,
             fingerprint,
             routine_metadata,

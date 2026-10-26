@@ -286,6 +286,7 @@ impl Compiler {
             export_tags: Vec::new(),
             is_test_assertion: false,
             supersede: false,
+            scope: crate::ast::SubScope::My,
             // A `method`/`submethod` literal is a Routine like a `sub`, but it
             // reports its own type. The declarator rides the pooled decl as a
             // `__mutsu_callable_type::<Type>` marker, which is what the

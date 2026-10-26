@@ -26,13 +26,15 @@ pub(super) fn copyable_routine(decl: &Stmt) -> Option<(String, bool, Stmt)> {
             name_expr,
             supersede: false,
             multi,
+            scope,
             custom_traits,
             ..
         } => {
             let name = name.resolve();
-            let internal = custom_traits
-                .iter()
-                .any(|(t, _)| t.starts_with("__") && t != OUR_SCOPED && t != OP_PREC);
+            let internal = *scope == crate::ast::SubScope::Anon
+                || custom_traits
+                    .iter()
+                    .any(|(t, _)| t.starts_with("__") && t != OP_PREC);
             if internal
                 || (name.contains(':') && !is_category_routine(&name))
                 || name_expr.as_ref().is_some_and(|e| !is_literal_name(e))
@@ -43,13 +45,13 @@ pub(super) fn copyable_routine(decl: &Stmt) -> Option<(String, bool, Stmt)> {
             if let Stmt::SubDecl {
                 is_export,
                 export_tags,
-                custom_traits,
+                scope,
                 ..
             } = &mut copy
             {
                 *is_export = false;
                 export_tags.clear();
-                custom_traits.retain(|(t, _)| t != OUR_SCOPED);
+                *scope = crate::ast::SubScope::My;
             }
             Some((name, *multi, copy))
         }
@@ -100,7 +102,6 @@ pub(super) fn copyable_routine(decl: &Stmt) -> Option<(String, bool, Stmt)> {
     }
 }
 
-const OUR_SCOPED: &str = "__our_scoped";
 /// An operator's precedence and associativity, which the copy registers again.
 const OP_PREC: &str = "__prec";
 

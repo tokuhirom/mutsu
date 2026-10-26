@@ -81,6 +81,31 @@ pub(crate) mod decl_id_serde {
 }
 
 /// Specifies how delegation (`handles`) should forward methods.
+/// The scope a named `sub` was declared with, when it is not the default `my`
+/// (ADR-10723 Stage 2: a field of the declaration, not a marker trait).
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    bincode::Encode,
+    bincode::Decode,
+)]
+pub(crate) enum SubScope {
+    /// `sub f` / `my sub f`: lexical.
+    #[default]
+    My,
+    /// `our sub f`: also installed in the package.
+    Our,
+    /// `anon sub f`: built but never installed.
+    Anon,
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum HandleSpec {
     /// Forward a method by name (same name on both sides).
@@ -2344,6 +2369,9 @@ pub(crate) enum Stmt {
         export_tags: Vec<String>,
         is_test_assertion: bool,
         supersede: bool,
+        /// `our` / `anon` as written; the default `my` otherwise.
+        #[serde(default)]
+        scope: SubScope,
         /// Custom `is` traits (non-builtin trait names like `me'd`) with optional argument expression
         custom_traits: Vec<(String, Option<Expr>)>,
         /// Where the name, signature and block were written (ADR-10723

@@ -216,6 +216,7 @@ impl Interpreter {
             export_tags,
             is_test_assertion,
             supersede,
+            scope,
             custom_traits,
             fingerprint: site_fp,
             routine_metadata,
@@ -360,6 +361,7 @@ impl Interpreter {
                     *is_raw,
                     *is_test_assertion,
                     *supersede,
+                    *scope,
                     custom_traits,
                     reg_fp,
                     routine_metadata,
@@ -425,7 +427,7 @@ impl Interpreter {
                     }
                 } else if !*is_export
                     && !self.module.suppress_exports
-                    && custom_traits.iter().any(|(t, _)| t == "__our_scoped")
+                    && *scope == crate::ast::SubScope::Our
                 {
                     // An `our`-scoped sub/multi declared directly inside a
                     // module's own `my package EXPORT::<tag> { ... }` block
@@ -486,6 +488,7 @@ impl Interpreter {
                             *is_raw,
                             *is_test_assertion,
                             *supersede,
+                            *scope,
                             custom_traits,
                             alt_metadata,
                             alt_compiled,
@@ -514,7 +517,7 @@ impl Interpreter {
             // an unrelated sibling-block `my $a` cannot pollute the map; the hoisted
             // top-of-block registration runs before the box and finds no cell, so it
             // correctly persists nothing (a call before the block reads undefined).
-            if custom_traits.iter().any(|(t, _)| t == "__our_scoped")
+            if *scope == crate::ast::SubScope::Our
                 && !self.lexicals.escaping_our_lexical_names.is_empty()
             {
                 // Record the sub itself: the cell resolution
@@ -591,7 +594,7 @@ impl Interpreter {
             // mainline `my` scalar into a shared cell at registration time —
             // see docs/adr/0024-mainline-lexicals-for-named-subs.md. Runs on
             // both the hoisted and the in-sequence pass, mirroring the
-            // `__our_scoped` block above: at hoist time every mainline local
+            // `SubScope::Our` block above: at hoist time every mainline local
             // slot is still its pool-allocated `Nil` (no mainline statement
             // has run yet, per `hoist_sub_decls` emitting every sub's
             // registration at the very top of the block), so the per-name
@@ -620,7 +623,7 @@ impl Interpreter {
             {
                 if self.block_scope_depth() == 0 && self.routine_stack().is_empty() {
                     Some(crate::runtime::MAINLINE_UNIT_KEY.to_string())
-                } else if custom_traits.iter().any(|(t, _)| t == "__our_scoped") {
+                } else if *scope == crate::ast::SubScope::Our {
                     // An `our sub` declared in a block is NOT lexical to it: it
                     // is installed in the package registry and outlives the
                     // block. Its captured block lexicals already have a store —
@@ -806,7 +809,7 @@ impl Interpreter {
                     // sub's capture, which `escaped_our_lexical_cells` owns.
                     let seeded = if is_hoisted_pass
                         && baked.is_some()
-                        && !custom_traits.iter().any(|(t, _)| t == "__our_scoped")
+                        && *scope != crate::ast::SubScope::Our
                         && hoist_seed_slots.contains(&(slot_idx as u32))
                         && !rebound_syms.contains(&sym)
                         && !code.rebound_slots.contains(&(slot_idx as u32))

@@ -4128,6 +4128,7 @@ impl Compiler {
                 multi,
                 is_rw,
                 is_raw,
+                scope,
                 custom_traits,
                 ..
             } => {
@@ -4248,7 +4249,7 @@ impl Compiler {
                 // registry; flag the body compile so its read/write lexical
                 // captures are boxed + persisted (escaping_our_sub_captures).
                 let prev_our = self.compiling_our_sub;
-                self.compiling_our_sub = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
+                self.compiling_our_sub = *scope == crate::ast::SubScope::Our;
                 let mut compiled_routine_keys = Vec::new();
                 let is_cached = custom_traits.iter().any(|(t, _)| t == "cached");
                 if let Some(key) = self.compile_sub_body_with_deprecation(
@@ -4439,12 +4440,14 @@ impl Compiler {
                     export_tags: export_tags.clone(),
                     is_test_assertion: false,
                     supersede: false,
+                    scope: if *is_our {
+                        crate::ast::SubScope::Our
+                    } else {
+                        crate::ast::SubScope::My
+                    },
                     custom_traits: {
                         let mut traits = custom_traits.clone();
                         traits.push(("__mutsu_method_decl".to_string(), None));
-                        if *is_our {
-                            traits.push(("__our_scoped".to_string(), None));
-                        }
                         if let Some(marker) = declarator.literal_marker() {
                             traits.push((marker.to_string(), None));
                         }

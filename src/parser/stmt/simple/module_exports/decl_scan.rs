@@ -24,7 +24,7 @@
 //!   could shadow an importer's own routine or quote construct.
 
 use super::{
-    InlineModuleExport, compose_type_name, is_export_stash_package, is_our_scoped, sub_export_entry,
+    InlineModuleExport, compose_type_name, is_export_stash_package, sub_export_entry,
 };
 use crate::ast::{Expr, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
@@ -454,7 +454,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                 associativity,
                 precedence_trait,
                 is_test_assertion,
-                custom_traits,
+                scope,
                 ..
             } => {
                 // Every `is export` sub is collected, whatever tag it carries:
@@ -464,7 +464,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                 // `EXPORT::<tag>` stash is exported by construction
                 // (Net::IP::Parse's `our sub infix:<< ip== >>`).
                 if *is_export
-                    || (is_export_stash_package(&self.package) && is_our_scoped(custom_traits))
+                    || (is_export_stash_package(&self.package) && *scope == crate::ast::SubScope::Our)
                 {
                     let entry = sub_export_entry(
                         name.resolve(),

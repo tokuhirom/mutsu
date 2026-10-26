@@ -640,6 +640,7 @@ impl Interpreter {
         is_raw: bool,
         is_test_assertion: bool,
         supersede: bool,
+        scope: crate::ast::SubScope,
         custom_traits: &crate::opcode::DeclTraits,
         metadata: Option<&crate::opcode::CompiledRoutineMetadata>,
         compiled: Option<&std::sync::Arc<crate::compiled_lazy::LazyFn>>,
@@ -656,6 +657,7 @@ impl Interpreter {
             is_raw,
             is_test_assertion,
             supersede,
+            scope,
             custom_traits,
             None,
             metadata,
@@ -714,6 +716,7 @@ impl Interpreter {
         is_raw: bool,
         is_test_assertion: bool,
         supersede: bool,
+        scope: crate::ast::SubScope,
         custom_traits: &crate::opcode::DeclTraits,
         site_fingerprint: Option<u64>,
         metadata: &crate::opcode::CompiledRoutineMetadata,
@@ -731,6 +734,7 @@ impl Interpreter {
             is_raw,
             is_test_assertion,
             supersede,
+            scope,
             custom_traits,
             site_fingerprint,
             Some(metadata),
@@ -752,6 +756,7 @@ impl Interpreter {
         is_raw: bool,
         is_test_assertion: bool,
         supersede: bool,
+        scope: crate::ast::SubScope,
         custom_traits: &crate::opcode::DeclTraits,
         site_fingerprint: Option<u64>,
         metadata: Option<&crate::opcode::CompiledRoutineMetadata>,
@@ -850,6 +855,7 @@ impl Interpreter {
                     is_raw,
                     is_test_assertion,
                     supersede,
+                    scope,
                     custom_traits,
                     site_fingerprint,
                     metadata,
@@ -869,7 +875,7 @@ impl Interpreter {
             custom_traits.iter().map(|(t, _)| t.as_str()),
         );
         let allow_redeclare = supersede || is_method_value_decl;
-        let is_our_scoped = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
+        let is_our_scoped = scope == crate::ast::SubScope::Our;
         let is_lexical_hoist = custom_traits.iter().any(|(t, _)| t == "__lexical_hoist");
         // Declared in a scope nested in its compilation unit's or routine's
         // own (an `if` body, a bare block): it may shadow an outer `&name`

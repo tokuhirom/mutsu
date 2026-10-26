@@ -1073,13 +1073,6 @@ fn is_export_stash_package(package: &str) -> bool {
     !tag.is_empty() && !tag.contains("::")
 }
 
-/// Whether a declaration's custom traits mark it `our`-scoped (the
-/// `__our_scoped` marker `my_decl_dispatch.rs` attaches to `our sub`/
-/// `our multi sub`).
-fn is_our_scoped(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits.iter().any(|(t, _)| t == "__our_scoped")
-}
-
 /// The parser-facing export record of one routine declaration: its name plus
 /// a custom operator's precedence (resolved from an `is tighter/looser/equiv`
 /// trait against the referenced operator) and associativity.

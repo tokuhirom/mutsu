@@ -1273,14 +1273,13 @@ impl Compiler {
             Stmt::Call { name, args, .. } => {
                 self.compile_tail_stmt_call_value(*name, args);
             }
-            // `anon sub NAME ... {...}` (marked `__anon_decl` by the parser):
-            // build the routine value carrying its declared name WITHOUT
-            // registering `&NAME` in the enclosing scope.
-            Stmt::SubDecl { custom_traits, .. }
-                if custom_traits
-                    .iter()
-                    .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT) =>
-            {
+            // `anon sub NAME ... {...}` (`SubScope::Anon`): build the routine
+            // value carrying its declared name WITHOUT registering `&NAME` in
+            // the enclosing scope.
+            Stmt::SubDecl {
+                scope: crate::ast::SubScope::Anon,
+                ..
+            } => {
                 self.compile_anon_named_sub_decl(stmt);
             }
             // A `multi` declaration in expression position (`my $t := multi
@@ -1300,11 +1299,14 @@ impl Compiler {
             } if !name.resolve().is_empty() => {
                 self.compile_stmt(stmt);
                 let mut value = stmt.clone();
-                if let Stmt::SubDecl { custom_traits, .. } = &mut value {
-                    *custom_traits = vec![
-                        (crate::parser::ANON_DECL_TRAIT.to_string(), None),
-                        (crate::ast::MULTI_CANDIDATE_VALUE_MARKER.to_string(), None),
-                    ];
+                if let Stmt::SubDecl {
+                    scope,
+                    custom_traits,
+                    ..
+                } = &mut value
+                {
+                    *scope = crate::ast::SubScope::Anon;
+                    *custom_traits = vec![(crate::ast::MULTI_CANDIDATE_VALUE_MARKER.to_string(), None)];
                 }
                 self.compile_anon_named_sub_decl(&value);
             }
