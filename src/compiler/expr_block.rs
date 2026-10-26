@@ -1306,7 +1306,8 @@ impl Compiler {
                 } = &mut value
                 {
                     *scope = crate::ast::SubScope::Anon;
-                    *custom_traits = vec![(crate::ast::MULTI_CANDIDATE_VALUE_MARKER.to_string(), None)];
+                    *custom_traits =
+                        vec![(crate::ast::MULTI_CANDIDATE_VALUE_MARKER.to_string(), None)];
                 }
                 self.compile_anon_named_sub_decl(&value);
             }
