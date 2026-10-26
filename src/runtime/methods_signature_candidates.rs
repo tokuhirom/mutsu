@@ -39,7 +39,7 @@ impl Interpreter {
     ) {
         for pd in param_defs {
             if pd.named {
-                if pd.name == "__subsig__" {
+                if pd.is_parens() {
                     if let Some(key) = &pd.type_constraint {
                         out.insert(key.clone());
                     }

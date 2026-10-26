@@ -144,7 +144,7 @@ impl Interpreter {
                 } else {
                     "$"
                 };
-                if pd.name == "__type_only__" {
+                if pd.is_type_only() {
                     // Type-only param: show just the type constraint
                     return pd.type_constraint.as_deref().unwrap_or("Any").to_string();
                 }
@@ -359,7 +359,7 @@ impl Interpreter {
         // not as a parameter of its own.
         let signature_has_type_captures = param_defs.iter().any(|pd| {
             crate::qualified::is_type_capture(&pd.name)
-                || pd.name == "__type_capture__"
+                || pd.is_bare_type_capture()
                 || pd.captured_type_name().is_some()
         });
         if signature_has_type_captures {
@@ -383,7 +383,7 @@ impl Interpreter {
                     && !pd.named
                     && (pd.name == bare
                         || (failing == "<anon>"
-                            && matches!(pd.name.as_str(), "__ANON_STATE#" | "__type_only__")))
+                            && (pd.target == crate::ast::ParamTarget::Anonymous('$') || pd.is_type_only())))
             });
             if failed_has_default {
                 return err;
@@ -419,7 +419,7 @@ impl Interpreter {
         // and NOT when the constraint is a user-defined type (subset, class, etc.).
         let has_type_captures = param_defs
             .iter()
-            .any(|pd| crate::qualified::is_type_capture(&pd.name) || pd.name == "__type_capture__");
+            .any(|pd| crate::qualified::is_type_capture(&pd.name) || pd.is_bare_type_capture());
         let has_subsignature = param_defs
             .iter()
             .any(|pd| pd.sub_signature.is_some() || pd.outer_sub_signature.is_some());

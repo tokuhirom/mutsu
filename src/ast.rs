@@ -427,6 +427,27 @@ impl ParamDef {
         }
     }
 
+    /// True for a parameter written as a bare type (`sub f(Int)`).
+    // Cost: O(1).
+    pub(crate) fn is_type_only(&self) -> bool {
+        debug_assert_eq!(self.target == ParamTarget::TypeOnly, self.name == TYPE_ONLY_PARAM, "TMPCHECK type-only {}", self.name);
+        self.target == ParamTarget::TypeOnly
+    }
+
+    /// True for a parameter written as a bare `::T` capture.
+    // Cost: O(1).
+    pub(crate) fn is_bare_type_capture(&self) -> bool {
+        debug_assert_eq!(self.target == ParamTarget::TypeCapture, self.name.starts_with(TYPE_CAPTURE_PREFIX), "TMPCHECK capture {}", self.name);
+        self.target == ParamTarget::TypeCapture
+    }
+
+    /// True for an anonymous `(…)` destructuring parameter.
+    // Cost: O(1).
+    pub(crate) fn is_parens(&self) -> bool {
+        debug_assert_eq!(self.target == ParamTarget::Parens, self.name == PARENS_PARAM, "TMPCHECK parens {}", self.name);
+        self.target == ParamTarget::Parens
+    }
+
     /// The parameter a bare type is: `sub f(Int)` binds nothing.
     // Cost: O(1).
     pub(crate) fn type_only() -> Self {

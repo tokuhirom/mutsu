@@ -64,7 +64,7 @@ impl Interpreter {
         if args.len() != param_defs.len()
             || !param_defs.iter().all(|pd| {
                 Self::is_simple_positional_param(pd)
-                    || (allow_type_only && pd.name == "__type_only__" && Self::is_simple_positional_param_named(pd))
+                    || (allow_type_only && pd.is_type_only() && Self::is_simple_positional_param_named(pd))
             })
             || args
                 .iter()
