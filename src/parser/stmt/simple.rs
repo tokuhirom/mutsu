@@ -405,18 +405,6 @@ pub(super) fn add_xor_sink_warnings(expr: &Expr, line: i64) {
     }
 }
 
-pub(super) fn parse_hyper_assign_op(input: &str) -> Option<&str> {
-    const HYPER_ASSIGN_OPS: &[&str] = &[
-        ">>=>>", "<<=<<", ">>=<<", "<<=>>", "»=»", "«=«", "»=«", "«=»",
-    ];
-    for op in HYPER_ASSIGN_OPS {
-        if let Some(rest) = input.strip_prefix(op) {
-            return Some(rest);
-        }
-    }
-    None
-}
-
 impl LexicalScope {
     /// Create a nested frame that inherits lexical modes but owns no bindings.
     /// The scope stack itself provides visibility into the parent frames.
