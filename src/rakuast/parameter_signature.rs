@@ -69,7 +69,7 @@ pub(super) fn lower_pointy(node: &RakuAstNode) -> Result<crate::ast::Expr, Runti
                 && param.default.is_none()
                 && param.literal_value.is_none()
                 && !param.optional_marker
-                && param.traits.is_empty()
+                && param.no_traits()
                 && param.sub_signature.is_none()
                 && param.code_signature.is_none()
                 && param.outer_sub_signature.is_none()

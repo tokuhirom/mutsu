@@ -3637,7 +3637,7 @@ fn pointy_block_source(
             && param.literal_value.is_none()
             && param.sub_signature.is_none()
             && param.where_constraint.is_none()
-            && param.traits.is_empty()
+            && param.no_traits()
             && !param.optional_marker
             && param.outer_sub_signature.is_none()
             && param.code_signature.is_none()

@@ -230,7 +230,7 @@ fn pure_param(param: &ParamDef) -> bool {
         && param.shape_constraints.is_none()
         && param.literal_value.is_none()
         && param.type_capture.is_none()
-        && param.traits.is_empty()
+        && param.no_traits()
         && param.trait_args.is_empty()
 }
 
