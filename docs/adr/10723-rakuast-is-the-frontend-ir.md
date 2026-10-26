@@ -2289,3 +2289,15 @@ scan for traits. Three differences from rakudo this removes, each now in
 `does` / `hides` was listed after them (`is rw`, a user trait), `is NAME(1, 2)` dropped its arguments, and
 `is NAME<a b>` rendered as a parenthesised string instead of the words quote. The ordinary frontend
 gained the matching fix: a class's `is NAME(1, 2)` hands the trait the whole list, as a routine's does.
+
+### 6.112 Dead statement-level assignment fallbacks, found by coverage (2026-10-26)
+
+§6.109-§6.111 deleted `convert`'s reverse paths by replacing them with a typed node or a written
+record. Some of what is left is not a path to replace but a path nothing reaches: the parser
+re-reading an assignment after `expression()` returned (`.=`, `Index = v`, `R=`, compound forms on a
+non-variable target), from before the assignment family became typed nodes (#14948). An
+llvm-cov run over the whole corpus (`docs/dead-code-coverage.md`) lists them: `convert.rs` 328 of
+4,979 lines never ran (error refusals, and the `DoStmt` of declaration-only `SyntheticBlock`
+shape), `lower.rs` 318 of 3,796, `src/parser/` 6,028 of 57,337. The first blocks removed are in
+`simple_expr_stmt/core.rs` and `assign/paren.rs` (about 730 lines); a differential list of 65
+assignment statements is unchanged. The rest of the list is the queue for further deletions.

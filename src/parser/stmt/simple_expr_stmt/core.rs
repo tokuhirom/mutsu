@@ -5,93 +5,16 @@ use crate::parser::parse_result::{
     PError, PResult, merge_expected_messages, parse_char, take_while1,
 };
 use crate::parser::primary::parse_call_arg_list;
-use crate::parser::stmt::assign::{
-    CompoundAssignOp, parse_assign_expr_or_comma, parse_colon_args, parse_comma_or_expr,
-    parse_compound_assign_op, parse_set_compound_assign_op,
-};
+use crate::parser::stmt::assign::{parse_assign_expr_or_comma, parse_colon_args};
 use crate::parser::stmt::modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
-use crate::parser::stmt::simple::{add_xor_sink_warnings, parse_hyper_assign_op};
+use crate::parser::stmt::simple::add_xor_sink_warnings;
 use crate::parser::term_boundary::{is_pure_value_expr, starts_with_unambiguous_term};
 use crate::symbol::Symbol;
-use crate::value::Value;
-use crate::value::ValueView;
 
-use super::lvalue::{
-    callable_lvalue_assign_expr, grouped_assign_lvalue_stmt, method_lvalue_assign_expr,
-    method_lvalue_target_name, named_sub_lvalue_assign_expr, single_target_list_lvalue_stmt,
-};
+use super::lvalue::callable_lvalue_assign_expr;
 use super::predicates::{
     is_literal_expr, is_pseudo_package, starts_with_postfix_ambiguous_term, starts_with_term_token,
 };
-/// Desugar `LVALUE = RHS` for a method-call / sub-call / callable lvalue into the
-/// corresponding `__mutsu_assign_*` call expression. Mirrors the inline handling
-/// of the main `=` assignment path; factored out so a statement-prefix-wrapped
-/// lvalue (`try $obj.x = v`) can push the assignment *inside* the prefix.
-fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
-    match lvalue {
-        Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier,
-            ..
-        } => {
-            if name == "AT-POS"
-                && args.len() == 1
-                && !matches!(target.as_ref(), Expr::Var(name) | Expr::BareWord(name) if name == "self")
-            {
-                return Expr::IndexAssign {
-                    target,
-                    index: Box::new(args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL))),
-                    value: Box::new(rhs),
-                    is_positional: true,
-                    spelling: Default::default(),
-                };
-            }
-            let target_var_name = method_lvalue_target_name(&target);
-            let method_name = if let Some(m @ ('!' | '^')) = modifier {
-                format!("{m}{}", name.resolve())
-            } else {
-                name.resolve()
-            };
-            method_lvalue_assign_expr(*target, target_var_name, method_name, args, rhs)
-        }
-        // An indirect method-call lvalue (`$o."$name"() = v` — an rw accessor
-        // whose name is computed at runtime). Mirror the `MethodCall` arm above but
-        // pass the name expression through instead of a literal, so it writes back
-        // through the accessor rather than being mis-lowered to a callable lvalue
-        // (which threw "cannot assign through non-callable value").
-        Expr::DynamicMethodCall {
-            target,
-            name_expr,
-            args,
-            modifier,
-            ..
-        } => {
-            let target_var_name = method_lvalue_target_name(&target);
-            crate::parser::stmt::assign::dynamic_method_lvalue_assign_expr(
-                *target,
-                target_var_name,
-                *name_expr,
-                modifier,
-                args,
-                rhs,
-            )
-        }
-        // The assignment node, target as written; its lowering
-        // (`rakuast::assign_lower`) makes the same writeback.
-        call @ Expr::Call { .. } => crate::parser::stmt::assign::written_assignment(call, rhs),
-        spelled @ Expr::Spelled(_) if crate::rakuast::is_expression_assign_target(&spelled) => {
-            crate::parser::stmt::assign::written_assignment(spelled, rhs)
-        }
-        Expr::CallOn { target, args } => callable_lvalue_assign_expr(*target, args, rhs),
-        other if crate::rakuast::is_callable_lvalue_assign_target(&other) => {
-            crate::parser::stmt::assign::written_assignment(other, rhs)
-        }
-        other => callable_lvalue_assign_expr(other, Vec::new(), rhs),
-    }
-}
-
 /// The statement `.=` on the topic (`$_ .= meth`, `.= meth`), tagged with its
 /// source-level shape. It routes through the `__mutsu_topic_dotassign` marker
 /// (compiled to `TopicDotAssign`) so it can reassign a read-only
@@ -345,205 +268,6 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             }
         }
     }
-    if let Some(stripped) = rest.strip_prefix(".=") {
-        let (stripped, _) = ws(stripped)?;
-        let (r, method_name) = take_while1(stripped, |c: char| {
-            c.is_alphanumeric() || c == '_' || c == '-'
-        })
-        .map_err(|err| PError {
-            messages: merge_expected_messages("expected method name after '.='", &err.messages),
-            remaining_len: err.remaining_len.or(Some(stripped.len())),
-            exception: None,
-        })?;
-        let method_name = method_name.to_string();
-        let r_before_ws = r;
-        let (r, _) = ws(r)?;
-        let (r, method_args) = if r.starts_with('(') {
-            let (r, _) = parse_char(r, '(')?;
-            let (r, _) = ws(r)?;
-            let (r, mut args) = parse_call_arg_list(r)?;
-            let (r, _) = ws(r)?;
-            let (r, _) = parse_char(r, ')')?;
-            let (r, ()) = crate::parser::expr::parse_trailing_call_adverbs(r, &mut args)?;
-            (r, args)
-        } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
-            // Colon-arg syntax: .=method: arg
-            let r2 = &r_before_ws[1..];
-            let (r2, _) = ws(r2)?;
-            let (r2, first_arg) = crate::parser::expr::expression(r2)?;
-            let mut args = vec![first_arg];
-            let mut r_inner = r2;
-            loop {
-                let (r3, _) = ws(r_inner)?;
-                if r3.starts_with(':')
-                    && !r3.starts_with("::")
-                    && let Ok((r4, arg)) = crate::parser::primary::misc::colonpair_expr(r3)
-                {
-                    args.push(arg);
-                    r_inner = r4;
-                    continue;
-                }
-                if !r3.starts_with(',') {
-                    r_inner = r3;
-                    break;
-                }
-                let r3 = &r3[1..];
-                let (r3, _) = ws(r3)?;
-                if r3.starts_with(';') || r3.starts_with('}') || r3.is_empty() {
-                    r_inner = r3;
-                    break;
-                }
-                let (r3, next) = crate::parser::expr::expression(r3)?;
-                args.push(next);
-                r_inner = r3;
-            }
-            (r_inner, args)
-        } else if r.starts_with(':') && !r.starts_with("::") {
-            // Fake-infix adverb form: .=method :key<val>
-            let mut args = Vec::new();
-            let mut r_inner = r;
-            while r_inner.starts_with(':') && !r_inner.starts_with("::") {
-                if let Ok((r2, arg)) = crate::parser::primary::misc::colonpair_expr(r_inner) {
-                    args.push(arg);
-                    let (r3, _) = ws(r2)?;
-                    r_inner = r3;
-                } else {
-                    break;
-                }
-            }
-            (r_inner, args)
-        } else {
-            (r, Vec::new())
-        };
-        let make_rhs = |target: Expr| Expr::MethodCall {
-            target: Box::new(target),
-            name: Symbol::intern(&method_name),
-            args: method_args.clone(),
-            modifier: None,
-            quoted: false,
-            sugar: false,
-        };
-        match expr {
-            // `$_ .= meth`: route the topic metaop through `__mutsu_topic_dotassign`
-            // (see the leading-dot case above).
-            Expr::Var(name) if name == "_" => {
-                let topic = Expr::Var("_".to_string());
-                let stmt = Stmt::Expr(crate::parser::stmt::assign::written_dotty_assignment(
-                    topic.clone(),
-                    make_rhs(topic),
-                    true,
-                ));
-                return parse_statement_modifier(r, stmt);
-            }
-            // A variable or an element: the same `.=` expansion (and marker) the
-            // expression form builds, so the RakuAST conversion sees one shape.
-            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::Index { .. } => {
-                let call = make_rhs(expr.clone());
-                let stmt = Stmt::Expr(crate::parser::stmt::assign::written_dotty_assignment(
-                    expr, call, true,
-                ));
-                return parse_statement_modifier(r, stmt);
-            }
-            _ => {
-                // Non-lvalue targets still support `.=` dispatch in statement position,
-                // but must not sink the returned value.
-                let stmt = Stmt::Expr(Expr::Call {
-                    name: Symbol::intern("sink"),
-                    args: vec![make_rhs(expr)],
-                    listop: false,
-                });
-                return parse_statement_modifier(r, stmt);
-            }
-        }
-    }
-    if matches!(expr, Expr::Index { .. } | Expr::MultiDimIndex { .. })
-        && rest.starts_with('=')
-        && !rest.starts_with("==")
-    {
-        let rest = &rest[1..];
-        let (rest, _) = ws(rest)?;
-        let (rest, value) = parse_comma_or_expr(rest).map_err(|err| PError {
-            messages: merge_expected_messages(
-                "expected assigned expression after index assignment",
-                &err.messages,
-            ),
-            remaining_len: err.remaining_len.or(Some(rest.len())),
-            exception: None,
-        })?;
-        if let Expr::MultiDimIndex {
-            target,
-            dimensions,
-            is_positional,
-        } = expr
-        {
-            let stmt = Stmt::Expr(Expr::MultiDimIndexAssign {
-                target,
-                dimensions,
-                value: Box::new(value),
-                is_positional,
-            });
-            return parse_statement_modifier(rest, stmt);
-        }
-        if let Expr::Index {
-            target,
-            index,
-            is_positional,
-            spelling,
-            ..
-        } = expr
-        {
-            if let Expr::Call { name, args, .. } = target.as_ref()
-                && name == "__mutsu_subscript_adverb"
-                && args.len() >= 3
-                && matches!(index.as_ref(), Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(1)))
-                && matches!(&args[2], Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(mode) if mode.as_str() == "kv" || mode.as_str() == "not-kv"))
-            {
-                let stmt = Stmt::Expr(Expr::IndexAssign {
-                    target: Box::new(args[0].clone()),
-                    index: Box::new(args[1].clone()),
-                    value: Box::new(value),
-                    is_positional,
-                    spelling,
-                });
-                return parse_statement_modifier(rest, stmt);
-            }
-            let stmt = Stmt::Expr(Expr::IndexAssign {
-                target,
-                index,
-                value: Box::new(value),
-                is_positional,
-                spelling,
-            });
-            return parse_statement_modifier(rest, stmt);
-        }
-    }
-    if let Expr::Index {
-        target,
-        index,
-        is_positional,
-        spelling,
-        ..
-    } = expr.clone()
-        && let Some(rest) = parse_hyper_assign_op(rest)
-    {
-        let (rest, _) = ws(rest)?;
-        let (rest, value) = parse_comma_or_expr(rest).map_err(|err| PError {
-            messages: merge_expected_messages(
-                "expected assigned expression after hyper assignment",
-                &err.messages,
-            ),
-            remaining_len: err.remaining_len.or(Some(rest.len())),
-            exception: None,
-        })?;
-        let stmt = Stmt::Expr(Expr::IndexAssign {
-            target,
-            index,
-            value: Box::new(value),
-            is_positional,
-            spelling,
-        });
-        return parse_statement_modifier(rest, stmt);
-    }
     if matches!(expr, Expr::Index { .. } | Expr::MultiDimIndex { .. }) && rest.starts_with(":=") {
         let rest = &rest[2..];
         let (rest, _) = ws(rest)?;
@@ -604,132 +328,6 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             "Cannot reverse the args of := because list assignment operators are too fiddly"
                 .to_string(),
         ));
-    }
-
-    // Reverse assignment: `value R= target` means `target = value`.
-    if !matches!(expr, Expr::AssignExpr { .. })
-        && rest.starts_with("R=")
-        && !rest.starts_with("R==")
-    {
-        let r = &rest[2..];
-        let (r, _) = ws(r)?;
-        let (r, target_expr) = parse_assign_expr_or_comma(r).map_err(|err| PError {
-            messages: merge_expected_messages(
-                "expected assignable expression after 'R='",
-                &err.messages,
-            ),
-            remaining_len: err.remaining_len.or(Some(r.len())),
-            exception: None,
-        })?;
-        if let Expr::DoStmt(stmt) = &target_expr
-            && let Stmt::VarDecl {
-                name,
-                type_constraint,
-                is_state,
-                is_our,
-                is_dynamic,
-                is_export,
-                export_tags,
-                custom_traits,
-                ..
-            } = stmt.as_ref()
-        {
-            let stmt = Stmt::VarDecl {
-                anonymous: false,
-                name: name.clone(),
-                expr,
-                type_constraint: type_constraint.clone(),
-                is_state: *is_state,
-                is_our: *is_our,
-                is_dynamic: *is_dynamic,
-                is_export: *is_export,
-                export_tags: export_tags.clone(),
-                custom_traits: custom_traits.clone(),
-                where_constraint: None,
-            };
-            return parse_statement_modifier(r, stmt);
-        }
-        if let Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier,
-            ..
-        } = &target_expr
-        {
-            let target_var_name = method_lvalue_target_name(target);
-            let method_name = if let Some(m @ ('!' | '^')) = *modifier {
-                format!("{m}{}", name.resolve())
-            } else {
-                name.resolve()
-            };
-            let assigned = method_lvalue_assign_expr(
-                (**target).clone(),
-                target_var_name,
-                method_name,
-                args.clone(),
-                expr,
-            );
-            let stmt = Stmt::Expr(assigned);
-            return parse_statement_modifier(r, stmt);
-        }
-        if let Expr::Call { name, args, .. } = &target_expr {
-            let stmt = Stmt::Expr(named_sub_lvalue_assign_expr(
-                name.resolve(),
-                args.clone(),
-                expr,
-            ));
-            return parse_statement_modifier(r, stmt);
-        }
-        if let Expr::CallOn { target, args } = &target_expr {
-            let stmt = Stmt::Expr(callable_lvalue_assign_expr(
-                (**target).clone(),
-                args.clone(),
-                expr,
-            ));
-            return parse_statement_modifier(r, stmt);
-        }
-        let stmt = match target_expr {
-            Expr::Var(name) => Stmt::Assign {
-                name,
-                expr,
-                op: AssignOp::Assign,
-                target_is_sigilless: false,
-            },
-            Expr::ArrayVar(name) => Stmt::Assign {
-                name: format!("@{}", name),
-                expr,
-                op: AssignOp::Assign,
-                target_is_sigilless: false,
-            },
-            Expr::HashVar(name) => Stmt::Assign {
-                name: format!("%{}", name),
-                expr,
-                op: AssignOp::Assign,
-                target_is_sigilless: false,
-            },
-            Expr::SymbolicDeref { sigil, expr: inner } => Stmt::Expr(Expr::SymbolicDerefAssign {
-                sigil,
-                expr: inner,
-                value: Box::new(expr),
-            }),
-            Expr::IndirectTypeLookup(inner) => Stmt::Expr(Expr::IndirectTypeLookupAssign {
-                expr: inner,
-                value: Box::new(expr),
-            }),
-            target => {
-                if let Some(stmt) = grouped_assign_lvalue_stmt(&target, expr.clone()) {
-                    stmt
-                } else if let Some(stmt) =
-                    single_target_list_lvalue_stmt(target.clone(), expr.clone())
-                {
-                    stmt
-                } else {
-                    Stmt::Expr(callable_lvalue_assign_expr(target, Vec::new(), expr))
-                }
-            }
-        };
-        return parse_statement_modifier(r, stmt);
     }
 
     // Generic assignment on non-variable lhs (e.g. `.key = 1`).
@@ -810,7 +408,6 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 };
                 Stmt::Expr(crate::parser::literal_assign_ro_expr(lit, rhs))
             }
-            Expr::BareWord(_) => Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]),
             Expr::SymbolicDeref { sigil, expr: inner } => Stmt::Expr(Expr::SymbolicDerefAssign {
                 sigil,
                 expr: inner,
@@ -820,43 +417,6 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 expr: inner,
                 value: Box::new(rhs),
             }),
-            // `(try LVALUE) = RHS` / `(do LVALUE) = RHS`: a statement prefix binds
-            // looser than `=`, so the assignment belongs *inside* the prefix:
-            // `try (LVALUE = RHS)`. Without this the Try node itself becomes the
-            // lvalue ("cannot assign through non-callable value").
-            Expr::Try { body, catch } if matches!(body.as_slice(), [Stmt::Expr(_)]) => {
-                let inner = match body.into_iter().next() {
-                    Some(Stmt::Expr(e)) => e,
-                    _ => unreachable!(),
-                };
-                Stmt::Expr(Expr::Try {
-                    body: vec![Stmt::Expr(lvalue_assign_to_expr(inner, rhs))],
-                    catch,
-                })
-            }
-            // The same for the `try` a `.AST` parse spells as written.
-            Expr::Spelled(spelled)
-                if matches!(
-                    spelled.spelling,
-                    crate::ast::spelled::Spelling::BareStatement
-                ) && matches!(&spelled.expr, Expr::Try { body, .. }
-                        if matches!(body.as_slice(), [Stmt::Expr(_)])) =>
-            {
-                let Expr::Try { body, catch } = spelled.expr else {
-                    unreachable!("matched above");
-                };
-                let inner = match body.into_iter().next() {
-                    Some(Stmt::Expr(e)) => e,
-                    _ => unreachable!(),
-                };
-                Stmt::Expr(Expr::spelled(
-                    Expr::Try {
-                        body: vec![Stmt::Expr(lvalue_assign_to_expr(inner, rhs))],
-                        catch,
-                    },
-                    || crate::ast::spelled::Spelling::BareStatement,
-                ))
-            }
             // `-$x = 5`, `$<c> = $0`, `($a || $b) = 1`, `(my $v) = 1, 2`: the
             // assignment node, written through the target's result.
             target if crate::rakuast::is_callable_lvalue_assign_target(&target) => {
@@ -997,120 +557,32 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Check for assignment after parenthesized assign expression: ($x = $y) = 5
-    if let Expr::AssignExpr { ref name, .. } = expr {
-        if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
-            let var_name = name.clone();
-            let r = &rest[1..];
-            let (r, _) = ws(r)?;
-            let (r, rhs) = parse_assign_expr_or_comma(r).map_err(|err| PError {
-                messages: merge_expected_messages(
-                    "expected right-hand expression after '='",
-                    &err.messages,
-                ),
-                remaining_len: err.remaining_len.or(Some(r.len())),
-                exception: None,
-            })?;
-            let stmts = vec![
-                Stmt::Expr(expr),
-                Stmt::Assign {
-                    name: var_name,
-                    expr: rhs,
-                    op: AssignOp::Assign,
-                    target_is_sigilless: false,
-                },
-            ];
-            return parse_statement_modifier(r, Stmt::Block(stmts));
-        }
-        if let Some((stripped, op)) = parse_compound_assign_op(rest) {
-            let var_name = name.clone();
-            let (r, _) = ws(stripped)?;
-            let (r, rhs) = parse_assign_expr_or_comma(r).map_err(|err| PError {
-                messages: merge_expected_messages(
-                    "expected right-hand expression after compound assignment",
-                    &err.messages,
-                ),
-                remaining_len: err.remaining_len.or(Some(r.len())),
-                exception: None,
-            })?;
-            let var_expr = Expr::Var(var_name.clone());
-            let stmts = vec![
-                Stmt::Expr(expr),
-                Stmt::Assign {
-                    name: var_name,
-                    expr: Expr::Binary {
-                        left: Box::new(var_expr),
-                        op: op.token_kind(),
-                        right: Box::new(rhs),
-                        form: Default::default(),
-                    },
-                    op: AssignOp::Assign,
-                    target_is_sigilless: false,
-                },
-            ];
-            return parse_statement_modifier(r, Stmt::Block(stmts));
-        }
-    }
-
-    // Set-operator compound assignment on a non-plain-variable lvalue:
-    // `%h<k> ∪= $s`, `@a[0] (&)= $s`, `.key ⊖= $s`. These operators
-    // (`∪=`/`∩=`/`(-)=`/…) are parsed by `parse_set_compound_assign_op` and
-    // carry a raw `TokenKind`, so they are not reached by the
-    // `CompoundAssignOp` path below. Desugar `lhs OP= rhs` to
-    // `lhs = lhs OP rhs`, evaluating the index once for an `Index` lvalue.
-    if !matches!(expr, Expr::AssignExpr { .. })
-        && let Some((stripped, set_tok, spelling)) = parse_set_compound_assign_op(rest)
+    if let Expr::AssignExpr { ref name, .. } = expr
+        && rest.starts_with('=')
+        && !rest.starts_with("==")
+        && !rest.starts_with("=>")
     {
-        let (r, _) = ws(stripped)?;
+        let var_name = name.clone();
+        let r = &rest[1..];
+        let (r, _) = ws(r)?;
         let (r, rhs) = parse_assign_expr_or_comma(r).map_err(|err| PError {
             messages: merge_expected_messages(
-                "expected right-hand expression after compound assignment",
+                "expected right-hand expression after '='",
                 &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        let stmt = Stmt::Expr(crate::parser::stmt::assign::written_set_assignment(
-            expr, spelling, set_tok, rhs,
-        ));
-        return parse_statement_modifier(r, stmt);
-    }
-
-    // Generic compound assignment on non-variable lhs (e.g. `.key //= ++$i`).
-    // TODO: Support proper compound assignment semantics for arbitrary lvalues.
-    // Current fallback desugars to a binary op expression so parsing can proceed.
-    if !matches!(expr, Expr::AssignExpr { .. })
-        && let Some((stripped, op)) = parse_compound_assign_op(rest)
-    {
-        let (r, _) = ws(stripped)?;
-        let (r, rhs) = parse_assign_expr_or_comma(r).map_err(|err| PError {
-            messages: merge_expected_messages(
-                "expected right-hand expression after compound assignment",
-                &err.messages,
-            ),
-            remaining_len: err.remaining_len.or(Some(r.len())),
-            exception: None,
-        })?;
-        let stmt =
-            if matches!(expr, Expr::BracketArray(..)) && matches!(op, CompoundAssignOp::Comma) {
-                Stmt::Expr(Expr::Binary {
-                    left: Box::new(expr),
-                    op: op.token_kind(),
-                    right: Box::new(rhs),
-                    form: Default::default(),
-                })
-            } else {
-                // The typed node over the target as written; its lowering
-                // writes back through a subscript, a method call or the
-                // branch a ternary selects. A non-lvalue target (a literal,
-                // `(my $x)`) throws `X::Assignment::RO` when it is reached.
-                crate::parser::stmt::assign::written_compound_assignment_stmt(
-                    expr,
-                    op,
-                    crate::ast::parsed::CompoundMeta::Plain,
-                    rhs,
-                )?
-            };
-        return parse_statement_modifier(r, stmt);
+        let stmts = vec![
+            Stmt::Expr(expr),
+            Stmt::Assign {
+                name: var_name,
+                expr: rhs,
+                op: AssignOp::Assign,
+                target_is_sigilless: false,
+            },
+        ];
+        return parse_statement_modifier(r, Stmt::Block(stmts));
     }
 
     // Check for comma-separated expressions (e.g., "1,2, until $++")
