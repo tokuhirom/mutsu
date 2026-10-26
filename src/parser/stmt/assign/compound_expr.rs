@@ -947,13 +947,6 @@ pub(crate) fn zip_assign_call(target: Expr, source: Expr) -> Expr {
     }
 }
 
-/// The sigil-qualified assignment-target name for a `Z=` element-wise assign,
-/// or `None` for an LHS shape `Z=` does not element-wise-assign (only plain
-/// variables are supported; an `Index` LHS keeps the value-producing path).
-fn zip_assign_target_name(lhs: &Expr) -> Option<String> {
-    lhs.container_var_key()
-}
-
 pub(crate) fn build_meta_assign_expr(
     lhs: Expr,
     meta: String,
@@ -966,54 +959,7 @@ pub(crate) fn build_meta_assign_expr(
     {
         return preserve_compound_assign(lhs, compound_op, rhs);
     }
-    // `@a Z= rhs` (zip metaoperator on `=`) is element-wise assignment, NOT
-    // `@a = (@a Z rhs)`: each `@a[i]` gets `rhs[i]`, trailing `@a` elements keep
-    // their value, and a shaped array keeps its shape. `__mutsu_zip_assign`
-    // rebuilds the container; the outer assignment stores it back. Only `Z=`
-    // (op `=`) is rewritten — `Z=>` / `Z+` / etc. keep the value-producing
-    // MetaOp path below.
-    if meta == "Z"
-        && op == "="
-        && let Some(name) = zip_assign_target_name(&lhs)
-    {
-        let zip_call = zip_assign_call(lhs, rhs);
-        return Ok(Expr::AssignExpr {
-            name,
-            expr: Box::new(zip_call),
-            is_bind: false,
-        });
-    }
     Ok(match lhs {
-        Expr::Var(name) => Expr::AssignExpr {
-            name: name.clone(),
-            expr: Box::new(Expr::MetaOp {
-                meta,
-                op,
-                left: Box::new(Expr::Var(name)),
-                right: Box::new(rhs),
-            }),
-            is_bind: false,
-        },
-        Expr::ArrayVar(name) => Expr::AssignExpr {
-            name: format!("@{}", name),
-            expr: Box::new(Expr::MetaOp {
-                meta,
-                op,
-                left: Box::new(Expr::ArrayVar(name)),
-                right: Box::new(rhs),
-            }),
-            is_bind: false,
-        },
-        Expr::HashVar(name) => Expr::AssignExpr {
-            name: format!("%{}", name),
-            expr: Box::new(Expr::MetaOp {
-                meta,
-                op,
-                left: Box::new(Expr::HashVar(name)),
-                right: Box::new(rhs),
-            }),
-            is_bind: false,
-        },
         Expr::Index {
             target,
             index,

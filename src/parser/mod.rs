@@ -433,11 +433,9 @@ pub use stmt::simple::{
 };
 
 pub(crate) use expr::precedence::{
-    assign_to_target_expr, list_lvalue_assign_expr, single_target_list_lvalue_expr,
-    unwrap_grouped_lvalue,
+    assign_to_target_expr, single_target_list_lvalue_expr, unwrap_grouped_lvalue,
 };
 pub(crate) use stmt::assign::named_sub_lvalue_assign_expr;
-pub(crate) use stmt::simple_expr_stmt::lvalue::single_target_list_lvalue_stmt;
 
 /// `expr`, with an assignment a `.AST` parse kept in its RakuAST shape
 /// lowered to the executable shape the parser builds otherwise. For a parser
@@ -459,9 +457,7 @@ pub(crate) fn lowered_assignment(expr: crate::ast::Expr) -> crate::ast::Expr {
         other => other,
     }
 }
-pub(crate) use expr::precedence::{
-    assignment_ro_parts, literal_assign_ro_expr, literal_assign_ro_parts,
-};
+pub(crate) use expr::precedence::{literal_assign_ro_expr, literal_assign_ro_parts};
 pub(crate) use expr::precedence_meta_ops::lower_hyper_assignment as hyper_assignment_expr;
 pub(crate) use expr::precedence_meta_ops::negated_glyph_relation;
 pub(crate) use stmt::assign::written_assignment;

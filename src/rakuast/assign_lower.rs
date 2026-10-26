@@ -163,16 +163,7 @@ pub(crate) fn lower_expression(node: Assign) -> Expr {
             expr: Box::new(source),
             is_bind: false,
         },
-        Expr::CallOn { target, args } => {
-            if args.is_empty()
-                && let Expr::ArrayLiteral(items) = target.as_ref()
-                && let Some(expr) =
-                    crate::parser::list_lvalue_assign_expr(items.clone(), source.clone())
-            {
-                return expr;
-            }
-            callable_lvalue(*target, args, source)
-        }
+        Expr::CallOn { target, args } => callable_lvalue(*target, args, source),
         // A method-call lvalue (`$o.a = v`, `my $c = $o.a = 42`): the
         // rw-accessor writeback. `$(EXPR) = v` is the contextualizer's
         // `.item` call here, which writes through to `EXPR`.
@@ -209,18 +200,7 @@ pub(crate) fn lower_statement(node: Assign) -> Stmt {
             op: AssignOp::Assign,
             target_is_sigilless: false,
         },
-        None => {
-            // `(@a, *) = …`: the statement form extracts the element by position.
-            if let Expr::ArrayLiteral(items) = &node.target
-                && let Some(stmt) = crate::parser::single_target_list_lvalue_stmt(
-                    Expr::ArrayLiteral(items.clone()),
-                    node.source.clone(),
-                )
-            {
-                return stmt;
-            }
-            Stmt::Expr(lower_expression(node))
-        }
+        None => Stmt::Expr(lower_expression(node)),
     }
 }
 
