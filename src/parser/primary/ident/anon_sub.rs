@@ -23,7 +23,8 @@ pub(crate) fn invocant_param_def() -> crate::ast::ParamDef {
         literal_value: None,
         sub_signature: None,
         where_constraint: None,
-        traits: vec![crate::ast::IMPLICIT_INVOCANT_TRAIT.to_string()],
+        traits: Vec::new(),
+        implicit_invocant: true,
         optional_marker: false,
         outer_sub_signature: None,
         code_signature: None,
@@ -66,8 +67,8 @@ pub(crate) fn folded_invocant<'a>(
     use crate::ast::Stmt;
     if !receiver.is_invocant
         || receiver.name != "self"
-        || receiver.traits.len() != 1
-        || receiver.traits[0] != crate::ast::IMPLICIT_INVOCANT_TRAIT
+        || !receiver.traits.is_empty()
+        || !receiver.implicit_invocant
         || receiver.where_constraint.is_some()
         || receiver.type_capture.is_some()
         || receiver.sub_signature.is_some()
@@ -203,7 +204,7 @@ pub(crate) fn method_literal_params(
     let mut seen_positional = false;
     for pd in param_defs {
         let declares_invocant =
-            pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") || pd.name == "self";
+            pd.is_invocant || pd.name == "self";
         let declares_self_lexical = pd.declares_self_lexical();
         if !seen_positional && declares_invocant {
             invocant.default = pd.default;

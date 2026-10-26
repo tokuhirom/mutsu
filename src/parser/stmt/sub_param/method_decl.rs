@@ -7,9 +7,7 @@ use std::collections::HashMap;
 
 pub(crate) fn mark_params_as_invocant(params: &mut [ParamDef]) {
     for param in params {
-        if !param.traits.iter().any(|t| t == "invocant") {
-            param.traits.push("invocant".to_string());
-        }
+        param.is_invocant = true;
     }
 }
 

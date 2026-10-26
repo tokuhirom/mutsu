@@ -1028,11 +1028,11 @@ impl Interpreter {
             return;
         }
         let has_invocant_constraint = method_def.param_defs.iter().any(|pd| {
-            (pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
+            pd.is_invocant
                 && pd.type_constraint.is_some()
         });
         let has_complex_params = method_def.param_defs.iter().any(|pd| {
-            if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") {
+            if pd.is_invocant {
                 return false;
             }
             if pd.slurpy && pd.name == "%_" {
@@ -1087,7 +1087,7 @@ impl Interpreter {
             .iter()
             .filter(|pd| {
                 !pd.is_invocant
-                    && !pd.traits.iter().any(|t| t == "invocant")
+                    && !pd.is_invocant
                     && !pd.slurpy
                     && !pd.double_slurpy
                     && !pd.named
@@ -1098,7 +1098,7 @@ impl Interpreter {
             .iter()
             .filter(|pd| {
                 !pd.is_invocant
-                    && !pd.traits.iter().any(|t| t == "invocant")
+                    && !pd.is_invocant
                     && !pd.slurpy
                     && !pd.double_slurpy
                     && !pd.named
@@ -1113,7 +1113,7 @@ impl Interpreter {
         // drop that write — e.g. `method go { my $f = { $*x = 1 }; $f() }`. #3658.
         let can_skip_merge = !cc.has_env_writes && !cc.has_calls;
         let has_defaults = method_def.param_defs.iter().any(|pd| {
-            !pd.is_invocant && !pd.traits.iter().any(|t| t == "invocant") && pd.default.is_some()
+            !pd.is_invocant && pd.default.is_some()
         });
         self.caches.fast_method_cache.insert(
             cache_key,

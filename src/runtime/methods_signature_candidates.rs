@@ -184,7 +184,7 @@ impl Interpreter {
                 if data
                     .param_defs
                     .iter()
-                    .any(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
+                    .any(|p| p.is_invocant)
                 {
                     self.method_args_match(args, &data.param_defs)
                 } else {

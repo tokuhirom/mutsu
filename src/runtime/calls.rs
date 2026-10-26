@@ -132,7 +132,7 @@ impl Interpreter {
     pub(crate) fn build_signature_string(param_defs: &[crate::ast::ParamDef]) -> String {
         let sig_parts: Vec<String> = param_defs
             .iter()
-            .filter(|pd| !pd.traits.iter().any(|t| t == "invocant"))
+            .filter(|pd| !pd.is_invocant)
             .map(|pd| {
                 let sigil = if pd.name.starts_with('@')
                     || pd.name.starts_with('%')

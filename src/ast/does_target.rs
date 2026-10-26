@@ -10,10 +10,6 @@ use super::{Expr, ParamDef, Stmt};
 use crate::ast_visit::{Visit, walk_expr};
 use crate::token_kind::TokenKind;
 
-/// Trait marker the parser records on a parameter its routine body applies
-/// `does` to.
-pub(crate) const DOES_TARGET_TRAIT: &str = "does-target";
-
 #[derive(Default)]
 struct DoesTargets(Vec<String>);
 
@@ -31,9 +27,9 @@ impl<'ast> Visit<'ast> for DoesTargets {
 
 impl ParamDef {
     /// True for a parameter its routine body applies `does` to.
-    // Cost: O(t), t = the parameter's trait count.
+    // Cost: O(1).
     pub(crate) fn is_does_target(&self) -> bool {
-        self.traits.iter().any(|t| t == DOES_TARGET_TRAIT)
+        self.does_target
     }
 }
 
@@ -68,7 +64,7 @@ pub(crate) fn mark_does_targets(name: &str, params: &mut [ParamDef], body: &[Stm
             && targets.0.contains(&pd.name)
             && !pd.is_does_target()
         {
-            pd.traits.push(DOES_TARGET_TRAIT.to_string());
+            pd.does_target = true;
         }
     }
 }

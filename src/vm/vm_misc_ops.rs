@@ -292,7 +292,7 @@ impl Interpreter {
                     || pd.slurpy
                     || pd.double_slurpy
                     || pd.onearg
-                    || pd.traits.iter().any(|t| t == "invocant")
+                    || pd.is_invocant
                 {
                     continue;
                 }

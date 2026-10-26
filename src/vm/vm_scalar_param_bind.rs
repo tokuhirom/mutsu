@@ -112,7 +112,6 @@ impl Interpreter {
         let has_trait = |name: &str| pd.traits.iter().any(|t| t == name);
         if pd.sigilless
             || pd.is_invocant
-            || has_trait("invocant")
             || pd.name.starts_with(['@', '%', '&'])
             || has_trait("raw")
             || has_trait("rw")

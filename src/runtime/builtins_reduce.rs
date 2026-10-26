@@ -17,7 +17,7 @@ impl Interpreter {
                 if pd.named
                     || pd.slurpy
                     || pd.double_slurpy
-                    || pd.traits.iter().any(|t| t == "invocant")
+                    || pd.is_invocant
                 {
                     continue;
                 }
@@ -427,7 +427,7 @@ impl Interpreter {
                 if pd.named
                     || pd.slurpy
                     || pd.double_slurpy
-                    || pd.traits.iter().any(|t| t == "invocant")
+                    || pd.is_invocant
                 {
                     continue;
                 }

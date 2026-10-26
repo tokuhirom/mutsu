@@ -637,7 +637,7 @@ impl Interpreter {
         let arg_sources = self.pending_call_arg_sources();
         let mut arg_idx = 0usize;
         for pd in &method_def.param_defs {
-            if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") || pd.named {
+            if pd.is_invocant || pd.named {
                 continue;
             }
             // Skip named (string-keyed Pair) arguments when aligning positional

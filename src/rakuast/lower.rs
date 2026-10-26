@@ -2178,11 +2178,7 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
     def.sigilless = sigilless;
     if invocant {
         def.is_invocant = true;
-        def.traits.push("invocant".to_string());
-        if !has_target {
-            def.traits
-                .push(crate::ast::IMPLICIT_INVOCANT_TRAIT.to_string());
-        }
+        def.implicit_invocant = !has_target;
     }
     // A named parameter `:$x` carries a `names` list; it binds by name and is
     // optional by default. More than one name is an alias chain, rebuilt once
@@ -2451,11 +2447,7 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     // folds into the receiver (`parser::anon_method_expr_declared`).
     let declared = if param_defs.first().is_some_and(|p| p.is_invocant) {
         let first = param_defs.remove(0);
-        let implicit = first
-            .traits
-            .iter()
-            .any(|t| t == crate::ast::IMPLICIT_INVOCANT_TRAIT);
-        let alias = (!implicit).then(|| (first.name.clone(), first.sigilless));
+        let alias = (!first.implicit_invocant).then(|| (first.name.clone(), first.sigilless));
         Some((first.type_constraint, alias, first.default))
     } else {
         None
