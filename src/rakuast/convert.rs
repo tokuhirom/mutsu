@@ -4160,7 +4160,9 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     return Ok(node);
                 }
                 if *is_rw || *is_raw {
-                    return Err(unsupported("anonymous routine with traits and no written-trait record"));
+                    return Err(unsupported(
+                        "anonymous routine with traits and no written-trait record",
+                    ));
                 }
                 Ok(node)
             }
@@ -4231,7 +4233,9 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     return Ok(node);
                 }
                 if *is_rw || *is_raw {
-                    return Err(unsupported("anonymous routine with traits and no written-trait record"));
+                    return Err(unsupported(
+                        "anonymous routine with traits and no written-trait record",
+                    ));
                 }
                 return Ok(node);
             }

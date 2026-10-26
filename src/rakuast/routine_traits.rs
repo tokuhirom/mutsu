@@ -31,9 +31,7 @@
 //! `is DEPRECATED` / `is DEPRECATED("message")` is a `Trait::Is` too: the
 //! parser keeps it as the custom trait `DEPRECATED` / `DEPRECATED:message`.
 
-use super::convert::{
-    leaf_field, name_from_identifier, node_field, statement_expression,
-};
+use super::convert::{leaf_field, name_from_identifier, node_field, statement_expression};
 use super::lower::{named_child, named_child_or_positional, positional_leaf};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
