@@ -444,7 +444,8 @@ impl ParamDef {
     /// True for an anonymous `(…)` destructuring parameter.
     // Cost: O(1).
     pub(crate) fn is_parens(&self) -> bool {
-        debug_assert_eq!(self.target == ParamTarget::Parens, self.name == PARENS_PARAM || self.name.is_empty() || self.name.starts_with("__for_unpack"), "TMPCHECK parens {}", self.name);
+        debug_assert!(self.name != PARENS_PARAM || self.target == ParamTarget::Parens, "TMPCHECK parens-name {}", self.name);
+        debug_assert!(self.target != ParamTarget::Parens || self.name == PARENS_PARAM || self.name.is_empty() || self.name.starts_with("__for_unpack"), "TMPCHECK parens-target {}", self.name);
         self.target == ParamTarget::Parens
     }
 
