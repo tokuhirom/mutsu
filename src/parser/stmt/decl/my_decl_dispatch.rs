@@ -53,7 +53,7 @@ pub(super) fn try_keyword_dispatch(
             if let Stmt::SubDecl {
                 name,
                 return_type,
-                custom_traits,
+                scope,
                 ..
             } = &mut stmt
             {
@@ -62,7 +62,7 @@ pub(super) fn try_keyword_dispatch(
                     None => *return_type = Some(routine_type),
                 }
                 if is_our {
-                    custom_traits.push(("__our_scoped".to_string(), None));
+                    *scope = crate::ast::SubScope::Our;
                 }
             }
             return Ok(Some((r, stmt)));
@@ -73,7 +73,7 @@ pub(super) fn try_keyword_dispatch(
             if let Stmt::SubDecl {
                 name,
                 return_type,
-                custom_traits,
+                scope,
                 ..
             } = &mut stmt
             {
@@ -82,7 +82,7 @@ pub(super) fn try_keyword_dispatch(
                     None => *return_type = Some(routine_type),
                 }
                 if is_our {
-                    custom_traits.push(("__our_scoped".to_string(), None));
+                    *scope = crate::ast::SubScope::Our;
                 }
             }
             return Ok(Some((r, stmt)));
@@ -169,8 +169,8 @@ pub(super) fn try_keyword_dispatch(
             .map(|r2| ws(r2).map(|(r3, _)| r3).unwrap_or(r2))
             .unwrap_or(r);
         let (r, mut stmt) = sub_decl_body(r, true, false, false)?;
-        if is_our && let Stmt::SubDecl { custom_traits, .. } = &mut stmt {
-            custom_traits.push(("__our_scoped".to_string(), None));
+        if is_our && let Stmt::SubDecl { scope, .. } = &mut stmt {
+            *scope = crate::ast::SubScope::Our;
         }
         return Ok(Some((r, stmt)));
     }
@@ -187,8 +187,8 @@ pub(super) fn try_keyword_dispatch(
         }
         let (r, _) = ws1(after_sub)?;
         let (r, mut stmt) = sub_decl_body(r, false, false, false)?;
-        if is_our && let Stmt::SubDecl { custom_traits, .. } = &mut stmt {
-            custom_traits.push(("__our_scoped".to_string(), None));
+        if is_our && let Stmt::SubDecl { scope, .. } = &mut stmt {
+            *scope = crate::ast::SubScope::Our;
         }
         return Ok(Some((r, stmt)));
     }

@@ -147,9 +147,6 @@ pub(super) fn package_scope(is_lexical: bool, is_unit: bool) -> Option<&'static 
     }
 }
 
-/// The parser's `custom_traits` marker for an `our sub`.
-pub(super) const OUR_SCOPED: &str = "__our_scoped";
-
 /// The custom trait the parser gives an operator sub that declares its
 /// precedence or associativity.
 const OP_PREC_TRAIT: &str = "__prec";
@@ -630,6 +627,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             export_tags,
             is_test_assertion,
             supersede,
+            scope,
             custom_traits,
             spans,
             ..
@@ -653,8 +651,6 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     custom_traits.iter().any(|(t, _)| {
                         t.starts_with("__")
                             && !is_return_spelling_marker(t)
-                            && t != OUR_SCOPED
-                            && t != crate::parser::ANON_DECL_TRAIT
                             && t != "__hidden_from_backtrace"
                             // The operator-precedence record the parser derives
                             // from `is assoc` / `is tighter`; lowering rebuilds it.
@@ -694,9 +690,14 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 return Err(unsupported("sub with traits and no written-trait record"));
             }
             routine_traits::add_flags(&mut node, *multi, false);
-            if let Some(scope) = sub_scope(custom_traits) {
-                // `scope => "our"` / `"anon"` leads the node; `my` is the
-                // default scope and renders no field.
+            // `scope => "our"` / `"anon"` leads the node; `my` is the default
+            // scope and renders no field.
+            let written_scope = match scope {
+                crate::ast::SubScope::My => None,
+                crate::ast::SubScope::Our => Some("our"),
+                crate::ast::SubScope::Anon => Some("anon"),
+            };
+            if let Some(scope) = written_scope {
                 node.fields
                     .insert(0, leaf_field(Some("scope"), Value::str_from(scope)));
             }
@@ -2273,22 +2274,6 @@ pub(super) fn package_header_fields(
         fields.push(node_field(Some("name"), name_from_identifier(name)));
     }
     fields
-}
-
-/// The scope a named sub's `custom_traits` mark it with, when it is not the
-/// default `my`: `our sub f`, or `anon sub g` (built but not installed).
-// Cost: O(t), t = number of custom traits.
-fn sub_scope(custom_traits: &[(String, Option<Expr>)]) -> Option<&'static str> {
-    if custom_traits.iter().any(|(t, _)| t == OUR_SCOPED) {
-        Some("our")
-    } else if custom_traits
-        .iter()
-        .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT)
-    {
-        Some("anon")
-    } else {
-        None
-    }
 }
 
 /// Whether a package declaration's `custom_traits` hold anything but the

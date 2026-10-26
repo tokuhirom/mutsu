@@ -1,7 +1,7 @@
 //! Named subroutine lowering.
 use super::RakuAstNode;
 use super::lower::*;
-use crate::ast::Stmt;
+use crate::ast::{Stmt, SubScope};
 use crate::value::RuntimeError;
 
 /// Lower `sub NAME (SIG) { … }` to `Stmt::SubDecl`. Only bare positional scalar
@@ -13,15 +13,15 @@ pub(super) fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let mut is_traits = super::routine_traits::IsTraits::default();
     let (return_type, mut custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
     let multi = multiness(node)?;
-    match node.fields.iter().find(|f| f.name == Some("scope")) {
-        None => {}
+    let scope = match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => SubScope::My,
         Some(_) => match leaf_str(node, "scope")?.as_str() {
-            "our" => custom_traits.push((super::convert::OUR_SCOPED.to_string(), None)),
-            "anon" => custom_traits.push((crate::parser::ANON_DECL_TRAIT.to_string(), None)),
-            "my" => {}
+            "our" => SubScope::Our,
+            "anon" => SubScope::Anon,
+            "my" => SubScope::My,
             _ => return Err(unsupported(node)),
         },
-    }
+    };
     // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
     let mut body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     super::routine_source::retain(node, &mut body)?;
@@ -61,6 +61,7 @@ pub(super) fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         export_tags: is_traits.export_tags,
         is_test_assertion: custom_traits.iter().any(|(t, _)| t == "test-assertion"),
         supersede: super::routine_source::has_supersede(node),
+        scope,
         custom_traits,
     })
 }

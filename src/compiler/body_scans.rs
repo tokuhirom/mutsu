@@ -355,8 +355,8 @@ struct NestedOurSubScan<'ast> {
 impl<'ast> Visit<'ast> for NestedOurSubScan<'ast> {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
-            Stmt::SubDecl { custom_traits, .. }
-                if self.depth > 0 && custom_traits.iter().any(|(t, _)| t == "__our_scoped") =>
+            Stmt::SubDecl { scope, .. }
+                if self.depth > 0 && *scope == crate::ast::SubScope::Our =>
             {
                 self.out.push(stmt);
             }

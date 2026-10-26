@@ -69,6 +69,7 @@ impl Compiler {
             is_raw: false,
             is_export: false,
             signature_alternates,
+            scope,
             custom_traits,
             ..
         } = stmt
@@ -76,9 +77,8 @@ impl Compiler {
             return None;
         };
         if !signature_alternates.is_empty()
-            || custom_traits
-                .iter()
-                .any(|(t, _)| !t.starts_with("__") || t == "__our_scoped")
+            || *scope == crate::ast::SubScope::Our
+            || custom_traits.iter().any(|(t, _)| !t.starts_with("__"))
         {
             return None;
         }

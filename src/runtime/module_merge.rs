@@ -352,10 +352,9 @@ impl Interpreter {
                     name,
                     is_export: false,
                     multi: false,
-                    custom_traits,
+                    scope: crate::ast::SubScope::Our,
                     ..
-                } if custom_traits.iter().any(|(t, _)| t == "__our_scoped")
-                    && !crate::qualified::is_qualified(*name) =>
+                } if !crate::qualified::is_qualified(*name) =>
                 {
                     Some(*name)
                 }

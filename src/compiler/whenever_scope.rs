@@ -96,6 +96,7 @@ impl Compiler {
             export_tags: Vec::new(),
             is_test_assertion: false,
             supersede: false,
+            scope: crate::ast::SubScope::My,
             custom_traits: Vec::new(),
         });
         (body_idx, cc_idx)

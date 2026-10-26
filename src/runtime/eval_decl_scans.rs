@@ -173,9 +173,9 @@ impl<'ast> Visit<'ast> for OurRoutines {
             Stmt::SubDecl {
                 name,
                 multi: false,
-                custom_traits,
+                scope: crate::ast::SubScope::Our,
                 ..
-            } if custom_traits.iter().any(|(t, _)| t == "__our_scoped") => {
+            } => {
                 let n = name.resolve().to_string();
                 if !n.is_empty() && !self.seen.insert(n.clone()) {
                     let mut attrs = ValueMap::default();
