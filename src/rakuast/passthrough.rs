@@ -17,7 +17,7 @@
 use std::cell::{Cell, RefCell};
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::parsed::{Assign, ParsedExpr};
+use crate::ast::parsed::{Assign, ParsedExpr, ParsedStmt};
 use crate::ast::{Expr, Stmt};
 use crate::ast_visit::VisitMut;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -117,6 +117,10 @@ pub(super) fn expr_guards(expr: &Expr) -> Guards {
         // A kept `supply { }` body is expanded by the shape of its statements
         // (`emit`, `done`), as the desugaring is.
         (matches!(expr, Expr::DoStmt(inner) if matches!(inner.as_ref(), Stmt::SyntheticBlock(_)))
+            // `is my $k.defined, ...`: `decl_tail::convert` finds the declared
+            // variable at the bottom of the converted tail, which a leaf hides.
+            || matches!(expr, Expr::DoStmt(inner) if matches!(inner.as_ref(), Stmt::Ast(node)
+                if matches!(node.as_ref(), ParsedStmt::DeclTail { .. })))
             || matches!(expr, Expr::Ast(node) if !matches!(node.as_ref(), ParsedExpr::Assign(_))))
         .then(Desugared::enter),
         matches!(
