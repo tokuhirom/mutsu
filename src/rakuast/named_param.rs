@@ -273,6 +273,8 @@ pub(super) fn is_anonymous_named(node: &RakuAstNode) -> bool {
 /// outermost level says whether the parameter as a whole is required).
 fn bare_level(name: &str, named: bool, like: &ParamDef) -> ParamDef {
     ParamDef {
+        implicit_invocant: Default::default(),
+        does_target: Default::default(),
         spans: Default::default(),
         trait_meta: Default::default(),
         target: ParamTarget::Variable,

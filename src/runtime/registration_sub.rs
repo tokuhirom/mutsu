@@ -1091,6 +1091,8 @@ impl Interpreter {
             let mut defs = Vec::new();
             if use_positional {
                 defs.push(ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                    implicit_invocant: Default::default(),
+                    does_target: Default::default(),
                     target: Default::default(),
                     type_capture: None,
                     name: "@_".to_string(),
@@ -1120,6 +1122,8 @@ impl Interpreter {
             }
             if use_named {
                 defs.push(ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                    implicit_invocant: Default::default(),
+                    does_target: Default::default(),
                     target: Default::default(),
                     type_capture: None,
                     name: "%_".to_string(),

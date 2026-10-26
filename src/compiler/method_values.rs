@@ -127,9 +127,7 @@ impl Compiler {
             param_defs,
             self.static_class_hidden,
         );
-        let declared_receiver = param_defs
-            .first()
-            .is_some_and(|p| p.is_invocant);
+        let declared_receiver = param_defs.first().is_some_and(|p| p.is_invocant);
         let (mut defs, aliases) = crate::parser::method_literal_params(effective);
         if let Some(receiver) = defs.first_mut() {
             receiver.is_invocant = true;

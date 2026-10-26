@@ -156,6 +156,8 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             rest,
             ParamDef {
+                implicit_invocant: Default::default(),
+                does_target: Default::default(),
                 target: Default::default(),
                 spans: Default::default(),
                 trait_meta: Default::default(),
@@ -245,6 +247,8 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             r,
             ParamDef {
+                implicit_invocant: Default::default(),
+                does_target: Default::default(),
                 target: Default::default(),
                 spans: Default::default(),
                 trait_meta: Default::default(),
@@ -285,6 +289,8 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             return Ok((
                 r,
                 ParamDef {
+                    implicit_invocant: Default::default(),
+                    does_target: Default::default(),
                     target: Default::default(),
                     spans: Default::default(),
                     trait_meta: Default::default(),
@@ -323,6 +329,8 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             return Ok((
                 r,
                 ParamDef {
+                    implicit_invocant: Default::default(),
+                    does_target: Default::default(),
                     target: Default::default(),
                     spans: Default::default(),
                     trait_meta: Default::default(),
@@ -360,6 +368,8 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             r,
             ParamDef {
+                implicit_invocant: Default::default(),
+                does_target: Default::default(),
                 target: Default::default(),
                 spans: Default::default(),
                 trait_meta: Default::default(),
@@ -433,6 +443,8 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             rest,
             ParamDef {
+                implicit_invocant: Default::default(),
+                does_target: Default::default(),
                 target: Default::default(),
                 spans: Default::default(),
                 trait_meta: Default::default(),
@@ -604,6 +616,8 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     Ok((
         rest,
         ParamDef {
+            implicit_invocant: Default::default(),
+            does_target: Default::default(),
             target: Default::default(),
             spans: Default::default(),
             trait_meta: Default::default(),

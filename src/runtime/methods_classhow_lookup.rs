@@ -587,6 +587,8 @@ impl Interpreter {
 
     pub(super) fn make_invocant_param(class_name: &str) -> crate::ast::ParamDef {
         crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
+            implicit_invocant: Default::default(),
+            does_target: Default::default(),
             target: Default::default(),
             type_capture: None,
             name: String::new(),

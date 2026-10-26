@@ -323,7 +323,6 @@ pub(crate) const PARENS_PARAM: &str = "__subsig__";
 /// The execution name of an anonymous `[…]` destructuring parameter.
 pub(crate) const BRACKETS_PARAM: &str = "@";
 
-
 /// True when a *signature* declares a parameter the source spelled `$self`,
 /// including one nested in a destructuring sub-signature (`sub f([$self, $x])`).
 ///
@@ -446,6 +445,8 @@ impl ParamDef {
     // Cost: O(|name|).
     pub(crate) fn sigilless_term(name: &str) -> Self {
         ParamDef {
+            implicit_invocant: Default::default(),
+            does_target: Default::default(),
             target: Default::default(),
             spans: Default::default(),
             trait_meta: Default::default(),
@@ -3481,6 +3482,8 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
             let param_defs = legacy_params
                 .iter()
                 .map(|name| ParamDef {
+                    implicit_invocant: Default::default(),
+                    does_target: Default::default(),
                     target: Default::default(),
                     spans: Default::default(),
                     trait_meta: Default::default(),
@@ -3538,6 +3541,8 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                 // Named placeholders use `:` twigil: $:f, @:f, %:f
                 let is_named = name.contains(':');
                 ParamDef {
+                    implicit_invocant: Default::default(),
+                    does_target: Default::default(),
                     target: Default::default(),
                     spans: Default::default(),
                     trait_meta: Default::default(),
@@ -3571,6 +3576,8 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
         if uses_hash_underscore {
             params.push("%_".to_string());
             param_defs.push(ParamDef {
+                implicit_invocant: Default::default(),
+                does_target: Default::default(),
                 target: Default::default(),
                 spans: Default::default(),
                 trait_meta: Default::default(),

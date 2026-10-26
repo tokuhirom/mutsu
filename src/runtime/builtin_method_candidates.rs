@@ -83,6 +83,8 @@ fn is_core_owner(owner: &str) -> bool {
 // Cost: O(1).
 fn blank_param(name: &str) -> ParamDef {
     ParamDef { spans: Default::default(),
+        implicit_invocant: Default::default(),
+        does_target: Default::default(),
         target: Default::default(),
         trait_meta: Default::default(),
         type_capture: None,

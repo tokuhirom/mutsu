@@ -167,6 +167,9 @@ pub(crate) fn def_is_plain_positional(pd: &ParamDef) -> bool {
         outer_sub_signature,
         code_signature,
         is_invocant,
+        // A `does` target is written back through its argument's container.
+        does_target,
+        implicit_invocant: _,
         shape_constraints,
         // Only the implicit nominal type of an *unpassed* optional depends on
         // it, and an optional parameter is refused below.
@@ -184,6 +187,7 @@ pub(crate) fn def_is_plain_positional(pd: &ParamDef) -> bool {
         && !sigilless
         && !optional_marker
         && !is_invocant
+        && !does_target
         && default.is_none()
         && type_constraint.is_none()
         && type_capture.is_none()

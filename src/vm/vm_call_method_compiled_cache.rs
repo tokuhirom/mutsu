@@ -1027,10 +1027,10 @@ impl Interpreter {
         if has_rw_params {
             return;
         }
-        let has_invocant_constraint = method_def.param_defs.iter().any(|pd| {
-            pd.is_invocant
-                && pd.type_constraint.is_some()
-        });
+        let has_invocant_constraint = method_def
+            .param_defs
+            .iter()
+            .any(|pd| pd.is_invocant && pd.type_constraint.is_some());
         let has_complex_params = method_def.param_defs.iter().any(|pd| {
             if pd.is_invocant {
                 return false;
@@ -1086,11 +1086,7 @@ impl Interpreter {
             .param_defs
             .iter()
             .filter(|pd| {
-                !pd.is_invocant
-                    && !pd.is_invocant
-                    && !pd.slurpy
-                    && !pd.double_slurpy
-                    && !pd.named
+                !pd.is_invocant && !pd.is_invocant && !pd.slurpy && !pd.double_slurpy && !pd.named
             })
             .count();
         let required_positional_count = method_def
@@ -1112,9 +1108,10 @@ impl Interpreter {
         // env (those call ops are NOT in `has_env_writes`). Skipping the merge would
         // drop that write — e.g. `method go { my $f = { $*x = 1 }; $f() }`. #3658.
         let can_skip_merge = !cc.has_env_writes && !cc.has_calls;
-        let has_defaults = method_def.param_defs.iter().any(|pd| {
-            !pd.is_invocant && pd.default.is_some()
-        });
+        let has_defaults = method_def
+            .param_defs
+            .iter()
+            .any(|pd| !pd.is_invocant && pd.default.is_some());
         self.caches.fast_method_cache.insert(
             cache_key,
             super::FastMethodCacheEntry {

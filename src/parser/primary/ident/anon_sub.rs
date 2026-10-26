@@ -5,6 +5,7 @@ use crate::parser::primary::misc::parse_block_body_routine_with_params;
 
 pub(crate) fn invocant_param_def() -> crate::ast::ParamDef {
     crate::ast::ParamDef {
+        does_target: Default::default(),
         target: Default::default(),
         spans: Default::default(),
         trait_meta: Default::default(),
@@ -203,8 +204,7 @@ pub(crate) fn method_literal_params(
     let mut rest_params: Vec<crate::ast::ParamDef> = Vec::new();
     let mut seen_positional = false;
     for pd in param_defs {
-        let declares_invocant =
-            pd.is_invocant || pd.name == "self";
+        let declares_invocant = pd.is_invocant || pd.name == "self";
         let declares_self_lexical = pd.declares_self_lexical();
         if !seen_positional && declares_invocant {
             invocant.default = pd.default;

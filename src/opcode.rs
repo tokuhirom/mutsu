@@ -5444,6 +5444,8 @@ pub(crate) fn body_uses_return_rw(stmts: &[Stmt]) -> bool {
 
 fn implicit_legacy_param(name: &str) -> ParamDef {
     ParamDef {
+        implicit_invocant: Default::default(),
+        does_target: Default::default(),
         target: Default::default(),
         spans: Default::default(),
         trait_meta: Default::default(),

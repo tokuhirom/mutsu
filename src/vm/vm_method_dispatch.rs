@@ -221,8 +221,7 @@ impl Interpreter {
         // first env_mut() call triggers.
         if !has_rw_params && !has_aliasable_container_params && !shares_scalar_container {
             let has_invocant_constraint = method_def.param_defs.iter().any(|pd| {
-                pd.is_invocant
-                    && (pd.type_constraint.is_some() || pd.type_capture.is_some())
+                pd.is_invocant && (pd.type_constraint.is_some() || pd.type_capture.is_some())
             });
             // A `::T` type capture has to be BOUND before the body runs, and the
             // fast path has no binder step that does it. It used to be kept out
@@ -346,11 +345,7 @@ impl Interpreter {
             let needs_default_eval = {
                 let mut pos = 0;
                 method_def.param_defs.iter().any(|pd| {
-                    if pd.is_invocant
-                        || pd.is_invocant
-                        || pd.named
-                        || pd.slurpy
-                        || pd.double_slurpy
+                    if pd.is_invocant || pd.is_invocant || pd.named || pd.slurpy || pd.double_slurpy
                     {
                         return false;
                     }
@@ -365,11 +360,7 @@ impl Interpreter {
             let has_missing_required = {
                 let mut pos = 0;
                 method_def.param_defs.iter().any(|pd| {
-                    if pd.is_invocant
-                        || pd.is_invocant
-                        || pd.slurpy
-                        || pd.double_slurpy
-                        || pd.named
+                    if pd.is_invocant || pd.is_invocant || pd.slurpy || pd.double_slurpy || pd.named
                     {
                         return false;
                     }
@@ -2087,9 +2078,7 @@ impl Interpreter {
             } else {
                 (param_name.as_str(), param_syms[idx])
             };
-            let is_invocant = pd
-                .map(|pd| pd.is_invocant)
-                .unwrap_or(false);
+            let is_invocant = pd.map(|pd| pd.is_invocant).unwrap_or(false);
             if is_invocant {
                 // ADR-0067 slice 3b — see the twin in `call_compiled_method`.
                 // Which of the two binders runs is decided by the fast-path

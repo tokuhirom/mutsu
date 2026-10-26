@@ -13,6 +13,8 @@ use crate::token_kind::TokenKind;
 
 pub(crate) fn make_wc_param(name: String) -> ParamDef {
     ParamDef {
+        implicit_invocant: Default::default(),
+        does_target: Default::default(),
         target: Default::default(),
         spans: Default::default(),
         trait_meta: Default::default(),
