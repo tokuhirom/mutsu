@@ -12,6 +12,7 @@ const STORE_VALUE_VAR: &str = "__mutsu_sub_rw_store_value";
 
 fn plain_param(name: &str) -> ParamDef {
     ParamDef { spans: Default::default(), trait_meta: Default::default(),
+        target: Default::default(),
         type_capture: None,
         name: name.to_string(),
         default: None,

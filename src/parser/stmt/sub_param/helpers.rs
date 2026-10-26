@@ -20,9 +20,7 @@ use std::collections::HashMap;
 /// about every `.map(-> ($x) {...})` in the tree, not a per-caller one.
 pub(crate) fn fold_parenthesised_pointy_params(sub_params: Vec<ParamDef>) -> Vec<ParamDef> {
     if sub_params.len() > 1 || sub_params.first().is_some_and(|p| p.named) {
-        let mut p = make_param("__subsig__".to_string());
-        p.sub_signature = Some(sub_params);
-        vec![p]
+        vec![ParamDef::destructure(sub_params, false)]
     } else {
         sub_params
     }
@@ -31,6 +29,7 @@ pub(crate) fn fold_parenthesised_pointy_params(sub_params: Vec<ParamDef>) -> Vec
 /// Helper to construct a default ParamDef with only required fields.
 pub(crate) fn make_param(name: String) -> ParamDef {
     ParamDef {
+        target: Default::default(),
         spans: Default::default(),
         trait_meta: Default::default(),
         type_capture: None,
@@ -201,7 +200,7 @@ pub(crate) fn type_only_param(
     slurpy: bool,
 ) -> PResult<'_, ParamDef> {
     use crate::parser::helpers::{ws, ws1};
-    let mut p = make_param("__type_only__".to_string());
+    let mut p = ParamDef::type_only();
     p.type_constraint = Some(type_constraint);
     p.named = named;
     p.slurpy = slurpy;

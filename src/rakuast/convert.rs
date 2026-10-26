@@ -21,7 +21,7 @@ use super::{
 };
 use crate::ast::parsed::ParsedStmt;
 use crate::ast::spelled::Spelling;
-use crate::ast::{AssignOp, Expr, ForMode, IMPLICIT_INVOCANT_TRAIT, ParamDef, Stmt};
+use crate::ast::{AssignOp, Expr, ForMode, IMPLICIT_INVOCANT_TRAIT, ParamDef, ParamTarget, Stmt};
 use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::regex_tree::{RegexExtension, RegexModifierKind, RegexNode, RegexTree};
 use crate::value::{RuntimeError, Value, ValueView};
@@ -5377,7 +5377,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     // A bare `::T` is represented internally by a synthetic parameter name,
     // but RakuAST models it as a Parameter with no target. Keep the synthetic
     // name only in the internal AST used by the existing binder.
-    if pd.name.starts_with("__type_capture__") {
+    if pd.target == ParamTarget::TypeCapture {
         let Some(type_capture) = type_capture else {
             return Err(unsupported("type capture without a capture node"));
         };
@@ -5565,7 +5565,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     }
     // `sub f(Int)`: the parser names a parameter written as a bare type, which
     // rakudo gives no target.
-    if pd.name == TYPE_ONLY_PARAM && !pd.is_invocant {
+    if pd.target == ParamTarget::TypeOnly && !pd.is_invocant {
         node.fields.retain(|field| field.name != Some("target"));
     }
     // `:x($r) ($a, $b)`: the trailing signature is the parameter's own
@@ -5638,18 +5638,10 @@ pub(super) fn parameter_traits(pd: &ParamDef) -> Result<Option<RakuAstField>, Ru
     }))
 }
 
-/// The parser's name for a parameter written as a bare type (`sub f(Int)`).
-pub(super) const TYPE_ONLY_PARAM: &str = "__type_only__";
-
 /// The parser's names for an anonymous `$` / `@` / `%` parameter.
 pub(super) const ANONYMOUS_SCALAR_PARAM: &str = "__ANON_STATE#";
 pub(super) const ANONYMOUS_ARRAY_PARAM: &str = "@__ANON_ARRAY__";
 pub(super) const ANONYMOUS_HASH_PARAM: &str = "%__ANON_HASH__";
-
-/// The parser's name for an anonymous `[…]` destructuring parameter.
-pub(super) const ANONYMOUS_ARRAY_SUBSIGNATURE: &str = "@";
-/// The parser's name for an anonymous `(…)` destructuring parameter.
-pub(super) const ANONYMOUS_SUBSIGNATURE: &str = "__subsig__";
 
 /// The `::T` type capture `pd` declares. Unlike `ParamDef::captured_type_name`
 /// (whose binder reading this does not change), a `::?CLASS` / `::?ROLE`
@@ -5765,10 +5757,7 @@ fn sigilless_slurpy_parameter(pd: &ParamDef, type_setting: bool) -> RakuAstNode 
     if type_setting {
         fields.push(node_field(Some("type"), type_setting_any()));
     }
-    if !matches!(
-        pd.name.as_str(),
-        super::lower::ANONYMOUS_CAPTURE | ANONYMOUS_SUBSIGNATURE
-    ) {
+    if pd.name != super::lower::ANONYMOUS_CAPTURE && pd.target != ParamTarget::Parens {
         fields.push(node_field(
             Some("target"),
             RakuAstNode {

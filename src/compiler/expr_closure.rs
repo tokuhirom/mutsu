@@ -251,6 +251,7 @@ impl Compiler {
             && crate::whatever_curry::body_mutates_placeholder(body, "_");
         let wc_param_defs: Vec<crate::ast::ParamDef> = if wc_raw {
             vec![crate::ast::ParamDef {
+                target: Default::default(),
                 spans: Default::default(),
                 trait_meta: Default::default(),
                 type_capture: None,

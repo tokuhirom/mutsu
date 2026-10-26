@@ -146,6 +146,7 @@ pub(crate) fn def_is_plain_positional(pd: &ParamDef) -> bool {
     let ParamDef {
         trait_meta: _,
         name: _,
+        target: _,
         default,
         multi_invocant: _,
         required: _,

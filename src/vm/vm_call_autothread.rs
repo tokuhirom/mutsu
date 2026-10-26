@@ -661,6 +661,7 @@ impl Interpreter {
                 2usize
             };
             let pd = crate::ast::ParamDef {
+                target: Default::default(),
                 spans: Default::default(),
                 trait_meta: Default::default(),
                 type_capture: None,

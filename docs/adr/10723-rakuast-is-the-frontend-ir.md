@@ -2301,3 +2301,24 @@ llvm-cov run over the whole corpus (`docs/dead-code-coverage.md`) lists them: `c
 shape), `lower.rs` 318 of 3,796, `src/parser/` 6,028 of 57,337. The first blocks removed are in
 `simple_expr_stmt/core.rs` and `assign/paren.rs` (about 730 lines); a differential list of 65
 assignment statements is unchanged. The rest of the list is the queue for further deletions.
+
+### 6.113 Signatures: a parameter records the form of its target (2026-10-26, [#15025](https://github.com/tokuhirom/mutsu/issues/15025))
+
+Third slice of Stage 2 row 2. `convert::parameter` rebuilt a parameter's form from the execution
+placeholder the parser binds it under: `__type_only__` (`sub f(Int)`), `__subsig__` (`(…)`), `@`
+(`[…]`), `__for_unpack*` / `__for_unpack_array_N` (the same two in a `for` header) and
+`__type_capture__T` (`::T`). Four spellings named one thing, and `"@"` is ambiguous by name alone.
+
+`ParamDef` is already the lossless typed node for everything else a parameter writes (type,
+default, `where`, shape, sub-signature, traits and their arguments), so it gains the one thing it
+lost: `ParamDef::target: ParamTarget { Variable, TypeOnly, TypeCapture, Parens, Brackets }`. The
+parser builds those parameters through `ParamDef::{type_only, bare_type_capture, destructure}`, each
+of which sets the form and derives the placeholder, so the two cannot disagree. `lower` sets it for
+`EVAL($ast)` and hand-built trees. `convert`, `lower`, `named_param`, `parameter_destructure` and
+`literal_parameter` read `target` and never a placeholder name.
+
+Deleted: `parameter_destructure::anonymous_destructuring_form` (the name and `__for_unpack` pattern
+matcher), `convert::{TYPE_ONLY_PARAM, ANONYMOUS_ARRAY_SUBSIGNATURE, ANONYMOUS_SUBSIGNATURE}`, the
+placeholder comparisons in `convert::parameter`, `named_param` and `lower`, and three hand-written
+`ParamDef` literals in the parser (`for_params`, `pointy_param`). The execution layer still binds
+under the placeholders; dropping them is the last slice of the row (#15025).

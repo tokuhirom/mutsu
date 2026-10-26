@@ -1,33 +1,11 @@
 //! Anonymous positional and slurpy destructuring parameters.
 
 use super::convert::{
-    ANONYMOUS_ARRAY_SUBSIGNATURE, ANONYMOUS_SUBSIGNATURE, build_type_node, leaf_field, node_field,
-    signature, type_setting_any, unsupported,
+    build_type_node, leaf_field, node_field, signature, type_setting_any, unsupported,
 };
 use super::{RakuAstClass, RakuAstNode};
-use crate::ast::ParamDef;
+use crate::ast::{ParamDef, ParamTarget};
 use crate::value::{RuntimeError, Value};
-
-/// Whether `name` is the parser's name for an anonymous destructuring
-/// parameter, and if so whether it was the `[…]` form: `@` / `__subsig__` in
-/// a signature, `__for_unpack[_array][_N]` in a `for` loop's.
-fn anonymous_destructuring_form(name: &str) -> Option<bool> {
-    use crate::parser::{FOR_UNPACK, FOR_UNPACK_ARRAY};
-    let numbered = |base: &str| {
-        name == base
-            || name
-                .strip_prefix(base)
-                .and_then(|rest| rest.strip_prefix('_'))
-                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
-    };
-    match name {
-        ANONYMOUS_ARRAY_SUBSIGNATURE => Some(true),
-        ANONYMOUS_SUBSIGNATURE => Some(false),
-        _ if numbered(FOR_UNPACK_ARRAY) => Some(true),
-        _ if numbered(FOR_UNPACK) => Some(false),
-        _ => None,
-    }
-}
 
 /// An anonymous destructuring parameter, `[$a, $b]` or `($a, $b)`: rakudo's
 /// `Parameter` with no target, holding the `sub-signature`; the bracket form
@@ -40,8 +18,10 @@ pub(super) fn anonymous_destructuring(
     pd: &ParamDef,
     type_setting: bool,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
-    let Some(is_array) = anonymous_destructuring_form(&pd.name) else {
-        return Ok(None);
+    let is_array = match pd.target {
+        ParamTarget::Brackets => true,
+        ParamTarget::Parens => false,
+        _ => return Ok(None),
     };
     let Some(sub_params) = pd.sub_signature.as_deref() else {
         return Ok(None);

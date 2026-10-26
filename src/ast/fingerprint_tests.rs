@@ -16,6 +16,7 @@ fn say(text: &str) -> Stmt {
 
 fn param(name: &str) -> ParamDef {
     ParamDef {
+        target: Default::default(),
         spans: Default::default(),
         trait_meta: Default::default(),
         type_capture: None,

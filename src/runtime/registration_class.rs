@@ -112,6 +112,7 @@ pub(super) fn apply_resolved_handles(
 /// This ensures the method matches any number of positional/named arguments.
 fn delegation_slurpy_param() -> ParamDef {
     ParamDef { spans: Default::default(), trait_meta: Default::default(),
+        target: Default::default(),
         type_capture: None,
         name: "@_".to_string(),
         default: None,
@@ -176,6 +177,7 @@ pub(super) fn make_delegation_method(attr_var_name: &str, target_method: &str) -
 /// Create the double-slurpy `**@_` parameter for named arg forwarding.
 fn delegation_double_slurpy_param() -> ParamDef {
     ParamDef { spans: Default::default(), trait_meta: Default::default(),
+        target: Default::default(),
         type_capture: None,
         name: "%_".to_string(),
         default: None,
