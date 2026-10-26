@@ -2398,3 +2398,23 @@ The same measurement found two whitelisted roast files that failed only under `M
 (`sub f { 1;; }`), and the expression-level `DeclTail` (`is my $k.defined, ...`) lacked the `Desugared`
 guard of the statement-level one. With both fixed the roast whitelist fails the same four container-only
 files as the ordinary frontend.
+
+### 6.118 An inline `proto` argument of `use` is a typed parser node (2026-10-26, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+The last `SyntheticBlock` shape `convert_stmt_node` matched by its contents,
+`SyntheticBlock([ProtoDecl, Use])` (`use Foo, proto sub MAIN(|) {*}`, §6.94), is now
+`ParsedStmt::InlineProtoUse { proto, use_stmt }`. The parser builds it through `finish_total`
+(an ordinary parse lowers it at once to the same block), `convert` reads it in `parsed_view`, and
+`use_stmt::lower` hands the extracted proto to the same node instead of building the block itself.
+`convert_stmt_node` no longer names `Stmt::SyntheticBlock`.
+
+The coverage run of §6.117 (llvm-cov over `t/` in `MUTSU_RAKUAST=convert` and `=1`, plus the roast
+whitelist) also showed the `SyntheticBlock` branch of `routine_origins::package_origins` never runs:
+`class C is export { }` is a `ParsedStmt::PackageHeader`, whose `inner_stmt()` is the declaration.
+Deleted. The other `SyntheticBlock` readers left in `src/rakuast/` (`bare_prefix` for the scope-less
+`FIRST`/`NEXT`/`LAST` body, `modifier_lower`, `decl_tail`) are the lowering's own constructions, not
+recognizers of parser output.
+
+Result of the run for the whole directory: of `convert.rs` and `lower.rs`' remaining unreached lines
+(263 and 303), the only non-error ones are hand-built `RakuAST::*.new` argument shapes in
+`mod.rs::construct_values`, which are untested features rather than dead code.
