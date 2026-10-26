@@ -209,6 +209,13 @@ fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
                     _ => warn_expr_sink(tail, nil_hint, line.get()),
                 }
             }
+            // The same for a `.=` declaration with a list (`my Int $c .= new(), 5`).
+            ParsedStmt::CallAssignList { head, items } => {
+                walk_stmt(head, false, line);
+                for e in items {
+                    warn_expr_sink(e, nil_hint, line.get());
+                }
+            }
             other if other.inner_stmt().is_some() => {
                 if let Some(stmt) = other.inner_stmt() {
                     walk_stmt(stmt, nil_hint, line);

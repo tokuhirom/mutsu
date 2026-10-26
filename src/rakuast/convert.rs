@@ -108,20 +108,6 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
         if crate::ast::anon_state::is_implicit_decl(stmt) {
             continue;
         }
-        if let Some(expansion) = done_value_expansion(stmt) {
-            for part in expansion {
-                if let Some(mut node) = convert_stmt(part)? {
-                    if let Some(field) = trace.take().and_then(origin::trace_field) {
-                        node.fields.push(field);
-                    }
-                    if let Some((n, span)) = line.take() {
-                        origin::set(&mut node, n, span);
-                    }
-                    fields.push(node_field(None, node));
-                }
-            }
-            continue;
-        }
         if trace.is_none()
             && let Some(leaf) = super::passthrough::stmt_leaf(stmt, line.map(|(n, _)| n))
         {
@@ -145,28 +131,6 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
         class: RakuAstClass::StatementList,
         fields,
     })
-}
-
-/// `done VALUE` expands to `emit VALUE; done`, which Rakudo keeps as two
-/// statements in a supply block.
-// Cost: O(1), the expansion has exactly two statements.
-fn done_value_expansion(stmt: &Stmt) -> Option<&[Stmt]> {
-    let Stmt::SyntheticBlock(stmts) = stmt else {
-        return None;
-    };
-    let [
-        Stmt::Call {
-            name,
-            args,
-            listop: false,
-        },
-        Stmt::ReactDone,
-    ] = stmts.as_slice()
-    else {
-        return None;
-    };
-    (name.resolve() == "emit" && matches!(args.as_slice(), [crate::ast::CallArg::Positional(_)]))
-        .then_some(stmts)
 }
 
 /// The `scope` a package declaration is written with: `my` for a lexical one,
@@ -522,14 +486,6 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 *is_attribute,
             )?,
         ))),
-        // `my Int $c .= new(), 5`: a `.=` declaration with sunk list items.
-        Stmt::SyntheticBlock(_)
-            if super::decl_tail::convert_call_assign_list(stmt)
-                .is_some_and(|node| node.is_ok()) =>
-        {
-            let node = super::decl_tail::convert_call_assign_list(stmt).expect("just checked");
-            Ok(Some(statement_expression(node?)))
-        }
         Stmt::VarDecl { .. } => var_decl_statement(var_decl_parts(stmt)?, false),
         Stmt::DocPhaser(inner) => Ok(Some(super::doc_phaser::convert(inner)?)),
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
@@ -6537,7 +6493,7 @@ fn slipped_control_call(
     control_call(name, std::slice::from_ref(slip)).map(Some)
 }
 
-fn control_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn control_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let name_node = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::Name,

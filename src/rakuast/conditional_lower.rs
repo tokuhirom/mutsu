@@ -90,6 +90,21 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
         ParsedStmt::TakeLogicalTail { value, op, right } => {
             Ok(crate::ast::expand_take_logical_tail(value, op, right))
         }
+        // `done VALUE` is `emit VALUE; done`.
+        ParsedStmt::DoneValue(value) => Ok(Stmt::SyntheticBlock(vec![
+            Stmt::Call {
+                name: crate::symbol::Symbol::intern("emit"),
+                args: vec![crate::ast::CallArg::Positional(value)],
+                listop: false,
+            },
+            Stmt::ReactDone,
+        ])),
+        ParsedStmt::CallAssignList { head, items } => {
+            let mut parts = Vec::with_capacity(items.len() + 1);
+            parts.push(*head);
+            parts.extend(items.into_iter().map(Stmt::Expr));
+            Ok(Stmt::SyntheticBlock(parts))
+        }
         ParsedStmt::CommaDecls(declarations) => {
             let mut expanded = Vec::with_capacity(declarations.len());
             for declaration in declarations {

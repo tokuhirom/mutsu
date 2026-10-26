@@ -875,13 +875,13 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 sink_stmts.push(Stmt::Expr(next_sink));
                 r_inner = r2;
             }
-            let combined = Stmt::SyntheticBlock(sink_stmts);
+            let combined = sunk_list(sink_stmts);
             if s.apply_modifier {
                 return parse_statement_modifier(r_inner, combined);
             }
             return Ok((r_inner, combined));
         }
-        let combined = Stmt::SyntheticBlock(sink_stmts);
+        let combined = sunk_list(sink_stmts);
         if s.apply_modifier {
             return parse_statement_modifier(r, combined);
         }
@@ -891,6 +891,35 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
     Ok((rest, stmt))
+}
+
+/// A declaration followed by sunk list items (`my $x = 1, 2`): one scopeless
+/// block, except a `.=` declaration (`my Int $c .= new(), 5`), which RakuAST
+/// reads as one comma application and the parser keeps as such.
+// Cost: O(n), n = size of the statements.
+fn sunk_list(mut stmts: Vec<Stmt>) -> Stmt {
+    let call_assign_head = matches!(
+        stmts.first(),
+        Some(Stmt::VarDecl { expr: Expr::CompoundAssign { op, .. }, .. })
+            if op == crate::ast::method_assign_decl::DECL_INITIALIZER_OP
+    );
+    if !call_assign_head
+        || stmts.len() < 2
+        || !stmts[1..].iter().all(|s| matches!(s, Stmt::Expr(_)))
+    {
+        return Stmt::SyntheticBlock(stmts);
+    }
+    let items = stmts
+        .drain(1..)
+        .filter_map(|s| match s {
+            Stmt::Expr(item) => Some(item),
+            _ => None,
+        })
+        .collect();
+    let head = Box::new(stmts.remove(0));
+    crate::parser::stmt::control::parsed_block::finish_total(
+        crate::ast::parsed::ParsedStmt::CallAssignList { head, items },
+    )
 }
 
 /// Handle binding `:=` or `::=`.

@@ -2370,3 +2370,31 @@ helpers `is_anonymous_param_name` and `is_plain_scalar_param_name` take a bare n
 stays: it is a bijection with RakuAST's `names` list, so `convert::flatten` / `lower::wrap_aliases` are a
 structural view, not a reconstruction of lost information. Replacing the chain would be a binder redesign
 with no `convert` code to delete.
+
+### 6.117 `done VALUE` and a `.=` declaration list are typed parser nodes (2026-10-26, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+Two of the last `SyntheticBlock` shapes the converter recognized by their contents become typed
+parser nodes, the way §6.48-§6.116 did for the others. A coverage run over `t/` (in
+`MUTSU_RAKUAST=convert` and `=1`) and the roast whitelist found no `convert`/`lower` line that nothing
+reaches except error refusals, so the remaining reverse paths are exactly the shape recognizers:
+
+- `done VALUE` was `SyntheticBlock([Call emit VALUE, ReactDone])`, recognized by
+  `convert::done_value_expansion` and rendered as two statements. It is now `ParsedStmt::DoneValue(value)`,
+  lowered by `conditional_lower` to the same block. Rendering it as two statements was also wrong:
+  rakudo 2026.09 keeps `done VALUE` as one `Call::Name::WithoutParentheses(done, args => ArgList(VALUE))`
+  (`RakuAST::StatementPrefix::Supply` body measured), also under a statement modifier, where the old
+  shape was refused. `convert` renders that call and `lower` reads an argument-carrying `done` back into the
+  node, so a hand-built `done(7)` works too. This supersedes the rendering described in §6.59.
+- `my Int $c .= new(), 5, 6` was `SyntheticBlock([VarDecl .=decl, Expr, Expr])`, recognized by
+  `decl_tail::convert_call_assign_list` from the shape of the block. It is now
+  `ParsedStmt::CallAssignList { head, items }`. Other `my $x = 1, 2` lists stay plain blocks (their
+  tail re-reads the variable and is `DeclTail`).
+
+Deleted: `convert::done_value_expansion` and its statement-list branch, the `SyntheticBlock` arm for the
+call-assign list in `convert_stmt_node`, `decl_tail::convert_call_assign_list`'s block-shape matcher.
+
+The same measurement found two whitelisted roast files that failed only under `MUTSU_RAKUAST=1`
+(#15039): a stray `;` is `Spelled(EmptyStatement)` and a passthrough leaf ran it as `Nil`
+(`sub f { 1;; }`), and the expression-level `DeclTail` (`is my $k.defined, ...`) lacked the `Desugared`
+guard of the statement-level one. With both fixed the roast whitelist fails the same four container-only
+files as the ordinary frontend.
