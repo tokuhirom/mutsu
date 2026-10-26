@@ -229,7 +229,10 @@ impl Purity {
 fn is_empty_statement(spelled: &crate::ast::spelled::Spelled) -> bool {
     let mut spelled = spelled;
     loop {
-        if matches!(spelled.spelling, crate::ast::spelled::Spelling::EmptyStatement) {
+        if matches!(
+            spelled.spelling,
+            crate::ast::spelled::Spelling::EmptyStatement
+        ) {
             return true;
         }
         match &spelled.expr {
