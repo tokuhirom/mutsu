@@ -32,7 +32,7 @@
 //! parser keeps it as the custom trait `DEPRECATED` / `DEPRECATED:message`.
 
 use super::convert::{
-    leaf_field, name_from_identifier, node_field, statement_expression, unsupported,
+    leaf_field, name_from_identifier, node_field, statement_expression,
 };
 use super::lower::{named_child, named_child_or_positional, positional_leaf};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -186,41 +186,10 @@ pub(super) fn export_tags(argument: &RakuAstNode) -> Result<Option<Vec<String>>,
     Ok(Some(tags))
 }
 
-/// Add a routine's `multiness`, `private` and flag traits to the node
-/// `routine_node` built.
-// Cost: O(f + t), f = fields of `node`, t = export tags.
-pub(super) fn add_flags(
-    node: &mut RakuAstNode,
-    multi: bool,
-    private: bool,
-    traits: &IsTraits,
-) -> Result<(), RuntimeError> {
-    let written = traits.nodes();
-    if !written.is_empty() {
-        let has_traits = node.fields.iter().any(|f| f.name == Some("traits"));
-        if written.len() > 1 || has_traits {
-            return Err(unsupported(
-                "routine with several traits (their source order is not kept)",
-            ));
-        }
-        let at = node
-            .fields
-            .iter()
-            .position(|f| f.name == Some("body"))
-            .unwrap_or(node.fields.len());
-        node.fields.insert(
-            at,
-            RakuAstField {
-                name: Some("traits"),
-                value: RakuAstFieldValue::List(
-                    written
-                        .into_iter()
-                        .map(|t| Value::rakuast(Box::new(t)))
-                        .collect(),
-                ),
-            },
-        );
-    }
+/// Add a routine's `multiness` and `private` to the node `routine_node` built;
+/// its traits are the ones the source wrote (`routine_source::apply`).
+// Cost: O(f), f = fields of `node`.
+pub(super) fn add_flags(node: &mut RakuAstNode, multi: bool, private: bool) {
     if private {
         node.fields
             .insert(0, leaf_field(Some("private"), Value::truth(true)));
@@ -229,7 +198,6 @@ pub(super) fn add_flags(
         node.fields
             .insert(0, leaf_field(Some("multiness"), Value::str_from("multi")));
     }
-    Ok(())
 }
 
 /// Trait names the parser folds into a field of its own, or keeps as an

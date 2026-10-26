@@ -16,7 +16,7 @@
 //! type form as [`Expr::IndirectTypeLookupAssign`] (the lookup itself, without
 //! assignment, is `Expr::IndirectTypeLookup`, handled in `convert.rs`).
 
-use super::convert::{assignment_around, convert_expr, leaf_field, node_field};
+use super::convert::{convert_expr, leaf_field, node_field};
 use super::lower::{lower_expr, named_child};
 use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
@@ -121,27 +121,6 @@ pub(super) fn lower_indirect_code(node: &RakuAstNode) -> Option<Result<Expr, Run
         name,
         caller,
     }))
-}
-
-/// `$::($n) = v`.
-// Cost: O(n), n = nodes of the expression and the value.
-pub(super) fn convert_assign(
-    sigil: &str,
-    expr: &Expr,
-    value: &Expr,
-) -> Result<RakuAstNode, RuntimeError> {
-    assignment_around(convert(sigil, expr)?, sigil == "$", value)
-}
-
-/// `::($n) = v`.
-// Cost: O(n), n = nodes of the expression and the value.
-pub(super) fn convert_type_assign(expr: &Expr, value: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let lookup = RakuAstNode {
-        origin: Default::default(),
-        class: RakuAstClass::TermName,
-        fields: vec![node_field(None, indirect_name(expr)?)],
-    };
-    assignment_around(lookup, false, value)
 }
 
 /// The name expression of a plain `::(EXPR)` name (no static tail).
