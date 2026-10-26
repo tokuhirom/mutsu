@@ -3163,9 +3163,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 if let Some((literal, rhs)) = crate::parser::literal_assign_ro_parts(expr) {
                     return assignment_around(convert_expr(literal)?, false, rhs);
                 }
-                if let Some((lhs, rhs)) = crate::parser::assignment_ro_parts(expr) {
-                    return assignment_around(convert_expr(lhs)?, false, rhs);
-                }
                 return Err(unsupported("desugared do-block"));
             }
             let expression = RakuAstNode {

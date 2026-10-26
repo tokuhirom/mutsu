@@ -12,28 +12,6 @@ pub(crate) fn assignment_ro_expr(lhs: Expr, rhs: Expr) -> Expr {
     ])
 }
 
-/// The `(lhs, rhs)` of an immutable-lvalue assignment expansion.
-// Cost: O(1).
-pub(crate) fn assignment_ro_parts(expr: &Expr) -> Option<(&Expr, &Expr)> {
-    let Expr::DoBlock {
-        body,
-        label: None,
-        origin: crate::ast::DoBlockOrigin::Desugar,
-    } = expr
-    else {
-        return None;
-    };
-    let [
-        Stmt::Expr(lhs),
-        Stmt::Expr(rhs),
-        Stmt::Expr(Expr::Call { name, args, .. }),
-    ] = body.as_slice()
-    else {
-        return None;
-    };
-    (args.is_empty() && name.with_str(|n| n == "__mutsu_assignment_ro")).then_some((lhs, rhs))
-}
-
 /// `LITERAL = RHS`: assigning to an immutable literal throws
 /// `X::Assignment::RO` once the right-hand side has been evaluated.
 ///
@@ -424,63 +402,9 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
     }
 }
 
-pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
-    let mut saw_whatever = false;
-    let mut lvalues: Vec<Expr> = Vec::new();
-    for item in items {
-        if matches!(item, Expr::Whatever) {
-            saw_whatever = true;
-            continue;
-        }
-        lvalues.push(item);
-    }
-    if !saw_whatever || lvalues.len() != 1 {
-        return None;
-    }
-    match lvalues.into_iter().next()? {
-        Expr::Var(name) => Some(Expr::AssignExpr {
-            name,
-            expr: Box::new(rhs),
-            is_bind: false,
-        }),
-        Expr::ArrayVar(name) => Some(Expr::AssignExpr {
-            name: format!("@{}", name),
-            expr: Box::new(rhs),
-            is_bind: false,
-        }),
-        Expr::HashVar(name) => Some(Expr::AssignExpr {
-            name: format!("%{}", name),
-            expr: Box::new(rhs),
-            is_bind: false,
-        }),
-        Expr::Index {
-            target,
-            index,
-            is_positional,
-            spelling,
-            ..
-        } => Some(Expr::IndexAssign {
-            target,
-            index,
-            value: Box::new(rhs),
-            is_positional,
-            spelling,
-        }),
-        _ => None,
-    }
-}
-
-/// The expression-position counterpart of
-/// `stmt::simple_expr_stmt::lvalue::single_target_list_lvalue_stmt` (private to
-/// that module, so not linked here): a `*`-slurpy parenthesized list-lvalue
-/// with exactly one real (non-`*`)
+/// A `*`-slurpy parenthesized list-lvalue with exactly one real (non-`*`)
 /// target extracts just that target's element from the RHS by position,
-/// rather than assigning the RHS whole (which is what a plain named target
-/// with NO `*` — the `list_lvalue_assign_expr` case above — legitimately
-/// does). Kept as a separate function, rather than sharing one with the
-/// statement-level `Stmt`-returning version, because a `Stmt::Assign` and an
-/// `Expr::AssignExpr` are compiled differently and the statement-level path
-/// must not change shape here.
+/// rather than assigning the RHS whole.
 pub(crate) fn single_target_list_lvalue_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
     let mut saw_whatever = false;
     let mut lvalues: Vec<(usize, Expr)> = Vec::new();
