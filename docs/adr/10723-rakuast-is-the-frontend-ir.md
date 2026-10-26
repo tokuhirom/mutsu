@@ -2418,3 +2418,31 @@ recognizers of parser output.
 Result of the run for the whole directory: of `convert.rs` and `lower.rs`' remaining unreached lines
 (263 and 303), the only non-error ones are hand-built `RakuAST::*.new` argument shapes in
 `mod.rs::construct_values`, which are untested features rather than dead code.
+
+### 6.119 A sub's `our` / `anon` scope is a field of the declaration (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+After §6.110 and §6.113-§6.116 the `SubDecl` / `MethodDecl` arms of `convert` hold no reverse path:
+the declaration is already its own typed node (§4), the traits come from the written record, the
+signature from `ParamDef`. What they still read were three `__`-prefixed marker traits on
+`custom_traits`. `__our_scoped` and `__anon_decl` are the scope of a `sub`, and the one place `convert`
+recovered it from was a scan of the trait list (`convert::sub_scope`).
+
+`Stmt::SubDecl` gains `scope: SubScope { My, Our, Anon }` (`CompiledSubDeclPlan` carries it to the
+registrar, `register_sub_decl*` take it as a parameter). The parser sets it where it used to push
+the marker (`our sub`, `our multi sub`, `my Type our sub`, `anon sub NAME` in expression position), the
+method-value lowering sets `Our` for a method declared `our`, and `lower` sets it from the node's
+`scope` field. About twenty readers in the compiler, the VM's `RegisterSub`, the runtime
+registrar and the parser's module-export scan now match on the field instead of scanning
+`custom_traits` for the string. `ANON_DECL_TRAIT` stays for packages (`anon class`), where it has the
+same job; moving it is the same change for `ClassDecl` / `RoleDecl`.
+
+Deleted: `convert::{sub_scope, OUR_SCOPED}`, the two exemptions in the "internal trait" deferral of
+the `Sub` arm, the marker pushes in `routine_lower`, `routine_copy::OUR_SCOPED`,
+`module_exports::is_our_scoped`.
+
+`__return_via_trait` / `__return_via_of` stay: they are not a reconstruction either. They record that
+the return type was spelled `returns` / `of` rather than `-->`, which `X::InvalidType` versus
+`X::Undeclared` reads at run time, on three declaration kinds (`SubDecl`, `MethodDecl`, `ProtoDecl`).
+`convert` no longer reads them for the spelling (§6.110); it only filters them from the "internal trait"
+check, so moving them to a field would delete three lines of `convert` and add a field to three
+variants. That is a run-time flag, not a Stage 2 deletion.
