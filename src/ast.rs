@@ -427,6 +427,24 @@ impl ParamDef {
         }
     }
 
+    /// True for a parameter written as a bare type (`sub f(Int)`).
+    // Cost: O(1).
+    pub(crate) fn is_type_only(&self) -> bool {
+        self.target == ParamTarget::TypeOnly
+    }
+
+    /// True for a parameter written as a bare `::T` capture.
+    // Cost: O(1).
+    pub(crate) fn is_bare_type_capture(&self) -> bool {
+        self.target == ParamTarget::TypeCapture
+    }
+
+    /// True for an anonymous `(…)` destructuring parameter.
+    // Cost: O(1).
+    pub(crate) fn is_parens(&self) -> bool {
+        self.target == ParamTarget::Parens
+    }
+
     /// The parameter a bare type is: `sub f(Int)` binds nothing.
     // Cost: O(1).
     pub(crate) fn type_only() -> Self {

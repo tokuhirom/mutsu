@@ -519,8 +519,9 @@ impl Interpreter {
     fn signature_constraint_for_error(param_defs: &[ParamDef]) -> String {
         let mut defs = param_defs.to_vec();
         for pd in &mut defs {
-            if pd.name == "__type_only__" {
-                pd.name = "__ANON_STATE#".to_string();
+            if pd.is_type_only() {
+                pd.name = crate::ast::ANON_SCALAR_PARAM.to_string();
+                pd.target = crate::ast::ParamTarget::Anonymous('$');
             }
         }
         format!(":{}", Self::build_signature_string(&defs))
@@ -682,7 +683,7 @@ impl Interpreter {
             }
         }
         if let Some(constraint) = &pd.type_constraint
-            && (pd.name != "__type_only__"
+            && (!pd.is_type_only()
                 || (self.is_resolvable_type(constraint)
                     && !self.type_only_enum_value_shadows_alias(pd, constraint)))
         {
@@ -789,7 +790,7 @@ impl Interpreter {
                         pd.is_invocant,
                     ));
                 }
-                let display_name = if pd.name == "__type_only__" {
+                let display_name = if pd.is_type_only() {
                     format!("parameter '{}'", resolved_constraint)
                 } else {
                     pd.name.clone()
@@ -3026,7 +3027,7 @@ impl Interpreter {
                 bind_sub_signature_from_value(self, sub_params, &capture)?;
                 positional_idx = args.len();
                 continue;
-            } else if pd.name == "__subsig__"
+            } else if pd.is_parens()
                 && let Some(sub_params) = &pd.sub_signature
             {
                 // A plain destructuring parameter `($a, $b)` consumes exactly
@@ -3840,8 +3841,8 @@ impl Interpreter {
                         }
                     });
                     if !pd.name.is_empty()
-                        && pd.name != "__type_only__"
-                        && !pd.name.starts_with("__type_capture__")
+                        && !pd.is_type_only()
+                        && !pd.is_bare_type_capture()
                     {
                         if pd.name.starts_with('%')
                             && let ValueView::Array(items, ..) = value.view()
@@ -4182,7 +4183,7 @@ impl Interpreter {
         // Sigilless params (\x) are always writable (they are raw aliases).
         // For `is raw` with non-lvalue args, also mark readonly.
         for (param_idx, pd) in param_defs.iter().enumerate() {
-            if pd.name.is_empty() || pd.name == "__type_only__" || pd.name == "__subsig__" {
+            if pd.name.is_empty() || pd.is_type_only() || pd.is_parens() {
                 continue;
             }
             if pd.sigilless {

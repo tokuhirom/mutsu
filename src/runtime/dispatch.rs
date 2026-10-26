@@ -59,7 +59,7 @@ impl Interpreter {
             // A named capture `|c(...)` is a sigilless slurpy param; an anonymous
             // capture `|(...)` is recorded as a `__subsig__` param.  Both carry
             // the real dispatch parameters in their subsignature.
-            let is_capture_subsig = (p.slurpy && p.sigilless) || p.name == "__subsig__";
+            let is_capture_subsig = (p.slurpy && p.sigilless) || p.is_parens();
             if is_capture_subsig
                 && p.type_constraint.is_none()
                 && p.literal_value.is_none()

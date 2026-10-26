@@ -1802,8 +1802,8 @@ impl Interpreter {
         let name_syms = method_def.param_def_name_syms();
         for (pd, &sym) in method_def.param_defs.iter().zip(name_syms) {
             if pd.name.is_empty()
-                || pd.name == "__type_only__"
-                || pd.name == "__subsig__"
+                || pd.is_type_only()
+                || pd.is_parens()
                 || pd.sigilless
                 || pd.is_invocant
                 || pd.name.starts_with('!')
@@ -2268,7 +2268,7 @@ impl Interpreter {
                     if native_err.is_none()
                         && ((skip_constraint_recheck
                             && self.constraint_is_user_subset(&resolved_constraint))
-                            || if pd.is_some_and(|pd| pd.name == "__type_only__")
+                            || if pd.is_some_and(|pd| pd.is_type_only())
                                 && !resolved_constraint.as_bytes().starts_with(b"::")
                                 && !self.is_resolvable_type(&resolved_constraint)
                             {

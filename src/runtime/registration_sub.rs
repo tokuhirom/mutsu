@@ -412,7 +412,7 @@ impl Interpreter {
             // value, so its "constraint" is not a type name and must not be
             // validated. A bare *type-only* param `(TypeName)` IS validated
             // below (an undeclared one is X::Parameter::InvalidType).
-            if pd.name.starts_with("__") && pd.name != "__type_only__" {
+            if pd.name.starts_with("__") && !pd.is_type_only() {
                 continue;
             }
             // Only a bare identifier (letters/digits/_/-) starting uppercase is

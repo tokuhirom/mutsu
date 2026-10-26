@@ -10,7 +10,7 @@ impl Interpreter {
     pub(super) fn method_rank_params(def: &MethodDef) -> Vec<&ParamDef> {
         def.param_defs
             .iter()
-            .filter(|p| !p.is_invocant && !p.name.starts_with("__type_capture__"))
+            .filter(|p| !p.is_invocant && !p.is_bare_type_capture())
             .collect()
     }
 
@@ -23,7 +23,7 @@ impl Interpreter {
                 !p.is_invocant
                     && !p.named
                     && !p.is_variadic()
-                    && !p.name.starts_with("__type_capture__")
+                    && !p.is_bare_type_capture()
             })
             .count()
     }

@@ -2353,3 +2353,20 @@ name (`__ANON_STATE#`, `@__ANON_ARRAY__`, `%__ANON_HASH__`); `convert::parameter
 readers use it. `parser::sub_param::helpers::make_param`'s hand-written field list is deleted.
 The pointy-lambda single parameter (`Expr::Lambda` holds a name, not a `ParamDef`) and the `my ($, @)`
 declaration elements (`SignatureVar`) still decode the names; they go with their own families.
+
+### 6.116 Signatures: the binder and dispatch read `target`, not the placeholder name (2026-10-26, [#15025](https://github.com/tokuhirom/mutsu/issues/15025))
+
+Step 5 of the §6.113 plan, reduced to what can be removed. Twenty-odd places in the runtime, the VM and
+the dispatcher asked a `ParamDef` whether it was a bare type, an anonymous `(…)` destructure or a bare
+`::T` capture by comparing its `name` with `__type_only__`, `__subsig__` or the `__type_capture__`
+prefix. They now ask `ParamDef::{is_type_only, is_parens, is_bare_type_capture}`, which read `target`.
+Checked by a temporary assertion that `target` and the name agree, run over all of `t/` (it found one
+copy that renamed a parameter for an error message without updating its `target`; fixed).
+
+What stays: the placeholder names themselves. They are also the names of *variables* the execution
+layer declares (`for` unpacking declares `__subsig__` / `__for_unpack*` lexicals; the signature display
+helpers `is_anonymous_param_name` and `is_plain_scalar_param_name` take a bare name that may come from a
+`VarDecl`), so a parameter keeps binding under them. The named-alias chain (step 4 of the plan) also
+stays: it is a bijection with RakuAST's `names` list, so `convert::flatten` / `lower::wrap_aliases` are a
+structural view, not a reconstruction of lost information. Replacing the chain would be a binder redesign
+with no `convert` code to delete.
