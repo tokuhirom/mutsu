@@ -13665,7 +13665,7 @@ impl FastParamCheck {
             && pd.type_constraint.is_none()
             && pd.type_capture.is_none()
             && pd.where_constraint.is_none()
-            && pd.traits.is_empty()
+            && pd.no_traits()
             && pd.literal_value.is_none()
             && pd.sub_signature.is_none()
             && pd.outer_sub_signature.is_none()

@@ -130,7 +130,7 @@ pub(crate) fn placeholder_defs_are_plain(param_defs: &[ParamDef]) -> bool {
     !param_defs.is_empty()
         && param_defs.iter().all(|pd| {
             def_is_plain_positional(pd)
-                && pd.traits.is_empty()
+                && pd.no_traits()
                 && pd
                     .name
                     .strip_prefix('^')

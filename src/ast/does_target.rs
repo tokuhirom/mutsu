@@ -26,6 +26,19 @@ impl<'ast> Visit<'ast> for DoesTargets {
 }
 
 impl ParamDef {
+    /// True when the parameter has no trait, written or derived: a `does`
+    /// target counts, since the binder writes it back through its argument.
+    // Cost: O(1).
+    pub(crate) fn no_traits(&self) -> bool {
+        self.traits.is_empty() && !self.does_target
+    }
+
+    /// The negation of [`ParamDef::no_traits`].
+    // Cost: O(1).
+    pub(crate) fn has_traits(&self) -> bool {
+        !self.no_traits()
+    }
+
     /// True for a parameter its routine body applies `does` to.
     // Cost: O(1).
     pub(crate) fn is_does_target(&self) -> bool {
