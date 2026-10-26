@@ -90,6 +90,9 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
         ParsedStmt::TakeLogicalTail { value, op, right } => {
             Ok(crate::ast::expand_take_logical_tail(value, op, right))
         }
+        ParsedStmt::InlineProtoUse { proto, use_stmt } => {
+            Ok(Stmt::SyntheticBlock(vec![*proto, *use_stmt]))
+        }
         // `done VALUE` is `emit VALUE; done`.
         ParsedStmt::DoneValue(value) => Ok(Stmt::SyntheticBlock(vec![
             Stmt::Call {

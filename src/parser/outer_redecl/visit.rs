@@ -189,6 +189,7 @@ impl VisitMut for Ctx {
             | ParsedStmt::Temporize(_)
                     | ParsedStmt::TakeLogicalTail { .. }
                     | ParsedStmt::DoneValue(_)
+                    | ParsedStmt::InlineProtoUse { .. }
                     | ParsedStmt::CallAssignList { .. }
                     | ParsedStmt::RoutineTraits(_)
                     | ParsedStmt::ImmediateCall { .. }

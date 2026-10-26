@@ -192,16 +192,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
 
 fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     match stmt {
-        Stmt::SyntheticBlock(stmts)
-            if matches!(stmts.as_slice(), [Stmt::ProtoDecl { .. }, Stmt::Use { .. }]) =>
-        {
-            let [proto, use_stmt] = stmts.as_slice() else {
-                unreachable!("guarded inline proto shape")
-            };
-            Ok(Some(super::use_stmt::convert_inline_proto(
-                proto, use_stmt,
-            )?))
-        }
         // The `use trace` hook is bookkeeping too: rakudo models the trace as a
         // flag on the traced statement, not as a statement of its own.
         Stmt::SetLine(..) | Stmt::Trace { .. } => Ok(None),

@@ -125,6 +125,13 @@ pub(crate) enum ParsedStmt {
         op: crate::token_kind::TokenKind,
         right: Expr,
     },
+    /// `use Foo ..., proto sub MAIN(|) {*}`: the proto declaration that is part
+    /// of the `use` argument, and the `use` statement. RakuAST has the proto as
+    /// the argument itself; `rakuast::lower` declares it ahead of the import.
+    InlineProtoUse {
+        proto: Box<Stmt>,
+        use_stmt: Box<Stmt>,
+    },
     /// `done VALUE` in a supply or react block: the value as written.
     /// RakuAST keeps `emit VALUE; done` as two statements; `rakuast::lower`
     /// expands it to them (`ast::done_value::expand`).
@@ -675,6 +682,7 @@ impl ParsedStmt {
             | ParsedStmt::CommaDecls(_) => Vec::new(),
             ParsedStmt::TakeLogicalTail { value, right, .. } => vec![value, right],
             ParsedStmt::DoneValue(value) => vec![value],
+            ParsedStmt::InlineProtoUse { .. } => Vec::new(),
             ParsedStmt::CallAssignList { items, .. } => items.iter().collect(),
             ParsedStmt::ImmediateCall { args, .. } => args.iter().collect(),
             ParsedStmt::AttributeModifier { condition, .. } => vec![condition],
@@ -726,6 +734,7 @@ impl ParsedStmt {
             | ParsedStmt::CommaDecls(_)
             | ParsedStmt::TakeLogicalTail { .. }
             | ParsedStmt::DoneValue(_)
+            | ParsedStmt::InlineProtoUse { .. }
             | ParsedStmt::CallAssignList { .. }
             | ParsedStmt::RoutineTraits(_)
             | ParsedStmt::Modified(_) => Vec::new(),
