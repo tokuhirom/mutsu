@@ -93,11 +93,11 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
         ParsedStmt::TakeLogicalTail { value, op, right } => {
             statement_expression(super::convert::take_logical_tail_node(value, op, right)?)
         }
-        ParsedStmt::DoneValue(_) => {
-            return Err(super::convert::unsupported(
-                "`done VALUE` outside a statement list",
-            ));
-        }
+        // Rakudo keeps `done VALUE` as the one call with its payload.
+        ParsedStmt::DoneValue(value) => statement_expression(super::convert::control_call(
+            "done",
+            std::slice::from_ref(value),
+        )?),
         ParsedStmt::CallAssignList { head, items } => {
             statement_expression(super::decl_tail::convert_call_assign_list(head, items)?)
         }

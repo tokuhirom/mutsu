@@ -403,6 +403,15 @@ pub(super) fn lower_stmt_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> 
         RakuAstClass::ApplyPostfix if super::immediate_call::is_immediate_call(node) => {
             super::immediate_call::lower(node)
         }
+        // `done VALUE` is `emit VALUE; done`.
+        RakuAstClass::CallNameWithoutParentheses
+            if call_name_str(node).is_ok_and(|n| n == "done")
+                && !super::declared_routines::is_declared("done")
+                && named_child(node, "args").is_ok_and(|args| args.fields.len() == 1) =>
+        {
+            let value = arg_exprs(node)?.remove(0);
+            super::lower_parsed_stmt(crate::ast::parsed::ParsedStmt::DoneValue(value))
+        }
         // A bare `done` is the react/supply completion unless a lexical
         // `&done` shadows it; the compiler decides that for the bare word
         // (`Expr::BareWord("done")`), so lower to it rather than to a fixed

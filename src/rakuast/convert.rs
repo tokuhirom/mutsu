@@ -108,20 +108,6 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
         if crate::ast::anon_state::is_implicit_decl(stmt) {
             continue;
         }
-        if let Some(expansion) = done_value_expansion(stmt) {
-            for part in &expansion {
-                if let Some(mut node) = convert_stmt(part)? {
-                    if let Some(field) = trace.take().and_then(origin::trace_field) {
-                        node.fields.push(field);
-                    }
-                    if let Some((n, span)) = line.take() {
-                        origin::set(&mut node, n, span);
-                    }
-                    fields.push(node_field(None, node));
-                }
-            }
-            continue;
-        }
         if trace.is_none()
             && let Some(leaf) = super::passthrough::stmt_leaf(stmt, line.map(|(n, _)| n))
         {
@@ -145,22 +131,6 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
         class: RakuAstClass::StatementList,
         fields,
     })
-}
-
-/// `done VALUE` is `emit VALUE; done`, which Rakudo keeps as two statements in
-/// a supply block.
-// Cost: O(n), n = size of the value (the expansion has exactly two statements).
-fn done_value_expansion(stmt: &Stmt) -> Option<Vec<Stmt>> {
-    let Stmt::Ast(node) = stmt else {
-        return None;
-    };
-    let ParsedStmt::DoneValue(_) = node.as_ref() else {
-        return None;
-    };
-    match super::conditional_lower::lower_parsed(node.as_ref().clone()) {
-        Ok(Stmt::SyntheticBlock(parts)) => Some(parts),
-        _ => None,
-    }
 }
 
 /// The `scope` a package declaration is written with: `my` for a lexical one,
@@ -6523,7 +6493,7 @@ fn slipped_control_call(
     control_call(name, std::slice::from_ref(slip)).map(Some)
 }
 
-fn control_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn control_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let name_node = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::Name,
