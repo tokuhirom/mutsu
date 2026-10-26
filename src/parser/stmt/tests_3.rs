@@ -177,9 +177,9 @@ fn parse_method_decl_with_explicit_invocant_param() {
         if let Stmt::MethodDecl { param_defs, .. } = &body[0] {
             assert_eq!(param_defs.len(), 2);
             assert_eq!(param_defs[0].name, "self");
-            assert!(param_defs[0].traits.iter().any(|t| t == "invocant"));
+            assert!(param_defs[0].is_invocant);
             assert_eq!(param_defs[1].name, "num");
-            assert!(!param_defs[1].traits.iter().any(|t| t == "invocant"));
+            assert!(!param_defs[1].is_invocant);
         } else {
             panic!("expected MethodDecl");
         }
@@ -196,7 +196,7 @@ fn parse_method_decl_with_explicit_invocant_and_return_type() {
     if let Stmt::ClassDecl { body, .. } = &stmts[0] {
         if let Stmt::MethodDecl { param_defs, .. } = &body[0] {
             assert_eq!(param_defs.len(), 2);
-            assert!(param_defs[0].traits.iter().any(|t| t == "invocant"));
+            assert!(param_defs[0].is_invocant);
             assert_eq!(param_defs[1].name, "num");
         } else {
             panic!("expected MethodDecl");
