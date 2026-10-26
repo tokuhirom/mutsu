@@ -136,7 +136,7 @@ pub(super) fn named_parameter(
     }
     let (sigil, desigil) = split_sigil(&flat.target.name);
     // The anonymous scalar `$` has no name in rakudo.
-    let desigil = if flat.target.name == super::convert::ANONYMOUS_SCALAR_PARAM {
+    let desigil = if flat.target.target == ParamTarget::Anonymous('$') {
         ""
     } else {
         desigil
@@ -277,7 +277,7 @@ fn bare_level(name: &str, named: bool, like: &ParamDef) -> ParamDef {
         does_target: Default::default(),
         spans: Default::default(),
         trait_meta: Default::default(),
-        target: ParamTarget::Variable,
+        target: ParamTarget::of_name(name),
         name: name.to_string(),
         default: None,
         multi_invocant: like.multi_invocant,

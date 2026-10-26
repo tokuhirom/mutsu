@@ -5406,11 +5406,11 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     }
     // The parser names an anonymous `$` / `@` / `%` parameter internally;
     // the model's target keeps only the bare sigil.
-    let (sigil, desigil) = match pd.name.as_str() {
-        ANONYMOUS_SCALAR_PARAM => ("$", ""),
-        ANONYMOUS_ARRAY_PARAM => ("@", ""),
-        ANONYMOUS_HASH_PARAM => ("%", ""),
-        name => split_sigil(name),
+    let (sigil, desigil) = match pd.target {
+        ParamTarget::Anonymous('$') => ("$", ""),
+        ParamTarget::Anonymous('@') => ("@", ""),
+        ParamTarget::Anonymous(_) => ("%", ""),
+        _ => split_sigil(&pd.name),
     };
     let mut node = if pd.sigilless && pd.slurpy {
         let mut node = sigilless_slurpy_parameter(pd, type_setting);
@@ -5617,9 +5617,9 @@ pub(super) fn parameter_traits(pd: &ParamDef) -> Result<Option<RakuAstField>, Ru
 }
 
 /// The parser's names for an anonymous `$` / `@` / `%` parameter.
-pub(super) const ANONYMOUS_SCALAR_PARAM: &str = "__ANON_STATE#";
-pub(super) const ANONYMOUS_ARRAY_PARAM: &str = "@__ANON_ARRAY__";
-pub(super) const ANONYMOUS_HASH_PARAM: &str = "%__ANON_HASH__";
+pub(super) const ANONYMOUS_SCALAR_PARAM: &str = crate::ast::ANON_SCALAR_PARAM;
+pub(super) const ANONYMOUS_ARRAY_PARAM: &str = crate::ast::ANON_ARRAY_PARAM;
+pub(super) const ANONYMOUS_HASH_PARAM: &str = crate::ast::ANON_HASH_PARAM;
 
 /// The `::T` type capture `pd` declares. Unlike `ParamDef::captured_type_name`
 /// (whose binder reading this does not change), a `::?CLASS` / `::?ROLE`

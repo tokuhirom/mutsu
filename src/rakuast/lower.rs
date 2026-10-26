@@ -2174,7 +2174,9 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         return Err(unsupported(owner));
     };
     let mut def = positional_param(&name);
-    def.target = form;
+    if form != ParamTarget::Variable {
+        def.target = form;
+    }
     def.sigilless = sigilless;
     if invocant {
         def.is_invocant = true;
@@ -2393,7 +2395,7 @@ pub(super) fn positional_param(name: &str) -> ParamDef {
         trait_meta: Default::default(),
         type_capture: None,
         name: name.to_string(),
-        target: ParamTarget::Variable,
+        target: ParamTarget::of_name(name),
         default: None,
         multi_invocant: true,
         required: true,
