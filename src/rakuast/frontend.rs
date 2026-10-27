@@ -52,7 +52,11 @@ fn convert_level_from(rakuast: Option<&str>) -> bool {
 /// module cached under one level is never read under another.
 // Cost: O(1).
 pub(crate) fn cache_tag() -> &'static str {
-    if convert_level() { "ast-convert" } else { "ast" }
+    if convert_level() {
+        "ast-convert"
+    } else {
+        "ast"
+    }
 }
 
 /// Whether the frontend runs a unit of this kind through the round trip. Such a

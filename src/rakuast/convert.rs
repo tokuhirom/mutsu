@@ -868,9 +868,9 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     }
                     let node =
                         super::routine_source::trait_node(&also_parent(parent, parent_args))?;
-                    also_statements.push(super::role::also_is_statement(Value::rakuast(
-                        Box::new(node),
-                    )));
+                    also_statements.push(super::role::also_is_statement(Value::rakuast(Box::new(
+                        node,
+                    ))));
                 }
                 let traits = header_trait_values(
                     body,
