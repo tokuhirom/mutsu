@@ -19,6 +19,10 @@ and the nightly sweeps. At ~100 merges a day, PR runs queued for 5-15 minutes pe
   does not compile (`lint-configs`) or a `cargo test` debug assertion fires (`test-check`). A PR
   touching wasm-specific code or debug-assertion paths should dispatch `ci.yml` on its branch
   ("Use workflow from") before merging.
+- **The legacy-frontend opt-out is checked post-merge only.** `test-suites` runs
+  `scripts/rakuast-frontend.sh legacy` (all of `t/` under `MUTSU_LEGACY=1`, on the release binary
+  already built) when `github.event_name != 'pull_request'`: ~3 minutes, the same as the TAP step.
+  A PR that touches the opt-out path dispatches `ci.yml` on its branch.
 - **CI on `main` runs hourly** (`schedule`, `23 * * * *`) and on `workflow_dispatch`. The `changes`
   job looks up the head of the last green non-PR run on `main` and classifies the diff since then
   exactly as it would a push: an unchanged `main` skips every build job, and a stretch of
