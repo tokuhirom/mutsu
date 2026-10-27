@@ -179,7 +179,7 @@ fn parse_array_element(input: &str) -> PResult<'_, Expr> {
 /// multi-item section is a sub-list, a single-item section is the bare item. A
 /// single overall section (e.g. a trailing `;`: `[1,2,3;]`) stays flat.
 ///
-/// The parse keeps the sections as written ([`Spelling::ArraySections`]);
+/// The parse keeps the sections as written (`Spelling::ArraySections`);
 /// [`lower_array_sections`] is the executable shape alone.
 // Cost: O(n), n = size of the sections.
 pub(crate) fn finalize_array_sections(

@@ -379,7 +379,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
 /// a single-item section is the bare item. A single overall section (e.g. a
 /// trailing `;`: `(1,2,3;)`) is NOT wrapped, matching Raku.
 ///
-/// The parse keeps the sections as written ([`Spelling::ParenSections`]);
+/// The parse keeps the sections as written (`Spelling::ParenSections`);
 /// [`lower_paren_sections`] is the executable shape alone.
 // Cost: O(n), n = size of the sections.
 pub(crate) fn finalize_paren_sections(
