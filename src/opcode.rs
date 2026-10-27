@@ -5760,6 +5760,9 @@ pub(crate) struct CompiledClassDeclPlan {
     pub(crate) repr: Option<String>,
     /// Declared with the `native` declarator (`ast::Stmt::ClassDecl::is_native`).
     pub(crate) is_native: bool,
+    /// The export tags of an `is export` class published without an export statement
+    /// (`ast::Stmt::ClassDecl::export_tags`).
+    pub(crate) export_tags: Option<Vec<String>>,
     pub(crate) language_version: String,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
     pub(crate) decl_id: u64,
@@ -13122,6 +13125,7 @@ impl CompiledCode {
             decl_id,
             body_parents,
             is_native,
+            export_tags,
             ..
         } = stmt
         else {
@@ -13170,6 +13174,7 @@ impl CompiledCode {
             body_parents: body_parents.clone(),
             repr: repr.clone(),
             is_native: *is_native,
+            export_tags: export_tags.clone(),
             language_version: language_version.clone(),
             custom_traits: plan_traits,
             decl_id: *decl_id,

@@ -314,28 +314,16 @@ impl Interpreter {
                     &mut declared_types,
                 );
             }
-            // A lexical `my class C is export` carries its tags on an internal
-            // marker (see `class_decl`); publish it the way an exported subset is.
+            // A lexical `my class C is export` records its tags on the node (see
+            // `class_decl`); publish it the way an exported subset is.
             if let Stmt::ClassDecl {
                 name,
-                custom_traits,
+                export_tags: Some(tags),
                 ..
             } = &op.raw
-                && let Some((_, tags)) = custom_traits
-                    .iter()
-                    .find(|(t, _)| t == "__mutsu_export_type")
                 && !self.module.suppress_exports
             {
-                let tags = match tags {
-                    Some(Expr::ArrayLiteral(items)) => items
-                        .iter()
-                        .filter_map(|e| match e {
-                            Expr::Literal(v) => Some(v.to_string_value()),
-                            _ => None,
-                        })
-                        .collect(),
-                    _ => vec!["DEFAULT".to_string()],
-                };
+                let tags = tags.clone();
                 let (pkg, short) = match crate::qualified::package_parent(*name) {
                     Some(parent) => (
                         parent.resolve().to_string(),

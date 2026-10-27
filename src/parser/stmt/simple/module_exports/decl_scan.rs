@@ -233,7 +233,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                 name,
                 is_lexical,
                 is_unit,
-                custom_traits,
+                export_tags,
                 ..
             } => {
                 let name = name.resolve();
@@ -246,9 +246,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                 // `is export` reaches the importer from any depth, a lexical
                 // `my class` in a routine or block included, and under the
                 // class's short name (`class A::B::C is export` imports `C`).
-                let exported = custom_traits
-                    .iter()
-                    .any(|(t, _)| t == crate::parser::EXPORT_TYPE_MARKER);
+                let exported = export_tags.is_some();
                 if exported && let Some((_, short)) = name.rsplit_once("::") {
                     self.out.type_names.push(short.to_string());
                 }

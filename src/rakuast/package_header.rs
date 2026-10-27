@@ -178,24 +178,6 @@ pub(super) fn strip(
     Ok((stripped, header))
 }
 
-/// The export tags a lexical `my class ... is export` carries as an internal
-/// marker in its `custom_traits` (see `parser::export_type_marker`).
-// Cost: O(t), t = custom traits and tags.
-pub(super) fn lexical_export_tags(custom_traits: &[(String, Option<Expr>)]) -> Option<Vec<String>> {
-    let (_, Some(Expr::ArrayLiteral(tags))) = custom_traits
-        .iter()
-        .find(|(t, _)| t == crate::parser::EXPORT_TYPE_MARKER)?
-    else {
-        return None;
-    };
-    tags.iter()
-        .map(|tag| match tag {
-            Expr::Literal(v) => v.as_str().map(str::to_string),
-            _ => None,
-        })
-        .collect()
-}
-
 /// Lower a package-like declaration node with `lower`, then put its header
 /// back the way the parser spells it: the registration and meta setters around
 /// the declaration, or, for a lexical class, the marker in its traits.
@@ -229,21 +211,17 @@ pub(super) fn lower_with_header(
     };
     if let Stmt::ClassDecl {
         is_lexical: true,
-        custom_traits,
+        export_tags,
         ..
     } = &mut stmt
-        && let Some(tags) = header.export_tags.take()
     {
-        custom_traits.push(crate::parser::export_type_marker(&tags));
+        *export_tags = header.export_tags.take();
     }
     if let Stmt::RoleDecl {
-        custom_traits,
-        is_lexical: true,
-        ..
+        is_lexical: true, ..
     } = &mut stmt
-        && let Some(tags) = header.export_tags.take()
     {
-        custom_traits.push(crate::parser::export_type_marker(&tags));
+        header.export_tags.take();
     }
     super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::PackageHeader {
         decl: Box::new(stmt),

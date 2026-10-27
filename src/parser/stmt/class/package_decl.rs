@@ -61,6 +61,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let mut parent_args: Vec<(String, Vec<crate::ast::Expr>)> = Vec::new();
         let mut is_repr: Option<String> = None;
         let mut custom_traits: Vec<(String, Option<crate::ast::Expr>)> = Vec::new();
+        let mut export_tags: Option<Vec<String>> = None;
         // The header traits as written, for a parse that keeps spellings.
         let mut written: Vec<crate::ast::routine_trait::RoutineTrait> = Vec::new();
         let mut r = r;
@@ -150,7 +151,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 if parent == "export" && name.contains("::") {
                     let mut tags = Vec::new();
                     super::class_decl::push_export_tags(r2, &mut tags);
-                    custom_traits.push(super::class_decl::export_type_marker(&tags));
+                    export_tags = Some(tags);
                 }
                 // A header trait the declaration has no field for: kept in the
                 // record with its written argument, which the parser then skips.
@@ -248,6 +249,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     custom_traits,
                     is_unit: true,
                     is_native: false,
+                    export_tags,
                     implicit_grammar_parent: false,
                     is_grammar: false,
                     decl_id: crate::ast::next_class_decl_id(),
@@ -542,6 +544,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     custom_traits: Vec::new(),
                     is_unit: true,
                     is_native: false,
+                    export_tags: None,
                     implicit_grammar_parent,
                     is_grammar: true,
                     decl_id: crate::ast::next_class_decl_id(),

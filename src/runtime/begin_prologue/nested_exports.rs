@@ -190,12 +190,9 @@ impl<'ast> Visit<'ast> for ExportedDecls<'ast> {
             Stmt::ClassDecl {
                 is_lexical: true,
                 name_expr: None,
-                custom_traits,
+                export_tags: Some(_),
                 ..
-            } if custom_traits
-                .iter()
-                .any(|(t, _)| t == "__mutsu_export_type") =>
-            {
+            } => {
                 self.found.push(stmt);
             }
             // Another package's body, or code that already runs at BEGIN time.

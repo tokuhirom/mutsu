@@ -2836,6 +2836,12 @@ pub(crate) enum Stmt {
         /// a package declarator peer to `class`, which alone may carry the native-type traits.
         #[serde(default)]
         is_native: bool,
+        /// The export tags of an `is export` class whose export has no statement of
+        /// its own: a lexical `my class ... is export`, or `unit class A::B::C is export`
+        /// (published under its short name). A module loader or a role body that cannot
+        /// see an export statement reads them from here.
+        #[serde(default)]
+        export_tags: Option<Vec<String>>,
         /// Whether the trailing `Grammar` entry in `parents` was supplied
         /// implicitly, because a `grammar` declarator carried no `is` clause.
         /// A later `also is Parent` in the body replaces it rather than adding a

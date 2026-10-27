@@ -229,6 +229,7 @@ impl Interpreter {
             body_parents,
             repr,
             is_native,
+            export_tags,
             language_version,
             custom_traits,
             decl_id,
@@ -1098,24 +1099,14 @@ impl Interpreter {
 
             // A lexical `my class C is export` cannot carry the runtime
             // `__MUTSU_EXPORT_TYPE__` call (see `class_decl`), only its
-            // `__mutsu_export_type` marker. Publish it here, the way an
-            // exported role is, so `import M` of an inline `module M` finds it
-            // (#10557); a module file's scan records the same entry.
+            // `export_tags`. Publish it here, the way an exported role is, so
+            // `import M` of an inline `module M` finds it (#10557); a module
+            // file's scan records the same entry.
             if *is_lexical
                 && !self.module.suppress_exports
-                && let Some((_, tags)) = custom_traits
-                    .iter()
-                    .find(|(t, _)| t == "__mutsu_export_type")
+                && let Some(tags) = export_tags
             {
-                let tags: Vec<String> = match tags {
-                    Some(arg) => {
-                        crate::runtime::utils::value_to_list(&self.eval_decl_trait_arg(arg)?)
-                            .iter()
-                            .map(Value::to_string_value)
-                            .collect()
-                    }
-                    None => Vec::new(),
-                };
+                let tags = tags.clone();
                 let qualified_sym = Symbol::intern(&qualified_name);
                 let (export_pkg, export_short) =
                     match crate::qualified::package_parent(qualified_sym) {
