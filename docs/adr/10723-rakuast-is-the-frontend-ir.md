@@ -2454,3 +2454,19 @@ and parses the full comma-list RHS of `Z=` in expression position. Lowering
 reuses the existing meta-assignment path. The focused contract is
 `t/rakuast/rakuast-xz-assignment.t`.
 
+### 6.121 A declaration's initializer is a field of `VarDecl` (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+Second step of the marker-to-field series after §6.119. `Stmt::VarDecl` gains `has_initializer: bool`
+and the `__has_initializer` entry of `custom_traits` is deleted: the parser, the lowering
+(`lower`, `var_does`, `decl_from_cell`, `split_var_decl`) set the field, and the compiler, the BEGIN
+prologue, the TRIR slot allocator and `convert` read it. A "declaration with no user traits" test that
+spelled `all(t == "__has_initializer")` is `custom_traits.is_empty()`. `convert::var_decl_statement`
+drops the marker from its internal-trait filter and from the constant-trait check, and
+`does_declaration` sets `VarDeclParts::has_initializer` instead of rebuilding a trait list.
+
+Deleted: the `__has_initializer` marker and its ~35 push sites, the marker filters in
+`modifier_decl_split`, `cell_ast::without_initializer_markers` (now `without_bind_marker`), the
+`var_does` retain/re-push, and the `convert` trait-list rebuild in `does_declaration`.
+Remaining `VarDecl` pseudo-traits (`__constant*`, `__init_sees_self`, `__scalar_bind`/`__code_bind`,
+shaped/implicit-value-type/name-colonpair marks, the `is dynamic` argument) follow in their own PRs.
+
