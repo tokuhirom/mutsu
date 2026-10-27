@@ -250,6 +250,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_unit: true,
                     is_native: false,
                     export_tags,
+                    marks: Default::default(),
                     implicit_grammar_parent: false,
                     is_grammar: false,
                     decl_id: crate::ast::next_class_decl_id(),
@@ -445,6 +446,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     language_version: super::super::simple::current_language_version(),
                     custom_traits,
                     decl_id: crate::ast::next_class_decl_id(),
+                    marks: Default::default(),
                 },
             ),
         ));
@@ -545,6 +547,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_unit: true,
                     is_native: false,
                     export_tags: None,
+                    marks: Default::default(),
                     implicit_grammar_parent,
                     is_grammar: true,
                     decl_id: crate::ast::next_class_decl_id(),

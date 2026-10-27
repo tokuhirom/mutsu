@@ -33,14 +33,13 @@ pub(crate) use primary::string::{decode_q_regex_quote, decode_qq_regex_quote};
 pub(crate) use primary::var::{
     fresh_anon_array_name, fresh_anon_state_name, is_identifier_spelling, is_pseudo_package,
 };
-pub(crate) use primary::{
-    ANON_COLONS_TRAIT, ANON_DECL_TRAIT, mark_anon_package_stmt, next_anon_class_name,
-    next_anon_grammar_name, next_anon_role_name, prepend_does_header,
-};
 pub(crate) use primary::{decimal_literal_value, numeric_literal_value};
+pub(crate) use primary::{
+    mark_anon_package_stmt, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,
+    prepend_does_header,
+};
 pub(crate) use stmt::class::{
-    DECLARE_HOW_TRAIT, LEADING_COLONS_TRAIT, declare_how_keyword, declare_how_marker,
-    push_also_is_parent,
+    DECLARE_HOW_TRAIT, declare_how_keyword, declare_how_marker, push_also_is_parent,
 };
 pub(crate) use stmt::control::placeholder_loop_params;
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};

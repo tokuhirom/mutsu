@@ -100,6 +100,7 @@ impl Compiler {
                 is_unit,
                 is_native,
                 export_tags,
+                marks,
                 implicit_grammar_parent,
                 is_grammar,
                 decl_id,
@@ -158,6 +159,7 @@ impl Compiler {
                     is_unit: *is_unit,
                     is_native: *is_native,
                     export_tags: export_tags.clone(),
+                    marks: *marks,
                     implicit_grammar_parent: *implicit_grammar_parent,
                     is_grammar: *is_grammar,
                     decl_id: *decl_id,
@@ -178,6 +180,7 @@ impl Compiler {
                 language_version,
                 custom_traits,
                 decl_id,
+                marks,
                 ..
             } => Stmt::RoleDecl {
                 spans: Default::default(),
@@ -201,6 +204,7 @@ impl Compiler {
                     traits
                 },
                 decl_id: *decl_id,
+                marks: *marks,
             },
             _ => stmt.clone(),
         }
@@ -4842,8 +4846,8 @@ impl Compiler {
             Stmt::ClassDecl {
                 name,
                 body,
-                custom_traits,
                 is_lexical,
+                marks,
                 ..
             } => {
                 // A top-level `class Failure` shadows the built-in the way a
@@ -4871,9 +4875,7 @@ impl Compiler {
                 // redeclares (the current-scope set is reset on block entry).
                 // An `anon class NAME { ... }` installs no symbol at all, so it
                 // neither claims the name nor collides with a previous claim.
-                let is_anon_decl = custom_traits
-                    .iter()
-                    .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT);
+                let is_anon_decl = marks.anon;
                 if !is_anon_decl && !Self::is_stub_class_body(body) {
                     let cname = name.resolve();
                     // Package blocks share this compiler scope, so key the

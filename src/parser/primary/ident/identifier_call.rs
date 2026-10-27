@@ -1106,7 +1106,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 // A NAMED `anon class Foo { ... }` keeps its name (`.^name`,
                 // gist `(Foo)`) but installs no symbol anywhere — not the
                 // enclosing scope, not the current package's stash. Marks the
-                // declaration `anon` (`ANON_DECL_TRAIT`) and mangles its registry name so
+                // declaration `anon` (`marks.anon`) and mangles its registry name so
                 // no env/alias/stash write it triggers is bareword-reachable.
                 // See `mark_anon_package_decl`'s doc comment for the full
                 // mechanism.

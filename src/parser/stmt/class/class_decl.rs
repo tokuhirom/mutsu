@@ -228,12 +228,6 @@ pub(crate) fn push_export_tags(after_export: &str, export_tags: &mut Vec<String>
     }
 }
 
-/// The `custom_traits` marker of a class declared as `class ::Name { }`. The
-/// leading `::` does not change the declaration; the marker only lets the
-/// RakuAST conversion render the name with its leading empty part, as rakudo
-/// does. Internal (`__`-prefixed), so never dispatched as a trait.
-pub(crate) const LEADING_COLONS_TRAIT: &str = "__leading_colons";
-
 /// The `custom_traits` marker of a declaration written with a declarator a
 /// `use`d module registered through `EXPORTHOW::DECLARE` (`monitor Name { }`).
 /// Its argument is the keyword; registration resolves the HOW from it, and the
@@ -538,6 +532,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         is_unit: false,
         is_native: false,
         export_tags: None,
+        marks: Default::default(),
         implicit_grammar_parent: false,
         is_grammar: false,
         decl_id: crate::ast::next_class_decl_id(),
@@ -604,9 +599,6 @@ pub(crate) fn class_decl_body_opt(
     let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
     // The header traits as written, for a parse that keeps spellings.
     let mut written: Vec<RoutineTrait> = Vec::new();
-    if leading_colons {
-        custom_traits.push((LEADING_COLONS_TRAIT.to_string(), None));
-    }
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
     let mut r = rest;
@@ -897,6 +889,10 @@ pub(crate) fn class_decl_body_opt(
         is_unit: false,
         is_native: false,
         export_tags: None,
+        marks: crate::ast::PackageMarks {
+            leading_colons,
+            ..Default::default()
+        },
         implicit_grammar_parent: false,
         is_grammar: false,
         decl_id: crate::ast::next_class_decl_id(),

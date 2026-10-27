@@ -345,6 +345,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
         is_unit: false,
         is_native: false,
         export_tags: lexical_export_tags,
+        marks: Default::default(),
         implicit_grammar_parent,
         is_grammar: true,
         decl_id: crate::ast::next_class_decl_id(),
