@@ -1363,7 +1363,10 @@ fn prepend_trusts(body: &mut Vec<Stmt>, trusts: Vec<String>) {
 /// to *read* a class with inheritance, scope, a repr, or traits, so nothing
 /// lowered here can carry them either.
 fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let head = package_head(node, crate::parser::next_anon_class_name)?;
+    let retained = super::role_header::retained_name(node)?;
+    let head = package_head(node, || {
+        retained.unwrap_or_else(crate::parser::next_anon_class_name)
+    })?;
     let mut body = lower_package_body(lower_block(named_child(node, "body")?)?);
     let ClassTraits {
         mut parents,
@@ -1538,7 +1541,10 @@ pub(super) fn package_head(
 }
 
 fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let head = package_head(node, crate::parser::next_anon_grammar_name)?;
+    let retained = super::role_header::retained_name(node)?;
+    let head = package_head(node, || {
+        retained.unwrap_or_else(crate::parser::next_anon_grammar_name)
+    })?;
     let mut body = lower_package_body(lower_block(named_child(node, "body")?)?);
     let ClassTraits {
         mut parents,
