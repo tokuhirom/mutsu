@@ -2393,6 +2393,11 @@ pub struct HashData {
     /// by `Value::hash`, which must not itemize the values of a hash that has
     /// declared they are not containers.
     pub bare_values: bool,
+    /// Keys an `nqp::bindkey` stored as a bare (non-container) value in a hash
+    /// whose other values are element containers: `nqp::atkey` answers them as
+    /// they are, not as a lazily promoted cell (#15106). `None` is the
+    /// overwhelmingly common case.
+    pub bound_bare: Option<Box<std::collections::HashSet<String>>>,
 }
 
 /// Backing data for `Value::Array`: the element vector plus embedded

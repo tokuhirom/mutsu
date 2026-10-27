@@ -135,6 +135,19 @@ impl Interpreter {
                 let hash = args.first().cloned().unwrap_or(Value::NIL);
                 let key = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
                 match hash.view() {
+                    // A Raku Hash's `$!storage` holds Scalar containers in
+                    // Rakudo, so a present key reads as the value's shared
+                    // cell (the twin of `atpos` on `$!reified`, #15106). A raw
+                    // `VMHash` holds bare values and answers them as they are.
+                    ValueView::Hash(map)
+                        if !map.bare_values
+                            && map.contains_key(&key)
+                            && !map.bound_bare.as_ref().is_some_and(|b| b.contains(&key)) =>
+                    {
+                        Ok(hash.hash_slot_ref(&key, true).filter(|cell| {
+                            matches!(cell.view(), ValueView::ContainerRef(_))
+                        }).unwrap_or_else(|| map.get(&key).cloned().unwrap_or(Value::NIL)))
+                    }
                     ValueView::Hash(map) => Ok(map.get(&key).cloned().unwrap_or(Value::NIL)),
                     _ => {
                         let h = hash.clone();
