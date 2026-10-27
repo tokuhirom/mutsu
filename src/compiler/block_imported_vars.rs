@@ -216,7 +216,10 @@ impl Compiler {
         let (expr, bind) = match sigil {
             Some('@') => (Expr::ArrayVar(qualified), None),
             Some(_) => (Expr::HashVar(qualified), None),
-            None => (Expr::Var(qualified), Some(crate::ast::bind_decl::BindKind::Scalar)),
+            None => (
+                Expr::Var(qualified),
+                Some(crate::ast::bind_decl::BindKind::Scalar),
+            ),
         };
         Some(crate::ast::bind_decl::expand(Stmt::VarDecl {
             anonymous: false,

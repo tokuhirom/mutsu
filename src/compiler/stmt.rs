@@ -1947,9 +1947,7 @@ impl Compiler {
                 // declaration (#11834). A `:=` bind takes the bound container,
                 // so its type is whatever that container's is: leave it unrecorded
                 // for the run-time check to answer.
-                if !bind_vardecl
-                    && *bind != Some(crate::ast::bind_decl::BindKind::Scalar)
-                {
+                if !bind_vardecl && *bind != Some(crate::ast::bind_decl::BindKind::Scalar) {
                     self.record_scalar_decl_type(name, type_constraint.as_deref());
                 }
                 if !*is_state

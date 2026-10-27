@@ -187,7 +187,11 @@ mod tests {
             decl("x", Expr::BareWord("f".to_string()), Some(BindKind::Scalar)),
             decl("@a", Expr::ArrayVar("b".to_string()), None),
             decl("%h", Expr::HashVar("s".to_string()), None),
-            decl("&f", Expr::CodeVar("source".to_string()), Some(BindKind::Code)),
+            decl(
+                "&f",
+                Expr::CodeVar("source".to_string()),
+                Some(BindKind::Code),
+            ),
         ] {
             let expanded = expand(d.clone());
             assert!(declared(&expanded).is_some(), "{expanded:?}");

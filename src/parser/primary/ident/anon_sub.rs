@@ -86,8 +86,7 @@ pub(crate) fn folded_invocant<'a>(
             custom_traits,
             bind: Some(crate::ast::bind_decl::BindKind::Scalar),
             ..
-        }) if is_self(expr) && custom_traits.is_empty() =>
-        {
+        }) if is_self(expr) && custom_traits.is_empty() => {
             let name = if name == crate::env::LEX_SELF {
                 "self".to_string()
             } else {
