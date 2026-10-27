@@ -324,22 +324,28 @@ impl Interpreter {
             let order = Self::method_decl_order(mro, *owner, matched + j);
             self.method_rank_key(arg_values, def, usize::MAX, order, *owner)
         }));
-        multi_rank::assign_tiers(&mut tiered, |rank| rank, &|x, y| {
-            self.nominal_type_conforms(x, y)
-        });
+        {
+            let _scope = self.conformance_scope();
+            multi_rank::assign_tiers(&mut tiered, |rank| rank, &|x, y| {
+                self.nominal_type_conforms(x, y)
+            });
+        }
         for (rank, tiered) in ranks.iter_mut().zip(&tiered) {
             rank.tier = tiered.tier;
             rank.tiered = true;
         }
         // Across owners too: an ancestor's candidate and a subclass's that
         // are incomparable resolve by declaration order (`method_decl_order`).
-        let (mut ranked, ambiguous) = prune_to_maximal(
-            ranks
-                .into_iter()
-                .zip(0..)
-                .collect::<Vec<(MultiRank, usize)>>(),
-            &|x, y| self.nominal_type_conforms(x, y),
-        );
+        let (mut ranked, ambiguous) = {
+            let _scope = self.conformance_scope();
+            prune_to_maximal(
+                ranks
+                    .into_iter()
+                    .zip(0..)
+                    .collect::<Vec<(MultiRank, usize)>>(),
+                &|x, y| self.nominal_type_conforms(x, y),
+            )
+        };
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
         // An arity-incomparable split in one tier with no bind-time check:
         // rakudo's `X::Multi::Ambiguous`, unless `is default` picks one.

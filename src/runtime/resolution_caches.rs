@@ -132,6 +132,9 @@ pub(crate) struct ResolutionCaches {
     /// back — which is what lets a memo outlive the excursion that a
     /// routine-local `my sub` makes of every call (#8314).
     pub(crate) fn_resolve_gen: u64,
+    /// Memo of the declared-type conformance relation multi ranking asks for
+    /// (`Interpreter::nominal_type_conforms`); see `type_conformance`.
+    pub(crate) type_conformance: crate::runtime::type_conformance::ConformanceCache,
     /// Memo for the compiled-key probe chain of a `multi` name
     /// (`find_compiled_function_inner`). `fn_resolve_cache` above deliberately
     /// withholds itself from a multi, because its key cannot tell two calls

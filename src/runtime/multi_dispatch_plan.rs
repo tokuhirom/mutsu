@@ -262,9 +262,12 @@ impl Interpreter {
                 def,
             })
             .collect();
-        multi_rank::assign_tiers(&mut entries, |entry| &mut entry.key, &|x, y| {
-            self.nominal_type_conforms(x, y)
-        });
+        {
+            let _scope = self.conformance_scope();
+            multi_rank::assign_tiers(&mut entries, |entry| &mut entry.key, &|x, y| {
+                self.nominal_type_conforms(x, y)
+            });
+        }
         entries
     }
 
@@ -323,6 +326,7 @@ impl Interpreter {
         }
         // A key re-ranked against this call's values needs its tier again.
         if stage.iter().any(|entry| entry.reads_value) {
+            let _scope = self.conformance_scope();
             multi_rank::assign_tiers(&mut ranked, |(key, _)| key, &|x, y| {
                 self.nominal_type_conforms(x, y)
             });
