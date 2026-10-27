@@ -2625,7 +2625,21 @@ impl Interpreter {
                 && self.is_attribute_buildable(&cn, key)
             {
                 let sigil = sigil_map.get(key.as_str()).copied().unwrap_or('$');
-                let coerced = Self::coerce_attr_value_by_sigil(boxed.clone(), sigil);
+                // A twiddle is an assignment to the attribute: a typed one
+                // refuses a value of the wrong type (`X::TypeCheck::Assignment`).
+                let checked = match self.check_attr_store_type(&cn, key, sigil, boxed.clone()) {
+                    Ok(value) => value,
+                    Err(err) => return Some(Err(err)),
+                };
+                // `clone` binds an `@` attribute to an itemized Array as it is
+                // (`.clone(tasks => $arr)`), where `new` would wrap the item
+                // as one element.
+                let checked = if sigil == '@' {
+                    checked.deitemize_for_sigil_bind()
+                } else {
+                    checked
+                };
+                let coerced = Self::coerce_attr_value_by_sigil(checked, sigil);
                 attrs.insert(key.clone(), coerced);
             }
         }
