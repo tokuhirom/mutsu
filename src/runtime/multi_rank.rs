@@ -627,26 +627,29 @@ pub(crate) fn assign_tiers<T>(
     // argument-dependent artifact push a binding candidate into a later
     // tier (`multi w(1, 'em')` putting `multi w($f, 'khz')` behind
     // `multi w(Numeric $n, Str:D $u)` for `w(0.1, 'khz')`).
-    let narrower: Vec<Vec<bool>> = (0..n)
-        .map(|i| {
-            (0..n)
-                .map(|j| {
-                    if i == j {
-                        return false;
-                    }
-                    if ranks[i].profile.unrelated || ranks[j].profile.unrelated {
-                        // Only method candidates compare by declared type
-                        // (rakudo's tiers do); a sub's unbindable candidate
-                        // stays out of the relation.
-                        return ranks[i].invocant.is_some()
-                            && ranks[j].invocant.is_some()
-                            && ranks[i].declared_narrower(&ranks[j], conforms);
-                    }
-                    ranks[i].rakudo_narrower(&ranks[j], conforms)
-                })
-                .collect()
-        })
-        .collect();
+    // The relation asks `conforms` for the same two names in both directions
+    // (`(i, j)` and `(j, i)`), so the two directions of a pair are computed
+    // back to back and a tiny direct-mapped memo answers the second ask.
+    let memo = PairMemo::default();
+    let conforms = &|a: Symbol, b: Symbol| memo.get_or(a, b, || conforms(a, b));
+    let narrow = |i: usize, j: usize| -> bool {
+        if ranks[i].profile.unrelated || ranks[j].profile.unrelated {
+            // Only method candidates compare by declared type
+            // (rakudo's tiers do); a sub's unbindable candidate
+            // stays out of the relation.
+            return ranks[i].invocant.is_some()
+                && ranks[j].invocant.is_some()
+                && ranks[i].declared_narrower(&ranks[j], conforms);
+        }
+        ranks[i].rakudo_narrower(&ranks[j], conforms)
+    };
+    let mut narrower: Vec<Vec<bool>> = vec![vec![false; n]; n];
+    for i in 0..n {
+        for j in (i + 1)..n {
+            narrower[i][j] = narrow(i, j);
+            narrower[j][i] = narrow(j, i);
+        }
+    }
     let mut tier_of: Vec<Option<u32>> = vec![None; n];
     let mut tier = 0u32;
     let mut left = n;
@@ -857,4 +860,33 @@ pub(crate) fn has_optional_positional(params: &[&ParamDef]) -> bool {
             .iter()
             .filter(|p| !p.named && !p.slurpy && !p.double_slurpy)
             .any(|p| p.optional_marker || p.default.is_some())
+}
+
+/// A 256-entry direct-mapped memo of one ranking's `conforms` answers. It is
+/// exact for the ranking it lives in (the relation is fixed while no user code
+/// runs); a collision just recomputes.
+#[derive(Default)]
+struct PairMemo {
+    slots: std::cell::RefCell<Vec<(u32, u32, u8)>>,
+}
+
+impl PairMemo {
+    // Cost: O(1) plus `compute` on a miss.
+    fn get_or(&self, a: Symbol, b: Symbol, compute: impl FnOnce() -> bool) -> bool {
+        let (ka, kb) = (a.raw(), b.raw());
+        let at = (ka.wrapping_mul(0x9E37_79B1) ^ kb.wrapping_mul(0x85EB_CA6B)) as usize >> 8 & 255;
+        {
+            let mut slots = self.slots.borrow_mut();
+            if slots.is_empty() {
+                slots.resize(256, (0, 0, 0));
+            }
+            let (sa, sb, v) = slots[at];
+            if v != 0 && sa == ka && sb == kb {
+                return v == 2;
+            }
+        }
+        let answer = compute();
+        self.slots.borrow_mut()[at] = (ka, kb, if answer { 2 } else { 1 });
+        answer
+    }
 }
