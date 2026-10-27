@@ -5028,10 +5028,10 @@ fn constant_declaration(
     is_our: bool,
     export_trait: Option<Value>,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
-    let sigil = Some(constant.as_str());
+    let sigil = constant.as_str();
     // rakudo's `name` carries the sigil (`"@a"`, `"$x"`). The parser keeps
     // it in the name for `@` / `%` / `&` and strips a `$`.
-    let name = match sigil.as_deref().unwrap_or("") {
+    let name = match sigil {
         // `constant term:<$bar>`: a sigiled name without a sigil of its own
         // is a term, which rakudo names `term:<$bar>`.
         "" if name.starts_with(['$', '@', '%', '&']) => format!("term:<{name}>"),
