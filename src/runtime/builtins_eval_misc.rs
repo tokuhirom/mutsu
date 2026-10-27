@@ -493,11 +493,30 @@ impl Interpreter {
                 interp.eval_eval_string(&code)
             }
         };
+        // The frame behind `context` had its slot-only locals flushed for by-name
+        // readers when it made the call that led here; they are visible to the
+        // snippet for its duration only (#15048).
+        let context_flushed = context_arg
+            .as_ref()
+            .map(|ctx| self.eval_context_flushed(ctx))
+            .unwrap_or_default();
+        let env_before_context = (!context_flushed.is_empty()).then(|| {
+            let saved = self.env.clone();
+            let mut env = crate::env::Env::scoped_child(saved.clone());
+            for (sym, value) in context_flushed {
+                env.insert_sym(sym, value);
+            }
+            self.env = env;
+            saved
+        });
         let mut result = if context_arg.is_some() {
             crate::env::with_static_links_suppressed(|| run(self))
         } else {
             run(self)
         };
+        if let Some(saved) = env_before_context {
+            self.env = saved;
+        }
         // A compile-time diagnosis (`X::Comp`/`X::Syntax::*`) raised while
         // parsing the EVAL'd string reports `.filename` matching the EVAL
         // pseudo-file (rakudo: `/EVAL/`), just like `.line` reports the line

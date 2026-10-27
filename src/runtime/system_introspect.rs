@@ -132,6 +132,7 @@ impl Interpreter {
                     routine: k.checked_sub(1).and_then(|p| self.routine_stack.get(p)).copied(),
                     synthetic: false,
                     routine_depth: k,
+                    flushed: Vec::new(),
                 });
             }
         }

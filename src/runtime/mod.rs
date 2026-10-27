@@ -1557,6 +1557,10 @@ pub(crate) struct CallFrameEntry {
     /// routine frame takes. A routine frame no entry claims was reached through
     /// a frameless light call path (see `Interpreter::effective_callframes`).
     pub routine_depth: usize,
+    /// The slot-only locals of the calling frame that `push_caller_env` copied
+    /// into [`Self::env`] for a by-name reader (#15048); an `EVAL` run with this
+    /// frame as its `context` makes them visible to the snippet.
+    pub flushed: Vec<(Symbol, Value)>,
 }
 
 /// Entry in the routine stack, tracking the call chain for backtraces.

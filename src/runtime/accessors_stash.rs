@@ -192,6 +192,48 @@ impl Interpreter {
     /// the frame's authoritative saved environment instead.
     pub(crate) const STASH_CALLER_DEPTH_ATTR: &str = "__mutsu_caller_depth";
 
+    /// Attribute carrying the `callframe_stack` index of the frame a `CALLER::`
+    /// stash was taken from, so an `EVAL ..., context => $ctx` can make that
+    /// frame's flushed slot-only locals visible to the snippet (#15048).
+    pub(crate) const STASH_CALLER_FRAME_ATTR: &str = "__mutsu_caller_frame";
+
+    /// Stamp the `callframe_stack` index `index` onto a `CALLER::` stash.
+    // Cost: O(1).
+    pub(crate) fn stamp_stash_caller_frame(stash: &Value, index: usize) {
+        if let ValueView::Instance { attributes, .. } = stash.view() {
+            attributes.insert(
+                Self::STASH_CALLER_FRAME_ATTR.to_string(),
+                Value::int(index as i64),
+            );
+        }
+    }
+
+    /// The slot-only locals the frame behind an `EVAL` context stash had
+    /// flushed for by-name readers; empty for any other context value.
+    // Cost: O(k), k = the flushed locals.
+    pub(crate) fn eval_context_flushed(&self, ctx: &Value) -> Vec<(Symbol, Value)> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = ctx.view()
+        else {
+            return Vec::new();
+        };
+        if !is_stash_class_name(class_name.as_str()) {
+            return Vec::new();
+        }
+        let index = attributes
+            .as_map()
+            .get(Self::STASH_CALLER_FRAME_ATTR)
+            .and_then(Value::as_int)
+            .and_then(|i| usize::try_from(i).ok());
+        index
+            .and_then(|i| self.callframe_stack.get(i))
+            .map(|entry| entry.flushed.clone())
+            .unwrap_or_default()
+    }
+
     /// Stamp `origin` onto a pseudo-stash value. `CALLER::` names the frame that
     /// was current *where the stash was taken*, which is not recoverable later:
     /// `Test.rakumod` writes `my $ctx = CALLER::` in `throws-like` and uses it
