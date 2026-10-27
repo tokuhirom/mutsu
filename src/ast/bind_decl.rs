@@ -188,12 +188,12 @@ mod tests {
     #[test]
     fn an_assignment_is_not_a_binding() {
         // `my $x = $y`: no bind trait.
-        let assign = decl("x", Expr::Var("y".to_string()), &["__has_initializer"]);
+        let assign = decl("x", Expr::Var("y".to_string()), &[]);
         assert!(declared(&assign).is_none());
         let code_assign = decl(
             "&f",
             Expr::CodeVar("source".to_string()),
-            &["__has_initializer"],
+            &[],
         );
         assert!(declared(&code_assign).is_none());
         // `my @a = …` is never wrapped the way a bind is.

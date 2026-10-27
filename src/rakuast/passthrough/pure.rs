@@ -130,11 +130,7 @@ impl Purity {
                 where_constraint: None,
                 ..
             } => {
-                declared_name(name)
-                    && export_tags.is_empty()
-                    && custom_traits
-                        .iter()
-                        .all(|(name, arg)| name == "__has_initializer" && arg.is_none())
+                declared_name(name) && export_tags.is_empty() && custom_traits.is_empty()
             }
             Stmt::Call { args, .. } => args
                 .iter()

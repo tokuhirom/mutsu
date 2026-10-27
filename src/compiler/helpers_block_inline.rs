@@ -542,6 +542,7 @@ impl Compiler {
                                 expr,
                                 type_constraint.as_deref(),
                                 custom_traits,
+                                *has_initializer,
                             ) {
                                 // Block-final uninitialized untyped scalar:
                                 // seed and yield the Any type object

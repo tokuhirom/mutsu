@@ -99,7 +99,6 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
     // or — being package-scoped — loaded as a bare `our` redeclaration).
     let constant_traits = vec![
         ("__constant".to_string(), None),
-        ("__has_initializer".to_string(), None),
         (
             "__constant_sigil".to_string(),
             Some(Expr::Literal(Value::str(sigil_marker.to_string()))),
@@ -190,6 +189,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 is_export,
                 export_tags: export_tags.clone(),
                 custom_traits: constant_traits,
+                has_initializer: true,
                 where_constraint: None,
             },
         ));
@@ -238,6 +238,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 is_export,
                 export_tags: export_tags.clone(),
                 custom_traits: constant_traits,
+                has_initializer: true,
                 where_constraint: None,
             },
         ));

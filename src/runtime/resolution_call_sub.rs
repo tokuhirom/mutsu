@@ -50,9 +50,8 @@ impl Interpreter {
         let is_bare_our = |stmt: &Stmt| {
             matches!(
                 stmt,
-                Stmt::VarDecl { is_our: true, expr, custom_traits, .. }
+                Stmt::VarDecl { is_our: true, expr, has_initializer: false, .. }
                     if crate::compiler::Compiler::is_synthesized_decl_default(expr)
-                        && !custom_traits.iter().any(|(n, _)| n == "__has_initializer")
             )
         };
         if !body.iter().any(is_bare_our) {

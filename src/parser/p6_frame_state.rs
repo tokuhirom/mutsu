@@ -144,7 +144,7 @@ fn no_user_args(args: &[Expr]) -> bool {
 }
 
 fn hidden_decls() -> [Stmt; 2] {
-    let decl = |name: &str, expr: Expr, is_state: bool, custom_traits| Stmt::VarDecl {
+    let decl = |name: &str, expr: Expr, is_state: bool, has_initializer| Stmt::VarDecl {
         anonymous: false,
         name: name.to_string(),
         expr,
@@ -154,7 +154,8 @@ fn hidden_decls() -> [Stmt; 2] {
         is_dynamic: false,
         is_export: false,
         export_tags: Vec::new(),
-        custom_traits,
+        custom_traits: Vec::new(),
+        has_initializer,
         where_constraint: None,
     };
     let first_run = Expr::Ternary {
@@ -167,13 +168,8 @@ fn hidden_decls() -> [Stmt; 2] {
         }))),
     };
     [
-        decl(SEEN_VAR, Expr::Literal(Value::NIL), true, Vec::new()),
-        decl(
-            FLAG_VAR,
-            first_run,
-            false,
-            vec![("__has_initializer".to_string(), None)],
-        ),
+        decl(SEEN_VAR, Expr::Literal(Value::NIL), true, false),
+        decl(FLAG_VAR, first_run, false, true),
     ]
 }
 

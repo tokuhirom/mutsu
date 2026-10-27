@@ -198,11 +198,13 @@ fn split_body_stmt(stmt: Stmt, decls: &mut Vec<Stmt>, runtime: &mut Vec<Stmt>) {
 fn has_runtime_part(stmt: &Stmt) -> bool {
     match stmt {
         stmt if stmt.is_routine_traits() => false,
-        Stmt::VarDecl { custom_traits, .. } => {
+        Stmt::VarDecl {
+            custom_traits,
+            has_initializer,
+            ..
+        } => {
             splittable_var_decl(stmt)
-                && custom_traits
-                    .iter()
-                    .any(|(t, _)| t == "__has_initializer" || t == "__scalar_bind")
+                && (*has_initializer || custom_traits.iter().any(|(t, _)| t == "__scalar_bind"))
         }
         Stmt::ClassDecl { .. } | Stmt::Package { .. } => {
             matches!(split_package_decl(stmt.clone()), (_, Some(_)))

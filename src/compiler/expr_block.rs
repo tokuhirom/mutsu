@@ -260,7 +260,7 @@ impl Compiler {
                     && !nested_state_init
                     && name.starts_with('@')
                     && custom_traits.iter().any(|(t, _)| t == "default")
-                    && custom_traits.iter().any(|(t, _)| t == "__has_initializer");
+                    && *has_initializer;
                 let decl_slot = if !*is_our && !is_promoted && predeclared_shadow {
                     self.local_map.get(name).copied()
                 } else if !*is_our
@@ -327,7 +327,7 @@ impl Compiler {
                     .find_map(|(t, a)| (t == "default").then_some(a.as_ref()))
                     .flatten();
                 let mark_explicit_local_init = decl_slot.is_some()
-                    && custom_traits.iter().any(|(t, _)| t == "__has_initializer")
+                    && *has_initializer
                     && (preapply_default || !custom_traits.iter().any(|(t, _)| t == "default"));
                 // Expression-position scalar declarations normally emit their
                 // `SetVarDynamic` after the initializer so the declaration's
@@ -417,8 +417,7 @@ impl Compiler {
                     // the "initialize once per declaration site" behavior (via the
                     // `__do_decl_init` marker), so repeated evaluation reuses the
                     // current lexical value instead of resetting it.
-                    let has_initializer =
-                        custom_traits.iter().any(|(t, _)| t == "__has_initializer");
+                    let has_initializer = *has_initializer;
                     let marker_name = format!("__do_decl_init_{}", super::compile_session::mint());
                     let marker_slot = self.alloc_local(&marker_name);
                     let jump_have_value = if has_initializer || self.in_real_loop_body {
@@ -673,7 +672,7 @@ impl Compiler {
                     let native_default = (!name.starts_with('@')
                         && !name.starts_with('%')
                         && !name.starts_with('&')
-                        && !custom_traits.iter().any(|(t, _)| t == "__has_initializer")
+                        && !*has_initializer
                         && Self::is_synthesized_decl_default(expr))
                     .then(|| {
                         type_constraint
@@ -696,6 +695,7 @@ impl Compiler {
                         expr,
                         type_constraint.as_deref(),
                         custom_traits,
+                        *has_initializer,
                     ) {
                         // Expression-position uninitialized untyped scalar
                         // (`(my $x)`, `(my $)`, do-block value): seed and yield
@@ -805,7 +805,7 @@ impl Compiler {
                                 self.emit_get_named_var(name);
                             } else if type_constraint.is_none()
                                 && is_nil_literal
-                                && custom_traits.iter().any(|(t, _)| t == "__has_initializer")
+                                && *has_initializer
                                 && !custom_traits
                                     .iter()
                                     .any(|(t, _)| t == "__scalar_bind" || t == "default")

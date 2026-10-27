@@ -9,7 +9,7 @@ impl Compiler {
     ///
     /// The shape alone does not settle it — `my @a = ()` parses to the same
     /// empty `Literal(Array)` — so every caller must also check that the
-    /// declaration does NOT carry the parser's `__has_initializer` trait. What
+    /// declaration does NOT set `has_initializer`. What
     /// this predicate answers is only "could this be the synthesized default",
     /// which is what both the `my` redeclaration no-op and the `our`
     /// value-preserving load need.
@@ -43,6 +43,7 @@ impl Compiler {
         expr: &Expr,
         type_constraint: Option<&str>,
         custom_traits: &[(String, Option<Expr>)],
+        has_initializer: bool,
     ) -> bool {
         !name.starts_with('@')
             && !name.starts_with('%')
@@ -53,9 +54,10 @@ impl Compiler {
             && name != "$!"
             && type_constraint.is_none()
             && matches!(expr, Expr::Literal(lit) if lit.is_nil())
+            && !has_initializer
             && !custom_traits
                 .iter()
-                .any(|(t, _)| t == "__has_initializer" || t == "__scalar_bind" || t == "default")
+                .any(|(t, _)| t == "__scalar_bind" || t == "default")
     }
 
     /// Return the zero value for a native type alias whose declaration was
@@ -771,7 +773,7 @@ impl Compiler {
                 where_constraint: None,
                 custom_traits,
                 ..
-            } if custom_traits.iter().all(|(n, _)| n == "__has_initializer")
+            } if custom_traits.is_empty()
         )
     }
 

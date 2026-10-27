@@ -2275,6 +2275,11 @@ pub(crate) enum Stmt {
         export_tags: Vec<String>,
         /// Custom variable `is` traits as `(trait_name, optional_arg_expr)`.
         custom_traits: Vec<(String, Option<Expr>)>,
+        /// True when the declaration carries an explicit initializer
+        /// (`my T $x = ...`, a `for`/`loop` binding's seed, ...). It is a
+        /// field of the declaration, not a `custom_traits` entry, so that list
+        /// holds only the traits the program wrote.
+        has_initializer: bool,
         /// Optional `where` constraint expression for inline subset typing
         where_constraint: Option<Box<Expr>>,
     },
@@ -3834,7 +3839,7 @@ mod expr_size_guard {
 /// The prefix a user variable trait named like a parser marker (`my $x is __x`)
 /// carries in [`Stmt::VarDecl`]'s `custom_traits`.
 ///
-/// The parser files its own markers (`__has_initializer`, `__scalar_bind`, ...)
+/// The parser files its own markers (`__scalar_bind`, ...)
 /// in the same list under a `__` prefix and every consumer filters on it, so a
 /// user trait that happens to start with `__` would be dropped as one. A
 /// character no identifier holds keeps the two namespaces apart, as

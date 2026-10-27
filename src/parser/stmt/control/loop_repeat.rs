@@ -38,7 +38,8 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
                         is_dynamic: false,
                         is_export: false,
                         export_tags: Vec::new(),
-                        custom_traits: vec![("__has_initializer".to_string(), None)],
+                        custom_traits: Vec::new(),
+                        has_initializer: true,
                         where_constraint: None,
                     },
                 ));

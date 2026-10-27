@@ -479,7 +479,8 @@ impl Compiler {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![("__has_initializer".to_string(), None)],
+            custom_traits: Vec::new(),
+            has_initializer: true,
             where_constraint: None,
         };
 
@@ -770,7 +771,8 @@ impl Compiler {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![("__has_initializer".to_string(), None)],
+            custom_traits: Vec::new(),
+            has_initializer: true,
             where_constraint: None,
         }
     }
@@ -1445,7 +1447,7 @@ impl Compiler {
                     && !bind_vardecl
                     && where_constraint.is_none();
                 if is_plain_my {
-                    let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+                    let has_init = *has_initializer;
                     // Only the default-init form (a bare `my $f;` / `my Int $f;` /
                     // `my @a;` / `my %h;`, whose RHS is the synthesized empty type
                     // default — see `Compiler::is_synthesized_decl_default`) is a
@@ -1511,8 +1513,7 @@ impl Compiler {
                             .any(|(trait_name, _)| trait_name == "__scalar_bind"),
                     shadows_by_name,
                 });
-                let has_explicit_initializer =
-                    custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+                let has_explicit_initializer = *has_initializer;
                 let preapply_container_default = has_default_trait
                     && has_explicit_initializer
                     && name.starts_with('@')
@@ -1573,11 +1574,11 @@ impl Compiler {
                 // silently, with no error (#7953). The synthesized defaults are,
                 // by sigil: `Literal(Nil)` for `$`/`&`, an empty `Literal(Array)`
                 // for `@`, and an empty `Expr::Hash` for `%`. A real initializer
-                // — including an explicit `our %H = ()` — carries the parser's
-                // `__has_initializer` marker and must still run.
+                // — including an explicit `our %H = ()` — sets the
+                // declaration's `has_initializer` and must still run.
                 let is_our_bare_decl = *is_our
                     && Self::is_synthesized_decl_default(expr)
-                    && !custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+                    && !*has_initializer;
                 // A scalar `:=` bind to a Positional makes the scalar a
                 // non-container alias; record it so SetLocal can mark it
                 // decontainerized (so `@a = $bound` flattens, not itemizes).
@@ -1832,6 +1833,7 @@ impl Compiler {
                         expr,
                         type_constraint.as_deref(),
                         custom_traits,
+                        *has_initializer,
                     ) {
                         &any_default
                     } else if let Some(native_default) = native_default.as_ref() {
@@ -2046,7 +2048,7 @@ impl Compiler {
                         && !binds_term
                         && !has_default_trait
                         && !scalar_bind_decont
-                        && custom_traits.iter().all(|(t, _)| t == "__has_initializer");
+                        && custom_traits.is_empty();
                     // A typed `our @a` / `our %h` publishes the typed container
                     // `SetLocal` just built, not a second copy of the raw
                     // initializer: the global store would coerce that copy to a

@@ -1215,7 +1215,7 @@ impl Compiler {
 
     /// Whether `expr` is an expression-position `my $ = ...` with no type,
     /// user trait or `state`: the anonymous scalar whose container a Pair
-    /// keeps. Internal `__` markers (`__has_initializer`) do not count.
+    /// keeps. Internal `__` markers do not count.
     // Cost: O(1).
     fn is_untyped_anon_scalar_decl(expr: &Expr) -> bool {
         let Expr::DoStmt(stmt) = expr else {
