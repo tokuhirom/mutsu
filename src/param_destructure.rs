@@ -252,7 +252,16 @@ pub(crate) fn destructure_binds(
                 } else {
                     method_result
                 };
-                bind_stmts.push(decl_stmt(sub.name.clone(), target_expr));
+                // `:$count! is rw` aliases the element, so a write through it
+                // reaches the unpacked Hash (rakudo binds the container).
+                if sub.traits.iter().any(|t| t == "rw" || t == "raw") {
+                    bind_stmts.push(Stmt::SyntheticBlock(vec![
+                        Stmt::MarkBind,
+                        decl_stmt(sub.name.clone(), target_expr),
+                    ]));
+                } else {
+                    bind_stmts.push(decl_stmt(sub.name.clone(), target_expr));
+                }
             }
         } else if sub.slurpy && sub.sigilless {
             // |rest capture parameter: the remaining positional elements and the
