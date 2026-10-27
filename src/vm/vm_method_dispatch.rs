@@ -436,7 +436,7 @@ impl Interpreter {
         // so the pushed entry captures the caller's (unoverlaid) env.
         let pushed_caller = cc.uses_callframe;
         if pushed_caller {
-            self.push_caller_env();
+            self.push_caller_env_in_call_frame();
         }
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
@@ -1965,7 +1965,7 @@ impl Interpreter {
         // captures the caller's (unoverlaid) env.
         let pushed_caller = cc.uses_callframe;
         if pushed_caller {
-            self.push_caller_env();
+            self.push_caller_env_in_call_frame();
         }
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller so the `self`/`?CLASS`/param/attr

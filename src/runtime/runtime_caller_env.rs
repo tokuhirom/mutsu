@@ -6,59 +6,101 @@ impl Interpreter {
         self.push_caller_env_with_code(None);
     }
 
-    /// Record the light frame that just bound its parameters, when a reader of
-    /// the immediate caller's frame exists and the parameters were not all
-    /// mirrored into `env`: [`Self::mirror_light_caller_params`] needs it.
-    // Cost: O(1).
-    #[inline]
-    pub(crate) fn note_unmirrored_params(
-        &mut self,
-        code: &std::sync::Arc<crate::opcode::CompiledCode>,
-        params_mirrored: bool,
-    ) {
-        if !params_mirrored && crate::opcode::caller_frame_read_possible() {
-            self.locals
-                .note_unmirrored(self.caller_env_stack.len(), code);
+    /// Copy the slot-only locals of the frame that is making this call (returned, for the `caller_env_stack` / `callframe_stack` entries pushed right
+    /// after), so a by-name read of the immediate caller (`CALLER::<$x>`, `CALLER::`, `callframe`)
+    /// sees them although no store mirrored them into `env` (#14337, #15048).
+    ///
+    /// `caller_code` is the address of the calling frame's live `CompiledCode`
+    /// and `caller_base` the base of its slot window (`VmCallFrame::caller_code`
+    /// / `saved_locals_base` for a call that already opened its frame, else the
+    /// executing frame). Nothing is copied when the caller's chunk mirrors every
+    /// store anyway. The entries hold them in a scoped overlay, so the flush
+    /// costs O(k) in the copied locals, never a copy of the whole env.
+    // Cost: O(k), k = the calling frame's slot-only locals; O(1) when none exist.
+    fn flush_calling_frame_slots(
+        &self,
+        caller_code: usize,
+        caller_base: usize,
+    ) -> Vec<(crate::symbol::Symbol, Value)> {
+        if caller_code == 0 {
+            return Vec::new();
         }
-    }
-
-    /// Copy the slot-only parameters of the light frame that is making this call
-    /// into the `caller_env_stack` / `callframe_stack` entries just pushed, so a
-    /// by-name read of the immediate caller (`CALLER::<$x>`, `CALLER::`) sees
-    /// them. Does nothing when the calling frame is not a light frame that
-    /// skipped its parameters' env write (#14337).
-    // Cost: O(p), p = the calling frame's parameters.
-    fn mirror_light_caller_params(&mut self) {
-        let pushed = self.caller_env_stack.len();
-        let Some(frame) = pushed
-            .checked_sub(1)
-            .and_then(|before| self.locals.unmirrored_at(before))
-        else {
-            return;
-        };
-        let code = frame.code.clone();
-        let base = frame.base;
+        // SAFETY: `caller_code` is the address of the calling frame's
+        // `CompiledCode`, which stays alive while the frame waits for this call to
+        // return (see `VmCallFrame::caller_code`, `Interpreter::running_code`).
+        let code = unsafe { &*(caller_code as *const crate::opcode::CompiledCode) };
+        if code.mirrors_all_params() {
+            return Vec::new();
+        }
+        let mut flushed: Vec<(crate::symbol::Symbol, Value)> = Vec::new();
         for (slot, sym) in code.locals_sym.iter().enumerate() {
-            if !code.param_locals.contains(sym)
-                || code.needs_env_sync.get(slot).copied().unwrap_or(true)
-            {
+            if code.needs_env_sync.get(slot).copied().unwrap_or(true) {
                 continue;
             }
-            let Some(value) = self.locals.absolute_slot(base + slot).cloned() else {
-                continue;
+            let Some(value) = self.locals.absolute_slot(caller_base + slot) else {
+                break;
             };
-            if let Some(env) = self.caller_env_stack.last_mut() {
-                env.insert_sym(*sym, value.clone());
+            // A slot nothing has written yet is a declaration still to come: by
+            // name it must not hide an outer variable of the same name.
+            if value.is_nil() {
+                continue;
             }
-            if let Some(entry) = self.callframe_stack.last_mut() {
-                entry.env.insert_sym(*sym, value);
+            // Only the names a store would have mirrored: plain user variables.
+            // `self`, `?CLASS`, `$_`, `$!`, `$/` and the internal keys are the
+            // frame's own state, and an env key by their name would mislead the
+            // readers that look those up env-first (ADR-14792).
+            if !sym.with_str(|name| {
+                name != "self" && crate::opcode::is_plain_user_var_name(name)
+            }) {
+                continue;
             }
+            flushed.push((*sym, value.clone()));
         }
+        flushed
     }
 
     /// Push caller env with an explicit code (Sub) value for the current frame.
     pub(crate) fn push_caller_env_with_code(&mut self, code: Option<Value>) {
-        self.caller_env_stack.push(self.env.clone());
+        let frame = (self.current_code, self.locals.base());
+        let flushed = if crate::opcode::caller_frame_read_possible() {
+            self.flush_calling_frame_slots(frame.0, frame.1)
+        } else {
+            Vec::new()
+        };
+        self.push_caller_env_entry(code, flushed, frame);
+    }
+
+    /// [`Self::push_caller_env`] for a call whose callee frame is already open:
+    /// the calling frame is the one `caller_code` / `caller_base` name (the
+    /// callee's `VmCallFrame`), not the executing top of the slot stack.
+    pub(crate) fn push_caller_env_of_frame(&mut self, caller_code: usize, caller_base: usize) {
+        let flushed = if crate::opcode::caller_frame_read_possible() {
+            self.flush_calling_frame_slots(caller_code, caller_base)
+        } else {
+            Vec::new()
+        };
+        self.push_caller_env_entry(None, flushed, (caller_code, caller_base));
+    }
+
+    fn push_caller_env_entry(
+        &mut self,
+        code: Option<Value>,
+        flushed: Vec<(crate::symbol::Symbol, Value)>,
+        frame: (usize, usize),
+    ) {
+        // The flushed locals sit in a scoped overlay on the entries' env, never
+        // on the live env: a callee or closure resolving a free name through the
+        // live chain must not meet the caller's variables there.
+        let entry_env = if flushed.is_empty() {
+            self.env.clone()
+        } else {
+            let mut env = Env::scoped_child(self.env.clone());
+            for (sym, value) in &flushed {
+                env.insert_sym(*sym, value.clone());
+            }
+            env
+        };
+        self.caller_env_stack.push(entry_env.clone());
         // The entry describes the frame this call is being made *from*, so its
         // file is the file the currently-executing routine was defined in.
         let file = self.executing_source_file().unwrap_or_default();
@@ -70,15 +112,20 @@ impl Interpreter {
             file,
             line,
             code,
-            env: self.env.clone(),
+            env: entry_env,
             package: self.current_package_sym(),
             routine: self.routine_stack.last().copied(),
             synthetic: false,
             routine_depth: self.routine_stack.len(),
+            flushed_frame: (!flushed.is_empty()).then_some(frame),
+            flushed,
         });
-        if crate::opcode::caller_frame_read_possible() {
-            self.mirror_light_caller_params();
-        }
+    }
+
+    /// Depth of the `callframe_stack`.
+    // Cost: O(1).
+    pub(crate) fn callframe_stack_len(&self) -> usize {
+        self.callframe_stack.len()
     }
 
     pub(crate) fn pop_caller_env(&mut self) {
@@ -142,6 +189,8 @@ impl Interpreter {
                 routine: None,
                 synthetic: true,
                 routine_depth: self.routine_stack.len(),
+                flushed: Vec::new(),
+                flushed_frame: None,
             });
         }
     }

@@ -301,6 +301,9 @@ pub(crate) struct ModuleState {
     /// its routines need this metadata after the load has finished in order to
     /// resolve the module's own imported aliases lexically.
     pub(crate) unit_module_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
+    /// The last answer of `Interpreter::lexical_package_for_frame`, valid while
+    /// the unit-scope epoch is unchanged (#15048).
+    pub(crate) lexical_package_memo: std::cell::Cell<Option<LexicalPackageMemo>>,
     /// Declared unit package by requested module path. A module file may be
     /// loaded as `A::B` while declaring `unit module A::C`.
     pub(crate) module_declared_unit_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
@@ -616,7 +619,7 @@ pub(crate) struct ModuleState {
     /// reach must see it. Populated at export-symbol installation; checked
     /// cheaply (guarded by `is_empty()`) on each call. Never removed, mirroring
     /// `amp_param_shadowed_names`.
-    pub(crate) export_amp_override_names: std::collections::HashSet<Symbol>,
+    pub(crate) export_amp_override_names: rustc_hash::FxHashSet<Symbol>,
     /// The `&name` callables a `sub EXPORT` map handed to each compunit, keyed
     /// by the (importing file, bare name). `env` holds one `&name` slot for
     /// the whole program, so a second import of the same name (the script
@@ -639,6 +642,18 @@ pub(crate) struct ModuleState {
     /// Populated at export-symbol installation and never removed, mirroring
     /// `export_amp_override_names`.
     pub(crate) export_term_override_names: std::collections::HashSet<Symbol>,
+}
+
+/// One memoised `lexical_package_for_frame` answer: the question
+/// (`def_file`, the ambient unit) and the unit-scope epoch it was computed under.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LexicalPackageMemo {
+    pub(crate) epoch: u64,
+    pub(crate) def_file: Option<Symbol>,
+    /// The running unit, recorded only when `def_file` is `None` (a frame with
+    /// no file starts its walk there).
+    pub(crate) ambient_unit: Option<Symbol>,
+    pub(crate) package: Option<Symbol>,
 }
 
 impl ModuleState {
@@ -692,6 +707,7 @@ impl ModuleState {
             module_imported_lexical_names: std::sync::Arc::new(PackageKeyed::default()),
             module_source_packages: Default::default(),
             unit_module_packages: Default::default(),
+            lexical_package_memo: std::cell::Cell::new(None),
             module_declared_unit_packages: Default::default(),
             exported_subs: Default::default(),
             exported_sub_values: Default::default(),
@@ -739,7 +755,7 @@ impl ModuleState {
             precomp_enabled: crate::precomp::enabled_by_default(),
             monkey_typing: false,
             imported_compiled_fns: HashMap::new(),
-            export_amp_override_names: std::collections::HashSet::new(),
+            export_amp_override_names: Default::default(),
             unit_imported_callables: std::collections::HashMap::new(),
             export_term_override_names: std::collections::HashSet::new(),
         }
@@ -798,6 +814,7 @@ impl ModuleState {
             module_imported_lexical_names: self.module_imported_lexical_names.clone(),
             module_source_packages: self.module_source_packages.clone(),
             unit_module_packages: self.unit_module_packages.clone(),
+            lexical_package_memo: std::cell::Cell::new(None),
             module_declared_unit_packages: self.module_declared_unit_packages.clone(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),

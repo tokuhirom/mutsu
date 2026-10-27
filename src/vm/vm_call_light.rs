@@ -252,6 +252,10 @@ impl Interpreter {
                     too_many,
                 );
                 self.stack.truncate(args_base);
+                // A slot-only parameter that was not mirrored into `env` is not recorded
+                // here: a reader of this frame by name is reached through
+                // `push_caller_env`, which copies the live frame's slot-only locals,
+                // parameters included, when the call is made (#15048).
                 return Err(err);
             }
         }
@@ -867,7 +871,6 @@ impl Interpreter {
         // body runs with the same stack depth the caller's drain used to leave
         // behind. Every early return above truncates for the same reason.
         self.stack.truncate(args_base);
-        self.note_unmirrored_params(&cf.code, write_all_params);
         // Bind-time param values that a name-based reader can observe were
         // already written into the (born-owned) overlay env above when
         // `needs_env` held. A slot-only param (read solely via GetLocal) never
