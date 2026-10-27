@@ -98,10 +98,20 @@ impl Interpreter {
             // operand that is itself a product stays one nested column
             // (`(A X B) X C` yields `((a, b), c)`), unlike a pairwise fold
             // that would extend the left operand's rows.
-            let mut columns = Vec::with_capacity(call_args.len());
+            let mut operands = Vec::with_capacity(call_args.len());
             for arg in &call_args {
-                let arg = self.fetch_proxy_for_store(Self::unwrap_var_ref_value(arg.clone()))?;
-                columns.push(crate::runtime::Interpreter::value_to_list(&arg));
+                operands
+                    .push(self.fetch_proxy_for_store(Self::unwrap_var_ref_value(arg.clone()))?);
+            }
+            // An infinite operand makes the product a lazy stage, as for the
+            // meta-operator form.
+            let combine = Self::meta_row_combine(Symbol::intern(""), false);
+            if let Some(pipe) = Self::lazy_cross_pipe(&operands, combine) {
+                return Ok(pipe);
+            }
+            let mut columns = Vec::with_capacity(operands.len());
+            for operand in &operands {
+                columns.push(self.cross_operand_list(operand)?);
             }
             return Ok(Value::seq(
                 crate::builtins::cross_product::cross_product_rows(&columns, false),

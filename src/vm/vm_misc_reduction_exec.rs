@@ -188,6 +188,30 @@ impl Interpreter {
             }
             return Ok(());
         }
+        // `[X] a, b, c` / `[Z] a, b, c` is the one list-associative call
+        // `a X b X c`: hand the operands to it, so a lazy or gather operand,
+        // an infinite one and a user `infix:<X>` behave as they do there.
+        if matches!(base_op, "X" | "Z")
+            && !scan
+            && !negate
+            && op_callable.is_none()
+            && list.len() >= 2
+        {
+            let kind = if base_op == "X" {
+                crate::compiled_operator::MetaKind::Cross
+            } else {
+                crate::compiled_operator::MetaKind::Zip
+            };
+            let count = list.len() as u32;
+            // A plain gather or deferred `.map` operand is read whole by the
+            // product, as when it is written between two infixes.
+            for operand in &list {
+                self.reify_gather_seq(operand)?;
+                self.reify_map_grep_seq(operand)?;
+            }
+            self.stack.extend(list);
+            return self.exec_meta_op_nary(kind, Symbol::intern(""), count);
+        }
         let mut callable = match op_callable {
             Some(callable) => Some(callable),
             None => self.reduction_callable_for_op(base_op, Some(code)),
