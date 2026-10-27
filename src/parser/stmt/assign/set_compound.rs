@@ -90,6 +90,7 @@ pub(crate) fn build_set_compound_assign_expr(expr: Expr, set_tok: TokenKind, rhs
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
                 where_constraint: None,
             },
             Stmt::Expr(Expr::IndexAssign {

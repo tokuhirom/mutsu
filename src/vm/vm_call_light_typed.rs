@@ -529,6 +529,7 @@ impl Interpreter {
         // The binding is done: the call site's `static_arg_types` must not
         // reach a call the body makes through a route that publishes none.
         self.static_call_args = false;
+        self.note_unmirrored_params(&cf.code, write_all_params);
 
         // Mark parameters as readonly (eligibility excludes `is rw/copy/raw`
         // traits, so every param is immutable).

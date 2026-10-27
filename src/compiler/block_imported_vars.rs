@@ -198,13 +198,11 @@ impl Compiler {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
-                custom_traits: vec![
-                    ("__has_initializer".to_string(), None),
-                    (
-                        crate::ast::sigilless_decl::SIGILLESS_DECL.to_string(),
-                        Some(Expr::Literal(Value::FALSE)),
-                    ),
-                ],
+                custom_traits: vec![(
+                    crate::ast::sigilless_decl::SIGILLESS_DECL.to_string(),
+                    Some(Expr::Literal(Value::FALSE)),
+                )],
+                has_initializer: true,
                 where_constraint: None,
             };
             return Some(Stmt::SyntheticBlock(vec![
@@ -232,6 +230,7 @@ impl Compiler {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits,
+            has_initializer: false,
             where_constraint: None,
         }))
     }
@@ -376,6 +375,7 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
                 where_constraint: None,
             };
             return Some(Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl]));

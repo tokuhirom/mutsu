@@ -11,7 +11,7 @@
 //! ```
 //!
 //! The parser keeps a declaration's traits in source order as
-//! `VarDecl.custom_traits` (beside its `__has_initializer` marker), so the list
+//! `VarDecl.custom_traits`, so the list
 //! renders in that order.
 //!
 //! `my %h is SetHash` is `Trait::Is(type => Type::Simple(SetHash))`: rakudo

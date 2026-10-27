@@ -1268,12 +1268,12 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         export_tags,
         custom_traits: vec![
             ("__constant".to_string(), None),
-            ("__has_initializer".to_string(), None),
             (
                 "__constant_sigil".to_string(),
                 Some(Expr::Literal(Value::str_from(sigil))),
             ),
         ],
+        has_initializer: true,
         where_constraint: None,
     })
 }
@@ -3273,9 +3273,6 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         Some(dims) => crate::ast::shaped_decl::new_expr(dims),
         None => expr,
     };
-    if has_initializer {
-        custom_traits.push(("__has_initializer".to_string(), None));
-    }
     // `:=`: the same declaration the parser builds, expanded by the same
     // function (`ast::bind_decl`). A natively typed scalar cannot be bound;
     // the parser rejects it, and this path stays the boundary for it.
@@ -3301,6 +3298,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 is_export,
                 export_tags: export_tags.clone(),
                 custom_traits,
+                has_initializer,
                 where_constraint,
             }),
         ));
@@ -3316,6 +3314,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_export,
         export_tags,
         custom_traits,
+        has_initializer,
         where_constraint,
     })
 }

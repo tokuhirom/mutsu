@@ -471,6 +471,7 @@ impl Compiler {
                         is_dynamic: ast_is_dynamic,
                         type_constraint,
                         custom_traits,
+                        has_initializer,
                         ..
                     } => {
                         // my $x = expr in block-final position: declare and return value
@@ -542,6 +543,7 @@ impl Compiler {
                                 expr,
                                 type_constraint.as_deref(),
                                 custom_traits,
+                                *has_initializer,
                             ) {
                                 // Block-final uninitialized untyped scalar:
                                 // seed and yield the Any type object

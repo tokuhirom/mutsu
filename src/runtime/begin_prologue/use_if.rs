@@ -46,7 +46,8 @@ pub(super) fn if_condition_check(condition: Expr, slot: &str) -> Vec<Stmt> {
             is_dynamic: false,
             is_export: false,
             export_tags: vec![],
-            custom_traits: vec![("__has_initializer".to_string(), None)],
+            custom_traits: Vec::new(),
+            has_initializer: true,
             where_constraint: None,
         },
         Stmt::If {

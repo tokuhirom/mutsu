@@ -343,6 +343,7 @@ impl Interpreter {
                 crate::opcode::replay_compile_latches(
                     latches.reflective_name_access,
                     latches.non_eval_reflective,
+                    latches.caller_frame_read,
                     latches.dispatcher,
                 );
                 if verify_enabled() {
@@ -380,6 +381,7 @@ impl Interpreter {
                     let latches = CompileLatches {
                         reflective_name_access: crate::opcode::reflective_name_access_possible(),
                         non_eval_reflective: crate::opcode::non_eval_reflective_possible(),
+                        caller_frame_read: crate::opcode::caller_frame_read_possible(),
                         dispatcher: crate::opcode::dispatcher_possible(),
                     };
                     crate::precomp::bytecode::save_code_entry(

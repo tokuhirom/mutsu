@@ -283,6 +283,7 @@ fn walk_var_decl(stmt: &mut Stmt, check_self: bool, ctx: &mut Ctx) {
         is_export: _,
         export_tags: _,
         custom_traits,
+        has_initializer: _,
         where_constraint,
     } = stmt
     else {

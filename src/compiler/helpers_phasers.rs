@@ -266,6 +266,7 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
                 where_constraint: None,
             },
             Stmt::VarDecl {
@@ -279,6 +280,7 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
                 where_constraint: None,
             },
         ];
@@ -294,6 +296,7 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
                 where_constraint: None,
             });
         }
@@ -309,6 +312,7 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
                 where_constraint: None,
             });
         }
@@ -324,6 +328,7 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
                 where_constraint: None,
             });
         }
@@ -339,6 +344,7 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
                 where_constraint: None,
             });
         }
@@ -427,6 +433,7 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
                 where_constraint: None,
             });
         }
@@ -647,6 +654,7 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
                 where_constraint: None,
             }];
             hoisted.push(Stmt::Phaser {

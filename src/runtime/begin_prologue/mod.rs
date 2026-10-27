@@ -421,6 +421,7 @@ fn static_bind_decl(name: &str, type_constraint: Option<String>, is_dynamic: boo
         is_export: false,
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
+        has_initializer: false,
         where_constraint: None,
     }
 }

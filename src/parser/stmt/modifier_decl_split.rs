@@ -144,6 +144,7 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
         is_export,
         export_tags,
         custom_traits,
+        has_initializer,
         where_constraint,
     } = stmt
     else {
@@ -171,7 +172,7 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
     // A `:=` declaration (`my $x := EXPR with $t`) carries its bound
     // expression the way an `=` one carries its initializer.
     let is_bind = custom_traits.iter().any(|(n, _)| n == "__scalar_bind");
-    let has_init = is_bind || custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+    let has_init = is_bind || *has_initializer;
     let decl = Stmt::VarDecl {
         anonymous: *anonymous,
         name: name.clone(),
@@ -184,9 +185,10 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
         export_tags: export_tags.clone(),
         custom_traits: custom_traits
             .iter()
-            .filter(|(n, _)| n != "__has_initializer" && n != "__scalar_bind")
+            .filter(|(n, _)| n != "__scalar_bind")
             .cloned()
             .collect(),
+        has_initializer: false,
         where_constraint: where_constraint.clone(),
     };
     if !has_init {
@@ -378,6 +380,7 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, Runtim
                     is_export: false,
                     export_tags: Vec::new(),
                     custom_traits,
+                    has_initializer: false,
                     where_constraint: None,
                 });
             }

@@ -77,7 +77,8 @@ pub(super) fn lower_expansion(
         is_dynamic,
         is_export,
         export_tags,
-        mut custom_traits,
+        custom_traits,
+        has_initializer,
         where_constraint,
     } = declaration
     else {
@@ -85,14 +86,12 @@ pub(super) fn lower_expansion(
     };
     // The role is mixed into the fresh container, then the initializer is
     // assigned: the declaration itself carries none.
-    let has_initializer = custom_traits.iter().any(|(t, _)| t == "__has_initializer");
     if custom_traits
         .iter()
         .any(|(t, _)| t == crate::ast::shaped_decl::SHAPED_DECL)
     {
         return Err(unsupported(node));
     }
-    custom_traits.retain(|(t, _)| t != "__has_initializer");
     let (default, init) = if has_initializer {
         let default = match name.chars().next() {
             Some('@') => Expr::Literal(Value::real_array(Vec::new())),
@@ -121,6 +120,7 @@ pub(super) fn lower_expansion(
         is_export,
         export_tags,
         custom_traits,
+        has_initializer: false,
         where_constraint,
     };
     Ok(crate::ast::var_does::expand(
