@@ -252,6 +252,10 @@ impl Interpreter {
                     too_many,
                 );
                 self.stack.truncate(args_base);
+        // A slot-only parameter that was not mirrored into `env` is not recorded
+        // here: a reader of this frame by name is reached through
+        // `push_caller_env`, which copies the live frame's slot-only locals,
+        // parameters included, when the call is made (#15048).
                 return Err(err);
             }
         }
