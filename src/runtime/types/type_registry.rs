@@ -511,13 +511,17 @@ impl Interpreter {
         // A sigil-less `constant Bar = Foo::Bar` alias lives in the term
         // namespace (#9962) and is consulted first.
         if !crate::env::is_magic_sigilless_key(name) {
+            // An imported type can sit in a container cell (`use NativeCall`'s
+            // `CArray` in a module whose routine runs from a submethod), so
+            // the imported term and package alias are read through it. A
+            // lexical read stays as it is: a `::T` type capture is bound in
+            // the env as a container of the type it captured, and is not a
+            // declared type named `T`.
             let alias = self
                 .term_value(name)
-                .or_else(|| self.env.get(name))
-                .or_else(|| self.package_symbol_alias(name));
-            // An imported type can sit in a container cell (`use NativeCall`'s
-            // `CArray` in a module whose routine runs from a submethod).
-            let alias = alias.map(|v| v.deref_container());
+                .map(|v| v.deref_container())
+                .or_else(|| self.env.get(name).cloned())
+                .or_else(|| self.package_symbol_alias(name).map(|v| v.deref_container()));
             if let Some(ValueView::Package(target)) = alias.as_ref().map(Value::view) {
                 let resolved = target.resolve();
                 if resolved != name && self.has_type_direct(&resolved) {
