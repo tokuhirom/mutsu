@@ -396,7 +396,7 @@ pub(crate) struct LexicalState {
     /// name-keyed light-call caches must be bypassed for it (the slow path's
     /// `lexical_override` check resolves the correct callable). Populated at sub
     /// registration; checked cheaply (guarded by `is_empty()`) on each call.
-    pub(crate) amp_param_shadowed_names: std::collections::HashSet<Symbol>,
+    pub(crate) amp_param_shadowed_names: rustc_hash::FxHashSet<Symbol>,
     /// Frame-lexical routines (ADR-0113) whose definition this interpreter
     /// has derived, keyed by the compile-time identity both their
     /// declaration and their call sites carry. A declaration derives its
@@ -484,7 +484,7 @@ impl LexicalState {
             readonly_rw_tail: None,
             state_scope_id: Box::new(std::cell::Cell::new(None)),
             pending_nested_state_scope: None,
-            amp_param_shadowed_names: std::collections::HashSet::new(),
+            amp_param_shadowed_names: Default::default(),
             frame_lexical_routines: Default::default(),
             frame_lexical_closure_bodies: Default::default(),
             block_declared_vars: crate::runtime::ScopeStack::new(),
@@ -554,7 +554,7 @@ impl LexicalState {
             readonly_rw_tail: None,
             state_scope_id: Box::new(std::cell::Cell::new(None)),
             pending_nested_state_scope: None,
-            amp_param_shadowed_names: std::collections::HashSet::new(),
+            amp_param_shadowed_names: Default::default(),
             frame_lexical_routines: Arc::clone(&self.frame_lexical_routines),
             frame_lexical_closure_bodies: Arc::clone(&self.frame_lexical_closure_bodies),
             block_declared_vars: crate::runtime::ScopeStack::new(),

@@ -619,7 +619,7 @@ pub(crate) struct ModuleState {
     /// reach must see it. Populated at export-symbol installation; checked
     /// cheaply (guarded by `is_empty()`) on each call. Never removed, mirroring
     /// `amp_param_shadowed_names`.
-    pub(crate) export_amp_override_names: std::collections::HashSet<Symbol>,
+    pub(crate) export_amp_override_names: rustc_hash::FxHashSet<Symbol>,
     /// The `&name` callables a `sub EXPORT` map handed to each compunit, keyed
     /// by the (importing file, bare name). `env` holds one `&name` slot for
     /// the whole program, so a second import of the same name (the script
@@ -753,7 +753,7 @@ impl ModuleState {
             precomp_enabled: crate::precomp::enabled_by_default(),
             monkey_typing: false,
             imported_compiled_fns: HashMap::new(),
-            export_amp_override_names: std::collections::HashSet::new(),
+            export_amp_override_names: Default::default(),
             unit_imported_callables: std::collections::HashMap::new(),
             export_term_override_names: std::collections::HashSet::new(),
         }
