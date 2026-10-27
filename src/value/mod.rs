@@ -3480,6 +3480,10 @@ pub(crate) enum PipeAdaptor {
     /// The callback is the owning spec's `func`.
     MultiMap {
         arity: usize,
+        /// How many of the `arity` positionals are required: a final chunk
+        /// shorter than `arity` still calls the callback when it covers them
+        /// (`-> $a, $b? { }` over an odd number of elements).
+        required: usize,
         /// A lazy list the callback slipped that cannot be seen to end, with
         /// the index of its next element (see `MapGrepSpec::pending_slip`).
         pending: Option<(Value, usize)>,
