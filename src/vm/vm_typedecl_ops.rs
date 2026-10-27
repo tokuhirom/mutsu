@@ -228,6 +228,7 @@ impl Interpreter {
             does_parents,
             body_parents,
             repr,
+            is_native,
             language_version,
             custom_traits,
             decl_id,
@@ -942,7 +943,12 @@ impl Interpreter {
             // `is ctype` / `is nativesize` / `is unsigned` are core traits
             // that set NativeHOW metadata; they never reach a user
             // `trait_mod:<is>` (see `runtime::native_decl`).
-            self.apply_native_type_traits(&storage_name, repr.as_deref(), custom_traits)?;
+            self.apply_native_type_traits(
+                &storage_name,
+                repr.as_deref(),
+                *is_native,
+                custom_traits,
+            )?;
             // `is array_type(T)` is core too (`runtime::array_type_trait`).
             self.apply_class_array_type_trait(&storage_name, custom_traits)?;
             // Dispatch custom `is` traits via trait_mod:<is> if defined.

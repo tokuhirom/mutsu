@@ -821,15 +821,14 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             body,
             custom_traits,
             is_unit,
+            is_native,
             implicit_grammar_parent,
             is_grammar,
             parent_args,
             body_parents,
             ..
         } => {
-            let is_native = custom_traits
-                .iter()
-                .any(|(trait_name, _)| trait_name == "__mutsu_native_decl");
+            let is_native = *is_native;
             if *is_grammar {
                 if name_expr.is_some()
                     || *class_is_rw
@@ -921,12 +920,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // A `my` class leads with `scope => "my"` (`our` is the default
             // and renders none). Unit scope, `hides`, computed names and user
             // traits carry extra RakuAST shape, deferred.
-            let visible_custom_traits: Vec<_> = custom_traits
-                .iter()
-                .filter(|(trait_name, _)| trait_name != "__mutsu_native_decl")
-                .cloned()
-                .collect();
-            if has_package_traits(&visible_custom_traits) && !is_native {
+            if has_package_traits(custom_traits) && !is_native {
                 return Err(unsupported(&format!(
                     "class with inheritance / scope / repr / traits ({})",
                     custom_traits
@@ -981,7 +975,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     hidden_parents,
                     is_rw: *class_is_rw,
                     is_hidden: *is_hidden,
-                    custom_traits: &visible_custom_traits,
+                    custom_traits,
                 },
             )?;
             if !traits.is_empty() {

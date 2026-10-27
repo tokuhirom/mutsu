@@ -98,6 +98,7 @@ impl Compiler {
                 language_version,
                 custom_traits,
                 is_unit,
+                is_native,
                 implicit_grammar_parent,
                 is_grammar,
                 decl_id,
@@ -154,6 +155,7 @@ impl Compiler {
                         traits
                     },
                     is_unit: *is_unit,
+                    is_native: *is_native,
                     implicit_grammar_parent: *implicit_grammar_parent,
                     is_grammar: *is_grammar,
                     decl_id: *decl_id,

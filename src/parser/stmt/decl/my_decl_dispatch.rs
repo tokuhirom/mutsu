@@ -240,8 +240,8 @@ pub(super) fn try_keyword_dispatch(
     if let Some(r) = keyword("native", rest) {
         let (r, _) = ws1(r)?;
         let (r, mut stmt) = class_decl_body(r, !is_our)?;
-        if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
-            custom_traits.push(("__mutsu_native_decl".to_string(), None));
+        if let Stmt::ClassDecl { is_native, .. } = &mut stmt {
+            *is_native = true;
         }
         return Ok(Some((r, stmt)));
     }

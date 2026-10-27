@@ -5758,6 +5758,8 @@ pub(crate) struct CompiledClassDeclPlan {
     /// what brings it into scope.
     pub(crate) body_parents: Vec<String>,
     pub(crate) repr: Option<String>,
+    /// Declared with the `native` declarator (`ast::Stmt::ClassDecl::is_native`).
+    pub(crate) is_native: bool,
     pub(crate) language_version: String,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
     pub(crate) decl_id: u64,
@@ -13119,6 +13121,7 @@ impl CompiledCode {
             custom_traits,
             decl_id,
             body_parents,
+            is_native,
             ..
         } = stmt
         else {
@@ -13166,6 +13169,7 @@ impl CompiledCode {
             does_parents: does_parents.clone(),
             body_parents: body_parents.clone(),
             repr: repr.clone(),
+            is_native: *is_native,
             language_version: language_version.clone(),
             custom_traits: plan_traits,
             decl_id: *decl_id,
