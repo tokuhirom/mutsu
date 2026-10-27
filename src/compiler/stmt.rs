@@ -4119,6 +4119,7 @@ impl Compiler {
                 is_raw,
                 scope,
                 custom_traits,
+                is_hidden_from_backtrace,
                 ..
             } => {
                 // A routine declared in a nested block that does not hoist its
@@ -4252,9 +4253,7 @@ impl Compiler {
                     *is_rw,
                     *is_raw,
                     is_cached,
-                    custom_traits
-                        .iter()
-                        .any(|(t, _)| t == "__hidden_from_backtrace"),
+                    *is_hidden_from_backtrace,
                     deprecated_info.clone(),
                 ) {
                     compiled_routine_keys.push(key);
@@ -4272,9 +4271,7 @@ impl Compiler {
                         *is_rw,
                         *is_raw,
                         is_cached,
-                        custom_traits
-                            .iter()
-                            .any(|(t, _)| t == "__hidden_from_backtrace"),
+                        *is_hidden_from_backtrace,
                         deprecated_info.clone(),
                     ) {
                         compiled_routine_keys.push(key);
@@ -4354,6 +4351,7 @@ impl Compiler {
                 is_export,
                 export_tags,
                 custom_traits,
+                is_hidden_from_backtrace,
                 return_type,
                 is_submethod,
                 is_my,
@@ -4412,6 +4410,7 @@ impl Compiler {
                     first.is_invocant = true;
                 }
                 let lowered = Stmt::SubDecl {
+                    is_hidden_from_backtrace: *is_hidden_from_backtrace,
                     spans: Default::default(),
                     name: *name,
                     name_expr: name_expr.clone(),

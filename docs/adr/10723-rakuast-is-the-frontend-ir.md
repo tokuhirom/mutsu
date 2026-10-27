@@ -2611,3 +2611,14 @@ and `round_trip_if_enabled`, and the two-way choice between `parse_program` and
 tree the unit runs as). The unspelled parse stays for the analyses that never execute a unit
 (`parse_program_recovering`, the LSP) and the preludes; `Stmt::Ast` carriers and `convert` stay until
 the parser builds RakuAST directly.
+
+### 6.128 `is hidden-from-backtrace` is a field of the routine declaration (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+`SubDecl`, `MethodDecl` and `ProtoDecl` gain `is_hidden_from_backtrace: bool`, set by the parser
+(`SubTraits`), by the RakuAST `lower` (`IsTraits`) and by the `MethodDecl` -> `SubDecl` lowering of a
+`my method`. The `__hidden_from_backtrace` entry of `custom_traits` is deleted: nothing stores it, the
+plan (`CompiledSubDeclPlan`), `register_*_sub_decl*`, the compiler's body compile and the proto-method
+registration take the field, and `convert`'s "internal trait" refusal no longer lists it. Deleted:
+the marker push, `routine_traits::lower_custom`'s special case, two `convert` exemptions and five
+`custom_traits.iter().any(…)` scans. `__prec` stays: it is data the parser derives from `is assoc` /
+`is tighter` and `lower` derives again through the same function, not a reconstruction.

@@ -530,6 +530,7 @@ impl Interpreter {
                 is_raw,
                 is_export,
                 is_test_assertion,
+                is_hidden_from_backtrace,
                 supersede,
                 ..
             } = stmt
@@ -563,6 +564,7 @@ impl Interpreter {
                     *is_rw,
                     *is_raw,
                     *is_test_assertion,
+                    *is_hidden_from_backtrace,
                     *supersede,
                     crate::ast::SubScope::My,
                     &[],
@@ -584,6 +586,7 @@ impl Interpreter {
                         *is_rw,
                         *is_raw,
                         *is_test_assertion,
+                        *is_hidden_from_backtrace,
                         *supersede,
                         crate::ast::SubScope::My,
                         &[],

@@ -79,6 +79,7 @@ impl Compiler {
         // source emits, from whichever frame or thread does so.
         let cc_idx = self.add_closure_code_baked(compiled, true);
         let body_idx = self.code.add_stmt(Stmt::SubDecl {
+            is_hidden_from_backtrace: false,
             spans: Default::default(),
             name: Symbol::intern(""),
             name_expr: None,

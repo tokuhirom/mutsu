@@ -2433,6 +2433,9 @@ pub(crate) enum Stmt {
         scope: SubScope,
         /// Custom `is` traits (non-builtin trait names like `me'd`) with optional argument expression
         custom_traits: Vec<(String, Option<Expr>)>,
+        /// `is hidden-from-backtrace`, a field of the declaration so that it is
+        /// not a `custom_traits` entry a user `trait_mod:<is>` could see.
+        is_hidden_from_backtrace: bool,
         /// Where the name, signature and block were written (ADR-10723
         /// Stage 2); `None` for a declaration nobody wrote.
         #[serde(default)]
@@ -3003,6 +3006,9 @@ pub(crate) enum Stmt {
         handles: Vec<HandleSpec>,
         /// Custom `is` traits (non-builtin trait names) with optional argument expression
         custom_traits: Vec<(String, Option<Expr>)>,
+        /// `is hidden-from-backtrace`, a field of the declaration so that it is
+        /// not a `custom_traits` entry a user `trait_mod:<is>` could see.
+        is_hidden_from_backtrace: bool,
         /// `is export` on the method: when a class/role is imported, exported
         /// methods are made available as their sub-form (e.g. operator subs).
         is_export: bool,
@@ -3161,6 +3167,8 @@ pub(crate) enum Stmt {
         /// do, and that needs the argument.
         #[serde(default)]
         trait_args: Vec<(String, Option<Expr>)>,
+        /// `is hidden-from-backtrace` on a `proto method`.
+        is_hidden_from_backtrace: bool,
         /// True when declared as `proto method`/`proto submethod` (inside a
         /// class/role body). Such a proto registers a method-level proto body
         /// whose `{*}` dispatches to the matching multi method candidate,

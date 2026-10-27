@@ -1878,6 +1878,7 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let handles = super::routine_source::handle_specs(&body).ok_or_else(|| unsupported(node))?;
     crate::ast::does_target::mark_does_targets(&name, &mut param_defs, &body);
     Ok(Stmt::MethodDecl {
+        is_hidden_from_backtrace: is_traits.is_hidden_from_backtrace,
         spans: Default::default(),
         value_prototype: None,
         name: crate::symbol::Symbol::intern(&name),
