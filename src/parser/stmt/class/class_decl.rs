@@ -323,15 +323,13 @@ pub(crate) fn class_decl(input: &str) -> PResult<'_, Stmt> {
 /// Parse `native` declaration: a package declarator peer to `class`/`role`,
 /// used by rakudo's `NativeCall::Types` to define native scalar types
 /// (`native long is Int is ctype<long> is repr<P6int> { }`). Parses exactly
-/// like `class`; the resulting ClassDecl carries a `__mutsu_native_decl`
-/// marker trait so a `native`-declared type can be told apart from an
-/// ordinary class if that ever matters.
+/// like `class`; the resulting ClassDecl has `is_native` set.
 pub(crate) fn native_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("native", input).ok_or_else(|| PError::expected("native declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, mut stmt) = class_decl_body(rest, false)?;
-    if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
-        custom_traits.push(("__mutsu_native_decl".to_string(), None));
+    if let Stmt::ClassDecl { is_native, .. } = &mut stmt {
+        *is_native = true;
     }
     reject_trailing_postfix(rest)?;
     Ok((rest, stmt))
@@ -554,6 +552,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         language_version: super::super::simple::current_language_version(),
         custom_traits: Vec::new(),
         is_unit: false,
+        is_native: false,
         implicit_grammar_parent: false,
         is_grammar: false,
         decl_id: crate::ast::next_class_decl_id(),
@@ -911,6 +910,7 @@ pub(crate) fn class_decl_body_opt(
         language_version: super::super::simple::current_language_version(),
         custom_traits,
         is_unit: false,
+        is_native: false,
         implicit_grammar_parent: false,
         is_grammar: false,
         decl_id: crate::ast::next_class_decl_id(),

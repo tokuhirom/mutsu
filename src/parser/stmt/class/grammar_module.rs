@@ -345,6 +345,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
         language_version: super::super::simple::current_language_version(),
         custom_traits,
         is_unit: false,
+        is_native: false,
         implicit_grammar_parent,
         is_grammar: true,
         decl_id: crate::ast::next_class_decl_id(),

@@ -153,6 +153,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
                 traits
             },
             is_unit: false,
+            is_native: false,
             implicit_grammar_parent: false,
             is_grammar: false,
             decl_id: crate::ast::next_class_decl_id(),
@@ -315,6 +316,7 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
             language_version: crate::parser::current_language_version(),
             custom_traits: colons_marker(colons, "grammar"),
             is_unit: false,
+            is_native: false,
             implicit_grammar_parent,
             is_grammar: true,
             decl_id: crate::ast::next_class_decl_id(),

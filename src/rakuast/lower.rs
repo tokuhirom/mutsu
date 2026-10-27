@@ -720,8 +720,8 @@ fn lower_comma_declarations(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeE
 // Cost: O(n + t), n = Native node fields, t = its traits.
 fn lower_native(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let mut stmt = lower_class(node)?;
-    if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
-        custom_traits.push(("__mutsu_native_decl".to_string(), None));
+    if let Stmt::ClassDecl { is_native, .. } = &mut stmt {
+        *is_native = true;
     }
     Ok(stmt)
 }
@@ -1414,6 +1414,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             custom
         },
         is_unit: head.is_unit,
+        is_native: false,
         implicit_grammar_parent: false,
         is_grammar: false,
         // Lowering is the parser's counterpart, so the declaration gets its
@@ -1595,6 +1596,7 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         language_version: crate::parser::current_language_version(),
         custom_traits: head.custom_traits(),
         is_unit: head.is_unit,
+        is_native: false,
         implicit_grammar_parent,
         is_grammar: true,
         decl_id: crate::ast::next_class_decl_id(),

@@ -25,6 +25,7 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
             language_version: _,
             custom_traits,
             is_unit: _,
+            is_native: _,
             implicit_grammar_parent: _,
             is_grammar: _,
             decl_id: _,
