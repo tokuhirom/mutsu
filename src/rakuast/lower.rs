@@ -3276,13 +3276,12 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // the parser rejects it, and this path stays the boundary for it.
     if is_binding {
         let bound_name = name.clone();
-        if crate::ast::bind_decl::is_scalar_bind_name(&name) {
-            if type_constraint
+        if crate::ast::bind_decl::is_scalar_bind_name(&name)
+            && type_constraint
                 .as_deref()
                 .is_some_and(crate::native_types::is_native_array_element_type)
-            {
-                return Err(unsupported(node));
-            }
+        {
+            return Err(unsupported(node));
         }
         return super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::BindDecl(
             Box::new(Stmt::VarDecl {
