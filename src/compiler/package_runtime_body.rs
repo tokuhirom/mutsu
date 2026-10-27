@@ -63,6 +63,19 @@ impl Compiler {
             .chain(our_names)
             .filter_map(|name| self.local_map.remove_entry(name))
             .collect();
+        // A `my &k` the body declares is an assignable Callable container for
+        // the body's own statements too (`&k = sub { ... }`), not a
+        // routine-name assignment, though its slot is hidden just above. Its
+        // declaration may have been compiled ahead of `body` (the prologue),
+        // so the name comes from `lexicals`, which carries the body's code
+        // variables ([`Compiler::package_body_runtime_lexical_names`]).
+        let saved_static_code_vars = self.class_body_static_code_vars.clone();
+        self.class_body_static_code_vars.extend(
+            lexicals
+                .iter()
+                .filter(|name| name.starts_with('&'))
+                .cloned(),
+        );
         for s in body {
             // A class body registered in place swallows the error of an `EVAL`
             // or `BEGIN` statement so the class still registers
@@ -81,6 +94,7 @@ impl Compiler {
                 self.compile_stmt_discarding_value(s);
             }
         }
+        self.class_body_static_code_vars = saved_static_code_vars;
         self.local_map.extend(shadowed);
         let declared: Vec<&str> = crate::ast::scope_members(body)
             .filter_map(|stmt| match stmt {
@@ -167,5 +181,27 @@ impl Compiler {
                 _ => None,
             })
             .collect()
+    }
+
+    /// The lexicals the run-time part of a split package body shares with its
+    /// declaration through the package's static store: the `my` lexicals of
+    /// [`Compiler::package_body_lexical_names`] plus its `my &code` variables,
+    /// which a method of the type calls by bare name.
+    // Cost: O(n), n = the body's top-level statements.
+    pub(crate) fn package_body_runtime_lexical_names(body: &[Stmt]) -> HashSet<String> {
+        let mut names = Self::package_body_lexical_names(body);
+        for stmt in crate::ast::scope_members(body) {
+            if let Stmt::VarDecl {
+                name,
+                is_our: false,
+                is_dynamic: false,
+                ..
+            } = stmt
+                && name.starts_with('&')
+            {
+                names.insert(name.clone());
+            }
+        }
+        names
     }
 }
