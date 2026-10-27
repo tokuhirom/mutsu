@@ -499,8 +499,30 @@ impl Interpreter {
         // like `@a.map({ $_++ })`). An infinite sequence/closure spec must stay
         // lazy — fall through to the lazy `map` pipeline in `call_method_with_values`
         // (L2b). Writeback is meaningless on an unbounded array anyway.
+        //
+        // A Proxy bound to an `@` attribute (`nqp::bindattr` of Red's
+        // relationships) is FETCHed first, and a receiver that is a user class
+        // with its own `map` (Red's `ResultSeq`) is not an array to write back
+        // into: its method answers, as it does for `$obj.map`.
+        let target = if method == "map"
+            && target_var.starts_with('@')
+            && matches!(target.view(), ValueView::Proxy { .. })
+        {
+            self.auto_fetch_proxy(&target)?
+        } else {
+            target
+        };
+        let user_map_receiver = method == "map"
+            && match target.view() {
+                ValueView::Instance { class_name, .. } => {
+                    self.has_user_method_including_role(&class_name.resolve(), "map")
+                }
+                ValueView::Mixin(..) => self.mixin_composes_method(&target, "map"),
+                _ => false,
+            };
         if method == "map"
             && target_var.starts_with('@')
+            && !user_map_receiver
             // A live gather/pipe has no eager item snapshot to put into the
             // deferred map body. Let the ordinary map dispatcher preserve
             // its lazy source instead of turning it into an empty Seq.
