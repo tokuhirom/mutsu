@@ -32,11 +32,11 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         for (_, value) in &header.adverbs {
             v.visit_expr(value);
         }
-        super::walk_stmt(v, decl);
+        v.visit_stmt(decl);
         return;
     }
     if let ParsedStmt::ImmediateCall { decl, args } = node {
-        super::walk_stmt(v, decl);
+        v.visit_stmt(decl);
         for arg in args {
             v.visit_expr(arg);
         }
@@ -46,7 +46,7 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         decl, condition, ..
     } = node
     {
-        super::walk_stmt(v, decl);
+        v.visit_stmt(decl);
         v.visit_expr(condition);
         return;
     }
@@ -56,8 +56,8 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         return;
     }
     if let ParsedStmt::InlineProtoUse { proto, use_stmt } = node {
-        super::walk_stmt(v, proto);
-        super::walk_stmt(v, use_stmt);
+        v.visit_stmt(proto);
+        v.visit_stmt(use_stmt);
         return;
     }
     if let ParsedStmt::DoneValue(value) = node {
@@ -65,7 +65,7 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         return;
     }
     if let ParsedStmt::CallAssignList { head, items } = node {
-        super::walk_stmt(v, head);
+        v.visit_stmt(head);
         for item in items {
             v.visit_expr(item);
         }
@@ -103,11 +103,11 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         return;
     }
     if let Some(stmt) = node.inner_stmt() {
-        super::walk_stmt(v, stmt);
+        v.visit_stmt(stmt);
         return;
     }
     if let ParsedStmt::DoesDecl { decl, role, init } = node {
-        super::walk_stmt(v, decl);
+        v.visit_stmt(decl);
         v.visit_expr(role);
         if let Some(init) = init {
             v.visit_expr(init);
@@ -119,17 +119,17 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         return;
     }
     if let ParsedStmt::DeclTail { head, tail } = node {
-        super::walk_stmt(v, head);
+        v.visit_stmt(head);
         v.visit_expr(tail);
         return;
     }
     if let ParsedStmt::DeclCompound { decl, source, .. } = node {
-        super::walk_stmt(v, decl);
+        v.visit_stmt(decl);
         v.visit_expr(source);
         return;
     }
     if let ParsedStmt::WillDecl { decl, phasers } = node {
-        super::walk_stmt(v, decl);
+        v.visit_stmt(decl);
         for (_, body) in phasers {
             super::walk_stmts(v, body);
         }
@@ -213,12 +213,12 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
             v.visit_expr_mut(right);
         }
         ParsedStmt::InlineProtoUse { proto, use_stmt } => {
-            super::walk_stmt_mut(v, proto);
-            super::walk_stmt_mut(v, use_stmt);
+            v.visit_stmt_mut(proto);
+            v.visit_stmt_mut(use_stmt);
         }
         ParsedStmt::DoneValue(value) => v.visit_expr_mut(value),
         ParsedStmt::CallAssignList { head, items } => {
-            super::walk_stmt_mut(v, head);
+            v.visit_stmt_mut(head);
             for item in items {
                 v.visit_expr_mut(item);
             }
@@ -243,7 +243,7 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
         }
         ParsedStmt::MethodAssignDecl(form) => walk_method_assign_decl_mut(v, form),
         ParsedStmt::ImmediateCall { decl, args } => {
-            super::walk_stmt_mut(v, decl);
+            v.visit_stmt_mut(decl);
             for arg in args {
                 v.visit_expr_mut(arg);
             }
@@ -251,11 +251,11 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
         ParsedStmt::AttributeModifier {
             decl, condition, ..
         } => {
-            super::walk_stmt_mut(v, decl);
+            v.visit_stmt_mut(decl);
             v.visit_expr_mut(condition);
         }
         ParsedStmt::DoesDecl { decl, role, init } => {
-            super::walk_stmt_mut(v, decl);
+            v.visit_stmt_mut(decl);
             v.visit_expr_mut(role);
             if let Some(init) = init {
                 v.visit_expr_mut(init);
@@ -266,18 +266,18 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
             for (_, value) in &mut header.adverbs {
                 v.visit_expr_mut(value);
             }
-            super::walk_stmt_mut(v, decl);
+            v.visit_stmt_mut(decl);
         }
         ParsedStmt::DeclTail { head, tail } => {
-            super::walk_stmt_mut(v, head);
+            v.visit_stmt_mut(head);
             v.visit_expr_mut(tail);
         }
         ParsedStmt::DeclCompound { decl, source, .. } => {
-            super::walk_stmt_mut(v, decl);
+            v.visit_stmt_mut(decl);
             v.visit_expr_mut(source);
         }
         ParsedStmt::WillDecl { decl, phasers } => {
-            super::walk_stmt_mut(v, decl);
+            v.visit_stmt_mut(decl);
             for (_, body) in phasers {
                 v.visit_stmts_mut(body);
             }
