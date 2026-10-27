@@ -97,10 +97,17 @@ impl VisitMut for Replacer<'_> {
                 // The target's `*` is the first parameter (left to right), but
                 // only when the RHS primes as well; see `count_whatever`.
                 // A compound target (`*.name ~= "!"`) primes on its own.
-                let target_primes = if is_whatever(target) {
+                // The planted scope of a lowered RakuAST tree wraps the target
+                // (`*.name`) in its own marker, which dissolves into this
+                // closure; look through it.
+                let core = match target.as_ref() {
+                    Expr::WhateverCurry(inner) => inner.as_ref(),
+                    other => other,
+                };
+                let target_primes = if is_whatever(core) {
                     crate::parser::contains_whatever(rhs)
                 } else {
-                    crate::parser::contains_whatever(target)
+                    crate::parser::contains_whatever(core)
                 };
                 if target_primes {
                     self.visit_expr_mut(target);
