@@ -2276,7 +2276,16 @@ pub fn bigrat_to_f64(n: &NumBigInt, d: &NumBigInt) -> f64 {
         0u32
     };
     let scaled = &na << shift;
-    let quotient = &scaled / &da;
+    let mut quotient = &scaled / &da;
+    // The quotient was truncated: when the division left a remainder, mark the
+    // lost bits with a sticky low bit, so the conversion below rounds the
+    // exact ratio and not a value that sits exactly on a rounding midpoint
+    // (`29849362802126903/6250000000000000` came out one ulp low). The quotient
+    // has at least 55 bits, so the sticky bit is below the 53-bit result and
+    // the guard bit.
+    if !(&scaled % &da).is_zero() {
+        quotient |= NumBigInt::from(1u8);
+    }
     let qf = quotient.to_f64().unwrap_or(f64::INFINITY);
     // Scale back: divide by 2^shift. `2.0f64.powi(-shift)` computed as a
     // single value underflows to exactly 0.0 once `shift` exceeds ~1074 (the
