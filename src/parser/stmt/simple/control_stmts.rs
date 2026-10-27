@@ -514,7 +514,7 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     // A phaser over a bare statement (`LEAVE say 1`): rakudo keeps the
     // statement as the prefix's child, which the block-less body cannot tell
     // from `LEAVE { say 1 }`. A spelling-keeping parse marks it (ADR-12199).
-    if bare && crate::ast::spelled::keeping() {
+    if bare {
         return Ok((
             rest,
             crate::parser::stmt::control::parsed_block::finish_total(

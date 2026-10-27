@@ -6,14 +6,11 @@ use crate::symbol::Symbol;
 
 static SUPPLY_EMITTER_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// `supply { BODY }`: kept in its RakuAST shape by a `.AST` parse, lowered at
-/// once to [`supply_method_call`] otherwise (ADR-10723 Stage 2, #14966).
+/// `supply { BODY }`: kept in its RakuAST shape for the conversion, which
+/// lowers it to [`supply_method_call`] (ADR-10723 Stage 2, #14966).
 // Cost: O(n), n = size of the body.
 pub(crate) fn supply_block(body: Vec<Stmt>) -> Expr {
-    if crate::ast::spelled::keeping() {
-        return Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Supply(body)));
-    }
-    supply_method_call(body)
+    Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Supply(body)))
 }
 
 pub(crate) fn supply_method_call(body: Vec<Stmt>) -> Expr {

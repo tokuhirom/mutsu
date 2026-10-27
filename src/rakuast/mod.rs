@@ -135,6 +135,7 @@ mod type_call;
 mod type_capture_indirect;
 mod type_ctor;
 mod type_lower;
+mod unspell;
 mod underscore_bindings;
 pub(crate) mod unit_source;
 mod use_origins;

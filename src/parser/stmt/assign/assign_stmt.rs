@@ -251,7 +251,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Set operator compound assignment: $s (|)= 5 → $s = $s (|) 5
-    if let Some((stripped, set_tok, spelling)) = parse_set_compound_assign_op(rest) {
+    if let Some((stripped, spelling)) = parse_set_compound_assign_op(rest) {
         let (rest, _) = ws(stripped)?;
         let (rest, rhs) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
             messages: merge_expected_messages(
@@ -262,7 +262,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             exception: None,
         })?;
         let stmt = Stmt::Expr(super::written_set_assignment(
-            var_expr, spelling, set_tok, rhs,
+            var_expr, spelling, rhs,
         ));
         return parse_statement_modifier(rest, stmt);
     }
@@ -300,20 +300,12 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         // circuit keeps the current value (see
         // `short_circuit_compound_assign_expr`).
         let plain = crate::ast::parsed::CompoundMeta::Plain;
-        if crate::ast::spelled::keeping() {
-            let (rest, expr) =
-                crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
-                    rest,
-                    super::written_compound_assignment(var_expr, op, plain, rhs)?,
-                )?;
-            return parse_statement_modifier(rest, Stmt::Expr(expr));
-        }
-        let (rest, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
-            rest,
-            super::written_compound_assignment_stmt(var_expr, op, plain, rhs)?,
-            crate::parser::stmt::word_logical_split::seed_read_expr(&name),
-        )?;
-        return parse_statement_modifier(rest, stmt);
+        let (rest, expr) =
+            crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
+                rest,
+                super::written_compound_assignment(var_expr, op, plain, rhs)?,
+            )?;
+        return parse_statement_modifier(rest, Stmt::Expr(expr));
     }
     if let Some((stripped, op_name)) = parse_custom_compound_assign_op(rest) {
         let (rest, _) = ws(stripped)?;
@@ -326,20 +318,12 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 remaining_len: err.remaining_len.or(Some(rest.len())),
                 exception: None,
             })?;
-        if crate::ast::spelled::keeping() {
-            let (rest, expr) =
-                crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
-                    rest,
-                    super::written_routine_compound_assignment(var_expr, op_name, rhs)?,
-                )?;
-            return parse_statement_modifier(rest, Stmt::Expr(expr));
-        }
-        let (rest, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
-            rest,
-            super::written_routine_compound_assignment_stmt(var_expr, op_name, rhs)?,
-            crate::parser::stmt::word_logical_split::seed_read_expr(&name),
-        )?;
-        return parse_statement_modifier(rest, stmt);
+        let (rest, expr) =
+            crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
+                rest,
+                super::written_routine_compound_assignment(var_expr, op_name, rhs)?,
+            )?;
+        return parse_statement_modifier(rest, Stmt::Expr(expr));
     }
 
     // Mutating method call: $x.=method or $x .= method(args)
@@ -579,7 +563,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 return parse_statement_modifier(r, stmt);
             }
             let (after_rhs, stmt) =
-                assignment_statement(after_rhs, written_target(&var_expr), rhs, Expr::Var(name))?;
+                assignment_statement(after_rhs, written_target(&var_expr), rhs)?;
             return parse_statement_modifier(after_rhs, stmt);
         }
 
@@ -596,8 +580,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             let stmt = Stmt::Expr(crate::ast::atomic_op::store_var(name, expr));
             return parse_statement_modifier(rest, stmt);
         }
-        let seed = crate::parser::stmt::word_logical_split::seed_read_expr(&name);
-        let (rest, stmt) = assignment_statement(rest, written_target(&var_expr), expr, seed)?;
+        let (rest, stmt) = assignment_statement(rest, written_target(&var_expr), expr)?;
         return parse_statement_modifier(rest, stmt);
     }
     // Binding (:= or ::=)
@@ -643,20 +626,13 @@ fn written_target(var_expr: &Expr) -> Expr {
 /// rakudo has, `ApplyInfix(assignment, and, …)`; any other parse runs the
 /// assignment as a statement and the tail over a re-read of `seed`.
 // Cost: O(n), n = size of the target, source and tail.
-fn assignment_statement(rest: &str, target: Expr, source: Expr, seed: Expr) -> PResult<'_, Stmt> {
-    if crate::ast::spelled::keeping() {
-        let (rest, expr) =
-            crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
-                rest,
-                super::written_assignment(target, source),
-            )?;
-        return Ok((rest, Stmt::Expr(expr)));
-    }
-    crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
-        rest,
-        super::written_assignment_stmt(target, source),
-        seed,
-    )
+fn assignment_statement(rest: &str, target: Expr, source: Expr) -> PResult<'_, Stmt> {
+    let (rest, expr) =
+        crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
+            rest,
+            super::written_assignment(target, source),
+        )?;
+    Ok((rest, Stmt::Expr(expr)))
 }
 
 /// The statement `NAME .= meth`: the topic form for `$_`, otherwise the same
@@ -666,6 +642,5 @@ fn dot_assign_stmt(name: String, method_call: Expr) -> Stmt {
     Stmt::Expr(super::written_dotty_assignment(
         crate::parser::expr::dot_assign_target(&name),
         method_call,
-        true,
     ))
 }

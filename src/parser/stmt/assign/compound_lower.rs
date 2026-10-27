@@ -141,52 +141,23 @@ fn lower_routine_statement(node: CompoundAssign) -> Result<Stmt, PError> {
 }
 
 /// `TARGET mod= SOURCE` over an infix [`is_routine_infix`] names: kept in its
-/// RakuAST shape by a `.AST` parse, lowered at once otherwise. A `.AST` parse
-/// still checks that the target takes the operator.
+/// RakuAST shape for the conversion, after checking that the target takes the
+/// operator.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn written_routine_compound_assignment(
     target: Expr,
     op: String,
     source: Expr,
 ) -> Result<Expr, PError> {
-    if crate::ast::spelled::keeping() {
-        build_custom_compound_assign_expr(target.clone(), op.clone(), source.clone())?;
-        return Ok(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(
-            CompoundAssign {
-                target,
-                op,
-                meta: CompoundMeta::Plain,
-                source,
-            },
-        ))));
-    }
-    build_custom_compound_assign_expr(target, op, source)
-}
-
-/// [`written_routine_compound_assignment`] written as a statement.
-// Cost: O(n), n = size of the target and source.
-pub(crate) fn written_routine_compound_assignment_stmt(
-    target: Expr,
-    op: String,
-    source: Expr,
-) -> Result<Stmt, PError> {
-    let node = CompoundAssign {
-        target,
-        op,
-        meta: CompoundMeta::Plain,
-        source,
-    };
-    if crate::ast::spelled::keeping() {
-        build_custom_compound_assign_expr(
-            node.target.clone(),
-            node.op.clone(),
-            node.source.clone(),
-        )?;
-        return Ok(Stmt::Expr(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(
-            node,
-        )))));
-    }
-    lower_routine_statement(node)
+    build_custom_compound_assign_expr(target.clone(), op.clone(), source.clone())?;
+    Ok(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(
+        CompoundAssign {
+            target,
+            op,
+            meta: CompoundMeta::Plain,
+            source,
+        },
+    ))))
 }
 
 /// Whether `target` is a plain variable (`$x`, `@a`, `%h`).
@@ -280,8 +251,7 @@ fn meta_assignment(node: CompoundAssign) -> Result<(String, Expr), PError> {
     ))
 }
 
-/// `VAR [X+]= SOURCE`, kept in its RakuAST shape by a `.AST` parse and
-/// lowered at once otherwise.
+/// `VAR [X+]= SOURCE`, kept in its RakuAST shape for the conversion.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn written_meta_assignment(
     target: Expr,
@@ -296,19 +266,16 @@ pub(crate) fn written_meta_assignment(
         meta: CompoundMeta::BracketedMeta(meta, depth),
         source,
     };
-    if crate::ast::spelled::keeping() {
-        // A `.AST` parse accepts the same targets the lowering does.
-        if !is_variable(&node.target) {
-            build_meta_assign_expr(
-                node.target.clone(),
-                meta.spelling().to_string(),
-                node.op.clone(),
-                node.source.clone(),
-            )?;
-        }
-        return Ok(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node))));
+    // A `.AST` parse accepts the same targets the lowering does.
+    if !is_variable(&node.target) {
+        build_meta_assign_expr(
+            node.target.clone(),
+            meta.spelling().to_string(),
+            node.op.clone(),
+            node.source.clone(),
+        )?;
     }
-    lower_compound_expression(node)
+    Ok(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node))))
 }
 
 /// [`written_meta_assignment`] written as a statement.
@@ -326,12 +293,9 @@ pub(crate) fn written_meta_assignment_stmt(
         meta: CompoundMeta::BracketedMeta(meta, depth),
         source,
     };
-    if crate::ast::spelled::keeping() {
-        return Ok(Stmt::Expr(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(
-            node,
-        )))));
-    }
-    lower_compound_statement(node)
+    Ok(Stmt::Expr(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(
+        node,
+    )))))
 }
 
 /// `TARGET R OP= SOURCE` assigns `SOURCE OP= TARGET`: the marker over the
@@ -406,48 +370,29 @@ pub(crate) fn lower_dotty_statement(node: CompoundAssign, is_term: fn(&str) -> b
     Stmt::Expr(lower_dotty(node, true, is_term))
 }
 
-/// `TARGET .= meth(args)`, kept in its RakuAST shape by a `.AST` parse and
-/// lowered at once otherwise. `call` is the method call over the target.
+/// `TARGET .= meth(args)`, kept in its RakuAST shape for the conversion. `call` is the method call over the target.
 // Cost: O(n), n = size of the target and the call.
-pub(crate) fn written_dotty_assignment(target: Expr, call: Expr, as_statement: bool) -> Expr {
+pub(crate) fn written_dotty_assignment(target: Expr, call: Expr) -> Expr {
     let node = CompoundAssign {
         target,
         op: ".".to_string(),
         meta: CompoundMeta::Dotty,
         source: call,
     };
-    if crate::ast::spelled::keeping() {
-        return Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node)));
-    }
-    lower_dotty(
-        node,
-        as_statement,
-        crate::parser::stmt::simple::is_user_declared_value_term,
-    )
+    Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node)))
 }
 
 /// `.= meth(args)` written with no target: the topic's `.=`, kept as the
-/// `Term::TopicCall` a `.AST` parse shows and lowered at once otherwise, the
-/// same way `$_ .= meth(args)` is. `call` is the method call over `$_`.
+/// `Term::TopicCall` RakuAST shows, the same way `$_ .= meth(args)` is. `call` is the method call over `$_`.
 // Cost: O(n), n = size of the call.
-pub(crate) fn written_topic_dotty_assignment(call: Expr, as_statement: bool) -> Expr {
+pub(crate) fn written_topic_dotty_assignment(call: Expr) -> Expr {
     let node = CompoundAssign {
         target: Expr::Var("_".to_string()),
         op: ".".to_string(),
         meta: CompoundMeta::TopicDotty,
         source: call,
     };
-    if crate::ast::spelled::keeping() {
-        return Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node)));
-    }
-    if !as_statement {
-        return topic_dotty_expression(node.source);
-    }
-    lower_dotty(
-        node,
-        true,
-        crate::parser::stmt::simple::is_user_declared_value_term,
-    )
+    Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node)))
 }
 
 /// The bare `.= meth` in expression position (the right side of an
@@ -482,28 +427,18 @@ fn lower_set(node: CompoundAssign) -> Result<Expr, PError> {
     ))
 }
 
-/// `TARGET (|)= SOURCE`, kept in its RakuAST shape by a `.AST` parse and
-/// lowered at once otherwise. `spelling` is the set operator as written.
+/// `TARGET (|)= SOURCE`, kept in its RakuAST shape for the conversion. `spelling` is the set operator as written.
 // Cost: O(n), n = size of the target and source.
-pub(crate) fn written_set_assignment(
-    target: Expr,
-    spelling: &str,
-    set_tok: TokenKind,
-    source: Expr,
-) -> Expr {
-    if crate::ast::spelled::keeping() {
-        return Expr::Ast(Box::new(ParsedExpr::CompoundAssign(CompoundAssign {
-            target,
-            op: spelling.to_string(),
-            meta: CompoundMeta::Set,
-            source,
-        })));
-    }
-    preserve_set_compound_assign(target, spelling, set_tok, source)
+pub(crate) fn written_set_assignment(target: Expr, spelling: &str, source: Expr) -> Expr {
+    Expr::Ast(Box::new(ParsedExpr::CompoundAssign(CompoundAssign {
+        target,
+        op: spelling.to_string(),
+        meta: CompoundMeta::Set,
+        source,
+    })))
 }
 
-/// `TARGET R OP= SOURCE`, kept in its RakuAST shape by a `.AST` parse and
-/// lowered at once otherwise. `op` is the reversed infix (`-`, or `=`).
+/// `TARGET R OP= SOURCE`, kept in its RakuAST shape for the conversion. `op` is the reversed infix (`-`, or `=`).
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn written_reverse_assignment(target: Expr, op: &str, source: Expr) -> Expr {
     let node = CompoundAssign {
@@ -512,15 +447,11 @@ pub(crate) fn written_reverse_assignment(target: Expr, op: &str, source: Expr) -
         meta: CompoundMeta::Reverse,
         source,
     };
-    if crate::ast::spelled::keeping() {
-        return Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node)));
-    }
-    lower_reverse(node)
+    Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node)))
 }
 
-/// `TARGET OP= SOURCE` in expression position: kept in its RakuAST shape by a
-/// `.AST` parse, lowered at once otherwise. A `.AST` parse still checks that
-/// the target takes the operator, so both parses accept the same programs.
+/// `TARGET OP= SOURCE` in expression position: kept in its RakuAST shape
+/// for the conversion, after checking that the target takes the operator.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn written_compound_assignment(
     target: Expr,
@@ -529,11 +460,8 @@ pub(crate) fn written_compound_assignment(
     source: Expr,
 ) -> Result<Expr, PError> {
     let node = compound_node(target, op, meta, source);
-    if crate::ast::spelled::keeping() {
-        build_compound_assign_expr(node.target.clone(), op, node.source.clone())?;
-        return Ok(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node))));
-    }
-    lower_compound_expression(node)
+    build_compound_assign_expr(node.target.clone(), op, node.source.clone())?;
+    Ok(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(node))))
 }
 
 /// `TARGET OP= SOURCE;` written as a statement, the same way.
@@ -545,13 +473,10 @@ pub(crate) fn written_compound_assignment_stmt(
     source: Expr,
 ) -> Result<Stmt, PError> {
     let node = compound_node(target, op, meta, source);
-    if crate::ast::spelled::keeping() {
-        build_compound_assign_expr(node.target.clone(), op, node.source.clone())?;
-        return Ok(Stmt::Expr(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(
-            node,
-        )))));
-    }
-    lower_compound_statement(node)
+    build_compound_assign_expr(node.target.clone(), op, node.source.clone())?;
+    Ok(Stmt::Expr(Expr::Ast(Box::new(ParsedExpr::CompoundAssign(
+        node,
+    )))))
 }
 
 // Cost: O(1).

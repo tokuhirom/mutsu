@@ -16,7 +16,7 @@ pub(crate) use expr::{
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
 pub(crate) use primary::ident::slipped_control_stmt;
-pub(crate) use primary::ident::supply_block;
+pub(crate) use primary::ident::supply_method_call;
 pub(crate) use primary::ident::{
     TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers,
 };
@@ -94,8 +94,7 @@ pub(crate) mod p6_frame_state;
 pub(crate) use stmt::decl::typed_default_expr;
 mod parse_result;
 mod primary;
-pub(crate) use primary::container::finalize_array_sections;
-pub(crate) use primary::container::finalize_paren_sections;
+pub(crate) use primary::container::{lower_array_sections, lower_paren_sections};
 mod quote_shadow;
 pub(crate) mod sink_warn;
 mod stmt;
@@ -344,7 +343,6 @@ pub(crate) fn canonical_name_colonpairs(source: &str, stem: String) -> (&str, St
 /// is the quote alone. `None` when `source` is not a sequence of colonpairs.
 // Cost: O(n), n = length of `source`.
 pub(crate) fn name_colonpair_exprs(source: &str) -> Option<Vec<crate::ast::Expr>> {
-    let _keep = crate::ast::spelled::keep_spelling(true);
     let mut rest = source;
     let mut pairs = Vec::new();
     while !rest.is_empty() {
@@ -576,9 +574,9 @@ pub(crate) fn parse_nested_block_fragment(
             language_version: stmt::simple::current_language_version(),
         });
     });
-    // A `.AST` parse of the unit keeps the block's statements in their
-    // RakuAST shape too (ADR-10723 Stage 2): the conversion reads them.
-    let result = parse_fragment_keeping(input, crate::ast::spelled::keeping());
+    // The block's statements keep their RakuAST shape like the rest of the
+    // unit's (ADR-10723 Stage 2): the conversion reads them.
+    let result = parse_fragment_spelled(input);
     // `parse_program` consumes the slot; clear it in case it bailed out first.
     INHERITED_SCOPES.with(|slot| slot.borrow_mut().take());
     if unit_offset.is_some() {
@@ -617,14 +615,14 @@ fn apply_inherited_scopes() {
 /// clears the warning buffer up front, an unguarded nested parse also *dropped*
 /// the enclosing unit's real warnings, so they are saved and restored here.
 pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    parse_fragment_keeping(input, false)
+    let (stmts, finish) = parse_fragment_spelled(input)?;
+    Ok((crate::rakuast::frontend::round_trip_unit(stmts)?, finish))
 }
 
-/// [`parse_fragment`], keeping the source spelling when `keep_spelling` is set
-/// (see [`parse_program_spelled`]).
-fn parse_fragment_keeping(
+/// [`parse_fragment`] without the round trip: the spelled tree only the RakuAST
+/// conversion may consume (see [`parse_program_spelled`]).
+pub(crate) fn parse_fragment_spelled(
     input: &str,
-    keep_spelling: bool,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // See the matching call in `parse_program`.
     crate::opcode::note_dispatcher_mention(input);
@@ -643,7 +641,7 @@ fn parse_fragment_keeping(
     // `use` then turned every later undeclared type name into a gobbled block.
     let type_index_was_incomplete = !stmt::simple::type_index_is_complete();
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(true));
-    let result = parse_program_keeping(input, keep_spelling);
+    let result = parse_program_spelled(input);
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(false));
     if type_index_was_incomplete {
         stmt::simple::note_type_index_incomplete();
@@ -1065,26 +1063,18 @@ pub(crate) fn split_finish_section(input: &str) -> (&str, Option<String>) {
 /// Parse a full program using the nom-based parser.
 /// Returns `(statements, Option<finish_content>)`.
 pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    parse_program_keeping(input, false)
+    let (stmts, finish) = parse_program_spelled(input)?;
+    Ok((crate::rakuast::frontend::round_trip_unit(stmts)?, finish))
 }
 
-/// [`parse_program`] for `.AST`: the terms that remember how they were spelled
-/// (`<a b  c>`) come back wrapped in `Expr::Spelled` (ADR-12199). Nothing but
-/// the RakuAST conversion may consume this tree: the compiler never sees a
-/// wrapper.
+/// [`parse_program`] without the round trip: the terms that remember how they
+/// were spelled (`<a b  c>`) come back wrapped in `Expr::Spelled` (ADR-12199).
+/// Nothing but the RakuAST conversion may consume this tree: the compiler never
+/// sees a wrapper.
 pub(crate) fn parse_program_spelled(
     input: &str,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    parse_program_keeping(input, true)
-}
-
-fn parse_program_keeping(
-    input: &str,
-    keep_spelling: bool,
-) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    // A parse nested inside this one (a module load) sets its own.
-    let _spelling = crate::ast::spelled::keep_spelling(keep_spelling);
-    let _origins = term_origins::begin(keep_spelling);
+    let _origins = term_origins::begin(true);
     // Re-entrant (a nested EVAL or module load parses from inside a running
     // program), which the claim-at-exit rule handles without a depth counter.
     let _region = crate::profile::enter(crate::profile::Region::Parse);
@@ -1130,19 +1120,9 @@ fn parse_program_keeping(
             // once every scope's bindings are known.
             stmt::simple::settle_core_type_fold();
             crate::whatever_curry::mark::mark_program(&mut stmts);
-            // A bare type name in a type position takes the package it is
-            // written in (ADR-12529 §2.1). `.AST` keeps the source spelling.
-            if !keep_spelling {
-                type_qualify::qualify_program(&mut stmts);
-            }
             // `use trace` hooks hold their statement's source offset until the
             // whole unit's statement attempts are known.
             stmt::trace::number_statements(&mut stmts);
-            // `nqp::p6stateinit()` and `nqp::p6takefirstflag()` read their frame,
-            // which only the whole tree can place (ADR-11505 §2.4, §2.5).
-            if !keep_spelling && p6_frame_state::mentions_op(source) {
-                p6_frame_state::lower_program(&mut stmts);
-            }
             let rest_trimmed = rest.trim();
             if !rest_trimmed.is_empty() {
                 let consumed = source.len() - rest.len();
@@ -1238,7 +1218,6 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     user_sub_names: &[String],
     user_type_names: &[String],
     user_value_term_names: &[String],
-    keep_spelling: bool,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // Set pre-seed operators before calling parse_program.
     // parse_program will call reset_user_subs, then we re-register after.
@@ -1258,7 +1237,7 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     // (EVAL / EVAL :check / throws-like code strings), so the final statement
     // is a return position, not sink context.
     set_eval_value_tail();
-    let result = parse_program_keeping(input, keep_spelling);
+    let result = parse_program_spelled(input);
     stmt::set_eval_operator_preseed(Vec::new());
     stmt::set_eval_operator_assoc_preseed(std::collections::HashMap::new());
     stmt::set_eval_user_sub_preseed(Vec::new());
@@ -1318,12 +1297,27 @@ pub(crate) fn parse_program_partial_with_operators(
 /// and by the analysis frontend, which wants the errors too: a document being
 /// edited is broken most of the time, and everything downstream of the first
 /// failure is still worth analysing (ADR-0065 S3).
+///
+/// The statements that parsed run through the RakuAST round trip like any
+/// unit's; a unit that does not round-trip yields no statements and its
+/// refusal among the errors.
 pub(crate) fn parse_program_recovering(
     input: &str,
 ) -> (Vec<Stmt>, Option<String>, Vec<RuntimeError>) {
-    // A best-effort scan of another unit (a module's exports, an analysis): its
-    // statements are never converted to RakuAST.
-    let _spelling = crate::ast::spelled::keep_spelling(false);
+    let (stmts, finish_content, mut errors) = parse_program_recovering_spelled(input);
+    match crate::rakuast::frontend::round_trip_unit(stmts) {
+        Ok(lowered) => (lowered, finish_content, errors),
+        Err(refusal) => {
+            errors.push(refusal);
+            (Vec::new(), finish_content, errors)
+        }
+    }
+}
+
+fn parse_program_recovering_spelled(
+    input: &str,
+) -> (Vec<Stmt>, Option<String>, Vec<RuntimeError>) {
+    let _origins = term_origins::begin(true);
     let memo_enabled = parse_memo_enabled();
     if memo_enabled {
         expr::reset_expression_memo();
@@ -1370,6 +1364,15 @@ pub(crate) fn parse_program_recovering(
 /// could not parse.
 pub(crate) fn parse_program_partial(input: &str) -> (Vec<Stmt>, Option<String>) {
     let (stmts, finish_content, _errors) = parse_program_recovering(input);
+    (stmts, finish_content)
+}
+
+/// [`parse_program_partial`] without the round trip, for a scan made in the
+/// middle of another unit's parse (a `use`d module's declarations): the
+/// round trip would run the lowering inside that parse, and the scan reads the
+/// declarations off the parser's own tree.
+pub(crate) fn parse_program_partial_spelled(input: &str) -> (Vec<Stmt>, Option<String>) {
+    let (stmts, finish_content, _errors) = parse_program_recovering_spelled(input);
     (stmts, finish_content)
 }
 

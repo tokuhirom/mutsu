@@ -762,7 +762,7 @@ pub(in crate::parser) use regex::parse_call_arg_list;
 // Cost: O(1) when the parse keeps no origins, O(n) otherwise, n = size of
 // `expr`.
 pub(in crate::parser) fn note_origin(input: &str, rest: &str, expr: &Expr) {
-    if crate::ast::spelled::keeping() && crate::parser::term_origins::is_new(input, rest, expr) {
+    if crate::parser::term_origins::is_new(input, rest, expr) {
         crate::parser::term_origins::note(expr, term_span(input, rest));
     }
 }

@@ -250,7 +250,6 @@ impl Interpreter {
             &user_sub_names,
             &user_type_names,
             &user_value_term_names,
-            true,
         );
         crate::parser::clear_parser_lib_paths();
         match parse_result {

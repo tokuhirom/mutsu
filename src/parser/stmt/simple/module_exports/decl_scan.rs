@@ -569,10 +569,12 @@ fn literal_marked_name(name: &str) -> String {
         let literal = marked
             .strip_prefix('(')
             .and_then(|m| m.strip_suffix(')'))
-            .and_then(|content| crate::parser::parse_fragment(content).ok())
+            .and_then(|content| crate::parser::parse_fragment_spelled(content).ok())
             .and_then(|(stmts, _)| match stmts.as_slice() {
-                [Stmt::Expr(Expr::Literal(v))]
-                | [Stmt::SetLine(..), Stmt::Expr(Expr::Literal(v))] => Some(v.to_string_value()),
+                [Stmt::Expr(e)] | [Stmt::SetLine(..), Stmt::Expr(e)] => match e.peel_parens() {
+                    Expr::Literal(v) => Some(v.to_string_value()),
+                    _ => None,
+                },
                 _ => None,
             });
         let Some(text) = literal else {

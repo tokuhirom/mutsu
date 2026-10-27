@@ -178,7 +178,32 @@ fn parse_array_element(input: &str) -> PResult<'_, Expr> {
 /// the array is flat. Otherwise each non-empty section becomes one element: a
 /// multi-item section is a sub-list, a single-item section is the bare item. A
 /// single overall section (e.g. a trailing `;`: `[1,2,3;]`) stays flat.
+///
+/// The parse keeps the sections as written ([`Spelling::ArraySections`]);
+/// [`lower_array_sections`] is the executable shape alone.
+// Cost: O(n), n = size of the sections.
 pub(crate) fn finalize_array_sections(
+    mut sections: Vec<Vec<Expr>>,
+    current: Vec<Expr>,
+    saw_semicolon: bool,
+    trailing_comma: bool,
+) -> Expr {
+    if !saw_semicolon {
+        return lower_array_sections(sections, current, false, trailing_comma);
+    }
+    if !current.is_empty() {
+        sections.push(current);
+    }
+    let source = sections.clone();
+    Expr::spelled(
+        lower_array_sections(sections, Vec::new(), true, trailing_comma),
+        || crate::ast::spelled::Spelling::ArraySections(source),
+    )
+}
+
+/// [`finalize_array_sections`] without the written sections.
+// Cost: O(n), n = size of the sections.
+pub(crate) fn lower_array_sections(
     mut sections: Vec<Vec<Expr>>,
     current: Vec<Expr>,
     saw_semicolon: bool,
@@ -190,14 +215,7 @@ pub(crate) fn finalize_array_sections(
     if !current.is_empty() {
         sections.push(current);
     }
-    let source = crate::ast::spelled::keeping().then(|| sections.clone());
-    let result = build_array_sections(sections);
-    match source {
-        Some(sections) => Expr::spelled(result, || {
-            crate::ast::spelled::Spelling::ArraySections(sections)
-        }),
-        None => result,
-    }
+    build_array_sections(sections)
 }
 
 fn build_array_sections(sections: Vec<Vec<Expr>>) -> Expr {

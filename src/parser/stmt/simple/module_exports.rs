@@ -773,7 +773,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         INLINE_MODULE_EXPORTS.with(|m| m.borrow().keys().cloned().collect());
     let skips_before = super::super::partial_parse_skips();
     let ((stmts, _), nested) =
-        nested_imports::collect(|| crate::parser::parse_program_partial(source));
+        nested_imports::collect(|| crate::parser::parse_program_partial_spelled(source));
     // A best-effort parse silently drops every statement it cannot parse — a
     // `class`/`constant` among them. The names in such a statement are missing
     // from this scan, so the importer's view of the module is partial and it

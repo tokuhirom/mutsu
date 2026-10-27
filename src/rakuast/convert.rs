@@ -4182,7 +4182,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // The interpolated code is parsed here, after the unit's own parse
             // ended: it keeps its typed nodes (a statement modifier inside a
             // `{ ... }`) the way the rest of the tree does.
-            let _spelling = crate::ast::spelled::keep_spelling(true);
             convert_expr(&crate::parser::interpolate_heredoc_content(content))
         }
         Expr::StringInterpolation(parts) => {

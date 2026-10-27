@@ -453,7 +453,7 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((r2, wrap_finished_expr(compound)));
         }
     }
-    if let Some((after_op, set_tok, spelling)) =
+    if let Some((after_op, spelling)) =
         crate::parser::stmt::assign::parse_set_compound_assign_op(r)
     {
         let (after_ws, _) = ws(after_op)?;
@@ -461,7 +461,7 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 r2,
                 wrap_finished_expr(crate::parser::stmt::assign::written_set_assignment(
-                    expr, spelling, set_tok, rhs,
+                    expr, spelling, rhs,
                 )),
             ));
         }

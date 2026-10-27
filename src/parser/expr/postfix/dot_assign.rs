@@ -688,7 +688,7 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
 // Cost: O(n), n = size of the target and the call.
 fn written_dotty(expr: Expr, call_fn: impl Fn(Expr) -> Expr) -> Expr {
     let call = call_fn(expr.clone());
-    crate::parser::stmt::assign::written_dotty_assignment(expr, call, false)
+    crate::parser::stmt::assign::written_dotty_assignment(expr, call)
 }
 
 /// `__mutsu_custom_store(VALUE)`: whether `.=` stores through the value's own

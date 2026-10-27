@@ -378,6 +378,10 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
 /// non-empty section becomes one element: a multi-item section is a sub-list,
 /// a single-item section is the bare item. A single overall section (e.g. a
 /// trailing `;`: `(1,2,3;)`) is NOT wrapped, matching Raku.
+///
+/// The parse keeps the sections as written ([`Spelling::ParenSections`]);
+/// [`lower_paren_sections`] is the executable shape alone.
+// Cost: O(n), n = size of the sections.
 pub(crate) fn finalize_paren_sections(
     mut sections: Vec<Vec<Expr>>,
     current: Vec<Expr>,
@@ -389,17 +393,30 @@ pub(crate) fn finalize_paren_sections(
     if !current.is_empty() {
         sections.push(current);
     }
-    let source = crate::ast::spelled::keeping().then(|| sections.clone());
-    let result = match sections.len() {
+    let source = sections.clone();
+    Expr::spelled(
+        lower_paren_sections(sections, Vec::new(), true),
+        || crate::ast::spelled::Spelling::ParenSections(source),
+    )
+}
+
+/// [`finalize_paren_sections`] without the written sections.
+// Cost: O(n), n = size of the sections.
+pub(crate) fn lower_paren_sections(
+    mut sections: Vec<Vec<Expr>>,
+    current: Vec<Expr>,
+    saw_semicolon: bool,
+) -> Expr {
+    if !saw_semicolon {
+        return finalize_paren_list(current);
+    }
+    if !current.is_empty() {
+        sections.push(current);
+    }
+    match sections.len() {
         0 => Expr::ArrayLiteral(Vec::new()),
         1 => build_paren_section(sections.into_iter().next().unwrap()),
         _ => Expr::ArrayLiteral(sections.into_iter().map(build_paren_section).collect()),
-    };
-    match source {
-        Some(sections) => Expr::spelled(result, || {
-            crate::ast::spelled::Spelling::ParenSections(sections)
-        }),
-        None => result,
     }
 }
 

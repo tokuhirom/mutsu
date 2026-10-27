@@ -142,27 +142,21 @@ pub(crate) enum CompoundAssignOp {
 
 mod assign_stmt;
 
-/// `TARGET = SOURCE` in expression position: kept in its RakuAST shape by a
-/// `.AST` parse, lowered at once otherwise (ADR-10723 Stage 2, #14948).
+/// `TARGET = SOURCE` in expression position: kept in its RakuAST shape
+/// for the conversion (ADR-10723 Stage 2, #14948).
 // Cost: O(n), n = size of the target and source (lowering only).
 pub(crate) fn written_assignment(target: Expr, source: Expr) -> Expr {
     let node = crate::ast::parsed::Assign::written(target, source);
-    if crate::ast::spelled::keeping() {
-        return Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(node)));
-    }
-    crate::rakuast::lower_expression_assign(node)
+    Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(node)))
 }
 
 /// `TARGET = SOURCE;` written as a statement, the same way.
 // Cost: O(n), n = size of the target and source (lowering only).
 pub(crate) fn written_assignment_stmt(target: Expr, source: Expr) -> Stmt {
     let node = crate::ast::parsed::Assign::written(target, source);
-    if crate::ast::spelled::keeping() {
-        return Stmt::Expr(Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(
-            node,
-        ))));
-    }
-    crate::rakuast::lower_statement_assign(node)
+    Stmt::Expr(Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(
+        node,
+    ))))
 }
 mod bracket;
 mod comma;
@@ -186,7 +180,7 @@ pub(crate) use compound_lower::{
     written_bracketed_meta_assignment, written_compound_assignment,
     written_compound_assignment_stmt, written_dotty_assignment, written_meta_assignment,
     written_meta_assignment_stmt, written_reverse_assignment, written_routine_compound_assignment,
-    written_routine_compound_assignment_stmt, written_set_assignment,
+    written_set_assignment,
     written_topic_dotty_assignment,
 };
 pub(in crate::parser) use try_assign::{paren_assign_rhs_is_complete, try_parse_assign_expr};
