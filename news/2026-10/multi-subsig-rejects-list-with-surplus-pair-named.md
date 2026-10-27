@@ -5,4 +5,4 @@ sub-signature (`:$arg! (*@a)`) cannot bind `(getter => &g, setter => &s)`: Rakud
 "unexpected named arguments passed (getter,setter) in sub-signature" and dispatch moves on to the next
 candidate. The multi matcher ignored the surplus Pairs and picked that candidate, so AccessorFacade's
 `is accessor-facade(getter => &g, setter => &s)` trait died with "only takes Callable arguments".
-`AccessorFacade` now loads with the named-argument forms; the rest of its suite is #15128 / #15129.
+`AccessorFacade` now loads with the named-argument forms; the rest of its suite is #15127 / #15128.
