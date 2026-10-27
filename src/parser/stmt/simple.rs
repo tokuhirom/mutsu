@@ -511,6 +511,7 @@ sub helper() { }
     #[test]
     fn statement_keeps_array_meta_assign_as_assignment() {
         let (_, stmt) = statement("@a [X+]= @b;").unwrap();
+        let stmt = crate::parser::test_lower::stmt(stmt);
         match stmt {
             Stmt::Assign { name, expr, .. } => {
                 assert_eq!(name, "@a");

@@ -845,7 +845,7 @@ mod declaration_plan_tests {
             role R does Some {
                 has $.x;
                 method m { 42 }
-                does Baz;
+                also does Baz;
                 say "hi";
             }
             "#,

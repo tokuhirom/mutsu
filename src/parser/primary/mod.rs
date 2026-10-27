@@ -973,6 +973,7 @@ mod tests {
     #[test]
     fn parse_angle_single() {
         let (rest, expr) = primary("<hello>").unwrap();
+        let expr = crate::parser::test_lower::expr(expr);
         assert_eq!(rest, "");
         assert!(
             matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(s) if s.as_str() == "hello"))
@@ -982,6 +983,7 @@ mod tests {
     #[test]
     fn parse_angle_list() {
         let (rest, expr) = primary("<a b c>").unwrap();
+        let expr = crate::parser::test_lower::expr(expr);
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::ArrayLiteral(ref items) if items.len() == 3));
     }
@@ -1221,6 +1223,7 @@ mod tests {
     fn parse_big_q_to_heredoc() {
         let src = "Q:to/END/\nhello\nEND\n";
         let (rest, expr) = primary(src).unwrap();
+        let expr = crate::parser::test_lower::expr(expr);
         assert_eq!(rest, "");
         assert!(
             matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(s) if s.as_str() == "hello\n"))
@@ -1231,6 +1234,7 @@ mod tests {
     fn parse_big_q_to_angle_heredoc() {
         let src = "Q:to<--END-->;\nhello\n--END--\n";
         let (rest, expr) = primary(src).unwrap();
+        let expr = crate::parser::test_lower::expr(expr);
         assert_eq!(rest, ";\n");
         assert!(
             matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(s) if s.as_str() == "hello\n"))
@@ -1241,6 +1245,7 @@ mod tests {
     fn parse_big_q_to_heredoc_with_indented_terminator() {
         let src = "Q:to/END/\nhello\n    END\n";
         let (rest, expr) = primary(src).unwrap();
+        let expr = crate::parser::test_lower::expr(expr);
         assert_eq!(rest, "");
         assert!(
             matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(s) if s.as_str() == "hello\n"))
@@ -1251,6 +1256,7 @@ mod tests {
     fn parse_q_to_heredoc_with_space_before_delimiter() {
         let src = "q:to /END/;\nhello\nEND\n";
         let (rest, expr) = primary(src).unwrap();
+        let expr = crate::parser::test_lower::expr(expr);
         assert_eq!(rest, ";\n");
         assert!(
             matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(s) if s.as_str() == "hello\n"))
@@ -1541,6 +1547,7 @@ mod tests {
     #[test]
     fn primary_reduction_call_style_with_parenthesized_argument() {
         let (rest, expr) = primary("is([+](^20 .grep: *.is-prime), 77)").unwrap();
+        let expr = crate::parser::test_lower::expr(expr);
         assert_eq!(rest, "");
         match expr {
             Expr::Call { name, args, .. } => {

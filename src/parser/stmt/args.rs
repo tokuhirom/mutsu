@@ -936,10 +936,14 @@ mod tests {
     fn parse_call_args_prefers_longer_expression_over_partial_assign() {
         let (rest, args) = parse_stmt_call_args("(@d = 1,3 Z 2,4), \"desc\";").unwrap();
         assert_eq!(rest, ";");
-        match &args[0] {
-            CallArg::Positional(Expr::AssignExpr { name, expr, .. }) => {
+        let CallArg::Positional(first) = &args[0] else {
+            panic!("expected a positional argument");
+        };
+        let first = crate::parser::test_lower::stmt(crate::ast::Stmt::Expr(first.clone()));
+        match &first {
+            crate::ast::Stmt::Assign { name, expr, .. } => {
                 assert_eq!(name, "@d");
-                match expr.as_ref() {
+                match expr {
                     Expr::MetaOp {
                         meta, left, right, ..
                     } => {

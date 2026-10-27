@@ -1374,6 +1374,37 @@ pub(crate) fn parse_program_partial_spelled(input: &str) -> (Vec<Stmt>, Option<S
     (stmts, finish_content)
 }
 
+/// Lowering of parser results for the tests that assert the executable shape
+/// (the tree the compiler sees) of a construct the parser keeps in its RakuAST
+/// shape.
+#[cfg(test)]
+pub(crate) mod test_lower {
+    use crate::ast::{Expr, Stmt};
+
+    // Cost: O(n), n = size of the statements.
+    pub(crate) fn stmts(stmts: Vec<Stmt>) -> Vec<Stmt> {
+        crate::rakuast::frontend::round_trip_unit(stmts).expect("the statements round-trip")
+    }
+
+    // Cost: O(n), n = size of the statement.
+    pub(crate) fn stmt(stmt: Stmt) -> Stmt {
+        let mut lowered: Vec<Stmt> = stmts(vec![stmt])
+            .into_iter()
+            .filter(|s| !matches!(s, Stmt::SetLine(..)))
+            .collect();
+        assert_eq!(lowered.len(), 1, "one statement lowers to one: {lowered:?}");
+        lowered.remove(0)
+    }
+
+    // Cost: O(n), n = size of the expression.
+    pub(crate) fn expr(expr: Expr) -> Expr {
+        match stmt(Stmt::Expr(expr)) {
+            Stmt::Expr(expr) => expr,
+            other => panic!("an expression lowers to an expression statement: {other:?}"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::parse_program;

@@ -12,6 +12,7 @@ fn comparison_requires_rhs_expression() {
 #[test]
 fn parse_strict_not_equal_operator() {
     let (rest, expr) = expression("1 !=== 2").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     match expr {
         Expr::Unary {
@@ -32,6 +33,7 @@ fn parse_strict_not_equal_operator() {
 #[test]
 fn parse_negated_comparison_meta_operators() {
     let (rest, expr) = expression("2 !== 3").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     match expr {
         Expr::Unary {
@@ -49,6 +51,7 @@ fn parse_negated_comparison_meta_operators() {
     }
 
     let (rest, expr) = expression("$a !eq $b").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     match expr {
         Expr::Unary {
@@ -69,6 +72,7 @@ fn parse_negated_comparison_meta_operators() {
 #[test]
 fn parse_container_not_equal_operator() {
     let (rest, expr) = expression("$a !=:= $b").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     match expr {
         Expr::Unary {

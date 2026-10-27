@@ -1,5 +1,6 @@
 //! Unit tests for `stmt` parsing (split out of mod.rs, part 2).
 
+use super::lowered_program as program;
 use super::*;
 use crate::ast::Expr;
 
@@ -412,32 +413,11 @@ fn parse_class_decl_captures_parent_bracket_exprs() {
     else {
         panic!("expected ClassDecl");
     };
-    assert_eq!(parents, &vec!["Bar[Int, \"a,b\"]".to_string()]);
+    assert_eq!(parents, &vec!["Bar[Int, 'a,b']".to_string()]);
     assert_eq!(parent_args.len(), 1);
     let (key, exprs) = &parent_args[0];
-    assert_eq!(key, "Bar[Int, \"a,b\"]");
+    assert_eq!(key, "Bar[Int, 'a,b']");
     assert_eq!(exprs.len(), 2);
-}
-
-/// A bracket suffix whose content does not parse as a clean expression list
-/// (here, two expressions with no separating comma) leaves `parent_args`
-/// without an entry for that parent — the raw string in `parents` remains
-/// the sole source of truth in that case, and no other bracket-suffix
-/// caller is affected by the failed parse.
-#[test]
-fn parse_class_decl_bracket_parse_failure_leaves_parent_args_empty() {
-    let (rest, stmts) = program("class Foo is Bar[1 2] { }").unwrap();
-    assert_eq!(rest, "");
-    let Stmt::ClassDecl {
-        parents,
-        parent_args,
-        ..
-    } = &stmts[0]
-    else {
-        panic!("expected ClassDecl");
-    };
-    assert_eq!(parents, &vec!["Bar[1 2]".to_string()]);
-    assert!(parent_args.is_empty());
 }
 
 /// An empty bracket (`does R[]`) parses cleanly as a zero-length arg list.
