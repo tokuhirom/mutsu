@@ -207,7 +207,9 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
         // an operand that can prime the complete read-modify-write expression.
         // The source marker is retained for RakuAST; closure construction later
         // rebuilds its execution expansion from this RHS.
-        Expr::CompoundAssign { rhs, .. } => contains_whatever(rhs) || is_wrapped_whatevercode(rhs),
+        Expr::CompoundAssign { target, rhs, .. } => {
+            contains_whatever(target) || contains_whatever(rhs) || is_wrapped_whatevercode(rhs)
+        }
         e if is_whatever(e) || matches!(e, Expr::HyperWhatever) => true,
         // Thunk barriers (`&&`, `||`, `//`, `and`, `or`, `andthen`, `orelse`,
         // `notandthen`, and the ternary) are **opaque** to the enclosing
