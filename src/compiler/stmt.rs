@@ -1191,6 +1191,7 @@ impl Compiler {
                 is_export,
                 export_tags,
                 custom_traits,
+                has_initializer,
                 where_constraint,
                 anonymous: _,
             } => {

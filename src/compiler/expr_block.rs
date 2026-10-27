@@ -188,6 +188,7 @@ impl Compiler {
                 is_dynamic: ast_is_dynamic,
                 type_constraint,
                 custom_traits,
+                has_initializer,
                 ..
             } => {
                 let anonymous_scalar = *anonymous && !name.starts_with(['@', '%', '&']);

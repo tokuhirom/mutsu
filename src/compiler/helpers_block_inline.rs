@@ -471,6 +471,7 @@ impl Compiler {
                         is_dynamic: ast_is_dynamic,
                         type_constraint,
                         custom_traits,
+                        has_initializer,
                         ..
                     } => {
                         // my $x = expr in block-final position: declare and return value
