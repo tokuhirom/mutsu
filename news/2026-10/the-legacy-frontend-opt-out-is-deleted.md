@@ -7,3 +7,5 @@ lower`. `use`d modules still compile from the parser's tree until #15074 is fixe
 module round-trip gaps found while measuring that are fixed: a `%(…)` argument of a role
 application, the `$<a=b>` back-reference spelling, a statement modifier inside a heredoc's `{…}`, and
 `also is Base` in a grammar body.
+
+The post-merge CI step that exercised it (#15060) goes with it.
