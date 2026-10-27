@@ -15,7 +15,7 @@ locks still live.
 
 History so far: #7884 → #8977 (2026-09-21, 318 comments) → #10045 (2026-09-28, 301 comments) →
 #11256 (2026-10-03, 269 comments) → #11640 (2026-10-03, 260 comments) →
-#12725 (2026-10-11, 357 comments).
+#12725 (2026-10-11, 357 comments) → #15044 (2026-10-27, 325 comments).
 Early rotations took about a week of traffic; #11256 filled up within a day, so check the count on every read.
 
 ## When to rotate
