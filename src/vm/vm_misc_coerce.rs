@@ -363,7 +363,12 @@ impl Interpreter {
                 self.stack.push(str_r);
                 return Ok(());
             }
-            if self.is_native_method(&cn, "Str") && !self.has_user_method(&cn, "Stringy") {
+            if (self.is_native_method(&cn, "Str") || self.has_user_method(&cn, "Str"))
+                && !self.has_user_method(&cn, "Stringy")
+            {
+                // `Mu.Stringy` is `self.Str`, so a user `Str` (on a subclass
+                // of `Date`, `DateTime`, ...) answers `~$obj` without a
+                // detour through the native `Stringy`.
                 let caller_code = self.current_code;
                 let str_r = self.try_compiled_method_or_interpret(val.clone(), "Str", vec![])?;
                 self.reconcile_caller_after_internal_dispatch(caller_code);
