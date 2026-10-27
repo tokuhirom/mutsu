@@ -24,8 +24,8 @@
 //!
 //! When both names are plain, `sub` conforms to `sup` exactly when `sup` is in
 //! `sub`'s set -- what `type_hierarchy_distance` answers for a type object of
-//! such a class. Every other pair takes the general walk. A hit is two name
-//! probes and one set probe; nothing is stored per pair.
+//! such a class. Every other pair takes the general walk. A hit is two table
+//! reads (indexed by symbol id) and one set probe; nothing is stored per pair.
 //!
 //! Debug builds recompute every fast answer the general way and assert the two
 //! agree, so a case the facts get wrong fails the `t/` suite.
@@ -62,7 +62,51 @@ pub(crate) struct ConformanceCache {
     scope_depth: Cell<u32>,
     /// Identifies the outermost open scope; `serial 0` is never a live scope.
     scope_serial: Cell<u32>,
-    names: RefCell<FxHashMap<Symbol, NameFacts>>,
+    names: RefCell<NameTable>,
+}
+
+/// `NameFacts` by symbol id, without hashing: `slots[id]` is `(epoch, index
+/// into facts + 1)`, live only while `epoch` is the table's current one, so
+/// dropping every fact is a counter bump.
+const MAX_SLOTS: usize = 1 << 20;
+
+#[derive(Default)]
+struct NameTable {
+    epoch: u32,
+    slots: Vec<(u32, u32)>,
+    facts: Vec<NameFacts>,
+}
+
+impl NameTable {
+    fn clear(&mut self) {
+        self.epoch = self.epoch.wrapping_add(1);
+        if self.epoch == 0 {
+            self.slots.clear();
+            self.epoch = 1;
+        }
+        self.facts.clear();
+    }
+
+    // Cost: O(1) amortised; the slot vector grows to the largest symbol id seen.
+    fn get_or_default(&mut self, sym: Symbol) -> Option<&mut NameFacts> {
+        let id = sym.raw() as usize;
+        // A name interned this late is not a declared type of a ranked
+        // candidate in any realistic program; it takes the general walk
+        // rather than growing the table without bound.
+        if id >= MAX_SLOTS {
+            return None;
+        }
+        if id >= self.slots.len() {
+            self.slots.resize(id + 1, (0, 0));
+        }
+        let (epoch, at) = self.slots[id];
+        if epoch == self.epoch && at != 0 {
+            return Some(&mut self.facts[at as usize - 1]);
+        }
+        self.facts.push(NameFacts::default());
+        self.slots[id] = (self.epoch, self.facts.len() as u32);
+        self.facts.last_mut()
+    }
 }
 
 /// While alive, per-name env facts are memoised; see the module docs. Opened
@@ -112,7 +156,7 @@ impl Interpreter {
         let serial = cache.scope_serial.get();
         // Nothing below runs user code or re-enters this cache.
         let mut names = cache.names.borrow_mut();
-        let sup_facts = names.entry(sup).or_default();
+        let sup_facts = names.get_or_default(sup)?;
         if sup_facts.sup_serial != serial {
             sup_facts.sup_ok = self.compute_conformance_sup_is_plain(sup);
             sup_facts.sup_serial = serial;
@@ -120,7 +164,7 @@ impl Interpreter {
         if !sup_facts.sup_ok {
             return None;
         }
-        let sub_facts = names.entry(sub).or_default();
+        let sub_facts = names.get_or_default(sub)?;
         if sub_facts.sub_serial != serial {
             sub_facts.sub_ok = !self.is_int_enum_type_name(&sub.resolve());
             sub_facts.sub_serial = serial;
