@@ -515,7 +515,10 @@ impl Interpreter {
                 .term_value(name)
                 .or_else(|| self.env.get(name))
                 .or_else(|| self.package_symbol_alias(name));
-            if let Some(ValueView::Package(target)) = alias.map(Value::view) {
+            // An imported type can sit in a container cell (`use NativeCall`'s
+            // `CArray` in a module whose routine runs from a submethod).
+            let alias = alias.map(|v| v.deref_container());
+            if let Some(ValueView::Package(target)) = alias.as_ref().map(Value::view) {
                 let resolved = target.resolve();
                 if resolved != name && self.has_type_direct(&resolved) {
                     return true;

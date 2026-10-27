@@ -8,31 +8,50 @@ impl Interpreter {
     /// over `Any`, so a Junction operand autothreads (all/none before
     /// any/one, as for `∈`), rather than being coerced into a one-element Set:
     /// `none(@a) ⊆ any(@b)` is a Junction of per-pair answers.
+    ///
+    /// A user `multi infix:<(<)>` (or its Texas/Unicode twin) is asked first with
+    /// the operands as written, as for the binary set operators.
     // Cost: O(e1 + e2) per threaded pair, e = elements of each operand.
     fn exec_set_compare_op(
         &mut self,
+        names: [&str; 2],
         f: fn(&mut Interpreter, Value, Value) -> Result<Value, RuntimeError>,
     ) -> Result<(), RuntimeError> {
-        let (left, right) = self.pop_set_operands()?;
+        let (left, right) = self.pop_set_operands_unwalked()?;
+        for name in names {
+            if let Some(result) = self.try_user_infix(name, &left, &right)? {
+                self.stack.push(result);
+                return Ok(());
+            }
+        }
+        let (left, right) = self.walk_set_operands(left, right)?;
         let result = self.eval_binary_with_junctions(left, right, f)?;
         self.stack.push(result);
         Ok(())
     }
 
     pub(super) fn exec_set_subset_op(&mut self) -> Result<(), RuntimeError> {
-        self.exec_set_compare_op(|_, l, r| Ok(Value::truth(Self::quant_hash_subset(&l, &r))))
+        self.exec_set_compare_op(["infix:<(<=)>", "infix:<⊆>"], |_, l, r| {
+            Ok(Value::truth(Self::quant_hash_subset(&l, &r)))
+        })
     }
 
     pub(super) fn exec_set_superset_op(&mut self) -> Result<(), RuntimeError> {
-        self.exec_set_compare_op(|_, l, r| Ok(Value::truth(Self::quant_hash_subset(&r, &l))))
+        self.exec_set_compare_op(["infix:<(>=)>", "infix:<⊇>"], |_, l, r| {
+            Ok(Value::truth(Self::quant_hash_subset(&r, &l)))
+        })
     }
 
     pub(super) fn exec_set_strict_subset_op(&mut self) -> Result<(), RuntimeError> {
-        self.exec_set_compare_op(|_, l, r| Ok(Value::truth(Self::quant_hash_strict_subset(&l, &r))))
+        self.exec_set_compare_op(["infix:<(<)>", "infix:<⊂>"], |_, l, r| {
+            Ok(Value::truth(Self::quant_hash_strict_subset(&l, &r)))
+        })
     }
 
     pub(super) fn exec_set_strict_superset_op(&mut self) -> Result<(), RuntimeError> {
-        self.exec_set_compare_op(|_, l, r| Ok(Value::truth(Self::quant_hash_strict_subset(&r, &l))))
+        self.exec_set_compare_op(["infix:<(>)>", "infix:<⊃>"], |_, l, r| {
+            Ok(Value::truth(Self::quant_hash_strict_subset(&r, &l)))
+        })
     }
 
     pub(super) fn exec_junction_any_op(&mut self) {
