@@ -1954,6 +1954,15 @@ impl Interpreter {
                 return;
             }
         }
+        // No thread publishes this write: it is the one-Symbol env insert
+        // `set_shared_var_sym` ends in, without its `value` clone and key probes.
+        if let Some(sym) = sym
+            && !self.threads.shared_vars_active
+        {
+            crate::env::note_env_key(name);
+            self.env_mut().insert_sym(sym, value);
+            return;
+        }
         loan_env!(self, set_shared_var_sym(name, sym, value));
     }
 
