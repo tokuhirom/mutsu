@@ -177,13 +177,16 @@ pub(crate) fn preloadable_module_name<'a>(
     Some(module)
 }
 
-/// A `use` of something that loads no compunit of its own. The same rule the
-/// parser's module scan uses (`module_exports::import_is_pragma_like`): a
-/// lowercase-initial name is a pragma, plus the handful of uppercase ones that
-/// are built into the VM.
+/// A `use` of something that loads no compunit of its own: the pragmas mutsu
+/// applies itself (`crate::runtime::begin_prologue::is_known_pragma_name`,
+/// `lib`) and the handful of uppercase ones built into the VM. Any other
+/// lowercase name is an ordinary module that happens to be spelled like a
+/// pragma (`use has-word`, `use vars <$x>`): its imports are lexical to the
+/// `use`, like any module's, so an `EVAL` in the importing unit's routines
+/// still sees them.
 fn is_pragma_like(module: &str) -> bool {
     if module.starts_with(|c: char| !c.is_ascii_uppercase()) {
-        return true;
+        return module == "lib" || crate::runtime::begin_prologue::is_known_pragma_name(module);
     }
     matches!(
         module,
