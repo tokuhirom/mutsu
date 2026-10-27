@@ -198,7 +198,7 @@ impl Compiler {
         custom_traits: &[(String, Option<Expr>)],
     ) -> Option<String> {
         let smiley = self.variables_pragma?;
-        if custom_traits.iter().any(|(t, _)| t == "__constant") {
+        if constant.is_some() {
             return None;
         }
         let tc = match type_constraint {

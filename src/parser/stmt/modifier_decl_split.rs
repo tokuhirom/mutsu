@@ -162,7 +162,7 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
     // modifier entirely rather than gating the initializer like a normal `my`
     // variable would: keep the original declaration (with its real
     // initializer) as-is.
-    if custom_traits.iter().any(|(n, _)| n == "__constant") {
+    if constant.is_some() {
         return Some(stmt.clone());
     }
     // Only sigil'd variables are hoistable here; a sigilless `\x` or other form
@@ -189,6 +189,7 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
             .cloned()
             .collect(),
         has_initializer: false,
+        constant: None,
         where_constraint: where_constraint.clone(),
     };
     if !has_init {
@@ -226,7 +227,7 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
 fn split_decl_for_topic_modifier(
     stmt: &Stmt,
 ) -> Result<Option<(Stmt, Option<Stmt>)>, RuntimeError> {
-    if matches!(stmt, Stmt::VarDecl { custom_traits, .. } if custom_traits.iter().any(|(n, _)| n == "__constant"))
+    if matches!(stmt, Stmt::VarDecl { custom_traits, .. } if constant.is_some())
     {
         return Ok(None);
     }
@@ -381,6 +382,7 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, Runtim
                     export_tags: Vec::new(),
                     custom_traits,
                     has_initializer: false,
+                    constant: None,
                     where_constraint: None,
                 });
             }

@@ -85,25 +85,12 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
     // Record the source sigil so the compiler can distinguish a scalar
     // `constant $x` from a sigilless `constant x` for X::Redeclaration purposes
     // (the VarDecl `name` strips the `$`, so both would otherwise collide).
-    let sigil_marker = match sigil {
-        b'$' => "$",
-        b'@' => "@",
-        b'%' => "%",
-        b'&' => "&",
-        _ => "",
-    };
-    let anonymous = !sigil_marker.is_empty() && name_input.len() - rest.len() == 1;
+    let constant = crate::ast::ConstantSigil::from_sigil(sigil);
+    let anonymous = constant != crate::ast::ConstantSigil::Term && name_input.len() - rest.len() == 1;
     // A constant always has a user-written initializer, so it is marked like
     // any other initialized declaration: `constant z = Nil` must keep its Nil
     // rather than be taken for the synthesized default (re-seeded as `Any`,
     // or — being package-scoped — loaded as a bare `our` redeclaration).
-    let constant_traits = vec![
-        ("__constant".to_string(), None),
-        (
-            "__constant_sigil".to_string(),
-            Some(Expr::Literal(Value::str(sigil_marker.to_string()))),
-        ),
-    ];
     let (mut rest, _) = ws(rest)?;
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
@@ -188,8 +175,10 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export,
                 export_tags: export_tags.clone(),
-                custom_traits: constant_traits,
+                custom_traits: Vec::new(),
+                constant: Some(constant),
                 has_initializer: true,
+                constant: None,
                 where_constraint: None,
             },
         ));
@@ -237,8 +226,10 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export,
                 export_tags: export_tags.clone(),
-                custom_traits: constant_traits,
+                custom_traits: Vec::new(),
+                constant: Some(constant),
                 has_initializer: true,
+                constant: None,
                 where_constraint: None,
             },
         ));

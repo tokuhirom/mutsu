@@ -231,7 +231,7 @@ impl Compiler {
                 // one-element list instead of the constant's real elements
                 // (found via Digest::PSHA1's SHA-1 dependency, whose `sha1-block`
                 // reduce accumulator is exactly such a constant).
-                let is_constant_decl = custom_traits.iter().any(|(t, _)| t == "__constant");
+                let is_constant_decl = constant.is_some();
                 let shadows_outer = self.enclosing_local_names.contains(name)
                     || self.local_scopes.len() >= 2
                         && self.local_scopes[..self.local_scopes.len() - 1]

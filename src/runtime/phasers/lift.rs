@@ -254,6 +254,7 @@ fn push_temp_phaser(bucket: &mut Vec<Stmt>, temp_name: String, value: Expr) {
         export_tags: vec![],
         custom_traits: vec![],
         has_initializer: false,
+        constant: None,
         where_constraint: None,
     });
     bucket.push(Stmt::Assign {

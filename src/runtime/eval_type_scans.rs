@@ -189,7 +189,7 @@ impl<'ast> Visit<'ast> for TypeDecls<'_> {
                 name,
                 custom_traits,
                 ..
-            } if custom_traits.iter().any(|(t, _)| t == "__constant")
+            } if constant.is_some()
                 && name.starts_with(|c: char| c.is_ascii_uppercase() || c.is_ascii_lowercase())
                 && !name.starts_with(['$', '@', '%', '&']) =>
             {

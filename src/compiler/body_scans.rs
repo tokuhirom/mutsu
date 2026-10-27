@@ -410,7 +410,7 @@ impl<'ast> Visit<'ast> for TypeAliasScan {
             custom_traits,
             ..
         } = stmt
-            && custom_traits.iter().any(|(t, _)| t == "__constant")
+            && constant.is_some()
             && !name.starts_with(['$', '@', '%', '&'])
         {
             self.out.push((name.clone(), target.clone()));

@@ -405,5 +405,5 @@ fn stmt_mentions_role_params(stmt: &Stmt, params: &[String]) -> bool {
 /// Whether a `VarDecl`'s traits mark it a `constant` declaration.
 // Cost: O(t), t = the declaration's traits.
 fn is_constant_decl(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits.iter().any(|(name, _)| name == "__constant")
+    constant.is_some()
 }

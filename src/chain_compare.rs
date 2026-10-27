@@ -128,6 +128,7 @@ fn build_chain_cmp_expr(
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
             has_initializer: false,
+            constant: None,
             where_constraint: None,
         },
         Stmt::Expr(Expr::Binary {

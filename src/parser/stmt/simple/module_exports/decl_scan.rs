@@ -385,7 +385,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                 // it is declared in; an exported constant may be `my`-scoped.
                 // Only one on the package spine is known to be declared when
                 // the module loads.
-                let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
+                let is_constant = constant.is_some();
                 if *is_our && is_export_stash_package(&self.package) && !name.starts_with('&') {
                     self.out.unlisted_exported_vars = true;
                 }
@@ -422,7 +422,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                         });
                 }
                 // Sigiled constants (`constant $x = 1`) are not barewords.
-                if custom_traits.iter().any(|(t, _)| t == "__constant")
+                if constant.is_some()
                     && !name.is_empty()
                     && !name.starts_with(['$', '@', '%', '&'])
                 {

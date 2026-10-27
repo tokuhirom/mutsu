@@ -118,6 +118,7 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Vec<Stmt> {
                 export_tags: form.export_tags.clone(),
                 custom_traits: form.custom_traits.clone(),
                 has_initializer: false,
+                constant: None,
                 where_constraint: form.where_constraint.clone(),
             },
             Stmt::Assign {

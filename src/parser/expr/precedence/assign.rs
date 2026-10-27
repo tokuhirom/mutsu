@@ -234,6 +234,7 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
                     export_tags,
                     custom_traits,
                     has_initializer: false,
+                    constant: None,
                     where_constraint,
                 }))
             } else {

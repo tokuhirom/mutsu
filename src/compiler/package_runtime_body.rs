@@ -145,7 +145,7 @@ impl Compiler {
                     custom_traits,
                     ..
                 } if !name.starts_with('&')
-                    && !custom_traits.iter().any(|(t, _)| t == "__constant") =>
+                    && !constant.is_some() =>
                 {
                     names.insert(name.clone());
                 }

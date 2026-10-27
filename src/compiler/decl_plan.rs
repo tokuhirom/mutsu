@@ -402,7 +402,7 @@ impl Compiler {
                     expr: Expr::BareWord(target),
                     custom_traits,
                     ..
-                } if custom_traits.iter().any(|(t, _)| t == "__constant")
+                } if constant.is_some()
                     && !name.starts_with(['$', '@', '%', '&']) =>
                 {
                     Some((name.clone(), target.clone()))

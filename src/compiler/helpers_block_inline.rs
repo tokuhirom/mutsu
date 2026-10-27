@@ -506,7 +506,7 @@ impl Compiler {
                             local_slot: None,
                             reset: if !*is_state
                                 && !*is_our
-                                && !custom_traits.iter().any(|(t, _)| t == "__constant")
+                                && !constant.is_some()
                                 && !name.starts_with('@')
                                 && !name.starts_with('%')
                             {

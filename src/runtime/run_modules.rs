@@ -2174,7 +2174,7 @@ impl Interpreter {
             // discriminate on the `__constant` trait the same way
             // `collect_unit_package_scope_names` does, rather than on a
             // scope keyword that only incidentally lines up.
-            if custom_traits.iter().any(|(t, _)| t == "__constant") {
+            if constant.is_some() {
                 continue;
             }
             // Anonymous container slots (`@__ANON_ARRAY__`/`%__ANON_HASH__`)
@@ -2339,7 +2339,7 @@ impl Interpreter {
                     // a `__constant` trait; `is_our` alone cannot tell it from an
                     // ordinary `our $x`, which is a package variable the loading
                     // scope may legitimately share.
-                    if *is_dynamic || !custom_traits.iter().any(|(t, _)| t == "__constant")
+                    if *is_dynamic || !constant.is_some()
                     {
                         continue;
                     }
@@ -2392,7 +2392,7 @@ impl Interpreter {
             else {
                 continue;
             };
-            if !custom_traits.iter().any(|(t, _)| t == "__constant")
+            if !constant.is_some()
                 || crate::qualified::is_qualified_str(name)
                 || name.contains("__ANON")
             {
@@ -2439,7 +2439,7 @@ impl Interpreter {
             else {
                 continue;
             };
-            if custom_traits.iter().any(|(t, _)| t == "__constant")
+            if constant.is_some()
                 || crate::qualified::is_qualified(crate::symbol::Symbol::intern(name))
                 || name.contains("__ANON")
             {

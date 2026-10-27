@@ -179,7 +179,7 @@ impl<'ast> Visit<'ast> for ExportedDecls<'ast> {
                 is_export: true,
                 custom_traits,
                 ..
-            } if custom_traits.iter().any(|(t, _)| t == "__constant") => {
+            } if constant.is_some() => {
                 self.found.push(stmt);
             }
             Stmt::EnumDecl {

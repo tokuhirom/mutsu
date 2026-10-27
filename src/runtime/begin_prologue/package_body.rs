@@ -240,7 +240,7 @@ fn splittable_var_decl(stmt: &Stmt) -> bool {
         && !is_dynamic
         && !is_export
         && !name.starts_with('&')
-        && !custom_traits.iter().any(|(t, _)| t == "__constant")
+        && !constant.is_some()
 }
 
 /// A statement that runs at run time in Rakudo and declares nothing.

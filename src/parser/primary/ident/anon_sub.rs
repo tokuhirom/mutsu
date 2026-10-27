@@ -289,6 +289,7 @@ pub(crate) fn bind_invocant_aliases(expr: Expr, aliases: &[(String, bool)]) -> E
                 export_tags: Vec::new(),
                 custom_traits: vec![("__scalar_bind".to_string(), None)],
                 has_initializer: false,
+                constant: None,
                 where_constraint: None,
             }
         })

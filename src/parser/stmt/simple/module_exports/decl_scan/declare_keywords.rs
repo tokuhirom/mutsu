@@ -31,7 +31,7 @@ impl DeclScan {
                             custom_traits,
                             ..
                         } = decl
-                            && custom_traits.iter().any(|(t, _)| t == "__constant")
+                            && constant.is_some()
                         {
                             self.out.supersede_keywords.push(name.clone());
                         }
@@ -45,7 +45,7 @@ impl DeclScan {
                                 expr: Expr::BareWord(how_type),
                                 custom_traits,
                                 ..
-                            } if custom_traits.iter().any(|(t, _)| t == "__constant") => {
+                            } if constant.is_some() => {
                                 self.out
                                     .declare_keywords
                                     .push((name.clone(), how_type.clone()));

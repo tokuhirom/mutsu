@@ -106,6 +106,62 @@ pub(crate) enum SubScope {
     Anon,
 }
 
+/// The sigil a `constant` declaration was written with (ADR-10723 Stage 2:
+/// a field of `Stmt::VarDecl`, not the `__constant` / `__constant_sigil`
+/// marker traits). The declaration's `name` strips a `$`, so a scalar
+/// `constant $x` and a sigilless `constant x` would otherwise collide.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    bincode::Encode,
+    bincode::Decode,
+)]
+pub(crate) enum ConstantSigil {
+    /// `constant x`: a term, stored in the term namespace.
+    Term,
+    /// `constant $x`.
+    Scalar,
+    /// `constant @x`.
+    Array,
+    /// `constant %x`.
+    Hash,
+    /// `constant &x`.
+    Code,
+}
+
+impl ConstantSigil {
+    /// The sigil of the source spelling, empty for a term.
+    // Cost: O(1).
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Term => "",
+            Self::Scalar => "$",
+            Self::Array => "@",
+            Self::Hash => "%",
+            Self::Code => "&",
+        }
+    }
+
+    /// The constant a sigil byte of the source spelling declares; any
+    /// non-sigil byte is a term.
+    // Cost: O(1).
+    pub(crate) fn from_sigil(sigil: u8) -> Self {
+        match sigil {
+            b'$' => Self::Scalar,
+            b'@' => Self::Array,
+            b'%' => Self::Hash,
+            b'&' => Self::Code,
+            _ => Self::Term,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum HandleSpec {
     /// Forward a method by name (same name on both sides).
@@ -2280,6 +2336,9 @@ pub(crate) enum Stmt {
         /// field of the declaration, not a `custom_traits` entry, so that list
         /// holds only the traits the program wrote.
         has_initializer: bool,
+        /// `Some` for a `constant` declaration, with the sigil it was written
+        /// with (a field of the declaration, not a `custom_traits` entry).
+        constant: Option<ConstantSigil>,
         /// Optional `where` constraint expression for inline subset typing
         where_constraint: Option<Box<Expr>>,
     },
@@ -3254,6 +3313,7 @@ pub(crate) fn expand_take_logical_tail(value: Expr, op: TokenKind, right: Expr) 
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
             has_initializer: false,
+            constant: None,
             where_constraint: None,
         },
         Stmt::Take(variable.clone(), false),
@@ -3711,6 +3771,7 @@ mod env_only_decl_tests {
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
             has_initializer: false,
+            constant: None,
             where_constraint: None,
         }
     }

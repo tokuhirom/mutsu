@@ -153,7 +153,7 @@ impl BlockScope {
                     custom_traits,
                     expr,
                     ..
-                } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
+                } if constant.is_some() => {
                     own.insert(name.clone(), constant_kind(expr));
                 }
                 _ => {}
@@ -345,7 +345,7 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                     custom_traits,
                     expr,
                     ..
-                } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
+                } if constant.is_some() => {
                     self.0.insert(name.clone(), constant_kind(expr));
                     if let Expr::BareWord(target) = expr {
                         self.2.push(package_alias::PackageAlias {
