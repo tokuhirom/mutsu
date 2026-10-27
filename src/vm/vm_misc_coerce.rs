@@ -97,9 +97,23 @@ impl Interpreter {
             let caller_code = self.current_code;
             let result = self.try_compiled_method_or_interpret(val.clone(), "Numeric", vec![]);
             self.reconcile_caller_after_internal_dispatch(caller_code);
-            if let Ok(result) = result {
-                self.stack.push(result);
-                return Ok(());
+            match result {
+                Ok(result) => {
+                    self.stack.push(result);
+                    return Ok(());
+                }
+                // An opaque user object (no `Cool`/`Numeric` ancestry) has no
+                // generic numeric reading to fall back to: its `.Numeric`
+                // failing (an absent method, a user `die`) is `+$obj`'s error.
+                Err(err)
+                    if matches!(val.view(), ValueView::Instance { .. })
+                        && !is_range_instance
+                        && !self.type_matches_value("Cool", &val)
+                        && !self.type_matches_value("Numeric", &val) =>
+                {
+                    return Err(err);
+                }
+                Err(_) => {}
             }
             if is_range_instance {
                 let result = self.call_method_with_values(val, "Numeric", vec![])?;

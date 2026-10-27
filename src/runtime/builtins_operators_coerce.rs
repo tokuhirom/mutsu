@@ -12,6 +12,11 @@ impl Interpreter {
         &mut self,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // An operand that arrives as the caller's variable (`&infix:<*>`'s
+        // arguments, a captured-candidate dispatcher's fallback) is read
+        // through its `VarRef` / container cell: left wrapped, an object failed
+        // every check below and numified to itself, then to 0.
+        let value = value.unwrap_varref().clone().into_deref();
         // A pure positional list (List/Array/Seq) in numeric context coerces to
         // its element count: `(1,2,3) <=> (1,2,4)` is `3 <=> 3` (Same) and
         // `(1,2,3) == (1,2,4)` is `3 == 3` (True), NOT an element-wise compare
@@ -152,9 +157,16 @@ impl Interpreter {
         {
             return Ok(bridged);
         }
-        self.call_method_with_values(value.clone(), "Numeric", vec![])
-            .or_else(|_| self.call_method_with_values(value.clone(), "Bridge", vec![]))
-            .or(Ok(value))
+        match self.call_method_with_values(value.clone(), "Numeric", vec![]) {
+            Ok(n) => Ok(n),
+            Err(numeric_err) => match self.call_method_with_values(value.clone(), "Bridge", vec![]) {
+                Ok(n) => Ok(n),
+                // A user `Numeric` that dies (or an instance that cannot
+                // numify) fails the operator, as rakudo's `.Numeric` call does.
+                Err(_) if has_numeric_method => Err(numeric_err),
+                Err(_) => Ok(value),
+            },
+        }
     }
 
     pub(super) fn build_infix_expr(op: &str, left: Value, right: Value) -> Expr {
