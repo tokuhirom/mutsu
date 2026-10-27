@@ -549,9 +549,16 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
     }
     if let Some((stripped, meta, op)) = parse_meta_compound_assign_op(r2) {
         let (rest, _) = ws(stripped)?;
-        let (rest, rhs) = match try_parse_assign_expr(rest) {
-            Ok(r) => r,
-            Err(_) => expression_no_sequence(rest)?,
+        let (rest, rhs) = if (meta == "X" || meta == "Z") && op == "=" {
+            // `X=` and `Z=` are list-assignment operators: their RHS includes
+            // the full comma list, including when this expression is nested
+            // in an initializer (`my @b = @a Z= 1, 2`).
+            parse_assign_expr_or_comma(rest)?
+        } else {
+            match try_parse_assign_expr(rest) {
+                Ok(r) => r,
+                Err(_) => expression_no_sequence(rest)?,
+            }
         };
         let name = format!("{}{}", prefix, var);
         // For scalar variables with Z-meta, fall back to plain compound assignment

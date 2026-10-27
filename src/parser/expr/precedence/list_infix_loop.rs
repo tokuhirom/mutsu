@@ -398,6 +398,19 @@ fn parse_list_infix_loop_impl<'a>(
                     } else {
                         (r, right)
                     };
+                    if op == "=" && (meta == "X" || meta == "Z") {
+                        let kind = crate::ast::parsed::BracketedMeta::from_spelling(&meta)
+                            .expect("X and Z are bracketed metaoperators");
+                        *left = crate::parser::stmt::assign::written_meta_assignment(
+                            left.clone(),
+                            kind,
+                            1,
+                            op,
+                            right,
+                        )?;
+                        rest = r;
+                        continue;
+                    }
                     *left = Expr::MetaOp {
                         meta,
                         op,
@@ -449,6 +462,32 @@ fn parse_list_infix_loop_impl<'a>(
                 &op_name,
                 rhs,
             );
+            rest = r;
+            continue;
+        }
+        // `X=` and `Z=` are assignment infixes, so their RHS is the entire
+        // comma list even when this parser is inside another expression (for
+        // example, the initializer in `my @b = @a Z= 1, 2`). Preserve the
+        // assignment node here; the statement-level path cannot see this
+        // operator when it is nested in an initializer or call argument.
+        if let Some((stripped, meta, op_name)) = parse_meta_compound_assign_op(r)
+            && (meta == "X" || meta == "Z")
+            && op_name == "="
+        {
+            let (r, _) = ws(stripped)?;
+            let (r, rhs) = parse_assign_expr_or_comma(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after meta assignment", r.len())
+            })?;
+            let kind = crate::ast::parsed::BracketedMeta::from_spelling(&meta)
+                .expect("X and Z are bracketed metaoperators");
+            *left = crate::parser::stmt::assign::written_meta_assignment(
+                left.clone(),
+                kind,
+                0,
+                op_name,
+                rhs,
+            )?;
+            *current_assoc_key = Some(format!("{meta}="));
             rest = r;
             continue;
         }
