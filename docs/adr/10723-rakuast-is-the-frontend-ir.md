@@ -2611,3 +2611,10 @@ and `round_trip_if_enabled`, and the two-way choice between `parse_program` and
 tree the unit runs as). The unspelled parse stays for the analyses that never execute a unit
 (`parse_program_recovering`, the LSP) and the preludes; `Stmt::Ast` carriers and `convert` stay until
 the parser builds RakuAST directly.
+
+The `unit class` / `unit role` / `unit grammar` forms with `:ver<>` / `:auth<>` / `:api<>` adverbs were the
+last producers of the `__MUTSU_SET_META__` desugar outside the typed header (`ParsedStmt::PackageHeader`);
+the converter refused them, which the passthrough guard hid until modules were round-tripped at the
+`convert` level. They now build the typed header around the declaration, `stmt_list` takes the header off,
+absorbs the rest of the unit into the declaration and puts the header back. Deleted:
+`package_unit_meta::{decl_adverb_meta_stmts, with_meta_stmts}` and `class_decl::meta_setter_stmt`.

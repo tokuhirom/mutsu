@@ -402,12 +402,24 @@ pub(crate) fn stmt_list_with_mode(
             // `SyntheticBlock` of `:ver`/`:auth`/`:api` metadata setters with the
             // declaration itself last. Work on the declaration and re-emit the
             // setters ahead of it.
-            let (mut meta_stmts, mut decl) = match decl0 {
+            // A parse that keeps spellings gets the typed header node around the
+            // declaration instead; it is put back around the finished one.
+            let (mut meta_stmts, mut decl, header) = match decl0 {
                 Stmt::SyntheticBlock(mut inner) => {
                     let decl = inner.pop().expect("declaration is the last element");
-                    (inner, decl)
+                    (inner, decl, None)
                 }
-                other => (Vec::new(), other),
+                Stmt::Ast(node)
+                    if matches!(*node, crate::ast::parsed::ParsedStmt::PackageHeader { .. }) =>
+                {
+                    let crate::ast::parsed::ParsedStmt::PackageHeader { decl, name, header } =
+                        *node
+                    else {
+                        unreachable!("matched a PackageHeader above");
+                    };
+                    (Vec::new(), *decl, Some((name, header)))
+                }
+                other => (Vec::new(), other, None),
             };
             let (tail_rest, mut tail_stmts) = stmt_list_with_mode(after_decl, false, emit_setline)?;
             match &mut decl {
@@ -528,7 +540,12 @@ pub(crate) fn stmt_list_with_mode(
             }
             crate::parser::decl_doc::attach_unit_stmt(r, &decl);
             stmts.append(&mut meta_stmts);
-            stmts.push(decl);
+            stmts.push(match header {
+                Some((name, header)) => {
+                    super::control::parsed_block::finish_package_header(decl, &name, header)
+                }
+                None => decl,
+            });
             return Ok((tail_rest, stmts));
         }
         // Emit source line info for deprecation tracking and error reporting.
