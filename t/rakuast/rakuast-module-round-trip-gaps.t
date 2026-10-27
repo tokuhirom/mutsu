@@ -7,7 +7,7 @@ use lib $*PROGRAM.parent(2).add('lib-prefix-class-parent');
 # Every program runs at the `convert` level, where no subtree crosses as the
 # parser's own tree, and prints what raku prints.
 
-plan 5;
+plan 7;
 
 sub run-convert(Str $code) {
     my %env = %*ENV;
@@ -54,5 +54,24 @@ sub run-convert(Str $code) {
     my ($rc, $out, $err) = run-convert(
         'grammar H { use Pfx::Sub::Gram; also is Pfx::Sub::Gram; }; say H.parse("abc", :rule<word>).so');
     is $out, "True\n", 'and the inherited token is callable'
+        or diag $err;
+}
+
+{
+    my ($rc, $out, $err) = run-convert('role Pfx::D { }; class Pfx::R does Pfx::D { }; say Pfx::R.new ~~ Pfx::D');
+    is $out, "True\n", 'a type whose name ends in ::D is not the smiley :D'
+        or diag $err;
+}
+
+{
+    # An imported name makes a bareword an `ImportedTerm` in a unit that keeps
+    # spellings; `require`'s operand is still a module name (#15074).
+    my $code = q:to/CODE/;
+        use JSON::Fast;
+        require Pfx;
+        say Pfx.hi;
+        CODE
+    my ($rc, $out, $err) = run-convert($code);
+    is $out, "hi\n", 'require Module after a use that imports a name'
         or diag $err;
 }

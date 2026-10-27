@@ -595,10 +595,7 @@ impl Interpreter {
         let saved_source_file =
             crate::parser::set_parser_source_file(Some(source_path.to_string_lossy().to_string()));
         let parse = || {
-            parse_dispatch::parse_compilation_unit_of(
-                &preprocessed,
-                crate::rakuast::frontend::Unit::Module,
-            )
+            parse_dispatch::parse_compilation_unit_of(&preprocessed)
         };
         let result = match unit {
             Some(unit) => crate::anon_names::with_content_unit(unit.parse_session(), parse),

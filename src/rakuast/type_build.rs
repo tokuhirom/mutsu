@@ -58,11 +58,18 @@ pub(super) fn plain_string_literal(t: &str) -> Option<&str> {
     Some(inner)
 }
 
+/// `t` without a trailing smiley (`:D`, `:U`, `:_`). A name that ends in the
+/// letter after its own `::` (`Example2::D`, a role called `D`) has no smiley.
+// Cost: O(1).
+pub(super) fn strip_smiley<'a>(t: &'a str, smiley: &str) -> Option<&'a str> {
+    t.strip_suffix(smiley).filter(|base| !base.ends_with(':'))
+}
+
 pub(super) fn build_type_node_at(t: &str, depth: usize) -> Result<RakuAstNode, RuntimeError> {
     if depth >= MAX_TYPE_DEPTH {
         return Err(unsupported("type composition exceeds 128 levels"));
     }
-    if let Some(base) = t.strip_suffix(":_") {
+    if let Some(base) = strip_smiley(t, ":_") {
         return Ok(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::TypeAnyDefinedness,
@@ -72,7 +79,7 @@ pub(super) fn build_type_node_at(t: &str, depth: usize) -> Result<RakuAstNode, R
             )],
         });
     }
-    if let Some(base) = t.strip_suffix(":D").or_else(|| t.strip_suffix(":U")) {
+    if let Some(base) = strip_smiley(t, ":D").or_else(|| strip_smiley(t, ":U")) {
         return Ok(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::TypeDefinedness,

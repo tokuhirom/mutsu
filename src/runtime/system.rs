@@ -237,8 +237,7 @@ impl Interpreter {
         let user_value_term_names = self.collect_eval_user_value_term_names();
         // Parsing and static module probes can reset parser import tables.
         // Capture the calling unit's names before either step.
-        let caller_names = crate::rakuast::frontend::covers(crate::rakuast::frontend::Unit::Eval)
-            .then(|| (self.eval_caller_type_names(), self.eval_caller_enum_value_names()));
+        let caller_names = (self.eval_caller_type_names(), self.eval_caller_enum_value_names());
         // Make module search paths visible to the parser so that `use Foo`
         // inside the EVAL'd code can resolve and register Foo's exported sub
         // names (needed for parenless calls like `use Foo; bar`).
@@ -251,7 +250,7 @@ impl Interpreter {
             &user_sub_names,
             &user_type_names,
             &user_value_term_names,
-            crate::rakuast::frontend::covers(crate::rakuast::frontend::Unit::Eval),
+            true,
         );
         crate::parser::clear_parser_lib_paths();
         match parse_result {
@@ -273,21 +272,18 @@ impl Interpreter {
                 // A refused conversion must not hide the source unit's typed
                 // CHECK-time diagnostic. Valid converted units are checked
                 // after lowering, when imported names have been resolved.
-                let stmts = if let Some((types, terms)) = caller_names {
-                    match crate::rakuast::frontend::round_trip_eval(
-                        &stmts,
-                        || types,
-                        || terms,
-                        op_names,
-                    ) {
-                        Ok(lowered) => lowered,
-                        Err(refusal) => {
-                            self.validate_eval_source(&stmts)?;
-                            return Err(refusal);
-                        }
+                let (types, terms) = caller_names;
+                let stmts = match crate::rakuast::frontend::round_trip_eval(
+                    &stmts,
+                    || types,
+                    || terms,
+                    op_names,
+                ) {
+                    Ok(lowered) => lowered,
+                    Err(refusal) => {
+                        self.validate_eval_source(&stmts)?;
+                        return Err(refusal);
                     }
-                } else {
-                    stmts
                 };
                 // The hook maps the pre-run recorded are replayed by the
                 // unit's own `use`s and end with the unit.

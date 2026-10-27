@@ -52,22 +52,13 @@ pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>),
 /// execute under it. Callers that load a *nested* unit (`load_module`) restore
 /// their own version once the unit's mainline has finished.
 ///
-/// `unit` says which kind of unit this is, because under `MUTSU_RAKUAST` the
-/// parsed unit runs as its RakuAST round trip (ADR-10723 Stage 0; see
+/// The parsed unit runs as its RakuAST round trip (ADR-10723 Stage 3; see
 /// `rakuast::frontend`).
 pub(crate) fn parse_compilation_unit_of(
     input: &str,
-    unit: crate::rakuast::frontend::Unit,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    let (stmts, finish) = if crate::rakuast::frontend::covers(unit) {
-        parser::parse_program_spelled(input)?
-    } else {
-        parser::parse_program(input)?
-    };
-    Ok((
-        crate::rakuast::frontend::round_trip_if_enabled(stmts, unit)?,
-        finish,
-    ))
+    let (stmts, finish) = parser::parse_program_spelled(input)?;
+    Ok((crate::rakuast::frontend::round_trip_unit(stmts)?, finish))
 }
 
 /// Parse a quote-construct body under `qq` (double-quote) interpolation rules,
