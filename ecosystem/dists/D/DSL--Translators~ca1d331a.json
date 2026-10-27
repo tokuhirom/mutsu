@@ -115,7 +115,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.12,
+        "secs": 240.11,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -129,7 +129,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.1,
+        "secs": 240.11,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -143,7 +143,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 142.73,
+        "secs": 108.43,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -157,7 +157,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 13.06,
+        "secs": 11.12,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -171,7 +171,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 13.17,
+        "secs": 9.16,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -185,7 +185,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 12.36,
+        "secs": 8.02,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -199,7 +199,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 13.19,
+        "secs": 8.96,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -213,7 +213,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 12.11,
+        "secs": 8.85,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -227,7 +227,7 @@
         "nok": 3,
         "ok": 1,
         "plan": 4,
-        "secs": 9.8,
+        "secs": 8.14,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -239,10 +239,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-25",
+    "date": "2026-10-26",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "200ca6c2",
+    "mutsu_commit": "6ac007e8",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
