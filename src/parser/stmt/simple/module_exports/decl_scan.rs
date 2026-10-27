@@ -422,9 +422,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                         });
                 }
                 // Sigiled constants (`constant $x = 1`) are not barewords.
-                if constant.is_some()
-                    && !name.is_empty()
-                    && !name.starts_with(['$', '@', '%', '&'])
+                if constant.is_some() && !name.is_empty() && !name.starts_with(['$', '@', '%', '&'])
                 {
                     if self.spine || *is_export {
                         self.out.constant_names.push(name.clone());

@@ -228,8 +228,7 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
 fn split_decl_for_topic_modifier(
     stmt: &Stmt,
 ) -> Result<Option<(Stmt, Option<Stmt>)>, RuntimeError> {
-    if matches!(stmt, Stmt::VarDecl { constant, .. } if constant.is_some())
-    {
+    if matches!(stmt, Stmt::VarDecl { constant, .. } if constant.is_some()) {
         return Ok(None);
     }
     let always = Expr::Literal(Value::TRUE);

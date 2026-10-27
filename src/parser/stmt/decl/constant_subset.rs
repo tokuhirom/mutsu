@@ -86,7 +86,8 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
     // `constant $x` from a sigilless `constant x` for X::Redeclaration purposes
     // (the VarDecl `name` strips the `$`, so both would otherwise collide).
     let constant = crate::ast::ConstantSigil::from_sigil(sigil);
-    let anonymous = constant != crate::ast::ConstantSigil::Term && name_input.len() - rest.len() == 1;
+    let anonymous =
+        constant != crate::ast::ConstantSigil::Term && name_input.len() - rest.len() == 1;
     // A constant always has a user-written initializer, so it is marked like
     // any other initialized declaration: `constant z = Nil` must keep its Nil
     // rather than be taken for the synthesized default (re-seeded as `Any`,

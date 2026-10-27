@@ -26,11 +26,7 @@ impl DeclScan {
                 // HOW of a built-in declarator for the importing unit.
                 Stmt::Package { name, body, .. } if name.resolve() == "SUPERSEDE" => {
                     for decl in body {
-                        if let Stmt::VarDecl {
-                            name,
-                            constant,
-                            ..
-                        } = decl
+                        if let Stmt::VarDecl { name, constant, .. } = decl
                             && constant.is_some()
                         {
                             self.out.supersede_keywords.push(name.clone());

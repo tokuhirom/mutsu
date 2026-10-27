@@ -124,9 +124,9 @@ pub(crate) fn decl_storage_name(name: &str, constant: Option<ConstantSigil>) -> 
 // Cost: O(|name|).
 pub(crate) fn stmt_decl_storage_name(stmt: &crate::ast::Stmt) -> Option<String> {
     match stmt {
-        crate::ast::Stmt::VarDecl {
-            name, constant, ..
-        } => Some(decl_storage_name(name, *constant)),
+        crate::ast::Stmt::VarDecl { name, constant, .. } => {
+            Some(decl_storage_name(name, *constant))
+        }
         _ => None,
     }
 }

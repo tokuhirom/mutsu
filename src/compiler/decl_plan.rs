@@ -403,9 +403,7 @@ impl Compiler {
                     custom_traits,
                     constant,
                     ..
-                } if constant.is_some()
-                    && !name.starts_with(['$', '@', '%', '&']) =>
-                {
+                } if constant.is_some() && !name.starts_with(['$', '@', '%', '&']) => {
                     Some((name.clone(), target.clone()))
                 }
                 _ => None,

@@ -43,11 +43,9 @@ impl Compiler {
             // the term namespace (#9962), which only the statement-position
             // declaration knows how to set up. Declare it there and yield the
             // value back from its term slot.
-            Stmt::VarDecl {
-                name,
-                constant,
-                ..
-            } if crate::runtime::term_names::is_term_constant_decl(name, *constant) => {
+            Stmt::VarDecl { name, constant, .. }
+                if crate::runtime::term_names::is_term_constant_decl(name, *constant) =>
+            {
                 self.compile_stmt(stmt);
                 let key = crate::runtime::term_names::term_key(name);
                 match self.local_map.get(key.as_str()).copied() {
