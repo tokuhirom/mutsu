@@ -666,6 +666,9 @@ impl Interpreter {
                         .is_none()
                     && self.get_our_var(&key).is_none())
             }
+            // `GLOBAL::<Name> := Name` publishes the type to every scope.
+            // Last: it builds GLOBAL's stash.
+            && Self::stash_lookup_symbol(&self.package_stash_value("GLOBAL"), name).is_none()
     }
 
     /// Whether a block-level merge live here granted the package `top`
