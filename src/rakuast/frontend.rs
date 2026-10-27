@@ -1,13 +1,18 @@
-//! The RakuAST round-trip frontend mode (ADR-10723 Stage 0).
+//! The RakuAST frontend (ADR-10723 Stages 0 and 3).
 //!
-//! Under `MUTSU_RAKUAST`, a compilation unit the interpreter is about to run is
+//! Since Stage 3 the default frontend is `parse -> RakuAST -> lower`: the
+//! program's own units run as their round trip. `MUTSU_LEGACY=1` opts out to the
+//! parser's tree (the pre-Stage-3 path, kept for one release); `MUTSU_RAKUAST`
+//! selects a wider or narrower level of the round trip explicitly.
+//!
+//! Under the round trip, a compilation unit the interpreter is about to run is
 //! converted to its RakuAST tree and lowered back before it is compiled. The
 //! result is what the RakuAST frontend will produce once the parser emits
 //! RakuAST directly, so the number of test files that still pass in this mode
 //! is the migration's metric.
 //!
-//! - `MUTSU_RAKUAST=1`: the program's own units, the main program and every
-//!   `EVAL` string.
+//! - `MUTSU_RAKUAST=1` (the default): the program's own units, the main program
+//!   and every `EVAL` string.
 //! - `MUTSU_RAKUAST=all`: those, plus every `use`d module and `require`d file,
 //!   bundled ones included.
 //! - `MUTSU_RAKUAST=convert`: as `1`, but no subtree crosses as the parser's own
@@ -49,19 +54,42 @@ enum Mode {
     Convert,
 }
 
-/// The `MUTSU_RAKUAST` setting. Read once per process.
+/// The `MUTSU_LEGACY` / `MUTSU_RAKUAST` setting. Read once per process.
 fn mode() -> Mode {
     static MODE: OnceLock<Mode> = OnceLock::new();
-    *MODE.get_or_init(|| parse_mode(std::env::var("MUTSU_RAKUAST").ok().as_deref()))
+    *MODE.get_or_init(|| {
+        parse_mode(
+            std::env::var("MUTSU_LEGACY").ok().as_deref(),
+            std::env::var("MUTSU_RAKUAST").ok().as_deref(),
+        )
+    })
 }
 
+/// `MUTSU_LEGACY=1` is the opt-out and wins over everything; `MUTSU_RAKUAST`
+/// then picks a level (`0` is the opt-out spelled the old way); unset or any
+/// other value is the default, the program-unit round trip.
 // Cost: O(1).
-fn parse_mode(value: Option<&str>) -> Mode {
-    match value {
-        Some("1") => Mode::ProgramUnits,
+fn parse_mode(legacy: Option<&str>, rakuast: Option<&str>) -> Mode {
+    if legacy == Some("1") {
+        return Mode::Off;
+    }
+    match rakuast {
+        Some("0") => Mode::Off,
         Some("all") => Mode::All,
         Some("convert") => Mode::Convert,
-        _ => Mode::Off,
+        _ => Mode::ProgramUnits,
+    }
+}
+
+/// A short name of the frontend level, part of the precompilation cache key: a
+/// module cached under one level is never read under another.
+// Cost: O(1).
+pub(crate) fn cache_tag() -> &'static str {
+    match mode() {
+        Mode::Off => "legacy",
+        Mode::ProgramUnits => "ast",
+        Mode::All => "ast-all",
+        Mode::Convert => "ast-convert",
     }
 }
 
@@ -161,11 +189,14 @@ mod tests {
 
     #[test]
     fn convert_mode_covers_program_units_without_the_passthrough() {
-        assert_eq!(parse_mode(Some("convert")), Mode::Convert);
-        assert_eq!(parse_mode(Some("1")), Mode::ProgramUnits);
-        assert_eq!(parse_mode(Some("all")), Mode::All);
-        assert_eq!(parse_mode(None), Mode::Off);
-        assert_eq!(parse_mode(Some("0")), Mode::Off);
+        assert_eq!(parse_mode(None, Some("convert")), Mode::Convert);
+        assert_eq!(parse_mode(None, Some("1")), Mode::ProgramUnits);
+        assert_eq!(parse_mode(None, Some("all")), Mode::All);
+        assert_eq!(parse_mode(None, None), Mode::ProgramUnits);
+        assert_eq!(parse_mode(None, Some("0")), Mode::Off);
+        assert_eq!(parse_mode(Some("1"), None), Mode::Off);
+        assert_eq!(parse_mode(Some("1"), Some("all")), Mode::Off);
+        assert_eq!(parse_mode(Some("0"), None), Mode::ProgramUnits);
     }
 
     #[test]

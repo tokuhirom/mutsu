@@ -162,9 +162,10 @@ pub(crate) fn interpreter_version() -> String {
                 .map(|d| d.as_nanos())
                 .unwrap_or(0);
             format!(
-                "{}+cf{}+exe{}",
+                "{}+cf{}+fe{}+exe{}",
                 env!("CARGO_PKG_VERSION"),
                 CACHE_FORMAT_VERSION,
+                crate::rakuast::frontend::cache_tag(),
                 exe_stamp
             )
         })

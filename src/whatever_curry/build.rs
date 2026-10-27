@@ -235,7 +235,11 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
         // one-parameter expansion (`build_compound_assign_expr`).
         Expr::CompoundAssign { target, rhs, .. } => {
             let n = count_whatever(rhs);
-            n + usize::from(n > 0 && is_whatever(target))
+            if is_whatever(target) {
+                n + usize::from(n > 0)
+            } else {
+                n + count_whatever(target)
+            }
         }
         // A nested, already-planted WhateverCurry operand (e.g. `(* - 1)`
         // inside `(* - 1) - 1`) contributes its own un-curried placeholder

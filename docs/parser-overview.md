@@ -6,7 +6,9 @@ For ongoing refactoring policy and roadmap, see `docs/parser-improvement-plan.md
 
 ## Scope and entry points
 
-- Runtime entry: `src/parse_dispatch.rs` -> `parse_source()`
+- Runtime entry: `src/parse_dispatch.rs` -> `parse_source()`. By default (ADR-10723 Stage 3) a
+  program unit's parsed tree then goes through the RakuAST round trip (`src/rakuast/frontend.rs`);
+  `MUTSU_LEGACY=1` skips it.
 - Parser entry: `src/parser/mod.rs` -> `parse_program(input)`
 - Statement loop: `src/parser/stmt.rs` -> `program()` -> `stmt_list()` -> `statement()`
 - Expression entry: `src/parser/expr.rs` -> `expression()`

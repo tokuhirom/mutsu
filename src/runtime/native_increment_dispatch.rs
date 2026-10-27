@@ -159,7 +159,7 @@ impl Interpreter {
         let ValueView::Sub(data) = callable.view() else {
             return false;
         };
-        let operand = Self::increment_operand(arg);
+        let operand = self.increment_operand(arg);
         // An export table binds a multi as a dispatcher `Sub` that carries its
         // candidates; a plain `Sub` is its own single candidate.
         let candidates: Vec<Value> = match data
@@ -188,7 +188,7 @@ impl Interpreter {
     // Cost: O(p + h), p = `def`'s parameters, h = the type-hierarchy distance
     // walk.
     pub(crate) fn core_increment_wins_over(&mut self, def: &FunctionDef, args: &[Value]) -> bool {
-        let operand = Self::increment_operand(&args[0]);
+        let operand = self.increment_operand(&args[0]);
         let (core_constraint, core_distance) = self.core_increment_candidate(&operand);
         if core_constraint == "Mu" {
             // `Mu` is the root of the type hierarchy, so every other parameter
@@ -220,11 +220,20 @@ impl Interpreter {
 
     /// The value an increment operand carries, looking through the `VarRef`
     /// wrapper the call site adds so the callee can write back.
-    fn increment_operand(arg: &Value) -> Value {
-        match arg.as_varref() {
+    ///
+    /// A Proxy operand (`Model.column++` where the accessor is an `is rw`
+    /// Proxy) dispatches on what its FETCH answers, as rakudo's
+    /// decontainerization does, so an imported `Red::AST` candidate is seen.
+    // Cost: O(1) + the FETCH body's own work when the operand is a Proxy.
+    fn increment_operand(&mut self, arg: &Value) -> Value {
+        let operand = match arg.as_varref() {
             Some((_, inner, _)) => inner.clone(),
             None => arg.clone(),
+        };
+        if operand.is_proxy_value() {
+            return self.auto_fetch_proxy(&operand).unwrap_or(operand);
         }
+        operand
     }
 
     /// Run the core `++`/`--` implementation for a call site that resolved to

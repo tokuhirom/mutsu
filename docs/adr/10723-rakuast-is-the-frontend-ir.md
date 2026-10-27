@@ -2470,8 +2470,28 @@ Deleted: the `__has_initializer` marker and its ~35 push sites, the marker filte
 Remaining `VarDecl` pseudo-traits (`__constant*`, `__init_sees_self`, `__scalar_bind`/`__code_bind`,
 shaped/implicit-value-type/name-colonpair marks, the `is dynamic` argument) follow in their own PRs.
 
+### 6.122 Stage 3: the default frontend is the RakuAST round trip (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
 
-### 6.122 A `constant` declaration is a field of `VarDecl` (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+With the maintainer's approval (2026-10-27) the default flips as §2.2 defines: a program unit
+(the main program and every `EVAL` string) runs as `parse -> RakuAST -> lower -> compile`, the
+path `MUTSU_RAKUAST=1` selected. `MUTSU_LEGACY=1` is the opt-out (and wins over any
+`MUTSU_RAKUAST` value); `MUTSU_RAKUAST=0` is accepted as the same opt-out; `all` and `convert`
+keep their meaning. `use`d modules are still outside the default level (`all` is not at parity:
+`Test.rakumod` itself does not round-trip), so a module's precompilation is unchanged by the
+flip; the cache key nevertheless carries the frontend level (`cache_tag`) so levels never mix.
+
+Ratchets after the flip: "passes by default" is what `make test` / `make roast` gate.
+`scripts/rakuast-frontend.sh check` keeps `ci/rakuast-frontend-passing.txt` but runs it at
+`convert`, the level the default no longer exercises (it covers the `convert` / `lower` arms the
+parsed-leaf passthrough bypasses); `scripts/rakuast-frontend.sh legacy` runs all of `t/` under
+`MUTSU_LEGACY=1` for the release the opt-out is kept. The legacy CI step is a `.github/` change
+and rides a separate PR (CODEOWNERS).
+
+Deleting the legacy path, `convert.rs` and the remaining parser desugarings (the rest of §2.2
+Stage 3) is the next release's work and is not done here. Frontend cost: see the flip PR for the
+measurements against the pre-flip ordinary frontend (§2.4).
+
+### 6.123 A `constant` declaration is a field of `VarDecl` (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
 
 Third step of the marker-to-field series (§6.119, §6.121). `Stmt::VarDecl` gains
 `constant: Option<ConstantSigil>` (`Term`, `Scalar`, `Array`, `Hash`, `Code`), and the `__constant` /
