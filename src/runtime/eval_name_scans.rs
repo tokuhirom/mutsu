@@ -285,6 +285,9 @@ impl UndeclaredName<'_> {
             || super::system_eval_names::EVAL_KNOWN_ROUTINE_NAMES.contains(&name)
             || crate::parser::is_imported_function(name)
             || crate::parser::is_imported_value_term(name)
+            // `GLOBAL::<Name> := Name` published a type to every scope.
+            || Interpreter::stash_lookup_symbol(&interp.package_stash_value("GLOBAL"), name)
+                .is_some()
     }
 }
 

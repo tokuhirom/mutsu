@@ -1048,6 +1048,12 @@ impl Interpreter {
             // above (types, enums, functions, an unqualified `our`-var) already
             // had first refusal.
             pkg_val
+        } else if let Some(global_val) =
+            Self::stash_lookup_symbol(&self.package_stash_value("GLOBAL"), name)
+        {
+            // `GLOBAL::<Name> := Name` published the symbol to every scope,
+            // including code that never imported the module declaring it.
+            global_val
         } else if let Some(module_val) = self.module_scope_lexical(name).cloned() {
             // A `constant` (or sigilless declaration) the running routine's own
             // module made in its file scope. A module body executes in the env of
