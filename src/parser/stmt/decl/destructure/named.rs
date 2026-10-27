@@ -79,7 +79,11 @@ pub(super) fn expand(decl: &SignatureDecl, rhs: Expr) -> Vec<Stmt> {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
-                    sugar: false,
+                    // The contextualizer form (`@$v`): it re-reads a `Seq`
+                    // instead of consuming it, so a named `@` target bound
+                    // twice from the same `Seq` value (a `for @list -> (:@e)`
+                    // over a reused hash, Red t/41) still sees its elements.
+                    sugar: true,
                 }),
                 else_expr: Box::new(Expr::ArrayLiteral(Vec::new())),
             }
