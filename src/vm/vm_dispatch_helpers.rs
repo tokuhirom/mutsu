@@ -1171,6 +1171,7 @@ impl Interpreter {
                 && (self.has_class(&name)
                     || self.has_role(&name)
                     || self.registry().enum_types.contains_key(&name)
+                    || self.is_subset_type_name(&name)
                     || Self::is_builtin_type(&name))
             {
                 return self.call_function(&name, args);
