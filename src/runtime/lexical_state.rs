@@ -506,9 +506,13 @@ impl LexicalState {
             nested_method_captures: Default::default(),
             composed_nested_method_captures: self.composed_nested_method_captures.clone(),
             nested_capture_cell_names: self.nested_capture_cell_names.clone(),
-            our_vars: rustc_hash::FxHashMap::default(),
-            our_var_unqualified: rustc_hash::FxHashSet::default(),
-            our_term_keys: rustc_hash::FxHashSet::default(),
+            // A package variable the parent persisted (`$GLOBAL::x = ...` made
+            // inside a sub, which no env keeps once the frame returns) is
+            // visible to the worker as of the spawn. Containers keep sharing
+            // their `Gc` with the parent.
+            our_vars: self.our_vars.clone(),
+            our_var_unqualified: self.our_var_unqualified.clone(),
+            our_term_keys: self.our_term_keys.clone(),
             // ADR-11318: one `PROCESS::` stash for the whole lineage.
             process_dynamics: self.process_dynamics.clone(),
             hll_syms: rustc_hash::FxHashMap::default(),
