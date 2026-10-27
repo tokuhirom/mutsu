@@ -12,12 +12,12 @@ Source → **Parser** (`parser/`) → **RakuAST** → `lower` (`rakuast/`) → *
 
 The parser is in `src/parser/` and is used unconditionally.
 
-Since ADR-10723 Stage 3 the default frontend runs every program unit (the main program and each
-`EVAL` string) as `parse → RakuAST → lower` (`src/rakuast/frontend.rs`) before compiling it; `use`d
-modules still go parse → compile. `MUTSU_LEGACY=1` opts out to the parser's tree (kept for one
-release). `MUTSU_RAKUAST=all` also round-trips modules and `MUTSU_RAKUAST=convert` disables the
-parsed-leaf passthrough so every node goes through `convert` and `lower`. The precompilation cache
-key includes the frontend level, so caches written under different levels are never mixed.
+Since ADR-10723 Stage 3 the frontend runs every program unit (the main program and each `EVAL`
+string) as `parse → RakuAST → lower` (`src/rakuast/frontend.rs`) before compiling it; there is no
+opt-out. `use`d modules still go parse → compile (#15074). `MUTSU_RAKUAST=convert`
+disables the parsed-leaf passthrough so every node goes through `convert` and `lower` (the test
+level behind `scripts/rakuast-frontend.sh check`). The precompilation cache key includes the
+frontend level, so caches written under different levels are never mixed.
 
 `parse_dispatch.rs` provides `parse_source()` used by parsing call sites and currently delegates directly to `parser::parse_program()`.
 

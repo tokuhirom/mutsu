@@ -1561,9 +1561,20 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
     // With no written parent a grammar inherits `Grammar`, which the parser
     // puts first in `parents`, before any composed role.
-    let implicit_grammar_parent = parents.iter().all(|p| does_parents.contains(p));
+    let mut implicit_grammar_parent = parents.iter().all(|p| does_parents.contains(p));
     if implicit_grammar_parent {
         parents.insert(0, "Grammar".to_string());
+    }
+    // `also is Base;` leaves the body for the parents, as the parser does it,
+    // so the body-positioned parent is resolved after the body's `use` ran.
+    let mut body_parents = Vec::new();
+    for parent in super::role::take_also_is_parents(&mut body) {
+        crate::parser::push_also_is_parent(
+            &mut parents,
+            &mut body_parents,
+            &mut implicit_grammar_parent,
+            parent,
+        );
     }
     Ok(head.finish(Stmt::ClassDecl {
         spans: Default::default(),
@@ -1584,7 +1595,7 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_grammar: true,
         decl_id: crate::ast::next_class_decl_id(),
         parent_args,
-        body_parents: Vec::new(),
+        body_parents,
     }))
 }
 

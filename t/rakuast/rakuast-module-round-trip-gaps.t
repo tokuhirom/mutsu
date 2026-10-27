@@ -1,0 +1,58 @@
+use Test;
+use lib $*PROGRAM.parent(2).add('lib-prefix-class-parent');
+
+# Constructs a `use`d module (Cro::HTTP::Client, YAMLish, Telemetry,
+# CSS::Module) needs the RakuAST round trip to carry, found by running the
+# whole t/ suite with the modules round-tripped (ADR-10723 section 6.126).
+# Every program runs at the `convert` level, where no subtree crosses as the
+# parser's own tree, and prints what raku prints.
+
+plan 5;
+
+sub run-convert(Str $code) {
+    my %env = %*ENV;
+    %env<MUTSU_RAKUAST> = 'convert';
+    my $proc = run $*EXECUTABLE, '-I', $*PROGRAM.parent(2).add('lib-prefix-class-parent').Str,
+        '-e', $code, :%env, :out, :err;
+    my $out = $proc.out.slurp(:close);
+    my $err = $proc.err.slurp(:close);
+    ($proc.exitcode, $out, $err)
+}
+
+{
+    my ($rc, $out, $err) = run-convert('role R[$x] { method g { $x<a> } }; class C does R[%(a => 1, b => 2)] { }; say C.new.g');
+    is $out, "1\n", 'a %(...) argument of a role application round-trips'
+        or diag $err;
+}
+
+{
+    my ($rc, $out, $err) = run-convert('grammar G { token TOP { $<sign=[+-]>? "a" } }; say so G.parse("a")');
+    is $out, "True\n", 'a $<a=b> back-reference is a regex term with the key "a=b"'
+        or diag $err;
+}
+
+{
+    my $code = q:to/CODE/;
+        my %h = a => 1;
+        say qq:to/E/;
+        x{ " y" if %h<a> }z
+        E
+        CODE
+    my ($rc, $out, $err) = run-convert($code);
+    is $out, "x yz\n\n", 'a statement modifier in a heredoc closure round-trips'
+        or diag $err;
+}
+
+{
+    my ($rc, $out, $err) = run-convert(
+        'grammar H { use Pfx::Sub::Gram; also is Pfx::Sub::Gram; }; say H.^mro.map(*.^name).head(2).join(" ")');
+    is $out, "H Pfx::Sub::Gram\n", 'also is Base in a grammar body is resolved after the body use'
+        or diag $err;
+}
+
+{
+    my ($rc, $out, $err) = run-convert(
+        'grammar H { use Pfx::Sub::Gram; also is Pfx::Sub::Gram; }; say H.parse("abc", :rule<word>).so');
+    is $out, "True\n", 'and the inherited token is callable'
+        or diag $err;
+}

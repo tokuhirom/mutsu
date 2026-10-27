@@ -2406,7 +2406,8 @@ impl Parser {
         ))
     }
 
-    /// `$<name>` that is not an alias: match what the capture matched.
+    /// `$<name>` that is not an alias: match what the capture matched. The name
+    /// is whatever precedes the `>` (`$<s=x>` looks up the key `s=x`).
     // Cost: O(n), n = length of the name.
     fn parse_named_back_reference(&mut self) -> Option<RegexNode> {
         self.pos += 2; // '$<'
@@ -2414,7 +2415,7 @@ impl Parser {
         while self
             .chars
             .get(self.pos)
-            .is_some_and(|ch| ch.is_alphanumeric() || matches!(ch, '_' | '-'))
+            .is_some_and(|ch| *ch != '>' && !ch.is_whitespace())
         {
             self.pos += 1;
         }

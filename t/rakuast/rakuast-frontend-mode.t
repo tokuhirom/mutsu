@@ -35,7 +35,7 @@ my $hash_alias = q[my $x = " a"; $x ~~ m/%<chars>=( \s+ \S+ )+/; say 1];
 
 {
     my ($rc, $out) = run-mutsu('', '-e', $hash_alias);
-    is $out, "1\n", 'without the mode the same program runs normally';
+    is $out, "1\n", 'without the variable the same program runs the same';
 }
 
 {

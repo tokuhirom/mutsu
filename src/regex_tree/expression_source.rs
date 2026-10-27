@@ -310,7 +310,10 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
         }
         crate::ast::Expr::ArrayLiteral(items) => Some(format!("[{}]", join_args(items)?)),
         crate::ast::Expr::BracketArray(items, _) => Some(format!("[{}]", join_args(items)?)),
-        crate::ast::Expr::Hash(pairs, crate::ast::HashSpelling::Composer) => {
+        crate::ast::Expr::Hash(
+            pairs,
+            spelling @ (crate::ast::HashSpelling::Composer | crate::ast::HashSpelling::Contextualizer),
+        ) => {
             let entries = pairs
                 .iter()
                 .map(|(key, value)| {
@@ -324,8 +327,12 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
                     };
                     expression_source(&pair)
                 })
-                .collect::<Option<Vec<_>>>()?;
-            Some(format!("{{ {} }}", entries.join(", ")))
+                .collect::<Option<Vec<_>>>()?
+                .join(", ");
+            Some(match spelling {
+                crate::ast::HashSpelling::Composer => format!("{{ {entries} }}"),
+                _ => format!("%({entries})"),
+            })
         }
         crate::ast::Expr::PositionalPair(inner) => Some(format!("({})", expression_source(inner)?)),
         _ => None,

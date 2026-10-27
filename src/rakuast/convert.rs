@@ -858,20 +858,21 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 } else {
                     parents
                 };
-                // An `also is Parent;` lifted out of the body has no header
-                // spelling; it renders as a trailing `is` trait, which lowers
-                // back to the same parent.
+                // An `also is Parent;` lifted out of the body is a
+                // `Statement::Also` leading it, as for a class.
                 let mut header_parents = written.to_vec();
-                let mut also_traits = Vec::new();
+                let mut also_statements = Vec::new();
                 for parent in body_parents {
                     if let Some(at) = header_parents.iter().rposition(|p| p == parent) {
                         header_parents.remove(at);
                     }
-                    also_traits.push(Value::rakuast(Box::new(super::routine_source::trait_node(
-                        &also_parent(parent, parent_args),
-                    )?)));
+                    let node =
+                        super::routine_source::trait_node(&also_parent(parent, parent_args))?;
+                    also_statements.push(super::role::also_is_statement(Value::rakuast(Box::new(
+                        node,
+                    ))));
                 }
-                let mut traits = header_trait_values(
+                let traits = header_trait_values(
                     body,
                     &HeaderFields {
                         parents: &header_parents,
@@ -882,16 +883,16 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                         custom_traits: &[],
                     },
                 )?;
-                traits.extend(also_traits);
                 if !traits.is_empty() {
                     fields.push(RakuAstField {
                         name: Some("traits"),
                         value: RakuAstFieldValue::List(traits),
                     });
                 }
+                let grammar_body = block_node(&crate::parser::unhoist_nested_methods(body))?;
                 fields.push(node_field(
                     Some("body"),
-                    block_node(&crate::parser::unhoist_nested_methods(body))?,
+                    super::role::with_leading_statements(grammar_body, also_statements),
                 ));
                 let grammar = RakuAstNode {
                     origin: Default::default(),
@@ -4181,6 +4182,10 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if *closes_block_same_line {
                 return super::quoted_string::convert_closed_block_heredoc(content);
             }
+            // The interpolated code is parsed here, after the unit's own parse
+            // ended: it keeps its typed nodes (a statement modifier inside a
+            // `{ ... }`) the way the rest of the tree does.
+            let _spelling = crate::ast::spelled::keep_spelling(true);
             convert_expr(&crate::parser::interpolate_heredoc_content(content))
         }
         Expr::StringInterpolation(parts) => {
