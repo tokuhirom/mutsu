@@ -855,6 +855,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     },
                     is_colons_package(custom_traits),
                 );
+                super::role_header::retain_name(&mut fields, *name);
                 // The implicit `Grammar` parent is not a written trait.
                 let written: &[String] = if *implicit_grammar_parent {
                     parents.get(1..).unwrap_or(&[])
@@ -942,6 +943,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 },
                 is_colons_package(custom_traits),
             );
+            super::role_header::retain_name(&mut fields, *name);
             if let Some(expr) = name_expr {
                 let name = node_field(Some("name"), super::symbolic_deref::indirect_name(expr)?);
                 match fields.iter_mut().find(|f| f.name == Some("name")) {
