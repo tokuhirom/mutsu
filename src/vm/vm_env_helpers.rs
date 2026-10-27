@@ -47,6 +47,21 @@ impl Interpreter {
         }
     }
 
+    /// [`Interpreter::push_caller_env`] for a call that has already opened its
+    /// call frame: the calling frame is the one that frame recorded.
+    pub(super) fn push_caller_env_in_call_frame(&mut self) {
+        let caller = self.call_frames.last().and_then(|frame| {
+            frame
+                .saved_locals_base
+                .as_ref()
+                .map(|base| (frame.caller_code, base.base()))
+        });
+        match caller {
+            Some((code, base)) => self.push_caller_env_of_frame(code, base),
+            None => self.push_caller_env(),
+        }
+    }
+
     /// Save the current env, locals, stack depth, and readonly vars into a new
     /// call frame.
     pub(super) fn push_call_frame(&mut self) {
@@ -1938,6 +1953,15 @@ impl Interpreter {
                 self.env_mut().insert_sym(placeholder_sym, value);
                 return;
             }
+        }
+        // No thread publishes this write: it is the one-Symbol env insert
+        // `set_shared_var_sym` ends in, without its `value` clone and key probes.
+        if let Some(sym) = sym
+            && !self.threads.shared_vars_active
+        {
+            crate::env::note_env_key(name);
+            self.env_mut().insert_sym(sym, value);
+            return;
         }
         loan_env!(self, set_shared_var_sym(name, sym, value));
     }

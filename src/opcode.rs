@@ -30,19 +30,19 @@ static REFLECTIVE_NAME_ACCESS_SEEN: AtomicBool = AtomicBool::new(false);
 /// The part of [`REFLECTIVE_NAME_ACCESS_SEEN`] that is not an `EVAL`: set by
 /// the ops that can read *another* frame's lexical (`CALLER::`, symbolic
 /// dereference, pseudo-stashes, ...). An `EVAL` resolves names in the scope it
-/// is written in (and its enclosing scopes), so a routine's parameters need the
-/// env write only when this latch is set or the routine's own chunk (or one
-/// nested in it) holds the `EVAL` (#14337). Stores of plain locals keep using
-/// the broader latch: an `EVAL` nested in a closure or routine reads the
-/// enclosing chunks' locals, which no per-chunk flag of theirs records.
+/// is written in (and its enclosing scopes), so a routine's parameters and
+/// local stores need the env write only when this latch is set or the chunk's
+/// own flag says it (or a closure/routine nested in it) holds the `EVAL`
+/// ([`CompiledCode::mirrors_all_params`], #14337, #15048).
 static NON_EVAL_REFLECTIVE_SEEN: AtomicBool = AtomicBool::new(false);
 
 /// Process-global latch: some compiled code reads the *immediate* caller's frame
 /// by name (`CALLER::<$x>`, a bare `CALLER::` stash, `&CALLER::LEXICAL::(..)`).
 /// Such a reader is never a light call (`uses_callframe`), so it is reached
-/// through `push_caller_env`, which then copies the slot-only parameters of a
-/// light caller frame into the entry it pushes (`Locals::unmirrored`) -- the
-/// reader no longer forces every routine to mirror its parameters (#14337).
+/// through `push_caller_env`, which then copies the slot-only locals of the
+/// calling frame into the entry it pushes (`flush_calling_frame_slots`) -- the
+/// reader no longer forces every routine to mirror its parameters and every
+/// local store to write `env` (#14337, #15048).
 /// Deeper (`CALLER::CALLER::`) and cascading (`CALLERS::`) readers keep
 /// [`NON_EVAL_REFLECTIVE_SEEN`].
 static CALLER_FRAME_READ_SEEN: AtomicBool = AtomicBool::new(false);
@@ -9290,6 +9290,36 @@ impl CompiledCode {
     /// A local needs env sync if it's referenced by GetGlobal/SetGlobal/etc.
     /// in this code. Locals only accessed via GetLocal don't need env sync,
     /// which reduces env size and makes method call env clones cheaper.
+    /// The variable spellings (`$n`, `@xs`, `%h`, and the sigil-less `n` a
+    /// scalar local is stored under) that source text names.
+    // Cost: O(t), t = bytes of `text`.
+    fn sigiled_names_in(text: &str) -> Vec<&str> {
+        let bytes = text.as_bytes();
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            if matches!(bytes[i], b'$' | b'@' | b'%') {
+                let start = i;
+                let mut j = i + 1;
+                while j < bytes.len()
+                    && (bytes[j].is_ascii_alphanumeric() || matches!(bytes[j], b'_' | b'-'))
+                {
+                    j += 1;
+                }
+                if j > i + 1 {
+                    out.push(&text[start..j]);
+                    if bytes[start] == b'$' {
+                        out.push(&text[start + 1..j]);
+                    }
+                }
+                i = j;
+            } else {
+                i += 1;
+            }
+        }
+        out
+    }
+
     pub(crate) fn compute_needs_env_sync(&mut self) {
         // The ip -> line table must stay index-aligned with `ops`: a code path
         // that pushes/removes an op without going through `emit()` (or without
@@ -9583,6 +9613,25 @@ impl CompiledCode {
                 | OpCode::MultiDimIndexAssignNested { name_idx: idx, .. }
                 | OpCode::MultiDimIndexAssign { name_idx: idx, .. } => Some(*idx),
                 OpCode::AtomicCompoundVar { name_idx, .. } => Some(*name_idx),
+                // The tag names the container a topic/element alias writes back to
+                // (`with %h<k> { } else { $_ = v }`, `given @a.reverse`): the
+                // write-back resolves it by name.
+                OpCode::TagElementSource { container_idx, .. }
+                | OpCode::TagElementSourcePath { container_idx, .. } => Some(*container_idx),
+                OpCode::TagContainerRef(idx, _) | OpCode::TagContainerRefReversed(idx, _) => {
+                    Some(*idx)
+                }
+                // An aggregate (or sigilless alias) argument: the callee may bind its
+                // parameter to the caller's variable by name and write it back
+                // there (`sub f(\c) { c<b> = 1 }`, `is rw`).
+                OpCode::WrapVarRef { name_idx, .. }
+                    if matches!(
+                        self.constants.get(*name_idx as usize).map(Value::view),
+                        Some(ValueView::Str(name)) if name.starts_with(['@', '%'])
+                    ) =>
+                {
+                    Some(*name_idx)
+                }
                 _ => None,
             };
             if let Some(idx) = name_idx
@@ -9620,6 +9669,40 @@ impl CompiledCode {
                 && let Some(&slot) = locals_map.get(name.as_str())
             {
                 self.needs_env_sync[slot] = true;
+            }
+        }
+        // A variable's name pushed as a string VALUE (`__mutsu_cas_array_multidim
+        // ("@p", @p, ..)`, `__mutsu_*_var("$x", ..)`): the callee resolves and
+        // republishes the variable by that name, so its env mirror must stay
+        // current whichever builtin it is. A plain string literal that happens to
+        // spell a local only costs that local its slot-only status.
+        for op in &self.ops {
+            if let OpCode::LoadConst(idx) = op
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(*idx as usize).map(Value::view)
+                && let Some(&slot) = locals_map.get(name.as_str())
+            {
+                self.needs_env_sync[slot] = true;
+            }
+        }
+        // A regex literal's adverb arguments (`m:nth($n)`, `:x(@counts)`) are kept as
+        // source text and evaluated by name when the match runs.
+        for c in &self.constants {
+            if let ValueView::RegexWithAdverbs(adverbs) = c.view() {
+                let args = adverbs.nth.iter().map(|a| a.as_str()).chain(
+                    adverbs
+                        .source_adverbs
+                        .iter()
+                        .flat_map(|list| list.iter())
+                        .filter_map(|(_, arg)| arg.as_deref()),
+                );
+                for text in args {
+                    for var in Self::sigiled_names_in(text) {
+                        if let Some(&slot) = locals_map.get(var) {
+                            self.needs_env_sync[slot] = true;
+                        }
+                    }
+                }
             }
         }
         // A regex match writes `$/` by name, so a `$/` that is a local or a
@@ -9876,8 +9959,8 @@ impl CompiledCode {
         )
     }
 
-    /// Whether this routine's parameters must all be mirrored into `env` by
-    /// name: a reflective op that can reach another frame's lexical exists
+    /// Whether this routine's parameters -- and the stores to its slot-only
+    /// locals -- must be mirrored into `env` by name: a reflective op that can reach another frame's lexical exists
     /// somewhere, or this chunk (or a closure nested in it) looks one up by a
     /// runtime string (`EVAL`, ...). An `EVAL` in an unrelated routine -- as in
     /// every program that loads `JSON::Fast` -- does not make this routine's
@@ -9885,7 +9968,12 @@ impl CompiledCode {
     // Cost: O(1).
     #[inline]
     pub(crate) fn mirrors_all_params(&self) -> bool {
-        NON_EVAL_REFLECTIVE_SEEN.load(Ordering::Relaxed) || self.needs_reflective_capture
+        // A body stashed in `stmt_pool` runs by name against the live env (phasers
+        // of a `map` block, anonymous subs, trait arguments, enum/subset
+        // declarations ...), so it can name any lexical of this chunk.
+        NON_EVAL_REFLECTIVE_SEEN.load(Ordering::Relaxed)
+            || self.needs_reflective_capture
+            || !self.stmt_pool.is_empty()
     }
 
     /// Whether every `SymbolicDeref` of this chunk is spelled

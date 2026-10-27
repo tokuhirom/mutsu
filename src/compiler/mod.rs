@@ -5244,6 +5244,9 @@ impl Compiler {
             }
         }
         self.record_unit_hidden_lexicals();
+        // A routine of this unit that names lexicals by string (`sub e($c) { EVAL $c }`)
+        // reads this unit's lexicals by name.
+        self.note_routines_naming_lexicals();
         self.code.compute_needs_env_sync();
         (self.code, self.compiled_functions)
     }

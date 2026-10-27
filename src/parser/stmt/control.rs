@@ -208,6 +208,11 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             bind: None,
             where_constraint: None,
         }];
+        // An aggregate-sigil pattern (`-> % (:$k is rw)`) BINDS the topic, so its
+        // elements alias the source rather than a copy.
+        if target.starts_with(['@', '%']) {
+            stmts = vec![Stmt::SyntheticBlock(vec![Stmt::MarkBind, stmts.remove(0)])];
+        }
         crate::param_destructure::destructure_declaring(target, sub_params, &mut stmts);
         return Stmt::SyntheticBlock(stmts);
     }

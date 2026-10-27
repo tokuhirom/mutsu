@@ -926,6 +926,7 @@ impl Interpreter {
                 .resolve_module_path(module)
                 .ok_or_else(|| RuntimeError::unsatisfied_dependency(module))?,
         };
+        crate::runtime::bump_unit_scope_epoch();
         crate::runtime::cow_table_mut(&mut self.module.module_source_packages).insert(
             crate::symbol::Symbol::intern(&source_path.to_string_lossy()),
             crate::symbol::Symbol::intern(module),
@@ -1183,6 +1184,7 @@ impl Interpreter {
             // record X so that `register_exported_sub` can mirror exports into
             // `unit_module_exported_subs` for tag validation.
             if let Some(name) = unit_name.as_deref() {
+                crate::runtime::bump_unit_scope_epoch();
                 crate::runtime::cow_table_mut(&mut self.module.unit_module_packages).insert(
                     module_unit_for_loading_stack,
                     crate::symbol::Symbol::intern(name),

@@ -107,7 +107,7 @@ impl Interpreter {
                 .get(idx)
                 .is_some_and(|v| matches!(v.view(), ValueView::Str(_)))
             || code.needs_env_sync.get(idx).copied().unwrap_or(true)
-            || crate::opcode::reflective_name_access_possible()
+            || code.mirrors_all_params()
             || self.user_infix_override("infix:<~>")
             || self
                 .dispatch
@@ -184,8 +184,7 @@ impl Interpreter {
             return Ok(false);
         }
         // A user `infix:<~>` candidate must see the operands (#13791).
-        if crate::opcode::reflective_name_access_possible() || self.user_infix_override("infix:<~>")
-        {
+        if code.mirrors_all_params() || self.user_infix_override("infix:<~>") {
             return Ok(false);
         }
         let mirrored = code.needs_env_sync.get(idx).copied().unwrap_or(true);

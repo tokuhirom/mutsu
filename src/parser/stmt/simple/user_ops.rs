@@ -212,6 +212,14 @@ pub(crate) fn match_user_declared_infix_symbol_op(input: &str) -> Option<(String
                     continue;
                 }
                 let consumed = op.len();
+                // A declared bare `X` / `Z` does not claim the front of a longer
+                // metaoperator token (`X+`, `Z~`, `X[&f]`): that token wins.
+                if matches!(op, "X" | "Z")
+                    && crate::parser::expr::precedence_meta_ops::parse_meta_op_spelling(input)
+                        .is_some_and(|(_, _, len)| len > consumed)
+                {
+                    continue;
+                }
                 // A user operator ending in `=` must not claim a strict prefix of
                 // a longer `=`-chain token the core parser owns (a declared
                 // `infix:<==>` must not swallow two of `===`'s three `=` and

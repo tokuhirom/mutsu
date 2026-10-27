@@ -106,6 +106,11 @@ pub(crate) static PULLS: &[LazyPull] = pulls![
 /// - throw `X::Cannot::Lazy` from the force (a `Failure` in Rakudo for
 ///   `elems`, `end`, `Numeric`, `Int`, `sum`, `reverse`, `pick`, `roll`):
 ///   the counting, ordering and sampling methods;
+/// - throw `X::Cannot::Lazy` from the force as well, and fold a sequence
+///   that ends: the QuantHash and Hash coercions (`Set`, `Bag`, `Mix`, their
+///   `*Hash` forms, `hash`, `Hash`, `Map`) and `Slip` -- a finite
+///   `.map`/`.grep` over a `Seq.new($iterator)` is a `LazyList` the pure
+///   coercions would otherwise take for one element;
 /// - `hyper` and `race` are pulls (they keep an unbounded sequence lazy,
 ///   marked `HyperSeq`/`RaceSeq`); only a sequence that ends reifies here,
 ///   into the settled `HyperSeq`;
@@ -163,6 +168,16 @@ pub(crate) fn reifies(method: &str) -> bool {
             | "pairs"
             | "antipairs"
             | "sink"
+            | "Set"
+            | "SetHash"
+            | "Bag"
+            | "BagHash"
+            | "Mix"
+            | "MixHash"
+            | "hash"
+            | "Hash"
+            | "Map"
+            | "Slip"
     )
 }
 

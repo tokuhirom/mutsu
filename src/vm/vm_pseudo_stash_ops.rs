@@ -22,6 +22,9 @@ impl Interpreter {
             Self::stamp_stash_origin_package(&stash, &origin);
             Self::stamp_stash_origin_routine(&stash, origin_routine.as_deref());
             Self::stamp_stash_origin_unit(&stash, self.caller_frame_unit());
+            if let Some(index) = self.callframe_stack_len().checked_sub(depth) {
+                Self::stamp_stash_caller_frame(&stash, index);
+            }
             self.stack.push(stash);
             return Ok(());
         }

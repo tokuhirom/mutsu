@@ -59,25 +59,6 @@ pub(crate) struct Locals {
     slots: Vec<Value>,
     /// Index of the executing frame's slot 0.
     base: usize,
-    /// Open light frames whose slot-only parameters were not mirrored into
-    /// `env` (#14337); see [`UnmirroredFrame`]. Innermost last.
-    unmirrored: Vec<UnmirroredFrame>,
-}
-
-/// A light call frame that bound its parameters to slots only. A reader of the
-/// *immediate caller's* frame by name (`CALLER::<$x>`, `CALLER::`) is reached
-/// through `push_caller_env`, which finds the frame here and copies its
-/// parameters into the entry it pushes -- so no routine has to mirror its
-/// parameters in case such a reader exists somewhere in the program.
-#[derive(Debug)]
-pub(crate) struct UnmirroredFrame {
-    /// `caller_env_stack` length while the frame ran: a callee that pushes one
-    /// entry is this frame's direct callee exactly when the length before its
-    /// push is this.
-    pub(crate) caller_depth: usize,
-    /// Absolute index of the frame's slot 0.
-    pub(crate) base: usize,
-    pub(crate) code: std::sync::Arc<crate::opcode::CompiledCode>,
 }
 
 impl Clone for Locals {
@@ -86,7 +67,6 @@ impl Clone for Locals {
         Locals {
             slots: self.slots.clone(),
             base: self.base,
-            unmirrored: Vec::new(),
         }
     }
 
@@ -96,7 +76,6 @@ impl Clone for Locals {
     fn clone_from(&mut self, source: &Self) {
         self.slots.clone_from(&source.slots);
         self.base = source.base;
-        self.unmirrored.clear();
     }
 }
 
@@ -119,34 +98,7 @@ impl Locals {
         Locals {
             slots: Vec::new(),
             base: 0,
-            unmirrored: Vec::new(),
         }
-    }
-
-    /// Record that the executing frame bound `code`'s slot-only parameters
-    /// without mirroring them into `env`. Closed with the frame by
-    /// [`Self::pop_frame`].
-    // Cost: O(1) amortized.
-    #[inline]
-    pub(crate) fn note_unmirrored(
-        &mut self,
-        caller_depth: usize,
-        code: &std::sync::Arc<crate::opcode::CompiledCode>,
-    ) {
-        self.unmirrored.push(UnmirroredFrame {
-            caller_depth,
-            base: self.base,
-            code: code.clone(),
-        });
-    }
-
-    /// The innermost open unmirrored frame, if it ran at `caller_depth`.
-    // Cost: O(1).
-    #[inline]
-    pub(crate) fn unmirrored_at(&self, caller_depth: usize) -> Option<&UnmirroredFrame> {
-        self.unmirrored
-            .last()
-            .filter(|f| f.caller_depth == caller_depth)
     }
 
     /// One slot by absolute stack index.
@@ -201,9 +153,6 @@ impl Locals {
     /// caller's own slots.
     #[inline]
     pub(crate) fn pop_frame(&mut self, caller: CallerFrame) {
-        while self.unmirrored.last().is_some_and(|f| f.base >= self.base) {
-            self.unmirrored.pop();
-        }
         self.slots.truncate(self.base);
         self.base = caller.0;
     }
