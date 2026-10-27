@@ -280,11 +280,13 @@ impl Parser {
             } else {
                 // `-` is literal only at an edge: `a-z` is rakudo's
                 // "Unsupported use of - as character range".
+                // Plain whitespace between the `-` and the closing `]` does
+                // not make it interior (`<[ _ - ]>`).
                 if ch == '-'
                     && !elements.is_empty()
-                    && self
-                        .chars
-                        .get(self.pos + 1)
+                    && self.chars[self.pos + 1..]
+                        .iter()
+                        .find(|c| !c.is_whitespace())
                         .is_some_and(|next| *next != ']')
                 {
                     return None;
