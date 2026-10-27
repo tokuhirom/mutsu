@@ -924,6 +924,17 @@ impl Interpreter {
                     args,
                 );
             }
+            // `$type.^isa($other)` reaches a user subclass of a builtin
+            // metaclass (Red's `MetamodelX::Red::Model is Metamodel::ClassHOW`) as
+            // `HOW.isa($type, $other)`: the metaobject's `isa` asks about the
+            // type object it is given, not about the HOW instance itself.
+            if method == "isa"
+                && args.len() == 2
+                && self.is_metamodel_how_class(&class_name.resolve())
+                && !matches!(args[0].view(), ValueView::Nil)
+            {
+                return self.call_method_with_values(args[0].clone(), "isa", vec![args[1].clone()]);
+            }
             if method == "isa" {
                 let isa_arg = args.first().cloned().unwrap_or(Value::NIL);
                 let target_name = match isa_arg.view() {
