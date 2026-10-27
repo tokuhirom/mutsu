@@ -380,6 +380,7 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, Runtim
                     is_export: false,
                     export_tags: Vec::new(),
                     custom_traits,
+                    has_initializer: false,
                     where_constraint: None,
                 });
             }

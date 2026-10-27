@@ -127,6 +127,7 @@ fn expand_bare(decl: &SignatureDecl) -> Vec<Stmt> {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: traits,
+            has_initializer: false,
             where_constraint: None,
         });
     }
@@ -186,6 +187,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         is_export: false,
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
+        has_initializer: false,
         where_constraint: None,
     };
     // In BINDING mode the staging temp must keep the RHS elements' CONTAINERS,
@@ -231,6 +233,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
                 where_constraint: None,
             });
         }
@@ -287,6 +290,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
                 where_constraint: Some(Box::new(lit.clone())),
             });
             continue;
@@ -444,6 +448,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
             is_export: false,
             export_tags: Vec::new(),
             custom_traits,
+            has_initializer: false,
             where_constraint: effective_where,
         };
         let decl = if binds_element && dvar.sigilless {

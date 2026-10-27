@@ -34,6 +34,7 @@ pub(crate) fn expand(signature: Expr, rhs: Expr) -> Option<Stmt> {
         is_export: false,
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
+        has_initializer: false,
         where_constraint: None,
     };
     let mut statements = Vec::with_capacity(params.len() + 3);

@@ -168,6 +168,7 @@ fn expand_loop(
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
                 where_constraint: None,
             })
             .chain(std::iter::once(stmt))

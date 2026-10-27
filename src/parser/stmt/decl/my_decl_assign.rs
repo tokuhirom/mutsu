@@ -44,6 +44,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
             is_export: s.has_export_trait,
             export_tags: s.export_tags,
             custom_traits: s.custom_traits,
+            has_initializer: false,
             where_constraint: s.where_constraint,
         };
         let stmt = Stmt::Expr(Expr::Feed {
@@ -134,6 +135,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 is_export: s.has_export_trait,
                 export_tags: s.export_tags.clone(),
                 custom_traits: s.custom_traits.clone(),
+                has_initializer: false,
                 where_constraint: s.where_constraint.clone(),
             };
             let (r3, tail_expr) =
@@ -187,6 +189,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 is_export: s.has_export_trait,
                 export_tags: s.export_tags.clone(),
                 custom_traits: s.custom_traits.clone(),
+                has_initializer: false,
                 where_constraint: s.where_constraint.clone(),
             };
             let block = crate::parser::stmt::word_logical_split::tail_stmt(decl, call_expr);
@@ -227,6 +230,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         is_export: s.has_export_trait,
         export_tags: s.export_tags,
         custom_traits: s.custom_traits,
+        has_initializer: false,
         where_constraint: s.where_constraint.clone(),
     };
     // A bare declaration may carry a `does`/`but` role mixin applied to the
@@ -363,6 +367,7 @@ fn handle_compound_assign(stripped: &str, s: MyDeclState, op: DeclCompoundOp) ->
         is_export: s.has_export_trait,
         export_tags: s.export_tags.clone(),
         custom_traits: s.custom_traits.clone(),
+        has_initializer: false,
         where_constraint: s.where_constraint.clone(),
     };
     let stmt = match op {
@@ -981,6 +986,7 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             is_export: s.has_export_trait,
             export_tags: s.export_tags.clone(),
             custom_traits,
+            has_initializer: false,
             where_constraint: s.where_constraint.clone(),
         })),
     )

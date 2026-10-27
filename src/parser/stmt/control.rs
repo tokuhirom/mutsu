@@ -292,6 +292,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
             where_constraint: None,
         }
     } else {
@@ -362,6 +363,7 @@ pub(crate) fn simple_pointy_bind(name: &str, source: &Expr, sigilless: bool) -> 
         is_export: false,
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
+        has_initializer: false,
         where_constraint: None,
     };
     if sigilless {

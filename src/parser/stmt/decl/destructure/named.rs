@@ -31,6 +31,7 @@ pub(super) fn expand(decl: &SignatureDecl, rhs: Expr) -> Vec<Stmt> {
         is_export: false,
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
+        has_initializer: false,
         where_constraint: None,
     }];
     for dvar in &decl.vars {
@@ -93,6 +94,7 @@ pub(super) fn expand(decl: &SignatureDecl, rhs: Expr) -> Vec<Stmt> {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
             where_constraint: None,
         });
     }

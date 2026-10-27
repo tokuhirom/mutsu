@@ -3253,6 +3253,7 @@ pub(crate) fn expand_take_logical_tail(value: Expr, op: TokenKind, right: Expr) 
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
             where_constraint: None,
         },
         Stmt::Take(variable.clone(), false),

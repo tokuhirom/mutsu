@@ -3292,6 +3292,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 is_export,
                 export_tags: export_tags.clone(),
                 custom_traits,
+                has_initializer: has_initializer,
                 where_constraint,
             }),
         ));
@@ -3307,6 +3308,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_export,
         export_tags,
         custom_traits,
+        has_initializer: has_initializer,
         where_constraint,
     })
 }
