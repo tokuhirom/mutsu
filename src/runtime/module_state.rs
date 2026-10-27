@@ -301,6 +301,9 @@ pub(crate) struct ModuleState {
     /// its routines need this metadata after the load has finished in order to
     /// resolve the module's own imported aliases lexically.
     pub(crate) unit_module_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
+    /// The last answer of `Interpreter::lexical_package_for_frame`, valid while
+    /// the unit-scope epoch is unchanged (#15048).
+    pub(crate) lexical_package_memo: std::cell::Cell<Option<LexicalPackageMemo>>,
     /// Declared unit package by requested module path. A module file may be
     /// loaded as `A::B` while declaring `unit module A::C`.
     pub(crate) module_declared_unit_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
@@ -641,6 +644,16 @@ pub(crate) struct ModuleState {
     pub(crate) export_term_override_names: std::collections::HashSet<Symbol>,
 }
 
+/// One memoised `lexical_package_for_frame` answer: the question
+/// (`def_file`, `unit`) and the unit-scope epoch it was computed under.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LexicalPackageMemo {
+    pub(crate) epoch: u64,
+    pub(crate) def_file: Option<Symbol>,
+    pub(crate) unit: Symbol,
+    pub(crate) package: Option<Symbol>,
+}
+
 impl ModuleState {
     pub(crate) fn new() -> Self {
         Self {
@@ -692,6 +705,7 @@ impl ModuleState {
             module_imported_lexical_names: std::sync::Arc::new(PackageKeyed::default()),
             module_source_packages: Default::default(),
             unit_module_packages: Default::default(),
+            lexical_package_memo: std::cell::Cell::new(None),
             module_declared_unit_packages: Default::default(),
             exported_subs: Default::default(),
             exported_sub_values: Default::default(),
@@ -798,6 +812,7 @@ impl ModuleState {
             module_imported_lexical_names: self.module_imported_lexical_names.clone(),
             module_source_packages: self.module_source_packages.clone(),
             unit_module_packages: self.unit_module_packages.clone(),
+            lexical_package_memo: std::cell::Cell::new(None),
             module_declared_unit_packages: self.module_declared_unit_packages.clone(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),

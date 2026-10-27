@@ -7,15 +7,15 @@ impl Interpreter {
     }
 
     /// Copy the slot-only locals of the frame that is making this call into the
-    /// `caller_env_stack` / `callframe_stack` entries just pushed, so a by-name
-    /// read of the immediate caller (`CALLER::<$x>`, `CALLER::`, `callframe`)
+    /// live env (and so into the `caller_env_stack` / `callframe_stack` entries
+    /// pushed right after), so a by-name read of the immediate caller (`CALLER::<$x>`, `CALLER::`, `callframe`)
     /// sees them although no store mirrored them into `env` (#14337, #15048).
     ///
     /// `caller_code` is the address of the calling frame's live `CompiledCode`
     /// and `caller_base` the base of its slot window (`VmCallFrame::caller_code`
     /// / `saved_locals_base` for a call that already opened its frame, else the
     /// executing frame). Nothing is copied when the caller's chunk mirrors every
-    /// store anyway. The values go into a scoped overlay over the entry's env, so
+    /// store anyway. The values go into a scoped overlay over the live env, so
     /// the flush costs O(k) in the copied locals, never a copy of the whole env.
     // Cost: O(k), k = the calling frame's slot-only locals; O(1) when none exist.
     fn flush_calling_frame_slots(&mut self, caller_code: usize, caller_base: usize) {
@@ -47,37 +47,35 @@ impl Interpreter {
         if flushed.is_empty() {
             return;
         }
-        let overlay = |base: &Env| {
-            let mut env = Env::scoped_child(base.clone());
-            for (sym, value) in &flushed {
-                env.insert_sym(*sym, value.clone());
-            }
-            env
-        };
-        if let Some(env) = self.caller_env_stack.last_mut() {
-            *env = overlay(env);
+        // A scoped overlay on the live env, not a write into it: the env is
+        // shared with the call frame's `saved_env`, so a write would copy the
+        // whole tier, and the overlay disappears with the callee when
+        // `saved_env` is restored. The entries pushed next and the callee's own
+        // env chain both start from it, so `CALLER::` readers and an `EVAL` that
+        // resolves through the caller chain (`context => CALLER::`) see the names.
+        let mut env = Env::scoped_child(self.env.clone());
+        for (sym, value) in flushed {
+            env.insert_sym(sym, value);
         }
-        if let Some(entry) = self.callframe_stack.last_mut() {
-            entry.env = overlay(&entry.env);
-        }
+        self.env = env;
     }
 
     /// Push caller env with an explicit code (Sub) value for the current frame.
     pub(crate) fn push_caller_env_with_code(&mut self, code: Option<Value>) {
-        self.push_caller_env_entry(code);
         if crate::opcode::caller_frame_read_possible() {
             self.flush_calling_frame_slots(self.current_code, self.locals.base());
         }
+        self.push_caller_env_entry(code);
     }
 
     /// [`Self::push_caller_env`] for a call whose callee frame is already open:
     /// the calling frame is the one `caller_code` / `caller_base` name (the
     /// callee's `VmCallFrame`), not the executing top of the slot stack.
     pub(crate) fn push_caller_env_of_frame(&mut self, caller_code: usize, caller_base: usize) {
-        self.push_caller_env_entry(None);
         if crate::opcode::caller_frame_read_possible() {
             self.flush_calling_frame_slots(caller_code, caller_base);
         }
+        self.push_caller_env_entry(None);
     }
 
     fn push_caller_env_entry(&mut self, code: Option<Value>) {

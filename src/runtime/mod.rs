@@ -2658,10 +2658,28 @@ pub(crate) fn main_unit() -> Symbol {
     *MAIN
 }
 
+/// Bumped whenever a table `lexical_package_for_frame` reads changes: the
+/// module/unit package maps and the EVAL unit parents. Process-global, so a
+/// bump is conservative for every interpreter (a memo is just recomputed).
+static UNIT_SCOPE_EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// See [`UNIT_SCOPE_EPOCH`].
+// Cost: O(1).
+pub(crate) fn unit_scope_epoch() -> u64 {
+    UNIT_SCOPE_EPOCH.load(std::sync::atomic::Ordering::Acquire)
+}
+
+/// Record that a table behind `lexical_package_for_frame` changed.
+// Cost: O(1).
+pub(crate) fn bump_unit_scope_epoch() {
+    UNIT_SCOPE_EPOCH.fetch_add(1, std::sync::atomic::Ordering::Release);
+}
+
 pub(crate) fn note_eval_unit_parent(unit: Symbol, parent: Symbol) {
     if let Ok(mut map) = EVAL_UNIT_PARENTS.write() {
         map.insert(unit, parent);
     }
+    bump_unit_scope_epoch();
 }
 
 /// The compilation unit an `EVAL` unit was compiled inside, if `unit` is one.

@@ -60,7 +60,16 @@ impl Interpreter {
         // registry is then not asked at all (#11165).
         let mut binding_decided_writable = false;
         if crate::value::readonly_binding_cells_possible() {
-            match self.free_var_readonly_binding(code, name_idx) {
+            // One probe of the chunk's slot index settles both questions: a name
+            // that owns a slot is never a free variable, and a name that does
+            // not has no slot to hold a rebound cell.
+            let sym = code.const_sym(name_idx);
+            let decision = match code.local_slots_of(sym) {
+                [] => self.free_var_nonlocal_decision(Self::const_str(code, name_idx), sym),
+                [slot] => self.slot_rebind_decision(*slot),
+                _ => None,
+            };
+            match decision {
                 Some(FreeVarBinding::Readonly(kind, bound)) => {
                     // A sigilless name bound to a mutable Array/Hash assigns
                     // into it (see `vm_sigilless_aggregate_store`).
@@ -74,17 +83,7 @@ impl Interpreter {
                     return Err(Self::readonly_binding_error(kind, &bound));
                 }
                 Some(FreeVarBinding::Writable) => binding_decided_writable = true,
-                None => {
-                    // One of this code's own slots, holding a binding cell a
-                    // rebind decided (#9277).
-                    match self.own_slot_rebind_decision(code, code.const_sym(name_idx)) {
-                        Some(FreeVarBinding::Readonly(kind, bound)) => {
-                            return Err(Self::readonly_binding_error(kind, &bound));
-                        }
-                        Some(FreeVarBinding::Writable) => binding_decided_writable = true,
-                        None => {}
-                    }
-                }
+                None => {}
             }
         }
         // Probe through the pre-interned constant Symbol:
@@ -146,7 +145,7 @@ impl Interpreter {
     /// is readonly. A free variable whose binding was decided by its declaring
     /// frame answers from that decision, as in `CheckReadOnly`; anything else
     /// asks the registry and the sigilless marker (#11165).
-    // Cost: as `free_var_readonly_binding` when a decided binding cell exists;
+    // Cost: as `free_var_binding_decision` when a decided binding cell exists;
     // O(1) otherwise.
     pub(super) fn check_named_incdec_readonly(
         &self,
@@ -238,31 +237,12 @@ impl Interpreter {
         }
     }
 
-    /// What the binding the free variable `code.constants[name_idx]` resolves
-    /// to says about its own writability. `None` for one of `code`'s own
-    /// locals (the registry still answers for those) and for a binding no
-    /// frame decided for.
-    ///
-    /// A readonly kind anywhere on the binding-cell chain wins over a writable
-    /// decision: a decided `my $x` container rebound by `$x := 42` sits behind
-    /// the binding cell that now leads to the readonly cell instead.
-    // Cost: O(d), d = env tiers walked to resolve the name (the by-name read's
-    // cost); the cell chain is bounded by `MAX_BINDING_CHAIN`.
-    fn free_var_readonly_binding(
-        &self,
-        code: &CompiledCode,
-        name_idx: u32,
-    ) -> Option<FreeVarBinding> {
-        self.free_var_binding_decision(
-            code,
-            Self::const_str(code, name_idx),
-            code.const_sym(name_idx),
-        )
-    }
-
-    /// [`Self::free_var_readonly_binding`] for a caller that holds the
-    /// (possibly rewritten) name itself: a by-name `SetGlobal` store.
-    // Cost: as `free_var_readonly_binding`.
+    /// What the binding of the free variable `name` resolves to says about its
+    /// own writability, for a caller that holds the (possibly rewritten) name
+    /// itself: a by-name `SetGlobal` store. `None` for one of `code`'s own
+    /// locals and for a binding no frame decided for.
+    // Cost: O(d), d = env tiers walked to resolve the name; the cell chain is
+    // bounded by `MAX_BINDING_CHAIN`.
     pub(super) fn free_var_binding_decision(
         &self,
         code: &CompiledCode,
@@ -272,6 +252,17 @@ impl Interpreter {
         if !code.local_slots_of(sym).is_empty() {
             return None;
         }
+        self.free_var_nonlocal_decision(name, sym)
+    }
+
+    /// [`Self::free_var_binding_decision`] for a name that is not a local of
+    /// the running chunk.
+    // Cost: as `free_var_binding_decision`.
+    fn free_var_nonlocal_decision(
+        &self,
+        name: &str,
+        sym: crate::symbol::Symbol,
+    ) -> Option<FreeVarBinding> {
         // The order a by-name read resolves a scalar in (a unit lexical the
         // running routine captured, then the env chain), but on the raw
         // binding: the read itself derefs the unit lexical's cell.
@@ -300,7 +291,13 @@ impl Interpreter {
         let [slot] = code.local_slots_of(sym) else {
             return None;
         };
-        let binding = self.locals.get(*slot as usize)?;
+        self.slot_rebind_decision(*slot)
+    }
+
+    /// [`Self::own_slot_rebind_decision`] for the slot already found.
+    // Cost: as `own_slot_rebind_decision`.
+    fn slot_rebind_decision(&self, slot: u32) -> Option<FreeVarBinding> {
+        let binding = self.locals.get(slot as usize)?;
         Self::binding_cell_of(binding)?;
         Self::binding_chain_decision(binding.clone())
     }
@@ -347,7 +344,7 @@ impl Interpreter {
     }
 }
 
-/// See [`Interpreter::free_var_readonly_binding`].
+/// See [`Interpreter::free_var_binding_decision`].
 pub(super) enum FreeVarBinding {
     /// Refused for this reason; the value is what the binding holds, for the
     /// error's wording.
