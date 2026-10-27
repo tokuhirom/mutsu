@@ -31,13 +31,12 @@
 //! agree, so a case the facts get wrong fails the `t/` suite.
 
 use super::*;
-use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::{Cell, RefCell};
 use std::sync::Arc;
 
 /// The ancestors a plain registered class conforms to: its MRO and the roles it
 /// composes.
-type Ancestors = Arc<FxHashSet<Symbol>>;
+type Ancestors = Arc<[u32]>;
 
 /// What is known about one type name. `ancestors` depends on the registry only
 /// and lives as long as `ConformanceCache::stamp`; the two `*_ok` flags read
@@ -88,7 +87,20 @@ impl NameTable {
     }
 
     // Cost: O(1) amortised; the slot vector grows to the largest symbol id seen.
+    #[inline(always)]
     fn get_or_default(&mut self, sym: Symbol) -> Option<&mut NameFacts> {
+        let id = sym.raw() as usize;
+        if let Some(&(epoch, at)) = self.slots.get(id)
+            && epoch == self.epoch
+            && at != 0
+        {
+            return Some(&mut self.facts[at as usize - 1]);
+        }
+        self.insert_default(sym)
+    }
+
+    #[cold]
+    fn insert_default(&mut self, sym: Symbol) -> Option<&mut NameFacts> {
         let id = sym.raw() as usize;
         // A name interned this late is not a declared type of a ranked
         // candidate in any realistic program; it takes the general walk
@@ -175,7 +187,7 @@ impl Interpreter {
         let ancestors = sub_facts
             .ancestors
             .get_or_insert_with(|| self.compute_conformance_ancestors(sub));
-        Some(ancestors.as_ref()?.contains(&sup))
+        Some(ancestors.as_ref()?.binary_search(&sup.raw()).is_ok())
     }
 
     /// `sub`'s ancestor set when it is a plain registered class. Reads the
@@ -199,15 +211,18 @@ impl Interpreter {
                 return None;
             }
         }
-        let mut set: FxHashSet<Symbol> = self
+        let mut ids: Vec<u32> = self
             .mro_readonly(name)
             .iter()
-            .map(|ancestor| Symbol::intern(ancestor))
+            .map(|ancestor| Symbol::intern(ancestor).raw())
             .collect();
         if let Some(roles) = self.registry().class_composed_roles.get(name) {
-            set.extend(roles.iter().map(|role| Symbol::intern(role)));
+            ids.extend(roles.iter().map(|role| Symbol::intern(role).raw()));
         }
-        Some(Arc::new(set))
+        // Sorted for the binary search; an MRO is a handful of names.
+        ids.sort_unstable();
+        ids.dedup();
+        Some(Arc::from(ids))
     }
 
     /// Whether the env leaves the type name `sup` alone, so the ranking walk
