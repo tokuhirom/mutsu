@@ -75,10 +75,7 @@ impl TrirCompiler<'_> {
         // assigns — for a fresh `my` in a TRIR frame the two are the same
         // thing, because nothing else can name the slot. Any other trait
         // declines.
-        if custom_traits
-            .iter()
-            .any(|(t, _)| t != "__scalar_bind")
-        {
+        if custom_traits.iter().any(|(t, _)| t != "__scalar_bind") {
             return None;
         }
         let tc = type_constraint.as_deref();

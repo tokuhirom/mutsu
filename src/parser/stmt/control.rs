@@ -232,9 +232,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![
-                ("__pointy_copy".to_string(), None),
-            ],
+            custom_traits: vec![("__pointy_copy".to_string(), None)],
             has_initializer: true,
             where_constraint: None,
         }
@@ -261,9 +259,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![
-                ("__pointy_native_param".to_string(), None),
-            ],
+            custom_traits: vec![("__pointy_native_param".to_string(), None)],
             has_initializer: true,
             where_constraint: None,
         };

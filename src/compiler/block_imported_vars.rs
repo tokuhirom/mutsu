@@ -198,12 +198,10 @@ impl Compiler {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
-                custom_traits: vec![
-                    (
-                        crate::ast::sigilless_decl::SIGILLESS_DECL.to_string(),
-                        Some(Expr::Literal(Value::FALSE)),
-                    ),
-                ],
+                custom_traits: vec![(
+                    crate::ast::sigilless_decl::SIGILLESS_DECL.to_string(),
+                    Some(Expr::Literal(Value::FALSE)),
+                )],
                 has_initializer: true,
                 where_constraint: None,
             };

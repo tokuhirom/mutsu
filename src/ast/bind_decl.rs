@@ -190,11 +190,7 @@ mod tests {
         // `my $x = $y`: no bind trait.
         let assign = decl("x", Expr::Var("y".to_string()), &[]);
         assert!(declared(&assign).is_none());
-        let code_assign = decl(
-            "&f",
-            Expr::CodeVar("source".to_string()),
-            &[],
-        );
+        let code_assign = decl("&f", Expr::CodeVar("source".to_string()), &[]);
         assert!(declared(&code_assign).is_none());
         // `my @a = …` is never wrapped the way a bind is.
         assert!(declared(&decl("@a", Expr::ArrayVar("b".to_string()), &[])).is_none());

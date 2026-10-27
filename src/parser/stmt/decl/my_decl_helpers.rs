@@ -147,12 +147,10 @@ pub(crate) fn build_sigilless_bind_stmt(
         // A sigilless term always carries a user-written initializer, so an
         // explicit `Nil` RHS (`my \x = Nil`) must not be mistaken for the
         // synthesized default and re-seeded as `Any`.
-        custom_traits: vec![
-            (
-                crate::ast::sigilless_decl::SIGILLESS_DECL.to_string(),
-                Some(Expr::Literal(Value::truth(assigned))),
-            ),
-        ],
+        custom_traits: vec![(
+            crate::ast::sigilless_decl::SIGILLESS_DECL.to_string(),
+            Some(Expr::Literal(Value::truth(assigned))),
+        )],
         has_initializer: true,
         where_constraint: None,
     };

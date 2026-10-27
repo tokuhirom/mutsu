@@ -1577,9 +1577,8 @@ impl Compiler {
                 // for `@`, and an empty `Expr::Hash` for `%`. A real initializer
                 // — including an explicit `our %H = ()` — sets the
                 // declaration's `has_initializer` and must still run.
-                let is_our_bare_decl = *is_our
-                    && Self::is_synthesized_decl_default(expr)
-                    && !*has_initializer;
+                let is_our_bare_decl =
+                    *is_our && Self::is_synthesized_decl_default(expr) && !*has_initializer;
                 // A scalar `:=` bind to a Positional makes the scalar a
                 // non-container alias; record it so SetLocal can mark it
                 // decontainerized (so `@a = $bound` flattens, not itemizes).
