@@ -156,6 +156,25 @@ impl Interpreter {
         if sub == sup {
             return true;
         }
+        // Inside a ranking scope the relation between two plain classes is a
+        // memoised set lookup (see `type_conformance`); debug builds check it
+        // against the general walk.
+        if let Some(fast) = self.conformance_fast(sub, sup) {
+            debug_assert_eq!(
+                fast,
+                self.nominal_type_conforms_general(sub, sup),
+                "type_conformance disagrees with type_hierarchy_distance for {sub:?} / {sup:?}"
+            );
+            return fast;
+        }
+        self.nominal_type_conforms_general(sub, sup)
+    }
+
+    // Cost: O(h), h = the hierarchy walk of `type_hierarchy_distance`.
+    fn nominal_type_conforms_general(&self, sub: Symbol, sup: Symbol) -> bool {
+        if sub == sup {
+            return true;
+        }
         // `Any` and `Mu` are ancestors of every type, including the ones the
         // hierarchy walk below cannot place from a type object.
         if sup.with_str(|n| n == "Mu") || (sup.with_str(|n| n == "Any") && !sub.with_str(|n| n == "Mu")) {
@@ -169,23 +188,9 @@ impl Interpreter {
         }) {
             return true;
         }
-        let general = || {
-            sup.with_str(|sup| {
-                self.type_hierarchy_distance(sup, &Value::package(sub)) < UNRELATED_DISTANCE
-            })
-        };
-        // Inside a ranking scope the relation between two plain classes is a
-        // set lookup (see `type_conformance`); debug builds check it against
-        // the general walk.
-        if let Some(fast) = self.conformance_fast(sub, sup) {
-            debug_assert_eq!(
-                fast,
-                general(),
-                "type_conformance disagrees with type_hierarchy_distance for {sub:?} / {sup:?}"
-            );
-            return fast;
-        }
-        general()
+        sup.with_str(|sup| {
+            self.type_hierarchy_distance(sup, &Value::package(sub)) < UNRELATED_DISTANCE
+        })
     }
 
     /// [`prune_to_maximal`] over the candidates of one sub dispatch that

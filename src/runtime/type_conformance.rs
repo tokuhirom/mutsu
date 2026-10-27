@@ -42,9 +42,14 @@ type Ancestors = Arc<FxHashSet<Symbol>>;
 pub(crate) struct ConformanceCache {
     /// The registry stamp `pairs` was filled under.
     stamp: Cell<u64>,
-    pairs: RefCell<FxHashMap<(Symbol, Symbol), bool>>,
+    /// `(sub, sup)` -> (answer, serial of the last scope that confirmed both
+    /// names plain). An entry confirmed by an earlier scope is re-confirmed by
+    /// the name facts below before it is served.
+    pairs: RefCell<FxHashMap<(Symbol, Symbol), (bool, u32)>>,
     /// Open [`ConformanceScope`]s; the facts below are valid while it is > 0.
     scope_depth: Cell<u32>,
+    /// Identifies the outermost open scope.
+    scope_serial: Cell<u32>,
     subs: RefCell<FxHashMap<Symbol, Option<Ancestors>>>,
     sups: RefCell<FxHashMap<Symbol, bool>>,
 }
@@ -71,6 +76,14 @@ impl Interpreter {
     // Cost: O(1).
     pub(crate) fn conformance_scope(&self) -> ConformanceScope<'_> {
         let cache = &self.caches.type_conformance;
+        if cache.scope_depth.get() == 0 {
+            cache.scope_serial.set(cache.scope_serial.get().wrapping_add(1));
+            let stamp = self.registry().type_stamp();
+            if cache.stamp.get() != stamp {
+                cache.pairs.borrow_mut().clear();
+                cache.stamp.set(stamp);
+            }
+        }
         cache.scope_depth.set(cache.scope_depth.get() + 1);
         ConformanceScope { cache }
     }
@@ -85,20 +98,26 @@ impl Interpreter {
         if cache.scope_depth.get() == 0 {
             return None;
         }
+        let serial = cache.scope_serial.get();
+        let known = cache.pairs.borrow().get(&(sub, sup)).copied();
+        if let Some((answer, confirmed)) = known {
+            if confirmed == serial {
+                return Some(answer);
+            }
+            // Filled by an earlier scope: the env half must be confirmed again.
+            return if self.conformance_sub_facts(sub).is_some() && self.conformance_sup_is_plain(sup) {
+                cache.pairs.borrow_mut().insert((sub, sup), (answer, serial));
+                Some(answer)
+            } else {
+                None
+            };
+        }
         let ancestors = self.conformance_sub_facts(sub)?;
         if !self.conformance_sup_is_plain(sup) {
             return None;
         }
-        let stamp = self.registry().type_stamp();
-        if cache.stamp.get() != stamp {
-            cache.pairs.borrow_mut().clear();
-            cache.stamp.set(stamp);
-        }
-        if let Some(&known) = cache.pairs.borrow().get(&(sub, sup)) {
-            return Some(known);
-        }
         let answer = ancestors.contains(&sup);
-        cache.pairs.borrow_mut().insert((sub, sup), answer);
+        cache.pairs.borrow_mut().insert((sub, sup), (answer, serial));
         Some(answer)
     }
 
