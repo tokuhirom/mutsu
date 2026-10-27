@@ -486,11 +486,15 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             body,
             condition,
             end_index,
+            bare,
         } => {
             if let Some(condition) = condition {
-                return super::phaser_condition::convert(kind, body, condition)?
-                    .map(Some)
-                    .ok_or_else(|| unsupported("PRE/POST phaser condition"));
+                let mut statement = super::phaser_condition::convert(kind, body, condition)?
+                    .ok_or_else(|| unsupported("PRE/POST phaser condition"))?;
+                if *bare {
+                    super::bare_prefix::unblock_phaser(&mut statement);
+                }
+                return Ok(Some(statement));
             }
             let class = match phaser_class(kind) {
                 Some(c) => c,
@@ -503,11 +507,15 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             let mut fields = vec![node_field(None, block)];
             // The source position of a main-compunit `END` (see `origin`).
             fields.extend(end_index.map(origin::end_index_field));
-            Ok(Some(statement_expression(RakuAstNode {
+            let mut statement = statement_expression(RakuAstNode {
                 origin: Default::default(),
                 class,
                 fields,
-            })))
+            });
+            if *bare {
+                super::bare_prefix::unblock_phaser(&mut statement);
+            }
+            Ok(Some(statement))
         }
         // A conditional is a typed node (`ast::parsed::Conditional`), and a
         // statement modifier too (`ast::parsed::Modified`). The one desugared

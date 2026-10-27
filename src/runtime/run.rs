@@ -610,6 +610,7 @@ impl Interpreter {
                             body,
                             condition: None,
                             end_index: None,
+                            bare: false,
                         }
                     } else {
                         s

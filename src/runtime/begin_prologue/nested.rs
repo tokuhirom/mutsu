@@ -393,6 +393,7 @@ impl Walker<'_> {
                 body,
                 condition: None,
                 end_index: None,
+                bare: false,
             });
         } else {
             let body = self.run_in_packages(inner);
@@ -401,6 +402,7 @@ impl Walker<'_> {
                 body,
                 condition: None,
                 end_index: None,
+                bare: false,
             });
         }
         true

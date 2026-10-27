@@ -179,7 +179,6 @@ impl VisitMut for Ctx {
                     | ParsedStmt::SigillessDecl(_)
                     | ParsedStmt::PackageHeader { .. }
                     | ParsedStmt::TempDecl(_)
-                    | ParsedStmt::BarePhaser(_)
                     | ParsedStmt::CommaDecls(_)
                     | ParsedStmt::AttributeGroup(_)
                     | ParsedStmt::AttributeColonArglist(_)

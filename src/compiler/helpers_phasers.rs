@@ -130,13 +130,14 @@ impl Compiler {
     }
 
     /// The body of a FIRST/NEXT/LAST phaser as a single statement. A
-    /// statement-form phaser (parsed as `[SyntheticBlock([stmt])]`) shares the
+    /// statement-form (`bare`) phaser shares the
     /// enclosing block's lexical scope, so it is spliced in scope-less; a
     /// block-form phaser gets its own `Stmt::Block` scope.
-    fn loop_phaser_body(body: &[Stmt]) -> Stmt {
-        match body {
-            [stmt @ Stmt::SyntheticBlock(_)] => stmt.clone(),
-            _ => Stmt::Block(body.to_vec()),
+    fn loop_phaser_body(body: &[Stmt], bare: bool) -> Stmt {
+        if bare {
+            Stmt::SyntheticBlock(body.to_vec())
+        } else {
+            Stmt::Block(body.to_vec())
         }
     }
 
@@ -186,15 +187,18 @@ impl Compiler {
             body
         };
         for stmt in body {
-            if let Stmt::Phaser { kind, body, .. } = stmt {
+            if let Stmt::Phaser {
+                kind, body, bare, ..
+            } = stmt
+            {
                 match kind {
                     PhaserKind::Enter => enter_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Leave => leave_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Keep => keep_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Undo => undo_ph.push(Stmt::Block(body.clone())),
-                    PhaserKind::First => first_ph.push(Self::loop_phaser_body(body)),
-                    PhaserKind::Next => next_ph.push(Self::loop_phaser_body(body)),
-                    PhaserKind::Last => last_ph.push(Self::loop_phaser_body(body)),
+                    PhaserKind::First => first_ph.push(Self::loop_phaser_body(body, *bare)),
+                    PhaserKind::Next => next_ph.push(Self::loop_phaser_body(body, *bare)),
+                    PhaserKind::Last => last_ph.push(Self::loop_phaser_body(body, *bare)),
                     PhaserKind::Pre => pre_ph.push(stmt.clone()),
                     PhaserKind::Post => post_ph.push(stmt.clone()),
                     _ => body_main.push(stmt.clone()),
@@ -687,6 +691,7 @@ impl Compiler {
                 body,
                 condition: None,
                 end_index: None,
+                bare: false,
             });
         }
         hoisted.extend(rest);

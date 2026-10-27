@@ -3146,6 +3146,11 @@ pub(crate) enum Stmt {
         /// for a statement-form phaser or one nobody wrote.
         #[serde(default)]
         spans: Option<Box<parsed::BlockSpans>>,
+        /// Written over a bare statement (`NEXT $x++`) rather than a block:
+        /// `body` is that one statement, and a `FIRST`/`NEXT`/`LAST` of this
+        /// form shares the enclosing block's lexical scope.
+        #[serde(default)]
+        bare: bool,
     },
     ProtoDecl {
         name: Symbol,

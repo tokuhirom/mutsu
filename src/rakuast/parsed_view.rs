@@ -107,8 +107,6 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
         ParsedStmt::CommaDecls(declarations) => {
             statement_expression(super::convert::comma_declarations_node(declarations)?)
         }
-        ParsedStmt::BarePhaser(phaser) => super::bare_prefix::bare_phaser_statement(phaser)?
-            .ok_or_else(|| super::convert::unsupported("a phaser over a bare statement"))?,
         ParsedStmt::ImmediateCall { decl, args } => {
             statement_expression(super::immediate_call::convert(decl, args)?)
         }
