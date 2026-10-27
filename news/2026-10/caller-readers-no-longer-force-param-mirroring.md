@@ -9,6 +9,6 @@ These readers only ever look at the immediate caller. They use a separate latch 
 frame that skipped its parameters' env write is recorded in `Locals`; when a callee pushes its
 `caller_env_stack` entry (`push_caller_env`) the recorded frame's slot-only parameters are copied
 into that entry. Deeper (`CALLER::CALLER::`) and cascading readers keep the old latch.
-`t/vm/frames/caller-lexical-sees-light-caller-params.t` pins the visibility.
+`t/routines/signature/caller-lexical-sees-light-caller-params.t` pins the visibility.
 
 Measured: `use Test` + 1000 calls of `f($s)`: `env_deep_copies` 1004 -> 4.
