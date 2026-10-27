@@ -187,7 +187,14 @@ impl Interpreter {
         let ancestors = sub_facts
             .ancestors
             .get_or_insert_with(|| self.compute_conformance_ancestors(sub));
-        Some(ancestors.as_ref()?.binary_search(&sup.raw()).is_ok())
+        let ancestors = ancestors.as_deref()?;
+        let id = sup.raw();
+        // An MRO is a handful of names: a scan beats a binary search.
+        Some(if ancestors.len() <= 16 {
+            ancestors.contains(&id)
+        } else {
+            ancestors.binary_search(&id).is_ok()
+        })
     }
 
     /// `sub`'s ancestor set when it is a plain registered class. Reads the
