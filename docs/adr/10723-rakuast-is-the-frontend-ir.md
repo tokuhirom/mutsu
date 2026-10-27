@@ -2572,3 +2572,24 @@ of the parser, the scope pass and `lower`.
 Remaining `VarDecl` pseudo-traits: none that `convert` reconstructs. What is left in `custom_traits`
 under `__` are compiler/run-time flags (`__restore_pointy_given_topic`, `__pointy_copy`,
 `__pointy_native_param`, the BEGIN static-cell marks) and the `.=` declaration marker.
+
+### 6.126 The legacy opt-out is gone (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+§6.122 kept `MUTSU_LEGACY=1` (and `MUTSU_RAKUAST=0`) as an opt-out to the parser's own tree "for one
+release". The maintainer's decision of 2026-10-27 is to delete the Stage 3 leftovers now, so the
+opt-out goes: the round trip is the one frontend for the main program and every `EVAL` string.
+
+Deleted: the `MUTSU_LEGACY` / `MUTSU_RAKUAST=0` / `MUTSU_RAKUAST=all` levels and the `Mode` enum
+behind them (`Mode::{Off, ProgramUnits, All}`; what is left is the boolean "`MUTSU_RAKUAST=convert`"), the
+`legacy` command of `scripts/rakuast-frontend.sh`, the post-merge CI step that ran it (#15060), its
+doc bullet and `t/rakuast/rakuast-frontend-default-legacy.t`.
+
+What is *not* deleted: `use`d and `require`d modules are still compiled from the parser's own tree
+(`Unit::Module` is outside `covers`). Measured with `MUTSU_RAKUAST=all` on 2026-10-27, whole `t/`
+passes except one file (`t/modules/module-import-alias-scope-paths.t`) after four fixes that rode with
+this change (a `%(…)` argument of a role application, the `$<a=b>` back-reference spelling, a
+statement modifier in a heredoc's `{…}`, `also is Base` in a grammar body keeping the parser's
+body-positioned parent); the remaining cause is #15074 (`require Foo::Bar` after a `use` with lexical
+imports dies "Could not find symbol '&Bar' in 'GLOBAL::Foo'" with identical lowered trees). Routing
+modules through the round trip, and with it the unspelled parse, is the next deletion once that
+issue is closed.

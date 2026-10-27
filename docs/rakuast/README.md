@@ -28,7 +28,7 @@ the next one from there. `scripts/rakuast-frontend.sh causes` runs every `t/`
 file outside `ci/rakuast-frontend-passing.txt` under `MUTSU_RAKUAST=convert` and
 prints why each fails, by file count: `REFUSE` is the first construct the
 conversion or lowering refuses, `DIFF` is a file that runs but behaves
-differently from the legacy frontend (`MUTSU_LEGACY=1`). A file counts under its first refusal
+differently from the default frontend. A file counts under its first refusal
 only, so a count is an upper bound on what fixing that cause moves into the
 list. The per-file rows are in `tmp/rakuast-causes/results.tsv`.
 

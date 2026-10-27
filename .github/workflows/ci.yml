@@ -633,24 +633,6 @@ jobs:
           MUTSU_T_TIMEOUT: "45"
           JOBS: "4"
 
-      - name: Legacy frontend opt-out (MUTSU_LEGACY=1, prove t/)
-        # ADR-10723 section 6.122: since the Stage 3 flip the default frontend
-        # is `parse -> RakuAST -> lower`, and `MUTSU_LEGACY=1` is the opt-out
-        # to the parser's own tree that is kept for one release. Nothing else
-        # runs it, so without this step it rots unnoticed. Post-merge only
-        # (hourly `main`, dispatch, the release gate), like `debug-tap`:
-        # ~3 min on this job's critical path is not worth adding to every PR
-        # (docs/ci-pipeline.md, "Runner budget"). Same per-file wrapper,
-        # timeout and -j4 as the TAP step above.
-        if: github.event_name != 'pull_request'
-        run: |
-          mkdir -p tmp
-          scripts/rakuast-frontend.sh legacy
-        env:
-          MUTSU_BIN: target/release/mutsu
-          MUTSU_T_TIMEOUT: "45"
-          JOBS: "4"
-
       - name: Site snippets still produce their documented output
         # Every code sample shipped on the site (landing highlights +
         # tutorial lessons) runs under mutsu here and must match the output

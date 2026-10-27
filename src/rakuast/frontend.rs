@@ -1,33 +1,24 @@
 //! The RakuAST frontend (ADR-10723 Stages 0 and 3).
 //!
-//! Since Stage 3 the default frontend is `parse -> RakuAST -> lower`: the
-//! program's own units run as their round trip. `MUTSU_LEGACY=1` opts out to the
-//! parser's tree (the pre-Stage-3 path, kept for one release); `MUTSU_RAKUAST`
-//! selects a wider or narrower level of the round trip explicitly.
+//! The frontend is `parse -> RakuAST -> lower`: the program's own units (the
+//! main program and every `EVAL` string) are converted to their RakuAST tree and
+//! lowered back before they are compiled. The result is what the RakuAST
+//! frontend will produce once the parser emits RakuAST directly (Stage 2). There
+//! is no opt-out.
 //!
-//! Under the round trip, a compilation unit the interpreter is about to run is
-//! converted to its RakuAST tree and lowered back before it is compiled. The
-//! result is what the RakuAST frontend will produce once the parser emits
-//! RakuAST directly, so the number of test files that still pass in this mode
-//! is the migration's metric.
+//! A `use`d module or `require`d file is still compiled from the parser's own
+//! tree: a module is shared by every program that uses it, and the cases that
+//! keep it out of the round trip are tracked on #15074.
 //!
-//! - `MUTSU_RAKUAST=1` (the default): the program's own units, the main program
-//!   and every `EVAL` string.
-//! - `MUTSU_RAKUAST=all`: those, plus every `use`d module and `require`d file,
-//!   bundled ones included.
-//! - `MUTSU_RAKUAST=convert`: as `1`, but no subtree crosses as the parser's own
-//!   tree ([`super::passthrough`]): every node goes through `convert` and `lower`,
-//!   as `.AST` and `EVAL($ast)` do. `1` is the cost-measured mode; this one keeps
-//!   the coverage of the `convert` and `lower` arms of the carried families.
+//! `MUTSU_RAKUAST=convert` is the one test level that is left: no subtree
+//! crosses as the parser's own tree ([`super::passthrough`]), every node goes
+//! through `convert` and `lower`, as `.AST` and `EVAL($ast)` do. The default is
+//! the cost-measured level; `convert` keeps the coverage of the `convert` and
+//! `lower` arms of the carried families (`scripts/rakuast-frontend.sh check`).
 //!
-//! The two levels exist because a module is shared by every program that uses
-//! it: while `Test.rakumod` itself does not round-trip, `all` fails every test
-//! file at its first line, and `1` is the level whose count says something
-//! about the files themselves.
-//!
-//! A construct the converter or the lowerer refuses is a compile error in this
-//! mode, never a silent fallback to the parser's own tree: a fallback would
-//! count a file as round-tripping when it does not.
+//! A construct the converter or the lowerer refuses is a compile error, never a
+//! silent fallback to the parser's own tree: a fallback would count a file as
+//! round-tripping when it does not.
 
 use std::sync::OnceLock;
 
@@ -45,68 +36,36 @@ pub(crate) enum Unit {
     Module,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Mode {
-    Off,
-    ProgramUnits,
-    All,
-    /// [`Mode::ProgramUnits`] without the passthrough leaves.
-    Convert,
+/// Whether `MUTSU_RAKUAST=convert` is set: the test level without passthrough
+/// leaves. Read once per process.
+fn convert_level() -> bool {
+    static CONVERT: OnceLock<bool> = OnceLock::new();
+    *CONVERT.get_or_init(|| convert_level_from(std::env::var("MUTSU_RAKUAST").ok().as_deref()))
 }
 
-/// The `MUTSU_LEGACY` / `MUTSU_RAKUAST` setting. Read once per process.
-fn mode() -> Mode {
-    static MODE: OnceLock<Mode> = OnceLock::new();
-    *MODE.get_or_init(|| {
-        parse_mode(
-            std::env::var("MUTSU_LEGACY").ok().as_deref(),
-            std::env::var("MUTSU_RAKUAST").ok().as_deref(),
-        )
-    })
-}
-
-/// `MUTSU_LEGACY=1` is the opt-out and wins over everything; `MUTSU_RAKUAST`
-/// then picks a level (`0` is the opt-out spelled the old way); unset or any
-/// other value is the default, the program-unit round trip.
 // Cost: O(1).
-fn parse_mode(legacy: Option<&str>, rakuast: Option<&str>) -> Mode {
-    if legacy == Some("1") {
-        return Mode::Off;
-    }
-    match rakuast {
-        Some("0") => Mode::Off,
-        Some("all") => Mode::All,
-        Some("convert") => Mode::Convert,
-        _ => Mode::ProgramUnits,
-    }
+fn convert_level_from(rakuast: Option<&str>) -> bool {
+    rakuast == Some("convert")
 }
 
 /// A short name of the frontend level, part of the precompilation cache key: a
 /// module cached under one level is never read under another.
 // Cost: O(1).
 pub(crate) fn cache_tag() -> &'static str {
-    match mode() {
-        Mode::Off => "legacy",
-        Mode::ProgramUnits => "ast",
-        Mode::All => "ast-all",
-        Mode::Convert => "ast-convert",
-    }
+    if convert_level() { "ast-convert" } else { "ast" }
 }
 
-/// Whether the `MUTSU_RAKUAST` mode runs a unit of this kind through the round
-/// trip. Such a unit is parsed with its spellings kept (ADR-12199): the
-/// conversion reads them, and the lowering hands the compiler the same tree it
-/// would have had without them.
+/// Whether the frontend runs a unit of this kind through the round trip. Such a
+/// unit is parsed with its spellings kept (ADR-12199): the conversion reads
+/// them, and the lowering hands the compiler the same tree it would have had
+/// without them.
+// Cost: O(1).
 pub(crate) fn covers(unit: Unit) -> bool {
-    match mode() {
-        Mode::Off => false,
-        Mode::ProgramUnits | Mode::Convert => unit != Unit::Module,
-        Mode::All => true,
-    }
+    unit != Unit::Module
 }
 
-/// Run a parsed compilation unit through the RakuAST round trip when the mode
-/// covers its kind; hand it back untouched otherwise.
+/// Run a parsed compilation unit through the RakuAST round trip when the
+/// frontend covers its kind; hand it back untouched otherwise.
 pub(crate) fn round_trip_if_enabled(
     stmts: Vec<Stmt>,
     unit: Unit,
@@ -143,7 +102,7 @@ pub(crate) fn round_trip(stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
 pub(crate) fn round_trip_owned(mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
     // The conversion matches expressions by shape, so the term origins the
     // spelled parse kept come off first (`expr_origins`).
-    let _leaves = (mode() != Mode::Convert).then(super::passthrough::Scope::enter);
+    let _leaves = (!convert_level()).then(super::passthrough::Scope::enter);
     let _origins = super::expr_origins::strip(&mut stmts);
     let node = super::convert::statement_list(&stmts)?;
     let mut lowered = super::lower(&node)?;
@@ -188,15 +147,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn convert_mode_covers_program_units_without_the_passthrough() {
-        assert_eq!(parse_mode(None, Some("convert")), Mode::Convert);
-        assert_eq!(parse_mode(None, Some("1")), Mode::ProgramUnits);
-        assert_eq!(parse_mode(None, Some("all")), Mode::All);
-        assert_eq!(parse_mode(None, None), Mode::ProgramUnits);
-        assert_eq!(parse_mode(None, Some("0")), Mode::Off);
-        assert_eq!(parse_mode(Some("1"), None), Mode::Off);
-        assert_eq!(parse_mode(Some("1"), Some("all")), Mode::Off);
-        assert_eq!(parse_mode(Some("0"), None), Mode::ProgramUnits);
+    fn only_convert_selects_the_test_level() {
+        assert!(convert_level_from(Some("convert")));
+        assert!(!convert_level_from(Some("1")));
+        assert!(!convert_level_from(Some("all")));
+        assert!(!convert_level_from(Some("0")));
+        assert!(!convert_level_from(None));
+    }
+
+    #[test]
+    fn modules_stay_outside_the_round_trip() {
+        assert!(covers(Unit::Mainline));
+        assert!(covers(Unit::Eval));
+        assert!(!covers(Unit::Module));
     }
 
     #[test]

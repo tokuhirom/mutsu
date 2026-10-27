@@ -1,20 +1,17 @@
 #!/bin/bash
 # The RakuAST frontend ratchets (ADR-10723 Stage 0, #10733; Stage 3 flip).
 #
-# Since Stage 3 the default frontend runs every program unit as `parse ->
+# Since Stage 3 the default frontend runs every compilation unit as `parse ->
 # RakuAST -> lower` (src/rakuast/frontend.rs), so "passes by default" is what
-# `make test` already gates. Two ratchets remain here:
+# `make test` already gates. One ratchet remains here:
 #
 # - `check` runs ci/rakuast-frontend-passing.txt under MUTSU_RAKUAST=convert,
 #   the level where no subtree crosses as the parser's own tree and every node
 #   goes through `convert` and `lower` (what `.AST` and `EVAL($ast)` do). The
 #   list may only grow.
-# - `legacy` runs every t/ file under MUTSU_LEGACY=1, the opt-out to the
-#   parser's tree that is kept for one release (Stage 3), so it cannot rot.
 #
 # Usage:
 #   scripts/rakuast-frontend.sh check    # run the listed files in the mode; fail if any fails
-#   scripts/rakuast-frontend.sh legacy   # run every t/ file under MUTSU_LEGACY=1; fail if any fails
 #   scripts/rakuast-frontend.sh survey   # run every t/ file in the mode; print the count
 #   scripts/rakuast-frontend.sh update   # survey, then rewrite the list (only ever adds files)
 #   scripts/rakuast-frontend.sh causes   # why the files outside the list do not pass (see below)
@@ -61,12 +58,6 @@ case "${1:-check}" in
     mapfile -t files < <(listed_files)
     echo "rakuast-frontend: ${#files[@]} files must pass under MUTSU_RAKUAST=$MUTSU_RAKUAST"
     prove -j"$JOBS" --merge -e scripts/run-t-test.sh "${files[@]}"
-    ;;
-  legacy)
-    unset MUTSU_RAKUAST
-    export MUTSU_LEGACY=1
-    echo "rakuast-frontend: every t/ file must pass under MUTSU_LEGACY=1"
-    prove -r -j"$JOBS" --merge -e scripts/run-t-test.sh t/
     ;;
   survey | update)
     mapfile -t all < <(find t -name '*.t' | LC_ALL=C sort)
@@ -124,7 +115,7 @@ case "${1:-check}" in
     fi
     ;;
   *)
-    echo "usage: $0 check|legacy|survey|update|causes" >&2
+    echo "usage: $0 check|survey|update|causes" >&2
     exit 2
     ;;
 esac
