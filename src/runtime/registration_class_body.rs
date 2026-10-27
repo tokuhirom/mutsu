@@ -619,6 +619,7 @@ impl Interpreter {
             is_export,
             export_tags,
             trait_args,
+            is_hidden_from_backtrace,
             is_method: true,
             ..
         } = stmt
@@ -682,10 +683,7 @@ impl Interpreter {
             self.registry_mut()
                 .set_proto_compiled(owner, &method_name, compiled);
         }
-        if trait_args
-            .iter()
-            .any(|(name, _)| name == "__hidden_from_backtrace")
-        {
+        if *is_hidden_from_backtrace {
             self.registry_mut()
                 .mark_proto_method_hidden(owner, &method_name);
         }

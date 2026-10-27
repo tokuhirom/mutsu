@@ -647,7 +647,6 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     custom_traits.iter().any(|(t, _)| {
                         t.starts_with("__")
                             && !is_return_spelling_marker(t)
-                            && t != "__hidden_from_backtrace"
                             // The operator-precedence record the parser derives
                             // from `is assoc` / `is tighter`; lowering rebuilds it.
                             && t != OP_PREC_TRAIT
@@ -744,11 +743,9 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     "method with `handles`",
                 ),
                 (
-                    custom_traits.iter().any(|(t, _)| {
-                        t.starts_with("__")
-                            && !is_return_spelling_marker(t)
-                            && t != "__hidden_from_backtrace"
-                    }),
+                    custom_traits
+                        .iter()
+                        .any(|(t, _)| t.starts_with("__") && !is_return_spelling_marker(t)),
                     "method with an internal trait",
                 ),
             ];

@@ -107,6 +107,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_my: bool, is_our: bool) -> PResu
         return Ok((
             rest,
             Stmt::ProtoDecl {
+                is_hidden_from_backtrace: traits.is_hidden_from_backtrace,
                 name: Symbol::intern(&name),
                 params,
                 param_defs,
@@ -142,6 +143,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_my: bool, is_our: bool) -> PResu
     Ok((
         rest,
         Stmt::ProtoDecl {
+            is_hidden_from_backtrace: traits.is_hidden_from_backtrace,
             name: Symbol::intern(&name),
             params,
             param_defs,

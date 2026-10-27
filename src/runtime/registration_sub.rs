@@ -639,6 +639,7 @@ impl Interpreter {
         is_rw: bool,
         is_raw: bool,
         is_test_assertion: bool,
+        is_hidden_from_backtrace: bool,
         supersede: bool,
         scope: crate::ast::SubScope,
         custom_traits: &crate::opcode::DeclTraits,
@@ -656,6 +657,7 @@ impl Interpreter {
             is_rw,
             is_raw,
             is_test_assertion,
+            is_hidden_from_backtrace,
             supersede,
             scope,
             custom_traits,
@@ -715,6 +717,7 @@ impl Interpreter {
         is_rw: bool,
         is_raw: bool,
         is_test_assertion: bool,
+        is_hidden_from_backtrace: bool,
         supersede: bool,
         scope: crate::ast::SubScope,
         custom_traits: &crate::opcode::DeclTraits,
@@ -733,6 +736,7 @@ impl Interpreter {
             is_rw,
             is_raw,
             is_test_assertion,
+            is_hidden_from_backtrace,
             supersede,
             scope,
             custom_traits,
@@ -755,6 +759,7 @@ impl Interpreter {
         is_rw: bool,
         is_raw: bool,
         is_test_assertion: bool,
+        is_hidden_from_backtrace: bool,
         supersede: bool,
         scope: crate::ast::SubScope,
         custom_traits: &crate::opcode::DeclTraits,
@@ -854,6 +859,7 @@ impl Interpreter {
                     is_rw,
                     is_raw,
                     is_test_assertion,
+                    is_hidden_from_backtrace,
                     supersede,
                     scope,
                     custom_traits,
@@ -1251,9 +1257,7 @@ impl Interpreter {
             param_defs: effective_param_defs,
             body: body.to_vec(),
             is_test_assertion,
-            is_hidden_from_backtrace: custom_traits
-                .iter()
-                .any(|(t, _)| t == "__hidden_from_backtrace"),
+            is_hidden_from_backtrace,
             is_implementation_detail: custom_traits
                 .iter()
                 .any(|(t, _)| t == "implementation-detail"),

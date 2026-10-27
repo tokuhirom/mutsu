@@ -232,7 +232,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                         custom_traits.push(entry);
                         continue;
                     }
-                    if !flags.read(t)? || flags.is_raw {
+                    if !flags.read(t)? || flags.is_raw || flags.is_hidden_from_backtrace {
                         return Err(unsupported_node(node));
                     }
                 }

@@ -601,6 +601,7 @@ impl CompiledMethodDecl {
             deprecated_message,
             handles,
             custom_traits,
+            is_hidden_from_backtrace,
             is_export,
             export_tags,
             ..
@@ -629,9 +630,7 @@ impl CompiledMethodDecl {
             custom_traits: custom_traits.clone(),
             is_export: *is_export,
             export_tags: export_tags.clone(),
-            is_hidden_from_backtrace: custom_traits
-                .iter()
-                .any(|(t, _)| t == "__hidden_from_backtrace"),
+            is_hidden_from_backtrace: *is_hidden_from_backtrace,
             compiled_routine_key: None,
             uses_bare_positional_args,
             nested_capture_index: custom_traits.iter().find_map(|(t, arg)| {
@@ -5283,6 +5282,7 @@ pub(crate) struct CompiledSubDeclPlan {
     pub(crate) is_export: bool,
     pub(crate) export_tags: Vec<String>,
     pub(crate) is_test_assertion: bool,
+    pub(crate) is_hidden_from_backtrace: bool,
     pub(crate) supersede: bool,
     pub(crate) scope: crate::ast::SubScope,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
@@ -12883,6 +12883,7 @@ impl CompiledCode {
             is_export,
             export_tags,
             is_test_assertion,
+            is_hidden_from_backtrace,
             supersede,
             scope,
             custom_traits,
@@ -12955,6 +12956,7 @@ impl CompiledCode {
             is_export: *is_export,
             export_tags: export_tags.clone(),
             is_test_assertion: *is_test_assertion,
+            is_hidden_from_backtrace: *is_hidden_from_backtrace,
             supersede: *supersede,
             scope: *scope,
             custom_traits: plan_traits,

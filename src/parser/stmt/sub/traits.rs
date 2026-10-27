@@ -41,6 +41,8 @@ pub(crate) struct SubTraits {
     pub is_test_assertion: bool,
     pub is_rw: bool,
     pub is_raw: bool,
+    /// `is hidden-from-backtrace`.
+    pub is_hidden_from_backtrace: bool,
     pub return_type: Option<String>,
     pub associativity: Option<String>,
     /// Non-builtin trait names (e.g. `me'd`) for custom `trait_mod:<is>` dispatch,
@@ -66,6 +68,7 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut is_test_assertion = false;
     let mut is_rw = false;
     let mut is_raw = false;
+    let mut is_hidden_from_backtrace = false;
     let mut return_type = None;
     let mut associativity = None;
     let mut custom_traits: Vec<(String, Option<crate::ast::Expr>)> = Vec::new();
@@ -95,6 +98,7 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     is_test_assertion,
                     is_rw,
                     is_raw,
+                    is_hidden_from_backtrace,
                     return_type,
                     associativity,
                     custom_traits: custom_traits.clone(),
@@ -157,10 +161,7 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                         argument: None,
                     });
                 }
-                // Keep this as an internal marker so method declarations can
-                // carry the trait through the AST without exposing it to a
-                // user `trait_mod:<is>` candidate.
-                custom_traits.push(("__hidden_from_backtrace".to_string(), None));
+                is_hidden_from_backtrace = true;
                 input = r;
                 continue;
             }
@@ -427,6 +428,7 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 is_test_assertion,
                 is_rw,
                 is_raw,
+                is_hidden_from_backtrace,
                 return_type,
                 associativity,
                 custom_traits: custom_traits.clone(),
