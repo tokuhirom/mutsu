@@ -139,14 +139,11 @@ impl Interpreter {
                     // Rakudo, so a present key reads as the value's shared
                     // cell (the twin of `atpos` on `$!reified`, #15106). A raw
                     // `VMHash` holds bare values and answers them as they are.
-                    ValueView::Hash(map)
-                        if !map.bare_values
-                            && map.contains_key(&key)
-                            && !map.bound_bare.as_ref().is_some_and(|b| b.contains(&key)) =>
-                    {
-                        Ok(hash.hash_slot_ref(&key, true).filter(|cell| {
-                            matches!(cell.view(), ValueView::ContainerRef(_))
-                        }).unwrap_or_else(|| map.get(&key).cloned().unwrap_or(Value::NIL)))
+                    ValueView::Hash(map) if !map.bare_values && map.contains_key(&key) => {
+                        if !map.storage_cells {
+                            hash.promote_storage_cells();
+                        }
+                        Ok(map.get(&key).cloned().unwrap_or(Value::NIL))
                     }
                     ValueView::Hash(map) => Ok(map.get(&key).cloned().unwrap_or(Value::NIL)),
                     _ => {
