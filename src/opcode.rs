@@ -9885,10 +9885,7 @@ impl CompiledCode {
     // Cost: O(1).
     #[inline]
     pub(crate) fn mirrors_all_params(&self) -> bool {
-        NON_EVAL_REFLECTIVE_SEEN.load(Ordering::Relaxed)
-            || self.needs_reflective_capture
-            || (std::env::var_os("FORCEM").is_some()
-                && REFLECTIVE_NAME_ACCESS_SEEN.load(Ordering::Relaxed))
+        NON_EVAL_REFLECTIVE_SEEN.load(Ordering::Relaxed) || self.needs_reflective_capture
     }
 
     /// Whether every `SymbolicDeref` of this chunk is spelled
