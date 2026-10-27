@@ -21,92 +21,6 @@ pub(in crate::parser) fn keep_written_parens(input: &str, assign: Expr) -> Expr 
     }
 }
 
-fn regroup_assign_expr_metaop_rhs(expr: Expr) -> Expr {
-    // Handle Grouped(AssignExpr{...}) from parenthesized assignments
-    if let Expr::Grouped(inner) = expr {
-        return Expr::Grouped(Box::new(regroup_assign_expr_metaop_rhs(*inner)));
-    }
-    // Preserve the original `is_bind`: a `:=` inside a list-op argument
-    // (`isa-ok (%qh := $t.new), $t`) must stay a bind, not silently become `=`.
-    let Expr::AssignExpr {
-        name,
-        expr,
-        is_bind,
-    } = expr
-    else {
-        return expr;
-    };
-    let Expr::ArrayLiteral(items) = *expr else {
-        return Expr::AssignExpr {
-            name,
-            expr,
-            is_bind,
-        };
-    };
-    // Raku's list infixes (`Z`, `X`, `Zop`, `Xop`, `minmax`) are LOOSER than the
-    // comma, so the whole comma level is the left operand: `my @r = 1, 2 Z <a b>`
-    // is `(1, 2) Z <a b>`. This used to lift by hand, one level: pop the last
-    // item and, if it was a metaop, push its `left` back as an item. That cannot
-    // see a CHAIN -- `1, 2 Z <a b> Z <c d>` arrives as a metaop whose own `left`
-    // is another metaop, so pushing that `left` produced
-    // `(1, (2 Z <a b>)) Z <c d>` and the answer `[(1, "c"), (((2, "a"),).Seq, "d")]`
-    // where raku says `[(1, "a", "c"), (2, "b", "d")]`.
-    //
-    // `lift_list_infix_in_arg_list` is the chain-aware lift the parenthesised
-    // and listop-argument spellings already share: it walks the left-nested
-    // same-op chain, collects each `right` as a column, and folds the preceding
-    // comma items into the first column. Reusing it makes all three spellings of
-    // the same source agree by construction.
-    let lifted = crate::parser::primary::lift_list_infix_in_arg_list(items);
-    let expr = if lifted.len() == 1 {
-        lifted.into_iter().next().unwrap()
-    } else {
-        Expr::ArrayLiteral(lifted)
-    };
-    Expr::AssignExpr {
-        name,
-        expr: Box::new(expr),
-        is_bind,
-    }
-}
-
-fn split_assignment_rhs_call_args(expr: Expr) -> (Expr, Vec<Expr>) {
-    match expr {
-        Expr::AssignExpr {
-            name,
-            expr,
-            is_bind,
-        } => {
-            let (rhs, extras) = split_assignment_rhs_call_args(*expr);
-            (
-                Expr::AssignExpr {
-                    name,
-                    expr: Box::new(rhs),
-                    is_bind,
-                },
-                extras,
-            )
-        }
-        Expr::ArrayLiteral(mut items) if items.len() > 1 => {
-            let first = items.remove(0);
-            (first, items)
-        }
-        other => (other, Vec::new()),
-    }
-}
-
-fn expand_call_arg(arg: CallArg) -> Vec<CallArg> {
-    match arg {
-        CallArg::Positional(expr @ Expr::AssignExpr { .. }) => {
-            let (expr, extras) = split_assignment_rhs_call_args(expr);
-            let mut args = vec![CallArg::Positional(expr)];
-            args.extend(extras.into_iter().map(CallArg::Positional));
-            args
-        }
-        other => vec![other],
-    }
-}
-
 /// Parse call arguments for statement-level function calls.
 /// Handles positional args, named args (fat arrow and colon pairs).
 /// Semicolon-sliced parenthesized argument list (`f(;:[])`, `f(1,2;3)`): each
@@ -224,7 +138,7 @@ fn parse_stmt_call_args_inner(
                 return Ok((r2, args));
             }
         }
-        args.extend(expand_call_arg(first_arg));
+        args.push(first_arg);
         let mut r = r;
         loop {
             let (r2, _) = ws(r)?;
@@ -254,7 +168,7 @@ fn parse_stmt_call_args_inner(
                 && !r2.starts_with("::")
                 && let Ok((r3, arg)) = parse_single_call_arg(r2)
             {
-                args.extend(expand_call_arg(arg));
+                args.push(arg);
                 r = r3;
                 continue;
             }
@@ -276,7 +190,7 @@ fn parse_stmt_call_args_inner(
                 remaining_len: err.remaining_len.or(Some(r2.len())),
                 exception: None,
             })?;
-            args.extend(expand_call_arg(arg));
+            args.push(arg);
             r = r2;
         }
     }
@@ -368,7 +282,7 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
             return Ok((after_args, args));
         }
     }
-    args.extend(expand_call_arg(first));
+    args.push(first);
     loop {
         let (r, _) = ws(rest)?;
         // Adjacent colonpairs without commas: foo :a :b :c or foo :a:b:c
@@ -376,7 +290,7 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
             && !r.starts_with("::")
             && let Ok((r3, arg)) = parse_single_call_arg_listop(r)
         {
-            args.extend(expand_call_arg(arg));
+            args.push(arg);
             rest = r3;
             continue;
         }
@@ -397,7 +311,7 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        args.extend(expand_call_arg(arg));
+        args.push(arg);
         rest = r;
     }
 }
@@ -851,8 +765,7 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
             && !expr_consumes_more
             && (!rest_ws.starts_with("=>") || rest_ws.starts_with("==>"))
         {
-            let assign_expr =
-                keep_written_parens(input, regroup_assign_expr_metaop_rhs(assign_expr));
+            let assign_expr = keep_written_parens(input, assign_expr);
             return Ok((
                 rest,
                 CallArg::Positional(crate::parser::expr::wrap_finished_expr(assign_expr)),
@@ -893,7 +806,6 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
         }
         return Ok((r, CallArg::Positional(compound_expr)));
     }
-    let expr = regroup_assign_expr_metaop_rhs(expr);
     Ok((
         rest,
         CallArg::Positional(crate::parser::expr::wrap_finished_expr(expr)),

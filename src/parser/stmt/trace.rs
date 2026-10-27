@@ -327,49 +327,23 @@ fn strip_trailing_comment(text: &str) -> &str {
 /// `if ?1`, `if 1 && 2`); only literals, `True`/`False`, parentheses and `!`
 /// are recognised here.
 fn folds_away(stmt: &Stmt) -> bool {
-    // A conditional a `.AST` parse keeps in its RakuAST shape (ADR-10723
-    // Stage 2) folds the same as the `if` it lowers to.
-    if let Stmt::Ast(node) = stmt {
-        let crate::ast::parsed::ParsedStmt::Conditional(c) = node.as_ref() else {
-            return false;
-        };
-        use crate::ast::parsed::ConditionalKind;
-        let truth = match c.kind {
-            ConditionalKind::If => constant_truth(&c.condition),
-            ConditionalKind::Unless => constant_truth(&c.condition).map(|t| !t),
-            ConditionalKind::With | ConditionalKind::Without => None,
-        };
-        return match truth {
-            Some(true) => true,
-            Some(false) => c.clauses.is_empty(),
-            None => false,
-        };
-    }
-    let Stmt::If {
-        cond,
-        else_branch,
-        is_statement_modifier: false,
-        with_kind: None,
-        ..
-    } = stmt
-    else {
+    let Stmt::Ast(node) = stmt else {
         return false;
     };
-    match constant_truth(cond) {
+    let crate::ast::parsed::ParsedStmt::Conditional(c) = node.as_ref() else {
+        return false;
+    };
+    use crate::ast::parsed::ConditionalKind;
+    let truth = match c.kind {
+        ConditionalKind::If => constant_truth(&c.condition),
+        ConditionalKind::Unless => constant_truth(&c.condition).map(|t| !t),
+        ConditionalKind::With | ConditionalKind::Without => None,
+    };
+    match truth {
         Some(true) => true,
-        Some(false) => !has_elsif_chain(else_branch),
+        Some(false) => c.clauses.is_empty(),
         None => false,
     }
-}
-
-fn has_elsif_chain(else_branch: &[Stmt]) -> bool {
-    matches!(
-        else_branch,
-        [Stmt::If {
-            is_statement_modifier: false,
-            ..
-        }]
-    )
 }
 
 /// The truth value of a condition made only of constants rakudo folds, `None`

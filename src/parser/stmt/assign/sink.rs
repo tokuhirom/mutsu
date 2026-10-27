@@ -148,11 +148,6 @@ pub(crate) fn rewrite_scalar_assignment_stmt_as_sink(name: String, rhs: Expr) ->
 // Cost: O(1).
 fn list_assign_source(expr: &Expr) -> Option<&Expr> {
     match expr {
-        Expr::AssignExpr {
-            name,
-            expr,
-            is_bind: false,
-        } if name.starts_with('@') || name.starts_with('%') => Some(expr),
         Expr::Ast(node) => match node.as_ref() {
             crate::ast::parsed::ParsedExpr::Assign(assign)
                 if matches!(assign.target, Expr::ArrayVar(_) | Expr::HashVar(_)) =>
@@ -169,11 +164,6 @@ fn list_assign_source(expr: &Expr) -> Option<&Expr> {
 // Cost: O(1).
 fn with_list_source(assign: Expr, source: Expr) -> Expr {
     match assign {
-        Expr::AssignExpr { name, .. } => Expr::AssignExpr {
-            name,
-            expr: Box::new(source),
-            is_bind: false,
-        },
         Expr::Ast(node) => match *node {
             crate::ast::parsed::ParsedExpr::Assign(assign) => {
                 super::written_assignment(assign.target, source)

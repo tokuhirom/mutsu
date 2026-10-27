@@ -1,8 +1,8 @@
-use crate::ast::{Expr, Stmt};
+use crate::ast::Expr;
 use crate::parser::helpers::is_non_breaking_space;
 use crate::parser::parse_result::PError;
 use crate::token_kind::TokenKind;
-use crate::value::{Value, ValueView};
+use crate::value::ValueView;
 
 /// Does the input (which starts at a `:`) begin a bareword/variable colonpair
 /// adverb — as opposed to a block/typed-hash/array/angle listop argument?
@@ -129,80 +129,6 @@ pub(crate) fn is_conservative_angle_key_char(c: char) -> bool {
         || c == '#'
         || is_non_breaking_space(c)
         || (!c.is_ascii() && !c.is_whitespace())
-}
-
-/// When a prefix operator is applied to a WhateverCode (Lambda or AnonSubParams),
-/// compose the prefix into the body so that `+(* + 1)` becomes `-> $_ { +($_ + 1) }`
-/// instead of trying to numify the closure itself.
-pub(crate) fn compose_prefix_into_whatevercode(op: TokenKind, expr: Expr) -> Expr {
-    match expr {
-        // ADR-0033 Phase 1: a currying operand is still an un-expanded
-        // `WhateverCurry` marker at this point (the closure isn't built until
-        // compile time), so compose the prefix into its un-curried body and
-        // re-wrap. Equivalent to composing into the built closure's last
-        // statement, since `build_closure` doesn't care whether the leaf is a
-        // literal `Expr::Whatever` or the already-substituted `$_`/`__wc_N`.
-        Expr::WhateverCurry(inner) => Expr::WhateverCurry(Box::new(Expr::Unary {
-            op,
-            expr: inner,
-            word: false,
-        })),
-        Expr::Lambda {
-            param,
-            mut body,
-            is_whatever_code,
-            param_sigilless,
-        } => {
-            wrap_last_stmt_with_unary(&mut body, op);
-            Expr::Lambda {
-                param,
-                body,
-                is_whatever_code,
-                param_sigilless,
-            }
-        }
-        Expr::AnonSubParams {
-            params,
-            param_defs,
-            return_type,
-            mut body,
-            is_rw,
-            is_raw,
-            custom_traits,
-            is_whatever_code,
-            declarator,
-        } => {
-            wrap_last_stmt_with_unary(&mut body, op);
-            Expr::AnonSubParams {
-                params,
-                param_defs,
-                return_type,
-                body,
-                is_rw,
-                is_raw,
-                custom_traits,
-                is_whatever_code,
-                declarator,
-            }
-        }
-        other => Expr::Unary {
-            op,
-            expr: Box::new(other),
-            word: false,
-        },
-    }
-}
-
-/// Wrap the last expression statement in a list of statements with a unary operator.
-pub(crate) fn wrap_last_stmt_with_unary(stmts: &mut [Stmt], op: TokenKind) {
-    if let Some(Stmt::Expr(expr)) = stmts.last_mut() {
-        let inner = std::mem::replace(expr, Expr::Literal(Value::NIL));
-        *expr = Expr::Unary {
-            op,
-            expr: Box::new(inner),
-            word: false,
-        };
-    }
 }
 
 /// Is `expr` a postcircumfix subscript (`%h{...}`, `%h<...>`, `@a[...]`,

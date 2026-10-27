@@ -15,8 +15,8 @@ use super::dot_assign::{
     atomic_elem_update, atomic_operator_call, atomic_var_name, parse_dot_assign,
 };
 use super::helpers::{
-    colonpair_adverb_follows, compose_prefix_into_whatevercode, extract_negative_literal,
-    extract_range_negative_end, is_angle_subscript_key_char, make_negative_subscript_error,
+    colonpair_adverb_follows, extract_negative_literal, extract_range_negative_end,
+    is_angle_subscript_key_char, make_negative_subscript_error,
 };
 use super::named_adverb::{
     has_subscript_named_adverb, lower_subscript_named_adverbs, scan_subscript_named_adverbs,
@@ -414,10 +414,14 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                     },
                 ));
             }
-            // If the operand is a WhateverCode (Lambda or AnonSubParams), compose
-            // the prefix operator into its body instead of wrapping it.
-            let result = compose_prefix_into_whatevercode(op.token_kind(), expr);
-            return Ok((rest, result));
+            return Ok((
+                rest,
+                Expr::Unary {
+                    op: op.token_kind(),
+                    expr: Box::new(expr),
+                    word: false,
+                },
+            ));
         }
     }
     // not(expr) — tight-binding form: not followed by ( without space
