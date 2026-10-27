@@ -204,6 +204,7 @@ impl Compiler {
                 )],
                 has_initializer: true,
                 constant: None,
+                bind: None,
                 where_constraint: None,
             };
             return Some(Stmt::SyntheticBlock(vec![
@@ -212,13 +213,10 @@ impl Compiler {
                 Stmt::MarkSigilless(var.name.clone()),
             ]));
         }
-        let (expr, custom_traits) = match sigil {
-            Some('@') => (Expr::ArrayVar(qualified), Vec::new()),
-            Some(_) => (Expr::HashVar(qualified), Vec::new()),
-            None => (
-                Expr::Var(qualified),
-                vec![(crate::ast::bind_decl::SCALAR_BIND.to_string(), None)],
-            ),
+        let (expr, bind) = match sigil {
+            Some('@') => (Expr::ArrayVar(qualified), None),
+            Some(_) => (Expr::HashVar(qualified), None),
+            None => (Expr::Var(qualified), Some(crate::ast::bind_decl::BindKind::Scalar)),
         };
         Some(crate::ast::bind_decl::expand(Stmt::VarDecl {
             anonymous: false,
@@ -230,9 +228,10 @@ impl Compiler {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits,
+            custom_traits: Vec::new(),
             has_initializer: false,
             constant: None,
+            bind,
             where_constraint: None,
         }))
     }
@@ -379,6 +378,7 @@ impl Compiler {
                 custom_traits: Vec::new(),
                 has_initializer: false,
                 constant: None,
+                bind: None,
                 where_constraint: None,
             };
             return Some(Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl]));

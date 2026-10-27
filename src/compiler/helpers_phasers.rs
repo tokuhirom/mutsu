@@ -268,6 +268,7 @@ impl Compiler {
                 custom_traits: Vec::new(),
                 has_initializer: false,
                 constant: None,
+                bind: None,
                 where_constraint: None,
             },
             Stmt::VarDecl {
@@ -283,6 +284,7 @@ impl Compiler {
                 custom_traits: Vec::new(),
                 has_initializer: false,
                 constant: None,
+                bind: None,
                 where_constraint: None,
             },
         ];
@@ -300,6 +302,7 @@ impl Compiler {
                 custom_traits: Vec::new(),
                 has_initializer: false,
                 constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
@@ -317,6 +320,7 @@ impl Compiler {
                 custom_traits: Vec::new(),
                 has_initializer: false,
                 constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
@@ -334,6 +338,7 @@ impl Compiler {
                 custom_traits: Vec::new(),
                 has_initializer: false,
                 constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
@@ -351,6 +356,7 @@ impl Compiler {
                 custom_traits: Vec::new(),
                 has_initializer: false,
                 constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
@@ -441,6 +447,7 @@ impl Compiler {
                 custom_traits: Vec::new(),
                 has_initializer: false,
                 constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
@@ -663,6 +670,7 @@ impl Compiler {
                 custom_traits: Vec::new(),
                 has_initializer: false,
                 constant: None,
+                bind: None,
                 where_constraint: None,
             }];
             hoisted.push(Stmt::Phaser {

@@ -54,6 +54,7 @@ pub(crate) fn defined_condition(negated: bool, tmp_name: &str, cond_expr: Expr) 
         custom_traits: Vec::new(),
         has_initializer: false,
         constant: None,
+        bind: None,
         where_constraint: None,
     };
     let init = Expr::DoStmt(Box::new(decl));

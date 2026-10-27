@@ -635,9 +635,10 @@ impl Compiler {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![("__scalar_bind".to_string(), None)],
+            custom_traits: Vec::new(),
             has_initializer: false,
             constant: None,
+            bind: Some(crate::ast::bind_decl::BindKind::Scalar),
             where_constraint: None,
         };
         let delete_through = Expr::MethodCall {

@@ -1198,12 +1198,12 @@ impl Compiler {
     // Cost: O(t), t = the declaration's traits.
     pub(super) fn is_scalar_bind_decl(
         name: &str,
-        custom_traits: &[(String, Option<Expr>)],
+        bind: Option<crate::ast::bind_decl::BindKind>,
     ) -> bool {
         !name.starts_with('@')
             && !name.starts_with('%')
             && !name.starts_with('&')
-            && custom_traits.iter().any(|(t, _)| t == "__scalar_bind")
+            && bind == Some(crate::ast::bind_decl::BindKind::Scalar)
     }
 
     /// Whether ADR-0039 slice 2's read flip covers `sigiled` at all — the

@@ -2339,6 +2339,8 @@ pub(crate) enum Stmt {
         /// `Some` for a `constant` declaration, with the sigil it was written
         /// with (a field of the declaration, not a `custom_traits` entry).
         constant: Option<ConstantSigil>,
+        /// `Some` for a binding declaration (`my $x := …`, `my &f := …`).
+        bind: Option<bind_decl::BindKind>,
         /// Optional `where` constraint expression for inline subset typing
         where_constraint: Option<Box<Expr>>,
     },
@@ -3314,6 +3316,7 @@ pub(crate) fn expand_take_logical_tail(value: Expr, op: TokenKind, right: Expr) 
             custom_traits: Vec::new(),
             has_initializer: false,
             constant: None,
+            bind: None,
             where_constraint: None,
         },
         Stmt::Take(variable.clone(), false),
@@ -3772,6 +3775,7 @@ mod env_only_decl_tests {
             custom_traits: Vec::new(),
             has_initializer: false,
             constant: None,
+            bind: None,
             where_constraint: None,
         }
     }

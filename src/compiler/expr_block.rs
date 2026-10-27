@@ -188,6 +188,7 @@ impl Compiler {
                 custom_traits,
                 has_initializer,
                 constant,
+                bind,
                 ..
             } => {
                 let anonymous_scalar = *anonymous && !name.starts_with(['@', '%', '&']);
@@ -276,7 +277,7 @@ impl Compiler {
                                 )
                             }))
                         || is_constant_decl
-                        || Self::is_scalar_bind_decl(name, custom_traits)
+                        || Self::is_scalar_bind_decl(name, *bind)
                         || self.call_arg_decl_slots.contains(name))
                 {
                     // ADR-0039 slice 2: a container declaration in expression
@@ -695,6 +696,7 @@ impl Compiler {
                         expr,
                         type_constraint.as_deref(),
                         custom_traits,
+                        *bind,
                         *has_initializer,
                     ) {
                         // Expression-position uninitialized untyped scalar
@@ -806,9 +808,8 @@ impl Compiler {
                             } else if type_constraint.is_none()
                                 && is_nil_literal
                                 && *has_initializer
-                                && !custom_traits
-                                    .iter()
-                                    .any(|(t, _)| t == "__scalar_bind" || t == "default")
+                                && *bind != Some(crate::ast::bind_decl::BindKind::Scalar)
+                                && !custom_traits.iter().any(|(t, _)| t == "default")
                                 && !name.starts_with('@')
                                 && !name.starts_with('%')
                                 && !name.starts_with('&')
@@ -849,7 +850,7 @@ impl Compiler {
                                     let var_name_idx =
                                         self.code.add_constant(Value::str(display_name));
                                     let is_bind =
-                                        custom_traits.iter().any(|(t, _)| t == "__scalar_bind");
+                                        *bind == Some(crate::ast::bind_decl::BindKind::Scalar);
                                     if is_bind {
                                         self.code.emit(OpCode::TypeCheckBind(
                                             tc_idx,
@@ -884,7 +885,7 @@ impl Compiler {
                                 // `(my $p := ...) =:= IterationEnd ?? () !! $p`).
                                 if !name.starts_with('@')
                                     && !name.starts_with('%')
-                                    && custom_traits.iter().any(|(t, _)| t == "__scalar_bind")
+                                    && *bind == Some(crate::ast::bind_decl::BindKind::Scalar)
                                 {
                                     self.code.emit(OpCode::MarkScalarBindContext);
                                 }
@@ -1192,7 +1193,7 @@ impl Compiler {
             }
             // A scalar bind to a readonly RHS used in expression position
             // (`f(my $c := "lit")`): the synthetic block is
-            // `[MarkReadonly(name), VarDecl{__scalar_bind}]`. As with the other
+            // `[MarkReadonly(name), VarDecl{bind: Scalar}]`. As with the other
             // declaration synthetic blocks, the `my` must leak into the enclosing
             // scope. The block-final VarDecl helper does a plain assign (which a
             // preceding MarkReadonly would reject), so instead compile the
@@ -1202,8 +1203,8 @@ impl Compiler {
             Stmt::SyntheticBlock(inner)
                 if matches!(inner.first(), Some(Stmt::MarkReadonly(..)))
                     && inner.iter().any(|s| {
-                        matches!(s, Stmt::VarDecl { custom_traits, .. }
-                            if custom_traits.iter().any(|(t, _)| t == "__scalar_bind"))
+                        matches!(s, Stmt::VarDecl { bind, .. }
+                            if *bind == Some(crate::ast::bind_decl::BindKind::Scalar))
                     }) =>
             {
                 let bound_name = inner.iter().find_map(|s| match s {

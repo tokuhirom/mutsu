@@ -270,6 +270,7 @@ fn rewrite_placeholder_block(stmt: Stmt, value: &Expr) -> Stmt {
             custom_traits: Vec::new(),
             has_initializer: false,
             constant: None,
+            bind: None,
             where_constraint: None,
         });
     }

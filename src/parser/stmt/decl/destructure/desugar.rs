@@ -129,6 +129,7 @@ fn expand_bare(decl: &SignatureDecl) -> Vec<Stmt> {
             custom_traits: traits,
             has_initializer: false,
             constant: None,
+            bind: None,
             where_constraint: None,
         });
     }
@@ -190,6 +191,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         custom_traits: Vec::new(),
         has_initializer: false,
         constant: None,
+        bind: None,
         where_constraint: None,
     };
     // In BINDING mode the staging temp must keep the RHS elements' CONTAINERS,
@@ -237,6 +239,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 custom_traits: Vec::new(),
                 has_initializer: false,
                 constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
@@ -295,6 +298,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 custom_traits: Vec::new(),
                 has_initializer: false,
                 constant: None,
+                bind: None,
                 where_constraint: Some(Box::new(lit.clone())),
             });
             continue;
@@ -430,12 +434,9 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         // same scalar bind `my $a := EXPR` lowers to, and carries the same
         // `__scalar_bind` marker, so an immutable element (`my ($a is rw) :=
         // (5,)`) stays immutable instead of getting a fresh container.
-        let mut custom_traits =
-            if binds_element && !dvar.sigilless && !dvar.name.starts_with(['@', '%']) {
-                vec![("__scalar_bind".to_string(), None)]
-            } else {
-                Vec::new()
-            };
+        let bind = (binds_element && !dvar.sigilless && !dvar.name.starts_with(['@', '%']))
+            .then_some(crate::ast::bind_decl::BindKind::Scalar);
+        let mut custom_traits = Vec::new();
         // `my ($a, $b) is default(D) = ...`: the group trait applies to every
         // element, through the same variable trait the bare form uses.
         if let Some(def_expr) = &decl.group_default {
@@ -454,6 +455,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
             custom_traits,
             has_initializer: false,
             constant: None,
+            bind,
             where_constraint: effective_where,
         };
         let decl = if binds_element && dvar.sigilless {

@@ -199,12 +199,12 @@ fn has_runtime_part(stmt: &Stmt) -> bool {
     match stmt {
         stmt if stmt.is_routine_traits() => false,
         Stmt::VarDecl {
-            custom_traits,
+            bind,
             has_initializer,
             ..
         } => {
             splittable_var_decl(stmt)
-                && (*has_initializer || custom_traits.iter().any(|(t, _)| t == "__scalar_bind"))
+                && (*has_initializer || *bind == Some(crate::ast::bind_decl::BindKind::Scalar))
         }
         Stmt::ClassDecl { .. } | Stmt::Package { .. } => {
             matches!(split_package_decl(stmt.clone()), (_, Some(_)))

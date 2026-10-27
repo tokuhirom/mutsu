@@ -32,6 +32,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             custom_traits,
             has_initializer: _,
             constant: _,
+            bind: _,
             where_constraint,
         } => {
             v.visit_expr_mut(expr);

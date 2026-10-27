@@ -36,6 +36,7 @@ pub(super) fn static_scalar(name: &str) -> Stmt {
         custom_traits: vec![],
         has_initializer: false,
         constant: None,
+        bind: None,
         where_constraint: None,
     }
 }
@@ -48,16 +49,6 @@ pub(super) fn unbound_decl(name: &str) -> Stmt {
         .unwrap_or(decl)
 }
 
-pub(super) fn without_bind_marker(
-    traits: &[(String, Option<Expr>)],
-) -> Vec<(String, Option<Expr>)> {
-    traits
-        .iter()
-        .filter(|(t, _)| t != "__scalar_bind")
-        .cloned()
-        .collect()
-}
-
 /// The cell's own static declaration: the variable's, under the cell's name.
 pub(super) fn renamed_static_decl(static_decl: &Stmt, cell_name: &str) -> Stmt {
     let mut decl = static_decl.clone();
@@ -68,6 +59,7 @@ pub(super) fn renamed_static_decl(static_decl: &Stmt, cell_name: &str) -> Stmt {
         export_tags,
         custom_traits,
         has_initializer,
+        bind: decl_bind,
         ..
     } = &mut decl
     {
@@ -75,7 +67,7 @@ pub(super) fn renamed_static_decl(static_decl: &Stmt, cell_name: &str) -> Stmt {
         *is_export = false;
         export_tags.clear();
         *has_initializer = false;
-        *custom_traits = without_bind_marker(custom_traits);
+        *decl_bind = None;
         // A `:D` variable's cell holds its type object until the run-time
         // assignment, which the constraint rejects. The cell is storage only;
         // the variable itself keeps the constraint.
@@ -134,6 +126,7 @@ pub(super) fn decl_from_cell(static_decl: &Stmt, cell_name: &str, bind: bool) ->
         expr,
         custom_traits,
         has_initializer,
+        bind: decl_bind,
         ..
     } = &mut decl
     {
@@ -148,7 +141,8 @@ pub(super) fn decl_from_cell(static_decl: &Stmt, cell_name: &str, bind: bool) ->
         } else {
             read_var(cell_name)
         };
-        let mut traits = without_bind_marker(custom_traits);
+        *decl_bind = None;
+        let mut traits = custom_traits.clone();
         *has_initializer = !bind;
         traits.push((
             crate::runtime::phasers::BEGIN_STATIC_TRAIT.to_string(),

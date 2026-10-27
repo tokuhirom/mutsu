@@ -170,6 +170,7 @@ fn expand_loop(
                 custom_traits: Vec::new(),
                 has_initializer: false,
                 constant: None,
+                bind: None,
                 where_constraint: None,
             })
             .chain(std::iter::once(stmt))

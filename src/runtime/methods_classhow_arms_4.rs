@@ -345,6 +345,7 @@ impl Interpreter {
                         custom_traits: Vec::new(),
                         has_initializer: false,
                         constant: None,
+                        bind: None,
                         where_constraint: None,
                     }];
                     body.extend(sub_data.body.iter().cloned());
@@ -365,6 +366,7 @@ impl Interpreter {
                             custom_traits: Vec::new(),
                             has_initializer: false,
                             constant: None,
+                            bind: None,
                             where_constraint: None,
                         },
                         crate::ast::Stmt::MarkSigillessReadonly(inv_name),

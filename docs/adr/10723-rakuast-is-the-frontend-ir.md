@@ -2509,3 +2509,25 @@ and the "no other traits" check in `convert` that spelled `n != "__constant" && 
 Remaining `VarDecl` pseudo-traits: `__scalar_bind` / `__code_bind`, `__my_scoped`, `__object_hash`,
 `__init_sees_self`, `__shaped_decl`, `__implicit_value_type`, the name-colonpair mark and the `is dynamic`
 argument.
+
+### 6.124 A binding declaration is a field of `VarDecl` (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+Fourth step of the marker-to-field series (§6.119, §6.121, §6.123). `Stmt::VarDecl` gains
+`bind: Option<BindKind>` (`Scalar` for `my $x := …`, `Code` for `my &f := …`), and the `__scalar_bind` /
+`__code_bind` entries of `custom_traits` are deleted. `@` and `%` binds carry none: `ast::bind_decl::expand`
+wraps them, and `declared` reads the wrapper. The parser's `BindDecl` node, the RakuAST `lower`, the
+destructuring desugar, the `self` alias and the compiler's own synthesized binds set the field; the
+compiler, the BEGIN lifting, TRIR slot allocation and the statement modifier split read it. The
+`uninit_untyped_scalar_defaults_to_any` family and `is_scalar_bind_decl` take the field as a parameter.
+
+Deleted: both marker traits and their push sites, `cell_ast::without_bind_marker` and the two
+`filter(!= "__scalar_bind")` rebuilds (the BEGIN static split and the modifier split), the
+`SCALAR_BIND` / `CODE_BIND` exemptions in `convert`'s internal-trait filter, the dead `has_init |= bind`
+in `split_var_decl` (a scalar bind returned earlier), and about 20 `custom_traits.iter().any(…)` scans.
+
+As in §6.123, a declaration guard spelled `custom_traits.is_empty()` had been excluding bound
+declarations implicitly; the passthrough leaf, the for-topic alias, the register-before-init test and the
+modifier split now name `bind: None`.
+
+Remaining `VarDecl` pseudo-traits: `__my_scoped`, `__object_hash`, `__init_sees_self`, `__shaped_decl`,
+`__implicit_value_type`, the name-colonpair mark and the `is dynamic` argument.

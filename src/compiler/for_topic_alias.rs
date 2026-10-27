@@ -133,6 +133,7 @@ impl<'ast> Visit<'ast> for AliasScan {
                 where_constraint: None,
                 custom_traits,
                 constant: None,
+                bind: None,
                 ..
             } => is_plain_scalar(name) && custom_traits.is_empty(),
             _ => false,

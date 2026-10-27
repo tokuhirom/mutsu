@@ -1801,8 +1801,6 @@ pub(super) fn var_decl_statement(
             || n == crate::ast::DYNAMIC_TRAIT_ARGUMENT
             // The written colonpairs of the name, rendered in `desigilname`.
             || n == crate::ast::NAME_COLONPAIRS
-            || (is_binding && n == crate::ast::bind_decl::SCALAR_BIND)
-            || (is_binding && n == crate::ast::bind_decl::CODE_BIND)
     };
     let unrendered: Vec<&str> = custom_traits
         .iter()
@@ -1991,6 +1989,7 @@ pub(super) fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeErr
         custom_traits,
         has_initializer,
         constant,
+        bind: _,
         where_constraint,
         is_export,
         export_tags,

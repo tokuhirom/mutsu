@@ -577,6 +577,7 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
         is_export,
         export_tags,
         custom_traits,
+        bind,
         constant,
         has_initializer,
         where_constraint,
@@ -603,7 +604,7 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     // whole declaration stays at its position and binds, or a Proxy on the
     // right would be FETCHed into a plain Scalar. The caller declares its
     // static half separately.
-    if custom_traits.iter().any(|(t, _)| t == "__scalar_bind") {
+    if *bind == Some(crate::ast::bind_decl::BindKind::Scalar) {
         return None;
     }
     // A declaration a lifted BEGIN gave a static cell (ADR-0134 slice 2) is
@@ -620,7 +621,7 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     // already records a real explicit initializer in the declaration's
     // `has_initializer` field (read the same way at e.g. `compiler/stmt.rs`'s
     // `has_init` sites) — use that instead of guessing from the expression shape.
-    let has_init = *has_initializer || custom_traits.iter().any(|(n, _)| n == "__scalar_bind");
+    let has_init = *has_initializer;
     // The static declaration's value (before any real initializer runs) must
     // match what an uninitialized declaration of this sigil actually holds:
     // `Nil` for a scalar, but an EMPTY container for `@`/`%` — never a raw
@@ -658,11 +659,7 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
             .filter(|_| has_init && !*is_our)
         {
             Some(nominal) => {
-                let mut traits: Vec<_> = custom_traits
-                    .iter()
-                    .filter(|(t, _)| t != "__scalar_bind")
-                    .cloned()
-                    .collect();
+                let mut traits = custom_traits.clone();
                 traits.push((BEGIN_STATIC_DEFINITE_TRAIT.to_string(), None));
                 (Expr::BareWord(nominal), traits, false)
             }
@@ -681,6 +678,7 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
         custom_traits: static_traits,
         has_initializer: static_has_initializer,
         constant: *constant,
+        bind: None,
         where_constraint: where_constraint.clone(),
     };
     let assign = has_init.then(|| Stmt::Assign {
