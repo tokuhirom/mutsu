@@ -431,6 +431,10 @@ impl Compiler {
         // for `(...)`. Compiling a `Grouped` is transparent, so peeling changes
         // nothing else. The marker still does its parse-time job of closing the
         // operand off from the argument-list lift; that happened before here.
+        // `(a X b) X c` keeps its inner product as ONE operand (nested tuples)
+        // where `a X b X c` is a single n-ary product (flat tuples): only the
+        // operand as written, parenthesization included, can be chained.
+        let written_left = left;
         let left = left.peel_parens();
         let right = right.peel_parens();
         // A grouped declaration used as an X/Z operand (`my ($a, $b) Z ...`)
@@ -696,7 +700,7 @@ impl Compiler {
         let is_identity_op = op == "=:=" || op == "!=:=";
         if meta == "X" || meta == "Z" {
             // `a X b X c` is `MetaOp(X, MetaOp(X, a, b), c)`: one operand list.
-            let mut operands = left.flatten_meta_chain(meta, op);
+            let mut operands = written_left.flatten_meta_chain(meta, op);
             operands.push(right);
             if operands.len() > 2 {
                 for operand in &operands {
