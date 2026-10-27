@@ -680,6 +680,19 @@ impl Interpreter {
             // Cost: O(n) to materialize the elements, n = elements.
             let list = self.call_method_with_values(target.clone(), "list", vec![])?;
             hyper_source_items(&list)
+        } else if let Some(elems) = if matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Mixin(..)
+        ) {
+            // A user class that composes `Iterable` is walked through its
+            // `iterator` (rakudo's `deepmap` reads `self.iterator`):
+            // `$seqy>>.id` calls `.id` on each element, not on the object.
+            // Cost: O(n) iterator pulls, n = elements.
+            self.try_iterable_instance_items(&target)?
+        } else {
+            None
+        } {
+            elems
         } else {
             hyper_source_items(&target)
         };
