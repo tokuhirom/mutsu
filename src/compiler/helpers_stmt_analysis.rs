@@ -532,6 +532,18 @@ impl Compiler {
         }
     }
 
+    /// Emit an `OpCode::LexImportBuiltinOp` prefix for the bare `X` / `Z` the
+    /// caller emits next (`meta` is `"X"` or `"Z"`): it is the routine
+    /// `infix:<X>` / `infix:<Z>`, whose user candidates a block-scoped `use`
+    /// may have imported.
+    // Cost: O(c), c = enclosing `use`-blocks; O(1) outside every `use`-block.
+    pub(super) fn emit_lex_import_list_infix(&mut self, meta: &str) {
+        if self.lexical_import_chain.is_empty() {
+            return;
+        }
+        self.emit_lex_import_builtin_named(&format!("infix:<{meta}>"));
+    }
+
     /// Emit an `OpCode::LexImportBuiltinOp` prefix for the `X`/`Z`/`R`
     /// meta-op over the built-in `op` the caller emits next, when its user
     /// candidates bind lexically (ADR-8751 stage 2). A meta-op over a user
