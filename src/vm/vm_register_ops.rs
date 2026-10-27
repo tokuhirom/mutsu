@@ -147,6 +147,35 @@ impl Interpreter {
             }
             scope.insert(name.to_string(), v);
         }
+        // `use MONKEY-SEE-NO-EVAL` is lexical: a regex that closes over names
+        // and interpolates a string carrying code blocks (`<{$re}>`) keeps the
+        // pragma of the scope it was written in, whoever matches it later.
+        if self.monkey_see_no_eval()
+            && matches!(base.view(), ValueView::Regex(p) if p.contains("<{"))
+        {
+            // The interpolated string is compiled in the regex's own lexical
+            // scope, so its code blocks may name any lexical visible there
+            // (`<{$re}>` with `$re ~ ' { $obj.note($/) }'`): capture the
+            // defining frame's set locals too, not only the names the literal
+            // spells.
+            for (slot, name) in code.locals.iter().enumerate() {
+                if scope.contains_key(name.as_str()) {
+                    continue;
+                }
+                if let Some(v) = self.locals.get(slot).filter(|v| !v.is_nil()) {
+                    scope.insert(name.to_string(), v.clone());
+                }
+            }
+        }
+        if !scope.is_empty() && self.monkey_see_no_eval() {
+            scope.insert(
+                crate::meta_ns::MetaNs::Pragma
+                    .key_for_str("MONKEY-SEE-NO-EVAL")
+                    .as_str()
+                    .to_string(),
+                Value::TRUE,
+            );
+        }
         // The defining frame's `$_` (see `RegexClosure::topic`): a set local
         // slot by value, otherwise the env `$_`'s container cell.
         let topic = topic.and_then(|slot| {
