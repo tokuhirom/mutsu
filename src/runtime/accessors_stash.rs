@@ -4,6 +4,10 @@ use crate::value::ValueMap;
 use crate::value::ValueView;
 use crate::value::types::is_stash_class_name;
 
+/// The slot-only locals a `CALLER::` frame had flushed, and the frame's code
+/// address and slot base (see `CallFrameEntry::flushed`).
+pub(crate) type FlushedContext = (Vec<(Symbol, Value)>, Option<(usize, usize)>);
+
 impl Interpreter {
     pub(super) fn stash_symbol_key_from_env_tail(rest: &str) -> String {
         // A sigil-less constant's term-namespace key (#9962) is the term it
@@ -214,7 +218,7 @@ impl Interpreter {
     pub(crate) fn eval_context_flushed(
         &self,
         ctx: &Value,
-    ) -> (Vec<(Symbol, Value)>, Option<(usize, usize)>) {
+    ) -> FlushedContext {
         let ValueView::Instance {
             class_name,
             attributes,
