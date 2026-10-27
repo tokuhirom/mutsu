@@ -37,15 +37,15 @@ pub(crate) enum BindKind {
 }
 
 /// Whether a binding declaration of `name` (a `$` name carries no sigil) is a
-/// scalar bind, the kind that carries [`SCALAR_BIND`].
+/// scalar bind, the kind recorded as [`BindKind::Scalar`].
 pub(crate) fn is_scalar_bind_name(name: &str) -> bool {
     !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&')
 }
 
 /// The statement the compiler runs for the binding declaration `decl`, a
-/// `Stmt::VarDecl` whose `expr` is the bound right-hand side (and which carries
-/// [`SCALAR_BIND`] when [`is_scalar_bind_name`] says so).
-// Cost: O(n + t), n = name length, t = custom traits on a callable declaration.
+/// `Stmt::VarDecl` whose `expr` is the bound right-hand side (and whose `bind` is
+/// [`BindKind::Scalar`] when [`is_scalar_bind_name`] says so).
+// Cost: O(n), n = name length.
 pub(crate) fn expand(mut decl: Stmt) -> Stmt {
     if let Stmt::VarDecl { name, bind, .. } = &mut decl
         && name.starts_with('&')
