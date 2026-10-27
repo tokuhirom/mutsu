@@ -228,31 +228,6 @@ pub(crate) fn push_export_tags(after_export: &str, export_tags: &mut Vec<String>
     }
 }
 
-/// The `custom_traits` marker of a declaration written with a declarator a
-/// `use`d module registered through `EXPORTHOW::DECLARE` (`monitor Name { }`).
-/// Its argument is the keyword; registration resolves the HOW from it, and the
-/// RakuAST layer renders it as the package's `parsed-declarator`.
-pub(crate) const DECLARE_HOW_TRAIT: &str = "__mutsu_declare_how";
-
-/// The [`DECLARE_HOW_TRAIT`] entry for the declarator keyword `kw`.
-// Cost: O(1).
-pub(crate) fn declare_how_marker(kw: String) -> (String, Option<Expr>) {
-    (
-        DECLARE_HOW_TRAIT.to_string(),
-        Some(Expr::Literal(Value::str(kw))),
-    )
-}
-
-/// The declarator keyword a [`DECLARE_HOW_TRAIT`] entry in `custom_traits`
-/// names, if there is one.
-// Cost: O(t), t = number of custom traits.
-pub(crate) fn declare_how_keyword(custom_traits: &[(String, Option<Expr>)]) -> Option<String> {
-    custom_traits.iter().find_map(|(name, arg)| match arg {
-        Some(Expr::Literal(kw)) if name == DECLARE_HOW_TRAIT => Some(kw.to_string_value()),
-        _ => None,
-    })
-}
-
 /// A `.` on the SAME LINE as a type declaration's closing brace is a **postfix
 /// on the type object** — `class It { ... }.new` builds an instance — not a new
 /// `$_.method` statement. Raku agrees even across a space: it parses
@@ -278,13 +253,13 @@ pub(crate) fn reject_trailing_postfix(rest: &str) -> Result<(), PError> {
 /// Tag a declaration written with the built-in declarator `keyword` with the
 /// HOW marker when a `use`d module's `EXPORTHOW::SUPERSEDE` replaced it.
 pub(crate) fn apply_supersede(stmt: &mut Stmt, keyword: &str) {
-    let Some(marker) = super::super::simple::supersede_marker(keyword) else {
+    let Some(declarator) = super::super::simple::superseded_declarator(keyword) else {
         return;
     };
-    if let Some(Stmt::ClassDecl { custom_traits, .. } | Stmt::RoleDecl { custom_traits, .. }) =
+    if let Some(Stmt::ClassDecl { marks, .. } | Stmt::RoleDecl { marks, .. }) =
         crate::ast::package_header::declaration_mut(stmt)
     {
-        custom_traits.push(marker);
+        marks.declarator = Some(declarator);
     }
 }
 
@@ -333,10 +308,10 @@ pub(crate) fn declare_decl(input: &str) -> PResult<'_, Stmt> {
         }
         let (rest, _) = ws1(rest)?;
         let (rest, mut stmt) = class_decl_body(rest, false)?;
-        if let Some(Stmt::ClassDecl { custom_traits, .. }) =
+        if let Some(Stmt::ClassDecl { marks, .. }) =
             crate::ast::package_header::declaration_mut(&mut stmt)
         {
-            custom_traits.push(declare_how_marker(kw));
+            marks.declarator = Some(kw);
         }
         return Ok((rest, stmt));
     }
@@ -368,10 +343,10 @@ pub(crate) fn declare_term_decl(input: &str) -> PResult<'_, Stmt> {
             continue;
         }
         let (rest, mut stmt) = class_decl_body_opt(rest, is_lexical, true)?;
-        if let Some(Stmt::ClassDecl { custom_traits, .. }) =
+        if let Some(Stmt::ClassDecl { marks, .. }) =
             crate::ast::package_header::declaration_mut(&mut stmt)
         {
-            custom_traits.push(declare_how_marker(kw));
+            marks.declarator = Some(kw);
         }
         return Ok((rest, stmt));
     }

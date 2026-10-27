@@ -41,14 +41,9 @@ pub(super) struct RoleDecl<'a> {
 // Cost: O(n), n = size of the role's body.
 pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     let is_lexical = role.is_lexical;
-    // The parser's own markers are not traits; any other plain name is a
-    // trait of the program's own (`is array_type(T)`), rendered by name.
-    let user_traits: Vec<(String, Option<crate::ast::Expr>)> = role
-        .custom_traits
-        .iter()
-        .filter(|(t, _)| t != crate::parser::DECLARE_HOW_TRAIT)
-        .cloned()
-        .collect();
+    // Any plain trait name is a trait of the program's own (`is array_type(T)`),
+    // rendered by name.
+    let user_traits = role.custom_traits;
     // Rakudo drops `is repr<...>` from a role's traits, so it cannot come back.
     if user_traits
         .iter()
@@ -133,7 +128,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     };
     let mut fields = package_header_fields(role.name, scope, role.marks.colons);
     super::role_header::retain_name(&mut fields, role.name);
-    super::declare_how::add_field(&mut fields, role.custom_traits, "role");
+    super::declare_how::add_field(&mut fields, role.marks.declarator.as_deref(), "role");
     if !traits.is_empty() {
         fields.push(RakuAstField {
             name: Some("traits"),
@@ -192,7 +187,6 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         return Err(super::lower::unsupported(node));
     }
     let mut custom_traits = Vec::new();
-    custom_traits.extend(head.custom_traits());
     let mut header = Vec::new();
     let mut flags = IsTraits::default();
     if let Some(field) = node.fields.iter().find(|f| f.name == Some("traits")) {

@@ -191,12 +191,8 @@ pub(super) fn lower_with_header(
     let mut stmt = lower(&stripped)?;
     if super::routine_source::has_supersede(node) {
         match &mut stmt {
-            Stmt::ClassDecl { custom_traits, .. } => {
-                custom_traits.push(crate::parser::declare_how_marker("class".to_string()));
-            }
-            Stmt::RoleDecl { custom_traits, .. } => {
-                custom_traits.push(crate::parser::declare_how_marker("role".to_string()));
-            }
+            Stmt::ClassDecl { marks, .. } => marks.declarator = Some("class".to_string()),
+            Stmt::RoleDecl { marks, .. } => marks.declarator = Some("role".to_string()),
             _ => return Err(super::lower::unsupported(node)),
         }
     }

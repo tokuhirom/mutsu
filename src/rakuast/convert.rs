@@ -951,7 +951,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             } else if marks.leading_colons {
                 name_parts::with_leading_empty(&mut fields);
             }
-            super::declare_how::add_field(&mut fields, custom_traits, "class");
+            super::declare_how::add_field(&mut fields, marks.declarator.as_deref(), "class");
             // Field order matches raku: scope, parsed-declarator, name, repr,
             // traits, body.
             if let Some(r) = repr {
@@ -1289,7 +1289,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 is_rw: *is_rw,
                 is_lexical: *is_lexical,
                 custom_traits,
-                marks: *marks,
+                marks: marks.clone(),
             },
         )?))),
         Stmt::HasDecl { .. } => super::attribute_decl::convert(stmt),
@@ -2280,11 +2280,11 @@ pub(super) fn package_header_fields(
 }
 
 /// Whether a package declaration's `custom_traits` hold anything but the
-/// parser's declarator marker, which the node expresses itself.
+/// traits the node expresses itself.
 pub(super) fn has_package_traits(custom_traits: &[(String, Option<Expr>)]) -> bool {
     custom_traits
         .iter()
-        .any(|(t, _)| t != crate::parser::DECLARE_HOW_TRAIT && !decl_traits::is_class_trait(t))
+        .any(|(t, _)| !decl_traits::is_class_trait(t))
 }
 
 /// The `expression` of a `Statement::Expression` node.

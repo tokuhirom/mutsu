@@ -3961,9 +3961,7 @@ pub(crate) fn unescape_user_trait(name: &str) -> &str {
 
 /// How a `class` / `role` / `grammar` declaration was written, where the written
 /// form is not a trait: the RakuAST layer renders these, nothing dispatches them.
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct PackageMarks {
     /// `anon class Name`: built but not installed under its name.
     pub anon: bool,
@@ -3971,4 +3969,9 @@ pub struct PackageMarks {
     pub colons: bool,
     /// Written `class ::Name`: the name's leading empty part.
     pub leading_colons: bool,
+    /// The keyword a registered `EXPORTHOW::DECLARE` declarator (`monitor Name { }`), or
+    /// a built-in one whose HOW `EXPORTHOW::SUPERSEDE` replaced, declared the package
+    /// with: registration resolves the HOW from it, and the RakuAST layer renders it
+    /// as the package's `parsed-declarator`.
+    pub declarator: Option<String>,
 }

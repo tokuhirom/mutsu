@@ -219,11 +219,8 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = opt_char(r, ';');
         let mut body: Vec<Stmt> = Vec::new();
         crate::ast::routine_trait::attach(&mut body, written);
-        if let Some(kw) = declare_how {
-            custom_traits.push(crate::parser::declare_how_marker(kw));
-        } else if let Some(marker) = super::super::simple::supersede_marker("class") {
-            custom_traits.push(marker);
-        }
+        let declarator =
+            declare_how.or_else(|| super::super::simple::superseded_declarator("class"));
         // `stmt_list` parses the rest of a `unit class` as this declaration's
         // body. Register the type before returning so body methods can use the
         // fully-qualified name in a `when` matcher.
@@ -250,7 +247,10 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_unit: true,
                     is_native: false,
                     export_tags,
-                    marks: Default::default(),
+                    marks: crate::ast::PackageMarks {
+                        declarator,
+                        ..Default::default()
+                    },
                     implicit_grammar_parent: false,
                     is_grammar: false,
                     decl_id: crate::ast::next_class_decl_id(),
@@ -423,11 +423,11 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             );
         }
         crate::ast::routine_trait::attach(&mut body, written);
-        if role_kw != "role" {
-            custom_traits.push(crate::parser::declare_how_marker(role_kw));
-        } else if let Some(marker) = super::super::simple::supersede_marker("role") {
-            custom_traits.push(marker);
-        }
+        let declarator = if role_kw != "role" {
+            Some(role_kw)
+        } else {
+            super::super::simple::superseded_declarator("role")
+        };
         return Ok((
             r,
             with_header(
@@ -446,7 +446,10 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     language_version: super::super::simple::current_language_version(),
                     custom_traits,
                     decl_id: crate::ast::next_class_decl_id(),
-                    marks: Default::default(),
+                    marks: crate::ast::PackageMarks {
+                        declarator,
+                        ..Default::default()
+                    },
                 },
             ),
         ));

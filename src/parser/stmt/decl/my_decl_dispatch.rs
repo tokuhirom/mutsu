@@ -339,8 +339,8 @@ pub(super) fn try_keyword_dispatch(
         };
         let (r, _) = ws1(r)?;
         let (r, mut stmt) = class_decl_body(r, !is_our)?;
-        if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
-            custom_traits.push(crate::parser::declare_how_marker(kw));
+        if let Stmt::ClassDecl { marks, .. } = &mut stmt {
+            marks.declarator = Some(kw);
         }
         return Ok(Some((r, stmt)));
     }

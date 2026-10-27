@@ -35,9 +35,8 @@ pub(crate) use token_body::{
 
 // Shared declarator helpers used across submodules.
 pub(crate) use class_decl::{
-    DECLARE_HOW_TRAIT, declare_how_keyword, declare_how_marker, note_is, note_parent,
-    parse_bracket_arg_exprs, parse_declarator_traits, parse_optional_bracket_suffix,
-    reject_trailing_postfix, trait_argument,
+    note_is, note_parent, parse_bracket_arg_exprs, parse_declarator_traits,
+    parse_optional_bracket_suffix, reject_trailing_postfix, trait_argument,
 };
 pub(crate) use export_scan::{extract_exported_subs, find_export_name_clash};
 pub(crate) use package_decl::{check_pseudo_package_in_decl, export_name_clash_error};

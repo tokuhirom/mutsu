@@ -230,6 +230,7 @@ impl Interpreter {
             repr,
             is_native,
             export_tags,
+            declarator,
             language_version,
             custom_traits,
             decl_id,
@@ -606,12 +607,7 @@ impl Interpreter {
             // before entering `register_class_decl`, but defer the protocol
             // (`new_type`/`add_method`) until after the body has registered its
             // own attributes and methods, as before.
-            let declare_how_keyword = custom_traits
-                .iter()
-                .find(|(trait_name, _)| trait_name == crate::parser::DECLARE_HOW_TRAIT)
-                .and_then(|(_, arg)| arg.as_ref())
-                .and_then(crate::opcode::DeclTraitArg::literal)
-                .map(|kw| kw.to_string_value());
+            let declare_how_keyword = declarator.clone();
             let declare_how_keyword_text = declare_how_keyword.clone();
             let (declare_how_installed, declare_how_has_compose) =
                 if let Some(keyword) = declare_how_keyword {
@@ -966,7 +962,7 @@ impl Interpreter {
                 let type_obj = Value::package(Symbol::intern(&storage_name));
                 // Dispatch explicitly parsed custom traits (with args)
                 for (trait_name, trait_arg) in custom_traits {
-                    // Internal markers (`__mutsu_declare_how`, `__hoisted`, ...)
+                    // Internal markers (`__hoisted`, ...)
                     // are not user traits; never dispatch them to trait_mod:<is>.
                     if trait_name.starts_with("__")
                         || crate::runtime::native_decl::is_native_type_trait(trait_name)
@@ -1345,6 +1341,7 @@ impl Interpreter {
             is_rw,
             is_lexical,
             language_version,
+            declarator,
             custom_traits,
             own_attribute_names,
             body_used_modules,
@@ -1660,13 +1657,7 @@ impl Interpreter {
 
             // A role declared through a superseded `role` declarator (or a
             // role-kind slang declarator) is built with that declarator's HOW.
-            let declare_how_keyword = custom_traits
-                .iter()
-                .find(|(trait_name, _)| trait_name == crate::parser::DECLARE_HOW_TRAIT)
-                .and_then(|(_, arg)| arg.as_ref())
-                .and_then(crate::opcode::DeclTraitArg::literal)
-                .map(|kw| kw.to_string_value());
-            if let Some(keyword) = declare_how_keyword
+            if let Some(keyword) = declarator.clone()
                 && let Some(how_type) = self.declarator_how_type(&keyword)
             {
                 self.install_custom_class_how(&qualified_name, how_type, false)?;

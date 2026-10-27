@@ -159,7 +159,7 @@ impl Compiler {
                     is_unit: *is_unit,
                     is_native: *is_native,
                     export_tags: export_tags.clone(),
-                    marks: *marks,
+                    marks: marks.clone(),
                     implicit_grammar_parent: *implicit_grammar_parent,
                     is_grammar: *is_grammar,
                     decl_id: *decl_id,
@@ -204,7 +204,7 @@ impl Compiler {
                     traits
                 },
                 decl_id: *decl_id,
-                marks: *marks,
+                marks: marks.clone(),
             },
             _ => stmt.clone(),
         }
