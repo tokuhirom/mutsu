@@ -197,7 +197,8 @@ pub(crate) fn with_then_branch(
                 // method named after the sub-parameter *with its sigil attached*
                 // (`$obj.@list`), and knew nothing of hash fallback, `|`
                 // captures, renames or defaults.
-                let unpack_target = crate::param_destructure::decl_stmt(pname.clone(), tmp_var.clone());
+                let unpack_target =
+                    crate::param_destructure::decl_stmt(pname.clone(), tmp_var.clone());
                 // An aggregate-sigil pattern (`-> % (:$k is rw)`) BINDS the value,
                 // so its elements alias the source rather than a copy.
                 with_body.push(if pname.starts_with(['@', '%']) {
