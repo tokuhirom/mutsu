@@ -1169,11 +1169,20 @@ impl Interpreter {
             // aggregate IS a container, so this is a list assignment into it,
             // exactly as for a routine-call result.
             ValueView::Package(_) => {
+                let was_lvalue = self.in_lvalue_assignment;
+                self.in_lvalue_assignment = true;
                 let saved_sources = self.take_pending_call_arg_sources();
                 let result =
                     self.call_method_with_values(target.clone(), method, method_args.clone());
                 self.set_pending_call_arg_sources(saved_sources);
+                self.in_lvalue_assignment = was_lvalue;
                 let result = result?;
+                // An `is rw` accessor on a type object hands back a Proxy
+                // (Red's `Model.column ~= "x"` inside `.map(*.column ...)`):
+                // assign through it before treating the result as an aggregate.
+                if let Some(assigned) = self.assign_lvalue_container(&result, value.clone()) {
+                    return assigned;
+                }
                 if let Some(stored) = self.store_into_aggregate_lvalue(&result, value.clone()) {
                     return Ok(stored);
                 }
