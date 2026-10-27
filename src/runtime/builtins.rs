@@ -666,6 +666,9 @@ impl Interpreter {
         if let Some(leaves) = Self::shaped_routine_args(name, &args) {
             args = leaves;
         }
+        if let Some(result) = self.forward_cool_routine_to_method(name, &args) {
+            return result;
+        }
         match name {
             // Error / control flow
             "die" => self.builtin_die(&args),
