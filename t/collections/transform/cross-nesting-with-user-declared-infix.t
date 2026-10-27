@@ -1,6 +1,6 @@
 use Test;
 
-plan 5;
+plan 7;
 
 class Marker { }
 # A user `infix:<X>` that declines these operands falls back to the core product.
@@ -17,3 +17,6 @@ is-deeply ((pv() X ^2) X <a b>).Array.raku, '[((1, 0), "a"), ((1, 0), "b"), ((1,
 is-deeply (<a b> X (pv() X ^2)).Array.raku, '[("a", (1, 0)), ("a", (1, 1)), ("a", (2, 0)), ("a", (2, 1)), ("b", (1, 0)), ("b", (1, 1)), ("b", (2, 0)), ("b", (2, 1))]',
     'a parenthesized right product stays one nested column';
 is (Marker.new X 1), 'user', 'the user candidate still wins for its own operands';
+is-deeply ((1, 2) X (1..*)).head(3).Array.raku, '[(1, 1), (1, 2), (1, 3)]',
+    'an infinite operand keeps the declined product lazy';
+ok ((1, 2) X (1..*)) ~~ Seq, 'and it is a Seq';

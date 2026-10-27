@@ -7,7 +7,7 @@ use lib $*PROGRAM.parent(2).add('lib-prefix-class-parent');
 # Every program runs at the `convert` level, where no subtree crosses as the
 # parser's own tree, and prints what raku prints.
 
-plan 7;
+plan 9;
 
 sub run-convert(Str $code) {
     my %env = %*ENV;
@@ -73,5 +73,27 @@ sub run-convert(Str $code) {
         CODE
     my ($rc, $out, $err) = run-convert($code);
     is $out, "hi\n", 'require Module after a use that imports a name'
+        or diag $err;
+}
+
+{
+    # A module is `unit class Name:ver<..>:auth<..>;` with the whole rest of the
+    # file as its body; the header adverbs are a typed node around the
+    # declaration, which still absorbs the rest of the unit.
+    my $code = q:to/CODE/;
+        unit class Foo:ver<1.2>:auth<me>;
+        method hi { "hi" }
+        say Foo.^ver, Foo.^auth, Foo.hi;
+        CODE
+    my ($rc, $out, $err) = run-convert($code);
+    is $out, "v1.2mehi\n", 'a unit class with header adverbs absorbs the rest of the unit'
+        or diag $err;
+}
+
+{
+    # `:` right after a literal run binds to its last character (`hos`, then
+    # `t:`), as a quantifier does; HTTP::Request matches `m:i/host:/`.
+    my ($rc, $out, $err) = run-convert('say "Host: x" ~~ m:i/host:/');
+    is $out, "\x[FF62]Host\x[FF63]\n", 'a backtrack control after a multi-character literal round-trips'
         or diag $err;
 }

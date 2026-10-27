@@ -2622,3 +2622,9 @@ registration take the field, and `convert`'s "internal trait" refusal no longer 
 the marker push, `routine_traits::lower_custom`'s special case, two `convert` exemptions and five
 `custom_traits.iter().any(…)` scans. `__prec` stays: it is data the parser derives from `is assoc` /
 `is tighter` and `lower` derives again through the same function, not a reconstruction.
+The `unit class` / `unit role` / `unit grammar` forms with `:ver<>` / `:auth<>` / `:api<>` adverbs were the
+last producers of the `__MUTSU_SET_META__` desugar outside the typed header (`ParsedStmt::PackageHeader`);
+the converter refused them, which the passthrough guard hid until modules were round-tripped at the
+`convert` level. They now build the typed header around the declaration, `stmt_list` takes the header off,
+absorbs the rest of the unit into the declaration and puts the header back. Deleted:
+`package_unit_meta::{decl_adverb_meta_stmts, with_meta_stmts}` and `class_decl::meta_setter_stmt`.

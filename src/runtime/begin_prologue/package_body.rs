@@ -94,7 +94,7 @@ pub(super) fn split_package_decl(stmt: Stmt) -> (Stmt, Option<Stmt>) {
                 }
             };
             let mut lexicals: Vec<String> =
-                crate::compiler::Compiler::package_body_lexical_names(body)
+                crate::compiler::Compiler::package_body_runtime_lexical_names(body)
                     .into_iter()
                     .collect();
             lexicals.sort();

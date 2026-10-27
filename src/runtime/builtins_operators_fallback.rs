@@ -344,6 +344,48 @@ impl Interpreter {
                 return Ok(Value::package(Symbol::intern(&format!("{name}({source})"))));
             }
         }
+        // Invoking a *subset* type object coerces, as invoking its base does,
+        // then checks the subset's `where`: `subset Short of Int where * < 100;
+        // Short("50")` is `50` (XML::Class deserialises a subset-typed
+        // attribute through `$type($text)`). A value outside the subset is
+        // X::Coerce::Impossible.
+        if args.len() == 1
+            && self.is_subset_type_name(name)
+            && !matches!(
+                args[0].view(),
+                ValueView::Package(_) | ValueView::ParametricRole { .. } | ValueView::Nil
+            )
+        {
+            let base = self.resolve_subset_base_type(name);
+            if base != name {
+                // The coercion protocol: `Int("50")` is `"50".Int`.
+                let coerced = if self.type_matches_value(&base, &args[0]) {
+                    args[0].clone()
+                } else {
+                    self.call_method_with_values(args[0].clone(), &base, vec![])?
+                };
+                if self.type_matches_value(name, &coerced) {
+                    return Ok(coerced);
+                }
+                let source_type = crate::runtime::types::diagnostic_type_name(&args[0]);
+                let display_name = crate::value::user_facing_type_name(name);
+                let msg = format!(
+                    "Impossible coercion from '{source_type}' into '{display_name}': \
+                     the coerced value does not satisfy the subset"
+                );
+                return Err(RuntimeError::typed(
+                    "X::Coerce::Impossible",
+                    ValueMap::from_iter([
+                        (
+                            "target-type".to_string(),
+                            Value::str(display_name.to_string()),
+                        ),
+                        ("from-type".to_string(), Value::str(source_type)),
+                        ("message".to_string(), Value::str(msg)),
+                    ]),
+                ));
+            }
+        }
         // `zip` over an unbounded column (an infinite Range, a lazy list):
         // pull the rows instead of materializing it (#9159). An all-finite
         // `zip` keeps the native implementation below.
