@@ -28,6 +28,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             is_export: _,
             export_tags,
             custom_traits,
+            has_initializer: _,
             where_constraint,
         } => {
             v.visit_name(name, NameKind::VarDecl);

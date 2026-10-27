@@ -34,6 +34,7 @@ pub(super) fn static_scalar(name: &str) -> Stmt {
         is_export: false,
         export_tags: vec![],
         custom_traits: vec![],
+        has_initializer: false,
         where_constraint: None,
     }
 }
@@ -46,12 +47,12 @@ pub(super) fn unbound_decl(name: &str) -> Stmt {
         .unwrap_or(decl)
 }
 
-pub(super) fn without_initializer_markers(
+pub(super) fn without_bind_marker(
     traits: &[(String, Option<Expr>)],
 ) -> Vec<(String, Option<Expr>)> {
     traits
         .iter()
-        .filter(|(t, _)| t != "__has_initializer" && t != "__scalar_bind")
+        .filter(|(t, _)| t != "__scalar_bind")
         .cloned()
         .collect()
 }
@@ -65,13 +66,15 @@ pub(super) fn renamed_static_decl(static_decl: &Stmt, cell_name: &str) -> Stmt {
         is_export,
         export_tags,
         custom_traits,
+        has_initializer,
         ..
     } = &mut decl
     {
         *name = cell_name.to_string();
         *is_export = false;
         export_tags.clear();
-        *custom_traits = without_initializer_markers(custom_traits);
+        *has_initializer = false;
+        *custom_traits = without_bind_marker(custom_traits);
         // A `:D` variable's cell holds its type object until the run-time
         // assignment, which the constraint rejects. The cell is storage only;
         // the variable itself keeps the constraint.
@@ -129,6 +132,7 @@ pub(super) fn decl_from_cell(static_decl: &Stmt, cell_name: &str, bind: bool) ->
     if let Stmt::VarDecl {
         expr,
         custom_traits,
+        has_initializer,
         ..
     } = &mut decl
     {
@@ -143,10 +147,8 @@ pub(super) fn decl_from_cell(static_decl: &Stmt, cell_name: &str, bind: bool) ->
         } else {
             read_var(cell_name)
         };
-        let mut traits = without_initializer_markers(custom_traits);
-        if !bind {
-            traits.push(("__has_initializer".to_string(), None));
-        }
+        let mut traits = without_bind_marker(custom_traits);
+        *has_initializer = !bind;
         traits.push((
             crate::runtime::phasers::BEGIN_STATIC_TRAIT.to_string(),
             None,

@@ -40,6 +40,7 @@ pub(crate) fn bind_stmt(name: String, expr: Expr) -> Stmt {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
             where_constraint: None,
         }
     } else {
@@ -75,6 +76,7 @@ pub(crate) fn decl_stmt(name: String, expr: Expr) -> Stmt {
         is_export: false,
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
+        has_initializer: false,
         where_constraint: None,
     }
 }

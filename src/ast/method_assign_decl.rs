@@ -117,6 +117,7 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Vec<Stmt> {
                 is_export: form.is_export,
                 export_tags: form.export_tags.clone(),
                 custom_traits: form.custom_traits.clone(),
+                has_initializer: false,
                 where_constraint: form.where_constraint.clone(),
             },
             Stmt::Assign {
@@ -136,9 +137,8 @@ fn single_declaration(form: &MethodAssignDecl, target: Expr, call: Expr) -> Stmt
     let mut custom_traits = form.custom_traits.clone();
     if !matches!(target, Expr::BareWord(_)) {
         custom_traits.push((METHOD_ASSIGN_DECL_TRAIT.to_string(), None));
-    } else if form.shape.is_none() && !custom_traits.iter().any(|(n, _)| n == "__has_initializer") {
-        custom_traits.push(("__has_initializer".to_string(), None));
     }
+    let has_initializer = matches!(target, Expr::BareWord(_)) && form.shape.is_none();
     Stmt::VarDecl {
         anonymous: form.anonymous,
         name: form.name.clone(),
@@ -150,6 +150,7 @@ fn single_declaration(form: &MethodAssignDecl, target: Expr, call: Expr) -> Stmt
         is_export: form.is_export,
         export_tags: form.export_tags.clone(),
         custom_traits,
+        has_initializer,
         where_constraint: form.where_constraint.clone(),
     }
 }
@@ -176,6 +177,7 @@ pub(crate) fn expression_declaration(form: &MethodAssignDecl) -> Option<Stmt> {
         is_export,
         export_tags,
         custom_traits,
+        has_initializer,
         where_constraint,
     } = single_declaration(form, target.clone(), call)
     else {
@@ -197,6 +199,7 @@ pub(crate) fn expression_declaration(form: &MethodAssignDecl) -> Option<Stmt> {
         is_export,
         export_tags,
         custom_traits,
+        has_initializer,
         where_constraint,
     })
 }

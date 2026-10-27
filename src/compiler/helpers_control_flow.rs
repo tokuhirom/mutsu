@@ -369,6 +369,7 @@ impl Compiler {
             is_export: false,
             export_tags: vec![],
             custom_traits: Vec::new(),
+            has_initializer: false,
             where_constraint: None,
         };
         // A sigilless pointy parameter is a term (ADR-12441).
@@ -425,6 +426,7 @@ impl Compiler {
             is_export: false,
             export_tags: vec![],
             custom_traits: Vec::new(),
+            has_initializer: false,
             where_constraint: None,
         }
     }

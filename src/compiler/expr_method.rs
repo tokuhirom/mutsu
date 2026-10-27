@@ -636,6 +636,7 @@ impl Compiler {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: vec![("__scalar_bind".to_string(), None)],
+            has_initializer: false,
             where_constraint: None,
         };
         let delete_through = Expr::MethodCall {

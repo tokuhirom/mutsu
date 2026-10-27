@@ -133,12 +133,7 @@ impl<'ast> Visit<'ast> for AliasScan {
                 where_constraint: None,
                 custom_traits,
                 ..
-            } => {
-                is_plain_scalar(name)
-                    && custom_traits
-                        .iter()
-                        .all(|(trait_name, _)| trait_name == "__has_initializer")
-            }
+            } => is_plain_scalar(name) && custom_traits.is_empty(),
             _ => false,
         };
         if allowed {

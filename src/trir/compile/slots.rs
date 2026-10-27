@@ -71,15 +71,11 @@ impl TrirCompiler<'_> {
             }
             return Some(None);
         }
-        // `__has_initializer` is the parser's own marker for `my T $x = ...`;
         // `__scalar_bind` marks `my $x := ...`, which binds rather than
         // assigns — for a fresh `my` in a TRIR frame the two are the same
         // thing, because nothing else can name the slot. Any other trait
         // declines.
-        if custom_traits
-            .iter()
-            .any(|(t, _)| t != "__has_initializer" && t != "__scalar_bind")
-        {
+        if custom_traits.iter().any(|(t, _)| t != "__scalar_bind") {
             return None;
         }
         let tc = type_constraint.as_deref();

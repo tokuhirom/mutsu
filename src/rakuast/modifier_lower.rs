@@ -268,6 +268,7 @@ fn rewrite_placeholder_block(stmt: Stmt, value: &Expr) -> Stmt {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
             where_constraint: None,
         });
     }

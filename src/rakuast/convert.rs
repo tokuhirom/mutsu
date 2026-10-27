@@ -1764,6 +1764,7 @@ pub(super) fn var_decl_statement(
         is_our,
         is_dynamic,
         custom_traits,
+        has_initializer,
         where_constraint,
         is_export,
         export_tags,
@@ -1785,10 +1786,9 @@ pub(super) fn var_decl_statement(
         );
     }
     let is_internal = |n: &str| {
-        n == "__has_initializer"
-            // The parser's own mark of a declaration whose initializer reads
-            // the new binding; the lowering marks it again.
-            || n == "__init_sees_self"
+        // The parser's own mark of a declaration whose initializer reads
+        // the new binding; the lowering marks it again.
+        n == "__init_sees_self"
             || n == crate::ast::method_assign_decl::METHOD_ASSIGN_DECL_TRAIT
             || n == crate::ast::shaped_decl::SHAPED_DECL
             || n == crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE
@@ -1837,9 +1837,9 @@ pub(super) fn var_decl_statement(
         _ => expr,
     };
     // `my @a <== EXPR` is a declaration whose initializer is the parser's
-    // feed helper call; without the `__has_initializer` mark it would read as
-    // none and the feed would be dropped.
-    let unmarked = !is_binding && !custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+    // feed helper call; without `has_initializer` it would read as none and
+    // the feed would be dropped.
+    let unmarked = !is_binding && !has_initializer;
     if unmarked
         && let Expr::Call { name: callee, .. } = expr
         && is_desugar_marker(callee.as_str())
@@ -1865,10 +1865,7 @@ pub(super) fn var_decl_statement(
     {
         Some(Initializer::CallAssignMarker(rhs))
     } else {
-        custom_traits
-            .iter()
-            .any(|(name, _)| name == "__has_initializer")
-            .then_some(Initializer::Assign(expr))
+        has_initializer.then_some(Initializer::Assign(expr))
     };
     // A dynamic `my $*x` is named `*x` (`@*a` / `%*h` keep their sigil in
     // front); raku renders the `*` as the declaration's `twigil`.
@@ -1925,12 +1922,10 @@ pub(super) fn does_declaration(
     init: Option<&Expr>,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
     let mut parts = var_decl_parts(decl)?;
-    let mut traits = parts.custom_traits.to_vec();
     if let Some(init) = init {
-        traits.push(("__has_initializer".to_string(), None));
+        parts.has_initializer = true;
         parts.expr = init;
     }
-    parts.custom_traits = &traits;
     let Some(statement) = var_decl_statement(parts, false)? else {
         return Ok(None);
     };
@@ -1968,6 +1963,8 @@ pub(super) struct VarDeclParts<'a> {
     is_our: bool,
     is_dynamic: bool,
     custom_traits: &'a [(String, Option<Expr>)],
+    /// Whether the declaration has an explicit initializer.
+    has_initializer: bool,
     /// The declaration's `where` expression.
     where_constraint: Option<&'a Expr>,
     /// Whether it is `is export`, and with which tags (`["DEFAULT"]` for the
@@ -1986,6 +1983,7 @@ pub(super) fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeErr
         is_our,
         is_dynamic,
         custom_traits,
+        has_initializer,
         where_constraint,
         is_export,
         export_tags,
@@ -2002,6 +2000,7 @@ pub(super) fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeErr
         is_our: *is_our,
         is_dynamic: *is_dynamic,
         custom_traits,
+        has_initializer: *has_initializer,
         where_constraint: where_constraint.as_deref(),
         is_export: *is_export,
         export_tags,
@@ -5046,7 +5045,7 @@ fn constant_declaration(
     };
     if custom_traits
         .iter()
-        .any(|(n, _)| n != "__constant" && n != "__constant_sigil" && n != "__has_initializer")
+        .any(|(n, _)| n != "__constant" && n != "__constant_sigil")
     {
         return Err(unsupported("constant with traits"));
     }
