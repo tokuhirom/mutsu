@@ -495,40 +495,25 @@ impl Interpreter {
         if let Some(result) = self.try_lexical_operator_candidates(op_name, args.clone()) {
             return result;
         }
-        let captured_candidates = Symbol::lookup(op_name)
+        let captured_family = Symbol::lookup(op_name)
             .map(crate::runtime::dispatch_key::amp_sym)
             .and_then(|amp| self.env().get_sym(amp))
             .and_then(|value| match value.view() {
                 ValueView::Sub(data) => data
                     .env
                     .get("__mutsu_multi_dispatch_candidates")
-                    .and_then(|value| value.as_list_items().map(ToOwned::to_owned)),
+                    .and_then(|candidates| candidates.as_list_items().map(ToOwned::to_owned))
+                    .map(|candidates| (value.clone(), candidates)),
                 _ => None,
             });
-        if let Some(candidates) = captured_candidates {
-            for candidate in &candidates {
-                if let ValueView::Sub(candidate_data) = candidate.view() {
-                    // This is a trial bind: `call_sub_value` binds again in the
-                    // callee's own frame. A rejected candidate may already have
-                    // bound its earlier parameters into the env, and without the
-                    // rollback they surface as the caller's same-named lexicals
-                    // (`$a`/`$b` of a stored closure, #12512).
-                    let saved_env = self.env().clone();
-                    let bound = self
-                        .bind_function_args_values(
-                            &candidate_data.param_defs,
-                            &candidate_data.params,
-                            &args,
-                        )
-                        .is_ok();
-                    self.restore_env_preserving_dynamics(saved_env);
-                    if bound {
-                        let result = self.call_sub_value(candidate.clone(), args)?;
-                        return Ok(Some(result));
-                    }
-                }
-            }
-            return Ok(None);
+        if let Some((dispatcher, candidates)) = captured_family {
+            // The family's candidates are ranked by narrowness like any other
+            // multi (and compete with the operator's core candidates): a
+            // re-exported family lists them in stash order, so taking the first
+            // one that binds picked `Date()` over `DateTime()` for a DateTime
+            // operand (Red's `infix:<==>`). A call none accepts declines to the
+            // core operator.
+            return self.try_captured_candidates(&dispatcher, &candidates, op_name, args);
         }
         // A proto body is the operator's entry point, even when a multi
         // candidate matches. Its body may answer directly or dispatch through
