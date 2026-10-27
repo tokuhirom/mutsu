@@ -277,6 +277,7 @@ impl Interpreter {
                 Stmt::VarDecl {
                     name,
                     custom_traits,
+                    constant,
                     is_our: true,
                     ..
                 } if constant.is_some()

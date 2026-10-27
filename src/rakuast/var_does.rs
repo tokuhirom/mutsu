@@ -79,6 +79,7 @@ pub(super) fn lower_expansion(
         export_tags,
         custom_traits,
         has_initializer,
+        constant: _,
         where_constraint,
     } = declaration
     else {

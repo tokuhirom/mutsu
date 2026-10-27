@@ -208,10 +208,10 @@ fn value_tail_begin(stmts: &mut [Stmt]) {
 /// `None` when `stmt` is not a constant declaration.
 // Cost: O(1).
 fn constant_read(stmt: &Stmt) -> Option<Stmt> {
-    let Stmt::VarDecl { name, custom_traits, .. } = stmt else {
+    let Stmt::VarDecl { name, constant, .. } = stmt else {
         return None;
     };
-    if !constant.is_some() {
+    if constant.is_none() {
         return None;
     }
     let read = match name.as_bytes().first()? {
@@ -435,7 +435,7 @@ fn is_begin_time_effect(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Phaser { kind, .. } => *kind == PhaserKind::Begin,
         Stmt::Use { .. } | Stmt::Need { .. } | Stmt::Import { .. } => !is_positional_pragma(stmt),
-        Stmt::VarDecl { custom_traits, .. } => constant.is_some(),
+        Stmt::VarDecl { constant, .. } => constant.is_some(),
         Stmt::SyntheticBlock(inner) => is_will_begin_group(inner),
         // A user `trait_mod:<is>` runs when the declaration is compiled, so its
         // argument sees the unit's lexicals in their static state (#14146).
@@ -685,7 +685,7 @@ fn partition_will_begin(inner: Vec<Stmt>, prologue: &mut Vec<Stmt>, rest: &mut V
 fn is_begin_time_stmt(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Phaser { kind, .. } => *kind == PhaserKind::Begin,
-        Stmt::VarDecl { custom_traits, .. } => constant.is_some(),
+        Stmt::VarDecl { constant, .. } => constant.is_some(),
         // A `unit module Foo;` is a body-less marker that puts every following
         // top-level statement into `Foo`; it has to precede them in the prologue
         // just as it does in the source.

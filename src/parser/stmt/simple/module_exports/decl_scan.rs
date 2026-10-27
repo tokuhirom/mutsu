@@ -378,7 +378,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                 is_export,
                 is_our,
                 export_tags,
-                custom_traits,
+                constant,
                 ..
             } => {
                 // An exported variable is the package variable of the package
@@ -417,7 +417,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                             name: name.clone(),
                             package,
                             tags: export_tags.clone(),
-                            term: crate::term_names::is_term_constant_decl(name, custom_traits),
+                            term: crate::term_names::is_term_constant_decl(name, *constant),
                             hook: false,
                         });
                 }

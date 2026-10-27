@@ -2470,3 +2470,22 @@ Deleted: the `__has_initializer` marker and its ~35 push sites, the marker filte
 Remaining `VarDecl` pseudo-traits (`__constant*`, `__init_sees_self`, `__scalar_bind`/`__code_bind`,
 shaped/implicit-value-type/name-colonpair marks, the `is dynamic` argument) follow in their own PRs.
 
+
+### 6.122 A `constant` declaration is a field of `VarDecl` (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+Third step of the marker-to-field series (§6.119, §6.121). `Stmt::VarDecl` gains
+`constant: Option<ConstantSigil>` (`Term`, `Scalar`, `Array`, `Hash`, `Code`), and the `__constant` /
+`__constant_sigil` entries of `custom_traits` are deleted. The sigil was always paired with the marker (the
+declaration's `name` strips a `$`, so a scalar `constant $x` and a term `constant x` need it), so one
+field carries both. The parser's `constant_decl` and the RakuAST `lower` set it; about forty readers in
+the compiler, the begin-prologue, the module registrar, the export scan and `convert` test the field instead
+of scanning `custom_traits`. `term_names::{is_term_constant_decl, decl_storage_name}` take the field.
+
+Deleted: both marker traits and their two push sites, the sigil recovery by trait scan in `convert`
+(`constant_declaration`), the compiler's two `__constant_sigil` lookups, `is_term_constant_decl`'s trait scan,
+and the "no other traits" check in `convert` that spelled `n != "__constant" && n != "__constant_sigil"`
+(now `custom_traits.is_empty()`).
+
+Remaining `VarDecl` pseudo-traits: `__scalar_bind` / `__code_bind`, `__my_scoped`, `__object_hash`,
+`__init_sees_self`, `__shaped_decl`, `__implicit_value_type`, the name-colonpair mark and the `is dynamic`
+argument.

@@ -45,9 +45,9 @@ impl Compiler {
             // value back from its term slot.
             Stmt::VarDecl {
                 name,
-                custom_traits,
+                constant,
                 ..
-            } if crate::runtime::term_names::is_term_constant_decl(name, custom_traits) => {
+            } if crate::runtime::term_names::is_term_constant_decl(name, *constant) => {
                 self.compile_stmt(stmt);
                 let key = crate::runtime::term_names::term_key(name);
                 match self.local_map.get(key.as_str()).copied() {
@@ -189,6 +189,7 @@ impl Compiler {
                 type_constraint,
                 custom_traits,
                 has_initializer,
+                constant,
                 ..
             } => {
                 let anonymous_scalar = *anonymous && !name.starts_with(['@', '%', '&']);
@@ -198,7 +199,7 @@ impl Compiler {
                         name,
                         *is_our,
                         type_constraint.as_deref(),
-                        custom_traits,
+                        *constant,
                     )
                     .map(Some);
                 let type_constraint = pragma_type_constraint.as_ref().unwrap_or(type_constraint);

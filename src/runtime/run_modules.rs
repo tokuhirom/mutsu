@@ -2150,7 +2150,7 @@ impl Interpreter {
                 is_our,
                 is_dynamic,
                 is_export,
-                custom_traits,
+                constant,
                 ..
             } = s
             else {
@@ -2332,7 +2332,7 @@ impl Interpreter {
                     name,
                     is_export: _,
                     is_dynamic,
-                    custom_traits,
+                    constant,
                     ..
                 } => {
                     // A `constant` parses to `VarDecl { is_our: true, .. }` with
@@ -2345,7 +2345,7 @@ impl Interpreter {
                     }
                     // A sigil-less constant is stored under its term key
                     // (#9962); that is the `env` entry to drop.
-                    if crate::runtime::term_names::is_term_constant_decl(name, custom_traits) {
+                    if crate::runtime::term_names::is_term_constant_decl(name, *constant) {
                         push(&crate::runtime::term_names::term_key(name));
                     } else {
                         push(name);
@@ -2386,7 +2386,7 @@ impl Interpreter {
                 is_our: false,
                 is_dynamic: false,
                 is_export: false,
-                custom_traits,
+                constant,
                 ..
             } = s
             else {
@@ -2398,7 +2398,7 @@ impl Interpreter {
             {
                 continue;
             }
-            let key = if crate::runtime::term_names::is_term_constant_decl(name, custom_traits) {
+            let key = if crate::runtime::term_names::is_term_constant_decl(name, *constant) {
                 crate::runtime::term_names::term_key(name)
             } else {
                 name.clone()
@@ -2433,7 +2433,7 @@ impl Interpreter {
                 name,
                 is_our: true,
                 is_dynamic: false,
-                custom_traits,
+                constant,
                 ..
             } = s
             else {

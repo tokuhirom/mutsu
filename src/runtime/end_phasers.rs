@@ -409,23 +409,22 @@ impl EndWalker<'_> {
                 name,
                 is_our: false,
                 is_dynamic: false,
-                custom_traits,
+                constant,
                 ..
             } => self.push_lexical(&crate::runtime::term_names::decl_storage_name(
-                name,
-                custom_traits,
+                name, *constant,
             )),
             Stmt::VarDecl {
                 name,
                 is_our: true,
                 type_constraint,
-                custom_traits,
+                constant,
                 ..
             } => {
                 // A sigil-less constant's lexical alias and unqualified
                 // package symbol live under its term key (#9962), exactly
                 // where the compiler stores them.
-                let storage = crate::runtime::term_names::decl_storage_name(name, custom_traits);
+                let storage = crate::runtime::term_names::decl_storage_name(name, *constant);
                 let name = &storage;
                 self.install_our_symbol(name, type_constraint.as_deref());
                 // An `our` inside a nested block also creates a LEXICAL alias

@@ -178,6 +178,7 @@ impl<'ast> Visit<'ast> for ExportedDecls<'ast> {
             Stmt::VarDecl {
                 is_export: true,
                 custom_traits,
+                constant,
                 ..
             } if constant.is_some() => {
                 self.found.push(stmt);

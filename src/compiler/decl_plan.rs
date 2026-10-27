@@ -401,6 +401,7 @@ impl Compiler {
                     name,
                     expr: Expr::BareWord(target),
                     custom_traits,
+                    constant,
                     ..
                 } if constant.is_some()
                     && !name.starts_with(['$', '@', '%', '&']) =>

@@ -18,7 +18,7 @@ impl Interpreter {
                     Stmt::VarDecl {
                         name,
                         is_our: true,
-                        custom_traits,
+                        constant,
                         ..
                     },
                 ..

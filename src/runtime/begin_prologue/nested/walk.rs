@@ -145,6 +145,7 @@ impl Walker<'_> {
             Stmt::VarDecl {
                 expr,
                 custom_traits,
+                constant,
                 where_constraint,
                 ..
             } => {

@@ -343,7 +343,7 @@ fn reorder_at_level(
         // triggers this split. Compiling the constant as one unsplit
         // declaration (its normal, unhoisted path) keeps the mark-readonly
         // strictly after its one real store, like a phaser-free `constant`.
-        let is_constant_decl = matches!(&stmt, Stmt::VarDecl { custom_traits, .. } if constant.is_some());
+        let is_constant_decl = matches!(&stmt, Stmt::VarDecl { constant, .. } if constant.is_some());
         if is_constant_decl {
             // A constant is a compile-time value, so a later CHECK sees it. Keep
             // source order by hoisting only while nothing that stays in `rest`
@@ -577,6 +577,7 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
         is_export,
         export_tags,
         custom_traits,
+        constant,
         has_initializer,
         where_constraint,
     } = stmt
@@ -679,6 +680,7 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
         export_tags: export_tags.clone(),
         custom_traits: static_traits,
         has_initializer: static_has_initializer,
+        constant: None,
         where_constraint: where_constraint.clone(),
     };
     let assign = has_init.then(|| Stmt::Assign {

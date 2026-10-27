@@ -151,6 +151,7 @@ impl BlockScope {
                 Stmt::VarDecl {
                     name,
                     custom_traits,
+                    constant,
                     expr,
                     ..
                 } if constant.is_some() => {
@@ -343,6 +344,7 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                 Stmt::VarDecl {
                     name,
                     custom_traits,
+                    constant,
                     expr,
                     ..
                 } if constant.is_some() => {

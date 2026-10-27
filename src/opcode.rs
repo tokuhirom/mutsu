@@ -5678,7 +5678,7 @@ fn role_body_our_scope_violation(body: &[Stmt]) -> Option<&'static str> {
             Stmt::RoleDecl { .. } => Some("role"),
             Stmt::VarDecl {
                 is_our: true,
-                custom_traits,
+                constant,
                 ..
             } => {
                 if constant.is_some() {

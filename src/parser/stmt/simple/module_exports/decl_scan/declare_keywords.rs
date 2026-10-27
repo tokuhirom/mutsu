@@ -28,7 +28,7 @@ impl DeclScan {
                     for decl in body {
                         if let Stmt::VarDecl {
                             name,
-                            custom_traits,
+                            constant,
                             ..
                         } = decl
                             && constant.is_some()
@@ -44,6 +44,7 @@ impl DeclScan {
                                 name,
                                 expr: Expr::BareWord(how_type),
                                 custom_traits,
+                                constant,
                                 ..
                             } if constant.is_some() => {
                                 self.out

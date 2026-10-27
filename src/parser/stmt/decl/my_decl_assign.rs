@@ -825,6 +825,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             export_tags: s.export_tags.clone(),
             custom_traits,
             has_initializer,
+            constant: None,
             where_constraint: s.where_constraint.clone(),
         };
         match chain.clone() {

@@ -441,7 +441,7 @@ impl Compiler {
             && let Stmt::VarDecl {
                 name,
                 is_our: false,
-                custom_traits,
+                constant,
                 ..
             } = stmt.as_ref()
             && !name.starts_with(['@', '%', '&'])
@@ -831,7 +831,7 @@ impl Compiler {
             && let Stmt::VarDecl {
                 name,
                 is_our: false,
-                custom_traits,
+                constant,
                 ..
             } = stmt.as_ref()
             && !name.starts_with(['@', '%', '&'])

@@ -143,6 +143,7 @@ impl Compiler {
                     is_our: false,
                     is_dynamic: false,
                     custom_traits,
+                    constant,
                     ..
                 } if !name.starts_with('&')
                     && !constant.is_some() =>

@@ -407,7 +407,7 @@ impl<'ast> Visit<'ast> for TypeAliasScan {
         if let Stmt::VarDecl {
             name,
             expr: Expr::BareWord(target),
-            custom_traits,
+            constant,
             ..
         } = stmt
             && constant.is_some()

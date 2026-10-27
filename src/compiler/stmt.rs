@@ -1194,6 +1194,7 @@ impl Compiler {
                 export_tags,
                 custom_traits,
                 has_initializer,
+                constant,
                 where_constraint,
                 anonymous: _,
             } => {
@@ -1204,7 +1205,7 @@ impl Compiler {
                         name,
                         *is_our,
                         type_constraint.as_deref(),
-                        custom_traits,
+                        *constant,
                     )
                     .map(Some);
                 let smiley_from_pragma = pragma_type_constraint.is_some();
@@ -1227,7 +1228,7 @@ impl Compiler {
                 let declares_term = std::mem::take(&mut self.decl_is_term)
                     && !name.starts_with(['$', '@', '%', '&', '\\']);
                 let name = if declares_term
-                    || crate::runtime::term_names::is_term_constant_decl(name, custom_traits)
+                    || crate::runtime::term_names::is_term_constant_decl(name, *constant)
                 {
                     term_storage = crate::runtime::term_names::term_key(name);
                     &term_storage

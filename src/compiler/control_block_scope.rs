@@ -74,7 +74,7 @@ impl Compiler {
                     name,
                     is_state: false,
                     is_our: false,
-                    custom_traits,
+                    constant,
                     ..
                 } = s
                     // Plain lexical scalars store a bare, sigil-stripped

@@ -178,7 +178,6 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 custom_traits: Vec::new(),
                 constant: Some(constant),
                 has_initializer: true,
-                constant: None,
                 where_constraint: None,
             },
         ));
@@ -229,7 +228,6 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 custom_traits: Vec::new(),
                 constant: Some(constant),
                 has_initializer: true,
-                constant: None,
                 where_constraint: None,
             },
         ));

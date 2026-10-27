@@ -230,7 +230,7 @@ fn splittable_var_decl(stmt: &Stmt) -> bool {
         is_state,
         is_dynamic,
         is_export,
-        custom_traits,
+        constant,
         ..
     } = stmt
     else {
