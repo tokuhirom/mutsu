@@ -1375,6 +1375,38 @@ impl Interpreter {
                     self.smart_match_into(&Value::package(Symbol::intern("Mu")), val, err)
                 }
             }
+            // Any ~~ Pair (`$x ~~ :so`, a `where :!so` clause): the method the
+            // key names is called on the topic, and its truthiness is compared
+            // with the pair value's (S03: `?."{X.key}" === ?X.value`). The
+            // aggregates and a Pair topic have their own Pair semantics above
+            // and below. Shared with the VM's smartmatch, which reaches this
+            // arm for what it does not answer itself.
+            (_, ValueView::Pair(..) | ValueView::ValuePair(..))
+                if !matches!(
+                    left.view(),
+                    ValueView::Hash(_)
+                        | ValueView::Array(..)
+                        | ValueView::Seq(_)
+                        | ValueView::Slip(_)
+                        | ValueView::LazyList(_)
+                        | ValueView::Pair(..)
+                        | ValueView::ValuePair(..)
+                ) =>
+            {
+                let (method_name, val) = match right.view() {
+                    ValueView::Pair(key, val) => (key.clone(), val.clone()),
+                    ValueView::ValuePair(key, val) => (key.to_string_value(), val.clone()),
+                    _ => unreachable!("guarded by the arm pattern"),
+                };
+                match self.try_compiled_method_or_interpret(left.clone(), &method_name, Vec::new())
+                {
+                    Ok(result) => result.truthy() == val.truthy(),
+                    Err(e) => {
+                        err.get_or_insert(e);
+                        false
+                    }
+                }
+            }
             // Hash ~~ Hash: structural equality (eqv)
             (ValueView::Hash(lmap), ValueView::Hash(rmap)) => {
                 // `Map.ACCEPTS(Map:D \m)` is `self eqv m`: a `Hash` and a
