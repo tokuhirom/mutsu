@@ -52,6 +52,7 @@ pub(crate) fn is_hash(name: &str) -> bool {
 // Cost: O(|name|).
 pub(crate) fn implicit_decl(name: String) -> Stmt {
     Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: true,
         name,
         expr: Expr::Literal(Value::NIL),
@@ -80,7 +81,8 @@ pub(crate) fn is_implicit_decl(stmt: &Stmt) -> bool {
             expr: Expr::Literal(_),
             is_state: true,
             custom_traits,
+            marks,
             ..
-        } if custom_traits.is_empty() && is_scalar(name)
+        } if custom_traits.is_empty() && marks.is_plain() && is_scalar(name)
     )
 }

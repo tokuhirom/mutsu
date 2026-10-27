@@ -81,6 +81,7 @@ pub(super) fn lower_expansion(
         has_initializer,
         constant: _,
         bind: _,
+        marks,
         where_constraint,
     } = declaration
     else {
@@ -88,10 +89,7 @@ pub(super) fn lower_expansion(
     };
     // The role is mixed into the fresh container, then the initializer is
     // assigned: the declaration itself carries none.
-    if custom_traits
-        .iter()
-        .any(|(t, _)| t == crate::ast::shaped_decl::SHAPED_DECL)
-    {
+    if marks.shaped {
         return Err(unsupported(node));
     }
     let (default, init) = if has_initializer {
@@ -125,6 +123,7 @@ pub(super) fn lower_expansion(
         has_initializer: false,
         constant: None,
         bind: None,
+        marks,
         where_constraint,
     };
     Ok(crate::ast::var_does::expand(

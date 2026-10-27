@@ -4362,6 +4362,7 @@ impl Compiler {
             Stmt::SyntheticBlock(vec![
                 Stmt::MarkBind,
                 Stmt::VarDecl {
+                    marks: Default::default(),
                     anonymous: false,
                     name: cap.to_string(),
                     expr: Expr::MethodCall {

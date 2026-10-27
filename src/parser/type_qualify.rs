@@ -59,13 +59,8 @@ fn opened_package(stmt: &Stmt) -> Option<(Option<&str>, bool)> {
             ..
         } => Some(((!is_lexical).then(|| name.as_str()), *is_unit)),
         Stmt::RoleDecl {
-            name,
-            custom_traits,
-            ..
-        } => {
-            let my = custom_traits.iter().any(|(t, _)| t == "__my_scoped");
-            Some(((!my).then(|| name.as_str()), false))
-        }
+            name, is_lexical, ..
+        } => Some(((!is_lexical).then(|| name.as_str()), false)),
         Stmt::Package {
             name,
             is_unit,
@@ -118,9 +113,9 @@ fn lexical_type(stmt: &Stmt) -> Option<&str> {
         } => Some(name.as_str()),
         Stmt::RoleDecl {
             name,
-            custom_traits,
+            is_lexical: true,
             ..
-        } if custom_traits.iter().any(|(t, _)| t == "__my_scoped") => Some(name.as_str()),
+        } => Some(name.as_str()),
         _ => None,
     }
 }

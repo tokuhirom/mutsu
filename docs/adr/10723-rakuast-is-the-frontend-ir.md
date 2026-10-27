@@ -2531,3 +2531,44 @@ modifier split now name `bind: None`.
 
 Remaining `VarDecl` pseudo-traits: `__my_scoped`, `__object_hash`, `__init_sees_self`, `__shaped_decl`,
 `__implicit_value_type`, the name-colonpair mark and the `is dynamic` argument.
+
+### 6.125 The rest of a declaration's pseudo-traits are fields (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+Last step of the marker-to-field series (§6.119, §6.121, §6.123, §6.124). Two shapes, because
+the markers were two different things:
+
+`__my_scoped` was never a `VarDecl` marker: only `RoleDecl` carried it (`ClassDecl` has had
+`is_lexical` for a long time). `RoleDecl` gains `is_lexical: bool`, `CompiledRoleDeclPlan` carries
+it to the registrar, and the twelve readers (parser export scan and type qualification, the
+compiler's body scans, hoist and plan, the VM's lexical role storage name, the module merge and
+the EVAL scans) match on the field.
+
+The other five are facts about a `Stmt::VarDecl`, held in one typed field, `marks: VarMarks`
+(`ast/var_marks.rs`): `init_sees_self` (set by the scope pass; the compiler gives the
+initializer a fresh `Any`), `shaped` (an initialized shaped array: the value-copy must not strip
+the shape), `implicit_value_type` (a keyed hash whose `Any` the parser supplied),
+`name_colonpairs` (the written colonpairs of the name, `.AST` parses only) and
+`dynamic_argument` (the written `is dynamic(ARG)` argument). One struct instead of five fields
+because all five are "what the canonical tree drops", have the same default, and are only ever
+cleared together (`VarMarks::is_plain`); the parser's `MyDeclState`, `MethodAssignDecl` and the
+RakuAST `lower` build one value and move it. `custom_traits` of a `VarDecl` now holds only what the
+program wrote (plus the compiler's `__restore_*`/`__pointy_*` run-time flags).
+
+The pitfall of §6.123/§6.124 recurred in a smaller form: seven guards spelled
+`custom_traits.is_empty()` on a `VarDecl` (the passthrough leaf, the for-topic alias, the
+register-before-init test, the modifier split, the `our`-cell test, TRIR slot allocation, the
+implicit anon-state test) had been excluding the marked declarations. They now also test
+`marks.is_plain()`, so no behaviour moved.
+
+Deleted: `NAME_COLONPAIRS`, `DYNAMIC_TRAIT_ARGUMENT`, `shaped_decl::SHAPED_DECL`,
+`keyed_hash::IMPLICIT_VALUE_TYPE`, `convert::MY_SCOPED`; the five-name "internal trait" exemption in
+`convert::var_decl_statement` (only the `.=` marker is left in it); the trait-list searches in
+`name_colonpairs::apply`, `decl_traits::dynamic_trait` and `keyed_hash::split`; and the marker pushes
+of the parser, the scope pass and `lower`.
+
+`__object_hash` is not a declaration marker: it is the name of the builtin that builds `:{ ... }`
+(§4 of this ADR, a call, not a trait) and stays.
+
+Remaining `VarDecl` pseudo-traits: none that `convert` reconstructs. What is left in `custom_traits`
+under `__` are compiler/run-time flags (`__restore_pointy_given_topic`, `__pointy_copy`,
+`__pointy_native_param`, the BEGIN static-cell marks) and the `.=` declaration marker.

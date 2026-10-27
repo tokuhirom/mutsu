@@ -1346,6 +1346,7 @@ impl Interpreter {
             is_export,
             export_tags,
             is_rw,
+            is_lexical,
             language_version,
             custom_traits,
             own_attribute_names,
@@ -1396,9 +1397,7 @@ impl Interpreter {
                 &name_str,
                 &source_qualified_name,
                 &current_package,
-                custom_traits
-                    .iter()
-                    .any(|(trait_name, _)| trait_name == "__my_scoped"),
+                *is_lexical,
                 source_compound_name(custom_traits).is_some(),
                 *decl_id,
             );
@@ -1466,9 +1465,7 @@ impl Interpreter {
             if self.env().contains_key("__mutsu_in_eval")
                 && !self.module_load_active()
                 && !name_is_qualified
-                && custom_traits
-                    .iter()
-                    .any(|(trait_name, _)| trait_name == "__my_scoped")
+                && *is_lexical
             {
                 self.env_mut().insert(
                     MetaNs::EvalRole.owned_key_for_str(&qualified_name),
@@ -1611,7 +1608,7 @@ impl Interpreter {
             if has_trait_mod && (!custom_traits.is_empty() || !role_deferred.is_empty()) {
                 let type_obj = Value::package(Symbol::intern(&qualified_name));
                 for (trait_name, trait_arg) in custom_traits {
-                    // Skip internal markers (e.g. `__my_scoped`); they are not real `is` traits.
+                    // Skip internal markers (e.g. `__hoisted`); they are not real `is` traits.
                     if trait_name.starts_with("__")
                         || crate::runtime::array_type_trait::is_array_type_trait(trait_name)
                     {

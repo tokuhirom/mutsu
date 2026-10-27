@@ -44,6 +44,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
             is_export: s.has_export_trait,
             export_tags: s.export_tags,
             custom_traits: s.custom_traits,
+            marks: s.marks,
             has_initializer: false,
             constant: None,
             bind: None,
@@ -137,6 +138,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 is_export: s.has_export_trait,
                 export_tags: s.export_tags.clone(),
                 custom_traits: s.custom_traits.clone(),
+                marks: s.marks.clone(),
                 has_initializer: false,
                 constant: None,
                 bind: None,
@@ -193,6 +195,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 is_export: s.has_export_trait,
                 export_tags: s.export_tags.clone(),
                 custom_traits: s.custom_traits.clone(),
+                marks: s.marks.clone(),
                 has_initializer: false,
                 constant: None,
                 bind: None,
@@ -236,6 +239,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         is_export: s.has_export_trait,
         export_tags: s.export_tags,
         custom_traits: s.custom_traits,
+        marks: s.marks,
         has_initializer: false,
         constant: None,
         bind: None,
@@ -375,6 +379,7 @@ fn handle_compound_assign(stripped: &str, s: MyDeclState, op: DeclCompoundOp) ->
         is_export: s.has_export_trait,
         export_tags: s.export_tags.clone(),
         custom_traits: s.custom_traits.clone(),
+        marks: s.marks.clone(),
         has_initializer: false,
         constant: None,
         bind: None,
@@ -509,6 +514,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                     is_export: s.has_export_trait,
                     export_tags: s.export_tags.clone(),
                     custom_traits: s.custom_traits.clone(),
+                    marks: s.marks.clone(),
                     has_initializer: true,
                     constant: None,
                     bind: None,
@@ -540,10 +546,9 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     // `(my @a = SOURCE) ==> SINK`. Relocate the declaration to wrap the feed's
     // textually-left operand, then run the whole feed as the statement value.
     if matches!(expr, Expr::Feed { .. }) {
-        let mut custom_traits = s.custom_traits.clone();
-        if s.shape_dims.is_some() {
-            custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
-        }
+        let custom_traits = s.custom_traits.clone();
+        let mut marks = s.marks.clone();
+        marks.shaped = s.shape_dims.is_some();
         let mut feed = expr;
         {
             let slot = crate::parser::feed_leftmost_operand_mut(&mut feed);
@@ -562,6 +567,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 is_export: s.has_export_trait,
                 export_tags: s.export_tags.clone(),
                 custom_traits,
+                marks,
                 has_initializer: true,
                 constant: None,
                 bind: None,
@@ -584,13 +590,12 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     } else {
         expr
     };
-    let mut custom_traits = s.custom_traits.clone();
+    let custom_traits = s.custom_traits.clone();
     // A shaped declaration (`my @a[5] = ...`) keeps its declared shape; mark it so
     // SetLocal does not strip the shape the way a value-copy (`my @u = @shaped`)
     // does.
-    if is_shaped_decl {
-        custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
-    }
+    let mut marks = s.marks.clone();
+    marks.shaped = is_shaped_decl;
     let base_stmt = Stmt::VarDecl {
         anonymous: s.anonymous,
         name: s.name.clone(),
@@ -602,6 +607,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         is_export: s.has_export_trait,
         export_tags: s.export_tags.clone(),
         custom_traits,
+        marks,
         has_initializer: true,
         constant: None,
         bind: None,
@@ -628,10 +634,9 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         }
         return Ok((rest, stmt));
     }
-    let mut custom_traits = s.custom_traits.clone();
-    if is_shaped_decl {
-        custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
-    }
+    let custom_traits = s.custom_traits.clone();
+    let mut marks = s.marks.clone();
+    marks.shaped = is_shaped_decl;
     let stmt = Stmt::VarDecl {
         anonymous: s.anonymous,
         name: s.name.clone(),
@@ -643,6 +648,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         is_export: s.has_export_trait,
         export_tags: s.export_tags.clone(),
         custom_traits,
+        marks,
         has_initializer: true,
         constant: None,
         bind: None,
@@ -791,6 +797,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                     is_export: s.has_export_trait,
                     export_tags: s.export_tags,
                     custom_traits: s.custom_traits,
+                    marks: s.marks,
                     where_constraint: s.where_constraint,
                     method: Symbol::intern(&method_name),
                     callee: source_callee.map(Box::new),
@@ -833,6 +840,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             is_export: s.has_export_trait,
             export_tags: s.export_tags.clone(),
             custom_traits,
+            marks: s.marks.clone(),
             has_initializer,
             constant: None,
             bind: None,
@@ -1003,6 +1011,7 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             is_export: s.has_export_trait,
             export_tags: s.export_tags.clone(),
             custom_traits,
+            marks: s.marks.clone(),
             has_initializer: false,
             constant: None,
             bind: is_scalar_bind.then_some(crate::ast::bind_decl::BindKind::Scalar),

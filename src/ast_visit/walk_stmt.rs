@@ -18,6 +18,7 @@ pub(crate) fn walk_stmts<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, body: &'ast [
 pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt) {
     match s {
         Stmt::VarDecl {
+            marks: _,
             anonymous: _,
             name,
             expr,

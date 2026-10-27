@@ -23,7 +23,7 @@ pub(super) fn read_var(name: &str) -> Expr {
 }
 
 pub(super) fn static_scalar(name: &str) -> Stmt {
-    Stmt::VarDecl {
+    Stmt::VarDecl { marks: Default::default(),
         anonymous: false,
         name: name.to_string(),
         expr: Expr::Literal(crate::value::Value::NIL),

@@ -170,6 +170,7 @@ impl Compiler {
                 export_tags,
                 body,
                 is_rw,
+                is_lexical,
                 language_version,
                 custom_traits,
                 decl_id,
@@ -183,6 +184,7 @@ impl Compiler {
                 export_tags: export_tags.clone(),
                 body: body.clone(),
                 is_rw: *is_rw,
+                is_lexical: *is_lexical,
                 language_version: language_version.clone(),
                 custom_traits: {
                     let mut traits = custom_traits.clone();
@@ -463,6 +465,7 @@ impl Compiler {
         // element to `@tmp` would wrap it as a one-element array and iterate
         // the wrong thing.
         let decl = Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: format!("@{}", tmp),
             expr: Expr::MethodCall {
@@ -764,6 +767,7 @@ impl Compiler {
     /// A `my <NAME> = <EXPR>;` declaration for a compiler-synthesized temp.
     fn init_decl(name: &str, expr: Expr) -> Stmt {
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: name.to_string(),
             expr,
@@ -1186,6 +1190,7 @@ impl Compiler {
             }
             Stmt::VarTrait { name, op } => self.compile_var_trait_stmt(name, op),
             Stmt::VarDecl {
+                marks,
                 name,
                 expr,
                 type_constraint,
@@ -1466,10 +1471,8 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 // The parser marks a declaration whose initializer reads the
                 // new binding (`my $x = do { $x }`, `my $*X = $*X + 1`, #9770).
-                let init_sees_self = !*is_state
-                    && !*is_our
-                    && !is_constant_decl
-                    && custom_traits.iter().any(|(n, _)| n == "__init_sees_self");
+                let init_sees_self =
+                    !*is_state && !*is_our && !is_constant_decl && marks.init_sees_self;
                 // `my @*x = f()` / `my %*x = f()`: the fresh empty container is
                 // already the dynamic binding a callee of the initializer sees
                 // (the outer or absent one must not show through).
@@ -2042,7 +2045,8 @@ impl Compiler {
                         && !binds_term
                         && !has_default_trait
                         && !scalar_bind_decont
-                        && custom_traits.is_empty();
+                        && custom_traits.is_empty()
+                        && marks.is_plain();
                     // A typed `our @a` / `our %h` publishes the typed container
                     // `SetLocal` just built, not a second copy of the raw
                     // initializer: the global store would coerce that copy to a
@@ -2132,7 +2136,7 @@ impl Compiler {
                         // A shaped declaration (`my @a[5] = ...`) keeps its declared
                         // shape; mark it so SetLocal does not strip the shape the way
                         // an unshaped value-copy (`my @u = @shaped`) does.
-                        if custom_traits.iter().any(|(t, _)| t == "__shaped_decl") {
+                        if marks.shaped {
                             self.code.emit(OpCode::MarkShapedDeclContext);
                         }
                         // For % variables with QuantHash `is` traits, skip hash coercion
@@ -4957,11 +4961,9 @@ impl Compiler {
             // role-body-placeholder-mu-supply (#7550).
             Stmt::RoleDecl { body, .. } if self.emit_block_placeholder_die(body) => {}
             Stmt::RoleDecl {
-                name,
-                custom_traits,
-                ..
+                name, is_lexical, ..
             } => {
-                if custom_traits.iter().any(|(t, _)| t == "__my_scoped") {
+                if *is_lexical {
                     self.shadow_constant_with_lexical_type(&name.resolve());
                     self.lexical_types_in_scope.insert(name.resolve());
                 }

@@ -2,7 +2,7 @@
 //!
 //! The parser has no node for the shape: the declaration's initializer is
 //! `Array.new(shape => DIMS)`, with `data => VALUE` when it is initialized
-//! (and then the `__shaped_decl` trait, so the value-copy of a plain `my @u =
+//! (and then `VarMarks::shaped`, so the value-copy of a plain `my @u =
 //! @shaped` does not strip the shape). Rakudo has a `shape` on the
 //! `VarDeclaration::Simple`. [`new_expr`] / [`new_with_data_expr`] are the
 //! parser's and the RakuAST lowering's builders, [`split`] the converter's
@@ -12,9 +12,6 @@ use super::Expr;
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
-
-/// The trait marking an initialized shaped declaration.
-pub(crate) const SHAPED_DECL: &str = "__shaped_decl";
 
 fn pair(key: &str, value: Expr) -> Expr {
     Expr::Binary {

@@ -131,9 +131,15 @@ impl Purity {
                 // of `bareword` must see it, so it is converted, not carried.
                 constant: None,
                 bind: None,
+                marks,
                 where_constraint: None,
                 ..
-            } => declared_name(name) && export_tags.is_empty() && custom_traits.is_empty(),
+            } => {
+                declared_name(name)
+                    && export_tags.is_empty()
+                    && custom_traits.is_empty()
+                    && marks.is_plain()
+            }
             Stmt::Call { args, .. } => args
                 .iter()
                 .all(|a| matches!(a, CallArg::Positional(_) | CallArg::Named { .. })),

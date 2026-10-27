@@ -5670,11 +5670,9 @@ fn role_body_our_scope_violation(body: &[Stmt]) -> Option<&'static str> {
             // nothing ambiguous to complain about (rakudo accepts it).
             Stmt::EnumDecl { name, .. } if name.as_str().is_empty() => None,
             Stmt::EnumDecl { .. } => Some("enum"),
-            Stmt::RoleDecl { custom_traits, .. }
-                if custom_traits.iter().any(|(t, _)| t == "__my_scoped") =>
-            {
-                None
-            }
+            Stmt::RoleDecl {
+                is_lexical: true, ..
+            } => None,
             Stmt::RoleDecl { .. } => Some("role"),
             Stmt::VarDecl {
                 is_our: true,
@@ -6416,6 +6414,8 @@ pub(crate) struct CompiledRoleDeclPlan {
     pub(crate) is_export: bool,
     pub(crate) export_tags: Vec<String>,
     pub(crate) is_rw: bool,
+    /// A `my role`: stored under its declaration-site storage name.
+    pub(crate) is_lexical: bool,
     pub(crate) language_version: String,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
     /// Attribute names this role declares in its own body (ADR-0019 D2a),
@@ -13118,6 +13118,7 @@ impl CompiledCode {
             export_tags,
             body,
             is_rw,
+            is_lexical,
             language_version,
             custom_traits,
             decl_id,
@@ -13165,6 +13166,7 @@ impl CompiledCode {
             is_export: *is_export,
             export_tags: export_tags.clone(),
             is_rw: *is_rw,
+            is_lexical: *is_lexical,
             language_version: language_version.clone(),
             custom_traits: zip_decl_trait_args(custom_traits, trait_args),
             own_attribute_names,

@@ -242,7 +242,7 @@ fn phaser_value(body: Vec<Stmt>, kind: PhaserKind) -> Expr {
 
 /// Push `my $temp; $temp = VALUE` for a lifted phaser to `bucket`.
 fn push_temp_phaser(bucket: &mut Vec<Stmt>, temp_name: String, value: Expr) {
-    bucket.push(Stmt::VarDecl {
+    bucket.push(Stmt::VarDecl { marks: Default::default(),
         anonymous: false,
         name: temp_name.clone(),
         expr: Expr::Literal(crate::value::Value::NIL),

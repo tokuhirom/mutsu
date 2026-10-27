@@ -307,6 +307,7 @@ pub(crate) fn short_circuit_compound_assign_expr(
     };
     let cond = Expr::desugar_block(vec![
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: tmp_name,
             expr: lhs,
@@ -371,6 +372,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
         Expr::Ternary {
             cond: Box::new(Expr::desugar_block(vec![
                 Stmt::VarDecl {
+                    marks: Default::default(),
                     anonymous: false,
                     name: tmp_name,
                     expr: lhs,
@@ -411,6 +413,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
         Expr::Ternary {
             cond: Box::new(Expr::desugar_block(vec![
                 Stmt::VarDecl {
+                    marks: Default::default(),
                     anonymous: false,
                     name: tmp_name,
                     expr: lhs,

@@ -25,6 +25,7 @@ impl TrirCompiler<'_> {
             is_export,
             custom_traits,
             bind,
+            marks,
             where_constraint,
             ..
         } = stmt
@@ -75,7 +76,7 @@ impl TrirCompiler<'_> {
         // `bind` marks `my $x := ...`, which binds rather than
         // assigns — for a fresh `my` in a TRIR frame the two are the same
         // thing, because nothing else can name the slot. Any trait declines.
-        if !custom_traits.is_empty() {
+        if !custom_traits.is_empty() || !marks.is_plain() {
             return None;
         }
         let tc = type_constraint.as_deref();

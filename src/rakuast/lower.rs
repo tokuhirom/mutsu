@@ -1257,6 +1257,7 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         None => None,
     };
     Ok(Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name,
         expr,
@@ -3151,10 +3152,13 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
         None => None,
     };
-    let (mut custom_traits, dynamic_trait) = super::decl_traits::lower(node)?;
+    let (custom_traits, dynamic_trait) = super::decl_traits::lower(node)?;
+    let mut marks = crate::ast::var_marks::VarMarks::default();
+    if let Some(argument) = &dynamic_trait {
+        marks.dynamic_argument = argument.clone().map(Box::new);
+    }
     let sigil = leaf_str(node, "sigil")?;
-    let type_constraint =
-        super::keyed_hash::lower(node, &sigil, type_constraint, &mut custom_traits)?;
+    let type_constraint = super::keyed_hash::lower(node, &sigil, type_constraint, &mut marks)?;
     let anonymous = node.class == RakuAstClass::VarDeclarationAnonymous;
     let desigil = if anonymous {
         "__ANON_STATE#".to_string()
@@ -3176,7 +3180,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         }
     };
     let twigil = if is_dynamic { "*" } else { "" };
-    let is_dynamic = is_dynamic || dynamic_trait;
+    let is_dynamic = is_dynamic || dynamic_trait.is_some();
     let name = if sigil == "$" {
         format!("{twigil}{desigil}")
     } else {
@@ -3250,6 +3254,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                     is_export,
                     export_tags: export_tags.clone(),
                     custom_traits,
+                    marks,
                     where_constraint: None,
                     method: crate::symbol::Symbol::intern(&method),
                     callee: callee.map(Box::new),
@@ -3265,7 +3270,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
     let expr = match shape_dims {
         Some(dims) if has_initializer => {
-            custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
+            marks.shaped = true;
             crate::ast::shaped_decl::new_with_data_expr(dims, expr)
         }
         Some(dims) => crate::ast::shaped_decl::new_expr(dims),
@@ -3299,6 +3304,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 constant: None,
                 bind: crate::ast::bind_decl::is_scalar_bind_name(&bound_name)
                     .then_some(crate::ast::bind_decl::BindKind::Scalar),
+                marks,
                 where_constraint,
             }),
         ));
@@ -3317,6 +3323,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         has_initializer,
         constant: None,
         bind: None,
+        marks,
         where_constraint,
     })
 }

@@ -256,6 +256,7 @@ impl Compiler {
 
         let mut pre = vec![
             Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: first_var.clone(),
                 expr: Expr::Literal(Value::TRUE),
@@ -272,6 +273,7 @@ impl Compiler {
                 where_constraint: None,
             },
             Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: ran_var.clone(),
                 expr: Expr::Literal(Value::FALSE),
@@ -290,6 +292,7 @@ impl Compiler {
         ];
         if let Some(result_var) = result_var.clone() {
             pre.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: result_var,
                 expr: Expr::Literal(Value::NIL),
@@ -308,6 +311,7 @@ impl Compiler {
         }
         if let Some(last_topic_var) = last_topic_var.clone() {
             pre.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: last_topic_var,
                 expr: Expr::Literal(Value::NIL),
@@ -326,6 +330,7 @@ impl Compiler {
         }
         if let Some(value_var) = value_var.clone() {
             pre.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: value_var,
                 expr: Expr::Literal(Value::NIL),
@@ -344,6 +349,7 @@ impl Compiler {
         }
         if let Some(post_topic_var) = post_topic_var.clone() {
             pre.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: post_topic_var,
                 expr: Expr::Literal(Value::NIL),
@@ -435,6 +441,7 @@ impl Compiler {
         // Declare temp variables for extracted ENTER phaser expressions
         for var_name in &enter_expr_vars {
             pre.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: var_name.clone(),
                 expr: Expr::Literal(Value::NIL),
@@ -658,6 +665,7 @@ impl Compiler {
             };
             let init = init.clone();
             let body = vec![Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: var_name,
                 expr: init,

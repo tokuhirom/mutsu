@@ -36,7 +36,7 @@ pub(crate) fn if_condition_slot(condition: &Expr) -> Option<&str> {
 pub(super) fn if_condition_check(condition: Expr, slot: &str) -> Vec<Stmt> {
     let slot_var = || Expr::Var(slot.to_string());
     vec![
-        Stmt::VarDecl {
+        Stmt::VarDecl { marks: Default::default(),
             anonymous: false,
             name: slot.to_string(),
             expr: condition,

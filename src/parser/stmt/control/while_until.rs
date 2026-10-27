@@ -158,6 +158,7 @@ fn expand_loop(
         declared
             .into_iter()
             .map(|name| Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name,
                 expr: Expr::Literal(Value::NIL),

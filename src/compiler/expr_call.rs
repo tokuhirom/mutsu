@@ -764,6 +764,7 @@ impl Compiler {
             };
             let desugared = Expr::desugar_block(vec![
                 Stmt::VarDecl {
+                    marks: Default::default(),
                     anonymous: false,
                     name: tmp,
                     expr: (**left).clone(),
@@ -1941,6 +1942,7 @@ impl Compiler {
                     let seen_name = format!("__mutsu_cas_seen_{}", super::compile_session::mint());
                     let cas_expr = Expr::desugar_block(vec![
                         Stmt::VarDecl {
+                            marks: Default::default(),
                             anonymous: false,
                             name: seen_name.clone(),
                             expr: args[0].clone(),

@@ -86,10 +86,11 @@ impl<'ast> Visit<'ast> for NestedTypeDecls {
             }
             Stmt::RoleDecl {
                 name,
+                is_lexical,
                 custom_traits,
                 ..
             } => {
-                if custom_traits.iter().any(|(t, _)| t == "__my_scoped") || is_anon(custom_traits) {
+                if *is_lexical || is_anon(custom_traits) {
                     return;
                 }
                 if self.in_code {

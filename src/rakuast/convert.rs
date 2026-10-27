@@ -151,10 +151,6 @@ pub(super) fn package_scope(is_lexical: bool, is_unit: bool) -> Option<&'static 
 /// precedence or associativity.
 const OP_PREC_TRAIT: &str = "__prec";
 
-/// The parser's `custom_traits` marker for a `my`-scoped declaration
-/// (`my role R { }`).
-pub(super) const MY_SCOPED: &str = "__my_scoped";
-
 /// Whether `stmt` is a block-form loop or conditional the parser carries in an
 /// expression (`do for ...`) as a `DoStmt`.
 // Cost: O(1).
@@ -1276,6 +1272,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             export_tags,
             body,
             is_rw,
+            is_lexical,
             custom_traits,
             ..
         } => Ok(Some(statement_expression(super::role::convert(
@@ -1287,6 +1284,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 export_tags,
                 body,
                 is_rw: *is_rw,
+                is_lexical: *is_lexical,
                 custom_traits,
             },
         )?))),
@@ -1766,6 +1764,7 @@ pub(super) fn var_decl_statement(
         is_our,
         is_dynamic,
         custom_traits,
+        marks,
         has_initializer,
         constant,
         where_constraint,
@@ -1790,18 +1789,7 @@ pub(super) fn var_decl_statement(
             export_trait,
         );
     }
-    let is_internal = |n: &str| {
-        // The parser's own mark of a declaration whose initializer reads
-        // the new binding; the lowering marks it again.
-        n == "__init_sees_self"
-            || n == crate::ast::method_assign_decl::METHOD_ASSIGN_DECL_TRAIT
-            || n == crate::ast::shaped_decl::SHAPED_DECL
-            || n == crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE
-            // The argument of `is dynamic(ARG)`, rendered with the trait.
-            || n == crate::ast::DYNAMIC_TRAIT_ARGUMENT
-            // The written colonpairs of the name, rendered in `desigilname`.
-            || n == crate::ast::NAME_COLONPAIRS
-    };
+    let is_internal = |n: &str| n == crate::ast::method_assign_decl::METHOD_ASSIGN_DECL_TRAIT;
     let unrendered: Vec<&str> = custom_traits
         .iter()
         .filter(|(n, arg)| !is_internal(n) && !decl_traits::is_rendered(n, arg))
@@ -1816,7 +1804,7 @@ pub(super) fn var_decl_statement(
     // build_type_node validates simple/definite and defers the rest. A
     // key-typed hash (`my Int %h{Str}`) splits into its value `type` and a
     // `shape`.
-    let keyed = super::keyed_hash::split(name, type_constraint.as_deref(), custom_traits);
+    let keyed = super::keyed_hash::split(name, type_constraint.as_deref(), marks);
     let type_name = match keyed {
         Some((value, _)) => value,
         None => type_constraint.as_deref(),
@@ -1895,7 +1883,9 @@ pub(super) fn var_decl_statement(
         if !traits.is_empty() {
             return Err(unsupported("`is dynamic` beside other traits"));
         }
-        traits.push(decl_traits::dynamic_trait(custom_traits)?);
+        traits.push(decl_traits::dynamic_trait(
+            marks.dynamic_argument.as_deref(),
+        )?);
     }
     if let Some(export) = export_trait {
         // Like `is dynamic`, `is export` is a flag of the parsed declaration,
@@ -1906,7 +1896,7 @@ pub(super) fn var_decl_statement(
         traits.push(export);
     }
     decl_traits::insert(&mut decl, traits);
-    super::name_colonpairs::apply(&mut decl, custom_traits)?;
+    super::name_colonpairs::apply(&mut decl, marks)?;
     // `where` is the declaration's last field, after the initializer.
     if let Some(constraint) = where_constraint {
         decl.fields
@@ -1966,6 +1956,7 @@ pub(super) struct VarDeclParts<'a> {
     is_our: bool,
     is_dynamic: bool,
     custom_traits: &'a [(String, Option<Expr>)],
+    marks: &'a crate::ast::var_marks::VarMarks,
     /// Whether the declaration has an explicit initializer.
     has_initializer: bool,
     constant: Option<crate::ast::ConstantSigil>,
@@ -1990,6 +1981,7 @@ pub(super) fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeErr
         has_initializer,
         constant,
         bind: _,
+        marks,
         where_constraint,
         is_export,
         export_tags,
@@ -2006,6 +1998,7 @@ pub(super) fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeErr
         is_our: *is_our,
         is_dynamic: *is_dynamic,
         custom_traits,
+        marks,
         has_initializer: *has_initializer,
         constant: *constant,
         where_constraint: where_constraint.as_deref(),

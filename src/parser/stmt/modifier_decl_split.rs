@@ -134,6 +134,7 @@ fn try_split_decl_modifier(
 
 fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool) -> Option<Stmt> {
     let Stmt::VarDecl {
+        marks,
         anonymous,
         name,
         expr,
@@ -176,6 +177,7 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
     let is_bind = *bind == Some(crate::ast::bind_decl::BindKind::Scalar);
     let has_init = is_bind || *has_initializer;
     let decl = Stmt::VarDecl {
+        marks: marks.clone(),
         anonymous: *anonymous,
         name: name.clone(),
         expr: super::decl::default_decl_expr(is_array, is_hash, None, type_constraint.as_deref()),
@@ -369,6 +371,7 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, Runtim
             ) =>
             {
                 out.push(Stmt::VarDecl {
+                    marks: Default::default(),
                     anonymous: false,
                     name,
                     expr,
@@ -391,8 +394,9 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, Runtim
                 custom_traits,
                 constant: None,
                 bind: None,
+                marks,
                 ..
-            } if custom_traits.is_empty() => {
+            } if custom_traits.is_empty() && marks.is_plain() => {
                 out.push(Stmt::Assign {
                     name,
                     expr,
@@ -408,9 +412,10 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, Runtim
                         expr,
                         custom_traits,
                         constant: None,
+                        marks,
                         ..
                     },
-                ] if custom_traits.is_empty() => {
+                ] if custom_traits.is_empty() && marks.is_plain() => {
                     out.push(Stmt::Assign {
                         name: name.clone(),
                         expr: expr.clone(),

@@ -189,6 +189,7 @@ impl Compiler {
                 has_initializer,
                 constant,
                 bind,
+                marks,
                 ..
             } => {
                 let anonymous_scalar = *anonymous && !name.starts_with(['@', '%', '&']);
@@ -551,9 +552,7 @@ impl Compiler {
                     // slice 2 gave a plain container decl in expression
                     // position a slot: the `SetGlobal` route never needed it
                     // (`roast/S06-signature/shape.t` 36-37).
-                    if decl_slot.is_some()
-                        && custom_traits.iter().any(|(t, _)| t == "__shaped_decl")
-                    {
+                    if decl_slot.is_some() && marks.shaped {
                         self.code.emit(OpCode::MarkShapedDeclContext);
                     }
                     if let Some(slot) = decl_slot {

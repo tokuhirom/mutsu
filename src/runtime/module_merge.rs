@@ -303,9 +303,9 @@ impl Interpreter {
                 // either becoming the provider of the bare name.
                 Stmt::RoleDecl {
                     name,
-                    custom_traits,
+                    is_lexical: false,
                     ..
-                } if !custom_traits.iter().any(|(t, _)| t == "__my_scoped") => *name,
+                } => *name,
                 _ => continue,
             };
             if crate::qualified::is_qualified(name) {

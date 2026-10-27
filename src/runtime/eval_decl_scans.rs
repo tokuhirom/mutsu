@@ -108,11 +108,9 @@ impl<'ast> Visit<'ast> for EvalLexicalKeys {
             } => self.insert_type_keys(*name),
             Stmt::RoleDecl {
                 name,
-                custom_traits,
+                is_lexical: true,
                 ..
-            } if custom_traits.iter().any(|(t, _)| t == "__my_scoped") => {
-                self.insert_type_keys(*name)
-            }
+            } => self.insert_type_keys(*name),
             // Routine, package and phaser bodies run in a frame of their own
             // (a phaser at another time), so their `my`s never shadow the
             // caller's pad.

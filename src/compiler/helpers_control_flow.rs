@@ -359,6 +359,7 @@ impl Compiler {
             (bare.clone(), Expr::Var(bare))
         };
         let var_decl = Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: bare_name,
             expr: cond.clone(),
@@ -418,6 +419,7 @@ impl Compiler {
     /// A `my NAME = EXPR;` declaration with no traits/constraints.
     fn plain_var_decl(name: String, expr: Expr) -> Stmt {
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name,
             expr,

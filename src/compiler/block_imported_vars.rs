@@ -189,6 +189,7 @@ impl Compiler {
         let qualified = format!("{}::{bare}", var.package);
         if var.term {
             let decl = Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: var.name.clone(),
                 expr: Expr::BareWord(qualified),
@@ -222,6 +223,7 @@ impl Compiler {
             ),
         };
         Some(crate::ast::bind_decl::expand(Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: var.name.clone(),
             expr,
@@ -369,6 +371,7 @@ impl Compiler {
         };
         if sigil == Some('&') {
             let decl = Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: symbol.to_string(),
                 expr: Expr::CodeVar(bare.to_string()),

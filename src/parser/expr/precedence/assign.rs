@@ -218,11 +218,13 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
                 is_export,
                 export_tags,
                 custom_traits,
+                marks,
                 where_constraint,
                 ..
             } = *stmt
             {
                 Expr::DoStmt(Box::new(Stmt::VarDecl {
+                    marks,
                     anonymous: false,
                     name,
                     expr: value,

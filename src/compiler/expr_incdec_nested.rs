@@ -103,6 +103,7 @@ impl Compiler {
         }
         let tmp = format!("__mutsu_incdec_root_{}", self.code.constants.len());
         let bind_decl = Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: tmp.clone(),
             expr: root.clone(),
