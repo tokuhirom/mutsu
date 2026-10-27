@@ -208,7 +208,12 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
         // The source marker is retained for RakuAST; closure construction later
         // rebuilds its execution expansion from this RHS.
         Expr::CompoundAssign { target, rhs, .. } => {
-            contains_whatever(target) || contains_whatever(rhs) || is_wrapped_whatevercode(rhs)
+            // A bare `*` target keeps its own one-parameter expansion
+            // (`build_compound_assign_expr`); only a compound one (`*.name`,
+            // `*[0]`) primes the expression.
+            (!is_whatever(target) && contains_whatever(target))
+                || contains_whatever(rhs)
+                || is_wrapped_whatevercode(rhs)
         }
         e if is_whatever(e) || matches!(e, Expr::HyperWhatever) => true,
         // Thunk barriers (`&&`, `||`, `//`, `and`, `or`, `andthen`, `orelse`,
