@@ -32,364 +32,9 @@
     "unresolved": []
   },
   "dist": "PDF::Font::Loader",
-  "files": [
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 6.25,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/cmap-fixed-width.t",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 25.45,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 5.92,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/cmap-issue#34.t",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 4.21,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 5.94,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/cmap-issue#35.t",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 3.9,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/cmap-ligatures.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 20.1,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/cmap-utf16.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 22.88,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/cmap-utf32.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 13.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/cmap-utf8.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 11.44,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/cmap-variable-width.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 9.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/core-font.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 12.43,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/fontobj.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 13.5,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/load-font.t",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/Font__FreeType/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/deps/Font__FreeType/Font-Fr",
-        "nok": 0,
-        "ok": 11,
-        "plan": 27,
-        "secs": 8.1,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/pdf-text-align.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 9.52,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/reuse-cid.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 9.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/reuse-type1.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 10.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/reuse-unembedded.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 9.46,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/subset.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 10.05,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/threads.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 9.87,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/type1-add-encoding.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 13.09,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/type1-encoding.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 13.56,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/type1-encoding_issue#12.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 12.94,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 10.22,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/type1-stream.t",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 5.84,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/type1.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 12.63,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/type3-basic.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 9.94,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "PDF::Font::Loader": "ok",
+    "PDF::Font::Loader": "raku_also_fails",
     "PDF::Font::Loader::Dict": "ok",
     "PDF::Font::Loader::Enc": "ok",
     "PDF::Font::Loader::Enc::CMap": "ok",
@@ -397,17 +42,17 @@
     "PDF::Font::Loader::Enc::Identity16": "ok",
     "PDF::Font::Loader::Enc::Type1": "ok",
     "PDF::Font::Loader::Enc::Unicode": "ok",
-    "PDF::Font::Loader::FontObj": "ok",
-    "PDF::Font::Loader::FontObj::CID": "ok",
+    "PDF::Font::Loader::FontObj": "raku_also_fails",
+    "PDF::Font::Loader::FontObj::CID": "Failed to parse module 'PDF::Content::Text::Box': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: literal Regex without a",
     "PDF::Font::Loader::Glyph": "ok",
     "PDF::Font::Loader::Type1::Stream": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-26",
+    "date": "2026-10-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6ac007e8",
+    "mutsu_commit": "1bfedbe3",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -418,12 +63,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/DF/PDF_FONT_LOADER/0b4e8f687d04825d7f059380a312d80b215c8be7.tar.gz"
   },
-  "status": "green",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 27,
-    "baseline_files": 4,
-    "mutsu_assertions": 27,
-    "parity_files": 4,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
     "regressed_files": 0
   },
   "version": "0.8.15"

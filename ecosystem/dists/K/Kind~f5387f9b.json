@@ -11,11 +11,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'kind' for invocant of type 'Perl6::Metamodel::ClassHOW'",
+        "first_failure": "Runtime error: MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: complex type capture",
         "nok": 0,
         "ok": 0,
-        "plan": 10,
-        "secs": 0.17,
+        "plan": null,
+        "secs": 0.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -25,30 +25,30 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 2.69,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "instantiation",
-        "nok": 1,
+        "first_failure": "Runtime error: MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: complex type capture",
+        "nok": 0,
         "ok": 0,
-        "plan": 3,
-        "secs": 0.18,
+        "plan": null,
+        "secs": 0.03,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/02-meta.t",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.43,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,10 +60,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-26",
+    "date": "2026-10-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6ac007e8",
+    "mutsu_commit": "1bfedbe3",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

@@ -11,40 +11,16 @@
     "unresolved": []
   },
   "dist": "Text::Emoji",
-  "files": [
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Ambiguous call to to-emoji(Str); these signatures all match: Signature<4520>, Signature<4523>",
-        "nok": 0,
-        "ok": 0,
-        "plan": 21,
-        "secs": 0.41,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/01-basic.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 21,
-        "plan": 21,
-        "secs": 7.63,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "Text::Emoji": "ok"
+    "Text::Emoji": "Failed to parse module 'Text::Emoji': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: declaration with traits (Map::Match"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-26",
+    "date": "2026-10-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6ac007e8",
+    "mutsu_commit": "1bfedbe3",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -55,13 +31,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/EX/TEXT_EMOJI/8108814d899e0014a07e4e40c9d2f8cb4a70e51d.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 21,
-    "baseline_files": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 1
+    "regressed_files": 0
   },
   "version": "0.0.11"
 }

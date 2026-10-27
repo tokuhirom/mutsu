@@ -17,7 +17,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 0.19,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 6.88,
+        "secs": 7.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.24,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.98,
+        "secs": 1.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +61,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.3,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.81,
+        "secs": 1.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,7 +83,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.23,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -93,7 +93,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.9,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,7 +105,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.2,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -115,30 +115,29 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.75,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "array of arrays of numbers",
-        "nok": 1,
-        "ok": 2,
+        "nok": 0,
+        "ok": 3,
         "plan": 3,
-        "secs": 0.27,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/05-standardize.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.87,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -152,10 +151,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-26",
+    "date": "2026-10-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6ac007e8",
+    "mutsu_commit": "1bfedbe3",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -166,13 +165,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AT/DATA_TRANSFORMERS/2c3c909cafd04ee98c97fe01e6d4b6ac1dce5c88.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 36,
     "baseline_files": 6,
-    "mutsu_assertions": 35,
-    "parity_files": 5,
-    "regressed_files": 1
+    "mutsu_assertions": 36,
+    "parity_files": 6,
+    "regressed_files": 0
   },
   "version": "0.0.4"
 }

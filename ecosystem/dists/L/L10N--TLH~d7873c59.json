@@ -7,40 +7,17 @@
     "unresolved": []
   },
   "dist": "L10N::TLH",
-  "files": [
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.12,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/01-basic.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 2.41,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "L10N::TLH": "ok",
+    "L10N::TLH": "Runtime error: slang activation for 'L10N::TLH' failed: Slang activation NYI: grammar rule override 'block-loop' is not supported by this implementation (recognized: term:sym<identifier>, methodop, ro",
     "RakuAST::Deparse::L10N::TLH": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-26",
+    "date": "2026-10-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6ac007e8",
+    "mutsu_commit": "1bfedbe3",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -51,12 +28,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/10/L10N_TLH/7bdc0f6d9a840a3f2ebeb07f8c2e7814c6f8b4e7.tar.gz"
   },
-  "status": "green",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 1,
-    "baseline_files": 1,
-    "mutsu_assertions": 1,
-    "parity_files": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
     "regressed_files": 0
   },
   "version": "0.0.3"

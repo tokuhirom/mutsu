@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.22,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 7.32,
+        "secs": 9.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 1.25,
+        "secs": 1.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 3.3,
+        "secs": 3.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.63,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,29 +68,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 3.52,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.38,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/09-basic.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 2.6,
+        "secs": 3.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -99,11 +77,34 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'chars' for invocant of type 'Range'. Did you mean any",
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 7,
+        "ok": 0,
         "plan": null,
-        "secs": 0.28,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/09-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -113,182 +114,213 @@
         "nok": 0,
         "ok": 86,
         "plan": 86,
-        "secs": 2.45,
+        "secs": 3.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.33,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/100-formatter-c.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.86,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 0.25,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/11-format-ampersand.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.86,
+        "secs": 1.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.35,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/12-format-b.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.51,
+        "secs": 1.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 0.28,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/13-format-brace.rakutest",
       "raku": {
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.33,
+        "secs": 1.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 0.42,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/14-format-circumflex.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.38,
+        "secs": 1.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.29,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/15-format-c.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.09,
+        "secs": 1.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 0.28,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/16-format-conditional.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.27,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 0.3,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/17-format-d.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
+        "secs": 1.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/18-format-f.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
         "secs": 1.4,
         "skip": 0,
         "todo": 0,
@@ -296,395 +328,298 @@
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.24,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/18-format-f.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 1.21,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 0.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/19-format-goto.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.99,
+        "secs": 1.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.27,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/20-format-i.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.8,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.24,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/21-format-justify.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.98,
+        "secs": 1.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.25,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/22-format-logical-block.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.01,
+        "secs": 1.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.24,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/23-format-newline.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.8,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.3,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/24-format-o.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.27,
+        "secs": 1.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.27,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/25-format-page.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.78,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.34,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/26-format-paren.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.97,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.4,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/27-format-percent.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.04,
+        "secs": 1.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.27,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/28-format-p.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.98,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.33,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/29-format-question.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.73,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 0.41,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/30-format-r.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.21,
+        "secs": 1.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.28,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/31-format-slash.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.92,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 0.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/32-format-s.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 1.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.29,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/33-format-tilde.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.88,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 0.28,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/34-format-t.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 1.01,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.29,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/35-format-underscore.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
         "secs": 0.98,
         "skip": 0,
         "todo": 0,
@@ -692,22 +627,115 @@
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
         "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 0.31,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/32-format-s.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 1.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/33-format-tilde.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/34-format-t.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/35-format-underscore.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Failed to parse module 'Utils': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: imaginary literal without a decimal spell",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
       },
       "path": "t/36-format-x.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.34,
+        "secs": 1.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -721,10 +749,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-26",
+    "date": "2026-10-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6ac007e8",
+    "mutsu_commit": "1bfedbe3",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -739,9 +767,9 @@
   "totals": {
     "baseline_assertions": 270,
     "baseline_files": 32,
-    "mutsu_assertions": 191,
-    "parity_files": 31,
-    "regressed_files": 1
+    "mutsu_assertions": 39,
+    "parity_files": 3,
+    "regressed_files": 29
   },
   "version": "0.0.3"
 }

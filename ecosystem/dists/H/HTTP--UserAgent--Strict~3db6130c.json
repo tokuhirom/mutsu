@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.12,
+        "secs": 0.23,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.91,
+        "secs": 0.81,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 0.26,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 4.84,
+        "secs": 5.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -70,7 +70,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 0.42,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 7.67,
+        "secs": 8.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,7 +92,7 @@
         "nok": 0,
         "ok": 31,
         "plan": 31,
-        "secs": 0.71,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,29 +102,30 @@
         "nok": 0,
         "ok": 31,
         "plan": 31,
-        "secs": 21.1,
+        "secs": 24.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Runtime error: MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: SyntheticBlock([VarDecl { name: \"expected\", anonymous: fal",
         "nok": 0,
-        "ok": 29,
-        "plan": 29,
-        "secs": 0.55,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/040-request.rakutest",
       "raku": {
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 2.07,
+        "secs": 2.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -136,7 +137,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.41,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -146,29 +147,30 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.21,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Runtime error: MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: SyntheticBlock([VarDecl { name: \"expected\", anonymous: fal",
         "nok": 0,
-        "ok": 29,
-        "plan": 29,
-        "secs": 0.71,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/050-response.rakutest",
       "raku": {
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 1.91,
+        "secs": 1.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -180,7 +182,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.24,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -190,7 +192,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.25,
+        "secs": 1.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -202,7 +204,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.69,
+        "secs": 0.74,
         "skip": 7,
         "todo": 0,
         "verdict": "pass"
@@ -212,7 +214,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 8.76,
+        "secs": 9.2,
         "skip": 7,
         "todo": 0,
         "verdict": "pass"
@@ -224,7 +226,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.85,
+        "secs": 1.18,
         "skip": 8,
         "todo": 0,
         "verdict": "pass"
@@ -234,7 +236,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 4.02,
+        "secs": 4.88,
         "skip": 8,
         "todo": 0,
         "verdict": "pass"
@@ -244,11 +246,11 @@
       "cmp": "no_baseline",
       "path": "t/081-ua-strict-interop.rakutest",
       "raku": {
-        "first_failure": "using port 38992",
+        "first_failure": "using port 30324",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 4.59,
+        "secs": 5.19,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -260,7 +262,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.67,
+        "secs": 0.87,
         "skip": 4,
         "todo": 0,
         "verdict": "pass"
@@ -270,7 +272,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.01,
+        "secs": 1.18,
         "skip": 4,
         "todo": 0,
         "verdict": "pass"
@@ -282,7 +284,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.82,
+        "secs": 0.71,
         "skip": 4,
         "todo": 0,
         "verdict": "pass"
@@ -292,30 +294,8 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.02,
+        "secs": 1.04,
         "skip": 4,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.85,
-        "skip": 2,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/090-ua-ssl.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.14,
-        "skip": 2,
         "todo": 0,
         "verdict": "pass"
       }
@@ -331,12 +311,34 @@
         "todo": 0,
         "verdict": "pass"
       },
+      "path": "t/090-ua-ssl.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.13,
+        "skip": 2,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 2.1,
+        "skip": 2,
+        "todo": 0,
+        "verdict": "pass"
+      },
       "path": "t/100-redirect-ssl.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.32,
+        "secs": 1.23,
         "skip": 2,
         "todo": 0,
         "verdict": "pass"
@@ -350,7 +352,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 2.3,
+        "secs": 2.73,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -362,7 +364,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.73,
+        "secs": 0.89,
         "skip": 3,
         "todo": 0,
         "verdict": "pass"
@@ -372,7 +374,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.93,
+        "secs": 1.16,
         "skip": 3,
         "todo": 0,
         "verdict": "pass"
@@ -386,7 +388,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.16,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -398,7 +400,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.54,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -408,7 +410,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 3.18,
+        "secs": 3.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -420,7 +422,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.13,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -430,7 +432,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.85,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -442,7 +444,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.89,
+        "secs": 2.05,
         "skip": 2,
         "todo": 0,
         "verdict": "pass"
@@ -452,7 +454,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.21,
+        "secs": 1.17,
         "skip": 2,
         "todo": 0,
         "verdict": "pass"
@@ -464,7 +466,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.56,
+        "secs": 0.84,
         "skip": 7,
         "todo": 0,
         "verdict": "pass"
@@ -474,7 +476,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.03,
+        "secs": 1.07,
         "skip": 7,
         "todo": 0,
         "verdict": "pass"
@@ -486,7 +488,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.59,
+        "secs": 0.76,
         "skip": 2,
         "todo": 0,
         "verdict": "pass"
@@ -496,7 +498,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.02,
+        "secs": 1.13,
         "skip": 2,
         "todo": 0,
         "verdict": "pass"
@@ -508,7 +510,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.63,
+        "secs": 0.77,
         "skip": 5,
         "todo": 0,
         "verdict": "pass"
@@ -518,7 +520,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.2,
+        "secs": 1.34,
         "skip": 5,
         "todo": 0,
         "verdict": "pass"
@@ -532,7 +534,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 2.15,
+        "secs": 2.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -544,7 +546,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.67,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -554,7 +556,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.31,
+        "secs": 1.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -566,7 +568,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.74,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -576,7 +578,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.24,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -588,7 +590,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.64,
+        "secs": 0.77,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -598,7 +600,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.02,
+        "secs": 1.05,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -620,10 +622,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-26",
+    "date": "2026-10-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6ac007e8",
+    "mutsu_commit": "1bfedbe3",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -634,13 +636,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/H/TT/HTTP_USERAGENT_STRICT/131c090998a2c1864d77e763b231c1c2667565c3.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 215,
     "baseline_files": 24,
-    "mutsu_assertions": 215,
-    "parity_files": 24,
-    "regressed_files": 0
+    "mutsu_assertions": 157,
+    "parity_files": 22,
+    "regressed_files": 2
   },
   "version": "0.9.2"
 }

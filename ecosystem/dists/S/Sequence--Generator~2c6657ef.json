@@ -15,7 +15,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 16,
-        "secs": 0.39,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 7.63,
+        "secs": 4.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -34,11 +34,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Iterator:D but got Any (Sequence::Generator::StepUpto<334>)",
+        "first_failure": "Type check failed for return value; expected Iterator:D but got Any (Sequence::Generator::StepUpto<1057>)",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.46,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,29 +48,30 @@
         "nok": 0,
         "ok": 129,
         "plan": 129,
-        "secs": 3.77,
+        "secs": 1.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 8,
+        "first_failure": "did it start at 42",
+        "nok": 2,
+        "ok": 4,
         "plan": 8,
-        "secs": 0.32,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/03-postfix.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.56,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,10 +83,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-26",
+    "date": "2026-10-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6ac007e8",
+    "mutsu_commit": "1bfedbe3",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -96,13 +97,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/EQ/SEQUENCE_GENERATOR/d6fbdc787bbbebf9562d1c6556c2063289af2df2.tar.gz"
   },
-  "status": "partial",
+  "status": "red",
   "totals": {
     "baseline_assertions": 153,
     "baseline_files": 3,
-    "mutsu_assertions": 20,
-    "parity_files": 1,
-    "regressed_files": 2
+    "mutsu_assertions": 16,
+    "parity_files": 0,
+    "regressed_files": 3
   },
   "version": "0.0.8"
 }

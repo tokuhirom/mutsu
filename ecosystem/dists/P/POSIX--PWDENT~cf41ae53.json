@@ -11,11 +11,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Unknown function: IO",
+        "first_failure": "Failed to parse module 'POSIX::PWDENT': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
         "nok": 0,
-        "ok": 12,
-        "plan": 31,
-        "secs": 0.78,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -25,30 +25,30 @@
         "nok": 0,
         "ok": 31,
         "plan": 31,
-        "secs": 3.76,
+        "secs": 3.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "Current pwddb has 1 entries",
-        "nok": 1,
-        "ok": 24,
-        "plan": 27,
-        "secs": 0.57,
+        "first_failure": "Failed to parse module 'POSIX::GRPENT': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/01-grpent.t",
       "raku": {
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 3.45,
+        "secs": 3.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -56,15 +56,15 @@
     }
   ],
   "load": {
-    "GRPENT": "ok",
-    "PWDENT": "ok"
+    "GRPENT": "raku_also_fails",
+    "PWDENT": "raku_also_fails"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-10-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6ac007e8",
+    "mutsu_commit": "1bfedbe3",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -79,7 +79,7 @@
   "totals": {
     "baseline_assertions": 58,
     "baseline_files": 2,
-    "mutsu_assertions": 36,
+    "mutsu_assertions": 0,
     "parity_files": 0,
     "regressed_files": 2
   },

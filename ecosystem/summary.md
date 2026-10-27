@@ -7,19 +7,19 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **86.5%** (1101/1273) |
-| file parity | 91.9% (4188/4559) |
-| assertion parity | 96.0% |
+| **dist parity** (published headline) | **85.9%** (1054/1227) |
+| file parity | 91.2% (4017/4404) |
+| assertion parity | 95.9% |
 | accepted divergences (out of the KPI, ADR-0130) | 1 file(s) |
 
 | status | distributions |
 |---|---|
 | `blocked_dep` | 7 |
-| `blocked_load` | 64 |
-| `green` | 1101 |
-| `no_baseline` | 307 |
-| `partial` | 105 |
-| `red` | 67 |
+| `blocked_load` | 119 |
+| `green` | 1054 |
+| `no_baseline` | 298 |
+| `partial` | 96 |
+| `red` | 77 |
 | `skipped` | 9 |
 
 ## Distributions
@@ -54,7 +54,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Air::Play` | 0.0.12 | green | 1/1 |
 | `Air::Plugin::Asciinema` | 0.0.6 | no_baseline | — |
 | `Air::Plugin::Donate` | 0.0.1 | green | 1/1 |
-| `Air::Plugin::Hilite` | 0.0.10 | green | 1/1 |
+| `Air::Plugin::Hilite` | 0.0.10 | blocked_load | — |
 | `Air::Plugin::MailForm` | 0.0.1 | no_baseline | — |
 | `Air::Plugin::Rakudoc` | 0.0.1 | no_baseline | — |
 | `Air::Plugin::Wordcloud` | 0.0.1 | no_baseline | — |
@@ -67,7 +67,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Algorithm::KdTree` | 0.05 | no_baseline | — |
 | `Algorithm::Kruskal` | * | green | 1/1 |
 | `Algorithm::LCS` | 0.1.1 | green | 1/1 |
-| `Algorithm::LibSVM` | 0.0.20 | green | 1/1 |
+| `Algorithm::LibSVM` | 0.0.20 | blocked_load | — |
 | `Algorithm::Soundex` | * | green | 1/1 |
 | `Algorithm::TernarySearchTree` | 0.04 | green | 4/4 |
 | `Algorithm::Treap` | 0.10.3 | green | 6/6 |
@@ -79,7 +79,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `annotations` | 0.1.0 | blocked_load | — |
 | `Anolis` | 1.0.0 | no_baseline | — |
 | `antlia` | 0.1.2 | no_baseline | — |
-| `ANTLR4::Grammar` | 0.6.3 | green | 13/13 |
+| `ANTLR4::Grammar` | 0.6.3 | partial | 12/13 |
 | `APISports::Football` | 0.2.3 | no_baseline | — |
 | `apotd` | 1.0.0 | no_baseline | — |
 | `App::AizuOnlineJudge` | 1.001001 | no_baseline | — |
@@ -92,7 +92,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `App::Crag` | 0.0.57 | no_baseline | — |
 | `App::Doc-N-Save` | 0.1.16 | green | 1/1 |
 | `App::Ebread` | 0.2.3 | no_baseline | — |
-| `App::Ecosystems` | 0.0.9 | green | 1/1 |
+| `App::Ecosystems` | 0.0.9 | blocked_load | — |
 | `App::FIT2GPX` | 0.0.1 | green | 1/1 |
 | `App::fix.raku` | 0.1.10 | green | 1/1 |
 | `App::FontSample` | 0.0.2 | green | 3/3 |
@@ -103,7 +103,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `App::JSONDiff` | 0.0.3 | green | 1/1 |
 | `App::Lorea` | 0.2.6 | no_baseline | — |
 | `App::Mi6` | 3.0.9 | green | 1/1 |
-| `App::MoarVM::Debug` | 0.4 | green | 1/1 |
+| `App::MoarVM::Debug` | 0.4 | blocked_load | — |
 | `App::MoarVM::HeapAnalyzer::Model` | 0.2 | blocked_load | — |
 | `App::ModuleSnap` | 0.0.14 | green | 3/3 |
 | `App::Moneymoor` | 0.4.2 | partial | 28/29 |
@@ -111,17 +111,17 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `App::pack.raku` | 0.1.53 | green | 1/1 |
 | `App::pixel::pick` | 0.1.0 | no_baseline | — |
 | `App::pixelpick` | 1.1 | no_baseline | — |
-| `App::Prove6` | 0.0.18 | green | 1/1 |
-| `App::RaCoCo` | 2.0.1 | partial | 17/20 |
+| `App::Prove6` | 0.0.18 | blocked_load | — |
+| `App::RaCoCo` | 2.0.1 | partial | 16/20 |
 | `App::Racoco::Report::ReporterCoveralls` | 2.0.2 | partial | 2/9 |
-| `App::Rak` | 0.3.21 | green | 1/1 |
-| `App::Rak::Complete` | 0.0.13 | green | 1/1 |
+| `App::Rak` | 0.3.21 | blocked_load | — |
+| `App::Rak::Complete` | 0.0.13 | blocked_load | — |
 | `App::Rak::Markdown` | 0.0.5 | green | 1/1 |
 | `App::Raku::Log` | 0.0.37 | green | 1/1 |
 | `App::RakuCron` | 0.0.1 | no_baseline | — |
 | `App::RakuDocToPDF` | 0.0.3 | green | 2/2 |
 | `App::Rakus` | 0.0.2 | green | 1/1 |
-| `App::samaki` | 0.0.35 | blocked_load | — |
+| `App::samaki` | 0.0.35 | green | 6/6 |
 | `App::SerializerPerf` | 0.0.5 | no_baseline | — |
 | `App::ShowPath` | 0.0.2 | green | 1/1 |
 | `App::Stouch` | 0.3.2 | green | 2/2 |
@@ -150,7 +150,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Array::Shaped::Console` | 0.0.3 | green | 2/2 |
 | `Array::Sorted::Map` | 0.0.4 | green | 1/1 |
 | `Array::Sorted::Util` | 0.0.11 | green | 5/5 |
-| `Array::Sparse` | 0.0.13 | green | 1/1 |
+| `Array::Sparse` | 0.0.13 | red | 0/1 |
 | `Array::Unsorted::Map` | 0.0.4 | green | 1/1 |
 | `as-cli-arguments` | 0.0.10 | green | 2/2 |
 | `ASCII::To::Uni` | 0.1.1 | green | 1/1 |
@@ -220,7 +220,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Chatnik` | 0.0.7 | no_baseline | — |
 | `CheckSocket` | 0.0.10 | green | 3/3 |
 | `Chemistry::Elements` | 1.001001 | blocked_dep | — |
-| `Chemistry::Stoichiometry` | 0.1.10 | green | 4/4 |
+| `Chemistry::Stoichiometry` | 0.1.10 | blocked_load | — |
 | `Chinese` | 0.0.3 | green | 1/1 |
 | `Chronic` | 0.0.14 | green | 6/6 |
 | `Class::Loader::Dynamic` | 0.0.6 | green | 1/1 |
@@ -228,7 +228,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `ClassX::StrictConstructor` | 0.2 | green | 5/5 |
 | `CLDR::List` | * | green | 2/2 |
 | `CLI::AWS::EC2-Simple` | 0.0.11 | no_baseline | — |
-| `CLI::Ecosystem` | 0.0.7 | green | 1/1 |
+| `CLI::Ecosystem` | 0.0.7 | blocked_load | — |
 | `CLI::Graphing::BarChart` | 1.0.0 | green | 1/1 |
 | `CLI::Help` | 0.0.5 | green | 1/1 |
 | `CLI::Version` | 0.0.10 | green | 1/1 |
@@ -238,16 +238,16 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Clipboard` | 0.1.2 | green | 3/3 |
 | `Clu` | 1.0.1 | no_baseline | — |
 | `cmark::Simple` | 0.0.3 | no_baseline | — |
-| `Code::Coverable` | 0.0.14 | green | 1/1 |
-| `Code::Coverage` | 0.0.9 | red | 0/1 |
-| `CodeUnit` | 0.0.11 | red | 0/1 |
+| `Code::Coverable` | 0.0.14 | blocked_load | — |
+| `Code::Coverage` | 0.0.9 | blocked_load | — |
+| `CodeUnit` | 0.0.11 | green | 1/1 |
 | `COIN-OR` | 0.0.3 | no_baseline | — |
 | `Collection` | 0.18.0 | green | 1/1 |
 | `Collection-Plugin-Development` | 0.4.6 | skipped | — |
 | `Collection-Raku-Documentation` | 0.12.3 | no_baseline | — |
 | `Color` | 1.004001 | green | 8/8 |
 | `Color::DirColors` | 0.0.3 | green | 1/1 |
-| `Color::Names` | 2.0.0 | green | 3/3 |
+| `Color::Names` | 2.0.0 | blocked_load | — |
 | `Color::Palette` | 0.0.2 | green | 5/5 |
 | `ComfyUI::API` | 0.3.1 | green | 2/2 |
 | `Commands` | 0.0.9 | green | 1/1 |
@@ -256,10 +256,10 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Compress::LZString` | 0.0.1 | green | 3/3 |
 | `Compress::PDF` | 0.5.0 | no_baseline | — |
 | `CompUnit::Util` | 0.7.0 | red | 0/8 |
-| `Concurrent::BoundedChannel` | 0.4.1 | green | 1/1 |
+| `Concurrent::BoundedChannel` | 0.4.1 | no_baseline | — |
 | `Concurrent::Iterator` | 1.1 | green | 3/3 |
 | `Concurrent::PChannel` | 0.0.4 | no_baseline | — |
-| `Concurrent::PriorityQueue` | 0.0.2 | green | 2/2 |
+| `Concurrent::PriorityQueue` | 0.0.2 | partial | 1/2 |
 | `Concurrent::Progress` | 1.2 | green | 2/2 |
 | `Concurrent::Queue` | 1.2 | green | 2/2 |
 | `Concurrent::Stack` | 1.3 | green | 2/2 |
@@ -269,11 +269,11 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Config::Ini` | 1.1 | green | 3/3 |
 | `Config::Netrc` | 1.0 | green | 1/1 |
 | `Config::Parser::NetRC` | 0.0.1 | green | 1/1 |
-| `Config::Parser::toml` | 1.0.4 | green | 1/1 |
+| `Config::Parser::toml` | 1.0.4 | red | 0/1 |
 | `Config::TOML` | 0.1.3 | green | 19/19 |
-| `Configuration` | 0.0.11 | green | 2/2 |
+| `Configuration` | 0.0.11 | partial | 1/2 |
 | `Console::Blackjack` | 1.0.10 | no_baseline | — |
-| `Contact` | 0.0.5 | green | 5/5 |
+| `Contact` | 0.0.5 | blocked_load | — |
 | `Contact::Name` | 0.0.1 | no_baseline | — |
 | `content-storage-cli` | 0.0.1 | green | 1/1 |
 | `Cookie::Jar` | 0.1.3 | blocked_load | — |
@@ -284,7 +284,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `CortexJS` | 0.0.4 | green | 10/10 |
 | `CPAN::Uploader::Tiny` | 0.1.0 | green | 1/1 |
 | `Crane` | 0.1.2 | green | 15/15 |
-| `CRDT` | 0.0.16 | partial | 8/10 |
+| `CRDT` | 0.0.16 | partial | 9/10 |
 | `cro` | 0.8.10 | red | 0/2 |
 | `Cro-HTTP-Middleware-GoatCounter` | 0.0.1 | no_baseline | — |
 | `Cro::CBOR` | 0.0.7 | no_baseline | — |
@@ -315,18 +315,18 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Crypt::SodiumPasswordHash` | 0.0.6 | green | 2/2 |
 | `Crypt::SodiumScrypt` | 0.0.5 | green | 2/2 |
 | `CSS` | 0.1.2 | no_baseline | — |
-| `CSS::Font::Resources` | 0.0.11 | green | 2/2 |
+| `CSS::Font::Resources` | 0.0.11 | blocked_load | — |
 | `CSS::Grammar` | 0.5.0 | green | 6/6 |
 | `CSS::Minifier` | 0.0.14 | partial | 5/7 |
-| `CSS::Module` | 0.7.8 | green | 16/16 |
-| `CSS::Module::CSS3::Selectors` | 0.0.7 | green | 1/1 |
+| `CSS::Module` | 0.7.8 | blocked_load | — |
+| `CSS::Module::CSS3::Selectors` | 0.0.7 | blocked_load | — |
 | `CSS::Nested` | 0.0.1 | green | 1/1 |
-| `CSS::Properties` | 0.10.10 | green | 25/25 |
-| `CSS::Selector::To::XPath` | 0.0.9 | partial | 3/4 |
-| `CSS::Specification` | 0.6.0 | green | 2/2 |
-| `CSS::Stylesheet` | 0.1.5 | partial | 4/7 |
-| `CSS::TagSet` | 0.1.4 | green | 3/3 |
-| `CSS::Writer` | 0.3.4 | green | 5/5 |
+| `CSS::Properties` | 0.10.10 | blocked_load | — |
+| `CSS::Selector::To::XPath` | 0.0.9 | blocked_load | — |
+| `CSS::Specification` | 0.6.0 | blocked_load | — |
+| `CSS::Stylesheet` | 0.1.5 | blocked_load | — |
+| `CSS::TagSet` | 0.1.4 | blocked_load | — |
+| `CSS::Writer` | 0.3.4 | blocked_load | — |
 | `CSV-AutoClass` | 0.1.0 | green | 2/2 |
 | `CSV-Autoclass` | 0.2.0 | green | 1/1 |
 | `CSV::Native` | 0.0.1 | red | 0/2 |
@@ -342,18 +342,18 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Data::DPath` | 0.0.1 | green | 1/1 |
 | `Data::Dump` | 0.0.18 | green | 9/9 |
 | `Data::Dump::Tree` | 2.9.4 | partial | 11/16 |
-| `Data::ExampleDatasets` | 0.2.4 | green | 2/2 |
-| `Data::Generators` | 0.1.11 | green | 8/8 |
+| `Data::ExampleDatasets` | 0.2.4 | red | 0/2 |
+| `Data::Generators` | 0.1.11 | green | 9/9 |
 | `Data::Geographics` | 0.1.5 | no_baseline | — |
 | `Data::Importers` | 0.1.8 | green | 1/1 |
 | `Data::MessagePack` | 0.1.4 | green | 26/26 |
 | `Data::RandomKeep` | 0.1.1 | green | 1/1 |
 | `Data::Record` | 1.0.2 | blocked_load | — |
 | `Data::Reshapers` | 0.3.8 | green | 15/15 |
-| `Data::StaticTable` | 0.1.1 | partial | 4/5 |
+| `Data::StaticTable` | 0.1.1 | green | 5/5 |
 | `Data::Summarizers` | 0.2.6 | green | 6/6 |
 | `Data::TextOrBinary` | 1.5 | green | 2/2 |
-| `Data::Transformers` | 0.0.4 | partial | 5/6 |
+| `Data::Transformers` | 0.0.4 | green | 6/6 |
 | `Data::Translators` | 0.1.18 | green | 6/6 |
 | `Data::Tree` | 0.3 | no_baseline | — |
 | `Data::TypeSystem` | 0.1.8 | green | 4/4 |
@@ -388,11 +388,11 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `DateTime::React` | 0.2.0 | green | 2/2 |
 | `DateTime::strftime` | 0.0.8 | partial | 1/3 |
 | `DateTime::TimeZone` | 0.10.2 | green | 2/2 |
-| `DateTime::Timezones` | 0.4.2 | blocked_load | — |
+| `DateTime::Timezones` | 0.4.2 | partial | 3/4 |
 | `DateTime::US` | 0.1.6 | green | 8/8 |
 | `Dawa` | 0.0.11 | red | 0/1 |
 | `DAWG` | 0.1.6 | partial | 5/6 |
-| `DB::DuckDB` | 0.3.1 | no_baseline | — |
+| `DB::DuckDB` | 0.5.0 | no_baseline | — |
 | `DB::Migration::Declare` | 0.1.3 | green | 2/2 |
 | `DB::Migration::Simple` | 1.1 | green | 1/1 |
 | `DB::MySQL` | 0.8 | no_baseline | — |
@@ -432,7 +432,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Display::Listings` | 0.1.9 | green | 2/2 |
 | `Dist::META` | 0.0.4 | green | 3/3 |
 | `Distribution::Builder::Cmake` | 0.0.10 | green | 1/1 |
-| `Distribution::Builder::Cmake-alt` | 0.0.13 | no_baseline | — |
+| `Distribution::Builder::Cmake-alt` | 1.0.0 | green | 1/1 |
 | `Distribution::Extension::Updater` | 0.0.3 | red | 0/1 |
 | `Distribution::Resources::Menu` | 0.0.4 | green | 2/2 |
 | `Doc::Executable` | 0.0.3 | green | 4/4 |
@@ -461,18 +461,18 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `DSL::Entity::Metadata` | 0.1.1 | green | 3/3 |
 | `DSL::Entity::WeatherData` | 0.1.0 | green | 2/2 |
 | `DSL::Examples` | 0.0.7 | green | 1/1 |
-| `DSL::FiniteStateMachines` | 0.1.4 | green | 1/1 |
+| `DSL::FiniteStateMachines` | 0.1.4 | blocked_load | — |
 | `DSL::Shared` | 0.2.12 | green | 5/5 |
 | `DSL::Translators` | 0.1.2 | no_baseline | — |
 | `Duck::CSV` | 0.0.2 | green | 1/1 |
-| `Duckie` | 0.0.13 | green | 1/1 |
+| `Duckie` | 0.0.14 | green | 1/1 |
 | `EBNF::Grammar` | 0.1.6 | green | 5/5 |
 | `EC` | 0.6.6 | partial | 3/4 |
 | `ECMA262Regex` | 1.2 | green | 3/3 |
-| `Ecosystem` | 0.0.34 | no_baseline | — |
+| `Ecosystem` | 0.0.34 | blocked_load | — |
 | `Ecosystem::Archive` | 0.0.5 | no_baseline | — |
 | `Ecosystem::Archive::Update` | 0.0.31 | no_baseline | — |
-| `Ecosystem::Cache` | 0.0.6 | no_baseline | — |
+| `Ecosystem::Cache` | 0.0.6 | blocked_load | — |
 | `EcosystemMakerFaker` | 0.1.1 | no_baseline | — |
 | `Edit::Files` | 0.0.7 | green | 1/1 |
 | `EERPG` | 0.0.2 | partial | 6/11 |
@@ -542,9 +542,9 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `FontFactory::Type1` | 1.1.1 | green | 2/2 |
 | `Foo::Bar` | 0.0.1 | green | 1/1 |
 | `Form` | 1.1 | green | 11/11 |
-| `Format::Lisp` | 0.0.3 | partial | 31/32 |
+| `Format::Lisp` | 0.0.3 | partial | 3/32 |
 | `fornax` | 0.2.0 | green | 2/2 |
-| `Fortran::Grammar` | 0.0.7 | green | 1/1 |
+| `Fortran::Grammar` | 0.0.7 | red | 0/1 |
 | `Fortune` | 0.1.0 | blocked_load | — |
 | `ForwardIterables` | 0.0.4 | green | 1/1 |
 | `French` | 0.0.2 | no_baseline | — |
@@ -595,7 +595,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Gnome::Gdk4` | 0.1.23 | no_baseline | — |
 | `Gnome::GdkPixbuf` | 0.1.3 | no_baseline | — |
 | `Gnome::Gio` | 0.11.1 | green | 24/24 |
-| `Gnome::Glib` | 0.21.0 | partial | 8/10 |
+| `Gnome::Glib` | 0.21.0 | green | 10/10 |
 | `Gnome::GObject` | 0.20.0 | green | 4/4 |
 | `Gnome::Graphene` | 0.1.11 | no_baseline | — |
 | `Gnome::Gsk4` | 0.2.1 | no_baseline | — |
@@ -606,7 +606,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `GnomeTools` | 0.8.5 | no_baseline | — |
 | `GNU::Time` | 0.0.2 | green | 2/2 |
 | `GOTO` | 0.1.71 | skipped | — |
-| `Grammar::BNF` | v0.1.0 | green | 2/2 |
+| `Grammar::BNF` | v0.1.0 | red | 0/2 |
 | `Grammar::Common` | 0.3.2 | green | 6/6 |
 | `Grammar::Debugger` | 1.0.3 | green | 3/3 |
 | `Grammar::Editor` | 0.0.2 | green | 1/1 |
@@ -631,25 +631,25 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `GUI::Wings` | 0.1.3 | green | 1/1 |
 | `Gzz::Paths` | 0.1.22 | green | 1/1 |
 | `Gzz::Prompt` | 0.1.2 | green | 1/1 |
-| `Gzz::Readline` | 0.1.32 | green | 1/1 |
+| `Gzz::Readline` | 1.0.0 | green | 1/1 |
 | `Gzz::Text::Utils` | 0.1.38 | green | 2/2 |
 | `H2O::Client` | 0.0.2 | green | 6/6 |
 | `HarfBuzz` | 0.1.7 | no_baseline | — |
 | `HarfBuzz::Font::FreeType` | 0.0.10 | no_baseline | — |
 | `HarfBuzz::Shaper::Cairo` | 0.0.7 | no_baseline | — |
-| `HarfBuzz::Subset` | 0.0.5 | no_baseline | — |
+| `HarfBuzz::Subset` | 0.0.5 | blocked_load | — |
 | `has-word` | 0.0.7 | green | 2/2 |
 | `Hash-with` | 0.0.6 | green | 1/1 |
 | `Hash2Class` | 0.1.7 | red | 0/1 |
 | `Hash::Agnostic` | 0.0.20 | green | 2/2 |
 | `Hash::Consistent` | 0.0.4 | green | 1/1 |
-| `Hash::int` | 0.0.7 | green | 1/1 |
+| `Hash::int` | 0.0.7 | red | 0/1 |
 | `Hash::LRU` | 0.0.8 | partial | 1/2 |
-| `Hash::MutableKeys` | 0.0.1 | green | 1/1 |
+| `Hash::MutableKeys` | 0.0.1 | red | 0/1 |
 | `Hash::Ordered` | 0.0.9 | green | 1/1 |
 | `Hash::Restricted` | 0.0.9 | green | 1/1 |
 | `Hash::Sorted` | 0.0.9 | red | 0/1 |
-| `Hash::str` | 0.0.7 | green | 1/1 |
+| `Hash::str` | 0.0.7 | red | 0/1 |
 | `Hash::Timeout` | 0.0.2 | green | 2/2 |
 | `Hash::Util` | 0.0.5 | partial | 2/6 |
 | `head-skip-tail` | 0.0.1 | green | 1/1 |
@@ -660,15 +660,15 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Highlight::Terminal` | 0.0.2 | green | 1/1 |
 | `highlighter` | 0.0.23 | green | 5/5 |
 | `Hiker` | 0.1.3 | no_baseline | — |
-| `Hilite` | 0.2.8 | green | 1/1 |
-| `Hilite::Simple` | 0.0.5 | green | 1/1 |
+| `Hilite` | 0.2.8 | blocked_load | — |
+| `Hilite::Simple` | 0.0.5 | blocked_load | — |
 | `Holidays::Miscellaneous` | 0.0.1 | green | 7/7 |
 | `Holidays::US::Federal` | 0.0.5 | green | 4/4 |
 | `HomoGlypher` | 1.8.7 | green | 5/5 |
 | `HowToUseModuleResources` | 0.0.2 | green | 1/1 |
-| `HTML::Canvas` | 0.1.4 | no_baseline | — |
+| `HTML::Canvas` | 0.1.4 | blocked_load | — |
 | `HTML::Canvas::To::PDF` | 0.0.13 | no_baseline | — |
-| `HTML::Component` | 0.0.1 | green | 1/1 |
+| `HTML::Component` | 0.0.1 | blocked_load | — |
 | `HTML::Entity::Fast` | 0.0.5 | green | 1/1 |
 | `HTML::EscapeUtils` | 0.0.3 | green | 1/1 |
 | `HTML::Functional` | 0.0.8 | green | 2/2 |
@@ -691,7 +691,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `HTTP::Tiny` | 0.2.6 | green | 7/7 |
 | `HTTP::Tinyish` | 0.4.2 | green | 1/1 |
 | `HTTP::UserAgent` | 1.2.0 | green | 23/23 |
-| `HTTP::UserAgent::Strict` | 0.9.2 | green | 24/24 |
+| `HTTP::UserAgent::Strict` | 0.9.2 | partial | 22/24 |
 | `HuggingFace::API` | 0.2.4 | no_baseline | — |
 | `Humming-Bird` | 4.1.0 | partial | 12/16 |
 | `Humming-Bird::Core` | 2.0.0 | no_baseline | — |
@@ -747,24 +747,24 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `IO::Socket::Async::SSL` | 0.8.2 | no_baseline | — |
 | `IO::Socket::SSL` | 0.0.4 | no_baseline | — |
 | `IO::Stem` | 0.0.2 | green | 1/1 |
-| `IO::String` | 0.2.0 | green | 9/9 |
+| `IO::String` | 0.2.0 | partial | 8/9 |
 | `IP::Addr` | 0.0.7 | partial | 6/9 |
 | `IP::Random` | 0.1.0 | green | 6/6 |
-| `IRC::Channel::Log` | 0.0.44 | no_baseline | — |
+| `IRC::Channel::Log` | 0.0.44 | blocked_load | — |
 | `IRC::Client` | 4.0.15 | no_baseline | — |
 | `IRC::Client::Plugin::Logger` | 0.0.13 | no_baseline | — |
 | `IRC::Client::Plugin::Rakkable` | 0.0.3 | no_baseline | — |
 | `IRC::Log` | 0.0.26 | green | 1/1 |
-| `IRC::Log::Colabti` | 0.0.53 | partial | 1/2 |
-| `IRC::Log::Perlgeek` | 0.0.2 | green | 1/1 |
-| `IRC::Log::Textual` | 0.0.18 | partial | 1/2 |
+| `IRC::Log::Colabti` | 0.0.53 | blocked_load | — |
+| `IRC::Log::Perlgeek` | 0.0.2 | blocked_load | — |
+| `IRC::Log::Textual` | 0.0.18 | blocked_load | — |
 | `IRC::TextColor` | v0.1.1 | skipped | — |
 | `IRC::Utils` | 0.2.1 | green | 3/3 |
 | `Iter::Able` | 0.2.0 | partial | 19/33 |
 | `IUP` | v0.5.6 | green | 2/2 |
 | `Japanese` | 0.0.1 | green | 1/1 |
 | `Java::Generate` | 1.0.0 | partial | 8/9 |
-| `JavaScript::D3` | 0.3.1 | partial | 6/7 |
+| `JavaScript::D3` | 0.3.1 | blocked_load | — |
 | `JavaScript::Google::Charts` | 0.1.1 | red | 0/1 |
 | `JobQueue` | 0.1.3 | green | 5/5 |
 | `JSON-CSV` | 0.0.1 | no_baseline | — |
@@ -800,7 +800,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Kind::Subset::Parametric` | 1.0.0 | blocked_load | — |
 | `Kivuli` | 0.0.4 | green | 1/1 |
 | `Korean` | 0.0.1 | green | 1/1 |
-| `Kubernetes` | 0.0.3 | green | 1/1 |
+| `Kubernetes` | 0.0.3 | blocked_load | — |
 | `L10N` | 0.1.10 | green | 1/1 |
 | `L10N::AF` | 0.0.4 | green | 1/1 |
 | `L10N::BG` | 0.0.2 | red | 0/1 |
@@ -818,12 +818,12 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `L10N::NL` | 0.0.7 | green | 1/1 |
 | `L10N::PT` | 0.0.4 | green | 1/1 |
 | `L10N::RU` | 0.0.2 | red | 0/1 |
-| `L10N::TLH` | 0.0.3 | green | 1/1 |
+| `L10N::TLH` | 0.0.3 | blocked_load | — |
 | `L10N::UK` | 0.0.2 | red | 0/1 |
 | `L10N::ZH` | 0.0.4 | green | 10/10 |
 | `lacerta` | 0.1.0 | no_baseline | — |
 | `Lang::JA::Kana` | 1.2.1 | green | 2/2 |
-| `Lang::Transliterate` | 0.1.0 | green | 1/1 |
+| `Lang::Transliterate` | 0.1.0 | blocked_load | — |
 | `Lang::ZH::Palladius` | 0.0.3 | green | 1/1 |
 | `LaTeX::Grammar` | 0.0.5 | green | 6/6 |
 | `Learn::Raku::With` | 0.0.1 | blocked_dep | — |
@@ -869,7 +869,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `LIVR` | 2.2.1 | partial | 8/9 |
 | `LLM::Agent` | 0.6.2 | blocked_load | — |
 | `LLM::Character` | 0.3.1 | green | 14/14 |
-| `LLM::Chat` | 0.10.3 | green | 15/15 |
+| `LLM::Chat` | 0.10.3 | partial | 14/15 |
 | `LLM::Chat::Backend` | 0.2.1 | green | 7/7 |
 | `LLM::Classifiers::Emotions` | 0.1.8 | no_baseline | — |
 | `LLM::Containerization` | 0.1.5 | no_baseline | — |
@@ -881,7 +881,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `LLM::Graph` | 0.1.1 | partial | 2/4 |
 | `LLM::Prompts` | 0.2.15 | green | 4/4 |
 | `LLM::Resources` | 0.0.3 | no_baseline | — |
-| `LLM::RetrievalAugmentedGeneration` | 0.0.8 | partial | 1/4 |
+| `LLM::RetrievalAugmentedGeneration` | 0.0.8 | partial | 2/4 |
 | `LN` | 1.001002 | green | 2/2 |
 | `Locale::Codes::Country` | 0.0.2 | green | 1/1 |
 | `Locale::Dates` | 0.0.7 | green | 2/2 |
@@ -914,10 +914,10 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Map::DeckGL` | 0.0.4 | green | 4/4 |
 | `Map::Leaflet` | 0.0.13 | green | 6/6 |
 | `Map::Mapnik` | 0.0.3 | green | 3/3 |
-| `Map::Match` | 0.0.10 | green | 1/1 |
-| `Map::Ordered` | 0.0.9 | green | 1/1 |
-| `Markdown::Grammar` | 0.6.4 | partial | 6/7 |
-| `Markdown::Lex` | 0.2.0 | partial | 4/5 |
+| `Map::Match` | 0.0.10 | red | 0/1 |
+| `Map::Ordered` | 0.0.9 | red | 0/1 |
+| `Markdown::Grammar` | 0.6.4 | green | 7/7 |
+| `Markdown::Lex` | 0.2.0 | green | 5/5 |
 | `Markup::Calendar` | 0.2.3 | green | 2/2 |
 | `Marpa` | 1.0.1 | green | 1/1 |
 | `Marrow` | 0.1.5 | partial | 1/2 |
@@ -932,7 +932,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Math::DistanceFunctions::Native` | 0.1.2 | no_baseline | — |
 | `Math::FFT::Libfftw3` | 0.3.5 | partial | 8/16 |
 | `Math::FFT::Libfftw3::C2C` | 0.3.4 | partial | 8/16 |
-| `Math::Fitting` | 0.0.5 | green | 4/4 |
+| `Math::Fitting` | 0.0.5 | partial | 2/4 |
 | `Math::FractionalPart` | 0.0.6 | green | 6/6 |
 | `Math::GameTheory` | 0.0.1 | green | 2/2 |
 | `Math::Handy` | 0.0.2 | green | 1/1 |
@@ -961,27 +961,27 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Math::Libgsl::Sort` | 0.0.3 | green | 1/1 |
 | `Math::Libgsl::Statistics` | 0.0.2 | green | 2/2 |
 | `Math::Libgsl::Wavelet` | 0.0.3 | blocked_load | — |
-| `Math::Matrix` | 0.4.2 | green | 11/11 |
+| `Math::Matrix` | 0.4.2 | blocked_load | — |
 | `Math::Nearest` | 0.0.7 | green | 5/5 |
 | `Math::NIntegrate` | 0.0.11 | partial | 23/24 |
 | `Math::NumberTheory` | 0.1.4 | partial | 18/19 |
-| `Math::Optimization` | 0.0.1 | green | 1/1 |
+| `Math::Optimization` | 0.0.2 | green | 1/1 |
 | `Math::PascalTriangle` | 0.1.0 | green | 2/2 |
 | `Math::Polygons` | 0.0.6 | green | 5/5 |
 | `Math::Polynomial::Chebyshev` | 0.0.2 | green | 2/2 |
-| `Math::QuantileRegression` | 0.0.2 | no_baseline | — |
+| `Math::QuantileRegression` | 0.0.3 | no_baseline | — |
 | `Math::Quaternion` | 0.2.1 | green | 6/6 |
 | `Math::Random` | 0.1.3 | green | 1/1 |
 | `Math::Root` | 0.0.4 | green | 3/3 |
 | `Math::SalvoCombatModeling` | 0.0.1 | green | 1/1 |
 | `Math::Sequences` | 0.1.2 | blocked_load | — |
-| `Math::SparseMatrix` | 0.0.15 | green | 19/19 |
+| `Math::SparseMatrix` | 0.0.15 | green | 18/18 |
 | `Math::SparseMatrix::Native` | 0.0.10 | no_baseline | — |
 | `Math::SpecialFunctions` | 0.1.1 | green | 4/4 |
 | `Math::Splines` | 0.0.2 | green | 4/4 |
 | `Math::Symbolic` | * | blocked_load | — |
 | `Math::Trig` | 0.5.1 | green | 6/6 |
-| `Math::Vector` | 0.6.0 | red | 0/1 |
+| `Math::Vector` | 0.6.0 | green | 1/1 |
 | `Math::Wavelet` | 0.0.3 | partial | 6/7 |
 | `Math::Zeckendorf` | 0.0.5 | green | 1/1 |
 | `Mathematica::Serializer` | 0.2.0 | partial | 2/3 |
@@ -993,7 +993,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `MCP::Server::Tool::Shell` | 0.4.3 | partial | 3/14 |
 | `MCP::Server::Tool::Web` | 0.1.2 | partial | 3/4 |
 | `MeCab` | 0.0.19 | no_baseline | — |
-| `Memoize` | * | green | 2/2 |
+| `Memoize` | * | partial | 1/2 |
 | `Menu::Simple` | 0.17 | green | 4/4 |
 | `MergeOrderedSeqs` | 0.0.2 | green | 1/1 |
 | `MermaidJS::Grammar` | 0.0.2 | green | 1/1 |
@@ -1012,7 +1012,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Migration::RTtoGithub` | 0.0.5 | green | 1/1 |
 | `MIME::Base64` | 1.2.5 | green | 4/4 |
 | `MIME::Types` | 0.3 | green | 1/1 |
-| `ML::AssociationRuleLearning` | 0.1.5 | partial | 2/5 |
+| `ML::AssociationRuleLearning` | 0.1.5 | red | 0/5 |
 | `ML::Clustering` | 0.2.0 | green | 2/2 |
 | `ML::FindTextualAnswer` | 0.2.8 | green | 1/1 |
 | `ML::LatentSemanticAnalyzer` | 0.0.3 | green | 1/1 |
@@ -1028,7 +1028,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `mod-div-specs` | 0.0.1 | red | 0/1 |
 | `Modf` | 0.0.4 | green | 2/2 |
 | `Module2Rpm` | 0.1 | green | 3/3 |
-| `Module::Does` | 0.1.2 | green | 1/1 |
+| `Module::Does` | 0.1.2 | red | 0/1 |
 | `Monad` | 0.3.0 | partial | 4/14 |
 | `Monad-Result` | 1.0.0 | green | 2/2 |
 | `Moneys` | 0.0.4 | green | 1/1 |
@@ -1040,12 +1040,12 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `MQTT::Client` | * | green | 1/1 |
 | `MUGS` | 0.1.4 | no_baseline | — |
 | `MUGS::Core` | 0.1.4 | green | 3/3 |
-| `MUGS::Games` | 0.1.4 | green | 1/1 |
+| `MUGS::Games` | 0.1.4 | blocked_load | — |
 | `MUGS::UI::CLI` | 0.1.4 | no_baseline | — |
 | `MUGS::UI::TUI` | 0.1.4 | no_baseline | — |
 | `MUGS::UI::WebSimple` | 0.1.4 | no_baseline | — |
 | `Mux` | 0.0.4 | green | 2/2 |
-| `mv2d` | 0.1.333 | green | 1/1 |
+| `mv2d` | 0.1.333 | blocked_load | — |
 | `MVC::Keayl` | 0.9.2 | partial | 36/37 |
 | `MVC::Keayl::Admin` | 0.9.1 | green | 3/3 |
 | `nano` | 0.0.3 | green | 1/1 |
@@ -1055,7 +1055,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `NativeHelpers::Array` | 0.0.6 | green | 3/3 |
 | `NativeHelpers::Blob` | 0.1.13 | green | 3/3 |
 | `NativeLibs` | 0.0.9 | green | 4/4 |
-| `Needle::Compile` | 0.0.13 | partial | 2/4 |
+| `Needle::Compile` | 0.0.13 | blocked_load | — |
 | `Net::BGP` | 0.9.0 | blocked_load | — |
 | `Net::DNS` | 1.4 | green | 6/6 |
 | `Net::Ethereum` | 0.0.186 | green | 14/14 |
@@ -1099,7 +1099,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `OneSeq` | 0.0.4 | red | 0/1 |
 | `ONNX::Native` | 0.2.1 | no_baseline | — |
 | `ONNX::Runtime` | 0.0.6 | no_baseline | — |
-| `OO::Actors` | 0.4 | green | 1/1 |
+| `OO::Actors` | 0.4 | no_baseline | — |
 | `OO::Monitors` | 1.1.7 | green | 5/5 |
 | `OO::Plugin` | 0.0.8 | blocked_load | — |
 | `OpenMPT::Bindings` | 0.0.3 | no_baseline | — |
@@ -1109,7 +1109,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `OrderedHash` | 0.0.4 | green | 2/2 |
 | `orion` | 0.2.3 | no_baseline | — |
 | `ORM::ActiveRecord` | 0.9.4 | green | 14/14 |
-| `ORM::Factory` | 0.9.1 | partial | 24/25 |
+| `ORM::Factory` | 0.9.1 | green | 25/25 |
 | `overload::constant` | 0.0.4 | blocked_load | — |
 | `Overwatch` | 0.1.8 | no_baseline | — |
 | `Oyatul` | 0.0.9 | green | 4/4 |
@@ -1144,7 +1144,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `P5quotemeta` | 0.0.7 | green | 1/1 |
 | `P5readlink` | 0.0.10 | green | 1/1 |
 | `P5ref` | 0.0.9 | green | 1/1 |
-| `P5reset` | 0.0.7 | green | 1/1 |
+| `P5reset` | 0.0.7 | red | 0/1 |
 | `P5reverse` | 0.0.10 | green | 1/1 |
 | `P5seek` | 0.0.5 | red | 0/1 |
 | `P5shift` | 0.0.9 | green | 1/1 |
@@ -1161,7 +1161,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Pastebin::Gist` | 1.004002 | no_baseline | — |
 | `Pastebin::Shadowcat` | 2.001003 | no_baseline | — |
 | `path-utils` | 0.0.25 | green | 1/1 |
-| `Path::Finder` | 0.4.7 | no_baseline | — |
+| `Path::Finder` | 0.4.7 | blocked_load | — |
 | `Path::Map` | 0.4 | green | 5/5 |
 | `Paths` | 0.1.14 | green | 1/1 |
 | `paths` | 10.3 | green | 1/1 |
@@ -1169,12 +1169,12 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `PB-Lottery` | 0.0.1 | green | 8/8 |
 | `PDF` | 0.6.17 | green | 31/31 |
 | `PDF::API6` | 0.2.10 | no_baseline | — |
-| `PDF::Class` | 0.5.31 | green | 2/2 |
+| `PDF::Class` | 0.5.31 | blocked_load | — |
 | `PDF::Combiner` | 0.0.1 | no_baseline | — |
-| `PDF::Content` | 0.9.11 | green | 4/4 |
+| `PDF::Content` | 0.9.11 | blocked_load | — |
 | `PDF::Document` | 0.0.10 | no_baseline | — |
 | `PDF::Extract` | 0.0.4 | no_baseline | — |
-| `PDF::Font::Loader` | 0.8.15 | green | 4/4 |
+| `PDF::Font::Loader` | 0.8.15 | blocked_load | — |
 | `PDF::Font::Loader::CSS` | 0.0.1 | no_baseline | — |
 | `PDF::Font::Loader::HarfBuzz` | 0.0.2 | no_baseline | — |
 | `PDF::Grammar` | 0.3.6 | green | 10/10 |
@@ -1192,7 +1192,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Physics::Error` | 0.1.9 | green | 2/2 |
 | `Physics::Measure` | 2.0.26 | green | 1/1 |
 | `Physics::Navigation` | 0.0.5 | green | 1/1 |
-| `Physics::Unit` | 2.0.31 | green | 1/1 |
+| `Physics::Unit` | 2.0.31 | blocked_load | — |
 | `Physics::Vector` | 0.0.2 | no_baseline | — |
 | `Pinterest::URL::Normalizer` | 0.1.0 | green | 1/1 |
 | `Pleroma` | 0.1.2 | no_baseline | — |
@@ -1201,11 +1201,11 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Pod::EOD` | 0.1.1 | green | 1/1 |
 | `Pod::From::Cache` | 0.6.1 | green | 1/1 |
 | `Pod::Load` | 0.7.2 | green | 2/2 |
-| `Pod::To::HTML` | v0.8.1 | green | 13/13 |
+| `Pod::To::HTML` | v0.8.1 | green | 12/12 |
 | `Pod::To::Man` | 1.2.1 | green | 1/1 |
 | `Pod::To::Markdown` | 0.2.2 | green | 10/10 |
 | `Pod::To::PDF` | 0.1.14 | no_baseline | — |
-| `Pod::To::PDF::Lite` | 0.1.16 | no_baseline | — |
+| `Pod::To::PDF::Lite` | 0.1.16 | blocked_load | — |
 | `Pod::To::Raku` | 0.0.4 | green | 1/1 |
 | `Pod::TreeWalker` | 0.0.7 | green | 5/5 |
 | `Pod::Usage` | 0.0.1 | green | 1/1 |
@@ -1213,7 +1213,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `POFile` | 0.9 | green | 4/4 |
 | `Point` | 1.2.1 | green | 1/1 |
 | `Polyglot::Brainfuck` | 0.1 | blocked_load | — |
-| `Polyglot::Regexen` | 0.1.0 | no_baseline | — |
+| `Polyglot::Regexen` | 0.1.0 | blocked_load | — |
 | `Pop` | 0.0.3 | blocked_load | — |
 | `Portuguese` | 0.0.1 | no_baseline | — |
 | `POSIX::getaddrinfo` | 0.2.0 | no_baseline | — |
@@ -1231,7 +1231,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Proc::ZMQed` | 0.1.1 | no_baseline | — |
 | `Progress::Bar` | 1.0.1 | no_baseline | — |
 | `Prompt` | 0.0.11 | green | 1/1 |
-| `Prompt::Expand` | 0.0.5 | red | 0/1 |
+| `Prompt::Expand` | 0.0.5 | blocked_load | — |
 | `Prompt::Hidden` | 0.0.3 | partial | 3/4 |
 | `Protocol` | 0.0.1 | partial | 1/2 |
 | `Protocol::MQTT` | 0.0.4 | red | 0/4 |
@@ -1253,7 +1253,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Qwiratry::Format::YAML` | 0.0.1 | green | 1/1 |
 | `Qwiratry::Location::HTTP` | 0.0.3 | no_baseline | — |
 | `Qwiratry::Test` | 0.0.2 | partial | 1/2 |
-| `Rainbow` | 0.4.4 | green | 2/2 |
+| `Rainbow` | 0.4.4 | blocked_load | — |
 | `rak` | 0.0.67 | green | 1/1 |
 | `Rake` | 0.0.7 | green | 1/1 |
 | `raku-mailgun` | 0.0.2 | green | 1/1 |
@@ -1281,7 +1281,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `RakuRename` | 0.3 | no_baseline | — |
 | `Random::Choice` | 0.0.9 | green | 1/1 |
 | `Random::Names` | 0.0.10 | green | 1/1 |
-| `Range::SetOps` | 0.0.5 | partial | 4/5 |
+| `Range::SetOps` | 0.0.5 | green | 5/5 |
 | `Rat::Power` | 0.0.2 | green | 1/1 |
 | `Rat::Precise` | 0.1.2 | red | 0/2 |
 | `rawstr4c` | 1.2.0 | green | 1/1 |
@@ -1291,13 +1291,13 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `ReadWriteLock` | 0.3.3 | green | 2/2 |
 | `RealDentalCosts::API` | 0.1.0 | no_baseline | — |
 | `Recipe::Parser` | 0.0.1 | green | 19/19 |
-| `Red` | 0.2.7 | partial | 58/96 |
+| `Red` | 0.2.7 | partial | 76/95 |
 | `Red::Driver::MySQL` | 0.0.2 | partial | 2/3 |
 | `RedFactory` | 0.0.3 | partial | 1/3 |
 | `Redis` | 0.1.6 | green | 17/17 |
 | `RedX::HashedPassword` | 0.0.8 | blocked_load | — |
 | `RegexUtils` | 0.1.5 | green | 3/3 |
-| `REPL` | 0.0.26 | partial | 2/3 |
+| `REPL` | 0.0.26 | blocked_load | — |
 | `Repository::Precomp::Cleanup` | 0.0.1 | green | 1/1 |
 | `RepositoryEvent` | 0.0.3 | partial | 4/5 |
 | `Resend` | 0.0.6 | no_baseline | — |
@@ -1308,7 +1308,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Rmv::JIRA` | 0.0.2 | green | 2/2 |
 | `Roaring::Tags` | 0.3.0 | green | 1/1 |
 | `roundrobin-slip` | 0.0.3 | red | 0/1 |
-| `Router::Right` | 0.0.66 | partial | 2/3 |
+| `Router::Right` | 0.0.66 | green | 3/3 |
 | `RPi::ButtonWatcher` | 1.0.0 | green | 1/1 |
 | `RPi::Device::DHT11` | 0.0.1 | green | 3/3 |
 | `RPi::Device::DS18B20` | 0.0.3 | green | 2/2 |
@@ -1319,7 +1319,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Russian` | 0.0.1 | green | 5/5 |
 | `Ryml` | 0.0.1 | green | 1/1 |
 | `SantaClaus::Utils` | 0.0.4 | green | 1/1 |
-| `SBOM::CycloneDX` | 0.0.18 | green | 27/27 |
+| `SBOM::CycloneDX` | 0.0.18 | blocked_load | — |
 | `SBOM::Raku` | 0.0.14 | no_baseline | — |
 | `Scalar::Util` | 0.0.10 | green | 9/9 |
 | `SCGI` | 2.6 | green | 1/1 |
@@ -1328,16 +1328,16 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `SDL2-ttf` | 0.0.3 | no_baseline | — |
 | `SelectiveImporting` | 0.1.3 | blocked_load | — |
 | `Selkie` | 0.16.0 | blocked_load | — |
-| `Selkie::UI` | 0.0.4 | partial | 5/6 |
+| `Selkie::UI` | 0.0.4 | partial | 6/7 |
 | `SEO::WebChecker` | 1.0.0 | green | 2/2 |
 | `SeqSplitter` | 0.0.3 | green | 2/2 |
-| `Sequence::Generator` | 0.0.8 | partial | 1/3 |
+| `Sequence::Generator` | 0.0.8 | red | 0/3 |
 | `Services::PortMapping` | v0.0.4 | green | 2/2 |
 | `Set::Equality` | 0.0.8 | green | 2/2 |
 | `SHAI` | 5 | green | 2/2 |
 | `Shareable` | 0.0.1 | partial | 1/2 |
 | `Shell::Command` | * | green | 1/1 |
-| `Shell::DSL` | 0.0.4 | no_baseline | — |
+| `Shell::DSL` | 0.0.4 | blocked_load | — |
 | `Shodan` | 0.0.3 | no_baseline | — |
 | `shorten-sub-commands` | 0.0.8 | no_baseline | — |
 | `sigpipe` | 0.0.3 | green | 1/1 |
@@ -1414,7 +1414,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Subsets::Common` | 0.0.6 | green | 1/1 |
 | `Subsets::IO` | 1.001003 | no_baseline | — |
 | `SupplyTimeWindow` | 0.0.1 | green | 2/2 |
-| `Sway::Config` | 0.2.2 | blocked_load | — |
+| `Sway::Config` | 0.2.2 | green | 1/1 |
 | `Sway::PreviewKeys` | 0.2.4 | skipped | — |
 | `Syndicate` | 0.0.6 | green | 31/31 |
 | `Syntax::Highlighters` | 0.1.5 | green | 2/2 |
@@ -1476,7 +1476,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Test::Builder` | 0.0.4 | green | 2/2 |
 | `Test::Class` | 1.0 | green | 1/1 |
 | `Test::ContainerizedService` | 0.2 | green | 2/2 |
-| `Test::Coverage` | 0.0.8 | green | 1/1 |
+| `Test::Coverage` | 0.0.8 | blocked_load | — |
 | `Test::Declare` | 0.0.3 | green | 8/8 |
 | `Test::Describe` | 0.0.1 | red | 0/3 |
 | `Test::Differences` | 1.0.3 | green | 2/2 |
@@ -1492,8 +1492,8 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Test::Scheduler` | 1.2 | green | 3/3 |
 | `Test::Script` | 0.0.4 | green | 6/6 |
 | `Test::Script::Output` | 0.1.0 | green | 2/2 |
-| `Test::Selector` | 0.4.2 | no_baseline | — |
-| `Test::Stream` | 0.2 | green | 5/5 |
+| `Test::Selector` | 0.4.2 | blocked_load | — |
+| `Test::Stream` | 0.2 | red | 0/5 |
 | `Test::Time` | 0.0.2 | red | 0/1 |
 | `Test::Util::ServerPort` | 0.0.5 | green | 2/2 |
 | `Test::When` | 2.1 | green | 2/2 |
@@ -1507,7 +1507,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Text::CSV::LibCSV` | 0.0.3 | no_baseline | — |
 | `Text::Diff` | 1.0.5 | green | 3/3 |
 | `Text::Diff::Sift4` | 2.0.1 | green | 1/1 |
-| `Text::Emoji` | 0.0.11 | red | 0/1 |
+| `Text::Emoji` | 0.0.11 | blocked_load | — |
 | `Text::Flags` | 0.0.6 | green | 1/1 |
 | `Text::FriBidi` | 0.0.7 | no_baseline | — |
 | `Text::Homoglyph::ASCII` | 0.0.5 | green | 1/1 |
@@ -1540,9 +1540,9 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Timer` | 0.0.3 | green | 2/2 |
 | `Timer::Stopwatch` | 0.1.0 | green | 1/1 |
 | `TimeUnit` | 1.3.1 | red | 0/1 |
-| `Timezone::Simple` | 0.0.1 | blocked_load | — |
+| `Timezone::Simple` | 0.0.1 | green | 2/2 |
 | `Timezones::US` | 0.0.7 | green | 2/2 |
-| `Timezones::ZoneInfo` | 0.5.0 | blocked_load | — |
+| `Timezones::ZoneInfo` | 0.5.0 | green | 7/7 |
 | `Tinky` | 0.1.5 | green | 8/8 |
 | `Tinky::Declare` | 0.0.2 | green | 6/6 |
 | `Tinky::JSON` | 0.0.8 | green | 5/5 |
@@ -1551,7 +1551,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Today` | 0.0.8 | green | 1/1 |
 | `Tokenizers` | 0.3.0 | no_baseline | — |
 | `TOML` | 3 | green | 5/5 |
-| `TOML::Thumb` | 0.2 | partial | 1/2 |
+| `TOML::Thumb` | 0.2 | blocked_load | — |
 | `Tomtit` | 0.1.37 | green | 1/1 |
 | `Tomtit::Profile::Python` | 0.0.2 | green | 1/1 |
 | `Tomty` | 0.0.22 | green | 1/1 |
@@ -1589,9 +1589,9 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `URI` | v0.1.4 | green | 6/6 |
 | `URI::Encode` | 1.0 | green | 2/2 |
 | `URI::FetchFile` | 0.0.6 | partial | 3/4 |
-| `URI::Query::FromHash` | 0.0.2 | green | 1/1 |
+| `URI::Query::FromHash` | 0.0.2 | blocked_load | — |
 | `URI::Template` | 0.0.11 | green | 8/8 |
-| `URL::Find` | v0.2 | green | 1/1 |
+| `URL::Find` | v0.2 | blocked_load | — |
 | `Usage::Utils` | 0.1.9 | green | 1/1 |
 | `User::grent` | 0.0.4 | green | 3/3 |
 | `User::Language` | 0.5.2 | green | 1/1 |

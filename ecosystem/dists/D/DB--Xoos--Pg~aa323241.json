@@ -34,7 +34,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.18,
+        "secs": 5.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -44,7 +44,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 13.16,
+        "secs": 13.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -56,7 +56,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.3,
+        "secs": 5.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -66,7 +66,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.91,
+        "secs": 6.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -78,7 +78,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.27,
+        "secs": 5.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -88,7 +88,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 6.0,
+        "secs": 6.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -100,7 +100,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.21,
+        "secs": 5.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -110,7 +110,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 6.0,
+        "secs": 6.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -119,15 +119,15 @@
   ],
   "load": {
     "DB::Xoos::Pg": "ok",
-    "DB::Xoos::Pg::Result": "ok",
+    "DB::Xoos::Pg::Result": "raku_also_fails",
     "DB::Xoos::Pg::Util::Dynamic": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-26",
+    "date": "2026-10-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6ac007e8",
+    "mutsu_commit": "1bfedbe3",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

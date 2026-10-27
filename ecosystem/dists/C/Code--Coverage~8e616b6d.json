@@ -16,40 +16,16 @@
     "unresolved": []
   },
   "dist": "Code::Coverage",
-  "files": [
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "is the first coverage ok",
-        "nok": 1,
-        "ok": 3,
-        "plan": 14,
-        "secs": 0.9,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/01-basic.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 13.65,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "Code::Coverage": "ok"
+    "Code::Coverage": "Can't use unknown trait 'is' -> 'built' in an attribute declaration."
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-26",
+    "date": "2026-10-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6ac007e8",
+    "mutsu_commit": "1bfedbe3",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -60,13 +36,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/OD/CODE_COVERAGE/4980d0914ecbf30f144a145fa9e04124e028a5aa.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 14,
-    "baseline_files": 1,
-    "mutsu_assertions": 3,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 1
+    "regressed_files": 0
   },
   "version": "0.0.9"
 }

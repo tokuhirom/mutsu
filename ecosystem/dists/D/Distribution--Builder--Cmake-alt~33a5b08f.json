@@ -3,23 +3,33 @@
   "deps": {
     "bundled_would_supply": [],
     "mode": "flat-closure",
-    "resolved": [],
+    "resolved": [
+      "File::Directory::Tree"
+    ],
     "unresolved": []
   },
   "dist": "Distribution::Builder::Cmake-alt",
   "files": [
     {
-      "cmp": "no_baseline",
-      "path": "t/01-basic.rakutest",
-      "raku": {
-        "first_failure": "succeeded",
-        "nok": 1,
-        "ok": 3,
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
         "plan": 4,
-        "secs": 2.73,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 4.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
       }
     }
   ],
@@ -28,10 +38,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-26",
+    "date": "2026-10-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6ac007e8",
+    "mutsu_commit": "1bfedbe3",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -40,15 +50,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/D/IS/DISTRIBUTION_BUILDER_CMAKEALT/30698528d58ef4c91e336dca80163f404ab76183.tar.gz"
+    "url": "https://360.zef.pm/D/IS/DISTRIBUTION_BUILDER_CMAKEALT/7916105731248df9dcafe8af324093ab48142d23.tar.gz"
   },
-  "status": "no_baseline",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 4,
+    "baseline_files": 1,
+    "mutsu_assertions": 4,
+    "parity_files": 1,
     "regressed_files": 0
   },
-  "version": "0.0.13"
+  "version": "1.0.0"
 }

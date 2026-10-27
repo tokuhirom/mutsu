@@ -14,40 +14,16 @@
     "unresolved": []
   },
   "dist": "Prompt::Expand",
-  "files": [
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$dt'; expected DateTime:D but got DateTime (DateTime.new(2026,10...)",
-        "nok": 0,
-        "ok": 0,
-        "plan": 10,
-        "secs": 0.43,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/01-basic.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 7.22,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "Prompt::Expand": "ok"
+    "Prompt::Expand": "Failed to parse module 'Text::Emoji': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: declaration with traits (Map::Match"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-10-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6ac007e8",
+    "mutsu_commit": "1bfedbe3",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -58,13 +34,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/RO/PROMPT_EXPAND/a2567a563518b901ac53200a85768c143ca0be00.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 10,
-    "baseline_files": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 1
+    "regressed_files": 0
   },
   "version": "0.0.5"
 }

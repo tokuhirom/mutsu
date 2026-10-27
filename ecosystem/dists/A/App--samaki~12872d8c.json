@@ -28,7 +28,430 @@
     "unresolved": []
   },
   "dist": "App::samaki",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 5.36,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 81.52,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-page.rakutest",
+      "raku": {
+        "first_failure": "could not setup handler module: Samaki::Plugin::Duck: could not find duckdb in path",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-page-3.rakutest",
+      "raku": {
+        "first_failure": "could not setup handler module: Samaki::Plugin::Duck: could not find duckdb in path",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 6.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-plugin-bash.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 22.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-plugin-duckie.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/test' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-repl.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-export.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/samaki-test-1793141503' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 2.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09-plugin-code.rakutest",
+      "raku": {
+        "first_failure": "Earlier failure:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-plugin-markdown.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/test/test-md.html: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/11-plugin-text.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/test/test-text.csv: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/12-plugin-llm.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/13-plugin-postgres.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 4.42,
+        "skip": 9,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/14-plugin-duck.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 4.33,
+        "skip": 9,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 4.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/15-plugin-process.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/16-plugin-raku.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/test/test-raku.csv: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/17-plugin-html.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/test/test-html.html: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/18-plugin-file.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/test-file.txt: Read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/19-plugin-repl-python.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/20-plugin-repl-r.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/21-planets.rakutest",
+      "raku": {
+        "first_failure": "could not setup handler module: Samaki::Plugin::Duck: could not find duckdb in path",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/22-planets-too.rakutest",
+      "raku": {
+        "first_failure": "could not setup handler module: Samaki::Plugin::Duck: could not find duckdb in path",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/23-duckie-csv.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/test/test-comma.csv: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/24-plugout-chartjs.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libduckdb.so': libduckdb.so: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/25-plugout-csvgeo.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/csvgeo-test-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 62,
+        "plan": null,
+        "secs": 7.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/26-plugout-deckglbin.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/deckglbin-test-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 5,
+        "plan": null,
+        "secs": 6.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 5.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/27-plugin-tmux.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 8.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/28-fold.rakutest",
+      "raku": {
+        "first_failure": "could not setup handler module: Samaki::Plugin::Duck: could not find duckdb in path",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
     "Samaki": "ok",
     "Samaki::Cell": "ok",
@@ -37,28 +460,28 @@
     "Samaki::Exporter::HTML": "ok",
     "Samaki::Importer::Jupyter": "ok",
     "Samaki::Page": "ok",
-    "Samaki::Plugin": "raku_also_fails",
+    "Samaki::Plugin": "ok",
     "Samaki::Plugin::Auto": "ok",
-    "Samaki::Plugin::Bash": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::Code": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::Duck": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::Duckie": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::File": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::HTML": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
+    "Samaki::Plugin::Bash": "ok",
+    "Samaki::Plugin::Code": "ok",
+    "Samaki::Plugin::Duck": "ok",
+    "Samaki::Plugin::Duckie": "ok",
+    "Samaki::Plugin::File": "ok",
+    "Samaki::Plugin::HTML": "ok",
     "Samaki::Plugin::LLM": "raku_also_fails",
-    "Samaki::Plugin::Markdown": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::Postgres": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::Process": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::Raku": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::Repl": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::Repl::Python": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::Repl::R": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::Repl::Raku": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::Text": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::Tmux": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::Tmux::Bash": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::Tmux::Python": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
-    "Samaki::Plugin::URL": "Redeclaration of routine 'seconds-from-time'. Did you mean to declare a multi-sub?",
+    "Samaki::Plugin::Markdown": "ok",
+    "Samaki::Plugin::Postgres": "ok",
+    "Samaki::Plugin::Process": "ok",
+    "Samaki::Plugin::Raku": "ok",
+    "Samaki::Plugin::Repl": "ok",
+    "Samaki::Plugin::Repl::Python": "ok",
+    "Samaki::Plugin::Repl::R": "ok",
+    "Samaki::Plugin::Repl::Raku": "ok",
+    "Samaki::Plugin::Text": "ok",
+    "Samaki::Plugin::Tmux": "ok",
+    "Samaki::Plugin::Tmux::Bash": "ok",
+    "Samaki::Plugin::Tmux::Python": "ok",
+    "Samaki::Plugin::URL": "ok",
     "Samaki::Plugins": "ok",
     "Samaki::Plugout": "ok",
     "Samaki::Plugout::CSVGeo": "ok",
@@ -81,10 +504,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-26",
+    "date": "2026-10-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6ac007e8",
+    "mutsu_commit": "1bfedbe3",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -95,12 +518,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/PP/APP_SAMAKI/af3c0ebc19e5941006b7e35c8e758e0816075ecb.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 66,
+    "baseline_files": 6,
+    "mutsu_assertions": 66,
+    "parity_files": 6,
     "regressed_files": 0
   },
   "version": "0.0.35"
