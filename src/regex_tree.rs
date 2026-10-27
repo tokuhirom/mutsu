@@ -3155,6 +3155,9 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         // A construct only the RakuAST boundary reads (`$<x>`, `<?alpha>`):
         // execution keeps the text, which the lowerer's own check declines.
         RegexNode::Extension(_) => true,
+        // `<?before [:i 'x']>`: an inline adverb inside the body. Only the
+        // RakuAST boundary reads this tree; the matcher keeps the text.
+        RegexNode::InternalModifier { .. } => true,
         other => is_executable_lookaround_body(other),
     }
 }
