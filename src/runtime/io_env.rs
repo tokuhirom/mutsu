@@ -504,14 +504,18 @@ impl Interpreter {
             // mutations were lost (only the last write survived). Reconcile the
             // caller frame afterwards so the accumulation persists (Slice F).
             let caller_code = self.current_code;
-            if self
-                .call_method_with_values(handle, "print", vec![Value::str(payload.clone())])
-                .is_ok()
-            {
-                self.reconcile_caller_after_internal_dispatch(caller_code);
-                return Ok(());
-            }
+            let printed =
+                self.call_method_with_values(handle, "print", vec![Value::str(payload.clone())]);
             self.reconcile_caller_after_internal_dispatch(caller_code);
+            match printed {
+                Ok(_) => return Ok(()),
+                // The handle has no usable `print` at all: the text goes to
+                // the real stream. An exception the handle's own `print` threw
+                // propagates (`my $*OUT = class { method print(|) { die ... } }`
+                // is how Red forbids output inside a `map` block).
+                Err(e) if e.is_method_not_found() || e.is_multi_no_match() => {}
+                Err(e) => return Err(e),
+            }
             if name == "$*ERR" {
                 self.output_sink_mut().stderr_output.push_str(&payload);
             }
