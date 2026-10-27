@@ -9884,10 +9884,10 @@ impl CompiledCode {
             .iter()
             .filter(|op| {
                 matches!(op, OpCode::LoadConst(idx)
-                    if matches!(
-                        self.constants.get(*idx as usize).map(Value::view),
-                        Some(ValueView::Str(name)) if name.as_str() == "CALLER::LEXICAL::"
-                    ))
+                if matches!(
+                    self.constants.get(*idx as usize).map(Value::view),
+                    Some(ValueView::Str(name)) if name.as_str() == "CALLER::LEXICAL::"
+                ))
             })
             .count();
         let derefs = self
