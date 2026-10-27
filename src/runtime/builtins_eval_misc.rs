@@ -496,15 +496,15 @@ impl Interpreter {
         // The frame behind `context` had its slot-only locals flushed for by-name
         // readers when it made the call that led here; they are visible to the
         // snippet for its duration only (#15048).
-        let context_flushed = context_arg
+        let (context_flushed, context_frame) = context_arg
             .as_ref()
             .map(|ctx| self.eval_context_flushed(ctx))
             .unwrap_or_default();
         let env_before_context = (!context_flushed.is_empty()).then(|| {
             let saved = self.env.clone();
             let mut env = crate::env::Env::scoped_child(saved.clone());
-            for (sym, value) in context_flushed {
-                env.insert_sym(sym, value);
+            for (sym, value) in &context_flushed {
+                env.insert_sym(*sym, value.clone());
             }
             self.env = env;
             saved
@@ -515,7 +515,13 @@ impl Interpreter {
             run(self)
         };
         if let Some(saved) = env_before_context {
+            // What the snippet assigned to those names belongs to the caller's
+            // variables, which live in slots.
+            let changed = self.write_back_context_flushed(&context_flushed, context_frame);
             self.env = saved;
+            for (sym, value) in changed {
+                self.env.insert_sym(sym, value);
+            }
         }
         // A compile-time diagnosis (`X::Comp`/`X::Syntax::*`) raised while
         // parsing the EVAL'd string reports `.filename` matching the EVAL

@@ -211,17 +211,20 @@ impl Interpreter {
     /// The slot-only locals the frame behind an `EVAL` context stash had
     /// flushed for by-name readers; empty for any other context value.
     // Cost: O(k), k = the flushed locals.
-    pub(crate) fn eval_context_flushed(&self, ctx: &Value) -> Vec<(Symbol, Value)> {
+    pub(crate) fn eval_context_flushed(
+        &self,
+        ctx: &Value,
+    ) -> (Vec<(Symbol, Value)>, Option<(usize, usize)>) {
         let ValueView::Instance {
             class_name,
             attributes,
             ..
         } = ctx.view()
         else {
-            return Vec::new();
+            return (Vec::new(), None);
         };
         if !is_stash_class_name(class_name.as_str()) {
-            return Vec::new();
+            return (Vec::new(), None);
         }
         let index = attributes
             .as_map()
@@ -230,8 +233,48 @@ impl Interpreter {
             .and_then(|i| usize::try_from(i).ok());
         index
             .and_then(|i| self.callframe_stack.get(i))
-            .map(|entry| entry.flushed.clone())
+            .map(|entry| (entry.flushed.clone(), entry.flushed_frame))
             .unwrap_or_default()
+    }
+
+    /// Store the values an `EVAL` run with `context` left in `flushed`'s env
+    /// names back into the slots of the frame they were copied from, and return
+    /// the ones that changed (the caller's env entry must say the same).
+    // Cost: O(k * l), k = flushed locals, l = the frame's locals.
+    pub(crate) fn write_back_context_flushed(
+        &mut self,
+        flushed: &[(Symbol, Value)],
+        frame: Option<(usize, usize)>,
+    ) -> Vec<(Symbol, Value)> {
+        let mut changed = Vec::new();
+        let Some((code_addr, base)) = frame else {
+            return changed;
+        };
+        if code_addr == 0 {
+            return changed;
+        }
+        // SAFETY: `code_addr` is the address of the calling frame's
+        // `CompiledCode`, which outlives the call this EVAL runs inside (see
+        // `Interpreter::flush_calling_frame_slots`).
+        let code = unsafe { &*(code_addr as *const crate::opcode::CompiledCode) };
+        for (sym, original) in flushed {
+            let Some(current) = self.env.get_sym(*sym).cloned() else {
+                continue;
+            };
+            // The snippet may have boxed the variable into a shared cell; the
+            // slot holds the plain value, as it did before the call.
+            let current = current.deref_container();
+            if &current == original {
+                continue;
+            }
+            if let Some(slot) = code.locals_sym.iter().position(|s| s == sym)
+                && base + slot < self.locals.all_slots().len()
+            {
+                *self.locals.absolute_slot_mut(base + slot) = current.clone();
+                changed.push((*sym, current));
+            }
+        }
+        changed
     }
 
     /// Stamp `origin` onto a pseudo-stash value. `CALLER::` names the frame that

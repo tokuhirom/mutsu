@@ -61,12 +61,13 @@ impl Interpreter {
 
     /// Push caller env with an explicit code (Sub) value for the current frame.
     pub(crate) fn push_caller_env_with_code(&mut self, code: Option<Value>) {
+        let frame = (self.current_code, self.locals.base());
         let flushed = if crate::opcode::caller_frame_read_possible() {
-            self.flush_calling_frame_slots(self.current_code, self.locals.base())
+            self.flush_calling_frame_slots(frame.0, frame.1)
         } else {
             Vec::new()
         };
-        self.push_caller_env_entry(code, flushed);
+        self.push_caller_env_entry(code, flushed, frame);
     }
 
     /// [`Self::push_caller_env`] for a call whose callee frame is already open:
@@ -78,13 +79,14 @@ impl Interpreter {
         } else {
             Vec::new()
         };
-        self.push_caller_env_entry(None, flushed);
+        self.push_caller_env_entry(None, flushed, (caller_code, caller_base));
     }
 
     fn push_caller_env_entry(
         &mut self,
         code: Option<Value>,
         flushed: Vec<(crate::symbol::Symbol, Value)>,
+        frame: (usize, usize),
     ) {
         // The flushed locals sit in a scoped overlay on the entries' env, never
         // on the live env: a callee or closure resolving a free name through the
@@ -115,6 +117,7 @@ impl Interpreter {
             routine: self.routine_stack.last().copied(),
             synthetic: false,
             routine_depth: self.routine_stack.len(),
+            flushed_frame: (!flushed.is_empty()).then_some(frame),
             flushed,
         });
     }
@@ -187,6 +190,7 @@ impl Interpreter {
                 synthetic: true,
                 routine_depth: self.routine_stack.len(),
                 flushed: Vec::new(),
+                flushed_frame: None,
             });
         }
     }

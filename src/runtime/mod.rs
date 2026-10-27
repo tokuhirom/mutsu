@@ -1561,6 +1561,10 @@ pub(crate) struct CallFrameEntry {
     /// into [`Self::env`] for a by-name reader (#15048); an `EVAL` run with this
     /// frame as its `context` makes them visible to the snippet.
     pub flushed: Vec<(Symbol, Value)>,
+    /// The calling frame's `CompiledCode` address and slot base, set with
+    /// [`Self::flushed`] so a write the `EVAL` makes to one of them can be stored
+    /// back into the slot.
+    pub flushed_frame: Option<(usize, usize)>,
 }
 
 /// Entry in the routine stack, tracking the call chain for backtraces.

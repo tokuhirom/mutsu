@@ -133,6 +133,7 @@ impl Interpreter {
                     synthetic: false,
                     routine_depth: k,
                     flushed: Vec::new(),
+                    flushed_frame: None,
                 });
             }
         }
