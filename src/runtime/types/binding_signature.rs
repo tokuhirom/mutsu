@@ -646,13 +646,29 @@ impl Interpreter {
         // those alone.
         // A `Positional`-typed parameter (`sub f(Positional $p)`) binds a
         // Seq through the same failover (rakudo#4864).
-        let positional_typed = pd.type_constraint.as_deref() == Some("Positional");
+        let positional_typed = pd
+            .type_constraint
+            .as_deref()
+            .is_some_and(|tc| super::strip_type_smiley(tc) == ("Positional", None)
+                || super::strip_type_smiley(tc) == ("Positional", Some(":D"))
+                || super::strip_type_smiley(tc) == ("Positional", Some(":_")));
         if (pd.name.starts_with('@') || positional_typed)
             && !seq_list_array_context
             && (is_builtin_seq || self.type_matches_value("PositionalBindFailover", &value))
             && (is_builtin_seq || !self.type_matches_value("Positional", &value))
         {
-            value = self.coerce_positional_bind_failover(value)?;
+            // A plain Seq binds through `.cache`, as an `@` parameter does: it
+            // is reified once and kept, so the same Seq binds again later.
+            if positional_typed
+                && let ValueView::Seq(body) = value.view()
+                && !body.is_lazy()
+            {
+                let body = std::sync::Arc::clone(&body);
+                body.mark_cache_requested();
+                value = Value::seq_list_view(&body);
+            } else {
+                value = self.coerce_positional_bind_failover(value)?;
+            }
         }
         // A `::T` capture records the argument's type under `T`; it is not a
         // nominal check. Done before the constraint block so `::T Foo:D $x`
