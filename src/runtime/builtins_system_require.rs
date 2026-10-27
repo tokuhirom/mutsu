@@ -96,10 +96,7 @@ impl Interpreter {
         // requirer's — mirrors `run_modules::parse_module_source`.
         let saved_source_file =
             crate::parser::set_parser_source_file(Some(path.to_string_lossy().to_string()));
-        let result = parse_dispatch::parse_compilation_unit_of(
-            &preprocessed,
-            crate::rakuast::frontend::Unit::Module,
-        );
+        let result = parse_dispatch::parse_compilation_unit_of(&preprocessed);
         crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();
         // See the parallel comment in `run_modules::parse_module_source`: the

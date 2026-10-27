@@ -7,7 +7,7 @@ use lib $*PROGRAM.parent(2).add('lib-prefix-class-parent');
 # Every program runs at the `convert` level, where no subtree crosses as the
 # parser's own tree, and prints what raku prints.
 
-plan 5;
+plan 9;
 
 sub run-convert(Str $code) {
     my %env = %*ENV;
@@ -54,5 +54,46 @@ sub run-convert(Str $code) {
     my ($rc, $out, $err) = run-convert(
         'grammar H { use Pfx::Sub::Gram; also is Pfx::Sub::Gram; }; say H.parse("abc", :rule<word>).so');
     is $out, "True\n", 'and the inherited token is callable'
+        or diag $err;
+}
+
+{
+    my ($rc, $out, $err) = run-convert('role Pfx::D { }; class Pfx::R does Pfx::D { }; say Pfx::R.new ~~ Pfx::D');
+    is $out, "True\n", 'a type whose name ends in ::D is not the smiley :D'
+        or diag $err;
+}
+
+{
+    # An imported name makes a bareword an `ImportedTerm` in a unit that keeps
+    # spellings; `require`'s operand is still a module name (#15074).
+    my $code = q:to/CODE/;
+        use JSON::Fast;
+        require Pfx;
+        say Pfx.hi;
+        CODE
+    my ($rc, $out, $err) = run-convert($code);
+    is $out, "hi\n", 'require Module after a use that imports a name'
+        or diag $err;
+}
+
+{
+    # A module is `unit class Name:ver<..>:auth<..>;` with the whole rest of the
+    # file as its body; the header adverbs are a typed node around the
+    # declaration, which still absorbs the rest of the unit.
+    my $code = q:to/CODE/;
+        unit class Foo:ver<1.2>:auth<me>;
+        method hi { "hi" }
+        say Foo.^ver, Foo.^auth, Foo.hi;
+        CODE
+    my ($rc, $out, $err) = run-convert($code);
+    is $out, "v1.2mehi\n", 'a unit class with header adverbs absorbs the rest of the unit'
+        or diag $err;
+}
+
+{
+    # `:` right after a literal run binds to its last character (`hos`, then
+    # `t:`), as a quantifier does; HTTP::Request matches `m:i/host:/`.
+    my ($rc, $out, $err) = run-convert('say "Host: x" ~~ m:i/host:/');
+    is $out, "\x[FF62]Host\x[FF63]\n", 'a backtrack control after a multi-character literal round-trips'
         or diag $err;
 }

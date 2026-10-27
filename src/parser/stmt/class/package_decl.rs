@@ -4,7 +4,7 @@ use crate::ast::Stmt;
 use crate::symbol::Symbol;
 use crate::value::Value;
 
-use super::package_unit_meta::{decl_adverb_meta_stmts, with_meta_stmts};
+use super::package_unit_meta::{header_adverbs, with_header};
 use crate::parser::helpers::{parse_trait_angle_arg, skip_balanced_parens, ws, ws1};
 use crate::parser::parse_result::{PError, PResult, opt_char};
 use crate::parser::stmt::{keyword, qualified_ident};
@@ -51,7 +51,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         // Optional type adverbs (:ver<...>, :auth<...>, :api<...>)
         let (r, traits) = parse_declarator_traits(r)?;
         let (r, _) = ws(r)?;
-        let meta_stmts = decl_adverb_meta_stmts(&name, traits);
+        let header = header_adverbs(traits);
         // Parse `is Parent` and `does Role` clauses before the semicolon
         let mut parents = Vec::new();
         let mut does_parents = Vec::new();
@@ -229,8 +229,9 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         super::super::simple::register_user_type(&name);
         return Ok((
             r,
-            with_meta_stmts(
-                meta_stmts,
+            with_header(
+                header,
+                &name,
                 Stmt::ClassDecl {
                     spans: Default::default(),
                     name: Symbol::intern(&name),
@@ -280,7 +281,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         // Optional type adverbs (:ver<...>, :auth<...>, :api<...>).
         let (r2, adverbs) = parse_declarator_traits(r)?;
         let (r2, _) = ws(r2)?;
-        let meta_stmts = decl_adverb_meta_stmts(&name, adverbs);
+        let header = header_adverbs(adverbs);
         r = r2;
         // The signature may also FOLLOW the adverbs — the order Raku itself uses:
         // `unit role Algorithm::Treap:ver<0.10.3>:auth<zef:titsuki>[::KeyT];`.
@@ -425,8 +426,9 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         }
         return Ok((
             r,
-            with_meta_stmts(
-                meta_stmts,
+            with_header(
+                header,
+                &name,
                 Stmt::RoleDecl {
                     spans: Default::default(),
                     name: Symbol::intern(&name),
@@ -456,7 +458,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         // the `is Bar` parent from being parsed (parent silently dropped).
         let (r, traits) = parse_declarator_traits(r)?;
         let (r, _) = ws(r)?;
-        let meta_stmts = decl_adverb_meta_stmts(&name, traits);
+        let header = header_adverbs(traits);
         let mut r = r;
         let mut parents = Vec::new();
         let mut does_parents = Vec::new();
@@ -520,8 +522,9 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         crate::ast::routine_trait::attach(&mut body, written);
         return Ok((
             r,
-            with_meta_stmts(
-                meta_stmts,
+            with_header(
+                header,
+                &name,
                 Stmt::ClassDecl {
                     spans: Default::default(),
                     name: Symbol::intern(&name),

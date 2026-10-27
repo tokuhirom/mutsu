@@ -352,6 +352,12 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
         } else {
             term_expr(rest)?
         };
+    // The operand is a module name whether or not the unit keeps the term's
+    // spelling (an import makes a bareword an `ImportedTerm`).
+    let target_raw = match target_raw {
+        Expr::Spelled(spelled) if matches!(spelled.expr, Expr::BareWord(_)) => spelled.expr,
+        other => other,
+    };
     let module_name_for_parse = match &target_raw {
         Expr::BareWord(name) => Some(name.clone()),
         Expr::Literal(v) => match v.view() {

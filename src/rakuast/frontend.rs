@@ -1,14 +1,10 @@
 //! The RakuAST frontend (ADR-10723 Stages 0 and 3).
 //!
-//! The frontend is `parse -> RakuAST -> lower`: the program's own units (the
-//! main program and every `EVAL` string) are converted to their RakuAST tree and
-//! lowered back before they are compiled. The result is what the RakuAST
-//! frontend will produce once the parser emits RakuAST directly (Stage 2). There
-//! is no opt-out.
-//!
-//! A `use`d module or `require`d file is still compiled from the parser's own
-//! tree: a module is shared by every program that uses it, and the cases that
-//! keep it out of the round trip are tracked on #15074.
+//! The frontend is `parse -> RakuAST -> lower`: every compilation unit (the
+//! main program, every `EVAL` string, every `use`d module and `require`d file)
+//! is converted to its RakuAST tree and lowered back before it is compiled. The
+//! result is what the RakuAST frontend will produce once the parser emits
+//! RakuAST directly (Stage 2). There is no opt-out.
 //!
 //! `MUTSU_RAKUAST=convert` is the one test level that is left: no subtree
 //! crosses as the parser's own tree ([`super::passthrough`]), every node goes
@@ -24,17 +20,6 @@ use std::sync::OnceLock;
 
 use crate::ast::Stmt;
 use crate::value::RuntimeError;
-
-/// Which kind of compilation unit is being parsed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Unit {
-    /// The program's main unit.
-    Mainline,
-    /// An `EVAL` string.
-    Eval,
-    /// A `use`d module or a `require`d file.
-    Module,
-}
 
 /// Whether `MUTSU_RAKUAST=convert` is set: the test level without passthrough
 /// leaves. Read once per process.
@@ -59,24 +44,11 @@ pub(crate) fn cache_tag() -> &'static str {
     }
 }
 
-/// Whether the frontend runs a unit of this kind through the round trip. Such a
-/// unit is parsed with its spellings kept (ADR-12199): the conversion reads
-/// them, and the lowering hands the compiler the same tree it would have had
-/// without them.
-// Cost: O(1).
-pub(crate) fn covers(unit: Unit) -> bool {
-    unit != Unit::Module
-}
-
-/// Run a parsed compilation unit through the RakuAST round trip when the
-/// frontend covers its kind; hand it back untouched otherwise.
-pub(crate) fn round_trip_if_enabled(
-    stmts: Vec<Stmt>,
-    unit: Unit,
-) -> Result<Vec<Stmt>, RuntimeError> {
-    if !covers(unit) {
-        return Ok(stmts);
-    }
+/// Run a parsed compilation unit through the RakuAST round trip. Every unit is
+/// parsed with its spellings kept (ADR-12199): the conversion reads them, and
+/// the lowering hands the compiler the same tree it would have had without
+/// them.
+pub(crate) fn round_trip_unit(stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
     round_trip_owned(stmts).map_err(refusal)
 }
 
@@ -117,7 +89,7 @@ pub(crate) fn round_trip_owned(mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, Runtim
     Ok(lowered)
 }
 
-/// [`round_trip_if_enabled`] for an `EVAL` string, whose bare names may be
+/// [`round_trip_unit`] for an `EVAL` string, whose bare names may be
 /// declared by the scope that called it: `types` and `terms` are those names,
 /// and `operators` the operator routines it makes visible.
 pub(crate) fn round_trip_eval(
@@ -157,13 +129,6 @@ mod tests {
         assert!(!convert_level_from(Some("all")));
         assert!(!convert_level_from(Some("0")));
         assert!(!convert_level_from(None));
-    }
-
-    #[test]
-    fn modules_stay_outside_the_round_trip() {
-        assert!(covers(Unit::Mainline));
-        assert!(covers(Unit::Eval));
-        assert!(!covers(Unit::Module));
     }
 
     #[test]

@@ -69,10 +69,9 @@ impl<'a> Iterator for ArgSources<'a> {
 /// or one with a definedness smiley (`Map:D`), which rakudo renders as a
 /// `Type::Definedness`.
 fn is_type_spelling(source: &str) -> bool {
-    let base = source
-        .strip_suffix(":D")
-        .or_else(|| source.strip_suffix(":U"))
-        .or_else(|| source.strip_suffix(":_"))
+    let base = [":D", ":U", ":_"]
+        .iter()
+        .find_map(|smiley| super::type_build::strip_smiley(source, smiley))
         .unwrap_or(source);
     is_simple_type(base)
 }

@@ -275,18 +275,6 @@ pub(crate) fn export_type_marker(tags: &[String]) -> (String, Option<Expr>) {
     )
 }
 
-pub(crate) fn meta_setter_stmt(type_name: &str, key: &str, value: Expr) -> Stmt {
-    Stmt::Expr(Expr::Call {
-        name: Symbol::intern("__MUTSU_SET_META__"),
-        args: vec![
-            Expr::Literal(Value::str(type_name.to_string())),
-            Expr::Literal(Value::str(key.to_string())),
-            value,
-        ],
-        listop: false,
-    })
-}
-
 /// A `.` on the SAME LINE as a type declaration's closing brace is a **postfix
 /// on the type object** — `class It { ... }.new` builds an instance — not a new
 /// `$_.method` statement. Raku agrees even across a space: it parses

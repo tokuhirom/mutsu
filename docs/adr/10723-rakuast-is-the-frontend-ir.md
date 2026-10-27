@@ -2593,3 +2593,28 @@ body-positioned parent); the remaining cause is #15074 (`require Foo::Bar` after
 imports dies "Could not find symbol '&Bar' in 'GLOBAL::Foo'" with identical lowered trees). Routing
 modules through the round trip, and with it the unspelled parse, is the next deletion once that
 issue is closed.
+
+### 6.127 `use`d modules run as their round trip, and the unspelled parse is gone from execution (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+§2.2's "`MUTSU_LEGACY=1` as the opt-out for one release" is withdrawn (maintainer decision
+2026-10-27: mutsu is in development and has no users to protect), so §6.126 deleted the opt-out and
+this section deletes what it had kept alive: `use`d and `require`d modules were compiled from the
+parser's own tree because `Test.rakumod` did not round-trip. It does now. Measured on 2026-10-27 with
+every module round-tripped, the whole of `t/` and the roast whitelist pass (`scripts/dev gate --full`),
+after these fixes: a `Pkg::D` / `Pkg::U` type name is not a smiley (`type_build::strip_smiley`), a
+`require Module` operand that is an `ImportedTerm` bareword is still a module name (#15074; the
+`Spelled` wrapper hid the `BareWord` from `parse_require_expr`), plus the four of §6.126.
+
+Deleted: `frontend::Unit`, `frontend::covers`, the `unit` parameter of `parse_compilation_unit_of`
+and `round_trip_if_enabled`, and the two-way choice between `parse_program` and
+`parse_program_spelled` in `parse_dispatch` and `lib.rs` (`dump_ast`, `dump_bytecode`: both now show the
+tree the unit runs as). The unspelled parse stays for the analyses that never execute a unit
+(`parse_program_recovering`, the LSP) and the preludes; `Stmt::Ast` carriers and `convert` stay until
+the parser builds RakuAST directly.
+
+The `unit class` / `unit role` / `unit grammar` forms with `:ver<>` / `:auth<>` / `:api<>` adverbs were the
+last producers of the `__MUTSU_SET_META__` desugar outside the typed header (`ParsedStmt::PackageHeader`);
+the converter refused them, which the passthrough guard hid until modules were round-tripped at the
+`convert` level. They now build the typed header around the declaration, `stmt_list` takes the header off,
+absorbs the rest of the unit into the declaration and puts the header back. Deleted:
+`package_unit_meta::{decl_adverb_meta_stmts, with_meta_stmts}` and `class_decl::meta_setter_stmt`.
