@@ -15,7 +15,7 @@
 mod allomorph;
 mod angle_words;
 mod array;
-pub(crate) use array::finalize_array_sections;
+pub(crate) use array::lower_array_sections;
 mod meta_ops;
 mod paren;
 mod sigil_context;
@@ -41,7 +41,7 @@ pub(in crate::parser) use array::array_literal;
 // uses (`parser::stmt::decl::enum_decl`), which is what makes `;` a variant
 // separator there.
 pub(in crate::parser) use paren::{colonpair_run_item, looks_like_colonpair_start};
-pub(crate) use paren::{finalize_paren_sections, paren_expr};
+pub(crate) use paren::{lower_paren_sections, paren_expr};
 pub(super) use sigil_context::{
     hash_context_paren_expr, itemized_brace_expr, itemized_bracket_expr,
     itemized_context_paren_expr, itemized_paren_expr, list_context_paren_expr,

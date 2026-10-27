@@ -229,6 +229,7 @@ fn parse_hyper_method_with_unspace_after_operator() {
 #[test]
 fn parse_array_slice_assignment_with_comma_rhs() {
     let (rest, expr) = expression("@a[0,1] = 10,20").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     match expr {
         Expr::IndexAssign { value, .. } => match *value {
@@ -250,6 +251,7 @@ fn parse_array_slice_assignment_with_comma_rhs() {
 #[test]
 fn parse_hash_slice_assignment_with_comma_rhs() {
     let (rest, expr) = expression("%h{1,2} = \"one\", \"two\"").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     match expr {
         Expr::IndexAssign { value, .. } => match *value {

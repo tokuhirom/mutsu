@@ -61,7 +61,6 @@ pub(crate) struct SubTraits {
 /// Returns `SubTraits` indicating which traits were found.
 pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     use crate::ast::routine_trait::{RoutineTrait, TraitArgument};
-    let keeping = crate::ast::spelled::keeping();
     let mut source_traits = Vec::new();
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
@@ -118,20 +117,15 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             let mut rest_out = r_after;
             let before = handles.len();
             super::super::decl::parse_handle_specs(r_after, &mut handles, &mut rest_out)?;
-            if keeping {
-                source_traits.push(
-                    match super::super::decl::handles_clause_term(
-                        r_after,
-                        rest_out,
-                        &handles[before..],
-                    ) {
-                        Some(term) => RoutineTrait::Handles(term),
-                        None => RoutineTrait::Unsupported(
-                            "method with a `handles` spelling not kept as a term".to_string(),
-                        ),
-                    },
-                );
-            }
+            source_traits.push(
+                match super::super::decl::handles_clause_term(r_after, rest_out, &handles[before..])
+                {
+                    Some(term) => RoutineTrait::Handles(term),
+                    None => RoutineTrait::Unsupported(
+                        "method with a `handles` spelling not kept as a term".to_string(),
+                    ),
+                },
+            );
             input = rest_out;
             continue;
         }
@@ -155,12 +149,10 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             }
             seen_traits.push(trait_name.to_string());
             if trait_name == "hidden-from-backtrace" {
-                if crate::ast::spelled::keeping() {
-                    source_traits.push(RoutineTrait::Is {
-                        name: trait_name.to_string(),
-                        argument: None,
-                    });
-                }
+                source_traits.push(RoutineTrait::Is {
+                    name: trait_name.to_string(),
+                    argument: None,
+                });
                 is_hidden_from_backtrace = true;
                 input = r;
                 continue;
@@ -168,13 +160,10 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             if trait_name == "export" {
                 is_export = true;
                 let (r2, tags) = parse_export_trait_tags(r)?;
-                if crate::ast::spelled::keeping() {
-                    source_traits.push(RoutineTrait::Is {
-                        name: trait_name.to_string(),
-                        argument: (!tags.is_empty())
-                            .then(|| TraitArgument::ExportTags(tags.clone())),
-                    });
-                }
+                source_traits.push(RoutineTrait::Is {
+                    name: trait_name.to_string(),
+                    argument: (!tags.is_empty()).then(|| TraitArgument::ExportTags(tags.clone())),
+                });
                 if tags.is_empty() {
                     if !export_tags.iter().any(|t| t == "DEFAULT") {
                         export_tags.push("DEFAULT".to_string());
@@ -229,9 +218,7 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             let (mut r, _) = ws(r)?;
             if r.starts_with('<') {
                 let (r2, arg) = parse_trait_angle_arg(r)?;
-                if keeping {
-                    source_argument = Some(TraitArgument::Words(arg.clone()));
-                }
+                source_argument = Some(TraitArgument::Words(arg.clone()));
                 if trait_name == "assoc" {
                     associativity = Some(arg);
                 } else if trait_name == "tighter" || trait_name == "looser" || trait_name == "equiv"
@@ -271,8 +258,7 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 if trait_name == "DEPRECATED" {
                     // Extract the deprecation message from parenthesized form
                     let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];
-                    if keeping
-                        && let Ok((after, expr)) = expression(paren_content)
+                    if let Ok((after, expr)) = expression(paren_content)
                         && after.trim().is_empty()
                     {
                         source_argument = Some(TraitArgument::Parentheses(expr));
@@ -297,9 +283,7 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     // replaces an earlier one, as in rakudo.
                     let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];
                     let ref_op = paren_content.trim().to_string();
-                    if keeping {
-                        source_argument = Some(TraitArgument::Operator(ref_op.clone()));
-                    }
+                    source_argument = Some(TraitArgument::Operator(ref_op.clone()));
                     precedence_trait = Some((trait_name.to_string(), ref_op));
                 } else if trait_name == "assoc" {
                     // `is assoc('non')` / `is assoc("left")` — parenthesized string form
@@ -313,11 +297,9 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                         value
                     };
                     associativity = Some(value.to_string());
-                    if keeping {
-                        source_argument = Some(TraitArgument::Parentheses(
-                            crate::ast::Expr::Literal(Value::str(value.to_string())),
-                        ));
-                    }
+                    source_argument = Some(TraitArgument::Parentheses(crate::ast::Expr::Literal(
+                        Value::str(value.to_string()),
+                    )));
                 } else {
                     // For custom traits, parse the parenthesized content as an expression
                     let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];
@@ -339,9 +321,7 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                         } else {
                             expr
                         };
-                        if keeping
-                            && (after.trim().is_empty() || after.trim_start().starts_with(','))
-                        {
+                        if after.trim().is_empty() || after.trim_start().starts_with(',') {
                             source_argument = Some(TraitArgument::Parentheses(expr.clone()));
                         }
                         // Update the last custom trait entry with the parsed argument
@@ -353,26 +333,22 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 }
             }
             input = r;
-            if crate::ast::spelled::keeping() {
-                if source_argument_required && source_argument.is_none() {
-                    source_traits.push(RoutineTrait::Unsupported(format!(
-                        "routine trait `{trait_name}` argument"
-                    )));
-                    continue;
-                }
-                source_traits.push(RoutineTrait::Is {
-                    name: trait_name.to_string(),
-                    argument: source_argument,
-                });
+            if source_argument_required && source_argument.is_none() {
+                source_traits.push(RoutineTrait::Unsupported(format!(
+                    "routine trait `{trait_name}` argument"
+                )));
+                continue;
             }
+            source_traits.push(RoutineTrait::Is {
+                name: trait_name.to_string(),
+                argument: source_argument,
+            });
             continue;
         }
         if let Some(r) = keyword("returns", r) {
             let (r, _) = ws(r)?;
             let (r, type_name) = parse_trait_type_name(r).map_err(|e| malformed_trait(e, r))?;
-            if crate::ast::spelled::keeping() {
-                source_traits.push(RoutineTrait::Returns(type_name.clone()));
-            }
+            source_traits.push(RoutineTrait::Returns(type_name.clone()));
             return_type = Some(type_name);
             // Mark that the return type came from a `returns`/`of` trait (not a
             // `-->` signature arrow): an undeclared one is X::InvalidType, while
@@ -386,15 +362,13 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
         if let Some(r) = keyword("of", r) {
             let (r, _) = ws(r)?;
             let (r, type_name) = parse_trait_type_name(r).map_err(|e| malformed_trait(e, r))?;
-            if crate::ast::spelled::keeping() {
-                match source_traits.last_mut() {
-                    Some(RoutineTrait::Returns(base) | RoutineTrait::Of(base))
-                        if !base.contains('[') =>
-                    {
-                        *base = format!("{base}[{type_name}]");
-                    }
-                    _ => source_traits.push(RoutineTrait::Of(type_name.clone())),
+            match source_traits.last_mut() {
+                Some(RoutineTrait::Returns(base) | RoutineTrait::Of(base))
+                    if !base.contains('[') =>
+                {
+                    *base = format!("{base}[{type_name}]");
                 }
+                _ => source_traits.push(RoutineTrait::Of(type_name.clone())),
             }
             // `of` parameterizes a preceding `returns`/role type, e.g.
             // `returns Positional of Int` means return type `Positional[Int]`.

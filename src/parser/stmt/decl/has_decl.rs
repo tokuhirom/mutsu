@@ -1322,11 +1322,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // A `.AST` parse keeps a private attribute's `has $!g //= EXPR` as the
     // declaration compound node RakuAST makes of it.
     let (kept_compound, compound_assign_after_decl) = match compound_assign_after_decl {
-        Some(compound)
-            if crate::ast::spelled::keeping() && !is_public && modifier_sink.is_none() =>
-        {
-            (Some(compound), None)
-        }
+        Some(compound) if !is_public && modifier_sink.is_none() => (Some(compound), None),
         other => (None, other),
     };
     let assign_stmt = compound_assign_after_decl.map(|(op, rhs)| {

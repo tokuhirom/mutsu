@@ -1218,7 +1218,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
             // the *statement* form, which `expr_stmt` builds.
             return Ok((
                 r,
-                crate::parser::stmt::assign::written_topic_dotty_assignment(method_call, false),
+                crate::parser::stmt::assign::written_topic_dotty_assignment(method_call),
             ));
         }
     }

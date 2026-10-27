@@ -37,6 +37,7 @@ pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     super::declared_routines::scan(node);
     super::infix_func::reset();
     let mut stmts = crate::parser::with_rakuast_lexical_scope(|| lower_stmts(node))?;
+    super::unspell::strip(&mut stmts);
     // ADR-0033 Phase 3. A lowered tree carries `Expr::WhateverArg` leaves but no
     // priming *scopes*: those are planted by the parser at its own grammar
     // positions, and there is no parser here. Run the same scope authority the
@@ -4493,7 +4494,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     });
                 }
                 return Ok(Expr::Grouped(Box::new(
-                    crate::parser::finalize_paren_sections(sections, Vec::new(), true),
+                    crate::parser::lower_paren_sections(sections, Vec::new(), true),
                 )));
             }
             let inner = named_child_or_positional(semilist)?;
@@ -4570,7 +4571,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         other => vec![other],
                     });
                 }
-                return Ok(crate::parser::finalize_array_sections(
+                return Ok(crate::parser::lower_array_sections(
                     sections,
                     Vec::new(),
                     true,

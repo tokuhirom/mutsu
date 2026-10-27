@@ -372,6 +372,7 @@ impl Interpreter {
         let user_sub_names = self.collect_eval_user_sub_names();
         let user_type_names = self.collect_eval_user_type_names();
         let user_value_term_names = self.collect_eval_user_value_term_names();
+        let caller_names = (self.eval_caller_type_names(), self.eval_caller_enum_value_names());
         match crate::parser::parse_program_with_operators_and_user_subs(
             src,
             op_names,
@@ -379,9 +380,15 @@ impl Interpreter {
             &user_sub_names,
             &user_type_names,
             &user_value_term_names,
-            false,
         ) {
             Ok((stmts, _)) => {
+                let (types, terms) = caller_names;
+                let stmts = crate::rakuast::frontend::round_trip_eval(
+                    &stmts,
+                    || types,
+                    || terms,
+                    op_names,
+                )?;
                 self.check_eval_class_redeclarations(&stmts)?;
                 self.check_eval_undeclared_trusts(&stmts)?;
                 self.check_eval_undeclared_type_args(&stmts)?;

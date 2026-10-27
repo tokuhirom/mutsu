@@ -392,8 +392,7 @@ pub(crate) struct Assign {
     pub(crate) source: Expr,
     /// Whether it is an item assignment (`Assignment.new(:item)`), decided
     /// from the target while the parser builds the node
-    /// ([`super::left_sigil`]). Only a keeping parse reads it, so any other
-    /// parse leaves it `false`.
+    /// ([`super::left_sigil`]).
     pub(crate) item: bool,
 }
 
@@ -406,9 +405,9 @@ impl Assign {
 
     /// The assignment `target = source` as the parser read it, the target
     /// starting at `at` when the expression before it may have left a sigil.
-    // Cost: O(n), n = size of the target (only a keeping parse reads the sigil).
+    // Cost: O(n), n = size of the target.
     pub(crate) fn written_at(at: Option<&str>, target: Expr, source: Expr) -> Self {
-        let item = super::spelled::keeping() && super::left_sigil::assignment_is_item(at, &target);
+        let item = super::left_sigil::assignment_is_item(at, &target);
         Self {
             target,
             source,
@@ -811,12 +810,9 @@ impl ParsedStmt {
 
 impl ParsedExpr {
     /// The body of a `start { BODY }` the compiler must reject for its
-    /// placeholder: kept as written by a `.AST` parse, a do-block otherwise.
+    /// placeholder: kept as written, for the conversion.
     // Cost: O(1).
     pub(crate) fn start_body(body: Vec<Stmt>) -> Expr {
-        if super::spelled::keeping() {
-            return Expr::Ast(Box::new(ParsedExpr::StartBody(body)));
-        }
-        Expr::desugar_block(body)
+        Expr::Ast(Box::new(ParsedExpr::StartBody(body)))
     }
 }

@@ -42,12 +42,6 @@ const TAKEFIRSTFLAG_OP: &str = "nqp::p6takefirstflag";
 const SEEN_VAR: &str = "__P6STATEINIT_SEEN__";
 const FLAG_VAR: &str = "__P6STATEINIT__";
 
-/// Whether `source` mentions an op this pass lowers.
-// Cost: O(n), n = bytes of the source.
-pub(crate) fn mentions_op(source: &str) -> bool {
-    source.contains("p6stateinit") || source.contains("p6takefirstflag")
-}
-
 /// Lower every frame-reading op of a parsed unit.
 // Cost: O(n), n = AST nodes of the unit.
 pub(crate) fn lower_program(stmts: &mut Vec<Stmt>) {

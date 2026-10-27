@@ -55,12 +55,10 @@ pub(crate) fn parse_package_is_traits(input: &str) -> PResult<'_, PackageTraits>
         } else {
             (after_name, None, None)
         };
-        if crate::ast::spelled::keeping() {
-            parsed.source.push(RoutineTrait::Is {
-                name: name.clone(),
-                argument: source_argument,
-            });
-        }
+        parsed.source.push(RoutineTrait::Is {
+            name: name.clone(),
+            argument: source_argument,
+        });
         // Export has its existing registration; deprecation follows the
         // class declarator's existing core-trait handling.
         if !matches!(name.as_str(), "export" | "DEPRECATED") {

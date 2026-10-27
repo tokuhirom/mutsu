@@ -75,7 +75,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             sugar: false,
         };
         let stmt = Stmt::Expr(crate::parser::stmt::assign::written_topic_dotty_assignment(
-            call, true,
+            call,
         ));
         return parse_statement_modifier(rest, stmt);
     }
@@ -259,7 +259,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::Index { .. } => {
                 let call = make_rhs(expr.clone());
                 let stmt = Stmt::Expr(crate::parser::stmt::assign::written_dotty_assignment(
-                    expr, call, true,
+                    expr, call,
                 ));
                 return parse_statement_modifier(r, stmt);
             }

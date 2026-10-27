@@ -323,20 +323,18 @@ pub(crate) fn stmt_list_with_mode(
         let r = consume_semicolons(r);
         trace::empty_statements(separators, r, open_terminator);
         // A `.AST` parse keeps each `;` that ends no statement (`Statement::Empty`).
-        if crate::ast::spelled::keeping() {
-            for tail in trace::empty_statement_tails(separators, r, open_terminator) {
-                let at = crate::parser::primary::source_offset(tail);
-                let empty = crate::ast::Expr::spelled(
-                    crate::ast::Expr::Literal(crate::value::Value::NIL),
-                    || crate::ast::spelled::Spelling::EmptyStatement,
-                );
-                stmts.push(Stmt::Expr(match at {
-                    Some(at) => crate::ast::Expr::spelled(empty, || {
-                        crate::ast::spelled::Spelling::Origin(crate::ast::SrcSpan::new(at, at))
-                    }),
-                    None => empty,
-                }));
-            }
+        for tail in trace::empty_statement_tails(separators, r, open_terminator) {
+            let at = crate::parser::primary::source_offset(tail);
+            let empty = crate::ast::Expr::spelled(
+                crate::ast::Expr::Literal(crate::value::Value::NIL),
+                || crate::ast::spelled::Spelling::EmptyStatement,
+            );
+            stmts.push(Stmt::Expr(match at {
+                Some(at) => crate::ast::Expr::spelled(empty, || {
+                    crate::ast::spelled::Spelling::Origin(crate::ast::SrcSpan::new(at, at))
+                }),
+                None => empty,
+            }));
         }
         let (r, _) = ws_bol(r)?;
         // End of block or input

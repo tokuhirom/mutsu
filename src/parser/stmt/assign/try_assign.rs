@@ -420,7 +420,6 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 super::written_dotty_assignment(
                     crate::parser::expr::dot_assign_target(&name),
                     method_expr,
-                    false,
                 ),
             ));
         }
@@ -500,7 +499,6 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             super::written_dotty_assignment(
                 crate::parser::expr::dot_assign_target(&name),
                 method_expr,
-                false,
             ),
         ));
     }

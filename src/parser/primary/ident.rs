@@ -10,7 +10,7 @@ pub(crate) use anon_sub::{
     anon_method_expr, anon_method_expr_declared, bind_invocant_aliases, folded_invocant,
     method_literal_params,
 };
-pub(crate) use supply::supply_block;
+pub(crate) use supply::supply_method_call;
 mod statement_terminator;
 mod term_literals;
 mod term_symbols;

@@ -4,18 +4,15 @@
 //! any other: a word list `<a b  c>` is an `ArrayLiteral` of three `Literal`s,
 //! indistinguishable from `'a', 'b', 'c'`, and its raw text is gone. RakuAST
 //! keeps that text (`QuotedString(processors => <words val>, segments =>
-//! ("a b  c",))`), so a parse that was asked to keep spellings wraps the term
-//! in [`Expr::Spelled`].
+//! ("a b  c",))`), so the parser wraps the term in [`Expr::Spelled`].
 //!
-//! Only the `.AST` entry points ask. Every other parse builds the plain
-//! expression, so the compiler, the precompilation cache and every analysis
-//! see exactly the tree they always saw, and no pass has to take a wrapper off
-//! again. The wrapper holds only what RakuAST needs and the `Expr` does not
-//! have; the value stays in `expr`, so the two cannot disagree. A parse-time
-//! consumer that matches a shape looks through it with [`Expr::peel_parens`].
+//! Every parse does: the parser's tree is only ever consumed by the RakuAST
+//! conversion, and the lowered tree the compiler sees carries no wrapper. The
+//! wrapper holds only what RakuAST needs and the `Expr` does not have; the
+//! value stays in `expr`, so the two cannot disagree. A parse-time consumer
+//! that matches a shape looks through it with [`Expr::peel_parens`].
 
 use super::Expr;
-use std::cell::Cell;
 
 /// How a term was written, when that is not recoverable from its value.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
@@ -144,43 +141,12 @@ pub(crate) struct Spelled {
     pub(crate) spelling: Spelling,
 }
 
-thread_local! {
-    /// Whether the parse running on this thread keeps spellings.
-    static KEEPING: Cell<bool> = const { Cell::new(false) };
-}
-
-/// Restores the previous keep-spellings setting when dropped.
-#[must_use = "the setting reverts when the guard is dropped"]
-pub(crate) struct KeepGuard(bool);
-
-impl Drop for KeepGuard {
-    fn drop(&mut self) {
-        KEEPING.with(|keeping| keeping.set(self.0));
-    }
-}
-
-/// Make the parse that runs while the guard lives keep spellings (or not). A
-/// parse nested inside it (a module load) sets its own and puts this one back.
-// Cost: O(1).
-pub(crate) fn keep_spelling(keep: bool) -> KeepGuard {
-    KeepGuard(KEEPING.with(|keeping| keeping.replace(keep)))
-}
-
-/// Whether the running parse keeps spellings.
-// Cost: O(1).
-pub(crate) fn keeping() -> bool {
-    KEEPING.with(Cell::get)
-}
-
 impl Expr {
     /// Preserve a source identifier that otherwise resembles a generated name.
     /// The input check excludes anonymous variables minted while parsing a
     /// bare sigil and helpers synthesized by a keyword parser.
     // Cost: O(k), k = identifier length.
     pub(crate) fn source_identifier(expr: Expr, written: &str) -> Expr {
-        if !KEEPING.with(Cell::get) {
-            return expr;
-        }
         let source_name = match &expr {
             Expr::Var(name) => written.strip_prefix('$').map(|rest| (name.as_str(), rest)),
             Expr::ArrayVar(name) => written.strip_prefix('@').map(|rest| (name.as_str(), rest)),
@@ -199,18 +165,13 @@ impl Expr {
         }
     }
 
-    /// `expr`, wrapped to remember its `spelling` when the running parse keeps
-    /// spellings; `expr` itself otherwise. `spelling` is only built then.
-    // Cost: O(1), plus the cost of `spelling` when it is built.
+    /// `expr`, wrapped to remember its `spelling`.
+    // Cost: O(1), plus the cost of `spelling`.
     pub(crate) fn spelled(expr: Expr, spelling: impl FnOnce() -> Spelling) -> Expr {
-        if KEEPING.with(Cell::get) {
-            Expr::Spelled(Box::new(Spelled {
-                expr,
-                spelling: spelling(),
-            }))
-        } else {
-            expr
-        }
+        Expr::Spelled(Box::new(Spelled {
+            expr,
+            spelling: spelling(),
+        }))
     }
 }
 
@@ -236,10 +197,7 @@ mod tests {
     use crate::value::Value;
 
     #[test]
-    fn source_identifiers_only_wrap_when_requested_and_written() {
-        let plain = Expr::source_identifier(Expr::Var("__x".into()), "$__x");
-        assert!(matches!(plain, Expr::Var(_)));
-        let _guard = keep_spelling(true);
+    fn source_identifiers_only_wrap_when_written() {
         let written = Expr::source_identifier(Expr::Var("__x".into()), "$__x");
         assert!(matches!(written, Expr::Spelled(_)));
         let anonymous = Expr::source_identifier(Expr::Var("__ANON_STATE_1__".into()), "$");
@@ -256,37 +214,9 @@ mod tests {
     }
 
     #[test]
-    fn a_plain_parse_builds_no_wrapper() {
-        let expr = Expr::spelled(words(), || panic!("the spelling must not be built"));
-        assert!(matches!(expr, Expr::ArrayLiteral(_)));
-    }
-
-    #[test]
-    fn a_keeping_parse_wraps_and_peels_back() {
-        let _guard = keep_spelling(true);
+    fn a_spelled_term_wraps_and_peels_back() {
         let expr = Expr::spelled(words(), || Spelling::Words("a  b".into()));
         assert!(matches!(expr, Expr::Spelled(_)));
         assert!(matches!(expr.peel_parens(), Expr::ArrayLiteral(items) if items.len() == 2));
-    }
-
-    #[test]
-    fn the_guard_restores_the_outer_setting() {
-        let outer = keep_spelling(true);
-        {
-            let _nested = keep_spelling(false);
-            assert!(matches!(
-                Expr::spelled(words(), || unreachable!()),
-                Expr::ArrayLiteral(_)
-            ));
-        }
-        assert!(matches!(
-            Expr::spelled(words(), || Spelling::Words("a b".into())),
-            Expr::Spelled(_)
-        ));
-        drop(outer);
-        assert!(matches!(
-            Expr::spelled(words(), || unreachable!()),
-            Expr::ArrayLiteral(_)
-        ));
     }
 }

@@ -124,6 +124,7 @@ fn parse_hyper_prefix_slip_right_on_angle_list() {
 #[test]
 fn parse_slip_prefix_with_space_before_french_quote_list() {
     let (rest, expr) = expression("| «echo test»").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     assert!(matches!(
         expr,
@@ -349,6 +350,7 @@ fn parse_reverse_metaop_oror() {
 #[test]
 fn parse_reverse_meta_compound_assign_rhs_target() {
     let (rest, expr) = expression("10 R+= ($a ||= 42)").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     // `$a ||= 42` desugars to a short-circuit ternary (see
     // `short_circuit_compound_assign_expr`), so the reverse metaop distributes
@@ -368,6 +370,7 @@ fn parse_reverse_meta_compound_assign_rhs_target() {
 #[test]
 fn parse_reverse_meta_compound_assign_non_lvalue_target() {
     let (rest, expr) = expression("($a ||= 42) R+= 10").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     assert!(matches!(
         &expr,

@@ -137,6 +137,7 @@ mod type_ctor;
 mod type_lower;
 mod underscore_bindings;
 pub(crate) mod unit_source;
+mod unspell;
 mod use_origins;
 mod use_stmt;
 mod var_decl_constructor;

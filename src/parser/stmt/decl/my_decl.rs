@@ -410,7 +410,7 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
         &mut hash_key_constraint,
     )?;
     state.anonymous = anonymous;
-    if let Some(written) = written_colonpairs.filter(|_| crate::ast::spelled::keeping()) {
+    if let Some(written) = written_colonpairs {
         state.marks.name_colonpairs = Some(written.into());
     }
 

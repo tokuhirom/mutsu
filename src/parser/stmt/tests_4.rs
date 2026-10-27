@@ -7,10 +7,12 @@ use crate::value::ValueView;
 #[test]
 fn assign_expr_parses_reverse_bracket_metaop_assign() {
     let (rest, expr) = assign::try_parse_assign_expr("$y [R/]= 1").unwrap();
+    let expr = crate::parser::test_lower::stmt(Stmt::Expr(expr));
     assert_eq!(rest, "");
     match expr {
-        Expr::AssignExpr { name, expr, .. } => {
+        Stmt::Assign { name, expr, .. } => {
             assert_eq!(name, "y");
+            let expr = Box::new(expr);
             match *expr {
                 Expr::MetaOp {
                     meta,
@@ -28,7 +30,7 @@ fn assign_expr_parses_reverse_bracket_metaop_assign() {
                 other => panic!("expected meta-op assignment expr, got {other:?}"),
             }
         }
-        other => panic!("expected AssignExpr, got {other:?}"),
+        other => panic!("expected Assign, got {other:?}"),
     }
 }
 
@@ -41,6 +43,7 @@ fn assign_expr_bracket_metaop_leaves_following_call_args() {
 #[test]
 fn assign_stmt_parses_nested_bracket_metaop_assign() {
     let (rest, stmt) = assign::assign_stmt("$x [R[+]]= 1;").unwrap();
+    let stmt = crate::parser::test_lower::stmt(stmt);
     assert_eq!(rest, ";");
     match stmt {
         Stmt::Assign { expr, .. } => match expr {
@@ -104,11 +107,12 @@ fn assign_stmt_parses_unbracketed_cross_metaop_assign() {
 #[test]
 fn assign_stmt_parses_unbracketed_cross_plain_assign() {
     let (rest, stmt) = assign::assign_stmt("@a X= 10;").unwrap();
+    let stmt = crate::parser::test_lower::stmt(stmt);
     assert_eq!(rest, ";");
     match stmt {
-        Stmt::Assign { name, expr, .. } => {
+        Stmt::Expr(Expr::AssignExpr { name, expr, .. }) => {
             assert_eq!(name, "@a");
-            match expr {
+            match *expr {
                 Expr::MetaOp { meta, op, .. } => {
                     assert_eq!(meta, "X");
                     assert_eq!(op, "=");
@@ -116,7 +120,7 @@ fn assign_stmt_parses_unbracketed_cross_plain_assign() {
                 other => panic!("expected meta-op assignment stmt, got {other:?}"),
             }
         }
-        other => panic!("expected Assign stmt, got {other:?}"),
+        other => panic!("expected assignment stmt, got {other:?}"),
     }
 }
 
@@ -147,6 +151,7 @@ fn statement_accepts_known_call_with_bracket_metaop_assign_argument() {
 #[test]
 fn expr_stmt_parses_reverse_assignment_into_var_decl() {
     let (rest, stmt) = simple::expr_stmt("1 R= my $x").unwrap();
+    let stmt = crate::parser::test_lower::stmt(stmt);
     assert_eq!(rest, "");
     // The written `1 R= my $x` is kept as a marker; its expansion declares `$x`.
     match stmt {
@@ -177,6 +182,7 @@ fn expr_stmt_rejects_reverse_bind_assignment() {
 #[test]
 fn expr_stmt_non_lvalue_assignment_is_not_silently_ignored() {
     let (rest, stmt) = simple::expr_stmt("(\"a\" R~ \"b\") = 1").unwrap();
+    let stmt = crate::parser::test_lower::stmt(stmt);
     assert_eq!(rest, "");
     match stmt {
         Stmt::Expr(Expr::Call { name, .. }) => {
@@ -241,6 +247,11 @@ fn known_call_stmt_parses_unicode_and_ascii_minus_angle_complex_args() {
 fn known_call_stmt_keeps_chained_assignment_as_single_argument() {
     simple::register_module_exports("Test");
     let (rest, stmt) = simple::known_call_stmt("is $x = $y = $z, 18;").unwrap();
+    // The anonymous `$` is declared by state variables ahead of the call.
+    let stmt = crate::parser::test_lower::stmts(vec![stmt])
+        .into_iter()
+        .rfind(|s| matches!(s, Stmt::Call { .. }))
+        .unwrap_or_else(|| panic!("no call"));
     assert_eq!(rest, ";");
     match stmt {
         Stmt::Call { name, args, .. } => {
@@ -266,22 +277,24 @@ fn known_call_stmt_splits_assignment_from_following_test_args() {
         "is $ = bar(), \"NoModule::bar\", \"can import symbol not inside module\";",
     )
     .unwrap();
+    // The anonymous `$` is declared by state variables ahead of the call.
+    let stmt = crate::parser::test_lower::stmts(vec![stmt])
+        .into_iter()
+        .rfind(|s| matches!(s, Stmt::Expr(Expr::Call { .. })))
+        .unwrap_or_else(|| panic!("no call"));
     assert_eq!(rest, ";");
     match stmt {
-        Stmt::Call { name, args, .. } => {
-            assert_eq!(name, "is");
-            assert!(matches!(
-                args.first(),
-                Some(CallArg::Positional(Expr::AssignExpr { .. }))
-            ));
+        Stmt::Expr(Expr::Call { name, args, .. }) => {
+            assert_eq!(name.resolve().as_str(), "is");
+            assert!(matches!(args.first(), Some(Expr::AssignExpr { .. })));
             assert!(matches!(
                 args.get(1),
-                Some(CallArg::Positional(Expr::Literal(lit)))
+                Some(Expr::Literal(lit))
                     if matches!(lit.view(), ValueView::Str(expected) if **expected == "NoModule::bar")
             ));
             assert!(matches!(
                 args.get(2),
-                Some(CallArg::Positional(Expr::Literal(lit)))
+                Some(Expr::Literal(lit))
                     if matches!(lit.view(), ValueView::Str(expected) if **expected == "can import symbol not inside module")
             ));
         }

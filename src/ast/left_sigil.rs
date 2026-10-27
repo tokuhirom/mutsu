@@ -35,13 +35,9 @@ thread_local! {
 }
 
 /// The sigil after `expr` has been read with `sigil` already left by what
-/// precedes it. Only a keeping parse reads the sigil, so any other parse
-/// stays `Unset` and skips the walk.
+/// precedes it.
 // Cost: O(n), n = size of the part of `expr` that shares its expression.
 pub(crate) fn after(sigil: LeftSigil, expr: &Expr) -> LeftSigil {
-    if !super::spelled::keeping() {
-        return LeftSigil::Unset;
-    }
     let mut reader = Reader { sigil };
     reader.visit_expr(expr);
     reader.sigil

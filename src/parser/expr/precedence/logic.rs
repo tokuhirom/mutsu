@@ -278,14 +278,14 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
     }
     // `$s (|)= 1`: a set operator's compound assignment.
     if !matches!(mode, ExprMode::NoSequenceNoFeed | ExprMode::ListopArg)
-        && let Some((after_op, set_tok, spelling)) =
+        && let Some((after_op, spelling)) =
             crate::parser::stmt::assign::parse_set_compound_assign_op(r)
     {
         let (after_ws, _) = ws(after_op)?;
         if let Ok((r, rhs)) = parse_compound_assign_rhs_mode(after_ws, false, mode) {
             return Ok((
                 r,
-                crate::parser::stmt::assign::written_set_assignment(expr, spelling, set_tok, rhs),
+                crate::parser::stmt::assign::written_set_assignment(expr, spelling, rhs),
             ));
         }
     }
@@ -530,9 +530,8 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
     // parentheses of a target the statement parser writes through
     // (`(-$x) = 5`), which builds the assignment node from it as written.
     if !crate::rakuast::is_expression_assign_target(&expr) {
-        if crate::ast::spelled::keeping()
-            && (crate::rakuast::is_callable_lvalue_assign_target(&expr)
-                || crate::rakuast::is_item_assign_target(&expr))
+        if crate::rakuast::is_callable_lvalue_assign_target(&expr)
+            || crate::rakuast::is_item_assign_target(&expr)
         {
             return Ok((rest, expr));
         }
@@ -541,11 +540,8 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
     // The target as written, parentheses included; a `.AST` parse keeps the
     // assignment in its RakuAST shape (ADR-10723 Stage 2).
     let node = crate::ast::parsed::Assign::written_at(Some(input), expr, rhs);
-    if crate::ast::spelled::keeping() {
-        return Ok((
-            r,
-            Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(node))),
-        ));
-    }
-    Ok((r, crate::rakuast::lower_expression_assign(node)))
+    Ok((
+        r,
+        Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::Assign(node))),
+    ))
 }
