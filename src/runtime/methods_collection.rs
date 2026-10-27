@@ -159,6 +159,12 @@ impl Interpreter {
                         func.clone(),
                         crate::value::PipeAdaptor::MultiMap {
                             arity,
+                            required: data
+                                .param_defs
+                                .iter()
+                                .filter(|pd| pd.required && !pd.named && !pd.slurpy)
+                                .count()
+                                .max(1),
                             pending: None,
                         },
                     ),
