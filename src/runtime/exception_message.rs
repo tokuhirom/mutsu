@@ -206,21 +206,6 @@ impl Interpreter {
             {
                 return Some(text.to_string_value());
             }
-            // A hand-built `X::TypeCheck::Assignment.new(:symbol, :got, :expected)`
-            // (Red's `Red::Model.new` rejects a mistyped column that way) renders
-            // the text rakudo's `message` does; the interpreter-raised ones store
-            // theirs in the `message` attribute handled above.
-            if cn == "X::TypeCheck::Assignment"
-                && let (Some(got), Some(expected)) = (map.get("got"), map.get("expected"))
-            {
-                return Some(crate::runtime::utils::type_check_assignment_error(
-                    &map.get("symbol")
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default(),
-                    &crate::runtime::utils::got_type_name(expected),
-                    got,
-                ));
-            }
             if let Some(formatted) =
                 crate::value::exception_message::format_exception_message(&cn, &map)
             {

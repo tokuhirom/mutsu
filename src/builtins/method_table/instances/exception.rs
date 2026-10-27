@@ -92,10 +92,26 @@ fn formatted(target: &Value) -> Option<String> {
     let ValueView::Instance { attributes, .. } = target.view() else {
         return None;
     };
-    crate::value::exception_message::format_exception_message(
-        &class_of(target),
-        &attributes.as_map(),
-    )
+    let class = class_of(target);
+    let attrs = attributes.as_map();
+    // A hand-built `X::TypeCheck::Assignment.new(:symbol, :got, :expected)` (Red's
+    // `Red::Model.new` rejects a mistyped column that way) has the text rakudo's
+    // `message` builds; the interpreter-raised ones store theirs in `message`.
+    // It lives here, not in the value-layer table, because naming the value
+    // (`Int (42)`) needs the type-check renderers of the runtime.
+    if class == "X::TypeCheck::Assignment"
+        && let (Some(got), Some(expected)) = (attrs.get("got"), attrs.get("expected"))
+    {
+        return Some(crate::runtime::utils::type_check_assignment_error(
+            &attrs
+                .get("symbol")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default(),
+            &crate::runtime::utils::got_type_name(expected),
+            got,
+        ));
+    }
+    crate::value::exception_message::format_exception_message(&class, &attrs)
 }
 
 /// `Exception.message` (and its `X::AdHoc`, `CX::Warn`, `X::TypeCheck::Assignment`
