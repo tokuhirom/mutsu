@@ -683,9 +683,7 @@ impl Interpreter {
         // slot-authoritative plain lexical skips its env mirror. The `is_bind` /
         // `is_constant` / term-symbol terms of that condition are all settled
         // above, so only the two live tests remain.
-        if code.needs_env_sync.get(idx).copied().unwrap_or(true)
-            || code.mirrors_all_params()
-        {
+        if code.needs_env_sync.get(idx).copied().unwrap_or(true) || code.mirrors_all_params() {
             let name = code.locals[idx].clone();
             self.set_env_plain_lexical(&name, name_sym, val);
         }
