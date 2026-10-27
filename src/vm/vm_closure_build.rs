@@ -233,8 +233,14 @@ impl Interpreter {
         };
         for name in ["/", "!"] {
             // A block that binds its own (`-> $/ { }`, `my $/`) does not
-            // share its scope's.
-            if !cc.locals.iter().any(|n| n == name) {
+            // share its scope's, and neither does one inside a routine whose
+            // `$/` is a parameter: that binding is readonly, so a match inside
+            // the block rebinds the block's own `$/` and leaves the routine's.
+            if !cc.locals.iter().any(|n| n == name)
+                && !code
+                    .param_locals
+                    .contains(&crate::symbol::Symbol::intern(name))
+            {
                 self.box_routine_owned_for_block(code, name);
             }
         }
