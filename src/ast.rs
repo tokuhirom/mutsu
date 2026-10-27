@@ -1290,16 +1290,6 @@ pub(crate) const MULTI_CANDIDATE_VALUE_MARKER: &str = "__multi_candidate_value";
 /// in its unit's or routine's own (an `if` body, a bare block): registering it
 /// may shadow an outer `&name` binding instead of redeclaring it (#13855).
 pub(crate) const NESTED_SCOPE_DECL_MARKER: &str = "__nested_scope";
-/// The `custom_traits` entry keeping the argument of a variable's
-/// `is dynamic(ARG)` for the RakuAST view; the trait itself is the
-/// declaration's `is_dynamic` flag, and the compiler skips the entry.
-pub(crate) const DYNAMIC_TRAIT_ARGUMENT: &str = "__dynamic_argument";
-/// The `custom_traits` entry keeping, in a `.AST` parse, the colonpairs of a
-/// declared variable's extended name as written (`:foo<g h>` of
-/// `my $today:foo<g h>`): the name itself is canonical (`today:foo<g h>`),
-/// but RakuAST keeps each colonpair as a node, spelled as the source spelled
-/// it. The compiler skips the entry.
-pub(crate) const NAME_COLONPAIRS: &str = "__name_colonpairs";
 
 /// The source spelling of an [`Expr::Hash`] literal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -2341,6 +2331,9 @@ pub(crate) enum Stmt {
         constant: Option<ConstantSigil>,
         /// `Some` for a binding declaration (`my $x := …`, `my &f := …`).
         bind: Option<bind_decl::BindKind>,
+        /// How the parser desugared the declaration and what it wrote that the
+        /// canonical tree drops (`my @a[3]`, `%h{Str}`, `is dynamic(ARG)`).
+        marks: var_marks::VarMarks,
         /// Optional `where` constraint expression for inline subset typing
         where_constraint: Option<Box<Expr>>,
     },
@@ -3028,6 +3021,9 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
         /// Whether this role was declared with `is rw` or `also is rw`
         is_rw: bool,
+        /// True for a `my role`: lexically scoped, installed in no package
+        /// stash (the field `ClassDecl::is_lexical` is for a class).
+        is_lexical: bool,
         /// Language version active when this role was declared (e.g., "6.c", "6.d", "6.e")
         language_version: String,
         /// Custom `is` traits with optional arguments, dispatched via `trait_mod:<is>`
@@ -3304,6 +3300,7 @@ pub(crate) fn expand_take_logical_tail(value: Expr, op: TokenKind, right: Expr) 
     let variable = Expr::Var(name.clone());
     Stmt::SyntheticBlock(vec![
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name,
             expr: value,
@@ -3370,6 +3367,7 @@ pub(crate) mod stub;
 pub(crate) mod subscript_adverb;
 pub(crate) mod temporize;
 pub(crate) mod var_does;
+pub(crate) mod var_marks;
 pub(crate) mod var_will;
 mod where_match;
 pub(crate) use signature_decl::{
@@ -3763,6 +3761,7 @@ mod env_only_decl_tests {
 
     fn vardecl(name: &str) -> Stmt {
         Stmt::VarDecl {
+            marks: Default::default(),
             name: name.to_string(),
             anonymous: false,
             expr: Expr::Literal(crate::value::Value::NIL),

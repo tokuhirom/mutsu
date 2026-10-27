@@ -440,6 +440,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
         export_tags,
         body,
         is_rw: role_is_rw,
+        is_lexical: false,
         language_version: super::super::simple::current_language_version(),
         custom_traits,
         decl_id: crate::ast::next_class_decl_id(),

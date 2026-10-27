@@ -192,6 +192,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             pd.name.as_str()
         };
         let mut stmts = vec![Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: target.to_string(),
             expr: topic,
@@ -230,6 +231,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             topic
         };
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: pd.name.clone(),
             expr,
@@ -259,6 +261,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         // writeback never fires because `Given`'s `pointy_param_idx` stays
         // `None`, the same way the general branch below needs `MarkBind`.
         let decl = Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: pd.name.clone(),
             expr: topic,
@@ -289,6 +292,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         // rejects it as such (`OpCode::AssignReadOnly`). A code alias has no
         // writeback semantics to lose, so a declaration is the exact form.
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: pd.name.clone(),
             expr: Expr::Var("_".to_string()),
@@ -312,6 +316,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         let mut stmts = vec![
             Stmt::MarkBind,
             Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: pd.name.clone(),
                 expr: topic,
@@ -364,6 +369,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
 /// which is what rakudo gives a `\\name` parameter.
 pub(crate) fn simple_pointy_bind(name: &str, source: &Expr, sigilless: bool) -> Stmt {
     let decl = Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name: name.to_string(),
         expr: source.clone(),
@@ -396,6 +402,7 @@ pub(crate) fn simple_pointy_bind(name: &str, source: &Expr, sigilless: bool) -> 
 /// lexical initialization.
 pub(crate) fn pointy_param_bind_decl(pd: &ParamDef, source: &Expr) -> Stmt {
     let decl = Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name: pd.name.clone(),
         expr: source.clone(),

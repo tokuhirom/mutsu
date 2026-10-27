@@ -30,6 +30,7 @@ pub(crate) fn bind_stmt(name: String, expr: Expr) -> Stmt {
         .starts_with('*');
     if name.starts_with('&') || is_dynamic_target {
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name,
             expr,
@@ -68,6 +69,7 @@ pub(crate) fn decl_stmt(name: String, expr: Expr) -> Stmt {
         .trim_start_matches(['$', '@', '%', '&'])
         .starts_with('*');
     Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name,
         expr,

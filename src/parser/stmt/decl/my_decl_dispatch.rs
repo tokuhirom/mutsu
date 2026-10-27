@@ -255,8 +255,8 @@ pub(super) fn try_keyword_dispatch(
         // A `my role` is lexically scoped (private to its declaring scope). Mark it
         // so the role-body forbidden-declaration check allows it inside another role,
         // mirroring how `my class` is permitted inside a role.
-        if !is_our && let Stmt::RoleDecl { custom_traits, .. } = &mut stmt {
-            custom_traits.push(("__my_scoped".to_string(), None));
+        if !is_our && let Stmt::RoleDecl { is_lexical, .. } = &mut stmt {
+            *is_lexical = true;
         }
         return Ok(Some((r, stmt)));
     }

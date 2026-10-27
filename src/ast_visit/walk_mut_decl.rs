@@ -131,6 +131,7 @@ pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut
             export_tags: _,
             body,
             is_rw: _,
+            is_lexical: _,
             language_version: _,
             custom_traits,
             decl_id: _,

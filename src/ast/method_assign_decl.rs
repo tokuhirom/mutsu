@@ -24,6 +24,7 @@ pub(crate) struct MethodAssignDecl {
     pub(crate) is_export: bool,
     pub(crate) export_tags: Vec<String>,
     pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
+    pub(crate) marks: super::var_marks::VarMarks,
     pub(crate) where_constraint: Option<Box<Expr>>,
     pub(crate) method: Symbol,
     /// A term as the method (`my $x .= &f`, `my $x .= $m`): the call's
@@ -107,6 +108,7 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Vec<Stmt> {
         // call reads the slot the declaration just bound (#13273).
         return vec![
             Stmt::VarDecl {
+                marks: form.marks.clone(),
                 anonymous: form.anonymous,
                 name: form.name.clone(),
                 expr: fresh_container(&form.name),
@@ -142,6 +144,7 @@ fn single_declaration(form: &MethodAssignDecl, target: Expr, call: Expr) -> Stmt
     }
     let has_initializer = matches!(target, Expr::BareWord(_)) && form.shape.is_none();
     Stmt::VarDecl {
+        marks: form.marks.clone(),
         anonymous: form.anonymous,
         name: form.name.clone(),
         expr: call,
@@ -171,6 +174,7 @@ pub(crate) fn expression_declaration(form: &MethodAssignDecl) -> Option<Stmt> {
     let target = invocant(&form.name, form.type_constraint.as_deref(), form.is_v6c);
     let call = method_call(form, target.clone());
     let Stmt::VarDecl {
+        marks,
         anonymous,
         name,
         expr,
@@ -190,6 +194,7 @@ pub(crate) fn expression_declaration(form: &MethodAssignDecl) -> Option<Stmt> {
         return None;
     };
     Some(Stmt::VarDecl {
+        marks,
         anonymous,
         name,
         expr: Expr::CompoundAssign {

@@ -135,6 +135,7 @@ pub(crate) fn build_sigilless_bind_stmt(
         _ => false,
     };
     let decl = Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name: name.clone(),
         expr,

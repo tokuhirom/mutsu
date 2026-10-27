@@ -775,8 +775,9 @@ impl Compiler {
                 custom_traits,
                 constant: None,
                 bind: None,
+                marks,
                 ..
-            } if custom_traits.is_empty()
+            } if custom_traits.is_empty() && marks.is_plain()
         )
     }
 

@@ -254,6 +254,7 @@ fn rewrite_placeholder_block(stmt: Stmt, value: &Expr) -> Stmt {
     let mut rewritten = Vec::with_capacity(placeholders.len() + body.len());
     for (idx, name) in placeholders.into_iter().enumerate() {
         rewritten.push(Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name,
             expr: if idx == 0 {

@@ -167,6 +167,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         return Ok((
             r,
             Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous,
                 name,
                 expr,
@@ -218,6 +219,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         return Ok((
             rest,
             Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous,
                 name,
                 expr,

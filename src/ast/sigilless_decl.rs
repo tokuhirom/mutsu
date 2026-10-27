@@ -43,6 +43,7 @@ pub(crate) fn call_assign_expansion(
 ) -> Stmt {
     Stmt::SyntheticBlock(vec![
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: name.clone(),
             expr,

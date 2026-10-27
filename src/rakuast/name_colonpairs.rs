@@ -8,7 +8,7 @@
 //! composer), and a key-less `:<home>` is the quote alone. mutsu's parser
 //! keeps the canonical name (`today:foo<g h>`), which is what the variable is
 //! looked up by; a `.AST` parse also records the written colonpairs
-//! ([`crate::ast::NAME_COLONPAIRS`]), which conversion reads back. Lowering
+//! ([`crate::ast::var_marks::VarMarks::name_colonpairs`]), which conversion reads back. Lowering
 //! turns the nodes into the canonical name again by the same rule the parser
 //! applies to the source.
 
@@ -22,12 +22,9 @@ use crate::value::{RuntimeError, Value, ValueView};
 // Cost: O(n), n = length of the written colonpairs.
 pub(super) fn apply(
     decl: &mut RakuAstNode,
-    custom_traits: &[(String, Option<Expr>)],
+    marks: &crate::ast::var_marks::VarMarks,
 ) -> Result<(), RuntimeError> {
-    let Some(written) = custom_traits.iter().find_map(|(name, arg)| match arg {
-        Some(Expr::Literal(v)) if name == crate::ast::NAME_COLONPAIRS => v.as_str(),
-        _ => None,
-    }) else {
+    let Some(written) = marks.name_colonpairs.as_deref() else {
         return Ok(());
     };
     let Some(field) = decl

@@ -134,8 +134,9 @@ impl<'ast> Visit<'ast> for AliasScan {
                 custom_traits,
                 constant: None,
                 bind: None,
+                marks,
                 ..
-            } => is_plain_scalar(name) && custom_traits.is_empty(),
+            } => is_plain_scalar(name) && custom_traits.is_empty() && marks.is_plain(),
             _ => false,
         };
         if allowed {

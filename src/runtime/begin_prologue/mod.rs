@@ -410,7 +410,7 @@ fn static_bind_decl(name: &str, type_constraint: Option<String>, is_dynamic: boo
         Some(b'%') => Expr::Literal(crate::value::Value::hash(crate::value::ValueMap::default())),
         _ => Expr::Literal(crate::value::Value::NIL),
     };
-    Stmt::VarDecl {
+    Stmt::VarDecl { marks: Default::default(),
         anonymous: false,
         name: name.to_string(),
         expr,

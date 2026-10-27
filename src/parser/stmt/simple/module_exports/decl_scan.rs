@@ -261,14 +261,14 @@ impl<'ast> Visit<'ast> for DeclScan {
                 name,
                 is_export,
                 export_tags,
-                custom_traits,
+                is_lexical,
                 ..
             } => {
                 let name = name.resolve();
                 if name.starts_with("__ANON_") {
                     return self.enter_package(stmt, self.prefix.clone(), false, String::new());
                 }
-                if *is_export && !custom_traits.iter().any(|(t, _)| t == "__my_scoped") {
+                if *is_export && !*is_lexical {
                     self.export_type(&name, export_tags);
                 }
                 let composed = package_type_name(&self.prefix, &name);

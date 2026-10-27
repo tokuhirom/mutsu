@@ -147,6 +147,7 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
             export_tags,
             body,
             is_rw: _,
+            is_lexical: _,
             language_version: _,
             custom_traits,
             decl_id: _,

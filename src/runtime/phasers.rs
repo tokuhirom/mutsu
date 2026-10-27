@@ -545,11 +545,11 @@ fn static_definite_type(name: &str, type_constraint: Option<&str>) -> Option<Str
 /// declaration's source position. `None` for any other statement, and for a
 /// `constant`, whose initializer is itself a BEGIN-time effect.
 /// Whether a declaration's initializer builds a shaped container: the parser
-/// marks one with an explicit initializer `__shaped_decl`, and a bare `my
+/// marks one with an explicit initializer `VarMarks::shaped`, and a bare `my
 /// @a[2;2]` is `Array.new(:shape(2, 2))`.
 // Cost: O(a), a = the initializer call's arguments.
-fn is_shaped_decl(init_expr: &Expr, custom_traits: &[(String, Option<Expr>)]) -> bool {
-    if custom_traits.iter().any(|(t, _)| t == "__shaped_decl") {
+fn is_shaped_decl(init_expr: &Expr, marks: &crate::ast::var_marks::VarMarks) -> bool {
+    if marks.shaped {
         return true;
     }
     let Expr::MethodCall { name, args, .. } = init_expr else {
@@ -580,6 +580,7 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
         bind,
         constant,
         has_initializer,
+        marks,
         where_constraint,
     } = stmt
     else {
@@ -591,7 +592,7 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     // A shaped declaration (`my @a[2;2]`, `my @a[2;2] = (1,2;3,4)`) builds its
     // container with the shape: an empty static half plus a plain `@a = ...`
     // assignment would lose the shape. It stays whole, at its own position.
-    if is_shaped_decl(init_expr, custom_traits) {
+    if is_shaped_decl(init_expr, marks) {
         return None;
     }
     // A user trait (`my %m is R = 1, 2`) is applied with the initializer in
@@ -679,6 +680,7 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
         has_initializer: static_has_initializer,
         constant: *constant,
         bind: None,
+        marks: marks.clone(),
         where_constraint: where_constraint.clone(),
     };
     let assign = has_init.then(|| Stmt::Assign {

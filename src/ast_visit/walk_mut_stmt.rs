@@ -20,6 +20,7 @@ pub(crate) fn walk_stmts_mut<V: VisitMut + ?Sized>(v: &mut V, body: &mut [Stmt])
 pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
     match s {
         Stmt::VarDecl {
+            marks: _,
             anonymous: _,
             name: _,
             expr,

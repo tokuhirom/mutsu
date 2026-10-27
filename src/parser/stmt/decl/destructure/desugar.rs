@@ -117,6 +117,7 @@ fn expand_bare(decl: &SignatureDecl) -> Vec<Stmt> {
             Vec::new()
         };
         stmts.push(Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: dvar.name.clone(),
             expr,
@@ -179,6 +180,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
     // element-itemization is therefore deliberately suppressed for it; see
     // `Interpreter::is_destructure_staging_temp`.
     let tmp_decl = Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name: tmp_name,
         expr: rhs,
@@ -227,6 +229,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 Expr::Literal(Value::NIL)
             };
             stmts.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: dvar.name.clone(),
                 expr,
@@ -283,6 +286,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 spelling: Default::default(),
             };
             stmts.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: format!("__destructure_lit_{i}"),
                 expr: read,
@@ -443,6 +447,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
             custom_traits.push(("default".to_string(), Some(def_expr.clone())));
         }
         let decl = Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: dvar.name.clone(),
             expr,
