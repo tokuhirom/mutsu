@@ -390,6 +390,7 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, Runtim
                 name,
                 expr,
                 custom_traits,
+                constant: None,
                 ..
             } if custom_traits.is_empty() => {
                 out.push(Stmt::Assign {
@@ -406,6 +407,7 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, Runtim
                         name,
                         expr,
                         custom_traits,
+                        constant: None,
                         ..
                     },
                 ] if custom_traits.is_empty() => {

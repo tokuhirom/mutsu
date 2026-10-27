@@ -773,6 +773,7 @@ impl Compiler {
                 is_our: false,
                 where_constraint: None,
                 custom_traits,
+                constant: None,
                 ..
             } if custom_traits.is_empty()
         )

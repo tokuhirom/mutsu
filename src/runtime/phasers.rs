@@ -680,7 +680,7 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
         export_tags: export_tags.clone(),
         custom_traits: static_traits,
         has_initializer: static_has_initializer,
-        constant: None,
+        constant: *constant,
         where_constraint: where_constraint.clone(),
     };
     let assign = has_init.then(|| Stmt::Assign {
