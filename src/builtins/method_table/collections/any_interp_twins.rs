@@ -172,6 +172,23 @@ pub(super) static ROWS: &[MethodRow] = &[
     // `head(&callable)` / `head(*)` of a finite list (§9.186).
     twin!("head", TWIN, |interp, target, args| {
         match args.as_slice() {
+            // `Any.head(&callable)` is `self.list.head(&callable)` too: an
+            // instance counts from the end of its own list, not of itself
+            // (`class C { multi method head(Int $n) }; C.new.head(*-1)`).
+            [count]
+                if matches!(
+                    count.view(),
+                    ValueView::Whatever
+                        | ValueView::Sub(_)
+                        | ValueView::WeakSub(_)
+                        | ValueView::Routine { .. }
+                ) && matches!(
+                    target.view(),
+                    ValueView::Instance { .. } | ValueView::Mixin(..)
+                ) =>
+            {
+                via_self_list_args(interp, &target, "head", vec![count.clone()])
+            }
             [count]
                 if matches!(
                     count.view(),
