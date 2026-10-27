@@ -125,15 +125,14 @@ impl Interpreter {
                     if !data.bare_values {
                         // A bare value bound into a Hash's storage stays bare
                         // for `nqp::atkey` (#15106).
-                        data.bound_bare
-                            .get_or_insert_with(Default::default)
+                        std::sync::Arc::make_mut(data.bound_bare.get_or_insert_with(Default::default))
                             .insert(key.clone());
                     }
                     data.map.insert(key, val.clone());
                     Ok(val)
                 } else {
                     if let Some(b) = data.bound_bare.as_mut() {
-                        b.remove(&key);
+                        std::sync::Arc::make_mut(b).remove(&key);
                     }
                     Ok(data.map.remove(&key).unwrap_or(Value::NIL))
                 }

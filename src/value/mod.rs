@@ -2397,7 +2397,7 @@ pub struct HashData {
     /// whose other values are element containers: `nqp::atkey` answers them as
     /// they are, not as a lazily promoted cell (#15106). `None` is the
     /// overwhelmingly common case.
-    pub bound_bare: Option<Box<std::collections::HashSet<String>>>,
+    pub bound_bare: Option<std::sync::Arc<std::collections::HashSet<String>>>,
 }
 
 /// Backing data for `Value::Array`: the element vector plus embedded
