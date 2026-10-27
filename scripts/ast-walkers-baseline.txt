@@ -35,7 +35,6 @@ src/parser/primary/container/meta_ops.rs             3  # X/Z meta-op operand-ch
 src/parser/primary/misc/colonpair.rs                 1  # render_signature_item: renders a signature item back to source text
 src/parser/primary/misc/hash.rs                      1  # hash_pair_from_expr: shape match of one hash-literal entry (through pair markers)
 src/parser/sink_warn.rs                              5  # sink-context propagation: visits only sink positions, by design
-src/parser/stmt/args.rs                              2  # 2 parser rewrites of an assignment's right-hand side inside a call's argument list
 src/parser/stmt/assign/comma.rs                      1  # merge_seeds_into_sequence: rewrite along a feed's source spine
 src/parser/stmt/assign/compound_expr.rs              1  # build_compound_assign_expr: compound-assignment lowering
 src/parser/stmt/assign/lvalue.rs                     1  # force_positional_pairs: rewrite of a list of pairs
