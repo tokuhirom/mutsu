@@ -202,6 +202,13 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
     row!(
         "Metamodel::CoercionHOW",
+        "nominal_target",
+        1,
+        true,
+        |interp, _target, args, _named| Some(interp.mop_nominalize(args.to_vec()))
+    ),
+    row!(
+        "Metamodel::CoercionHOW",
         "target_type",
         1,
         true,
