@@ -2186,7 +2186,6 @@ this container too; the other 13 came down to these causes, now fixed:
 The contract is `t/rakuast/rakuast-roast-tap-cohort.t`, which passes on rakudo and on
 both frontends.
 
-
 ### 6.109 Frontend cost: the executing round trip carries lossless families as the parser's tree (2026-10-25, [#15011](https://github.com/tokuhirom/mutsu/issues/15011))
 
 §2.4's budget (the `MUTSU_RAKUAST=1` frontend within 10% of the ordinary one, callgrind Ir of
@@ -2446,3 +2445,12 @@ the return type was spelled `returns` / `of` rather than `-->`, which `X::Invali
 `convert` no longer reads them for the spelling (§6.110); it only filters them from the "internal trait"
 check, so moving them to a field would delete three lines of `convert` and add a field to three
 variants. That is a run-time flag, not a Stage 2 deletion.
+### 6.120 S10: bracketed X=/Z= assignment nodes (2026-10-27, #15008)
+
+Rakudo represents `@a [Z=] rhs` and `@a [X=] rhs` as a list-infix application
+whose infix is `MetaInfix::Zip|Cross(Assignment(:item))`. The parser now retains
+that assignment distinction for both bracketed and plain `X=`/`Z=` spellings,
+and parses the full comma-list RHS of `Z=` in expression position. Lowering
+reuses the existing meta-assignment path. The focused contract is
+`t/rakuast/rakuast-xz-assignment.t`.
+
