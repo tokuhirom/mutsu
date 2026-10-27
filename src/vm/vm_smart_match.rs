@@ -729,10 +729,17 @@ impl Interpreter {
         }
         // Force finite lazy operands first so list matching sees their
         // elements (see reify_finite_lazy_for_match).
-        if let Some(forced) = self.reify_finite_lazy_for_match(left, err) {
+        // A type matcher (`$list ~~ Positional`) never reads the elements, so
+        // it must not run a lazy list's body: a gather classed finite by shape
+        // (`loop { take 1 }`) would spin forever.
+        if !matches!(right.view(), ValueView::Package(_))
+            && let Some(forced) = self.reify_finite_lazy_for_match(left, err)
+        {
             return self.vm_smart_match_into(&forced, right, err);
         }
-        if let Some(forced) = self.reify_finite_lazy_for_match(right, err) {
+        if !matches!(left.view(), ValueView::Package(_))
+            && let Some(forced) = self.reify_finite_lazy_for_match(right, err)
+        {
             return self.vm_smart_match_into(left, &forced, err);
         }
         // `$x ~~ $obj` where $obj's class defines a user `ACCEPTS` dispatches
