@@ -645,12 +645,14 @@ pub(crate) struct ModuleState {
 }
 
 /// One memoised `lexical_package_for_frame` answer: the question
-/// (`def_file`, `unit`) and the unit-scope epoch it was computed under.
+/// (`def_file`, the ambient unit) and the unit-scope epoch it was computed under.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct LexicalPackageMemo {
     pub(crate) epoch: u64,
     pub(crate) def_file: Option<Symbol>,
-    pub(crate) unit: Symbol,
+    /// The running unit, recorded only when `def_file` is `None` (a frame with
+    /// no file starts its walk there).
+    pub(crate) ambient_unit: Option<Symbol>,
     pub(crate) package: Option<Symbol>,
 }
 

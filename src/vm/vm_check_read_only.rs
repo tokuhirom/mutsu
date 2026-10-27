@@ -298,6 +298,11 @@ impl Interpreter {
     // Cost: as `own_slot_rebind_decision`.
     fn slot_rebind_decision(&self, slot: u32) -> Option<FreeVarBinding> {
         let binding = self.locals.get(slot as usize)?;
+        // The tag test settles the overwhelmingly common plain value without
+        // the cell walk.
+        if !binding.is_container_ref() {
+            return None;
+        }
         Self::binding_cell_of(binding)?;
         Self::binding_chain_decision(binding.clone())
     }
