@@ -702,7 +702,34 @@ fn sub_signature_matches_value_unbound(
         value.unwrap_varref().deref_container().descalarize().view(),
         ValueView::Array(..) | ValueView::Seq(..)
     ) {
-        positional.retain(|v| !matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)));
+        // The Pairs set aside are named parts of the Capture: a sub-signature
+        // that neither names one nor slurps named arguments rejects the list
+        // (rakudo: "unexpected named arguments passed (getter,setter) in
+        // sub-signature"), which is what lets a later candidate take it.
+        let has_named_slurpy = sub_params.iter().any(|p| {
+            p.slurpy && (p.named || p.name.starts_with('%') || p.name == "_capture" || p.sigilless)
+        });
+        let mut surplus_named = false;
+        positional.retain(|v| match v.view() {
+            ValueView::Pair(key, _) => {
+                surplus_named |= !sub_params.iter().any(|p| {
+                    p.named && p.name.trim_start_matches(|c: char| "$@%&".contains(c)) == &*key
+                });
+                false
+            }
+            ValueView::ValuePair(key, _) => {
+                let key = key.to_string_value();
+                surplus_named |= !sub_params.iter().any(|p| {
+                    p.named
+                        && p.name.trim_start_matches(|c: char| "$@%&".contains(c)) == key.as_str()
+                });
+                false
+            }
+            _ => true,
+        });
+        if surplus_named && !has_named_slurpy {
+            return false;
+        }
     }
     let mut positional_idx = 0usize;
     for pd in sub_params {
