@@ -30,7 +30,10 @@ sub shared() {
 shared();
 
 # `make` in a block inside an action still reaches the Match.
-grammar G { token TOP { <w> } token w { \w+ } }
+grammar G {
+    token TOP { <w> }
+    token w { \w+ }
+}
 class A {
     method TOP($/) { make 1 }
     method w($/) { my @x = (1).map({ $/.Str }); make @x[0] }
