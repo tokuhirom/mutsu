@@ -153,6 +153,7 @@ pub(crate) fn build_sigilless_bind_stmt(
         )],
         has_initializer: true,
         constant: None,
+        bind: None,
         where_constraint: None,
     };
     if binds_a_container {

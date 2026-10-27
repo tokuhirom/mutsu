@@ -42,6 +42,7 @@ pub(crate) fn bind_stmt(name: String, expr: Expr) -> Stmt {
             custom_traits: Vec::new(),
             has_initializer: false,
             constant: None,
+            bind: None,
             where_constraint: None,
         }
     } else {
@@ -79,6 +80,7 @@ pub(crate) fn decl_stmt(name: String, expr: Expr) -> Stmt {
         custom_traits: Vec::new(),
         has_initializer: false,
         constant: None,
+        bind: None,
         where_constraint: None,
     }
 }

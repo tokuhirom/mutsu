@@ -423,6 +423,7 @@ fn static_bind_decl(name: &str, type_constraint: Option<String>, is_dynamic: boo
         custom_traits: Vec::new(),
         has_initializer: false,
         constant: None,
+        bind: None,
         where_constraint: None,
     }
 }

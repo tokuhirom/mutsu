@@ -49,6 +49,7 @@ where
         custom_traits: Vec::new(),
         has_initializer: false,
         constant: None,
+        bind: None,
         where_constraint: None,
     }];
     // Preserve the subscript's positional/associative kind so an autovivified
@@ -99,6 +100,7 @@ fn compound_index_assign_op_expr(
         custom_traits: Vec::new(),
         has_initializer: false,
         constant: None,
+        bind: None,
         where_constraint: None,
     }];
     let lhs_expr = Expr::Index {
@@ -160,6 +162,7 @@ fn short_circuit_subscript_assign(
         custom_traits: Vec::new(),
         has_initializer: false,
         constant: None,
+        bind: None,
         where_constraint: None,
     });
     let (test, true_means_keep) = short_circuit_test(keep, Expr::Var(tmp_lhs.clone()));
@@ -275,6 +278,7 @@ pub(crate) fn build_compound_assign_expr(
                     custom_traits: Vec::new(),
                     has_initializer: false,
                     constant: None,
+                    bind: None,
                     where_constraint: None,
                 },
                 Stmt::Expr(inner),
@@ -373,6 +377,7 @@ pub(crate) fn build_compound_assign_expr(
                     custom_traits: Vec::new(),
                     has_initializer: false,
                     constant: None,
+                    bind: None,
                     where_constraint: None,
                 });
                 tmp_dims.push(Expr::Var(tmp));
@@ -606,6 +611,7 @@ pub(crate) fn build_compound_assign_expr(
                     custom_traits: Vec::new(),
                     has_initializer: false,
                     constant: None,
+                    bind: None,
                     where_constraint: None,
                 },
                 Stmt::Expr(Expr::Ternary {

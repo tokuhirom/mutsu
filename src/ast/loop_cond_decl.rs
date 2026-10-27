@@ -34,6 +34,7 @@ pub(crate) fn split_loop_cond_decl(cond: Expr) -> (Option<Stmt>, Expr) {
             name,
             has_initializer: false,
             constant: None,
+            bind: None,
             ..
         } = boxed.as_ref()
     {

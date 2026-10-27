@@ -285,6 +285,7 @@ fn walk_var_decl(stmt: &mut Stmt, check_self: bool, ctx: &mut Ctx) {
         custom_traits,
         has_initializer: _,
         constant: _,
+        bind: _,
         where_constraint,
     } = stmt
     else {

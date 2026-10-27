@@ -69,6 +69,7 @@ fn liftable_traits(stmt: &Stmt, allow_init: bool) -> Option<(String, AppliedTrai
         custom_traits,
         has_initializer,
         constant: None,
+        bind: None,
         where_constraint: None,
         ..
     } = stmt
@@ -77,7 +78,6 @@ fn liftable_traits(stmt: &Stmt, allow_init: bool) -> Option<(String, AppliedTrai
     };
     if name.starts_with('&')
         || (*has_initializer && !allow_init)
-        || custom_traits.iter().any(|(t, _)| t == "__scalar_bind")
     {
         return None;
     }

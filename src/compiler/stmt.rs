@@ -482,6 +482,7 @@ impl Compiler {
             custom_traits: Vec::new(),
             has_initializer: true,
             constant: None,
+            bind: None,
             where_constraint: None,
         };
 
@@ -775,6 +776,7 @@ impl Compiler {
             custom_traits: Vec::new(),
             has_initializer: true,
             constant: None,
+            bind: None,
             where_constraint: None,
         }
     }
@@ -1195,6 +1197,7 @@ impl Compiler {
                 custom_traits,
                 has_initializer,
                 constant,
+                bind,
                 where_constraint,
                 anonymous: _,
             } => {
@@ -1505,9 +1508,7 @@ impl Compiler {
                     // The early registration below is the very next op.
                     type_follows: !defer_type_constraint && type_constraint.is_some(),
                     bind_declaration: bind_vardecl
-                        || custom_traits
-                            .iter()
-                            .any(|(trait_name, _)| trait_name == "__scalar_bind"),
+                        || *bind == Some(crate::ast::bind_decl::BindKind::Scalar),
                     shadows_by_name,
                 });
                 let has_explicit_initializer = *has_initializer;
@@ -1580,7 +1581,7 @@ impl Compiler {
                 // decontainerized (so `@a = $bound` flattens, not itemizes).
                 // The parser tags such binds with the internal `__scalar_bind`
                 // trait.
-                let scalar_bind_decont = custom_traits.iter().any(|(t, _)| t == "__scalar_bind");
+                let scalar_bind_decont = *bind == Some(crate::ast::bind_decl::BindKind::Scalar);
                 // Capture whether this is a `:=` bind of an `@`/`%` container var
                 // *before* the RHS-compilation branches below consume `bind_vardecl`.
                 // Used by the `our` global store to skip the readonly check (the
@@ -1829,6 +1830,7 @@ impl Compiler {
                         expr,
                         type_constraint.as_deref(),
                         custom_traits,
+                        *bind,
                         *has_initializer,
                     ) {
                         &any_default
@@ -1945,11 +1947,7 @@ impl Compiler {
                 // declaration (#11834). A `:=` bind takes the bound container,
                 // so its type is whatever that container's is: leave it unrecorded
                 // for the run-time check to answer.
-                if !bind_vardecl
-                    && !custom_traits
-                        .iter()
-                        .any(|(trait_name, _)| trait_name == "__scalar_bind")
-                {
+                if !bind_vardecl && *bind != Some(crate::ast::bind_decl::BindKind::Scalar) {
                     self.record_scalar_decl_type(name, type_constraint.as_deref());
                 }
                 if !*is_state

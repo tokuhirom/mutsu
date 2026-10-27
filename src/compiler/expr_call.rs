@@ -776,6 +776,7 @@ impl Compiler {
                     custom_traits: Vec::new(),
                     has_initializer: false,
                     constant: None,
+                    bind: None,
                     where_constraint: None,
                 },
                 Stmt::Expr(Expr::Ternary {
@@ -1952,6 +1953,7 @@ impl Compiler {
                             custom_traits: Vec::new(),
                             has_initializer: false,
                             constant: None,
+                            bind: None,
                             where_constraint: None,
                         },
                         Stmt::If {

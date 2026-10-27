@@ -210,6 +210,7 @@ pub(crate) fn with_then_branch(
                     custom_traits: Vec::new(),
                     has_initializer: false,
                     constant: None,
+                    bind: None,
                     where_constraint: None,
                 });
                 crate::param_destructure::destructure_declaring(pname, sub_params, &mut with_body);

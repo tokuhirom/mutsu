@@ -55,6 +55,7 @@ pub(crate) fn call_assign_expansion(
             custom_traits: Vec::new(),
             has_initializer: false,
             constant: None,
+            bind: None,
             where_constraint: None,
         },
         Stmt::MarkSigillessReadonly(name),

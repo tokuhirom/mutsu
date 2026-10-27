@@ -43,6 +43,7 @@ impl Compiler {
         expr: &Expr,
         type_constraint: Option<&str>,
         custom_traits: &[(String, Option<Expr>)],
+        bind: Option<crate::ast::bind_decl::BindKind>,
         has_initializer: bool,
     ) -> bool {
         !name.starts_with('@')
@@ -55,9 +56,8 @@ impl Compiler {
             && type_constraint.is_none()
             && matches!(expr, Expr::Literal(lit) if lit.is_nil())
             && !has_initializer
-            && !custom_traits
-                .iter()
-                .any(|(t, _)| t == "__scalar_bind" || t == "default")
+            && bind != Some(crate::ast::bind_decl::BindKind::Scalar)
+            && !custom_traits.iter().any(|(t, _)| t == "default")
     }
 
     /// Return the zero value for a native type alias whose declaration was
@@ -774,6 +774,7 @@ impl Compiler {
                 where_constraint: None,
                 custom_traits,
                 constant: None,
+                bind: None,
                 ..
             } if custom_traits.is_empty()
         )

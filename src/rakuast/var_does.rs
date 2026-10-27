@@ -80,6 +80,7 @@ pub(super) fn lower_expansion(
         custom_traits,
         has_initializer,
         constant: _,
+        bind: _,
         where_constraint,
     } = declaration
     else {
@@ -123,6 +124,7 @@ pub(super) fn lower_expansion(
         custom_traits,
         has_initializer: false,
         constant: None,
+        bind: None,
         where_constraint,
     };
     Ok(crate::ast::var_does::expand(

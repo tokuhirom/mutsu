@@ -46,6 +46,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
             custom_traits: s.custom_traits,
             has_initializer: false,
             constant: None,
+            bind: None,
             where_constraint: s.where_constraint,
         };
         let stmt = Stmt::Expr(Expr::Feed {
@@ -138,6 +139,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 custom_traits: s.custom_traits.clone(),
                 has_initializer: false,
                 constant: None,
+                bind: None,
                 where_constraint: s.where_constraint.clone(),
             };
             let (r3, tail_expr) =
@@ -193,6 +195,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 custom_traits: s.custom_traits.clone(),
                 has_initializer: false,
                 constant: None,
+                bind: None,
                 where_constraint: s.where_constraint.clone(),
             };
             let block = crate::parser::stmt::word_logical_split::tail_stmt(decl, call_expr);
@@ -235,6 +238,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         custom_traits: s.custom_traits,
         has_initializer: false,
         constant: None,
+        bind: None,
         where_constraint: s.where_constraint.clone(),
     };
     // A bare declaration may carry a `does`/`but` role mixin applied to the
@@ -373,6 +377,7 @@ fn handle_compound_assign(stripped: &str, s: MyDeclState, op: DeclCompoundOp) ->
         custom_traits: s.custom_traits.clone(),
         has_initializer: false,
         constant: None,
+        bind: None,
         where_constraint: s.where_constraint.clone(),
     };
     let stmt = match op {
@@ -506,6 +511,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                     custom_traits: s.custom_traits.clone(),
                     has_initializer: true,
                     constant: None,
+                    bind: None,
                     where_constraint: s.where_constraint.clone(),
                 }))),
                 right,
@@ -558,6 +564,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 custom_traits,
                 has_initializer: true,
                 constant: None,
+                bind: None,
                 where_constraint: s.where_constraint.clone(),
             }));
         }
@@ -597,6 +604,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         custom_traits,
         has_initializer: true,
         constant: None,
+        bind: None,
         where_constraint: s.where_constraint.clone(),
     };
     if let Some(stmt) = rewrite_decl_assignment_or_chain(expr.clone(), base_stmt) {
@@ -637,6 +645,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         custom_traits,
         has_initializer: true,
         constant: None,
+        bind: None,
         where_constraint: s.where_constraint.clone(),
     };
     let stmt = will_decl(stmt, &var_name_for_leave, s.will_phasers.clone());
@@ -826,6 +835,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             custom_traits,
             has_initializer,
             constant: None,
+            bind: None,
             where_constraint: s.where_constraint.clone(),
         };
         match chain.clone() {
@@ -977,10 +987,7 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         let ex = Value::make_instance(Symbol::intern("X::Bind::NativeType"), attrs);
         return Err(PError::fatal_with_exception(msg, Box::new(ex)));
     }
-    let mut custom_traits = s.custom_traits.clone();
-    if is_scalar_bind {
-        custom_traits.push((crate::ast::bind_decl::SCALAR_BIND.to_string(), None));
-    }
+    let custom_traits = s.custom_traits.clone();
     // The bookkeeping around the declaration (`MarkBind`, `MarkReadonly`, the
     // bound-array records) is added by the lowering of the node
     // (`ast::bind_decl::expand`), shared with the RakuAST lowerer.
@@ -998,6 +1005,7 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             custom_traits,
             has_initializer: false,
             constant: None,
+            bind: is_scalar_bind.then_some(crate::ast::bind_decl::BindKind::Scalar),
             where_constraint: s.where_constraint.clone(),
         })),
     )

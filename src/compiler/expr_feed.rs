@@ -85,6 +85,7 @@ impl Compiler {
                                 is_state: false,
                                 has_initializer: false,
                                 constant: None,
+                                bind: None,
                                 ..
                             } = stmt.as_ref()
                         {

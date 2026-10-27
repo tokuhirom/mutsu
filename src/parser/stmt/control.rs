@@ -204,6 +204,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             custom_traits: Vec::new(),
             has_initializer: true,
             constant: None,
+            bind: None,
             where_constraint: None,
         }];
         crate::param_destructure::destructure_declaring(target, sub_params, &mut stmts);
@@ -236,6 +237,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             custom_traits: vec![("__pointy_copy".to_string(), None)],
             has_initializer: true,
             constant: None,
+            bind: None,
             where_constraint: None,
         }
     } else if pd
@@ -264,6 +266,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             custom_traits: vec![("__pointy_native_param".to_string(), None)],
             has_initializer: true,
             constant: None,
+            bind: None,
             where_constraint: None,
         };
         if pd.traits.iter().any(|t| t == "rw") {
@@ -293,6 +296,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             custom_traits: Vec::new(),
             has_initializer: false,
             constant: None,
+            bind: None,
             where_constraint: None,
         }
     } else {
@@ -315,6 +319,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
                 custom_traits: Vec::new(),
                 has_initializer: true,
                 constant: None,
+                bind: None,
                 where_constraint: None,
             },
         ];
@@ -366,6 +371,7 @@ pub(crate) fn simple_pointy_bind(name: &str, source: &Expr, sigilless: bool) -> 
         custom_traits: Vec::new(),
         has_initializer: false,
         constant: None,
+        bind: None,
         where_constraint: None,
     };
     if sigilless {
@@ -397,6 +403,7 @@ pub(crate) fn pointy_param_bind_decl(pd: &ParamDef, source: &Expr) -> Stmt {
         custom_traits: Vec::new(),
         has_initializer: true,
         constant: None,
+        bind: None,
         where_constraint: pd.where_constraint.clone(),
     };
     if pd.sigilless {

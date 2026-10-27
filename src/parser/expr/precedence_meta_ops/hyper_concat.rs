@@ -146,6 +146,7 @@ pub(crate) fn lower_hyper_assignment(
         custom_traits: Vec::new(),
         has_initializer: false,
         constant: None,
+        bind: None,
         where_constraint: None,
     };
     Expr::desugar_block(vec![

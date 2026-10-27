@@ -956,8 +956,8 @@ impl Compiler {
             self.emit_nil_value();
             return;
         }
-        let is_bind_decl = matches!(stmt, Stmt::VarDecl { custom_traits, .. }
-            if custom_traits.iter().any(|(t, _)| t == "__scalar_bind"));
+        let is_bind_decl = matches!(stmt, Stmt::VarDecl { bind, .. }
+            if *bind == Some(crate::ast::bind_decl::BindKind::Scalar));
         let anonymous_scalar = matches!(
             stmt,
             Stmt::VarDecl {

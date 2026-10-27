@@ -84,11 +84,9 @@ pub(crate) fn folded_invocant<'a>(
             expr,
             type_constraint: None,
             custom_traits,
+            bind: Some(crate::ast::bind_decl::BindKind::Scalar),
             ..
-        }) if is_self(expr)
-            && custom_traits.len() == 1
-            && custom_traits[0].0 == "__scalar_bind" =>
-        {
+        }) if is_self(expr) && custom_traits.is_empty() => {
             let name = if name == crate::env::LEX_SELF {
                 "self".to_string()
             } else {
@@ -287,9 +285,10 @@ pub(crate) fn bind_invocant_aliases(expr: Expr, aliases: &[(String, bool)]) -> E
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
-                custom_traits: vec![("__scalar_bind".to_string(), None)],
+                custom_traits: Vec::new(),
                 has_initializer: false,
                 constant: None,
+                bind: Some(crate::ast::bind_decl::BindKind::Scalar),
                 where_constraint: None,
             }
         })

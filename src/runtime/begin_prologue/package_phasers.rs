@@ -344,6 +344,7 @@ fn slot_decl(slot: &str) -> Stmt {
         custom_traits: vec![],
         has_initializer: false,
         constant: None,
+        bind: None,
         where_constraint: None,
     }
 }

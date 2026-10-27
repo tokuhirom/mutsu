@@ -1271,6 +1271,7 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         constant: Some(crate::ast::ConstantSigil::from_sigil(
             sigil.bytes().next().unwrap_or(0),
         )),
+        bind: None,
         where_constraint: None,
     })
 }
@@ -3274,14 +3275,13 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // function (`ast::bind_decl`). A natively typed scalar cannot be bound;
     // the parser rejects it, and this path stays the boundary for it.
     if is_binding {
-        if crate::ast::bind_decl::is_scalar_bind_name(&name) {
-            if type_constraint
+        let bound_name = name.clone();
+        if crate::ast::bind_decl::is_scalar_bind_name(&name)
+            && type_constraint
                 .as_deref()
                 .is_some_and(crate::native_types::is_native_array_element_type)
-            {
-                return Err(unsupported(node));
-            }
-            custom_traits.push((crate::ast::bind_decl::SCALAR_BIND.to_string(), None));
+        {
+            return Err(unsupported(node));
         }
         return super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::BindDecl(
             Box::new(Stmt::VarDecl {
@@ -3297,6 +3297,8 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 custom_traits,
                 has_initializer,
                 constant: None,
+                bind: crate::ast::bind_decl::is_scalar_bind_name(&bound_name)
+                    .then_some(crate::ast::bind_decl::BindKind::Scalar),
                 where_constraint,
             }),
         ));
@@ -3314,6 +3316,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         custom_traits,
         has_initializer,
         constant: None,
+        bind: None,
         where_constraint,
     })
 }

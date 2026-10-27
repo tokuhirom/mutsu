@@ -144,6 +144,7 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
         is_export,
         export_tags,
         custom_traits,
+        bind,
         constant,
         has_initializer,
         where_constraint,
@@ -172,7 +173,7 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
     let is_hash = name.starts_with('%');
     // A `:=` declaration (`my $x := EXPR with $t`) carries its bound
     // expression the way an `=` one carries its initializer.
-    let is_bind = custom_traits.iter().any(|(n, _)| n == "__scalar_bind");
+    let is_bind = *bind == Some(crate::ast::bind_decl::BindKind::Scalar);
     let has_init = is_bind || *has_initializer;
     let decl = Stmt::VarDecl {
         anonymous: *anonymous,
@@ -184,13 +185,10 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
         is_dynamic: *is_dynamic,
         is_export: *is_export,
         export_tags: export_tags.clone(),
-        custom_traits: custom_traits
-            .iter()
-            .filter(|(n, _)| n != "__scalar_bind")
-            .cloned()
-            .collect(),
+        custom_traits: custom_traits.clone(),
         has_initializer: false,
         constant: None,
+        bind: None,
         where_constraint: where_constraint.clone(),
     };
     if !has_init {
@@ -383,6 +381,7 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, Runtim
                     custom_traits,
                     has_initializer: false,
                     constant: None,
+                    bind: None,
                     where_constraint: None,
                 });
             }
@@ -391,6 +390,7 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, Runtim
                 expr,
                 custom_traits,
                 constant: None,
+                bind: None,
                 ..
             } if custom_traits.is_empty() => {
                 out.push(Stmt::Assign {

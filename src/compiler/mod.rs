@@ -4381,6 +4381,7 @@ impl Compiler {
                     custom_traits: Vec::new(),
                     has_initializer: true,
                     constant: None,
+                    bind: None,
                     where_constraint: None,
                 },
                 Stmt::MarkSigilless(cap.to_string()),
