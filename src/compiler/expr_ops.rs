@@ -707,6 +707,9 @@ impl Compiler {
                     }
                 }
                 self.emit_lex_import_builtin_meta(op);
+                if op.is_empty() {
+                    self.emit_lex_import_list_infix(meta);
+                }
                 self.code.emit(OpCode::MetaOpNary {
                     meta: meta_kind,
                     op: Symbol::intern(op),
@@ -723,6 +726,9 @@ impl Compiler {
             self.compile_expr(right);
         }
         self.emit_lex_import_builtin_meta(op.trim_start_matches('R'));
+        if op.is_empty() && matches!(meta, "X" | "Z") {
+            self.emit_lex_import_list_infix(meta);
+        }
         self.code.emit(OpCode::MetaOp {
             meta: meta_kind,
             op: Symbol::intern(op),
