@@ -54,6 +54,13 @@ impl Interpreter {
                 continue;
             };
             for method_def in &overloads {
+                // A method composed from a role is the role's: rakudo does not
+                // judge its `self!meth` calls against the composing class, so
+                // a role may call a private method the class supplies later or
+                // only on a path that is never taken.
+                if method_def.role_origin.is_some() {
+                    continue;
+                }
                 self.check_private_calls_exist(class_name, &method_def.body)?;
             }
         }
