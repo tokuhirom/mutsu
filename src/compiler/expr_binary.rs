@@ -289,8 +289,10 @@ impl Compiler {
                 let mut left_operand = Some(current);
                 for operand in operands.into_iter().rev() {
                     self.compile_expr(operand);
-                    self.note_numeric_operands(&opcode, left_operand.take(), operand);
+                    // The lexical-import marker (if any) comes first: the names
+                    // are keyed by the index of the op itself.
                     self.emit_lex_import_builtin_op(&opcode);
+                    self.note_numeric_operands(&opcode, left_operand.take(), operand);
                     self.code.emit(opcode.clone());
                 }
                 return;
@@ -996,8 +998,8 @@ impl Compiler {
                 self.emit_lex_import_builtin_compound(op);
                 self.code.emit(OpCode::NativeIntArithmetic { op, unsigned });
             } else {
-                self.note_numeric_operands(&opcode, Some(left), right);
                 self.emit_lex_import_builtin_op(&opcode);
+                self.note_numeric_operands(&opcode, Some(left), right);
                 self.code.emit(opcode);
             }
         } else if let TokenKind::Ident(name) = op
