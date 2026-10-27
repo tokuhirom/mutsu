@@ -765,8 +765,7 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
             && !expr_consumes_more
             && (!rest_ws.starts_with("=>") || rest_ws.starts_with("==>"))
         {
-            let assign_expr =
-                keep_written_parens(input, assign_expr);
+            let assign_expr = keep_written_parens(input, assign_expr);
             return Ok((
                 rest,
                 CallArg::Positional(crate::parser::expr::wrap_finished_expr(assign_expr)),
