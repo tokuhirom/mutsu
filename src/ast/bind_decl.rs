@@ -162,6 +162,7 @@ mod tests {
 
     fn decl(name: &str, expr: Expr, bind: Option<BindKind>) -> Stmt {
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: name.to_string(),
             expr,

@@ -3761,6 +3761,7 @@ mod env_only_decl_tests {
 
     fn vardecl(name: &str) -> Stmt {
         Stmt::VarDecl {
+            marks: Default::default(),
             name: name.to_string(),
             anonymous: false,
             expr: Expr::Literal(crate::value::Value::NIL),
