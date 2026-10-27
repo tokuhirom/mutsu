@@ -934,6 +934,18 @@ impl Interpreter {
         {
             return result;
         }
+        // A private call whose receiver sits in a container cell (`self` of a
+        // method reached through a `handles` delegate that returns a type
+        // object) is the call on the value the cell holds.
+        if method.starts_with('!')
+            && matches!(target.view(), ValueView::ContainerRef(_))
+            && matches!(
+                target.deref_container().view(),
+                ValueView::Instance { .. } | ValueView::Package(_) | ValueView::Mixin(..)
+            )
+        {
+            return self.call_method_with_values_unviewed(target.deref_container(), method, args);
+        }
         // Private method call on non-Instance
         if let Some(result) = self.dispatch_private_method_on_proxy_subclass(&target, method, &args) {
             return result;
