@@ -1,0 +1,5 @@
+# Declared-type conformance facts are indexed by symbol id
+
+Ranking the candidates of a multi asks whether one declared type conforms to another once per ordered pair of candidates (#14924). The memo introduced for that kept one entry per pair and re-confirmed both names in every new ranking. It now keeps one table of per-name facts instead: the ancestor set of a plain registered class (valid while the registry stamp is unchanged, stored as a short sorted id slice) and two env flags that carry the serial of the scope that computed them. The table is a vector indexed by symbol id, so a conformance ask is two vector reads and a scan of a handful of ids, with nothing stored per pair.
+
+On the 200-candidate `Ci:D` + `Mu:D` repro (profiling build, second run, difference against zero iterations): the first call costs 28.6M Ir (the goal is at most 150M), and a second, different argument type tuple costs +23.5M Ir, down from +29M. The goal for the second tuple is at most +20M, so #14924 stays open.
