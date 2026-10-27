@@ -9,7 +9,7 @@ use Test;
 
 use MetaopUserInfix;
 
-plan 12;
+plan 14;
 
 my $t1 = table('a');
 my $t2 = table('b');
@@ -20,6 +20,8 @@ is $d, 'cross of 2: a+b', 'in a declaration initializer with a block argument';
 my $e = ($t1 X $t2).chars;
 is $e, 15, 'in a declaration initializer with a method call';
 is ($t1 Z $t2), 'zip of 2: a+b', 'Z calls its candidate';
+is ($t1 X $t2 X $t1), 'cross of 3: a+b+a', 'a chain is one call of the list-associative routine';
+is ($t1 Z $t2 Z $t1), 'zip of 3: a+b+a', 'a Z chain is one call';
 
 # No candidate accepts these operands: the core operators run.
 is-deeply ((1, 2) X (3, 4)).list, ((1, 3), (1, 4), (2, 3), (2, 4)).list, 'core X when no candidate accepts';

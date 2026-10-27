@@ -12,3 +12,6 @@ fall back to the built-in operator when none accepts the operands.
 
 A declared bare `X` or `Z` also stops claiming the front of a longer
 metaoperator token: `X+` and `Z~` stay the metaoperators, as in rakudo.
+
+A parser-known user `infix:<X>` / `infix:<Z>` is list-associative by default, so
+`$a X $b X $c` is one call with three operands, not `X(X($a, $b), $c)` (#15056).

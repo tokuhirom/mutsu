@@ -44,7 +44,8 @@ impl Interpreter {
         if op.as_str().is_empty()
             && let Some(canon) = Self::list_infix_routine(meta)
             && self.user_infix_override(canon)
-            && let Some(result) = self.try_user_list_infix(canon, vec![left.clone(), right.clone()])?
+            && let Some(result) =
+                self.try_user_list_infix(canon, vec![left.clone(), right.clone()])?
         {
             self.stack.push(result);
             return Ok(());
