@@ -760,7 +760,7 @@ impl Interpreter {
         if bare == "reified"
             && let Some(storage) = attrs.get("__mutsu_array_storage")
         {
-            return Some(storage.clone());
+            return Some(storage.raw_storage_view().unwrap_or_else(|| storage.clone()));
         }
         attrs
             .get_vivify(bare)
