@@ -713,7 +713,7 @@ fn sub_signature_matches_value_unbound(
         positional.retain(|v| match v.view() {
             ValueView::Pair(key, _) => {
                 surplus_named |= !sub_params.iter().any(|p| {
-                    p.named && p.name.trim_start_matches(|c: char| "$@%&".contains(c)) == &*key
+                    p.named && p.name.trim_start_matches(|c: char| "$@%&".contains(c)) == *key
                 });
                 false
             }
