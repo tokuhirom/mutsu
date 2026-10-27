@@ -203,6 +203,7 @@ impl Compiler {
                     Some(Expr::Literal(Value::FALSE)),
                 )],
                 has_initializer: true,
+                constant: None,
                 where_constraint: None,
             };
             return Some(Stmt::SyntheticBlock(vec![
@@ -231,6 +232,7 @@ impl Compiler {
             export_tags: Vec::new(),
             custom_traits,
             has_initializer: false,
+            constant: None,
             where_constraint: None,
         }))
     }
@@ -376,6 +378,7 @@ impl Compiler {
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
                 has_initializer: false,
+                constant: None,
                 where_constraint: None,
             };
             return Some(Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl]));

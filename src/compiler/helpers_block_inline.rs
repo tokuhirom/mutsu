@@ -430,13 +430,14 @@ impl Compiler {
                     Stmt::VarDecl {
                         name,
                         custom_traits,
+                        constant,
                         ..
                     } if custom_traits.iter().any(|(t, _)| !t.starts_with("__"))
                         // A sigil-less constant's term-namespace storage
                         // (#9962) is likewise set up by that path only.
                         || crate::runtime::term_names::is_term_constant_decl(
                             name,
-                            custom_traits,
+                            *constant,
                         ) =>
                     {
                         self.compile_expr_do_stmt(stmt);
@@ -472,6 +473,7 @@ impl Compiler {
                         type_constraint,
                         custom_traits,
                         has_initializer,
+                        constant,
                         ..
                     } => {
                         // my $x = expr in block-final position: declare and return value
@@ -491,7 +493,7 @@ impl Compiler {
                                 name,
                                 *is_our,
                                 type_constraint.as_deref(),
-                                custom_traits,
+                                *constant,
                             )
                             .map(Some);
                         let type_constraint =
@@ -506,7 +508,7 @@ impl Compiler {
                             local_slot: None,
                             reset: if !*is_state
                                 && !*is_our
-                                && !custom_traits.iter().any(|(t, _)| t == "__constant")
+                                && !constant.is_some()
                                 && !name.starts_with('@')
                                 && !name.starts_with('%')
                             {

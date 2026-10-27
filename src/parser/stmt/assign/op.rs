@@ -318,6 +318,7 @@ pub(crate) fn short_circuit_compound_assign_expr(
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
             has_initializer: false,
+            constant: None,
             where_constraint: None,
         },
         Stmt::Expr(test),
@@ -380,6 +381,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
                     has_initializer: false,
+                    constant: None,
                     where_constraint: None,
                 },
                 Stmt::Expr(Expr::Call {
@@ -418,6 +420,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
                     has_initializer: false,
+                    constant: None,
                     where_constraint: None,
                 },
                 Stmt::Expr(Expr::Call {

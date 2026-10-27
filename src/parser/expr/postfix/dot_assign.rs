@@ -241,6 +241,7 @@ fn expand_dot_assign(
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
                     has_initializer: false,
+                    constant: None,
                     where_constraint: None,
                 },
                 Stmt::Expr(Expr::IndexAssign {
@@ -418,6 +419,7 @@ fn expand_dot_assign(
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
                     has_initializer: false,
+                    constant: None,
                     where_constraint: None,
                 },
                 Stmt::VarDecl {
@@ -432,6 +434,7 @@ fn expand_dot_assign(
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
                     has_initializer: false,
+                    constant: None,
                     where_constraint: None,
                 },
                 Stmt::Expr(ternary),
@@ -487,6 +490,7 @@ fn expand_dot_assign(
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
                     has_initializer: false,
+                    constant: None,
                     where_constraint: None,
                 },
                 Stmt::Expr(ternary),

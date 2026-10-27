@@ -736,6 +736,7 @@ impl Compiler {
                 type_constraint,
                 is_our: false,
                 custom_traits,
+                constant,
                 ..
             } = stmt
                 && !custom_traits.iter().any(|(n, _)| {
@@ -746,7 +747,7 @@ impl Compiler {
                     name,
                     false,
                     type_constraint.as_deref(),
-                    custom_traits,
+                    *constant,
                 );
                 let Some(tc) = pragma_tc.as_ref().or(type_constraint.as_ref()) else {
                     continue;
@@ -772,6 +773,7 @@ impl Compiler {
                 is_our: false,
                 where_constraint: None,
                 custom_traits,
+                constant: None,
                 ..
             } if custom_traits.is_empty()
         )

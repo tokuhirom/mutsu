@@ -53,6 +53,7 @@ pub(crate) fn defined_condition(negated: bool, tmp_name: &str, cond_expr: Expr) 
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
         has_initializer: false,
+        constant: None,
         where_constraint: None,
     };
     let init = Expr::DoStmt(Box::new(decl));

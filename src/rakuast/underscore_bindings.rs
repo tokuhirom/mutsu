@@ -139,6 +139,7 @@ pub(super) fn lower_statement_block(node: &RakuAstNode) -> Result<Stmt, RuntimeE
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
             has_initializer: false,
+            constant: None,
             where_constraint: None,
         });
     body.splice(0..0, bindings);

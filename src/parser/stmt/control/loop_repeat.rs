@@ -40,6 +40,7 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
                         export_tags: Vec::new(),
                         custom_traits: Vec::new(),
                         has_initializer: true,
+                        constant: None,
                         where_constraint: None,
                     },
                 ));
@@ -58,6 +59,7 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
                     has_initializer: false,
+                    constant: None,
                     where_constraint: None,
                 },
             ));
@@ -384,6 +386,7 @@ pub(crate) fn repeat_param_clause(param: Option<String>) -> (Option<Box<Stmt>>, 
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
             has_initializer: false,
+            constant: None,
             where_constraint: None,
         })
     });

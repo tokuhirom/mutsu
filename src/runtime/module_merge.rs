@@ -277,9 +277,10 @@ impl Interpreter {
                 Stmt::VarDecl {
                     name,
                     custom_traits,
+                    constant,
                     is_our: true,
                     ..
-                } if custom_traits.iter().any(|(t, _)| t == "__constant")
+                } if constant.is_some()
                     && name.starts_with(|c: char| c.is_alphabetic() || c == '_') =>
                 {
                     Symbol::intern(name)

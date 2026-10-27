@@ -118,6 +118,7 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Vec<Stmt> {
                 export_tags: form.export_tags.clone(),
                 custom_traits: form.custom_traits.clone(),
                 has_initializer: false,
+                constant: None,
                 where_constraint: form.where_constraint.clone(),
             },
             Stmt::Assign {
@@ -151,6 +152,7 @@ fn single_declaration(form: &MethodAssignDecl, target: Expr, call: Expr) -> Stmt
         export_tags: form.export_tags.clone(),
         custom_traits,
         has_initializer,
+        constant: None,
         where_constraint: form.where_constraint.clone(),
     }
 }
@@ -178,6 +180,7 @@ pub(crate) fn expression_declaration(form: &MethodAssignDecl) -> Option<Stmt> {
         export_tags,
         custom_traits,
         has_initializer,
+        constant: _,
         where_constraint,
     } = single_declaration(form, target.clone(), call)
     else {
@@ -200,6 +203,7 @@ pub(crate) fn expression_declaration(form: &MethodAssignDecl) -> Option<Stmt> {
         export_tags,
         custom_traits,
         has_initializer,
+        constant: None,
         where_constraint,
     })
 }

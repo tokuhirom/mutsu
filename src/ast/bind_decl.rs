@@ -167,6 +167,7 @@ mod tests {
             export_tags: Vec::new(),
             custom_traits: traits.iter().map(|t| (t.to_string(), None)).collect(),
             has_initializer: false,
+            constant: None,
             where_constraint: None,
         }
     }

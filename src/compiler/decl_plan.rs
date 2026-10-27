@@ -401,10 +401,9 @@ impl Compiler {
                     name,
                     expr: Expr::BareWord(target),
                     custom_traits,
+                    constant,
                     ..
-                } if custom_traits.iter().any(|(t, _)| t == "__constant")
-                    && !name.starts_with(['$', '@', '%', '&']) =>
-                {
+                } if constant.is_some() && !name.starts_with(['$', '@', '%', '&']) => {
                     Some((name.clone(), target.clone()))
                 }
                 _ => None,

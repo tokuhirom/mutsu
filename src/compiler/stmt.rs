@@ -481,6 +481,7 @@ impl Compiler {
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
             has_initializer: true,
+            constant: None,
             where_constraint: None,
         };
 
@@ -773,6 +774,7 @@ impl Compiler {
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
             has_initializer: true,
+            constant: None,
             where_constraint: None,
         }
     }
@@ -1192,6 +1194,7 @@ impl Compiler {
                 export_tags,
                 custom_traits,
                 has_initializer,
+                constant,
                 where_constraint,
                 anonymous: _,
             } => {
@@ -1202,7 +1205,7 @@ impl Compiler {
                         name,
                         *is_our,
                         type_constraint.as_deref(),
-                        custom_traits,
+                        *constant,
                     )
                     .map(Some);
                 let smiley_from_pragma = pragma_type_constraint.is_some();
@@ -1225,7 +1228,7 @@ impl Compiler {
                 let declares_term = std::mem::take(&mut self.decl_is_term)
                     && !name.starts_with(['$', '@', '%', '&', '\\']);
                 let name = if declares_term
-                    || crate::runtime::term_names::is_term_constant_decl(name, custom_traits)
+                    || crate::runtime::term_names::is_term_constant_decl(name, *constant)
                 {
                     term_storage = crate::runtime::term_names::term_key(name);
                     &term_storage
@@ -1345,7 +1348,7 @@ impl Compiler {
                 }
                 // Track constant declarations so the compiler can avoid itemizing
                 // them in `for` loops (constants have no Scalar container).
-                let is_constant_decl = custom_traits.iter().any(|(t, _)| t == "__constant");
+                let is_constant_decl = constant.is_some();
                 if is_constant_decl
                     && !spelled.starts_with(['$', '@', '%', '&'])
                     && let Expr::BareWord(target) = expr
@@ -1375,18 +1378,11 @@ impl Compiler {
                     // (see roast S06-operator-overloading/sub.t). Key the
                     // duplicate-detection set by the source sigil so only true
                     // same-sigil redeclarations are caught.
-                    let constant_sigil = custom_traits
-                        .iter()
-                        .find(|(t, _)| t == "__constant_sigil")
-                        .and_then(|(_, e)| match e {
-                            Some(Expr::Literal(lit)) => match lit.view() {
-                                ValueView::Str(s) => Some(s.to_string()),
-                                _ => None,
-                            },
-                            _ => None,
-                        })
-                        .unwrap_or_default();
-                    let redecl_key = format!("{}{}", constant_sigil, spelled);
+                    let redecl_key = format!(
+                        "{}{}",
+                        constant.map_or("", crate::ast::ConstantSigil::as_str),
+                        spelled
+                    );
                     if !self.constant_vars_current_scope.insert(redecl_key) {
                         let sym = spelled.trim_start_matches(['$', '@', '%', '&']).to_string();
                         let mut attrs = std::collections::HashMap::new();
@@ -1871,7 +1867,7 @@ impl Compiler {
                 }
                 // `constant @x = ...` should store a List, not an Array.
                 // Coerce the value on the stack before storing.
-                if name.starts_with('@') && custom_traits.iter().any(|(t, _)| t == "__constant") {
+                if name.starts_with('@') && constant.is_some() {
                     self.code.emit(OpCode::CoerceToList);
                 }
                 // Skip TypeCheck for hash declarations: the type constraint
@@ -2015,7 +2011,7 @@ impl Compiler {
                         self.code.emit(OpCode::StateVarInit(slot, key_sym));
                     }
                 } else {
-                    let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
+                    let is_constant = constant.is_some();
                     // A plain scalar `our $x = <expr>` (no `:=` bind, no native
                     // type, no container sigil, no `constant`, no trait besides
                     // the internal "has an initializer" marker): install ONE
@@ -2363,21 +2359,10 @@ impl Compiler {
                 // X::Assignment::RO ("Cannot modify an immutable Rat (3.14)")
                 // because the lvalue is the value itself. mutsu's AST strips
                 // the `$` from a scalar constant name, so the source sigil is
-                // recovered from the `__constant_sigil` trait recorded by the
+                // recovered from the declaration's `constant` field set by the
                 // parser (`@`/`%` constants behave like the value form too).
                 if is_constant_decl {
-                    let sigil = custom_traits
-                        .iter()
-                        .find(|(t, _)| t == "__constant_sigil")
-                        .and_then(|(_, e)| match e {
-                            Some(Expr::Literal(lit)) => match lit.view() {
-                                ValueView::Str(s) => Some(s.to_string()),
-                                _ => None,
-                            },
-                            _ => None,
-                        })
-                        .unwrap_or_default();
-                    let kind = if sigil == "$" {
+                    let kind = if *constant == Some(crate::ast::ConstantSigil::Scalar) {
                         crate::ast::ReadonlyKind::Immutable
                     } else {
                         crate::ast::ReadonlyKind::ImmutableValue

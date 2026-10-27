@@ -1767,6 +1767,7 @@ pub(super) fn var_decl_statement(
         is_dynamic,
         custom_traits,
         has_initializer,
+        constant,
         where_constraint,
         is_export,
         export_tags,
@@ -1774,13 +1775,15 @@ pub(super) fn var_decl_statement(
     let export_trait = super::package_header::export_trait_value(is_export, export_tags);
     // Real `is`/`does` traits carry richer shape, deferred.
     // `constant X = 5` is a distinct raku node, not a scoped `my`.
-    // mutsu marks it with a `__constant` pseudo-trait (plus a
-    // `__constant_sigil` recording the declared sigil) and sets
+    // mutsu records it as the declaration's `constant` sigil and sets
     // `is_our` for the package-scoped default spelling.
-    if !is_binding && custom_traits.iter().any(|(n, _)| n == "__constant") {
+    if let Some(sigil) = constant
+        && !is_binding
+    {
         return constant_declaration(
             name,
             expr,
+            sigil,
             custom_traits,
             type_constraint,
             is_our,
@@ -1967,6 +1970,7 @@ pub(super) struct VarDeclParts<'a> {
     custom_traits: &'a [(String, Option<Expr>)],
     /// Whether the declaration has an explicit initializer.
     has_initializer: bool,
+    constant: Option<crate::ast::ConstantSigil>,
     /// The declaration's `where` expression.
     where_constraint: Option<&'a Expr>,
     /// Whether it is `is export`, and with which tags (`["DEFAULT"]` for the
@@ -1986,6 +1990,7 @@ pub(super) fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeErr
         is_dynamic,
         custom_traits,
         has_initializer,
+        constant,
         where_constraint,
         is_export,
         export_tags,
@@ -2003,6 +2008,7 @@ pub(super) fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeErr
         is_dynamic: *is_dynamic,
         custom_traits,
         has_initializer: *has_initializer,
+        constant: *constant,
         where_constraint: where_constraint.as_deref(),
         is_export: *is_export,
         export_tags,
@@ -5018,25 +5024,16 @@ fn pointy_block_from_lambda(
 fn constant_declaration(
     name: &str,
     expr: &Expr,
+    constant: crate::ast::ConstantSigil,
     custom_traits: &[(String, Option<Expr>)],
     type_constraint: &Option<String>,
     is_our: bool,
     export_trait: Option<Value>,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
-    // `__constant_sigil` carries the declared sigil; only the sigilless form
-    // (a plain `constant X`) maps onto the measured node shape.
-    let sigil = custom_traits.iter().find_map(|(n, arg)| {
-        (n == "__constant_sigil").then(|| match arg {
-            Some(Expr::Literal(v)) => match v.view() {
-                ValueView::Str(s) => s.to_string(),
-                _ => String::new(),
-            },
-            _ => String::new(),
-        })
-    });
+    let sigil = constant.as_str();
     // rakudo's `name` carries the sigil (`"@a"`, `"$x"`). The parser keeps
     // it in the name for `@` / `%` / `&` and strips a `$`.
-    let name = match sigil.as_deref().unwrap_or("") {
+    let name = match sigil {
         // `constant term:<$bar>`: a sigiled name without a sigil of its own
         // is a term, which rakudo names `term:<$bar>`.
         "" if name.starts_with(['$', '@', '%', '&']) => format!("term:<{name}>"),
@@ -5045,10 +5042,7 @@ fn constant_declaration(
         sigil @ ("@" | "%" | "&") if name.starts_with(sigil) => name.to_string(),
         _ => return Err(unsupported("sigilled constant")),
     };
-    if custom_traits
-        .iter()
-        .any(|(n, _)| n != "__constant" && n != "__constant_sigil")
-    {
+    if !custom_traits.is_empty() {
         return Err(unsupported("constant with traits"));
     }
     let mut fields = Vec::new();

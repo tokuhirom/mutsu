@@ -152,6 +152,7 @@ pub(crate) fn build_sigilless_bind_stmt(
             Some(Expr::Literal(Value::truth(assigned))),
         )],
         has_initializer: true,
+        constant: None,
         where_constraint: None,
     };
     if binds_a_container {

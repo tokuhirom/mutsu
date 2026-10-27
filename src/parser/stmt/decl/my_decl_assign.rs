@@ -45,6 +45,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
             export_tags: s.export_tags,
             custom_traits: s.custom_traits,
             has_initializer: false,
+            constant: None,
             where_constraint: s.where_constraint,
         };
         let stmt = Stmt::Expr(Expr::Feed {
@@ -136,6 +137,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 export_tags: s.export_tags.clone(),
                 custom_traits: s.custom_traits.clone(),
                 has_initializer: false,
+                constant: None,
                 where_constraint: s.where_constraint.clone(),
             };
             let (r3, tail_expr) =
@@ -190,6 +192,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 export_tags: s.export_tags.clone(),
                 custom_traits: s.custom_traits.clone(),
                 has_initializer: false,
+                constant: None,
                 where_constraint: s.where_constraint.clone(),
             };
             let block = crate::parser::stmt::word_logical_split::tail_stmt(decl, call_expr);
@@ -231,6 +234,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         export_tags: s.export_tags,
         custom_traits: s.custom_traits,
         has_initializer: false,
+        constant: None,
         where_constraint: s.where_constraint.clone(),
     };
     // A bare declaration may carry a `does`/`but` role mixin applied to the
@@ -368,6 +372,7 @@ fn handle_compound_assign(stripped: &str, s: MyDeclState, op: DeclCompoundOp) ->
         export_tags: s.export_tags.clone(),
         custom_traits: s.custom_traits.clone(),
         has_initializer: false,
+        constant: None,
         where_constraint: s.where_constraint.clone(),
     };
     let stmt = match op {
@@ -500,6 +505,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                     export_tags: s.export_tags.clone(),
                     custom_traits: s.custom_traits.clone(),
                     has_initializer: true,
+                    constant: None,
                     where_constraint: s.where_constraint.clone(),
                 }))),
                 right,
@@ -551,6 +557,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 export_tags: s.export_tags.clone(),
                 custom_traits,
                 has_initializer: true,
+                constant: None,
                 where_constraint: s.where_constraint.clone(),
             }));
         }
@@ -589,6 +596,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         export_tags: s.export_tags.clone(),
         custom_traits,
         has_initializer: true,
+        constant: None,
         where_constraint: s.where_constraint.clone(),
     };
     if let Some(stmt) = rewrite_decl_assignment_or_chain(expr.clone(), base_stmt) {
@@ -628,6 +636,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         export_tags: s.export_tags.clone(),
         custom_traits,
         has_initializer: true,
+        constant: None,
         where_constraint: s.where_constraint.clone(),
     };
     let stmt = will_decl(stmt, &var_name_for_leave, s.will_phasers.clone());
@@ -816,6 +825,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             export_tags: s.export_tags.clone(),
             custom_traits,
             has_initializer,
+            constant: None,
             where_constraint: s.where_constraint.clone(),
         };
         match chain.clone() {
@@ -987,6 +997,7 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             export_tags: s.export_tags.clone(),
             custom_traits,
             has_initializer: false,
+            constant: None,
             where_constraint: s.where_constraint.clone(),
         })),
     )

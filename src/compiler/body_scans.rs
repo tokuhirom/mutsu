@@ -407,10 +407,10 @@ impl<'ast> Visit<'ast> for TypeAliasScan {
         if let Stmt::VarDecl {
             name,
             expr: Expr::BareWord(target),
-            custom_traits,
+            constant,
             ..
         } = stmt
-            && custom_traits.iter().any(|(t, _)| t == "__constant")
+            && constant.is_some()
             && !name.starts_with(['$', '@', '%', '&'])
         {
             self.out.push((name.clone(), target.clone()));

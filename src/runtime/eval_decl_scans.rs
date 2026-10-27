@@ -61,6 +61,7 @@ impl<'ast> Visit<'ast> for EvalLexicalKeys {
                 is_our: false,
                 is_dynamic: false,
                 custom_traits,
+                constant,
                 ..
             } => {
                 if let Some(key) = env_key(name) {
@@ -71,10 +72,9 @@ impl<'ast> Visit<'ast> for EvalLexicalKeys {
                 // spelling the capture must keep). Declared by the snippet it
                 // is still the snippet's own lexical, so it must not outlive
                 // the EVAL. A `my constant Name` is stored the same way.
-                if custom_traits.iter().any(|(t, _)| {
-                    t == "__sigilless_decl"
-                        || (t == "__constant" && !name.starts_with(['$', '@', '%', '&']))
-                }) {
+                if custom_traits.iter().any(|(t, _)| t == "__sigilless_decl")
+                    || (constant.is_some() && !name.starts_with(['$', '@', '%', '&']))
+                {
                     let term = crate::term_names::term_key(name);
                     self.keys
                         .insert(crate::runtime::sigilless_readonly_key(&term).to_string());

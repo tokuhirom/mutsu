@@ -188,8 +188,9 @@ impl<'ast> Visit<'ast> for TypeDecls<'_> {
             Stmt::VarDecl {
                 name,
                 custom_traits,
+                constant,
                 ..
-            } if custom_traits.iter().any(|(t, _)| t == "__constant")
+            } if constant.is_some()
                 && name.starts_with(|c: char| c.is_ascii_uppercase() || c.is_ascii_lowercase())
                 && !name.starts_with(['$', '@', '%', '&']) =>
             {

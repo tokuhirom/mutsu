@@ -4380,6 +4380,7 @@ impl Compiler {
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
                     has_initializer: true,
+                    constant: None,
                     where_constraint: None,
                 },
                 Stmt::MarkSigilless(cap.to_string()),

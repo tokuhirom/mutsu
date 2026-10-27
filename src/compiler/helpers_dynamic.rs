@@ -195,10 +195,10 @@ impl Compiler {
         name: &str,
         is_our: bool,
         type_constraint: Option<&str>,
-        custom_traits: &[(String, Option<Expr>)],
+        constant: Option<crate::ast::ConstantSigil>,
     ) -> Option<String> {
         let smiley = self.variables_pragma?;
-        if custom_traits.iter().any(|(t, _)| t == "__constant") {
+        if constant.is_some() {
             return None;
         }
         let tc = match type_constraint {

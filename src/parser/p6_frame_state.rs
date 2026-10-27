@@ -156,6 +156,7 @@ fn hidden_decls() -> [Stmt; 2] {
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
         has_initializer,
+        constant: None,
         where_constraint: None,
     };
     let first_run = Expr::Ternary {

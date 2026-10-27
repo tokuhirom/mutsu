@@ -343,6 +343,7 @@ fn slot_decl(slot: &str) -> Stmt {
         export_tags: vec![],
         custom_traits: vec![],
         has_initializer: false,
+        constant: None,
         where_constraint: None,
     }
 }

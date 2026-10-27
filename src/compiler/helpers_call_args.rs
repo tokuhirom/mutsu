@@ -441,14 +441,12 @@ impl Compiler {
             && let Stmt::VarDecl {
                 name,
                 is_our: false,
-                custom_traits,
+                constant,
                 ..
             } = stmt.as_ref()
             && !name.starts_with(['@', '%', '&'])
             && !name.starts_with("__ANON")
-            && !custom_traits
-                .iter()
-                .any(|(trait_name, _)| trait_name == "__constant")
+            && !constant.is_some()
         {
             Some(name.clone())
         } else {
@@ -833,14 +831,12 @@ impl Compiler {
             && let Stmt::VarDecl {
                 name,
                 is_our: false,
-                custom_traits,
+                constant,
                 ..
             } = stmt.as_ref()
             && !name.starts_with(['@', '%', '&'])
             && !name.starts_with("__ANON")
-            && !custom_traits
-                .iter()
-                .any(|(trait_name, _)| trait_name == "__constant")
+            && !constant.is_some()
             && !self.promoted_expr_decl_names.contains(name)
         {
             Some(name.clone())

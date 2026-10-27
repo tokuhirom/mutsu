@@ -114,6 +114,7 @@ impl Compiler {
             export_tags: Vec::new(),
             custom_traits: vec![("__scalar_bind".to_string(), None)],
             has_initializer: false,
+            constant: None,
             where_constraint: None,
         };
         let incdec = wrap(with_elem_chain_root(expr, &Expr::Var(tmp)));

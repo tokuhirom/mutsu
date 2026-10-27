@@ -33,6 +33,7 @@ pub(crate) fn split_loop_cond_decl(cond: Expr) -> (Option<Stmt>, Expr) {
         && let Stmt::VarDecl {
             name,
             has_initializer: false,
+            constant: None,
             ..
         } = boxed.as_ref()
     {

@@ -1266,14 +1266,11 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_dynamic: false,
         is_export,
         export_tags,
-        custom_traits: vec![
-            ("__constant".to_string(), None),
-            (
-                "__constant_sigil".to_string(),
-                Some(Expr::Literal(Value::str_from(sigil))),
-            ),
-        ],
+        custom_traits: Vec::new(),
         has_initializer: true,
+        constant: Some(crate::ast::ConstantSigil::from_sigil(
+            sigil.bytes().next().unwrap_or(0),
+        )),
         where_constraint: None,
     })
 }
@@ -3299,6 +3296,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 export_tags: export_tags.clone(),
                 custom_traits,
                 has_initializer,
+                constant: None,
                 where_constraint,
             }),
         ));
@@ -3315,6 +3313,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         export_tags,
         custom_traits,
         has_initializer,
+        constant: None,
         where_constraint,
     })
 }
