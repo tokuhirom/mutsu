@@ -460,18 +460,9 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
         // A statement-form LOOP phaser shares the enclosing block's lexical
         // scope: `NEXT (state $best) max= $_;` declares `$best` in the loop
         // body, visible to a `LAST` in the same block (advent2012-day15.t).
-        // Mark the form by wrapping in SyntheticBlock (which compiles
-        // scope-less); `expand_loop_phasers` splices it inline instead of
-        // wrapping it in a scoped Block. Other phaser kinds keep the plain
-        // single-statement body (their consumers pattern-match its shape).
-        if matches!(
-            kind,
-            PhaserKind::First | PhaserKind::Next | PhaserKind::Last
-        ) {
-            (r, vec![Stmt::SyntheticBlock(vec![s])])
-        } else {
-            (r, vec![s])
-        }
+        // The phaser's `bare` field says so; `expand_loop_phasers` splices
+        // the statement inline instead of wrapping it in a scoped Block.
+        (r, vec![s])
     };
     // `BEGIN $*RAKU.version` (and `$*PERL.version`) is a compile-time constant
     // equal to the language version of the current compilation unit. The parser
@@ -510,18 +501,8 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
         body,
         condition,
         end_index,
+        bare,
     };
-    // A phaser over a bare statement (`LEAVE say 1`): rakudo keeps the
-    // statement as the prefix's child, which the block-less body cannot tell
-    // from `LEAVE { say 1 }`. A spelling-keeping parse marks it (ADR-12199).
-    if bare {
-        return Ok((
-            rest,
-            crate::parser::stmt::control::parsed_block::finish_total(
-                crate::ast::parsed::ParsedStmt::BarePhaser(Box::new(phaser)),
-            ),
-        ));
-    }
     Ok((rest, phaser))
 }
 

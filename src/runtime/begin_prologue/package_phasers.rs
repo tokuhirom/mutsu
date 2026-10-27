@@ -326,6 +326,7 @@ impl Mover<'_> {
             body: inner,
             condition: None,
             end_index: None,
+            bare: false,
         });
     }
 }

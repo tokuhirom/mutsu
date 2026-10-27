@@ -160,7 +160,6 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
             | ParsedStmt::SigillessDecl(_)
             | ParsedStmt::PackageHeader { .. }
             | ParsedStmt::TempDecl(_)
-            | ParsedStmt::BarePhaser(_)
             | ParsedStmt::CommaDecls(_)
             | ParsedStmt::TakeLogicalTail { .. }
             | ParsedStmt::DoneValue(_)

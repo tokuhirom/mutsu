@@ -203,10 +203,9 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
             block_mut(v, &mut w.block);
         }
         ParsedStmt::Default(block) | ParsedStmt::BareBlock(block) => block_mut(v, block),
-        ParsedStmt::For { stmt, .. }
-        | ParsedStmt::BindDecl(stmt)
-        | ParsedStmt::TempDecl(stmt)
-        | ParsedStmt::BarePhaser(stmt) => super::walk_stmt_mut(v, stmt),
+        ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) | ParsedStmt::TempDecl(stmt) => {
+            super::walk_stmt_mut(v, stmt)
+        }
         ParsedStmt::RoutineTraits(_) => {}
         ParsedStmt::TakeLogicalTail { value, right, .. } => {
             v.visit_expr_mut(value);

@@ -4046,6 +4046,7 @@ impl Compiler {
                     body: body.clone(),
                     condition: None,
                     end_index: *end_index,
+                    bare: false,
                 };
                 let idx = self.code.add_stmt(end_stmt);
                 let site_id = super::compile_session::mint();

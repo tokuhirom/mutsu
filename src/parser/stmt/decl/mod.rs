@@ -132,6 +132,7 @@ pub(crate) fn wrap_with_will_phasers(
             body: phaser_body,
             condition: None,
             end_index: None,
+            bare: false,
         });
     }
     Stmt::SyntheticBlock(stmts)

@@ -88,6 +88,7 @@ mod tests {
             body: Vec::new(),
             condition: None,
             end_index: None,
+            bare: false,
         }
     }
 

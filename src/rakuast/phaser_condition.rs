@@ -121,6 +121,7 @@ pub(super) fn lower(node: &RakuAstNode, kind: PhaserKind) -> Result<Stmt, Runtim
         body,
         condition,
         end_index: None,
+        bare: false,
     })
 }
 

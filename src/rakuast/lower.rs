@@ -1295,7 +1295,9 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// other kind.
 fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let kind = phaser_kind(node)?;
-    let body = super::bare_prefix::lower_phaser_body(&kind, named_child_or_positional(node)?)?;
+    let child = named_child_or_positional(node)?;
+    let bare = child.class != RakuAstClass::Block;
+    let body = super::bare_prefix::lower_body(child)?;
     Ok(Stmt::Phaser {
         spans: Default::default(),
         kind,
@@ -1306,6 +1308,7 @@ fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // at a source position of the main compunit. One converted from the
         // parser's tree keeps its number (see `origin`).
         end_index: super::origin::end_index_of(node),
+        bare,
     })
 }
 

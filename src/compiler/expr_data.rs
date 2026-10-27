@@ -423,6 +423,7 @@ impl Compiler {
                     body: body.to_vec(),
                     condition: None,
                     end_index: None,
+                    bare: false,
                 };
                 let idx = self.code.add_stmt(end_stmt);
                 let site_id = super::compile_session::mint();

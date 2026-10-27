@@ -83,6 +83,7 @@ pub(super) fn lift_nested_exports(stmts: &mut Vec<Stmt>) {
                 body: copies,
                 condition: None,
                 end_index: None,
+                bare: false,
             },
         );
     }

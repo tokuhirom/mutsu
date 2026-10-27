@@ -105,11 +105,6 @@ pub(crate) enum ParsedStmt {
     /// A statement with statement modifiers (`Statement::Expression`'s
     /// `condition-modifier` and `loop-modifier`).
     Modified(Modified),
-    /// A phaser written over a bare statement, `BEGIN say 1` (the
-    /// `Stmt::Phaser`); RakuAST keeps the statement as the prefix's child,
-    /// which the phaser's block-less body cannot tell from `BEGIN { say 1 }`.
-    /// It lowers to the phaser itself.
-    BarePhaser(Box<Stmt>),
     /// A named routine declared and called on the spot, `sub f($n) { ... }(21)`:
     /// the declaration (a `Stmt::SubDecl`) and the call arguments as written.
     /// `rakuast::lower` expands it into the declaration and a call of its name
@@ -608,9 +603,7 @@ impl ParsedStmt {
     // Cost: O(1).
     pub(crate) fn inner_stmt(&self) -> Option<&Stmt> {
         match self {
-            ParsedStmt::For { stmt, .. }
-            | ParsedStmt::BindDecl(stmt)
-            | ParsedStmt::BarePhaser(stmt) => Some(stmt),
+            ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
             ParsedStmt::PackageHeader { decl, .. }
             | ParsedStmt::TempDecl(decl)
             | ParsedStmt::ImmediateCall { decl, .. }
@@ -644,9 +637,7 @@ impl ParsedStmt {
     // Cost: O(1).
     pub(crate) fn inner_stmt_mut(&mut self) -> Option<&mut Stmt> {
         match self {
-            ParsedStmt::For { stmt, .. }
-            | ParsedStmt::BindDecl(stmt)
-            | ParsedStmt::BarePhaser(stmt) => Some(stmt),
+            ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
             ParsedStmt::PackageHeader { decl, .. }
             | ParsedStmt::TempDecl(decl)
             | ParsedStmt::ImmediateCall { decl, .. }
@@ -670,7 +661,6 @@ impl ParsedStmt {
             ParsedStmt::For { .. }
             | ParsedStmt::BindDecl(_)
             | ParsedStmt::TempDecl(_)
-            | ParsedStmt::BarePhaser(_)
             | ParsedStmt::AttributeGroup(_)
             | ParsedStmt::AttributeColonArglist(_)
             | ParsedStmt::MethodAssignDecl(_)
@@ -721,7 +711,6 @@ impl ParsedStmt {
             | ParsedStmt::SigillessDecl(_)
             | ParsedStmt::PackageHeader { .. }
             | ParsedStmt::TempDecl(_)
-            | ParsedStmt::BarePhaser(_)
             | ParsedStmt::ImmediateCall { .. }
             | ParsedStmt::AttributeModifier { .. }
             | ParsedStmt::AttributeGroup(_)

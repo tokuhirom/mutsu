@@ -84,7 +84,6 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
             let save = crate::ast::temporize::save(&name, None, None, true);
             Ok(Stmt::SyntheticBlock(vec![*decl, save]))
         }
-        ParsedStmt::BarePhaser(phaser) => Ok(*phaser),
         // Not code: the execution fields hold what the traits say.
         ParsedStmt::RoutineTraits(_) => Ok(Stmt::SyntheticBlock(Vec::new())),
         ParsedStmt::TakeLogicalTail { value, op, right } => {

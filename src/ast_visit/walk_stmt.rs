@@ -407,6 +407,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             // The condition's source text, kept only for the error message.
             condition: _,
             end_index: _,
+            bare: _,
         } => super::walk_stmts(v, body),
         Stmt::ProtoDecl {
             is_hidden_from_backtrace: _,
