@@ -93,6 +93,20 @@ impl Interpreter {
         {
             return Ok(result);
         }
+        if name == "X" && call_args.len() >= 2 {
+            // One n-ary product over the operands as written: a parenthesized
+            // operand that is itself a product stays one nested column
+            // (`(A X B) X C` yields `((a, b), c)`), unlike a pairwise fold
+            // that would extend the left operand's rows.
+            let mut columns = Vec::with_capacity(call_args.len());
+            for arg in &call_args {
+                let arg = self.fetch_proxy_for_store(Self::unwrap_var_ref_value(arg.clone()))?;
+                columns.push(crate::runtime::Interpreter::value_to_list(&arg));
+            }
+            return Ok(Value::seq(
+                crate::builtins::cross_product::cross_product_rows(&columns, false),
+            ));
+        }
         if call_args.len() >= 2 {
             // `apply_reduction_op` is always a NATIVE reduction (`+`, `mod`,
             // junctions, ...) — never a call that could bind an `is rw`
