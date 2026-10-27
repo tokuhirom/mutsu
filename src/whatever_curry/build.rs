@@ -13,6 +13,9 @@ use crate::token_kind::TokenKind;
 
 pub(crate) fn make_wc_param(name: String) -> ParamDef {
     ParamDef {
+        implicit_invocant: Default::default(),
+        does_target: Default::default(),
+        target: Default::default(),
         spans: Default::default(),
         trait_meta: Default::default(),
         type_capture: None,
@@ -232,7 +235,11 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
         // one-parameter expansion (`build_compound_assign_expr`).
         Expr::CompoundAssign { target, rhs, .. } => {
             let n = count_whatever(rhs);
-            n + usize::from(n > 0 && is_whatever(target))
+            if is_whatever(target) {
+                n + usize::from(n > 0)
+            } else {
+                n + count_whatever(target)
+            }
         }
         // A nested, already-planted WhateverCurry operand (e.g. `(* - 1)`
         // inside `(* - 1) - 1`) contributes its own un-curried placeholder

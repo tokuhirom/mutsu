@@ -63,6 +63,9 @@ fn condition_modifier(modifier: StatementModifier, stmt: Stmt) -> Result<Stmt, R
     match kind {
         ModifierKind::If | ModifierKind::Unless => {
             let is_unless = kind == ModifierKind::Unless;
+            if is_pointy_block(&stmt) {
+                return Ok(call_with_condition(stmt, expr, is_unless));
+            }
             let stmt = rewrite_placeholder_block(stmt, &expr);
             // A declaration takes effect unconditionally; only its
             // initializer is gated.
@@ -105,6 +108,15 @@ fn condition_modifier(modifier: StatementModifier, stmt: Stmt) -> Result<Stmt, R
 // Cost: O(n), n = size of `stmt` and the topic.
 fn with_modifier(is_without: bool, topic: Expr, stmt: Stmt) -> Result<Stmt, RuntimeError> {
     let is_expression = matches!(stmt, Stmt::Expr(_));
+    // A pointy block takes the tested value as its argument.
+    let stmt = if is_pointy_block(&stmt) {
+        match stmt {
+            Stmt::Expr(closure) => call_with_topic(closure),
+            other => other,
+        }
+    } else {
+        stmt
+    };
     // A bare block's placeholders take the tested value: the topic for
     // `with`, the written operand for `without`.
     let placeholder_value = if is_without {
@@ -168,7 +180,7 @@ fn loop_modifier(modifier: StatementModifier, stmt: Stmt) -> Stmt {
             let is_until = kind == ModifierKind::Until;
             Stmt::While {
                 cond: negate_if(expr, is_until),
-                body: vec![while_operand(stmt)],
+                body: vec![while_body(stmt)],
                 label: None,
                 is_statement_modifier: true,
                 is_until,
@@ -218,12 +230,12 @@ fn negate_if(expr: Expr, negate: bool) -> Expr {
     }
 }
 
-/// A bare block to the left of `while`/`until` is the modifier's operand: the
-/// loop repeatedly evaluates the Block value without invoking its body.
+/// A bare block to the left of `while`/`until` runs on each pass, and its value
+/// is the pass's value, so it is a `do` block.
 // Cost: O(1).
-fn while_operand(stmt: Stmt) -> Stmt {
+fn while_body(stmt: Stmt) -> Stmt {
     match stmt {
-        Stmt::Block(body) => Stmt::Expr(crate::ast::make_anon_sub(body)),
+        Stmt::Block(body) => Stmt::Expr(Expr::DoStmt(Box::new(Stmt::Block(body)))),
         other => other,
     }
 }
@@ -242,6 +254,7 @@ fn rewrite_placeholder_block(stmt: Stmt, value: &Expr) -> Stmt {
     let mut rewritten = Vec::with_capacity(placeholders.len() + body.len());
     for (idx, name) in placeholders.into_iter().enumerate() {
         rewritten.push(Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name,
             expr: if idx == 0 {
@@ -256,6 +269,9 @@ fn rewrite_placeholder_block(stmt: Stmt, value: &Expr) -> Stmt {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         });
     }
@@ -357,6 +373,43 @@ fn for_modifier(iterable: Expr, stmt: Stmt) -> Stmt {
         Some(declaration) => Stmt::SyntheticBlock(vec![declaration, loop_stmt]),
         None => loop_stmt,
     }
+}
+
+/// A pointy block `-> $x { ... }` used as the modified statement.
+// Cost: O(1).
+fn is_pointy_block(stmt: &Stmt) -> bool {
+    matches!(
+        stmt,
+        Stmt::Expr(Expr::Lambda {
+            is_whatever_code: false,
+            ..
+        })
+    )
+}
+
+/// `-> $x { ... } if C`: the pointy block is called with the value of `C`,
+/// which is only evaluated once (rakudo 2026.09).
+// Cost: O(1).
+fn call_with_condition(closure: Stmt, cond: Expr, is_unless: bool) -> Stmt {
+    let Stmt::Expr(closure) = closure else {
+        return closure;
+    };
+    let test = negate_if(Expr::Var("_".to_string()), is_unless);
+    let call = Stmt::If {
+        cond: test,
+        then_branch: vec![call_with_topic(closure)],
+        else_branch: Vec::new(),
+        binding_var: None,
+        is_statement_modifier: true,
+        is_unless: false,
+        with_kind: None,
+    };
+    Stmt::Expr(Expr::DoStmt(Box::new(Stmt::Given {
+        topic: cond,
+        body: vec![Stmt::Expr(Expr::DoStmt(Box::new(call)))],
+        is_statement_modifier: true,
+        with_kind: None,
+    })))
 }
 
 /// `CLOSURE($_)`: the per-element call of a closure under `for`.

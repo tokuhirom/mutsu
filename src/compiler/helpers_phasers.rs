@@ -256,6 +256,7 @@ impl Compiler {
 
         let mut pre = vec![
             Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: first_var.clone(),
                 expr: Expr::Literal(Value::TRUE),
@@ -266,9 +267,13 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             },
             Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: ran_var.clone(),
                 expr: Expr::Literal(Value::FALSE),
@@ -279,11 +284,15 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             },
         ];
         if let Some(result_var) = result_var.clone() {
             pre.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: result_var,
                 expr: Expr::Literal(Value::NIL),
@@ -294,11 +303,15 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
         if let Some(last_topic_var) = last_topic_var.clone() {
             pre.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: last_topic_var,
                 expr: Expr::Literal(Value::NIL),
@@ -309,11 +322,15 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
         if let Some(value_var) = value_var.clone() {
             pre.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: value_var,
                 expr: Expr::Literal(Value::NIL),
@@ -324,11 +341,15 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
         if let Some(post_topic_var) = post_topic_var.clone() {
             pre.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: post_topic_var,
                 expr: Expr::Literal(Value::NIL),
@@ -339,6 +360,9 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
@@ -417,6 +441,7 @@ impl Compiler {
         // Declare temp variables for extracted ENTER phaser expressions
         for var_name in &enter_expr_vars {
             pre.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: var_name.clone(),
                 expr: Expr::Literal(Value::NIL),
@@ -427,6 +452,9 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
@@ -637,6 +665,7 @@ impl Compiler {
             };
             let init = init.clone();
             let body = vec![Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: var_name,
                 expr: init,
@@ -647,6 +676,9 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             }];
             hoisted.push(Stmt::Phaser {

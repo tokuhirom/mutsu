@@ -189,6 +189,7 @@ impl Compiler {
         let qualified = format!("{}::{bare}", var.package);
         if var.term {
             let decl = Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: var.name.clone(),
                 expr: Expr::BareWord(qualified),
@@ -198,13 +199,13 @@ impl Compiler {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
-                custom_traits: vec![
-                    ("__has_initializer".to_string(), None),
-                    (
-                        crate::ast::sigilless_decl::SIGILLESS_DECL.to_string(),
-                        Some(Expr::Literal(Value::FALSE)),
-                    ),
-                ],
+                custom_traits: vec![(
+                    crate::ast::sigilless_decl::SIGILLESS_DECL.to_string(),
+                    Some(Expr::Literal(Value::FALSE)),
+                )],
+                has_initializer: true,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             };
             return Some(Stmt::SyntheticBlock(vec![
@@ -213,15 +214,16 @@ impl Compiler {
                 Stmt::MarkSigilless(var.name.clone()),
             ]));
         }
-        let (expr, custom_traits) = match sigil {
-            Some('@') => (Expr::ArrayVar(qualified), Vec::new()),
-            Some(_) => (Expr::HashVar(qualified), Vec::new()),
+        let (expr, bind) = match sigil {
+            Some('@') => (Expr::ArrayVar(qualified), None),
+            Some(_) => (Expr::HashVar(qualified), None),
             None => (
                 Expr::Var(qualified),
-                vec![(crate::ast::bind_decl::SCALAR_BIND.to_string(), None)],
+                Some(crate::ast::bind_decl::BindKind::Scalar),
             ),
         };
         Some(crate::ast::bind_decl::expand(Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: var.name.clone(),
             expr,
@@ -231,7 +233,10 @@ impl Compiler {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits,
+            custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind,
             where_constraint: None,
         }))
     }
@@ -366,6 +371,7 @@ impl Compiler {
         };
         if sigil == Some('&') {
             let decl = Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: symbol.to_string(),
                 expr: Expr::CodeVar(bare.to_string()),
@@ -376,6 +382,9 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             };
             return Some(Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl]));

@@ -151,9 +151,10 @@ impl BlockScope {
                 Stmt::VarDecl {
                     name,
                     custom_traits,
+                    constant,
                     expr,
                     ..
-                } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
+                } if constant.is_some() => {
                     own.insert(name.clone(), constant_kind(expr));
                 }
                 _ => {}
@@ -343,9 +344,10 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                 Stmt::VarDecl {
                     name,
                     custom_traits,
+                    constant,
                     expr,
                     ..
-                } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
+                } if constant.is_some() => {
                     self.0.insert(name.clone(), constant_kind(expr));
                     if let Expr::BareWord(target) = expr {
                         self.2.push(package_alias::PackageAlias {
@@ -373,12 +375,9 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                 // An `our sub` of a package is reached by its qualified name.
                 Stmt::SubDecl {
                     name,
-                    custom_traits,
+                    scope: crate::ast::SubScope::Our,
                     ..
-                } if custom_traits
-                    .iter()
-                    .any(|(n, _)| n == super::convert::OUR_SCOPED) =>
-                {
+                } => {
                     for composed in self.compositions(*name).into_iter().skip(1) {
                         self.0.insert(composed.resolve(), DeclaredKind::Routine);
                     }

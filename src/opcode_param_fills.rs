@@ -43,7 +43,7 @@ impl CompiledFunction {
             || pd.code_signature.is_some()
             || pd.shape_constraints.is_some()
             || pd.literal_value.is_some()
-            || !pd.traits.is_empty()
+            || pd.has_traits()
             // An `@`/`%` parameter's missing-optional value is a FRESH
             // container per call (`Value::element_descriptor_array`), which a
             // shared constant cannot be. The light path's eligibility check
@@ -174,6 +174,9 @@ mod param_fill_tests {
 
     fn param(name: &str) -> ParamDef {
         ParamDef {
+            does_target: Default::default(),
+            implicit_invocant: Default::default(),
+            target: Default::default(),
             spans: Default::default(),
             trait_meta: Default::default(),
             type_capture: None,

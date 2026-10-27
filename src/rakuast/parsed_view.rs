@@ -93,6 +93,17 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
         ParsedStmt::TakeLogicalTail { value, op, right } => {
             statement_expression(super::convert::take_logical_tail_node(value, op, right)?)
         }
+        ParsedStmt::InlineProtoUse { proto, use_stmt } => {
+            super::use_stmt::convert_inline_proto(proto, use_stmt)?
+        }
+        // Rakudo keeps `done VALUE` as the one call with its payload.
+        ParsedStmt::DoneValue(value) => statement_expression(super::convert::control_call(
+            "done",
+            std::slice::from_ref(value),
+        )?),
+        ParsedStmt::CallAssignList { head, items } => {
+            statement_expression(super::decl_tail::convert_call_assign_list(head, items)?)
+        }
         ParsedStmt::CommaDecls(declarations) => {
             statement_expression(super::convert::comma_declarations_node(declarations)?)
         }

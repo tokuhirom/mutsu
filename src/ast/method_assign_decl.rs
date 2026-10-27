@@ -24,6 +24,7 @@ pub(crate) struct MethodAssignDecl {
     pub(crate) is_export: bool,
     pub(crate) export_tags: Vec<String>,
     pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
+    pub(crate) marks: super::var_marks::VarMarks,
     pub(crate) where_constraint: Option<Box<Expr>>,
     pub(crate) method: Symbol,
     /// A term as the method (`my $x .= &f`, `my $x .= $m`): the call's
@@ -107,6 +108,7 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Vec<Stmt> {
         // call reads the slot the declaration just bound (#13273).
         return vec![
             Stmt::VarDecl {
+                marks: form.marks.clone(),
                 anonymous: form.anonymous,
                 name: form.name.clone(),
                 expr: fresh_container(&form.name),
@@ -117,6 +119,9 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Vec<Stmt> {
                 is_export: form.is_export,
                 export_tags: form.export_tags.clone(),
                 custom_traits: form.custom_traits.clone(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: form.where_constraint.clone(),
             },
             Stmt::Assign {
@@ -136,10 +141,10 @@ fn single_declaration(form: &MethodAssignDecl, target: Expr, call: Expr) -> Stmt
     let mut custom_traits = form.custom_traits.clone();
     if !matches!(target, Expr::BareWord(_)) {
         custom_traits.push((METHOD_ASSIGN_DECL_TRAIT.to_string(), None));
-    } else if form.shape.is_none() && !custom_traits.iter().any(|(n, _)| n == "__has_initializer") {
-        custom_traits.push(("__has_initializer".to_string(), None));
     }
+    let has_initializer = matches!(target, Expr::BareWord(_)) && form.shape.is_none();
     Stmt::VarDecl {
+        marks: form.marks.clone(),
         anonymous: form.anonymous,
         name: form.name.clone(),
         expr: call,
@@ -150,6 +155,9 @@ fn single_declaration(form: &MethodAssignDecl, target: Expr, call: Expr) -> Stmt
         is_export: form.is_export,
         export_tags: form.export_tags.clone(),
         custom_traits,
+        has_initializer,
+        constant: None,
+        bind: None,
         where_constraint: form.where_constraint.clone(),
     }
 }
@@ -166,6 +174,7 @@ pub(crate) fn expression_declaration(form: &MethodAssignDecl) -> Option<Stmt> {
     let target = invocant(&form.name, form.type_constraint.as_deref(), form.is_v6c);
     let call = method_call(form, target.clone());
     let Stmt::VarDecl {
+        marks,
         anonymous,
         name,
         expr,
@@ -176,12 +185,16 @@ pub(crate) fn expression_declaration(form: &MethodAssignDecl) -> Option<Stmt> {
         is_export,
         export_tags,
         custom_traits,
+        has_initializer,
+        constant: _,
+        bind: _,
         where_constraint,
     } = single_declaration(form, target.clone(), call)
     else {
         return None;
     };
     Some(Stmt::VarDecl {
+        marks,
         anonymous,
         name,
         expr: Expr::CompoundAssign {
@@ -197,6 +210,9 @@ pub(crate) fn expression_declaration(form: &MethodAssignDecl) -> Option<Stmt> {
         is_export,
         export_tags,
         custom_traits,
+        has_initializer,
+        constant: None,
+        bind: None,
         where_constraint,
     })
 }

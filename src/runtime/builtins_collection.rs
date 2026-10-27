@@ -94,6 +94,17 @@ fn try_parse_unicode_fraction(s: &str) -> Option<Value> {
     Some(crate::value::make_rat(n, d))
 }
 
+/// The elements one argument of `set` / `bag` / `mix` contributes: the
+/// arguments of a `*@` slurpy flatten recursively through non-itemized lists
+/// (`set((1, (2, 3)))` has three elements; `set([1, [2, 3]])` keeps the inner
+/// Array whole).
+// Cost: O(e), e = nested elements.
+fn slurpy_elements(arg: &Value) -> Vec<Value> {
+    let mut out = Vec::new();
+    crate::runtime::types::flatten_into_slurpy(std::slice::from_ref(arg), &mut out);
+    out
+}
+
 impl Interpreter {
     pub(super) fn builtin_end(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.len() != 1 {
@@ -176,10 +187,10 @@ impl Interpreter {
                 ValueView::Array(_, kind) if kind.is_itemized() => {
                     insert_value(arg, &mut elems, &mut original_keys);
                 }
-                // Regular arrays are flattened
-                ValueView::Array(items, ..) => {
-                    for item in items.iter() {
-                        insert_value(item, &mut elems, &mut original_keys);
+                // Regular arrays are flattened, nested lists included
+                ValueView::Array(..) => {
+                    for item in slurpy_elements(arg) {
+                        insert_value(&item, &mut elems, &mut original_keys);
                     }
                 }
                 // A bare hash is decomposed into its pairs; an itemized one
@@ -193,9 +204,15 @@ impl Interpreter {
                 }
                 // A Seq (e.g. from `.map`/`.comb`) is a list of elements, not one
                 // opaque value — flatten it like a regular array.
-                ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
-                    for item in items.iter() {
-                        insert_value(item, &mut elems, &mut original_keys);
+                ValueView::Seq(_) | ValueView::HyperSeq(_) | ValueView::RaceSeq(_) => {
+                    for item in slurpy_elements(arg) {
+                        insert_value(&item, &mut elems, &mut original_keys);
+                    }
+                }
+                // A (finite) Range is a list of its values
+                _ if arg.is_range() => {
+                    for item in slurpy_elements(arg) {
+                        insert_value(&item, &mut elems, &mut original_keys);
                     }
                 }
                 _ => {
@@ -282,10 +299,10 @@ impl Interpreter {
                 ValueView::Array(_, kind) if kind.is_itemized() => {
                     add_item(&mut counts, &mut original_keys, arg);
                 }
-                // Regular arrays are flattened
-                ValueView::Array(items, ..) => {
-                    for item in items.iter() {
-                        add_item(&mut counts, &mut original_keys, item);
+                // Regular arrays are flattened, nested lists included
+                ValueView::Array(..) => {
+                    for item in slurpy_elements(arg) {
+                        add_item(&mut counts, &mut original_keys, &item);
                     }
                 }
                 // A bare hash is flattened into its pairs (each pair is a single
@@ -303,9 +320,15 @@ impl Interpreter {
                 }
                 // A Seq (e.g. from `.map`/`.comb`) is a list of elements, not one
                 // opaque value — flatten it like a regular array.
-                ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
-                    for item in items.iter() {
-                        add_item(&mut counts, &mut original_keys, item);
+                ValueView::Seq(_) | ValueView::HyperSeq(_) | ValueView::RaceSeq(_) => {
+                    for item in slurpy_elements(arg) {
+                        add_item(&mut counts, &mut original_keys, &item);
+                    }
+                }
+                // A (finite) Range is a list of its values
+                _ if arg.is_range() => {
+                    for item in slurpy_elements(arg) {
+                        add_item(&mut counts, &mut original_keys, &item);
                     }
                 }
                 _ => {
@@ -343,10 +366,11 @@ impl Interpreter {
                 ValueView::Array(_, kind) if kind.is_itemized() => {
                     insert_value(arg, &mut weights, &mut original_keys);
                 }
-                // Regular arrays are flattened; each element becomes a key
-                ValueView::Array(items, ..) => {
-                    for item in items.iter() {
-                        insert_value(item, &mut weights, &mut original_keys);
+                // Regular arrays are flattened, nested lists included; each
+                // element becomes a key
+                ValueView::Array(..) => {
+                    for item in slurpy_elements(arg) {
+                        insert_value(&item, &mut weights, &mut original_keys);
                     }
                 }
                 // A bare hash is flattened into its pairs (each pair becomes a key);
@@ -360,9 +384,15 @@ impl Interpreter {
                 }
                 // A Seq (e.g. from `.map`/`.comb`) is a list of elements, not one
                 // opaque value — flatten it like a regular array.
-                ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
-                    for item in items.iter() {
-                        insert_value(item, &mut weights, &mut original_keys);
+                ValueView::Seq(_) | ValueView::HyperSeq(_) | ValueView::RaceSeq(_) => {
+                    for item in slurpy_elements(arg) {
+                        insert_value(&item, &mut weights, &mut original_keys);
+                    }
+                }
+                // A (finite) Range is a list of its values
+                _ if arg.is_range() => {
+                    for item in slurpy_elements(arg) {
+                        insert_value(&item, &mut weights, &mut original_keys);
                     }
                 }
                 _ => {

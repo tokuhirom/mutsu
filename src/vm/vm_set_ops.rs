@@ -286,6 +286,15 @@ impl Interpreter {
     /// elements instead of the empty prefix. Non-consuming, like `.cache`.
     // Cost: O(e) once per pending Seq operand, e = its elements; O(1) otherwise.
     pub(super) fn pop_set_operands(&mut self) -> Result<(Value, Value), RuntimeError> {
+        let (left, right) = self.pop_set_operands_unwalked()?;
+        self.walk_set_operands(left, right)
+    }
+
+    /// The two operands of a set operator as the program wrote them: popped,
+    /// with a pending `.map`/`.grep` Seq run, but not yet read as element
+    /// lists. A user override of the operator (ADR-0071) takes these.
+    // Cost: O(e) once per pending Seq operand, e = its elements; O(1) otherwise.
+    pub(super) fn pop_set_operands_unwalked(&mut self) -> Result<(Value, Value), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         for v in [&left, &right] {
@@ -296,6 +305,17 @@ impl Interpreter {
                 self.reify_seq_body(&body)?;
             }
         }
+        Ok((left, right))
+    }
+
+    /// [`Self::pop_set_operands`] after the operands are popped: the operands
+    /// read as the element lists the built-in operator walks.
+    // Cost: O(e) for a user `Iterable` instance, e = its elements; O(1) otherwise.
+    pub(super) fn walk_set_operands(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<(Value, Value), RuntimeError> {
         // A user `Iterable` instance is a set operand through its elements.
         let left = self.iterable_instance_elements(left)?;
         let right = self.iterable_instance_elements(right)?;
@@ -338,12 +358,15 @@ impl Interpreter {
         op: runtime::SetOp,
         unicode: bool,
     ) -> Result<(), RuntimeError> {
-        let (left, right) = self.pop_set_operands()?;
+        let (left, right) = self.pop_set_operands_unwalked()?;
         let name = op.routine_names()[usize::from(unicode)];
+        // The override sees the operands themselves: an `Iterable` instance
+        // (Red's `ResultSeq`) is not yet its elements.
         if let Some(result) = self.try_user_infix(name, &left, &right)? {
             self.stack.push(result);
             return Ok(());
         }
+        let (left, right) = self.walk_set_operands(left, right)?;
         self.stack.push(runtime::set_op_values(op, &left, &right)?);
         Ok(())
     }

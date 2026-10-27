@@ -183,9 +183,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         let (r, sub_params) = super::super::sub::parse_param_list(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ']')?;
-        let mut p = super::helpers::make_param("@".to_string());
-        p.sub_signature = Some(sub_params);
-        return Ok((r, p));
+        return Ok((r, ParamDef::destructure(sub_params, true)));
     }
 
     // Capture-all: (|), (|$c), (|c), or capture sub-signature forms like | ($x)
@@ -201,8 +199,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             if sub_params.len() == 1 {
                 return Ok((r, sub_params[0].clone()));
             }
-            let mut p = super::helpers::make_param("__subsig__".to_string());
-            p.sub_signature = Some(sub_params);
+            let mut p = ParamDef::destructure(sub_params, false);
             // An anonymous capture `|(...)` consumes ALL remaining arguments;
             // mark it slurpy+sigilless (like the named `|c(...)` form) so it is
             // distinguishable from a plain one-argument destructuring
@@ -399,10 +396,9 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         let (r, sub_params) = super::super::sub::parse_param_list(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ']')?;
-        let mut p = super::helpers::make_param("@".to_string());
+        let mut p = ParamDef::destructure(sub_params, true);
         p.slurpy = true;
         p.onearg = plus;
-        p.sub_signature = Some(sub_params);
         return Ok((r, p));
     }
 
@@ -428,9 +424,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             let mut p = super::helpers::make_param("self".to_string());
             p.type_constraint = Some(tc);
             p.is_invocant = true;
-            p.traits.push("invocant".to_string());
-            p.traits
-                .push(crate::ast::IMPLICIT_INVOCANT_TRAIT.to_string());
+            p.implicit_invocant = true;
             return Ok((r, p));
         }
         let (r, _) = ws(r)?;
@@ -467,9 +461,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             let mut p = super::helpers::make_param("self".to_string());
             p.type_constraint = Some(tc);
             p.is_invocant = true;
-            p.traits.push("invocant".to_string());
-            p.traits
-                .push(crate::ast::IMPLICIT_INVOCANT_TRAIT.to_string());
+            p.implicit_invocant = true;
             return Ok((r, p));
         } else if r.starts_with('(') {
             // A `(` after the pseudo-type is not this branch's business: it
@@ -512,8 +504,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
             let (r, default) = super::helpers::parse_param_default_expr(r)?;
-            let mut p = super::helpers::make_param(format!("__type_capture__{}", capture_name));
-            p.type_capture = Some(capture_name);
+            let mut p = ParamDef::bare_type_capture(&capture_name);
             p.named = named;
             p.slurpy = slurpy;
             p.default = Some(default);
@@ -535,8 +526,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             // `{` ends a bare capture in a pointy header: `for @a -> ::T { ... }`.
             || rest.starts_with('{')
         {
-            let mut p = super::helpers::make_param(format!("__type_capture__{}", capture_name));
-            p.type_capture = Some(capture_name);
+            let mut p = ParamDef::bare_type_capture(&capture_name);
             p.named = named;
             p.slurpy = slurpy;
             return Ok((rest, p));
@@ -556,8 +546,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             if is_invocant_marker {
                 // Return the bare ::T as a standalone param; leave `:` for the
                 // outer param-list loop to handle as the invocant marker.
-                let mut p = super::helpers::make_param(format!("__type_capture__{}", capture_name));
-                p.type_capture = Some(capture_name);
+                let mut p = ParamDef::bare_type_capture(&capture_name);
                 p.named = named;
                 p.slurpy = slurpy;
                 return Ok((rest, p));
@@ -644,9 +633,8 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                     let (r3, _) = ws(r3)?;
                     let (r3, _) = parse_char(r3, ')')?;
                     let (r3, _) = ws(r3)?;
-                    let mut p = super::helpers::make_param("__subsig__".to_string());
+                    let mut p = ParamDef::destructure(sub_params, false);
                     p.type_constraint = Some(tc);
-                    p.sub_signature = Some(sub_params);
                     p.named = named;
                     p.slurpy = slurpy;
                     return Ok((r3, p));
@@ -659,9 +647,8 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 let (r3, _) = ws(r3)?;
                 let (r3, _) = parse_char(r3, ')')?;
                 let (r3, _) = ws(r3)?;
-                let mut p = super::helpers::make_param("__subsig__".to_string());
+                let mut p = ParamDef::destructure(sub_params, false);
                 p.type_constraint = Some(tc);
-                p.sub_signature = Some(sub_params);
                 p.named = named;
                 p.slurpy = slurpy;
                 // Handle optional (?) / required (!) suffix after sub-signature
@@ -764,7 +751,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                     ),
                     crate::parser::primary::current_line_number(r2),
                 );
-                let mut p = super::helpers::make_param("__type_only__".to_string());
+                let mut p = ParamDef::type_only();
                 p.type_constraint = Some("Bool".to_string());
                 p.named = named;
                 p.slurpy = slurpy;
@@ -952,8 +939,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         let (r, _) = ws(r)?;
         let (r, required, opt_marker) = super::helpers::parse_required_suffix(r);
         let (r, tail) = super::helpers::parse_subsig_tail(r)?;
-        let mut p = super::helpers::make_param("__subsig__".to_string());
-        p.sub_signature = Some(sub_params);
+        let mut p = ParamDef::destructure(sub_params, false);
         p.named = named;
         p.slurpy = slurpy;
         p.double_slurpy = double_slurpy;

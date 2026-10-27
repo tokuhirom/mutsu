@@ -23,9 +23,7 @@
 //!   private to its block, so it is not collected: as a bare-name superset it
 //!   could shadow an importer's own routine or quote construct.
 
-use super::{
-    InlineModuleExport, compose_type_name, is_export_stash_package, is_our_scoped, sub_export_entry,
-};
+use super::{InlineModuleExport, compose_type_name, is_export_stash_package, sub_export_entry};
 use crate::ast::{Expr, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 use std::collections::HashMap;
@@ -263,14 +261,14 @@ impl<'ast> Visit<'ast> for DeclScan {
                 name,
                 is_export,
                 export_tags,
-                custom_traits,
+                is_lexical,
                 ..
             } => {
                 let name = name.resolve();
                 if name.starts_with("__ANON_") {
                     return self.enter_package(stmt, self.prefix.clone(), false, String::new());
                 }
-                if *is_export && !custom_traits.iter().any(|(t, _)| t == "__my_scoped") {
+                if *is_export && !*is_lexical {
                     self.export_type(&name, export_tags);
                 }
                 let composed = package_type_name(&self.prefix, &name);
@@ -380,14 +378,14 @@ impl<'ast> Visit<'ast> for DeclScan {
                 is_export,
                 is_our,
                 export_tags,
-                custom_traits,
+                constant,
                 ..
             } => {
                 // An exported variable is the package variable of the package
                 // it is declared in; an exported constant may be `my`-scoped.
                 // Only one on the package spine is known to be declared when
                 // the module loads.
-                let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
+                let is_constant = constant.is_some();
                 if *is_our && is_export_stash_package(&self.package) && !name.starts_with('&') {
                     self.out.unlisted_exported_vars = true;
                 }
@@ -419,14 +417,12 @@ impl<'ast> Visit<'ast> for DeclScan {
                             name: name.clone(),
                             package,
                             tags: export_tags.clone(),
-                            term: crate::term_names::is_term_constant_decl(name, custom_traits),
+                            term: crate::term_names::is_term_constant_decl(name, *constant),
                             hook: false,
                         });
                 }
                 // Sigiled constants (`constant $x = 1`) are not barewords.
-                if custom_traits.iter().any(|(t, _)| t == "__constant")
-                    && !name.is_empty()
-                    && !name.starts_with(['$', '@', '%', '&'])
+                if constant.is_some() && !name.is_empty() && !name.starts_with(['$', '@', '%', '&'])
                 {
                     if self.spine || *is_export {
                         self.out.constant_names.push(name.clone());
@@ -454,7 +450,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                 associativity,
                 precedence_trait,
                 is_test_assertion,
-                custom_traits,
+                scope,
                 ..
             } => {
                 // Every `is export` sub is collected, whatever tag it carries:
@@ -464,7 +460,8 @@ impl<'ast> Visit<'ast> for DeclScan {
                 // `EXPORT::<tag>` stash is exported by construction
                 // (Net::IP::Parse's `our sub infix:<< ip== >>`).
                 if *is_export
-                    || (is_export_stash_package(&self.package) && is_our_scoped(custom_traits))
+                    || (is_export_stash_package(&self.package)
+                        && *scope == crate::ast::SubScope::Our)
                 {
                     let entry = sub_export_entry(
                         name.resolve(),

@@ -170,6 +170,7 @@ impl Compiler {
                 export_tags,
                 body,
                 is_rw,
+                is_lexical,
                 language_version,
                 custom_traits,
                 decl_id,
@@ -183,6 +184,7 @@ impl Compiler {
                 export_tags: export_tags.clone(),
                 body: body.clone(),
                 is_rw: *is_rw,
+                is_lexical: *is_lexical,
                 language_version: language_version.clone(),
                 custom_traits: {
                     let mut traits = custom_traits.clone();
@@ -463,6 +465,7 @@ impl Compiler {
         // element to `@tmp` would wrap it as a one-element array and iterate
         // the wrong thing.
         let decl = Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: format!("@{}", tmp),
             expr: Expr::MethodCall {
@@ -479,7 +482,10 @@ impl Compiler {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![("__has_initializer".to_string(), None)],
+            custom_traits: Vec::new(),
+            has_initializer: true,
+            constant: None,
+            bind: None,
             where_constraint: None,
         };
 
@@ -761,6 +767,7 @@ impl Compiler {
     /// A `my <NAME> = <EXPR>;` declaration for a compiler-synthesized temp.
     fn init_decl(name: &str, expr: Expr) -> Stmt {
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: name.to_string(),
             expr,
@@ -770,7 +777,10 @@ impl Compiler {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![("__has_initializer".to_string(), None)],
+            custom_traits: Vec::new(),
+            has_initializer: true,
+            constant: None,
+            bind: None,
             where_constraint: None,
         }
     }
@@ -1180,6 +1190,7 @@ impl Compiler {
             }
             Stmt::VarTrait { name, op } => self.compile_var_trait_stmt(name, op),
             Stmt::VarDecl {
+                marks,
                 name,
                 expr,
                 type_constraint,
@@ -1189,6 +1200,9 @@ impl Compiler {
                 is_export,
                 export_tags,
                 custom_traits,
+                has_initializer,
+                constant,
+                bind,
                 where_constraint,
                 anonymous: _,
             } => {
@@ -1199,7 +1213,7 @@ impl Compiler {
                         name,
                         *is_our,
                         type_constraint.as_deref(),
-                        custom_traits,
+                        *constant,
                     )
                     .map(Some);
                 let smiley_from_pragma = pragma_type_constraint.is_some();
@@ -1222,7 +1236,7 @@ impl Compiler {
                 let declares_term = std::mem::take(&mut self.decl_is_term)
                     && !name.starts_with(['$', '@', '%', '&', '\\']);
                 let name = if declares_term
-                    || crate::runtime::term_names::is_term_constant_decl(name, custom_traits)
+                    || crate::runtime::term_names::is_term_constant_decl(name, *constant)
                 {
                     term_storage = crate::runtime::term_names::term_key(name);
                     &term_storage
@@ -1342,7 +1356,7 @@ impl Compiler {
                 }
                 // Track constant declarations so the compiler can avoid itemizing
                 // them in `for` loops (constants have no Scalar container).
-                let is_constant_decl = custom_traits.iter().any(|(t, _)| t == "__constant");
+                let is_constant_decl = constant.is_some();
                 if is_constant_decl
                     && !spelled.starts_with(['$', '@', '%', '&'])
                     && let Expr::BareWord(target) = expr
@@ -1372,18 +1386,11 @@ impl Compiler {
                     // (see roast S06-operator-overloading/sub.t). Key the
                     // duplicate-detection set by the source sigil so only true
                     // same-sigil redeclarations are caught.
-                    let constant_sigil = custom_traits
-                        .iter()
-                        .find(|(t, _)| t == "__constant_sigil")
-                        .and_then(|(_, e)| match e {
-                            Some(Expr::Literal(lit)) => match lit.view() {
-                                ValueView::Str(s) => Some(s.to_string()),
-                                _ => None,
-                            },
-                            _ => None,
-                        })
-                        .unwrap_or_default();
-                    let redecl_key = format!("{}{}", constant_sigil, spelled);
+                    let redecl_key = format!(
+                        "{}{}",
+                        constant.map_or("", crate::ast::ConstantSigil::as_str),
+                        spelled
+                    );
                     if !self.constant_vars_current_scope.insert(redecl_key) {
                         let sym = spelled.trim_start_matches(['$', '@', '%', '&']).to_string();
                         let mut attrs = std::collections::HashMap::new();
@@ -1445,7 +1452,7 @@ impl Compiler {
                     && !bind_vardecl
                     && where_constraint.is_none();
                 if is_plain_my {
-                    let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+                    let has_init = *has_initializer;
                     // Only the default-init form (a bare `my $f;` / `my Int $f;` /
                     // `my @a;` / `my %h;`, whose RHS is the synthesized empty type
                     // default — see `Compiler::is_synthesized_decl_default`) is a
@@ -1464,10 +1471,8 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 // The parser marks a declaration whose initializer reads the
                 // new binding (`my $x = do { $x }`, `my $*X = $*X + 1`, #9770).
-                let init_sees_self = !*is_state
-                    && !*is_our
-                    && !is_constant_decl
-                    && custom_traits.iter().any(|(n, _)| n == "__init_sees_self");
+                let init_sees_self =
+                    !*is_state && !*is_our && !is_constant_decl && marks.init_sees_self;
                 // `my @*x = f()` / `my %*x = f()`: the fresh empty container is
                 // already the dynamic binding a callee of the initializer sees
                 // (the outer or absent one must not show through).
@@ -1506,13 +1511,10 @@ impl Compiler {
                     // The early registration below is the very next op.
                     type_follows: !defer_type_constraint && type_constraint.is_some(),
                     bind_declaration: bind_vardecl
-                        || custom_traits
-                            .iter()
-                            .any(|(trait_name, _)| trait_name == "__scalar_bind"),
+                        || *bind == Some(crate::ast::bind_decl::BindKind::Scalar),
                     shadows_by_name,
                 });
-                let has_explicit_initializer =
-                    custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+                let has_explicit_initializer = *has_initializer;
                 let preapply_container_default = has_default_trait
                     && has_explicit_initializer
                     && name.starts_with('@')
@@ -1573,17 +1575,16 @@ impl Compiler {
                 // silently, with no error (#7953). The synthesized defaults are,
                 // by sigil: `Literal(Nil)` for `$`/`&`, an empty `Literal(Array)`
                 // for `@`, and an empty `Expr::Hash` for `%`. A real initializer
-                // — including an explicit `our %H = ()` — carries the parser's
-                // `__has_initializer` marker and must still run.
-                let is_our_bare_decl = *is_our
-                    && Self::is_synthesized_decl_default(expr)
-                    && !custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+                // — including an explicit `our %H = ()` — sets the
+                // declaration's `has_initializer` and must still run.
+                let is_our_bare_decl =
+                    *is_our && Self::is_synthesized_decl_default(expr) && !*has_initializer;
                 // A scalar `:=` bind to a Positional makes the scalar a
                 // non-container alias; record it so SetLocal can mark it
                 // decontainerized (so `@a = $bound` flattens, not itemizes).
                 // The parser tags such binds with the internal `__scalar_bind`
                 // trait.
-                let scalar_bind_decont = custom_traits.iter().any(|(t, _)| t == "__scalar_bind");
+                let scalar_bind_decont = *bind == Some(crate::ast::bind_decl::BindKind::Scalar);
                 // Capture whether this is a `:=` bind of an `@`/`%` container var
                 // *before* the RHS-compilation branches below consume `bind_vardecl`.
                 // Used by the `our` global store to skip the readonly check (the
@@ -1832,6 +1833,8 @@ impl Compiler {
                         expr,
                         type_constraint.as_deref(),
                         custom_traits,
+                        *bind,
+                        *has_initializer,
                     ) {
                         &any_default
                     } else if let Some(native_default) = native_default.as_ref() {
@@ -1869,7 +1872,7 @@ impl Compiler {
                 }
                 // `constant @x = ...` should store a List, not an Array.
                 // Coerce the value on the stack before storing.
-                if name.starts_with('@') && custom_traits.iter().any(|(t, _)| t == "__constant") {
+                if name.starts_with('@') && constant.is_some() {
                     self.code.emit(OpCode::CoerceToList);
                 }
                 // Skip TypeCheck for hash declarations: the type constraint
@@ -1947,11 +1950,7 @@ impl Compiler {
                 // declaration (#11834). A `:=` bind takes the bound container,
                 // so its type is whatever that container's is: leave it unrecorded
                 // for the run-time check to answer.
-                if !bind_vardecl
-                    && !custom_traits
-                        .iter()
-                        .any(|(trait_name, _)| trait_name == "__scalar_bind")
-                {
+                if !bind_vardecl && *bind != Some(crate::ast::bind_decl::BindKind::Scalar) {
                     self.record_scalar_decl_type(name, type_constraint.as_deref());
                 }
                 if !*is_state
@@ -2013,7 +2012,7 @@ impl Compiler {
                         self.code.emit(OpCode::StateVarInit(slot, key_sym));
                     }
                 } else {
-                    let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
+                    let is_constant = constant.is_some();
                     // A plain scalar `our $x = <expr>` (no `:=` bind, no native
                     // type, no container sigil, no `constant`, no trait besides
                     // the internal "has an initializer" marker): install ONE
@@ -2046,7 +2045,8 @@ impl Compiler {
                         && !binds_term
                         && !has_default_trait
                         && !scalar_bind_decont
-                        && custom_traits.iter().all(|(t, _)| t == "__has_initializer");
+                        && custom_traits.is_empty()
+                        && marks.is_plain();
                     // A typed `our @a` / `our %h` publishes the typed container
                     // `SetLocal` just built, not a second copy of the raw
                     // initializer: the global store would coerce that copy to a
@@ -2136,7 +2136,7 @@ impl Compiler {
                         // A shaped declaration (`my @a[5] = ...`) keeps its declared
                         // shape; mark it so SetLocal does not strip the shape the way
                         // an unshaped value-copy (`my @u = @shaped`) does.
-                        if custom_traits.iter().any(|(t, _)| t == "__shaped_decl") {
+                        if marks.shaped {
                             self.code.emit(OpCode::MarkShapedDeclContext);
                         }
                         // For % variables with QuantHash `is` traits, skip hash coercion
@@ -2361,21 +2361,10 @@ impl Compiler {
                 // X::Assignment::RO ("Cannot modify an immutable Rat (3.14)")
                 // because the lvalue is the value itself. mutsu's AST strips
                 // the `$` from a scalar constant name, so the source sigil is
-                // recovered from the `__constant_sigil` trait recorded by the
+                // recovered from the declaration's `constant` field set by the
                 // parser (`@`/`%` constants behave like the value form too).
                 if is_constant_decl {
-                    let sigil = custom_traits
-                        .iter()
-                        .find(|(t, _)| t == "__constant_sigil")
-                        .and_then(|(_, e)| match e {
-                            Some(Expr::Literal(lit)) => match lit.view() {
-                                ValueView::Str(s) => Some(s.to_string()),
-                                _ => None,
-                            },
-                            _ => None,
-                        })
-                        .unwrap_or_default();
-                    let kind = if sigil == "$" {
+                    let kind = if *constant == Some(crate::ast::ConstantSigil::Scalar) {
                         crate::ast::ReadonlyKind::Immutable
                     } else {
                         crate::ast::ReadonlyKind::ImmutableValue
@@ -4128,6 +4117,7 @@ impl Compiler {
                 multi,
                 is_rw,
                 is_raw,
+                scope,
                 custom_traits,
                 ..
             } => {
@@ -4248,7 +4238,7 @@ impl Compiler {
                 // registry; flag the body compile so its read/write lexical
                 // captures are boxed + persisted (escaping_our_sub_captures).
                 let prev_our = self.compiling_our_sub;
-                self.compiling_our_sub = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
+                self.compiling_our_sub = *scope == crate::ast::SubScope::Our;
                 let mut compiled_routine_keys = Vec::new();
                 let is_cached = custom_traits.iter().any(|(t, _)| t == "cached");
                 if let Some(key) = self.compile_sub_body_with_deprecation(
@@ -4439,12 +4429,14 @@ impl Compiler {
                     export_tags: export_tags.clone(),
                     is_test_assertion: false,
                     supersede: false,
+                    scope: if *is_our {
+                        crate::ast::SubScope::Our
+                    } else {
+                        crate::ast::SubScope::My
+                    },
                     custom_traits: {
                         let mut traits = custom_traits.clone();
                         traits.push(("__mutsu_method_decl".to_string(), None));
-                        if *is_our {
-                            traits.push(("__our_scoped".to_string(), None));
-                        }
                         if let Some(marker) = declarator.literal_marker() {
                             traits.push((marker.to_string(), None));
                         }
@@ -4969,11 +4961,9 @@ impl Compiler {
             // role-body-placeholder-mu-supply (#7550).
             Stmt::RoleDecl { body, .. } if self.emit_block_placeholder_die(body) => {}
             Stmt::RoleDecl {
-                name,
-                custom_traits,
-                ..
+                name, is_lexical, ..
             } => {
-                if custom_traits.iter().any(|(t, _)| t == "__my_scoped") {
+                if *is_lexical {
                     self.shadow_constant_with_lexical_type(&name.resolve());
                     self.lexical_types_in_scope.insert(name.resolve());
                 }

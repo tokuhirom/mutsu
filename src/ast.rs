@@ -81,6 +81,87 @@ pub(crate) mod decl_id_serde {
 }
 
 /// Specifies how delegation (`handles`) should forward methods.
+/// The scope a named `sub` was declared with, when it is not the default `my`
+/// (ADR-10723 Stage 2: a field of the declaration, not a marker trait).
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    bincode::Encode,
+    bincode::Decode,
+)]
+pub(crate) enum SubScope {
+    /// `sub f` / `my sub f`: lexical.
+    #[default]
+    My,
+    /// `our sub f`: also installed in the package.
+    Our,
+    /// `anon sub f`: built but never installed.
+    Anon,
+}
+
+/// The sigil a `constant` declaration was written with (ADR-10723 Stage 2:
+/// a field of `Stmt::VarDecl`, not the `__constant` / `__constant_sigil`
+/// marker traits). The declaration's `name` strips a `$`, so a scalar
+/// `constant $x` and a sigilless `constant x` would otherwise collide.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    bincode::Encode,
+    bincode::Decode,
+)]
+pub(crate) enum ConstantSigil {
+    /// `constant x`: a term, stored in the term namespace.
+    Term,
+    /// `constant $x`.
+    Scalar,
+    /// `constant @x`.
+    Array,
+    /// `constant %x`.
+    Hash,
+    /// `constant &x`.
+    Code,
+}
+
+impl ConstantSigil {
+    /// The sigil of the source spelling, empty for a term.
+    // Cost: O(1).
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Term => "",
+            Self::Scalar => "$",
+            Self::Array => "@",
+            Self::Hash => "%",
+            Self::Code => "&",
+        }
+    }
+
+    /// The constant a sigil byte of the source spelling declares; any
+    /// non-sigil byte is a term.
+    // Cost: O(1).
+    pub(crate) fn from_sigil(sigil: u8) -> Self {
+        match sigil {
+            b'$' => Self::Scalar,
+            b'@' => Self::Array,
+            b'%' => Self::Hash,
+            b'&' => Self::Code,
+            _ => Self::Term,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum HandleSpec {
     /// Forward a method by name (same name on both sides).
@@ -102,9 +183,52 @@ pub(crate) enum HandleSpec {
     Wildcard,
 }
 
+/// How a parameter's target was written, for the forms whose spelling the
+/// execution `name` only encodes as a placeholder (ADR-10723 Stage 2).
+///
+/// The execution layer still binds under the placeholder (`__type_only__`,
+/// `__subsig__`, `@`, `__type_capture__T`); this records which form the
+/// placeholder stands for, so the RakuAST view reads the form and never has to
+/// recognize a placeholder name.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub(crate) enum ParamTarget {
+    /// A variable or sigilless term: `name` is it.
+    #[default]
+    Variable,
+    /// A bare type with no target: `sub f(Int)`.
+    TypeOnly,
+    /// A bare `::T` capture with no target: `sub f(::T)`.
+    TypeCapture,
+    /// An anonymous `(…)` destructuring parameter.
+    Parens,
+    /// An anonymous `[…]` destructuring parameter.
+    Brackets,
+    /// A bare sigil with no name: `$`, `@` or `%` (the character).
+    Anonymous(char),
+}
+
+impl ParamTarget {
+    /// The form a parameter bound under the execution name `name` was written
+    /// in, for the placeholder names of an anonymous `$` / `@` / `%`.
+    // Cost: O(1).
+    pub(crate) fn of_name(name: &str) -> Self {
+        match name {
+            ANON_SCALAR_PARAM => ParamTarget::Anonymous('$'),
+            ANON_ARRAY_PARAM => ParamTarget::Anonymous('@'),
+            ANON_HASH_PARAM => ParamTarget::Anonymous('%'),
+            _ => ParamTarget::Variable,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ParamDef {
     pub(crate) name: String,
+    /// How the target was written; see [`ParamTarget`].
+    #[serde(default)]
+    pub(crate) target: ParamTarget,
     pub(crate) default: Option<Expr>,
     pub(crate) multi_invocant: bool,
     pub(crate) required: bool,
@@ -153,6 +277,14 @@ pub(crate) struct ParamDef {
     pub(crate) code_signature: Option<(Vec<ParamDef>, Option<String>)>,
     /// True when this parameter is the explicit invocant (e.g. `$self:` in a method signature).
     pub(crate) is_invocant: bool,
+    /// True for an invocant the parser synthesized (`method (Foo:D:)`): the
+    /// source never named it. Only meaningful with `is_invocant`.
+    #[serde(default)]
+    pub(crate) implicit_invocant: bool,
+    /// True for a parameter its routine body applies `does` to (ADR-14144);
+    /// derived by `does_target::mark_does_targets`, not written.
+    #[serde(default)]
+    pub(crate) does_target: bool,
     /// Shape constraint for array parameters, e.g. `@a[3]`, `@a[4,4]`, `@a[*]`, `@a[$n]`.
     pub(crate) shape_constraints: Option<Vec<Expr>>,
     /// True when this parameter belongs to a block (pointy/bare), whose
@@ -279,12 +411,18 @@ pub(crate) fn named_param_external_key(name: &str) -> &str {
         .trim_start_matches(['!', '.'])
 }
 
-/// Trait marker the parser records on an invocant `ParamDef` it *synthesized*
-/// rather than one the user named: `method () { ... }`, `method (Foo:D:)`,
-/// `method (::?CLASS:)`. Both forms are recorded under the name `self`, but only
-/// a user-written `$self:` declares a `$self` lexical in the body — see
-/// [`ParamDef::declares_self_lexical`] and ADR-0061.
-pub(crate) const IMPLICIT_INVOCANT_TRAIT: &str = "implicit-invocant";
+/// The execution names of an anonymous `$` / `@` / `%` parameter.
+pub(crate) const ANON_SCALAR_PARAM: &str = "__ANON_STATE#";
+pub(crate) const ANON_ARRAY_PARAM: &str = "@__ANON_ARRAY__";
+pub(crate) const ANON_HASH_PARAM: &str = "%__ANON_HASH__";
+/// The execution name of a parameter written as a bare type (`sub f(Int)`).
+pub(crate) const TYPE_ONLY_PARAM: &str = "__type_only__";
+/// The execution-name prefix of a bare `::T` capture; the capture name follows.
+pub(crate) const TYPE_CAPTURE_PREFIX: &str = "__type_capture__";
+/// The execution name of an anonymous `(…)` destructuring parameter.
+pub(crate) const PARENS_PARAM: &str = "__subsig__";
+/// The execution name of an anonymous `[…]` destructuring parameter.
+pub(crate) const BRACKETS_PARAM: &str = "@";
 
 /// True when a *signature* declares a parameter the source spelled `$self`,
 /// including one nested in a destructuring sub-signature (`sub f([$self, $x])`).
@@ -358,10 +496,78 @@ pub(crate) fn scalar_var_expr(name: String) -> Expr {
 }
 
 impl ParamDef {
+    /// A parameter with nothing written yet but its execution `name`: what the
+    /// parser starts every parameter from.
+    // Cost: O(|name|).
+    pub(crate) fn blank(name: String) -> Self {
+        ParamDef {
+            target: ParamTarget::of_name(&name),
+            multi_invocant: true,
+            sigilless: false,
+            ..Self::sigilless_term(&name)
+        }
+    }
+
+    /// True for a parameter written as a bare type (`sub f(Int)`).
+    // Cost: O(1).
+    pub(crate) fn is_type_only(&self) -> bool {
+        self.target == ParamTarget::TypeOnly
+    }
+
+    /// True for a parameter written as a bare `::T` capture.
+    // Cost: O(1).
+    pub(crate) fn is_bare_type_capture(&self) -> bool {
+        self.target == ParamTarget::TypeCapture
+    }
+
+    /// True for an anonymous `(…)` destructuring parameter.
+    // Cost: O(1).
+    pub(crate) fn is_parens(&self) -> bool {
+        self.target == ParamTarget::Parens
+    }
+
+    /// The parameter a bare type is: `sub f(Int)` binds nothing.
+    // Cost: O(1).
+    pub(crate) fn type_only() -> Self {
+        ParamDef {
+            target: ParamTarget::TypeOnly,
+            ..Self::blank(TYPE_ONLY_PARAM.to_string())
+        }
+    }
+
+    /// The parameter a bare `::T` capture is: `sub f(::T)` binds the type
+    /// under the name `T` and no variable.
+    // Cost: O(|capture|).
+    pub(crate) fn bare_type_capture(capture: &str) -> Self {
+        ParamDef {
+            target: ParamTarget::TypeCapture,
+            type_capture: Some(capture.to_string()),
+            ..Self::blank(format!("{TYPE_CAPTURE_PREFIX}{capture}"))
+        }
+    }
+
+    /// The anonymous destructuring parameter `(…)` / `[…]` over `sub_params`.
+    // Cost: O(1).
+    pub(crate) fn destructure(sub_params: Vec<ParamDef>, brackets: bool) -> Self {
+        let (target, name) = if brackets {
+            (ParamTarget::Brackets, BRACKETS_PARAM)
+        } else {
+            (ParamTarget::Parens, PARENS_PARAM)
+        };
+        ParamDef {
+            target,
+            sub_signature: Some(sub_params),
+            ..Self::blank(name.to_string())
+        }
+    }
+
     /// The plain sigilless parameter `\name`: untyped, no default, no traits.
     // Cost: O(|name|).
     pub(crate) fn sigilless_term(name: &str) -> Self {
         ParamDef {
+            implicit_invocant: Default::default(),
+            does_target: Default::default(),
+            target: Default::default(),
             spans: Default::default(),
             trait_meta: Default::default(),
             type_capture: None,
@@ -468,9 +674,9 @@ impl ParamDef {
     /// `method (::?CLASS:)`): the source never named it, so it is anonymous
     /// to introspection (`Parameter.name` is empty, `.raku` renders `$:`)
     /// even though it is stored under the env key `self`.
-    // Cost: O(t), t = the parameter's trait count.
+    // Cost: O(1).
     pub(crate) fn is_implicit_invocant(&self) -> bool {
-        self.traits.iter().any(|t| t == IMPLICIT_INVOCANT_TRAIT)
+        self.implicit_invocant
     }
 
     /// The name a `::T` type capture on this parameter binds, if any.
@@ -1084,16 +1290,6 @@ pub(crate) const MULTI_CANDIDATE_VALUE_MARKER: &str = "__multi_candidate_value";
 /// in its unit's or routine's own (an `if` body, a bare block): registering it
 /// may shadow an outer `&name` binding instead of redeclaring it (#13855).
 pub(crate) const NESTED_SCOPE_DECL_MARKER: &str = "__nested_scope";
-/// The `custom_traits` entry keeping the argument of a variable's
-/// `is dynamic(ARG)` for the RakuAST view; the trait itself is the
-/// declaration's `is_dynamic` flag, and the compiler skips the entry.
-pub(crate) const DYNAMIC_TRAIT_ARGUMENT: &str = "__dynamic_argument";
-/// The `custom_traits` entry keeping, in a `.AST` parse, the colonpairs of a
-/// declared variable's extended name as written (`:foo<g h>` of
-/// `my $today:foo<g h>`): the name itself is canonical (`today:foo<g h>`),
-/// but RakuAST keeps each colonpair as a node, spelled as the source spelled
-/// it. The compiler skips the entry.
-pub(crate) const NAME_COLONPAIRS: &str = "__name_colonpairs";
 
 /// The source spelling of an [`Expr::Hash`] literal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -2125,6 +2321,19 @@ pub(crate) enum Stmt {
         export_tags: Vec<String>,
         /// Custom variable `is` traits as `(trait_name, optional_arg_expr)`.
         custom_traits: Vec<(String, Option<Expr>)>,
+        /// True when the declaration carries an explicit initializer
+        /// (`my T $x = ...`, a `for`/`loop` binding's seed, ...). It is a
+        /// field of the declaration, not a `custom_traits` entry, so that list
+        /// holds only the traits the program wrote.
+        has_initializer: bool,
+        /// `Some` for a `constant` declaration, with the sigil it was written
+        /// with (a field of the declaration, not a `custom_traits` entry).
+        constant: Option<ConstantSigil>,
+        /// `Some` for a binding declaration (`my $x := …`, `my &f := …`).
+        bind: Option<bind_decl::BindKind>,
+        /// How the parser desugared the declaration and what it wrote that the
+        /// canonical tree drops (`my @a[3]`, `%h{Str}`, `is dynamic(ARG)`).
+        marks: var_marks::VarMarks,
         /// Optional `where` constraint expression for inline subset typing
         where_constraint: Option<Box<Expr>>,
     },
@@ -2219,6 +2428,9 @@ pub(crate) enum Stmt {
         export_tags: Vec<String>,
         is_test_assertion: bool,
         supersede: bool,
+        /// `our` / `anon` as written; the default `my` otherwise.
+        #[serde(default)]
+        scope: SubScope,
         /// Custom `is` traits (non-builtin trait names like `me'd`) with optional argument expression
         custom_traits: Vec<(String, Option<Expr>)>,
         /// Where the name, signature and block were written (ADR-10723
@@ -2809,6 +3021,9 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
         /// Whether this role was declared with `is rw` or `also is rw`
         is_rw: bool,
+        /// True for a `my role`: lexically scoped, installed in no package
+        /// stash (the field `ClassDecl::is_lexical` is for a class).
+        is_lexical: bool,
         /// Language version active when this role was declared (e.g., "6.c", "6.d", "6.e")
         language_version: String,
         /// Custom `is` traits with optional arguments, dispatched via `trait_mod:<is>`
@@ -3085,6 +3300,7 @@ pub(crate) fn expand_take_logical_tail(value: Expr, op: TokenKind, right: Expr) 
     let variable = Expr::Var(name.clone());
     Stmt::SyntheticBlock(vec![
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name,
             expr: value,
@@ -3095,6 +3311,9 @@ pub(crate) fn expand_take_logical_tail(value: Expr, op: TokenKind, right: Expr) 
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         },
         Stmt::Take(variable.clone(), false),
@@ -3148,6 +3367,7 @@ pub(crate) mod stub;
 pub(crate) mod subscript_adverb;
 pub(crate) mod temporize;
 pub(crate) mod var_does;
+pub(crate) mod var_marks;
 pub(crate) mod var_will;
 mod where_match;
 pub(crate) use signature_decl::{
@@ -3396,6 +3616,9 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
             let param_defs = legacy_params
                 .iter()
                 .map(|name| ParamDef {
+                    implicit_invocant: Default::default(),
+                    does_target: Default::default(),
+                    target: Default::default(),
                     spans: Default::default(),
                     trait_meta: Default::default(),
                     type_capture: None,
@@ -3452,6 +3675,9 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                 // Named placeholders use `:` twigil: $:f, @:f, %:f
                 let is_named = name.contains(':');
                 ParamDef {
+                    implicit_invocant: Default::default(),
+                    does_target: Default::default(),
+                    target: Default::default(),
                     spans: Default::default(),
                     trait_meta: Default::default(),
                     type_capture: None,
@@ -3484,6 +3710,9 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
         if uses_hash_underscore {
             params.push("%_".to_string());
             param_defs.push(ParamDef {
+                implicit_invocant: Default::default(),
+                does_target: Default::default(),
+                target: Default::default(),
                 spans: Default::default(),
                 trait_meta: Default::default(),
                 type_capture: None,
@@ -3532,6 +3761,7 @@ mod env_only_decl_tests {
 
     fn vardecl(name: &str) -> Stmt {
         Stmt::VarDecl {
+            marks: Default::default(),
             name: name.to_string(),
             anonymous: false,
             expr: Expr::Literal(crate::value::Value::NIL),
@@ -3542,6 +3772,9 @@ mod env_only_decl_tests {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         }
     }
@@ -3672,7 +3905,7 @@ mod expr_size_guard {
 /// The prefix a user variable trait named like a parser marker (`my $x is __x`)
 /// carries in [`Stmt::VarDecl`]'s `custom_traits`.
 ///
-/// The parser files its own markers (`__has_initializer`, `__scalar_bind`, ...)
+/// The parser files its own markers (`__scalar_bind`, ...)
 /// in the same list under a `__` prefix and every consumer filters on it, so a
 /// user trait that happens to start with `__` would be dropped as one. A
 /// character no identifier holds keeps the two namespaces apart, as

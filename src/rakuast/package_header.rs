@@ -236,10 +236,11 @@ pub(super) fn lower_with_header(
     {
         custom_traits.push(crate::parser::export_type_marker(&tags));
     }
-    if let Stmt::RoleDecl { custom_traits, .. } = &mut stmt
-        && custom_traits
-            .iter()
-            .any(|(name, _)| name == super::convert::MY_SCOPED)
+    if let Stmt::RoleDecl {
+        custom_traits,
+        is_lexical: true,
+        ..
+    } = &mut stmt
         && let Some(tags) = header.export_tags.take()
     {
         custom_traits.push(crate::parser::export_type_marker(&tags));

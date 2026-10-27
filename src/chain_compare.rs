@@ -117,6 +117,7 @@ fn build_chain_cmp_expr(
     let rest = build_chain_cmp_expr(operands, ops, index + 1, tmp_var);
     Expr::desugar_block(vec![
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: tmp_name,
             expr: operands[index + 1].clone(),
@@ -127,6 +128,9 @@ fn build_chain_cmp_expr(
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         },
         Stmt::Expr(Expr::Binary {

@@ -4362,6 +4362,7 @@ impl Compiler {
             Stmt::SyntheticBlock(vec![
                 Stmt::MarkBind,
                 Stmt::VarDecl {
+                    marks: Default::default(),
                     anonymous: false,
                     name: cap.to_string(),
                     expr: Expr::MethodCall {
@@ -4378,7 +4379,10 @@ impl Compiler {
                     is_dynamic: false,
                     is_export: false,
                     export_tags: Vec::new(),
-                    custom_traits: vec![("__has_initializer".to_string(), None)],
+                    custom_traits: Vec::new(),
+                    has_initializer: true,
+                    constant: None,
+                    bind: None,
                     where_constraint: None,
                 },
                 Stmt::MarkSigilless(cap.to_string()),
@@ -5240,6 +5244,9 @@ impl Compiler {
             }
         }
         self.record_unit_hidden_lexicals();
+        // A routine of this unit that names lexicals by string (`sub e($c) { EVAL $c }`)
+        // reads this unit's lexicals by name.
+        self.note_routines_naming_lexicals();
         self.code.compute_needs_env_sync();
         (self.code, self.compiled_functions)
     }

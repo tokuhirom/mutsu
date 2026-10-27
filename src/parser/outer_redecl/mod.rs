@@ -214,8 +214,8 @@ fn normalized(sigil: char, base: &str) -> Option<String> {
 /// self-referencing initializer, or `None` if there is no such offense.
 ///
 /// Also marks each declaration whose initializer reads the new binding (see
-/// [`Initializing::sees_self`]) with the internal `__init_sees_self` trait, so
-/// the compiler resolves those reads to it.
+/// [`Initializing::sees_self`]) with `VarMarks::init_sees_self`, so the
+/// compiler resolves those reads to it.
 // Cost: O(n * d), n = size of the program's tree, d = lexical scope depth.
 pub(crate) fn find_scope_diagnostic(stmts: &mut [Stmt]) -> Option<ScopeDiagnostic> {
     let mut ctx = Ctx {
@@ -283,6 +283,10 @@ fn walk_var_decl(stmt: &mut Stmt, check_self: bool, ctx: &mut Ctx) {
         is_export: _,
         export_tags: _,
         custom_traits,
+        has_initializer: _,
+        constant: _,
+        bind: _,
+        marks,
         where_constraint,
     } = stmt
     else {
@@ -339,6 +343,6 @@ fn walk_var_decl(stmt: &mut Stmt, check_self: bool, ctx: &mut Ctx) {
         && let Some(init) = ctx.initializing.pop()
         && init.sees_self
     {
-        custom_traits.push(("__init_sees_self".to_string(), None));
+        marks.init_sees_self = true;
     }
 }

@@ -43,6 +43,7 @@ pub(crate) fn call_assign_expansion(
 ) -> Stmt {
     Stmt::SyntheticBlock(vec![
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: name.clone(),
             expr,
@@ -53,6 +54,9 @@ pub(crate) fn call_assign_expansion(
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         },
         Stmt::MarkSigillessReadonly(name),

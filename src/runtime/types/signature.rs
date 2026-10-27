@@ -911,7 +911,7 @@ pub(in crate::runtime) fn named_param_parens_accept(
         // Array would drop a Pair value (a Pair in a list is a named part of the
         // list's Capture), so match the inner signature against the value itself.
         let only = &sub_params[0];
-        if only.name == "__subsig__"
+        if only.is_parens()
             && only.type_constraint.is_none()
             && let Some(inner) = &only.sub_signature
         {
@@ -999,7 +999,9 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
         // a rename target; unpack it with the ordinary destructuring binder.
         // `:out([$a?, :pass($p) = True])` wraps the pattern in an anonymous `@`
         // (or `%`) parameter instead; it destructures the same way.
-        if matches!(sub_pd.name.as_str(), "__subsig__" | "@" | "%")
+        if (sub_pd.is_parens()
+            || sub_pd.target == crate::ast::ParamTarget::Brackets
+            || sub_pd.name == "%")
             && let Some(nested) = &sub_pd.sub_signature
         {
             bind_sub_signature_from_value(interpreter, nested, value)?;
@@ -1486,7 +1488,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 for inner in nested {
                     match &inner.sub_signature {
                         Some(inner_sig) => {
-                            if !inner.name.is_empty() && inner.name != "__subsig__" {
+                            if !inner.name.is_empty() && !inner.is_parens() {
                                 bind_sub_param_name(interpreter, &inner.name, candidate.clone());
                             }
                             bind_sub_signature_from_value(interpreter, inner_sig, &candidate)?;
@@ -1662,6 +1664,9 @@ pub(in crate::runtime) fn callable_signature_info(
                 params
                     .into_iter()
                     .map(|name| ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                        implicit_invocant: Default::default(),
+                        does_target: Default::default(),
+                        target: Default::default(),
                         type_capture: None,
                         name,
                         default: None,
@@ -1700,6 +1705,9 @@ pub(in crate::runtime) fn callable_signature_info(
                 params
                     .into_iter()
                     .map(|name| ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                        implicit_invocant: Default::default(),
+                        does_target: Default::default(),
+                        target: Default::default(),
                         type_capture: None,
                         name,
                         default: None,

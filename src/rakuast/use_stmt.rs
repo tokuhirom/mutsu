@@ -547,7 +547,10 @@ pub(super) fn lower_use(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         if_imports,
     };
     Ok(match inline_proto {
-        Some(proto) => Stmt::SyntheticBlock(vec![proto, use_stmt]),
+        Some(proto) => super::lower_parsed_stmt(crate::ast::parsed::ParsedStmt::InlineProtoUse {
+            proto: Box::new(proto),
+            use_stmt: Box::new(use_stmt),
+        })?,
         None => use_stmt,
     })
 }

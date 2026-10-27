@@ -7019,7 +7019,7 @@ impl Interpreter {
             }
 
             // -- MetaOp --
-            // Cost: `X` O(e_l * e_r), `Z` O(e_l + e_r) inner-op applications, e = elements of each operand (see exec_meta_op).
+            // Cost: `X` O(e_l * e_r), `Z` O(e_l + e_r) inner-op applications, e = elements of each operand (see exec_meta_op); a bare `X`/`Z` first probes the registry for a user `infix:<X>` once (O(1) when none is declared).
             OpCode::MetaOp { meta, op } => {
                 self.sync_source_line(code, *ip);
                 self.exec_meta_op(*meta, *op)?;
@@ -7033,7 +7033,7 @@ impl Interpreter {
                 *ip += 1;
             }
 
-            // Cost: `X` O(sum e_i + prod e_i), `Z` O(sum e_i + n * min e_i), n operands (see exec_meta_op_nary).
+            // Cost: `X` O(sum e_i + prod e_i), `Z` O(sum e_i + n * min e_i), n operands (see exec_meta_op_nary); a bare `X`/`Z` first probes the registry for a user `infix:<X>` once (O(1) when none is declared).
             OpCode::MetaOpNary { meta, op, count } => {
                 self.sync_source_line(code, *ip);
                 self.exec_meta_op_nary(*meta, *op, *count)?;

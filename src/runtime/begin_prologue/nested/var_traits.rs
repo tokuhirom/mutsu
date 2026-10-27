@@ -67,6 +67,9 @@ fn liftable_traits(stmt: &Stmt, allow_init: bool) -> Option<(String, AppliedTrai
         is_our: false,
         is_export: false,
         custom_traits,
+        has_initializer,
+        constant: None,
+        bind: None,
         where_constraint: None,
         ..
     } = stmt
@@ -74,13 +77,7 @@ fn liftable_traits(stmt: &Stmt, allow_init: bool) -> Option<(String, AppliedTrai
         return None;
     };
     if name.starts_with('&')
-        || custom_traits.iter().any(|(t, _)| {
-            match t.as_str() {
-                "__has_initializer" => !allow_init,
-                "__scalar_bind" | "__constant" => true,
-                _ => false,
-            }
-        })
+        || (*has_initializer && !allow_init)
     {
         return None;
     }

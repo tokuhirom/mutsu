@@ -535,9 +535,41 @@ impl Interpreter {
         // `unit_of_source` re-intern that. Round-tripping a name through a
         // string is the pattern ADR-0037 removed from this very call path once
         // already.
-        let mut unit = def_file
+        // Every routine call asks; the answer only changes when a table below
+        // does, which bumps the epoch (#15048). The unit the walk starts from is
+        // a function of `def_file` alone, except for a frame with no file, which
+        // starts from the running unit.
+        let epoch = crate::runtime::unit_scope_epoch();
+        let ambient = if def_file.is_none() {
+            Some(self.current_unit)
+        } else {
+            None
+        };
+        if let Some(memo) = self.module.lexical_package_memo.get()
+            && memo.epoch == epoch
+            && memo.def_file == def_file
+            && memo.ambient_unit == ambient
+        {
+            return memo.package;
+        }
+        let start = def_file
             .map(|file| self.unit_of_source_sym(Some(file)))
             .unwrap_or(self.current_unit);
+        let package = self.lexical_package_walk(def_file, start);
+        self.module
+            .lexical_package_memo
+            .set(Some(crate::runtime::module_state::LexicalPackageMemo {
+                epoch,
+                def_file,
+                ambient_unit: ambient,
+                package,
+            }));
+        package
+    }
+
+    // Cost: O(u), u = EVAL unit parents between `start` and a module unit.
+    fn lexical_package_walk(&self, def_file: Option<Symbol>, start: Symbol) -> Option<Symbol> {
+        let mut unit = start;
         loop {
             if let Some(package) = self.module.unit_module_packages.get(&unit) {
                 return Some(*package);

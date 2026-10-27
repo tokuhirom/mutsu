@@ -132,13 +132,11 @@ impl<'ast> Visit<'ast> for AliasScan {
                 type_constraint: None,
                 where_constraint: None,
                 custom_traits,
+                constant: None,
+                bind: None,
+                marks,
                 ..
-            } => {
-                is_plain_scalar(name)
-                    && custom_traits
-                        .iter()
-                        .all(|(trait_name, _)| trait_name == "__has_initializer")
-            }
+            } => is_plain_scalar(name) && custom_traits.is_empty() && marks.is_plain(),
             _ => false,
         };
         if allowed {

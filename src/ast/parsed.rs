@@ -125,6 +125,22 @@ pub(crate) enum ParsedStmt {
         op: crate::token_kind::TokenKind,
         right: Expr,
     },
+    /// `use Foo ..., proto sub MAIN(|) {*}`: the proto declaration that is part
+    /// of the `use` argument, and the `use` statement. RakuAST has the proto as
+    /// the argument itself; `rakuast::lower` declares it ahead of the import.
+    InlineProtoUse {
+        proto: Box<Stmt>,
+        use_stmt: Box<Stmt>,
+    },
+    /// `done VALUE` in a supply or react block: the value as written.
+    /// RakuAST keeps `emit VALUE; done` as two statements; `rakuast::lower`
+    /// expands it to them (`ast::done_value::expand`).
+    DoneValue(Expr),
+    /// `my Int $c .= new(), 5, 6`: the `.=` declaration and each further list
+    /// item as written. RakuAST has one comma application whose first operand
+    /// is the declaration; `rakuast::lower` expands it into the declaration
+    /// followed by the items as sunk statements.
+    CallAssignList { head: Box<Stmt>, items: Vec<Expr> },
     /// A comma list of declarations, `my $x = 1, my $y = 2`, as written: one
     /// source statement whose execution is the declarations' expansions in
     /// order, with no new lexical scope (RakuAST's `ApplyListInfix` over the
@@ -665,6 +681,9 @@ impl ParsedStmt {
             | ParsedStmt::RoutineTraits(_)
             | ParsedStmt::CommaDecls(_) => Vec::new(),
             ParsedStmt::TakeLogicalTail { value, right, .. } => vec![value, right],
+            ParsedStmt::DoneValue(value) => vec![value],
+            ParsedStmt::InlineProtoUse { .. } => Vec::new(),
+            ParsedStmt::CallAssignList { items, .. } => items.iter().collect(),
             ParsedStmt::ImmediateCall { args, .. } => args.iter().collect(),
             ParsedStmt::AttributeModifier { condition, .. } => vec![condition],
             ParsedStmt::DoesDecl { role, init, .. } => std::iter::once(role).chain(init).collect(),
@@ -714,6 +733,9 @@ impl ParsedStmt {
             | ParsedStmt::Temporize(_)
             | ParsedStmt::CommaDecls(_)
             | ParsedStmt::TakeLogicalTail { .. }
+            | ParsedStmt::DoneValue(_)
+            | ParsedStmt::InlineProtoUse { .. }
+            | ParsedStmt::CallAssignList { .. }
             | ParsedStmt::RoutineTraits(_)
             | ParsedStmt::Modified(_) => Vec::new(),
         }

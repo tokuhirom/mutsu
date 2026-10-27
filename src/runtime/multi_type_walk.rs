@@ -100,7 +100,9 @@ impl Interpreter {
                     // An optional param (`&c = &say`, `@a?`) takes no part in
                     // rakudo's narrowness comparison, so its implied
                     // Positional/Associative/Callable type must not either.
-                    || (!p.slurpy
+                    // A single-argument slurpy (`+@a`) is a slurpy too: its
+                    // implied Positional is no narrowness either.
+                    || (!p.is_variadic()
                         && !p.optional_marker
                         && p.default.is_none()
                         && (p.name.starts_with('@')
@@ -115,7 +117,7 @@ impl Interpreter {
         // `multi chomp()` that dies vs `multi chomp(*@a is raw)`).
         let writable_trait_count = params
             .iter()
-            .filter(|p| !p.slurpy && p.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw")))
+            .filter(|p| !p.is_variadic() && p.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw")))
             .count();
         (
             // NOMINAL tier. A literal parameter is not merely a refinement:

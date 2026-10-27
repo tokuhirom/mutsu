@@ -241,7 +241,7 @@ impl Interpreter {
                     name,
                     expr,
                     is_our,
-                    custom_traits,
+                    has_initializer,
                     ..
                 } = stmt
                 else {
@@ -253,7 +253,7 @@ impl Interpreter {
                 // value it already holds (#13255). An initializer re-runs.
                 if !*is_our
                     && current_caps.regex_vars().contains_key(name)
-                    && !custom_traits.iter().any(|(t, _)| t == "__has_initializer")
+                    && !*has_initializer
                 {
                     continue;
                 }

@@ -288,12 +288,7 @@ impl Interpreter {
             let mut total = 0usize;
             let mut required = 0usize;
             for pd in &param_defs {
-                if pd.named
-                    || pd.slurpy
-                    || pd.double_slurpy
-                    || pd.onearg
-                    || pd.traits.iter().any(|t| t == "invocant")
-                {
+                if pd.named || pd.slurpy || pd.double_slurpy || pd.onearg || pd.is_invocant {
                     continue;
                 }
                 total += 1;

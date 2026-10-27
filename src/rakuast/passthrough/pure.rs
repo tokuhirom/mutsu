@@ -127,14 +127,18 @@ impl Purity {
                 is_export: false,
                 export_tags,
                 custom_traits,
+                // A `constant` is a distinct RakuAST node; the scope scans
+                // of `bareword` must see it, so it is converted, not carried.
+                constant: None,
+                bind: None,
+                marks,
                 where_constraint: None,
                 ..
             } => {
                 declared_name(name)
                     && export_tags.is_empty()
-                    && custom_traits
-                        .iter()
-                        .all(|(name, arg)| name == "__has_initializer" && arg.is_none())
+                    && custom_traits.is_empty()
+                    && marks.is_plain()
             }
             Stmt::Call { args, .. } => args
                 .iter()
@@ -165,9 +169,12 @@ impl Purity {
                         .chars()
                         .all(|c| c.is_alphanumeric() || matches!(c, ':' | '-' | '_'))
             }
-            Expr::Spelled(_) => {
+            // A `;` that ends no statement is no statement of the lowered
+            // tree (`sub f { 1;; }` still returns 1); only the lowering of the
+            // `Statement::Empty` node knows to drop it.
+            Expr::Spelled(spelled) => {
                 self.fixup = true;
-                true
+                !is_empty_statement(spelled)
             }
             Expr::Ast(node) => {
                 self.fixup = true;
@@ -221,6 +228,24 @@ impl Purity {
 /// A parameter with a name and, at most, a type: nothing the lowering reads
 /// the signature of.
 // Cost: O(1).
+/// Whether a spelling, or one it wraps, is the `;` of a `Statement::Empty`.
+// Cost: O(d), d = nesting depth of the spellings.
+fn is_empty_statement(spelled: &crate::ast::spelled::Spelled) -> bool {
+    let mut spelled = spelled;
+    loop {
+        if matches!(
+            spelled.spelling,
+            crate::ast::spelled::Spelling::EmptyStatement
+        ) {
+            return true;
+        }
+        match &spelled.expr {
+            Expr::Spelled(inner) => spelled = inner,
+            _ => return false,
+        }
+    }
+}
+
 fn pure_param(param: &ParamDef) -> bool {
     param.default.is_none()
         && param.where_constraint.is_none()
@@ -230,7 +255,7 @@ fn pure_param(param: &ParamDef) -> bool {
         && param.shape_constraints.is_none()
         && param.literal_value.is_none()
         && param.type_capture.is_none()
-        && param.traits.is_empty()
+        && param.no_traits()
         && param.trait_args.is_empty()
 }
 

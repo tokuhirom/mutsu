@@ -372,6 +372,7 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
             export_tags: Vec::new(),
             body,
             is_rw: false,
+            is_lexical: false,
             language_version: crate::parser::current_language_version(),
             custom_traits: colons_marker(colons, "role"),
             decl_id: crate::ast::next_class_decl_id(),

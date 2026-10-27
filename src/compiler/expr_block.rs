@@ -43,11 +43,9 @@ impl Compiler {
             // the term namespace (#9962), which only the statement-position
             // declaration knows how to set up. Declare it there and yield the
             // value back from its term slot.
-            Stmt::VarDecl {
-                name,
-                custom_traits,
-                ..
-            } if crate::runtime::term_names::is_term_constant_decl(name, custom_traits) => {
+            Stmt::VarDecl { name, constant, .. }
+                if crate::runtime::term_names::is_term_constant_decl(name, *constant) =>
+            {
                 self.compile_stmt(stmt);
                 let key = crate::runtime::term_names::term_key(name);
                 match self.local_map.get(key.as_str()).copied() {
@@ -188,6 +186,10 @@ impl Compiler {
                 is_dynamic: ast_is_dynamic,
                 type_constraint,
                 custom_traits,
+                has_initializer,
+                constant,
+                bind,
+                marks,
                 ..
             } => {
                 let anonymous_scalar = *anonymous && !name.starts_with(['@', '%', '&']);
@@ -197,7 +199,7 @@ impl Compiler {
                         name,
                         *is_our,
                         type_constraint.as_deref(),
-                        custom_traits,
+                        *constant,
                     )
                     .map(Some);
                 let type_constraint = pragma_type_constraint.as_ref().unwrap_or(type_constraint);
@@ -230,7 +232,7 @@ impl Compiler {
                 // one-element list instead of the constant's real elements
                 // (found via Digest::PSHA1's SHA-1 dependency, whose `sha1-block`
                 // reduce accumulator is exactly such a constant).
-                let is_constant_decl = custom_traits.iter().any(|(t, _)| t == "__constant");
+                let is_constant_decl = constant.is_some();
                 let shadows_outer = self.enclosing_local_names.contains(name)
                     || self.local_scopes.len() >= 2
                         && self.local_scopes[..self.local_scopes.len() - 1]
@@ -260,7 +262,7 @@ impl Compiler {
                     && !nested_state_init
                     && name.starts_with('@')
                     && custom_traits.iter().any(|(t, _)| t == "default")
-                    && custom_traits.iter().any(|(t, _)| t == "__has_initializer");
+                    && *has_initializer;
                 let decl_slot = if !*is_our && !is_promoted && predeclared_shadow {
                     self.local_map.get(name).copied()
                 } else if !*is_our
@@ -276,7 +278,7 @@ impl Compiler {
                                 )
                             }))
                         || is_constant_decl
-                        || Self::is_scalar_bind_decl(name, custom_traits)
+                        || Self::is_scalar_bind_decl(name, *bind)
                         || self.call_arg_decl_slots.contains(name))
                 {
                     // ADR-0039 slice 2: a container declaration in expression
@@ -327,7 +329,7 @@ impl Compiler {
                     .find_map(|(t, a)| (t == "default").then_some(a.as_ref()))
                     .flatten();
                 let mark_explicit_local_init = decl_slot.is_some()
-                    && custom_traits.iter().any(|(t, _)| t == "__has_initializer")
+                    && *has_initializer
                     && (preapply_default || !custom_traits.iter().any(|(t, _)| t == "default"));
                 // Expression-position scalar declarations normally emit their
                 // `SetVarDynamic` after the initializer so the declaration's
@@ -417,8 +419,7 @@ impl Compiler {
                     // the "initialize once per declaration site" behavior (via the
                     // `__do_decl_init` marker), so repeated evaluation reuses the
                     // current lexical value instead of resetting it.
-                    let has_initializer =
-                        custom_traits.iter().any(|(t, _)| t == "__has_initializer");
+                    let has_initializer = *has_initializer;
                     let marker_name = format!("__do_decl_init_{}", super::compile_session::mint());
                     let marker_slot = self.alloc_local(&marker_name);
                     let jump_have_value = if has_initializer || self.in_real_loop_body {
@@ -551,9 +552,7 @@ impl Compiler {
                     // slice 2 gave a plain container decl in expression
                     // position a slot: the `SetGlobal` route never needed it
                     // (`roast/S06-signature/shape.t` 36-37).
-                    if decl_slot.is_some()
-                        && custom_traits.iter().any(|(t, _)| t == "__shaped_decl")
-                    {
+                    if decl_slot.is_some() && marks.shaped {
                         self.code.emit(OpCode::MarkShapedDeclContext);
                     }
                     if let Some(slot) = decl_slot {
@@ -673,7 +672,7 @@ impl Compiler {
                     let native_default = (!name.starts_with('@')
                         && !name.starts_with('%')
                         && !name.starts_with('&')
-                        && !custom_traits.iter().any(|(t, _)| t == "__has_initializer")
+                        && !*has_initializer
                         && Self::is_synthesized_decl_default(expr))
                     .then(|| {
                         type_constraint
@@ -696,6 +695,8 @@ impl Compiler {
                         expr,
                         type_constraint.as_deref(),
                         custom_traits,
+                        *bind,
+                        *has_initializer,
                     ) {
                         // Expression-position uninitialized untyped scalar
                         // (`(my $x)`, `(my $)`, do-block value): seed and yield
@@ -805,10 +806,9 @@ impl Compiler {
                                 self.emit_get_named_var(name);
                             } else if type_constraint.is_none()
                                 && is_nil_literal
-                                && custom_traits.iter().any(|(t, _)| t == "__has_initializer")
-                                && !custom_traits
-                                    .iter()
-                                    .any(|(t, _)| t == "__scalar_bind" || t == "default")
+                                && *has_initializer
+                                && *bind != Some(crate::ast::bind_decl::BindKind::Scalar)
+                                && !custom_traits.iter().any(|(t, _)| t == "default")
                                 && !name.starts_with('@')
                                 && !name.starts_with('%')
                                 && !name.starts_with('&')
@@ -849,7 +849,7 @@ impl Compiler {
                                     let var_name_idx =
                                         self.code.add_constant(Value::str(display_name));
                                     let is_bind =
-                                        custom_traits.iter().any(|(t, _)| t == "__scalar_bind");
+                                        *bind == Some(crate::ast::bind_decl::BindKind::Scalar);
                                     if is_bind {
                                         self.code.emit(OpCode::TypeCheckBind(
                                             tc_idx,
@@ -884,7 +884,7 @@ impl Compiler {
                                 // `(my $p := ...) =:= IterationEnd ?? () !! $p`).
                                 if !name.starts_with('@')
                                     && !name.starts_with('%')
-                                    && custom_traits.iter().any(|(t, _)| t == "__scalar_bind")
+                                    && *bind == Some(crate::ast::bind_decl::BindKind::Scalar)
                                 {
                                     self.code.emit(OpCode::MarkScalarBindContext);
                                 }
@@ -1192,7 +1192,7 @@ impl Compiler {
             }
             // A scalar bind to a readonly RHS used in expression position
             // (`f(my $c := "lit")`): the synthetic block is
-            // `[MarkReadonly(name), VarDecl{__scalar_bind}]`. As with the other
+            // `[MarkReadonly(name), VarDecl{bind: Scalar}]`. As with the other
             // declaration synthetic blocks, the `my` must leak into the enclosing
             // scope. The block-final VarDecl helper does a plain assign (which a
             // preceding MarkReadonly would reject), so instead compile the
@@ -1202,8 +1202,8 @@ impl Compiler {
             Stmt::SyntheticBlock(inner)
                 if matches!(inner.first(), Some(Stmt::MarkReadonly(..)))
                     && inner.iter().any(|s| {
-                        matches!(s, Stmt::VarDecl { custom_traits, .. }
-                            if custom_traits.iter().any(|(t, _)| t == "__scalar_bind"))
+                        matches!(s, Stmt::VarDecl { bind, .. }
+                            if *bind == Some(crate::ast::bind_decl::BindKind::Scalar))
                     }) =>
             {
                 let bound_name = inner.iter().find_map(|s| match s {
@@ -1273,14 +1273,13 @@ impl Compiler {
             Stmt::Call { name, args, .. } => {
                 self.compile_tail_stmt_call_value(*name, args);
             }
-            // `anon sub NAME ... {...}` (marked `__anon_decl` by the parser):
-            // build the routine value carrying its declared name WITHOUT
-            // registering `&NAME` in the enclosing scope.
-            Stmt::SubDecl { custom_traits, .. }
-                if custom_traits
-                    .iter()
-                    .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT) =>
-            {
+            // `anon sub NAME ... {...}` (`SubScope::Anon`): build the routine
+            // value carrying its declared name WITHOUT registering `&NAME` in
+            // the enclosing scope.
+            Stmt::SubDecl {
+                scope: crate::ast::SubScope::Anon,
+                ..
+            } => {
                 self.compile_anon_named_sub_decl(stmt);
             }
             // A `multi` declaration in expression position (`my $t := multi
@@ -1300,11 +1299,15 @@ impl Compiler {
             } if !name.resolve().is_empty() => {
                 self.compile_stmt(stmt);
                 let mut value = stmt.clone();
-                if let Stmt::SubDecl { custom_traits, .. } = &mut value {
-                    *custom_traits = vec![
-                        (crate::parser::ANON_DECL_TRAIT.to_string(), None),
-                        (crate::ast::MULTI_CANDIDATE_VALUE_MARKER.to_string(), None),
-                    ];
+                if let Stmt::SubDecl {
+                    scope,
+                    custom_traits,
+                    ..
+                } = &mut value
+                {
+                    *scope = crate::ast::SubScope::Anon;
+                    *custom_traits =
+                        vec![(crate::ast::MULTI_CANDIDATE_VALUE_MARKER.to_string(), None)];
                 }
                 self.compile_anon_named_sub_decl(&value);
             }

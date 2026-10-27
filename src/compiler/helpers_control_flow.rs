@@ -359,6 +359,7 @@ impl Compiler {
             (bare.clone(), Expr::Var(bare))
         };
         let var_decl = Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: bare_name,
             expr: cond.clone(),
@@ -369,6 +370,9 @@ impl Compiler {
             is_export: false,
             export_tags: vec![],
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         };
         // A sigilless pointy parameter is a term (ADR-12441).
@@ -415,6 +419,7 @@ impl Compiler {
     /// A `my NAME = EXPR;` declaration with no traits/constraints.
     fn plain_var_decl(name: String, expr: Expr) -> Stmt {
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name,
             expr,
@@ -425,6 +430,9 @@ impl Compiler {
             is_export: false,
             export_tags: vec![],
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         }
     }

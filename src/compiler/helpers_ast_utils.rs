@@ -9,7 +9,7 @@ impl Compiler {
     ///
     /// The shape alone does not settle it — `my @a = ()` parses to the same
     /// empty `Literal(Array)` — so every caller must also check that the
-    /// declaration does NOT carry the parser's `__has_initializer` trait. What
+    /// declaration does NOT set `has_initializer`. What
     /// this predicate answers is only "could this be the synthesized default",
     /// which is what both the `my` redeclaration no-op and the `our`
     /// value-preserving load need.
@@ -43,6 +43,8 @@ impl Compiler {
         expr: &Expr,
         type_constraint: Option<&str>,
         custom_traits: &[(String, Option<Expr>)],
+        bind: Option<crate::ast::bind_decl::BindKind>,
+        has_initializer: bool,
     ) -> bool {
         !name.starts_with('@')
             && !name.starts_with('%')
@@ -53,9 +55,9 @@ impl Compiler {
             && name != "$!"
             && type_constraint.is_none()
             && matches!(expr, Expr::Literal(lit) if lit.is_nil())
-            && !custom_traits
-                .iter()
-                .any(|(t, _)| t == "__has_initializer" || t == "__scalar_bind" || t == "default")
+            && !has_initializer
+            && bind != Some(crate::ast::bind_decl::BindKind::Scalar)
+            && !custom_traits.iter().any(|(t, _)| t == "default")
     }
 
     /// Return the zero value for a native type alias whose declaration was
@@ -734,6 +736,7 @@ impl Compiler {
                 type_constraint,
                 is_our: false,
                 custom_traits,
+                constant,
                 ..
             } = stmt
                 && !custom_traits.iter().any(|(n, _)| {
@@ -744,7 +747,7 @@ impl Compiler {
                     name,
                     false,
                     type_constraint.as_deref(),
-                    custom_traits,
+                    *constant,
                 );
                 let Some(tc) = pragma_tc.as_ref().or(type_constraint.as_ref()) else {
                     continue;
@@ -770,8 +773,11 @@ impl Compiler {
                 is_our: false,
                 where_constraint: None,
                 custom_traits,
+                constant: None,
+                bind: None,
+                marks,
                 ..
-            } if custom_traits.iter().all(|(n, _)| n == "__has_initializer")
+            } if custom_traits.is_empty() && marks.is_plain()
         )
     }
 

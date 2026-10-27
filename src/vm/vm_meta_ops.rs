@@ -16,6 +16,17 @@ impl Interpreter {
         }
     }
 
+    /// The routine a bare `X` / `Z` metaoperator is (`infix:<X>`), which
+    /// user candidates extend.
+    // Cost: O(1).
+    fn list_infix_routine(meta: MetaKind) -> Option<&'static str> {
+        match meta {
+            MetaKind::Cross => Some("infix:<X>"),
+            MetaKind::Zip => Some("infix:<Z>"),
+            _ => None,
+        }
+    }
+
     pub(super) fn should_retry_with_canonical_infix_name(name: &str) -> bool {
         matches!(
             name,
@@ -26,6 +37,19 @@ impl Interpreter {
     pub(super) fn exec_meta_op(&mut self, meta: MetaKind, op: Symbol) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap_or(Value::NIL);
         let left = self.stack.pop().unwrap_or(Value::NIL);
+        // The bare `X` / `Z` is the routine `infix:<X>` / `infix:<Z>`: a `multi`
+        // candidate of that name that a `use` brought in (or the unit declared)
+        // joins the core candidate and wins the call it accepts. The operands
+        // are still unconsumed here.
+        if op.as_str().is_empty()
+            && let Some(canon) = Self::list_infix_routine(meta)
+            && self.user_infix_override(canon)
+            && let Some(result) =
+                self.try_user_list_infix(canon, vec![left.clone(), right.clone()])?
+        {
+            self.stack.push(result);
+            return Ok(());
+        }
         // Both iterate their operands, consuming an uncached Seq; a plain
         // gather is streamed through a pipe over its body (ADR-11678), so
         // `(gather { loop { ... } }) Z (1..3)` stays lazy.
@@ -295,6 +319,15 @@ impl Interpreter {
             operands.push(self.stack.pop().unwrap_or(Value::NIL));
         }
         operands.reverse();
+        // A chain `a X b X c` is one call of the list-associative `infix:<X>`.
+        if op.as_str().is_empty()
+            && let Some(canon) = Self::list_infix_routine(meta)
+            && self.user_infix_override(canon)
+            && let Some(result) = self.try_user_list_infix(canon, operands.clone())?
+        {
+            self.stack.push(result);
+            return Ok(());
+        }
         let op_sym = op;
 
         let result = match meta {

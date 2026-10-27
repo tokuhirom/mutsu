@@ -21,7 +21,7 @@ use super::{
 };
 use crate::ast::parsed::ParsedStmt;
 use crate::ast::spelled::Spelling;
-use crate::ast::{AssignOp, Expr, ForMode, IMPLICIT_INVOCANT_TRAIT, ParamDef, Stmt};
+use crate::ast::{AssignOp, Expr, ForMode, ParamDef, ParamTarget, Stmt};
 use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::regex_tree::{RegexExtension, RegexModifierKind, RegexNode, RegexTree};
 use crate::value::{RuntimeError, Value, ValueView};
@@ -108,20 +108,6 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
         if crate::ast::anon_state::is_implicit_decl(stmt) {
             continue;
         }
-        if let Some(expansion) = done_value_expansion(stmt) {
-            for part in expansion {
-                if let Some(mut node) = convert_stmt(part)? {
-                    if let Some(field) = trace.take().and_then(origin::trace_field) {
-                        node.fields.push(field);
-                    }
-                    if let Some((n, span)) = line.take() {
-                        origin::set(&mut node, n, span);
-                    }
-                    fields.push(node_field(None, node));
-                }
-            }
-            continue;
-        }
         if trace.is_none()
             && let Some(leaf) = super::passthrough::stmt_leaf(stmt, line.map(|(n, _)| n))
         {
@@ -147,28 +133,6 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     })
 }
 
-/// `done VALUE` expands to `emit VALUE; done`, which Rakudo keeps as two
-/// statements in a supply block.
-// Cost: O(1), the expansion has exactly two statements.
-fn done_value_expansion(stmt: &Stmt) -> Option<&[Stmt]> {
-    let Stmt::SyntheticBlock(stmts) = stmt else {
-        return None;
-    };
-    let [
-        Stmt::Call {
-            name,
-            args,
-            listop: false,
-        },
-        Stmt::ReactDone,
-    ] = stmts.as_slice()
-    else {
-        return None;
-    };
-    (name.resolve() == "emit" && matches!(args.as_slice(), [crate::ast::CallArg::Positional(_)]))
-        .then_some(stmts)
-}
-
 /// The `scope` a package declaration is written with: `my` for a lexical one,
 /// `unit` for `unit class` / `unit module`; `our` is the default and renders
 /// none.
@@ -183,16 +147,9 @@ pub(super) fn package_scope(is_lexical: bool, is_unit: bool) -> Option<&'static 
     }
 }
 
-/// The parser's `custom_traits` marker for an `our sub`.
-pub(super) const OUR_SCOPED: &str = "__our_scoped";
-
 /// The custom trait the parser gives an operator sub that declares its
 /// precedence or associativity.
 const OP_PREC_TRAIT: &str = "__prec";
-
-/// The parser's `custom_traits` marker for a `my`-scoped declaration
-/// (`my role R { }`).
-pub(super) const MY_SCOPED: &str = "__my_scoped";
 
 /// Whether `stmt` is a block-form loop or conditional the parser carries in an
 /// expression (`do for ...`) as a `DoStmt`.
@@ -228,16 +185,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
 
 fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     match stmt {
-        Stmt::SyntheticBlock(stmts)
-            if matches!(stmts.as_slice(), [Stmt::ProtoDecl { .. }, Stmt::Use { .. }]) =>
-        {
-            let [proto, use_stmt] = stmts.as_slice() else {
-                unreachable!("guarded inline proto shape")
-            };
-            Ok(Some(super::use_stmt::convert_inline_proto(
-                proto, use_stmt,
-            )?))
-        }
         // The `use trace` hook is bookkeeping too: rakudo models the trace as a
         // flag on the traced statement, not as a statement of its own.
         Stmt::SetLine(..) | Stmt::Trace { .. } => Ok(None),
@@ -522,14 +469,6 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 *is_attribute,
             )?,
         ))),
-        // `my Int $c .= new(), 5`: a `.=` declaration with sunk list items.
-        Stmt::SyntheticBlock(_)
-            if super::decl_tail::convert_call_assign_list(stmt)
-                .is_some_and(|node| node.is_ok()) =>
-        {
-            let node = super::decl_tail::convert_call_assign_list(stmt).expect("just checked");
-            Ok(Some(statement_expression(node?)))
-        }
         Stmt::VarDecl { .. } => var_decl_statement(var_decl_parts(stmt)?, false),
         Stmt::DocPhaser(inner) => Ok(Some(super::doc_phaser::convert(inner)?)),
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
@@ -684,6 +623,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             export_tags,
             is_test_assertion,
             supersede,
+            scope,
             custom_traits,
             spans,
             ..
@@ -707,8 +647,6 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     custom_traits.iter().any(|(t, _)| {
                         t.starts_with("__")
                             && !is_return_spelling_marker(t)
-                            && t != OUR_SCOPED
-                            && t != crate::parser::ANON_DECL_TRAIT
                             && t != "__hidden_from_backtrace"
                             // The operator-precedence record the parser derives
                             // from `is assoc` / `is tighter`; lowering rebuilds it.
@@ -747,10 +685,15 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             {
                 return Err(unsupported("sub with traits and no written-trait record"));
             }
-            routine_traits::add_flags(&mut node, *multi, false, &Default::default())?;
-            if let Some(scope) = sub_scope(custom_traits) {
-                // `scope => "our"` / `"anon"` leads the node; `my` is the
-                // default scope and renders no field.
+            routine_traits::add_flags(&mut node, *multi, false);
+            // `scope => "our"` / `"anon"` leads the node; `my` is the default
+            // scope and renders no field.
+            let written_scope = match scope {
+                crate::ast::SubScope::My => None,
+                crate::ast::SubScope::Our => Some("our"),
+                crate::ast::SubScope::Anon => Some("anon"),
+            };
+            if let Some(scope) = written_scope {
                 node.fields
                     .insert(0, leaf_field(Some("scope"), Value::str_from(scope)));
             }
@@ -841,7 +784,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     "method with traits and no written-trait record",
                 ));
             }
-            routine_traits::add_flags(&mut node, *multi, *is_private, &Default::default())?;
+            routine_traits::add_flags(&mut node, *multi, *is_private);
             // `scope => "my"` / `"our"` leads the node, ahead of `multiness`.
             // Submethod's constructor rendering omits even a written scope,
             // but its accessor still distinguishes `my` and `our`. Keep the
@@ -908,26 +851,28 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     },
                     is_colons_package(custom_traits),
                 );
+                super::role_header::retain_name(&mut fields, *name);
                 // The implicit `Grammar` parent is not a written trait.
                 let written: &[String] = if *implicit_grammar_parent {
                     parents.get(1..).unwrap_or(&[])
                 } else {
                     parents
                 };
-                // An `also is Parent;` lifted out of the body has no header
-                // spelling; it renders as a trailing `is` trait, which lowers
-                // back to the same parent.
+                // An `also is Parent;` lifted out of the body is a
+                // `Statement::Also` leading it, as for a class.
                 let mut header_parents = written.to_vec();
-                let mut also_traits = Vec::new();
+                let mut also_statements = Vec::new();
                 for parent in body_parents {
                     if let Some(at) = header_parents.iter().rposition(|p| p == parent) {
                         header_parents.remove(at);
                     }
-                    also_traits.push(Value::rakuast(Box::new(super::routine_source::trait_node(
-                        &also_parent(parent, parent_args),
-                    )?)));
+                    let node =
+                        super::routine_source::trait_node(&also_parent(parent, parent_args))?;
+                    also_statements.push(super::role::also_is_statement(Value::rakuast(Box::new(
+                        node,
+                    ))));
                 }
-                let mut traits = header_trait_values(
+                let traits = header_trait_values(
                     body,
                     &HeaderFields {
                         parents: &header_parents,
@@ -938,16 +883,16 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                         custom_traits: &[],
                     },
                 )?;
-                traits.extend(also_traits);
                 if !traits.is_empty() {
                     fields.push(RakuAstField {
                         name: Some("traits"),
                         value: RakuAstFieldValue::List(traits),
                     });
                 }
+                let grammar_body = block_node(&crate::parser::unhoist_nested_methods(body))?;
                 fields.push(node_field(
                     Some("body"),
-                    block_node(&crate::parser::unhoist_nested_methods(body))?,
+                    super::role::with_leading_statements(grammar_body, also_statements),
                 ));
                 let grammar = RakuAstNode {
                     origin: Default::default(),
@@ -995,6 +940,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 },
                 is_colons_package(custom_traits),
             );
+            super::role_header::retain_name(&mut fields, *name);
             if let Some(expr) = name_expr {
                 let name = node_field(Some("name"), super::symbolic_deref::indirect_name(expr)?);
                 match fields.iter_mut().find(|f| f.name == Some("name")) {
@@ -1327,6 +1273,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             export_tags,
             body,
             is_rw,
+            is_lexical,
             custom_traits,
             ..
         } => Ok(Some(statement_expression(super::role::convert(
@@ -1338,6 +1285,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 export_tags,
                 body,
                 is_rw: *is_rw,
+                is_lexical: *is_lexical,
                 custom_traits,
             },
         )?))),
@@ -1560,12 +1508,6 @@ pub(super) fn plain_infix(op: &str) -> RakuAstNode {
         class: RakuAstClass::Infix,
         fields: vec![leaf_field(None, Value::str(op.to_string()))],
     }
-}
-
-/// Whether a compound-assignment marker's `op` is the `.=` metaop, which rakudo
-/// models as `ApplyDottyInfix`, not as `MetaInfix::Assign` over an infix.
-fn is_dotty_assign_op(op: &str) -> bool {
-    op == crate::parser::DOTTY_ASSIGN_OP
 }
 
 /// `$x OP= EXPR` -> `ApplyInfix(left, MetaInfix::Assign(Infix(OP)), right)`.
@@ -1823,6 +1765,9 @@ pub(super) fn var_decl_statement(
         is_our,
         is_dynamic,
         custom_traits,
+        marks,
+        has_initializer,
+        constant,
         where_constraint,
         is_export,
         export_tags,
@@ -1830,34 +1775,22 @@ pub(super) fn var_decl_statement(
     let export_trait = super::package_header::export_trait_value(is_export, export_tags);
     // Real `is`/`does` traits carry richer shape, deferred.
     // `constant X = 5` is a distinct raku node, not a scoped `my`.
-    // mutsu marks it with a `__constant` pseudo-trait (plus a
-    // `__constant_sigil` recording the declared sigil) and sets
+    // mutsu records it as the declaration's `constant` sigil and sets
     // `is_our` for the package-scoped default spelling.
-    if !is_binding && custom_traits.iter().any(|(n, _)| n == "__constant") {
+    if let Some(sigil) = constant
+        && !is_binding
+    {
         return constant_declaration(
             name,
             expr,
+            sigil,
             custom_traits,
             type_constraint,
             is_our,
             export_trait,
         );
     }
-    let is_internal = |n: &str| {
-        n == "__has_initializer"
-            // The parser's own mark of a declaration whose initializer reads
-            // the new binding; the lowering marks it again.
-            || n == "__init_sees_self"
-            || n == crate::ast::method_assign_decl::METHOD_ASSIGN_DECL_TRAIT
-            || n == crate::ast::shaped_decl::SHAPED_DECL
-            || n == crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE
-            // The argument of `is dynamic(ARG)`, rendered with the trait.
-            || n == crate::ast::DYNAMIC_TRAIT_ARGUMENT
-            // The written colonpairs of the name, rendered in `desigilname`.
-            || n == crate::ast::NAME_COLONPAIRS
-            || (is_binding && n == crate::ast::bind_decl::SCALAR_BIND)
-            || (is_binding && n == crate::ast::bind_decl::CODE_BIND)
-    };
+    let is_internal = |n: &str| n == crate::ast::method_assign_decl::METHOD_ASSIGN_DECL_TRAIT;
     let unrendered: Vec<&str> = custom_traits
         .iter()
         .filter(|(n, arg)| !is_internal(n) && !decl_traits::is_rendered(n, arg))
@@ -1872,7 +1805,7 @@ pub(super) fn var_decl_statement(
     // build_type_node validates simple/definite and defers the rest. A
     // key-typed hash (`my Int %h{Str}`) splits into its value `type` and a
     // `shape`.
-    let keyed = super::keyed_hash::split(name, type_constraint.as_deref(), custom_traits);
+    let keyed = super::keyed_hash::split(name, type_constraint.as_deref(), marks);
     let type_name = match keyed {
         Some((value, _)) => value,
         None => type_constraint.as_deref(),
@@ -1896,9 +1829,9 @@ pub(super) fn var_decl_statement(
         _ => expr,
     };
     // `my @a <== EXPR` is a declaration whose initializer is the parser's
-    // feed helper call; without the `__has_initializer` mark it would read as
-    // none and the feed would be dropped.
-    let unmarked = !is_binding && !custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+    // feed helper call; without `has_initializer` it would read as none and
+    // the feed would be dropped.
+    let unmarked = !is_binding && !has_initializer;
     if unmarked
         && let Expr::Call { name: callee, .. } = expr
         && is_desugar_marker(callee.as_str())
@@ -1924,10 +1857,7 @@ pub(super) fn var_decl_statement(
     {
         Some(Initializer::CallAssignMarker(rhs))
     } else {
-        custom_traits
-            .iter()
-            .any(|(name, _)| name == "__has_initializer")
-            .then_some(Initializer::Assign(expr))
+        has_initializer.then_some(Initializer::Assign(expr))
     };
     // A dynamic `my $*x` is named `*x` (`@*a` / `%*h` keep their sigil in
     // front); raku renders the `*` as the declaration's `twigil`.
@@ -1954,7 +1884,9 @@ pub(super) fn var_decl_statement(
         if !traits.is_empty() {
             return Err(unsupported("`is dynamic` beside other traits"));
         }
-        traits.push(decl_traits::dynamic_trait(custom_traits)?);
+        traits.push(decl_traits::dynamic_trait(
+            marks.dynamic_argument.as_deref(),
+        )?);
     }
     if let Some(export) = export_trait {
         // Like `is dynamic`, `is export` is a flag of the parsed declaration,
@@ -1965,7 +1897,7 @@ pub(super) fn var_decl_statement(
         traits.push(export);
     }
     decl_traits::insert(&mut decl, traits);
-    super::name_colonpairs::apply(&mut decl, custom_traits)?;
+    super::name_colonpairs::apply(&mut decl, marks)?;
     // `where` is the declaration's last field, after the initializer.
     if let Some(constraint) = where_constraint {
         decl.fields
@@ -1984,12 +1916,10 @@ pub(super) fn does_declaration(
     init: Option<&Expr>,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
     let mut parts = var_decl_parts(decl)?;
-    let mut traits = parts.custom_traits.to_vec();
     if let Some(init) = init {
-        traits.push(("__has_initializer".to_string(), None));
+        parts.has_initializer = true;
         parts.expr = init;
     }
-    parts.custom_traits = &traits;
     let Some(statement) = var_decl_statement(parts, false)? else {
         return Ok(None);
     };
@@ -2027,6 +1957,10 @@ pub(super) struct VarDeclParts<'a> {
     is_our: bool,
     is_dynamic: bool,
     custom_traits: &'a [(String, Option<Expr>)],
+    marks: &'a crate::ast::var_marks::VarMarks,
+    /// Whether the declaration has an explicit initializer.
+    has_initializer: bool,
+    constant: Option<crate::ast::ConstantSigil>,
     /// The declaration's `where` expression.
     where_constraint: Option<&'a Expr>,
     /// Whether it is `is export`, and with which tags (`["DEFAULT"]` for the
@@ -2045,6 +1979,10 @@ pub(super) fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeErr
         is_our,
         is_dynamic,
         custom_traits,
+        has_initializer,
+        constant,
+        bind: _,
+        marks,
         where_constraint,
         is_export,
         export_tags,
@@ -2061,6 +1999,9 @@ pub(super) fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeErr
         is_our: *is_our,
         is_dynamic: *is_dynamic,
         custom_traits,
+        marks,
+        has_initializer: *has_initializer,
+        constant: *constant,
         where_constraint: where_constraint.as_deref(),
         is_export: *is_export,
         export_tags,
@@ -2333,22 +2274,6 @@ pub(super) fn package_header_fields(
         fields.push(node_field(Some("name"), name_from_identifier(name)));
     }
     fields
-}
-
-/// The scope a named sub's `custom_traits` mark it with, when it is not the
-/// default `my`: `our sub f`, or `anon sub g` (built but not installed).
-// Cost: O(t), t = number of custom traits.
-fn sub_scope(custom_traits: &[(String, Option<Expr>)]) -> Option<&'static str> {
-    if custom_traits.iter().any(|(t, _)| t == OUR_SCOPED) {
-        Some("our")
-    } else if custom_traits
-        .iter()
-        .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT)
-    {
-        Some("anon")
-    } else {
-        None
-    }
 }
 
 /// Whether a package declaration's `custom_traits` hold anything but the
@@ -3042,12 +2967,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // `$::($n)` / `@::($n)` -> `Var::Package` over a dynamic name.
         Expr::SymbolicDeref { sigil, expr } => super::symbolic_deref::convert(sigil, expr),
-        Expr::SymbolicDerefAssign { sigil, expr, value } => {
-            super::symbolic_deref::convert_assign(sigil, expr, value)
-        }
-        Expr::IndirectTypeLookupAssign { expr, value } => {
-            super::symbolic_deref::convert_type_assign(expr, value)
-        }
         Expr::IndirectCodeLookup {
             package,
             name,
@@ -3171,15 +3090,9 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // it would hand back a node with block semantics (`let`/`temp`
             // resolution) the original never had -- GH-7635.
             if origin != &crate::ast::DoBlockOrigin::SourceBlock {
-                if let Some(node) = super::hyper_dotty_writeback::convert(body)? {
-                    return Ok(node);
-                }
                 // `120 = 3`: the written assignment to an immutable literal.
                 if let Some((literal, rhs)) = crate::parser::literal_assign_ro_parts(expr) {
                     return assignment_around(convert_expr(literal)?, false, rhs);
-                }
-                if let Some((lhs, rhs)) = crate::parser::assignment_ro_parts(expr) {
-                    return assignment_around(convert_expr(lhs)?, false, rhs);
                 }
                 return Err(unsupported("desugared do-block"));
             }
@@ -3394,36 +3307,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             };
             comma_declarations_node(declarations)
         }
-        // A parenthesized comma list of declarations is grouped by the parser
-        // into one synthetic block. Rakudo keeps each declaration as an
-        // operand of the comma ApplyListInfix.
-        Expr::DoStmt(stmt)
-            if matches!(stmt.as_ref(), Stmt::SyntheticBlock(stmts)
-                if stmts.len() > 1 && stmts.iter().all(|stmt| matches!(stmt, Stmt::VarDecl { .. }))) =>
-        {
-            let Stmt::SyntheticBlock(stmts) = stmt.as_ref() else {
-                unreachable!()
-            };
-            let mut operands = Vec::with_capacity(stmts.len());
-            for declaration in stmts {
-                let statement = var_decl_statement(var_decl_parts(declaration)?, false)?
-                    .ok_or_else(|| unsupported("declaration term"))?;
-                let expression =
-                    expression_of(&statement).ok_or_else(|| unsupported("declaration term"))?;
-                operands.push(Value::rakuast(Box::new(expression)));
-            }
-            Ok(RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::ApplyListInfix,
-                fields: vec![
-                    node_field(Some("infix"), plain_infix(",")),
-                    RakuAstField {
-                        name: Some("operands"),
-                        value: RakuAstFieldValue::List(operands),
-                    },
-                ],
-            })
-        }
         // `do for ... { }` / `do if ... { }` / `do given ... { }`: the loop or
         // conditional statement under `StatementPrefix::Do`.
         Expr::DoStmt(stmt) if is_do_statement(stmt) => {
@@ -3588,14 +3471,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // `$x = EXPR` is the typed assignment node a `.AST` parse keeps
             // (ADR-10723 Stage 2).
             Err(unsupported("source form"))
-        }
-        Expr::CompoundAssign {
-            target, op, rhs, ..
-        } => {
-            if is_dotty_assign_op(op) {
-                return dotty_assignment(target, rhs);
-            }
-            compound_assignment_infix(target, op, rhs)
         }
         Expr::ArrayVar(name) => {
             if is_desugar_marker(name) && !crate::ast::anon_state::is_array(name) {
@@ -4212,16 +4087,11 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 if super::routine_source::apply(&mut node, body)? {
                     return Ok(node);
                 }
-                routine_traits::add_flags(
-                    &mut node,
-                    false,
-                    false,
-                    &routine_traits::IsTraits {
-                        is_rw: *is_rw,
-                        is_raw: *is_raw,
-                        ..Default::default()
-                    },
-                )?;
+                if *is_rw || *is_raw {
+                    return Err(unsupported(
+                        "anonymous routine with traits and no written-trait record",
+                    ));
+                }
                 Ok(node)
             }
         }
@@ -4290,16 +4160,11 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 if super::routine_source::apply(&mut node, body)? {
                     return Ok(node);
                 }
-                routine_traits::add_flags(
-                    &mut node,
-                    false,
-                    false,
-                    &routine_traits::IsTraits {
-                        is_rw: *is_rw,
-                        is_raw: *is_raw,
-                        ..Default::default()
-                    },
-                )?;
+                if *is_rw || *is_raw {
+                    return Err(unsupported(
+                        "anonymous routine with traits and no written-trait record",
+                    ));
+                }
                 return Ok(node);
             }
             pointy_block(param_defs, body, return_type.as_deref())
@@ -4317,6 +4182,10 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if *closes_block_same_line {
                 return super::quoted_string::convert_closed_block_heredoc(content);
             }
+            // The interpolated code is parsed here, after the unit's own parse
+            // ended: it keeps its typed nodes (a statement modifier inside a
+            // `{ ... }`) the way the rest of the tree does.
+            let _spelling = crate::ast::spelled::keep_spelling(true);
             convert_expr(&crate::parser::interpolate_heredoc_content(content))
         }
         Expr::StringInterpolation(parts) => {
@@ -5152,25 +5021,16 @@ fn pointy_block_from_lambda(
 fn constant_declaration(
     name: &str,
     expr: &Expr,
+    constant: crate::ast::ConstantSigil,
     custom_traits: &[(String, Option<Expr>)],
     type_constraint: &Option<String>,
     is_our: bool,
     export_trait: Option<Value>,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
-    // `__constant_sigil` carries the declared sigil; only the sigilless form
-    // (a plain `constant X`) maps onto the measured node shape.
-    let sigil = custom_traits.iter().find_map(|(n, arg)| {
-        (n == "__constant_sigil").then(|| match arg {
-            Some(Expr::Literal(v)) => match v.view() {
-                ValueView::Str(s) => s.to_string(),
-                _ => String::new(),
-            },
-            _ => String::new(),
-        })
-    });
+    let sigil = constant.as_str();
     // rakudo's `name` carries the sigil (`"@a"`, `"$x"`). The parser keeps
     // it in the name for `@` / `%` / `&` and strips a `$`.
-    let name = match sigil.as_deref().unwrap_or("") {
+    let name = match sigil {
         // `constant term:<$bar>`: a sigiled name without a sigil of its own
         // is a term, which rakudo names `term:<$bar>`.
         "" if name.starts_with(['$', '@', '%', '&']) => format!("term:<{name}>"),
@@ -5179,10 +5039,7 @@ fn constant_declaration(
         sigil @ ("@" | "%" | "&") if name.starts_with(sigil) => name.to_string(),
         _ => return Err(unsupported("sigilled constant")),
     };
-    if custom_traits
-        .iter()
-        .any(|(n, _)| n != "__constant" && n != "__constant_sigil" && n != "__has_initializer")
-    {
+    if !custom_traits.is_empty() {
         return Err(unsupported("constant with traits"));
     }
     let mut fields = Vec::new();
@@ -5385,18 +5242,8 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     // The parser records an invocant (`$self:`, `Foo:D:`) as `is_invocant`
     // plus an `invocant` trait, and a synthesized one (no variable) with the
     // `implicit-invocant` trait as well; RakuAST has the one `invocant` flag.
-    let implicit_invocant = pd.traits.iter().any(|t| t == IMPLICIT_INVOCANT_TRAIT);
-    let user_traits: Vec<&str> = pd
-        .traits
-        .iter()
-        .map(String::as_str)
-        .filter(|t| {
-            !matches!(
-                *t,
-                "invocant" | IMPLICIT_INVOCANT_TRAIT | crate::ast::does_target::DOES_TARGET_TRAIT
-            )
-        })
-        .collect();
+    let implicit_invocant = pd.implicit_invocant;
+    let user_traits: Vec<&str> = pd.traits.iter().map(String::as_str).collect();
     let refusal = if pd.literal_value.is_some()
         && (pd.named
             || pd.slurpy
@@ -5408,9 +5255,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         Some("literal-value parameter with more than a value")
     } else if user_traits.iter().any(|t| !is_parameter_trait_name(t)) {
         Some("parameter with a trait the converter does not render")
-    } else if pd.is_invocant != pd.traits.iter().any(|t| t == "invocant")
-        || (implicit_invocant && !pd.is_invocant)
-    {
+    } else if implicit_invocant && !pd.is_invocant {
         Some("invocant marker without an invocant")
     } else if pd.is_invocant && (pd.named || pd.slurpy || pd.double_slurpy) {
         Some("non-scalar invocant parameter")
@@ -5443,7 +5288,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     // A bare `::T` is represented internally by a synthetic parameter name,
     // but RakuAST models it as a Parameter with no target. Keep the synthetic
     // name only in the internal AST used by the existing binder.
-    if pd.name.starts_with("__type_capture__") {
+    if pd.target == ParamTarget::TypeCapture {
         let Some(type_capture) = type_capture else {
             return Err(unsupported("type capture without a capture node"));
         };
@@ -5484,11 +5329,11 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     }
     // The parser names an anonymous `$` / `@` / `%` parameter internally;
     // the model's target keeps only the bare sigil.
-    let (sigil, desigil) = match pd.name.as_str() {
-        ANONYMOUS_SCALAR_PARAM => ("$", ""),
-        ANONYMOUS_ARRAY_PARAM => ("@", ""),
-        ANONYMOUS_HASH_PARAM => ("%", ""),
-        name => split_sigil(name),
+    let (sigil, desigil) = match pd.target {
+        ParamTarget::Anonymous('$') => ("$", ""),
+        ParamTarget::Anonymous('@') => ("@", ""),
+        ParamTarget::Anonymous(_) => ("%", ""),
+        _ => split_sigil(&pd.name),
     };
     let mut node = if pd.sigilless && pd.slurpy {
         let mut node = sigilless_slurpy_parameter(pd, type_setting);
@@ -5631,7 +5476,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     }
     // `sub f(Int)`: the parser names a parameter written as a bare type, which
     // rakudo gives no target.
-    if pd.name == TYPE_ONLY_PARAM && !pd.is_invocant {
+    if pd.target == ParamTarget::TypeOnly && !pd.is_invocant {
         node.fields.retain(|field| field.name != Some("target"));
     }
     // `:x($r) ($a, $b)`: the trailing signature is the parameter's own
@@ -5667,17 +5512,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
 /// Render the `traits` field shared by ordinary and anonymous destructuring
 /// parameters.
 pub(super) fn parameter_traits(pd: &ParamDef) -> Result<Option<RakuAstField>, RuntimeError> {
-    let traits: Vec<&str> = pd
-        .traits
-        .iter()
-        .map(String::as_str)
-        .filter(|t| {
-            !matches!(
-                *t,
-                "invocant" | IMPLICIT_INVOCANT_TRAIT | crate::ast::does_target::DOES_TARGET_TRAIT
-            )
-        })
-        .collect();
+    let traits: Vec<&str> = pd.traits.iter().map(String::as_str).collect();
     if traits.is_empty() {
         return Ok(None);
     }
@@ -5704,18 +5539,10 @@ pub(super) fn parameter_traits(pd: &ParamDef) -> Result<Option<RakuAstField>, Ru
     }))
 }
 
-/// The parser's name for a parameter written as a bare type (`sub f(Int)`).
-pub(super) const TYPE_ONLY_PARAM: &str = "__type_only__";
-
 /// The parser's names for an anonymous `$` / `@` / `%` parameter.
-pub(super) const ANONYMOUS_SCALAR_PARAM: &str = "__ANON_STATE#";
-pub(super) const ANONYMOUS_ARRAY_PARAM: &str = "@__ANON_ARRAY__";
-pub(super) const ANONYMOUS_HASH_PARAM: &str = "%__ANON_HASH__";
-
-/// The parser's name for an anonymous `[…]` destructuring parameter.
-pub(super) const ANONYMOUS_ARRAY_SUBSIGNATURE: &str = "@";
-/// The parser's name for an anonymous `(…)` destructuring parameter.
-pub(super) const ANONYMOUS_SUBSIGNATURE: &str = "__subsig__";
+pub(super) const ANONYMOUS_SCALAR_PARAM: &str = crate::ast::ANON_SCALAR_PARAM;
+pub(super) const ANONYMOUS_ARRAY_PARAM: &str = crate::ast::ANON_ARRAY_PARAM;
+pub(super) const ANONYMOUS_HASH_PARAM: &str = crate::ast::ANON_HASH_PARAM;
 
 /// The `::T` type capture `pd` declares. Unlike `ParamDef::captured_type_name`
 /// (whose binder reading this does not change), a `::?CLASS` / `::?ROLE`
@@ -5831,10 +5658,7 @@ fn sigilless_slurpy_parameter(pd: &ParamDef, type_setting: bool) -> RakuAstNode 
     if type_setting {
         fields.push(node_field(Some("type"), type_setting_any()));
     }
-    if !matches!(
-        pd.name.as_str(),
-        super::lower::ANONYMOUS_CAPTURE | ANONYMOUS_SUBSIGNATURE
-    ) {
+    if pd.name != super::lower::ANONYMOUS_CAPTURE && pd.target != ParamTarget::Parens {
         fields.push(node_field(
             Some("target"),
             RakuAstNode {
@@ -6636,7 +6460,7 @@ fn slipped_control_call(
     control_call(name, std::slice::from_ref(slip)).map(Some)
 }
 
-fn control_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn control_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let name_node = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::Name,

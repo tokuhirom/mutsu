@@ -39,7 +39,7 @@ impl Interpreter {
     ) {
         for pd in param_defs {
             if pd.named {
-                if pd.name == "__subsig__" {
+                if pd.is_parens() {
                     if let Some(key) = &pd.type_constraint {
                         out.insert(key.clone());
                     }
@@ -184,7 +184,7 @@ impl Interpreter {
                 if data
                     .param_defs
                     .iter()
-                    .any(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
+                    .any(|p| p.is_invocant)
                 {
                     self.method_args_match(args, &data.param_defs)
                 } else {
@@ -342,6 +342,9 @@ impl Interpreter {
                                     .map(|named| format!("{sigil}{named}"))
                                     .unwrap_or_else(|| name.clone());
                                 ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                                    implicit_invocant: Default::default(),
+                                    does_target: Default::default(),
+                                    target: Default::default(),
                                     type_capture: None,
                                     name: display_name,
                                     default: None,
@@ -386,6 +389,9 @@ impl Interpreter {
                             .is_some_and(|cc| cc.is_pointy_block);
                         if data.is_bare_block && !is_pointy && !use_positional {
                             defs.push(ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                                implicit_invocant: Default::default(),
+                                does_target: Default::default(),
+                                target: Default::default(),
                                 type_capture: None,
                                 name: "$_".to_string(),
                                 default: Some(Expr::Var("$_".to_string())),
@@ -414,6 +420,9 @@ impl Interpreter {
                         }
                         if use_positional {
                             defs.push(ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                                implicit_invocant: Default::default(),
+                                does_target: Default::default(),
+                                target: Default::default(),
                                 type_capture: None,
                                 name: "@_".to_string(),
                                 default: None,
@@ -442,6 +451,9 @@ impl Interpreter {
                         }
                         if use_named {
                             defs.push(ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                                implicit_invocant: Default::default(),
+                                does_target: Default::default(),
+                                target: Default::default(),
                                 type_capture: None,
                                 name: "%_".to_string(),
                                 default: None,

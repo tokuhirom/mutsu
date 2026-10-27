@@ -145,10 +145,11 @@ impl Walker<'_> {
             Stmt::VarDecl {
                 expr,
                 custom_traits,
+                constant,
                 where_constraint,
                 ..
             } => {
-                if custom_traits.iter().any(|(t, _)| t == "__constant") && !self.in_package() {
+                if constant.is_some() && !self.in_package() {
                     self.lift_constant_initializer(expr);
                 } else {
                     self.visit_expr_mut(expr);

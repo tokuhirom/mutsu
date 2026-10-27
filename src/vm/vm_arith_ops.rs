@@ -447,6 +447,36 @@ impl Interpreter {
         } else {
             vec![left.clone(), right.clone()]
         };
+        self.try_user_candidates(op_name, args, Some((left, right)))
+    }
+
+    /// Try to dispatch the list-associative operator `op_name` (`infix:<X>`)
+    /// over all of `args` to the user candidates in scope. `None` when no
+    /// candidate is in scope or none accepts `args`: the built-in operator
+    /// runs, as rakudo's core candidate does.
+    // Cost: O(1) when no `infix:<op>` is declared; else the ranking of the
+    // operator's candidates and the winner's call.
+    pub(crate) fn try_user_list_infix(
+        &mut self,
+        op_name: &str,
+        args: Vec<Value>,
+    ) -> Result<Option<Value>, RuntimeError> {
+        if !self.user_infix_override(op_name) {
+            return Ok(None);
+        }
+        self.try_user_candidates(op_name, args, None)
+    }
+
+    /// The user candidates of `op_name` for `args`: the block-scoped imports
+    /// first, then a captured family, a proto body, and the registry. `binary`
+    /// is the operand pair of a two-operand call, which a core candidate of
+    /// the operator competes against (ADR-0071).
+    fn try_user_candidates(
+        &mut self,
+        op_name: &str,
+        args: Vec<Value>,
+        binary: Option<(&Value, &Value)>,
+    ) -> Result<Option<Value>, RuntimeError> {
         // A custom EXPORT hook can return a materialized `&infix:<op>` value
         // whose candidates were private to the exporting compilation unit.
         // They are intentionally captured in the Sub, not left in the global
@@ -517,12 +547,14 @@ impl Interpreter {
             // candidate set and only takes the call when it out-narrows the
             // core set. Reporting "no user candidate" here leaves the native
             // path to run, which is exactly what rakudo's core candidate does.
-            match self.core_infix_candidate_wins(op_name, &def, left, right) {
-                CoreInfixVerdict::Core => return Ok(None),
-                CoreInfixVerdict::Tie(core) => {
-                    return Err(self.core_infix_tie_error(op_name, &def, core, left, right));
+            if let Some((left, right)) = binary {
+                match self.core_infix_candidate_wins(op_name, &def, left, right) {
+                    CoreInfixVerdict::Core => return Ok(None),
+                    CoreInfixVerdict::Tie(core) => {
+                        return Err(self.core_infix_tie_error(op_name, &def, core, left, right));
+                    }
+                    CoreInfixVerdict::User => {}
                 }
-                CoreInfixVerdict::User => {}
             }
             let empty_fns = CompiledFns::default();
             let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;

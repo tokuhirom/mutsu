@@ -430,13 +430,14 @@ impl Compiler {
                     Stmt::VarDecl {
                         name,
                         custom_traits,
+                        constant,
                         ..
                     } if custom_traits.iter().any(|(t, _)| !t.starts_with("__"))
                         // A sigil-less constant's term-namespace storage
                         // (#9962) is likewise set up by that path only.
                         || crate::runtime::term_names::is_term_constant_decl(
                             name,
-                            custom_traits,
+                            *constant,
                         ) =>
                     {
                         self.compile_expr_do_stmt(stmt);
@@ -471,6 +472,9 @@ impl Compiler {
                         is_dynamic: ast_is_dynamic,
                         type_constraint,
                         custom_traits,
+                        has_initializer,
+                        constant,
+                        bind,
                         ..
                     } => {
                         // my $x = expr in block-final position: declare and return value
@@ -490,7 +494,7 @@ impl Compiler {
                                 name,
                                 *is_our,
                                 type_constraint.as_deref(),
-                                custom_traits,
+                                *constant,
                             )
                             .map(Some);
                         let type_constraint =
@@ -505,7 +509,7 @@ impl Compiler {
                             local_slot: None,
                             reset: if !*is_state
                                 && !*is_our
-                                && !custom_traits.iter().any(|(t, _)| t == "__constant")
+                                && !constant.is_some()
                                 && !name.starts_with('@')
                                 && !name.starts_with('%')
                             {
@@ -542,6 +546,8 @@ impl Compiler {
                                 expr,
                                 type_constraint.as_deref(),
                                 custom_traits,
+                                *bind,
+                                *has_initializer,
                             ) {
                                 // Block-final uninitialized untyped scalar:
                                 // seed and yield the Any type object
@@ -564,7 +570,7 @@ impl Compiler {
                                 let display_name = format!("${}", name);
                                 let var_name_idx = self.code.add_constant(Value::str(display_name));
                                 let is_bind =
-                                    custom_traits.iter().any(|(t, _)| t == "__scalar_bind");
+                                    *bind == Some(crate::ast::bind_decl::BindKind::Scalar);
                                 if is_bind {
                                     self.code
                                         .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
@@ -587,7 +593,7 @@ impl Compiler {
                                 // declaration path so the readonly check is
                                 // bypassed for this declaration's own initializer,
                                 // mirroring the @/% bind path above.
-                                if custom_traits.iter().any(|(t, _)| t == "__scalar_bind") {
+                                if *bind == Some(crate::ast::bind_decl::BindKind::Scalar) {
                                     self.code.emit(OpCode::MarkScalarBindContext);
                                 }
                                 self.code.emit(OpCode::MarkVarDeclContext);

@@ -331,7 +331,7 @@ impl Mover<'_> {
 }
 
 fn slot_decl(slot: &str) -> Stmt {
-    Stmt::VarDecl {
+    Stmt::VarDecl { marks: Default::default(),
         anonymous: false,
         name: slot.to_string(),
         expr: Expr::Literal(crate::value::Value::NIL),
@@ -342,6 +342,9 @@ fn slot_decl(slot: &str) -> Stmt {
         is_export: false,
         export_tags: vec![],
         custom_traits: vec![],
+        has_initializer: false,
+        constant: None,
+        bind: None,
         where_constraint: None,
     }
 }

@@ -64,7 +64,7 @@ impl Interpreter {
         if args.len() != param_defs.len()
             || !param_defs.iter().all(|pd| {
                 Self::is_simple_positional_param(pd)
-                    || (allow_type_only && pd.name == "__type_only__" && Self::is_simple_positional_param_named(pd))
+                    || (allow_type_only && pd.is_type_only() && Self::is_simple_positional_param_named(pd))
             })
             || args
                 .iter()
@@ -225,7 +225,7 @@ impl Interpreter {
             && pd.default.is_none()
             && pd.literal_value.is_none()
             && pd.type_capture.is_none()
-            && pd.traits.is_empty()
+            && pd.no_traits()
             && pd.sub_signature.is_none()
             && pd.outer_sub_signature.is_none()
             && pd.code_signature.is_none()

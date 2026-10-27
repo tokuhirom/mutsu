@@ -117,6 +117,7 @@ fn expand_bare(decl: &SignatureDecl) -> Vec<Stmt> {
             Vec::new()
         };
         stmts.push(Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: dvar.name.clone(),
             expr,
@@ -127,6 +128,9 @@ fn expand_bare(decl: &SignatureDecl) -> Vec<Stmt> {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: traits,
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         });
     }
@@ -176,6 +180,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
     // element-itemization is therefore deliberately suppressed for it; see
     // `Interpreter::is_destructure_staging_temp`.
     let tmp_decl = Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name: tmp_name,
         expr: rhs,
@@ -186,6 +191,9 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         is_export: false,
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
+        has_initializer: false,
+        constant: None,
+        bind: None,
         where_constraint: None,
     };
     // In BINDING mode the staging temp must keep the RHS elements' CONTAINERS,
@@ -221,6 +229,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 Expr::Literal(Value::NIL)
             };
             stmts.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: dvar.name.clone(),
                 expr,
@@ -231,6 +240,9 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
@@ -274,6 +286,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 spelling: Default::default(),
             };
             stmts.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: format!("__destructure_lit_{i}"),
                 expr: read,
@@ -287,6 +300,9 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: Some(Box::new(lit.clone())),
             });
             continue;
@@ -422,18 +438,16 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         // same scalar bind `my $a := EXPR` lowers to, and carries the same
         // `__scalar_bind` marker, so an immutable element (`my ($a is rw) :=
         // (5,)`) stays immutable instead of getting a fresh container.
-        let mut custom_traits =
-            if binds_element && !dvar.sigilless && !dvar.name.starts_with(['@', '%']) {
-                vec![("__scalar_bind".to_string(), None)]
-            } else {
-                Vec::new()
-            };
+        let bind = (binds_element && !dvar.sigilless && !dvar.name.starts_with(['@', '%']))
+            .then_some(crate::ast::bind_decl::BindKind::Scalar);
+        let mut custom_traits = Vec::new();
         // `my ($a, $b) is default(D) = ...`: the group trait applies to every
         // element, through the same variable trait the bare form uses.
         if let Some(def_expr) = &decl.group_default {
             custom_traits.push(("default".to_string(), Some(def_expr.clone())));
         }
         let decl = Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: dvar.name.clone(),
             expr,
@@ -444,6 +458,9 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
             is_export: false,
             export_tags: Vec::new(),
             custom_traits,
+            has_initializer: false,
+            constant: None,
+            bind,
             where_constraint: effective_where,
         };
         let decl = if binds_element && dvar.sigilless {

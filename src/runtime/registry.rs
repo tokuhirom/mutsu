@@ -705,9 +705,22 @@ pub(crate) struct Registry {
     /// dropped by [`RegistryWriteGuard`]'s `DerefMut`; see
     /// [`Registry::has_lexical_type_key_for`].
     lexical_type_names: std::sync::OnceLock<rustc_hash::FxHashSet<Box<str>>>,
+    /// A process-unique stamp of this registry's content, replaced on every
+    /// write through [`RegistryWriteGuard`]'s `DerefMut` (the only path to a
+    /// `&mut Registry`), so a memo tagged with it cannot outlive a change to
+    /// the class, role, enum or subset tables; see [`Self::type_stamp`].
+    type_stamp: u64,
 }
 
 impl Registry {
+    /// The stamp of this registry's content. Two reads that return the same
+    /// value saw the same classes, roles, enums and subsets, whichever thread
+    /// or copy-on-write clone they went through.
+    // Cost: O(1).
+    pub(crate) fn type_stamp(&self) -> u64 {
+        self.type_stamp
+    }
+
     /// Whether any key in `classes` / `roles` / `enum_types` / `subsets` is a
     /// lexically-mangled storage name whose source-facing part is exactly
     /// `unmangled` — that is, whether a `key.starts_with("{unmangled}\u{0}")`
@@ -757,6 +770,8 @@ impl Registry {
     /// Registry`.
     fn invalidate_lexical_type_names(&mut self) {
         self.lexical_type_names.take();
+        static NEXT_STAMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        self.type_stamp = NEXT_STAMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 

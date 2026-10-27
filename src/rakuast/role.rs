@@ -11,8 +11,8 @@
 //! same leading statements, and an `also` one is a `Statement::Also`.
 
 use super::convert::{
-    MY_SCOPED, blockoid, build_type_node, is_colons_package, node_field, package_header_fields,
-    signature, unsupported,
+    blockoid, build_type_node, is_colons_package, node_field, package_header_fields, signature,
+    unsupported,
 };
 use super::lower::{
     lower_package_body, lower_signature_parameters, lower_stmts, named_child,
@@ -33,21 +33,21 @@ pub(super) struct RoleDecl<'a> {
     pub export_tags: &'a [String],
     pub body: &'a [Stmt],
     pub is_rw: bool,
+    pub is_lexical: bool,
     pub custom_traits: &'a [(String, Option<crate::ast::Expr>)],
 }
 
 /// The `RakuAST::Role` node for a role declaration.
 // Cost: O(n), n = size of the role's body.
 pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
-    let is_lexical = role.custom_traits.iter().any(|(t, _)| t == MY_SCOPED);
+    let is_lexical = role.is_lexical;
     // The parser's own markers are not traits; any other plain name is a
     // trait of the program's own (`is array_type(T)`), rendered by name.
     let user_traits: Vec<(String, Option<crate::ast::Expr>)> = role
         .custom_traits
         .iter()
         .filter(|(t, _)| {
-            t != MY_SCOPED
-                && t != crate::parser::ANON_COLONS_TRAIT
+            t != crate::parser::ANON_COLONS_TRAIT
                 && t != crate::parser::LEADING_COLONS_TRAIT
                 && t != crate::parser::DECLARE_HOW_TRAIT
                 && t != crate::parser::ANON_DECL_TRAIT
@@ -197,9 +197,6 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         return Err(super::lower::unsupported(node));
     }
     let mut custom_traits = Vec::new();
-    if head.is_lexical {
-        custom_traits.push((MY_SCOPED.to_string(), None));
-    }
     custom_traits.extend(head.custom_traits());
     let mut header = Vec::new();
     let mut flags = IsTraits::default();
@@ -282,6 +279,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         export_tags: flags.export_tags,
         body: header,
         is_rw: flags.is_rw,
+        is_lexical: head.is_lexical,
         language_version: crate::parser::current_language_version(),
         custom_traits,
         decl_id: crate::ast::next_class_decl_id(),

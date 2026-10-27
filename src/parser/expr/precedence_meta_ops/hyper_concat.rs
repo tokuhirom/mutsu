@@ -134,6 +134,7 @@ pub(crate) fn lower_hyper_assignment(
         dwim_right,
     };
     let temp_decl = |name: String, expr: Expr| crate::ast::Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name,
         expr,
@@ -144,6 +145,9 @@ pub(crate) fn lower_hyper_assignment(
         is_export: false,
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
+        has_initializer: false,
+        constant: None,
+        bind: None,
         where_constraint: None,
     };
     Expr::desugar_block(vec![

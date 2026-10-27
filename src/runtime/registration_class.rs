@@ -112,6 +112,9 @@ pub(super) fn apply_resolved_handles(
 /// This ensures the method matches any number of positional/named arguments.
 fn delegation_slurpy_param() -> ParamDef {
     ParamDef { spans: Default::default(), trait_meta: Default::default(),
+        implicit_invocant: Default::default(),
+        does_target: Default::default(),
+        target: Default::default(),
         type_capture: None,
         name: "@_".to_string(),
         default: None,
@@ -176,6 +179,9 @@ pub(super) fn make_delegation_method(attr_var_name: &str, target_method: &str) -
 /// Create the double-slurpy `**@_` parameter for named arg forwarding.
 fn delegation_double_slurpy_param() -> ParamDef {
     ParamDef { spans: Default::default(), trait_meta: Default::default(),
+        implicit_invocant: Default::default(),
+        does_target: Default::default(),
+        target: Default::default(),
         type_capture: None,
         name: "%_".to_string(),
         default: None,
@@ -391,7 +397,10 @@ pub(super) fn should_treat_role_arg_as_type_expr(input: &str) -> bool {
 }
 
 /// Whether `name` is the storage key of a type that shares its name with an
-/// earlier one: the bare name, a NUL, then digits (`Foo\0123`).
+/// earlier one: the bare name, a NUL, then digits (`Foo\0123`). The bare name
+/// is whatever `new_type(:name)` was given (`typed_child_untyped-parent` has a
+/// hyphen), so only the NUL-and-digits suffix, which source text cannot hold,
+/// identifies the key.
 // Cost: O(|name|).
 fn is_site_keyed_type_name(name: &str) -> bool {
     let Some((bare, id)) = name.split_once('\u{0}') else {
@@ -400,7 +409,6 @@ fn is_site_keyed_type_name(name: &str) -> bool {
     !id.is_empty()
         && id.bytes().all(|b| b.is_ascii_digit())
         && !bare.is_empty()
-        && looks_like_type_arg_expr(bare)
 }
 
 /// Substitute type parameters in a method definition.

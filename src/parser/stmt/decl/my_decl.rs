@@ -53,6 +53,7 @@ pub(super) struct MyDeclState {
     pub has_export_trait: bool,
     pub export_tags: Vec<String>,
     pub custom_traits: Vec<(String, Option<Expr>)>,
+    pub marks: crate::ast::var_marks::VarMarks,
     pub will_phasers: Vec<(crate::ast::PhaserKind, Vec<Stmt>)>,
     pub where_constraint: Option<Box<Expr>>,
 }
@@ -410,10 +411,7 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
     )?;
     state.anonymous = anonymous;
     if let Some(written) = written_colonpairs.filter(|_| crate::ast::spelled::keeping()) {
-        state.custom_traits.push((
-            crate::ast::NAME_COLONPAIRS.to_string(),
-            Some(Expr::Literal(crate::value::Value::str(written.to_string()))),
-        ));
+        state.marks.name_colonpairs = Some(written.into());
     }
 
     // A colonpair adverb directly on a declaration (`my $x :a`) is illegal —
@@ -470,6 +468,7 @@ fn parse_variable_traits<'a>(
     let mut has_export_trait = false;
     let mut export_tags: Vec<String> = Vec::new();
     let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
+    let mut marks = crate::ast::var_marks::VarMarks::default();
     let mut first_type_trait: Option<String> = None;
     let mut rest = {
         let mut r = input;
@@ -643,10 +642,7 @@ fn parse_variable_traits<'a>(
                 } else if trait_name == "dynamic" {
                     // `is dynamic(ARG)` sets the flag; the written argument is
                     // kept for the RakuAST view only.
-                    custom_traits.push((
-                        crate::ast::DYNAMIC_TRAIT_ARGUMENT.to_string(),
-                        Some(trait_arg),
-                    ));
+                    marks.dynamic_argument = Some(Box::new(trait_arg));
                 }
                 r = r3;
             } else if r2_immediate.starts_with('<') {
@@ -810,10 +806,7 @@ fn parse_variable_traits<'a>(
                 Some(crate::ast::keyed_hash::join(Some(&value_tc), &key_tc))
             }
             (None, Some(key_tc)) => {
-                custom_traits.push((
-                    crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE.to_string(),
-                    None,
-                ));
+                marks.implicit_value_type = true;
                 Some(crate::ast::keyed_hash::join(None, &key_tc))
             }
             (value_tc, None) => value_tc,
@@ -847,6 +840,7 @@ fn parse_variable_traits<'a>(
             has_export_trait,
             export_tags,
             custom_traits,
+            marks,
             will_phasers,
             where_constraint,
         },

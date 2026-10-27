@@ -50,6 +50,7 @@ pub(crate) fn walk_method_assign_decl<'ast, V: Visit<'ast> + ?Sized>(
     declaration: &'ast crate::ast::method_assign_decl::MethodAssignDecl,
 ) {
     let crate::ast::method_assign_decl::MethodAssignDecl {
+        marks: _,
         name,
         anonymous: _,
         type_constraint,

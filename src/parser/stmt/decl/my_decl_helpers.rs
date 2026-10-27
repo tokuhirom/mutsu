@@ -135,6 +135,7 @@ pub(crate) fn build_sigilless_bind_stmt(
         _ => false,
     };
     let decl = Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name: name.clone(),
         expr,
@@ -147,13 +148,13 @@ pub(crate) fn build_sigilless_bind_stmt(
         // A sigilless term always carries a user-written initializer, so an
         // explicit `Nil` RHS (`my \x = Nil`) must not be mistaken for the
         // synthesized default and re-seeded as `Any`.
-        custom_traits: vec![
-            ("__has_initializer".to_string(), None),
-            (
-                crate::ast::sigilless_decl::SIGILLESS_DECL.to_string(),
-                Some(Expr::Literal(Value::truth(assigned))),
-            ),
-        ],
+        custom_traits: vec![(
+            crate::ast::sigilless_decl::SIGILLESS_DECL.to_string(),
+            Some(Expr::Literal(Value::truth(assigned))),
+        )],
+        has_initializer: true,
+        constant: None,
+        bind: None,
         where_constraint: None,
     };
     if binds_a_container {

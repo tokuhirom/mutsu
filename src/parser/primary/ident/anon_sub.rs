@@ -5,6 +5,8 @@ use crate::parser::primary::misc::parse_block_body_routine_with_params;
 
 pub(crate) fn invocant_param_def() -> crate::ast::ParamDef {
     crate::ast::ParamDef {
+        does_target: Default::default(),
+        target: Default::default(),
         spans: Default::default(),
         trait_meta: Default::default(),
         type_capture: None,
@@ -22,7 +24,8 @@ pub(crate) fn invocant_param_def() -> crate::ast::ParamDef {
         literal_value: None,
         sub_signature: None,
         where_constraint: None,
-        traits: vec![crate::ast::IMPLICIT_INVOCANT_TRAIT.to_string()],
+        traits: Vec::new(),
+        implicit_invocant: true,
         optional_marker: false,
         outer_sub_signature: None,
         code_signature: None,
@@ -65,8 +68,8 @@ pub(crate) fn folded_invocant<'a>(
     use crate::ast::Stmt;
     if !receiver.is_invocant
         || receiver.name != "self"
-        || receiver.traits.len() != 1
-        || receiver.traits[0] != crate::ast::IMPLICIT_INVOCANT_TRAIT
+        || !receiver.traits.is_empty()
+        || !receiver.implicit_invocant
         || receiver.where_constraint.is_some()
         || receiver.type_capture.is_some()
         || receiver.sub_signature.is_some()
@@ -81,11 +84,9 @@ pub(crate) fn folded_invocant<'a>(
             expr,
             type_constraint: None,
             custom_traits,
+            bind: Some(crate::ast::bind_decl::BindKind::Scalar),
             ..
-        }) if is_self(expr)
-            && custom_traits.len() == 1
-            && custom_traits[0].0 == "__scalar_bind" =>
-        {
+        }) if is_self(expr) && custom_traits.is_empty() => {
             let name = if name == crate::env::LEX_SELF {
                 "self".to_string()
             } else {
@@ -201,8 +202,7 @@ pub(crate) fn method_literal_params(
     let mut rest_params: Vec<crate::ast::ParamDef> = Vec::new();
     let mut seen_positional = false;
     for pd in param_defs {
-        let declares_invocant =
-            pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") || pd.name == "self";
+        let declares_invocant = pd.is_invocant || pd.name == "self";
         let declares_self_lexical = pd.declares_self_lexical();
         if !seen_positional && declares_invocant {
             invocant.default = pd.default;
@@ -270,6 +270,7 @@ pub(crate) fn bind_invocant_aliases(expr: Expr, aliases: &[(String, bool)]) -> E
                 );
             }
             crate::ast::Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 // `$self` binds the reserved lexical key, not the invocant's
                 // own (ADR-0061); every other alias keeps its sigil-less name.
@@ -285,7 +286,10 @@ pub(crate) fn bind_invocant_aliases(expr: Expr, aliases: &[(String, bool)]) -> E
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
-                custom_traits: vec![("__scalar_bind".to_string(), None)],
+                custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: Some(crate::ast::bind_decl::BindKind::Scalar),
                 where_constraint: None,
             }
         })

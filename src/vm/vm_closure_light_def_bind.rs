@@ -74,7 +74,7 @@ fn light_def_param(pd: &ParamDef) -> Option<LightDefParam> {
     if !def_is_plain_positional(pd) || !is_plain_scalar_param_name(&pd.name) {
         return None;
     }
-    let is_raw = !pd.traits.is_empty();
+    let is_raw = pd.has_traits();
     Some(LightDefParam {
         sym: Symbol::intern(&pd.name),
         bind: Interpreter::scalar_param_bind(pd),

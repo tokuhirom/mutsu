@@ -606,7 +606,7 @@ impl Interpreter {
         let has_explicit_invocant = method_def
             .param_defs
             .iter()
-            .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
+            .any(|pd| pd.is_invocant);
         let mut full_param_defs = Vec::with_capacity(method_def.param_defs.len() + 1);
         if let Some(owner) = owner_class
             && !has_explicit_invocant
@@ -1074,7 +1074,7 @@ impl Interpreter {
                     let has_explicit_invocant = def
                         .param_defs
                         .iter()
-                        .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
+                        .any(|pd| pd.is_invocant);
                     let (params, param_defs) = if has_explicit_invocant {
                         (def.params.clone(), def.param_defs.to_vec())
                     } else {

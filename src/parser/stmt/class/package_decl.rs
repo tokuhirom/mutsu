@@ -436,6 +436,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     export_tags,
                     body,
                     is_rw: role_is_rw,
+                    is_lexical: false,
                     language_version: super::super::simple::current_language_version(),
                     custom_traits,
                     decl_id: crate::ast::next_class_decl_id(),

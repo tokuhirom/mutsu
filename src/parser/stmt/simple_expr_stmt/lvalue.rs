@@ -1,4 +1,4 @@
-use crate::ast::{AssignOp, Expr, LvaluePeel, LvalueRoot, Stmt};
+use crate::ast::{Expr, LvaluePeel, LvalueRoot, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
 
@@ -30,45 +30,6 @@ pub(crate) fn method_lvalue_target_name(target: &Expr) -> Option<String> {
     target
         .lvalue_root(LvaluePeel::GROUPED | LvaluePeel::DECL | LvaluePeel::SIGILLESS)
         .map(LvalueRoot::into_spelled_key)
-}
-
-pub(super) fn method_lvalue_assign_expr(
-    target: Expr,
-    target_var_name: Option<String>,
-    method_name: String,
-    method_args: Vec<Expr>,
-    value: Expr,
-) -> Expr {
-    // `$(EXPR) = value` lowers `$(EXPR)` to `EXPR.item`, but the item
-    // contextualizer is transparent as an lvalue: it names the same container as
-    // `EXPR`. Assign straight through to `EXPR` instead of dispatching a `.item`
-    // method-lvalue (which has no writable slot and threw X::Assignment::RO).
-    if method_name == "item" && method_args.is_empty() {
-        return crate::parser::expr::precedence::assign_to_target_expr(target, value);
-    }
-    let mut args = vec![
-        target,
-        Expr::Literal(Value::str(method_name)),
-        Expr::ArrayLiteral(method_args),
-        value,
-    ];
-    args.push(match target_var_name {
-        Some(name) => Expr::Literal(Value::str(name)),
-        None => Expr::Literal(Value::NIL),
-    });
-    Expr::Call {
-        name: Symbol::intern("__mutsu_assign_method_lvalue"),
-        args,
-        listop: false,
-    }
-}
-
-pub(super) fn named_sub_lvalue_assign_expr(
-    name: String,
-    call_args: Vec<Expr>,
-    value: Expr,
-) -> Expr {
-    crate::parser::stmt::assign::named_sub_lvalue_assign_expr(name, call_args, value)
 }
 
 pub(super) fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, value: Expr) -> Expr {
@@ -156,105 +117,4 @@ pub(crate) fn bind_source_metadata_expr(rhs: &Expr) -> Expr {
             }
         }
     }
-}
-
-pub(crate) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stmt> {
-    let Expr::ArrayLiteral(items) = lhs else {
-        return None;
-    };
-    let mut saw_whatever = false;
-    let mut lvalues: Vec<(usize, Expr)> = Vec::new();
-    for (i, item) in items.iter().enumerate() {
-        if matches!(item, Expr::Whatever) {
-            saw_whatever = true;
-            continue;
-        }
-        lvalues.push((i, item.clone()));
-    }
-    if !saw_whatever || lvalues.len() != 1 {
-        return None;
-    }
-    let (pos, target) = lvalues.into_iter().next()?;
-    // Extract the element at position `pos` from the RHS list for scalar targets
-    let extracted_rhs = Expr::Index {
-        target: Box::new(rhs.clone()),
-        index: Box::new(Expr::Literal(Value::int(pos as i64))),
-        is_positional: true,
-        spelling: Default::default(),
-    };
-    Some(match target {
-        Expr::Var(name) => Stmt::Assign {
-            name,
-            expr: extracted_rhs,
-            op: AssignOp::Assign,
-            target_is_sigilless: false,
-        },
-        Expr::ArrayVar(name) => {
-            // For array targets, pass the full RHS — __mutsu_star_lvalue_rhs
-            // handles truncation based on bound array length.
-            // If the * is trailing (array comes first), the array gets the full RHS.
-            // If the * is leading (array comes last), we need to skip leading elements.
-            let array_rhs = if pos > 0 {
-                // Skip the first `pos` elements for the array target
-                Expr::MethodCall {
-                    target: Box::new(rhs),
-                    name: Symbol::intern("skip"),
-                    args: vec![Expr::Literal(Value::int(pos as i64))],
-                    modifier: None,
-                    quoted: false,
-                    sugar: false,
-                }
-            } else {
-                rhs
-            };
-            Stmt::Assign {
-                name: format!("@{}", name),
-                expr: Expr::Call {
-                    name: Symbol::intern("__mutsu_star_lvalue_rhs"),
-                    args: vec![Expr::Literal(Value::str(format!("@{}", name))), array_rhs],
-                    listop: false,
-                },
-                op: AssignOp::Assign,
-                target_is_sigilless: false,
-            }
-        }
-        Expr::HashVar(name) => Stmt::Assign {
-            name: format!("%{}", name),
-            expr: extracted_rhs,
-            op: AssignOp::Assign,
-            target_is_sigilless: false,
-        },
-        Expr::Index {
-            target,
-            index,
-            is_positional,
-            spelling,
-            ..
-        } => Stmt::Expr(Expr::IndexAssign {
-            target,
-            index,
-            value: Box::new(extracted_rhs),
-            is_positional,
-            spelling,
-        }),
-        _ => return None,
-    })
-}
-
-pub(super) fn grouped_assign_lvalue_stmt(target: &Expr, rhs: Expr) -> Option<Stmt> {
-    let Expr::Grouped(inner) = target else {
-        return None;
-    };
-    let Expr::AssignExpr { name, .. } = inner.as_ref() else {
-        return None;
-    };
-    Some(Stmt::Block(vec![
-        Stmt::Expr((**inner).clone()),
-        Stmt::Assign {
-            name: name.clone(),
-            expr: rhs,
-            op: AssignOp::Assign,
-            target_is_sigilless: false,
-        },
-    ]))
 }

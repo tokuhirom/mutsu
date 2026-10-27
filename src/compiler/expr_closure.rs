@@ -98,6 +98,7 @@ impl Compiler {
                 export_tags: Vec::new(),
                 is_test_assertion: false,
                 supersede: false,
+                scope: crate::ast::SubScope::My,
                 custom_traits: Vec::new(),
             });
             self.code
@@ -138,7 +139,7 @@ impl Compiler {
     }
 
     /// Compile `anon sub NAME ... { ... }` (a `Stmt::SubDecl` marked
-    /// `__anon_decl` by the parser): compile the routine body and emit
+    /// `SubScope::Anon` by the parser): compile the routine body and emit
     /// `MakeAnonSubParams` with the original decl (which carries the name)
     /// so the built `SubData` keeps `.name` — without registering or
     /// installing `&NAME` in the enclosing scope.
@@ -251,6 +252,9 @@ impl Compiler {
             && crate::whatever_curry::body_mutates_placeholder(body, "_");
         let wc_param_defs: Vec<crate::ast::ParamDef> = if wc_raw {
             vec![crate::ast::ParamDef {
+                implicit_invocant: Default::default(),
+                does_target: Default::default(),
+                target: Default::default(),
                 spans: Default::default(),
                 trait_meta: Default::default(),
                 type_capture: None,
@@ -343,6 +347,7 @@ impl Compiler {
             export_tags: Vec::new(),
             is_test_assertion: false,
             supersede: false,
+            scope: crate::ast::SubScope::My,
             custom_traits: Vec::new(),
         });
         self.code

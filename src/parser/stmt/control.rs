@@ -192,6 +192,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             pd.name.as_str()
         };
         let mut stmts = vec![Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: target.to_string(),
             expr: topic,
@@ -201,9 +202,17 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![("__has_initializer".to_string(), None)],
+            custom_traits: Vec::new(),
+            has_initializer: true,
+            constant: None,
+            bind: None,
             where_constraint: None,
         }];
+        // An aggregate-sigil pattern (`-> % (:$k is rw)`) BINDS the topic, so its
+        // elements alias the source rather than a copy.
+        if target.starts_with(['@', '%']) {
+            stmts = vec![Stmt::SyntheticBlock(vec![Stmt::MarkBind, stmts.remove(0)])];
+        }
         crate::param_destructure::destructure_declaring(target, sub_params, &mut stmts);
         return Stmt::SyntheticBlock(stmts);
     }
@@ -222,6 +231,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             topic
         };
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: pd.name.clone(),
             expr,
@@ -231,10 +241,10 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![
-                ("__has_initializer".to_string(), None),
-                ("__pointy_copy".to_string(), None),
-            ],
+            custom_traits: vec![("__pointy_copy".to_string(), None)],
+            has_initializer: true,
+            constant: None,
+            bind: None,
             where_constraint: None,
         }
     } else if pd
@@ -251,6 +261,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         // writeback never fires because `Given`'s `pointy_param_idx` stays
         // `None`, the same way the general branch below needs `MarkBind`.
         let decl = Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: pd.name.clone(),
             expr: topic,
@@ -260,10 +271,10 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![
-                ("__has_initializer".to_string(), None),
-                ("__pointy_native_param".to_string(), None),
-            ],
+            custom_traits: vec![("__pointy_native_param".to_string(), None)],
+            has_initializer: true,
+            constant: None,
+            bind: None,
             where_constraint: None,
         };
         if pd.traits.iter().any(|t| t == "rw") {
@@ -281,6 +292,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         // rejects it as such (`OpCode::AssignReadOnly`). A code alias has no
         // writeback semantics to lose, so a declaration is the exact form.
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: pd.name.clone(),
             expr: Expr::Var("_".to_string()),
@@ -291,6 +303,9 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         }
     } else {
@@ -301,6 +316,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         let mut stmts = vec![
             Stmt::MarkBind,
             Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: pd.name.clone(),
                 expr: topic,
@@ -310,7 +326,10 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
-                custom_traits: vec![("__has_initializer".to_string(), None)],
+                custom_traits: Vec::new(),
+                has_initializer: true,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             },
         ];
@@ -350,6 +369,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
 /// which is what rakudo gives a `\\name` parameter.
 pub(crate) fn simple_pointy_bind(name: &str, source: &Expr, sigilless: bool) -> Stmt {
     let decl = Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name: name.to_string(),
         expr: source.clone(),
@@ -360,6 +380,9 @@ pub(crate) fn simple_pointy_bind(name: &str, source: &Expr, sigilless: bool) -> 
         is_export: false,
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
+        has_initializer: false,
+        constant: None,
+        bind: None,
         where_constraint: None,
     };
     if sigilless {
@@ -379,6 +402,7 @@ pub(crate) fn simple_pointy_bind(name: &str, source: &Expr, sigilless: bool) -> 
 /// lexical initialization.
 pub(crate) fn pointy_param_bind_decl(pd: &ParamDef, source: &Expr) -> Stmt {
     let decl = Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name: pd.name.clone(),
         expr: source.clone(),
@@ -388,7 +412,10 @@ pub(crate) fn pointy_param_bind_decl(pd: &ParamDef, source: &Expr) -> Stmt {
         is_dynamic: false,
         is_export: false,
         export_tags: Vec::new(),
-        custom_traits: vec![("__has_initializer".to_string(), None)],
+        custom_traits: Vec::new(),
+        has_initializer: true,
+        constant: None,
+        bind: None,
         where_constraint: pd.where_constraint.clone(),
     };
     if pd.sigilless {

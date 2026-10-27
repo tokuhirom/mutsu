@@ -401,10 +401,9 @@ impl Compiler {
                     name,
                     expr: Expr::BareWord(target),
                     custom_traits,
+                    constant,
                     ..
-                } if custom_traits.iter().any(|(t, _)| t == "__constant")
-                    && !name.starts_with(['$', '@', '%', '&']) =>
-                {
+                } if constant.is_some() && !name.starts_with(['$', '@', '%', '&']) => {
                     Some((name.clone(), target.clone()))
                 }
                 _ => None,
@@ -843,6 +842,7 @@ impl Compiler {
         let Stmt::RoleDecl {
             name,
             custom_traits,
+            is_lexical,
             body,
             type_param_defs,
             ..
@@ -873,10 +873,7 @@ impl Compiler {
         } else {
             Some(self.declared_type_name(&name.resolve(), self.decl_name_is_prequalified()))
         };
-        let lexical_type_name = custom_traits
-            .iter()
-            .any(|(trait_name, _)| trait_name == "__my_scoped")
-            .then(|| name.resolve());
+        let lexical_type_name = is_lexical.then(|| name.resolve());
         let lexical_type_short_name = lexical_type_name.as_deref().and_then(|name| {
             (self.in_unit_package
                 && !name.starts_with("GLOBAL::")

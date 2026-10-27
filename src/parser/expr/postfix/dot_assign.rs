@@ -230,6 +230,7 @@ fn expand_dot_assign(
             let assigned_value = method_call_fn(lhs_expr);
             Expr::desugar_block(vec![
                 Stmt::VarDecl {
+                    marks: Default::default(),
                     anonymous: false,
                     name: tmp_idx,
                     expr: *index.clone(),
@@ -240,6 +241,9 @@ fn expand_dot_assign(
                     is_export: false,
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
+                    has_initializer: false,
+                    constant: None,
+                    bind: None,
                     where_constraint: None,
                 },
                 Stmt::Expr(Expr::IndexAssign {
@@ -406,6 +410,7 @@ fn expand_dot_assign(
             };
             Expr::desugar_block(vec![
                 Stmt::VarDecl {
+                    marks: Default::default(),
                     anonymous: false,
                     name: inv_tmp,
                     expr: *inv.clone(),
@@ -416,9 +421,13 @@ fn expand_dot_assign(
                     is_export: false,
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
+                    has_initializer: false,
+                    constant: None,
+                    bind: None,
                     where_constraint: None,
                 },
                 Stmt::VarDecl {
+                    marks: Default::default(),
                     anonymous: false,
                     name: cur_tmp,
                     expr: read_expr,
@@ -429,6 +438,9 @@ fn expand_dot_assign(
                     is_export: false,
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
+                    has_initializer: false,
+                    constant: None,
+                    bind: None,
                     where_constraint: None,
                 },
                 Stmt::Expr(ternary),
@@ -473,6 +485,7 @@ fn expand_dot_assign(
             };
             Expr::desugar_block(vec![
                 Stmt::VarDecl {
+                    marks: Default::default(),
                     anonymous: false,
                     name: tmp,
                     expr: target,
@@ -483,6 +496,9 @@ fn expand_dot_assign(
                     is_export: false,
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
+                    has_initializer: false,
+                    constant: None,
+                    bind: None,
                     where_constraint: None,
                 },
                 Stmt::Expr(ternary),

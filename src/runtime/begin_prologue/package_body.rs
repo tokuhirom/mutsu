@@ -198,11 +198,13 @@ fn split_body_stmt(stmt: Stmt, decls: &mut Vec<Stmt>, runtime: &mut Vec<Stmt>) {
 fn has_runtime_part(stmt: &Stmt) -> bool {
     match stmt {
         stmt if stmt.is_routine_traits() => false,
-        Stmt::VarDecl { custom_traits, .. } => {
+        Stmt::VarDecl {
+            bind,
+            has_initializer,
+            ..
+        } => {
             splittable_var_decl(stmt)
-                && custom_traits
-                    .iter()
-                    .any(|(t, _)| t == "__has_initializer" || t == "__scalar_bind")
+                && (*has_initializer || *bind == Some(crate::ast::bind_decl::BindKind::Scalar))
         }
         Stmt::ClassDecl { .. } | Stmt::Package { .. } => {
             matches!(split_package_decl(stmt.clone()), (_, Some(_)))
@@ -228,7 +230,7 @@ fn splittable_var_decl(stmt: &Stmt) -> bool {
         is_state,
         is_dynamic,
         is_export,
-        custom_traits,
+        constant,
         ..
     } = stmt
     else {
@@ -238,7 +240,7 @@ fn splittable_var_decl(stmt: &Stmt) -> bool {
         && !is_dynamic
         && !is_export
         && !name.starts_with('&')
-        && !custom_traits.iter().any(|(t, _)| t == "__constant")
+        && !constant.is_some()
 }
 
 /// A statement that runs at run time in Rakudo and declares nothing.

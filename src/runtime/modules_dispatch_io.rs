@@ -12,6 +12,7 @@ mod class_scoped_accessor;
 mod wrap_handle_restore;
 mod dispatch_candidates;
 mod role_type_distance;
+pub(crate) mod type_conformance;
 mod multi_rank;
 mod multi_type_walk;
 pub(crate) mod dispatch_key;

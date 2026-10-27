@@ -75,17 +75,7 @@ fn list_origins(node: &mut RakuAstNode, field: &str, spans: &[TraitSpans]) {
 /// block's origins.
 // Cost: O(f), f = fields of the nodes on the path.
 pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
-    // `class C is export { }`: the declaration opens the block that also
-    // registers its export.
     let stmt = match stmt {
-        Stmt::SyntheticBlock(inner)
-            if matches!(
-                inner.first(),
-                Some(Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. })
-            ) =>
-        {
-            &inner[0]
-        }
         Stmt::Ast(node) => node.inner_stmt().unwrap_or(stmt),
         _ => stmt,
     };

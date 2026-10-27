@@ -20,7 +20,7 @@ sides, and publish the difference.
   [`.agents/skills/ecosystem-dist-queue/SKILL.md`](../.agents/skills/ecosystem-dist-queue/SKILL.md)
   wraps that in a fixed-order queue over every actionable record
   (`scripts/ecosystem-tickets.py --queue`: most dependents first) plus a lock on
-  [#12725](https://github.com/tokuhirom/mutsu/issues/12725), so parallel agents
+  [#15044](https://github.com/tokuhirom/mutsu/issues/15044), so parallel agents
   neither collide nor bias the work by cherry-picking cheap records.
 - **Sibling tools**: [docs/dist-compat-sweep.md](dist-compat-sweep.md) is the
   load-level (`use <module>`) diagnostic sampler that feeds root-cause tickets;

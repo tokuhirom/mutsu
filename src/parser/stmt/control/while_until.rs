@@ -158,6 +158,7 @@ fn expand_loop(
         declared
             .into_iter()
             .map(|name| Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name,
                 expr: Expr::Literal(Value::NIL),
@@ -168,6 +169,9 @@ fn expand_loop(
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             })
             .chain(std::iter::once(stmt))

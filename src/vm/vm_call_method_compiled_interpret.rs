@@ -531,7 +531,7 @@ impl Interpreter {
                     entry.has_defaults && args.len() < entry.positional_count && {
                         let mut pos = 0;
                         entry.method_def.param_defs.iter().any(|pd| {
-                            if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") {
+                            if pd.is_invocant {
                                 return false;
                             }
                             let result = pos >= args.len() && pd.default.is_some();

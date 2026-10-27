@@ -85,7 +85,7 @@ impl Interpreter {
     /// `pub(crate)`: also consulted by `vm_register_sub_ops.rs`, which is a
     /// different module tree, to implicitly export an `our sub`/`our multi
     /// sub` declared directly inside such a package (see
-    /// `exec_register_sub_op`'s `__our_scoped` branch).
+    /// `exec_register_sub_op`'s `SubScope::Our` branch).
     pub(crate) fn export_stash_tag(package: &str) -> Option<&str> {
         let tag = match package.strip_prefix("EXPORT::") {
             Some(tag) => tag,
@@ -428,7 +428,7 @@ impl Interpreter {
     /// `export_implicit_stash_sub` for the candidate family. The proto
     /// commonly precedes its `multi sub` candidates, and those candidates are
     /// not themselves `our`-scoped (so `exec_register_sub_op` cannot reach
-    /// them via its `__our_scoped` branch) — `exec_register_sub_op` instead
+    /// them via its `SubScope::Our` branch) — `exec_register_sub_op` instead
     /// calls this again as each bare candidate registers, once it recognises
     /// (via [`Self::is_our_scoped_proto`]) that the proto already put the
     /// family in this stash's export list. `export_implicit_stash_sub`

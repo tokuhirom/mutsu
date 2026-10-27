@@ -243,7 +243,7 @@ impl Interpreter {
 
     /// Extract junction from an argument, handling both positional and named (Pair) args.
     /// Returns (kind, values, pair_key) where pair_key is Some(key) for Pair args.
-    pub(super) fn extract_junction_from_arg(
+    pub(crate) fn extract_junction_from_arg(
         val: &Value,
     ) -> Option<(crate::value::JunctionKind, Arc<Vec<Value>>, Option<String>)> {
         if let ValueView::Pair(key, inner) = val.view() {
@@ -255,7 +255,7 @@ impl Interpreter {
 
     /// Pick the junction argument to thread over, based on Raku's priority:
     /// all/none junctions are threaded first (leftmost), then any/one (leftmost).
-    pub(super) fn pick_autothread_junction_index(
+    pub(crate) fn pick_autothread_junction_index(
         &self,
         args: &[Value],
         indices: &[usize],
@@ -566,7 +566,7 @@ impl Interpreter {
     /// positionals as raw values, and a slurpy hash (`*%h`, `+%h`, the implicit
     /// `%_`) collects named arguments the same way. Shared by the sub and the
     /// method call paths so both obey one rule.
-    pub(super) fn autothread_indices_for_params(
+    pub(crate) fn autothread_indices_for_params(
         &mut self,
         args: &[Value],
         junction_indices: &[usize],
@@ -661,6 +661,9 @@ impl Interpreter {
                 2usize
             };
             let pd = crate::ast::ParamDef {
+                implicit_invocant: Default::default(),
+                does_target: Default::default(),
+                target: Default::default(),
                 spans: Default::default(),
                 trait_meta: Default::default(),
                 type_capture: None,

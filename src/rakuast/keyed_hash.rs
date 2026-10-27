@@ -21,7 +21,8 @@ use super::convert::{
 use super::lower::unsupported;
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
-use crate::ast::keyed_hash::{IMPLICIT_VALUE_TYPE, join};
+use crate::ast::keyed_hash::join;
+use crate::ast::var_marks::VarMarks;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The hidden source spelling retained on an inline anonymous subset key.
@@ -45,18 +46,17 @@ fn subset_source(node: &RakuAstNode) -> Option<String> {
 /// The `(value type, key type)` a `%` declaration renders: `None` for a
 /// declaration that is not a keyed hash, and a `None` value type when the
 /// parser supplied it.
-// Cost: O(k + t), k = length of the type string, t = custom traits.
+// Cost: O(k), k = length of the type string.
 pub(super) fn split<'a>(
     name: &str,
     type_constraint: Option<&'a str>,
-    custom_traits: &[(String, Option<Expr>)],
+    marks: &VarMarks,
 ) -> Option<(Option<&'a str>, &'a str)> {
     if !name.starts_with('%') {
         return None;
     }
     let (value, key) = crate::ast::keyed_hash::split(type_constraint?)?;
-    let implicit = custom_traits.iter().any(|(n, _)| n == IMPLICIT_VALUE_TYPE);
-    Some(((!implicit).then_some(value), key))
+    Some(((!marks.implicit_value_type).then_some(value), key))
 }
 
 /// Put the key type `key` into `decl` as its `shape`, after its `type` and
@@ -176,22 +176,20 @@ pub(super) fn insert_dimensions(
 }
 
 /// A declaration's `shape` folded back into its type constraint: the parser's
-/// keyed-hash string, plus the implicit-value-type marker in `custom_traits`
-/// when the declaration has no `type`. A declaration without a `shape` keeps
+/// keyed-hash string, plus `marks.implicit_value_type` when the declaration
+/// has no `type`. A declaration without a `shape` keeps
 /// `type_constraint`; each type statement on a `%` shape names one key dimension.
 // Cost: O(n), n = size of the shape.
 pub(super) fn lower(
     node: &RakuAstNode,
     sigil: &str,
     type_constraint: Option<String>,
-    custom_traits: &mut Vec<(String, Option<Expr>)>,
+    marks: &mut VarMarks,
 ) -> Result<Option<String>, RuntimeError> {
     let Some(key) = lower_key_type(node, sigil)? else {
         return Ok(type_constraint);
     };
-    if type_constraint.is_none() {
-        custom_traits.push((IMPLICIT_VALUE_TYPE.to_string(), None));
-    }
+    marks.implicit_value_type = type_constraint.is_none();
     Ok(Some(join(type_constraint.as_deref(), &key)))
 }
 

@@ -32,10 +32,11 @@ pub(crate) fn split_loop_cond_decl(cond: Expr) -> (Option<Stmt>, Expr) {
     if let Expr::DoStmt(boxed) = &cond
         && let Stmt::VarDecl {
             name,
-            custom_traits,
+            has_initializer: false,
+            constant: None,
+            bind: None,
             ..
         } = boxed.as_ref()
-        && !custom_traits.iter().any(|(t, _)| t == "__has_initializer")
     {
         let read = if let Some(rest) = name.strip_prefix('@') {
             Expr::ArrayVar(rest.to_string())

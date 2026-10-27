@@ -624,7 +624,8 @@ jobs:
         # list only grows (`scripts/rakuast-frontend.sh update`); a listed file
         # that fails here is a regression in the RakuAST layer, fixed in the
         # same PR rather than dropped from the list. Same per-file wrapper,
-        # timeout and -j4 as the TAP step above.
+        # timeout and -j4 as the TAP step above. There is no opt-out left to
+        # check (the `MUTSU_LEGACY=1` step of #15060 was deleted with it).
         run: |
           mkdir -p tmp
           scripts/rakuast-frontend.sh check

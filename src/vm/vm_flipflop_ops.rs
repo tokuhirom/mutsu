@@ -140,7 +140,9 @@ impl Interpreter {
                 // For multi-arg calls (list-associative flattened chains),
                 // run a proto body before resolving a multi candidate, just
                 // as the binary path does.
-                if let Some(result) = self.vm_try_run_nontrivial_proto_body(
+                if let Some(result) = self.try_user_list_infix(&infix_name, call_args.clone())? {
+                    result
+                } else if let Some(result) = self.vm_try_run_nontrivial_proto_body(
                     &infix_name,
                     call_args.clone(),
                     compiled_fns,

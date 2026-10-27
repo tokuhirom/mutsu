@@ -704,7 +704,7 @@ impl Interpreter {
                     if crate::qualified::is_type_capture(&resolved_constraint) {
                         // `::?CLASS` / `::?ROLE` / `::(expr)`: bound above, and
                         // never a nominal check.
-                    } else if pd.name == "__type_only__"
+                    } else if pd.is_type_only()
                         && !self.is_resolvable_type(&resolved_constraint)
                     {
                         // Bare identifier param (e.g., enum value) -- resolve from env and compare.
@@ -924,8 +924,8 @@ impl Interpreter {
                     && let Some(arg) = arg_for_checks.as_ref()
                     && !pd.name.is_empty()
                     && pd.name != "_capture"
-                    && pd.name != "__subsig__"
-                    && !pd.name.starts_with("__type_capture__")
+                    && !pd.is_parens()
+                    && !pd.is_bare_type_capture()
                 {
                     self.bind_param_value(&pd.name, arg.clone());
                 }
@@ -1366,7 +1366,7 @@ impl Interpreter {
         pd: &ParamDef,
         constraint: &str,
     ) -> bool {
-        pd.name == "__type_only__"
+        pd.is_type_only()
             && self.enum_bare_value(constraint).is_some()
             && !self.has_type_direct(constraint)
     }
@@ -1431,7 +1431,7 @@ impl Interpreter {
 
     pub(crate) fn method_args_match(&mut self, args: &[Value], param_defs: &[ParamDef]) -> bool {
         let is_invocant_param =
-            |p: &ParamDef| p.is_invocant || p.traits.iter().any(|t| t == "invocant");
+            |p: &ParamDef| p.is_invocant;
         let all_invocant_only = param_defs.iter().all(is_invocant_param);
         if all_invocant_only {
             // Hot path for methods like `method m { ... }` where only the implicit invocant

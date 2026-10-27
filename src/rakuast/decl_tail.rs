@@ -149,61 +149,41 @@ pub(super) fn convert(head: &Stmt, tail: &Expr) -> Result<RakuAstNode, RuntimeEr
     })()
 }
 
-/// `my Int $c .= new(), 5, 6`: the parser keeps the `.=` declaration and each
-/// further list item as sunk statements of one scopeless block, with no
-/// re-read of the variable, so [`convert`] cannot take it apart. RakuAST has
-/// one comma application whose first operand is the declaration.
+/// `my Int $c .= new(), 5, 6`: the `.=` declaration and each further list
+/// item as the parser kept them. RakuAST has one comma application whose first
+/// operand is the declaration.
 // Cost: O(n), n = size of the statement.
-pub(super) fn convert_call_assign_list(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> {
-    let Stmt::SyntheticBlock(stmts) = stmt else {
-        return None;
+pub(super) fn convert_call_assign_list(
+    head: &Stmt,
+    items: &[Expr],
+) -> Result<RakuAstNode, RuntimeError> {
+    let (sigil, name) = declared_variable(head).ok_or_else(unsupported_statement)?;
+    let [first_item, rest @ ..] = items else {
+        return Err(unsupported_statement());
     };
-    let [head, tail @ ..] = stmts.as_slice() else {
-        return None;
-    };
-    let Stmt::VarDecl {
-        expr: Expr::CompoundAssign { op, .. },
-        ..
-    } = head
-    else {
-        return None;
-    };
-    if op != crate::ast::method_assign_decl::DECL_INITIALIZER_OP || tail.is_empty() {
-        return None;
+    let first = convert_expr(first_item)?;
+    if leftmost(&first, true).0 == &var_lexical(sigil, name) {
+        // A postfix chain over the declared variable, not a list item.
+        return Err(unsupported_statement());
     }
-    let items = tail
-        .iter()
-        .map(|s| match s {
-            Stmt::Expr(expr) => Some(expr),
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let (sigil, name) = declared_variable(head)?;
-    Some((|| {
-        let first = convert_expr(items[0])?;
-        if leftmost(&first, true).0 == &var_lexical(sigil, name) {
-            // A postfix chain over the declared variable, not a list item.
-            return Err(unsupported_statement());
-        }
-        let statement = convert_stmt(head)?.ok_or_else(unsupported_statement)?;
-        let declaration = expression_of(&statement).ok_or_else(unsupported_statement)?;
-        let mut operands = vec![Value::rakuast(Box::new(declaration))];
-        operands.push(Value::rakuast(Box::new(first)));
-        for item in &items[1..] {
-            operands.push(Value::rakuast(Box::new(convert_expr(item)?)));
-        }
-        Ok(RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::ApplyListInfix,
-            fields: vec![
-                node_field(Some("infix"), plain_infix(",")),
-                RakuAstField {
-                    name: Some("operands"),
-                    value: RakuAstFieldValue::List(operands),
-                },
-            ],
-        })
-    })())
+    let statement = convert_stmt(head)?.ok_or_else(unsupported_statement)?;
+    let declaration = expression_of(&statement).ok_or_else(unsupported_statement)?;
+    let mut operands = vec![Value::rakuast(Box::new(declaration))];
+    operands.push(Value::rakuast(Box::new(first)));
+    for item in rest {
+        operands.push(Value::rakuast(Box::new(convert_expr(item)?)));
+    }
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::ApplyListInfix,
+        fields: vec![
+            node_field(Some("infix"), plain_infix(",")),
+            RakuAstField {
+                name: Some("operands"),
+                value: RakuAstFieldValue::List(operands),
+            },
+        ],
+    })
 }
 
 // Cost: O(d), d = depth of the left operand chain.

@@ -145,6 +145,7 @@ impl Interpreter {
                 export_tags,
                 is_test_assertion,
                 supersede,
+                scope,
                 custom_traits,
                 ..
             } = stmt
@@ -220,6 +221,7 @@ impl Interpreter {
                     is_raw,
                     is_test_assertion,
                     supersede,
+                    scope,
                     &traits,
                     Some(site_fingerprint),
                     &metadata,
@@ -282,6 +284,7 @@ impl Interpreter {
                             is_raw,
                             is_test_assertion,
                             supersede,
+                            scope,
                             &traits,
                             Some(&alt_metadata),
                             Some(&crate::compiled_lazy::LazyFn::owned(alt_compiled.clone())),
@@ -570,11 +573,9 @@ impl<'ast> Visit<'ast> for InlinePackageSubCollector {
             | Stmt::AugmentClass { .. } => {}
             Stmt::SyntheticBlock(inner) => walk_stmts(self, inner),
             Stmt::SubDecl {
-                custom_traits,
-                is_export,
-                ..
+                scope, is_export, ..
             } => {
-                let is_our = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
+                let is_our = *scope == crate::ast::SubScope::Our;
                 self.collect(stmt, is_our, *is_export);
                 let saved = std::mem::replace(&mut self.in_routine, true);
                 self.walk_nested(stmt);

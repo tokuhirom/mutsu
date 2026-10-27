@@ -56,7 +56,6 @@ mod formatter;
 pub(crate) mod frontend;
 mod hash_literal;
 pub(crate) mod hierarchy;
-mod hyper_dotty_writeback;
 mod hyper_prefix;
 mod hyper_subscript;
 mod immediate_call;

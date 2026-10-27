@@ -30,6 +30,7 @@ pub(crate) fn bind_stmt(name: String, expr: Expr) -> Stmt {
         .starts_with('*');
     if name.starts_with('&') || is_dynamic_target {
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name,
             expr,
@@ -40,6 +41,9 @@ pub(crate) fn bind_stmt(name: String, expr: Expr) -> Stmt {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         }
     } else {
@@ -65,6 +69,7 @@ pub(crate) fn decl_stmt(name: String, expr: Expr) -> Stmt {
         .trim_start_matches(['$', '@', '%', '&'])
         .starts_with('*');
     Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name,
         expr,
@@ -75,6 +80,9 @@ pub(crate) fn decl_stmt(name: String, expr: Expr) -> Stmt {
         is_export: false,
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
+        has_initializer: false,
+        constant: None,
+        bind: None,
         where_constraint: None,
     }
 }
@@ -246,7 +254,16 @@ pub(crate) fn destructure_binds(
                 } else {
                     method_result
                 };
-                bind_stmts.push(decl_stmt(sub.name.clone(), target_expr));
+                // `:$count! is rw` aliases the element, so a write through it
+                // reaches the unpacked Hash (rakudo binds the container).
+                if sub.traits.iter().any(|t| t == "rw" || t == "raw") {
+                    bind_stmts.push(Stmt::SyntheticBlock(vec![
+                        Stmt::MarkBind,
+                        decl_stmt(sub.name.clone(), target_expr),
+                    ]));
+                } else {
+                    bind_stmts.push(decl_stmt(sub.name.clone(), target_expr));
+                }
             }
         } else if sub.slurpy && sub.sigilless {
             // |rest capture parameter: the remaining positional elements and the

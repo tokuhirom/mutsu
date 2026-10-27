@@ -412,7 +412,7 @@ impl Interpreter {
             // value, so its "constraint" is not a type name and must not be
             // validated. A bare *type-only* param `(TypeName)` IS validated
             // below (an undeclared one is X::Parameter::InvalidType).
-            if pd.name.starts_with("__") && pd.name != "__type_only__" {
+            if pd.name.starts_with("__") && !pd.is_type_only() {
                 continue;
             }
             // Only a bare identifier (letters/digits/_/-) starting uppercase is
@@ -640,6 +640,7 @@ impl Interpreter {
         is_raw: bool,
         is_test_assertion: bool,
         supersede: bool,
+        scope: crate::ast::SubScope,
         custom_traits: &crate::opcode::DeclTraits,
         metadata: Option<&crate::opcode::CompiledRoutineMetadata>,
         compiled: Option<&std::sync::Arc<crate::compiled_lazy::LazyFn>>,
@@ -656,6 +657,7 @@ impl Interpreter {
             is_raw,
             is_test_assertion,
             supersede,
+            scope,
             custom_traits,
             None,
             metadata,
@@ -714,6 +716,7 @@ impl Interpreter {
         is_raw: bool,
         is_test_assertion: bool,
         supersede: bool,
+        scope: crate::ast::SubScope,
         custom_traits: &crate::opcode::DeclTraits,
         site_fingerprint: Option<u64>,
         metadata: &crate::opcode::CompiledRoutineMetadata,
@@ -731,6 +734,7 @@ impl Interpreter {
             is_raw,
             is_test_assertion,
             supersede,
+            scope,
             custom_traits,
             site_fingerprint,
             Some(metadata),
@@ -752,6 +756,7 @@ impl Interpreter {
         is_raw: bool,
         is_test_assertion: bool,
         supersede: bool,
+        scope: crate::ast::SubScope,
         custom_traits: &crate::opcode::DeclTraits,
         site_fingerprint: Option<u64>,
         metadata: Option<&crate::opcode::CompiledRoutineMetadata>,
@@ -850,6 +855,7 @@ impl Interpreter {
                     is_raw,
                     is_test_assertion,
                     supersede,
+                    scope,
                     custom_traits,
                     site_fingerprint,
                     metadata,
@@ -869,7 +875,7 @@ impl Interpreter {
             custom_traits.iter().map(|(t, _)| t.as_str()),
         );
         let allow_redeclare = supersede || is_method_value_decl;
-        let is_our_scoped = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
+        let is_our_scoped = scope == crate::ast::SubScope::Our;
         let is_lexical_hoist = custom_traits.iter().any(|(t, _)| t == "__lexical_hoist");
         // Declared in a scope nested in its compilation unit's or routine's
         // own (an `if` body, a bare block): it may shadow an outer `&name`
@@ -1091,6 +1097,9 @@ impl Interpreter {
             let mut defs = Vec::new();
             if use_positional {
                 defs.push(ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                    implicit_invocant: Default::default(),
+                    does_target: Default::default(),
+                    target: Default::default(),
                     type_capture: None,
                     name: "@_".to_string(),
                     default: None,
@@ -1119,6 +1128,9 @@ impl Interpreter {
             }
             if use_named {
                 defs.push(ParamDef { spans: Default::default(), trait_meta: Default::default(),
+                    implicit_invocant: Default::default(),
+                    does_target: Default::default(),
+                    target: Default::default(),
                     type_capture: None,
                     name: "%_".to_string(),
                     default: None,

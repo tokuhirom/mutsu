@@ -197,18 +197,14 @@ pub(crate) fn with_then_branch(
                 // method named after the sub-parameter *with its sigil attached*
                 // (`$obj.@list`), and knew nothing of hash fallback, `|`
                 // captures, renames or defaults.
-                with_body.push(Stmt::VarDecl {
-                    anonymous: false,
-                    name: pname.clone(),
-                    expr: tmp_var.clone(),
-                    type_constraint: None,
-                    is_state: false,
-                    is_our: false,
-                    is_dynamic: false,
-                    is_export: false,
-                    export_tags: Vec::new(),
-                    custom_traits: Vec::new(),
-                    where_constraint: None,
+                let unpack_target =
+                    crate::param_destructure::decl_stmt(pname.clone(), tmp_var.clone());
+                // An aggregate-sigil pattern (`-> % (:$k is rw)`) BINDS the value,
+                // so its elements alias the source rather than a copy.
+                with_body.push(if pname.starts_with(['@', '%']) {
+                    Stmt::SyntheticBlock(vec![Stmt::MarkBind, unpack_target])
+                } else {
+                    unpack_target
                 });
                 crate::param_destructure::destructure_declaring(pname, sub_params, &mut with_body);
             } else {

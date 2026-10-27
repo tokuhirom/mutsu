@@ -29,6 +29,7 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
                 return Ok((
                     rest,
                     Stmt::VarDecl {
+                        marks: Default::default(),
                         anonymous: false,
                         name,
                         expr,
@@ -38,7 +39,10 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
                         is_dynamic: false,
                         is_export: false,
                         export_tags: Vec::new(),
-                        custom_traits: vec![("__has_initializer".to_string(), None)],
+                        custom_traits: Vec::new(),
+                        has_initializer: true,
+                        constant: None,
+                        bind: None,
                         where_constraint: None,
                     },
                 ));
@@ -46,6 +50,7 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
             return Ok((
                 rest,
                 Stmt::VarDecl {
+                    marks: Default::default(),
                     anonymous: false,
                     name,
                     expr: Expr::Literal(crate::value::Value::NIL),
@@ -56,6 +61,9 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
                     is_export: false,
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
+                    has_initializer: false,
+                    constant: None,
+                    bind: None,
                     where_constraint: None,
                 },
             ));
@@ -371,6 +379,7 @@ fn repeat_condition_first(r: &str, until: bool) -> PResult<'_, Stmt> {
 pub(crate) fn repeat_param_clause(param: Option<String>) -> (Option<Box<Stmt>>, Option<Expr>) {
     let init = param.as_ref().map(|name| {
         Box::new(Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: name.clone(),
             expr: Expr::Literal(crate::value::Value::package(Symbol::intern("Mu"))),
@@ -381,6 +390,9 @@ pub(crate) fn repeat_param_clause(param: Option<String>) -> (Option<Box<Stmt>>, 
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         })
     });

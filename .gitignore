@@ -105,3 +105,6 @@ __pycache__/
 /ecosystem/history.svg
 /ecosystem/index-snapshot.json
 /ecosystem/.ledger-ref
+
+# llvm-cov raw profiles a child process leaves in the working directory
+*.profraw

@@ -66,7 +66,7 @@ impl Interpreter {
         type_param_defs: &[ParamDef],
     ) -> Result<(), RuntimeError> {
         for param_def in type_param_defs {
-            if param_def.name == "__type_only__"
+            if param_def.is_type_only()
                 && let Some(type_name) = param_def.type_constraint.as_deref()
                 && !crate::qualified::is_type_capture(type_name)
                 && !self.is_resolvable_type(type_name)

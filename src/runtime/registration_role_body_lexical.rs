@@ -274,7 +274,7 @@ impl Interpreter {
                 | Stmt::SubsetDecl { .. } => {
                     !parameterized || !stmt_mentions_role_params(&op.raw, type_params)
                 }
-                Stmt::VarDecl { custom_traits, .. } if is_constant_decl(custom_traits) => {
+                Stmt::VarDecl { constant, .. } if is_constant_decl(*constant) => {
                     (!parameterized || !stmt_mentions_role_params(&op.raw, type_params))
                         && !stmt_mentions_role_params(&op.raw, &body_routines)
                 }
@@ -285,11 +285,11 @@ impl Interpreter {
                         match s {
                             Stmt::VarDecl {
                                 is_export,
-                                custom_traits,
+                                constant,
                                 ..
                             } => {
                                 *is_export
-                                    || (is_constant_decl(custom_traits)
+                                    || (is_constant_decl(*constant)
                                         && !stmt_mentions_role_params(s, &body_routines))
                             }
                             _ => false,
@@ -402,8 +402,8 @@ fn stmt_mentions_role_params(stmt: &Stmt, params: &[String]) -> bool {
     m.found
 }
 
-/// Whether a `VarDecl`'s traits mark it a `constant` declaration.
-// Cost: O(t), t = the declaration's traits.
-fn is_constant_decl(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits.iter().any(|(name, _)| name == "__constant")
+/// Whether a `VarDecl` is a `constant` declaration.
+// Cost: O(1).
+fn is_constant_decl(constant: Option<crate::ast::ConstantSigil>) -> bool {
+    constant.is_some()
 }

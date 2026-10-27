@@ -709,6 +709,9 @@ fn builtin_type_has_method(type_name: &str, method: &str) -> bool {
 /// `$name`, or a slurpy `*@name` when `slurpy` is true.
 fn walk_param(name: &str, slurpy: bool) -> crate::ast::ParamDef {
     crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
+        implicit_invocant: Default::default(),
+        does_target: Default::default(),
+        target: Default::default(),
         type_capture: None,
         name: name.to_string(),
         default: None,

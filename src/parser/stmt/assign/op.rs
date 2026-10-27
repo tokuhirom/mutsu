@@ -307,6 +307,7 @@ pub(crate) fn short_circuit_compound_assign_expr(
     };
     let cond = Expr::desugar_block(vec![
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: tmp_name,
             expr: lhs,
@@ -317,6 +318,9 @@ pub(crate) fn short_circuit_compound_assign_expr(
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         },
         Stmt::Expr(test),
@@ -368,6 +372,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
         Expr::Ternary {
             cond: Box::new(Expr::desugar_block(vec![
                 Stmt::VarDecl {
+                    marks: Default::default(),
                     anonymous: false,
                     name: tmp_name,
                     expr: lhs,
@@ -378,6 +383,9 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
                     is_export: false,
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
+                    has_initializer: false,
+                    constant: None,
+                    bind: None,
                     where_constraint: None,
                 },
                 Stmt::Expr(Expr::Call {
@@ -405,6 +413,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
         Expr::Ternary {
             cond: Box::new(Expr::desugar_block(vec![
                 Stmt::VarDecl {
+                    marks: Default::default(),
                     anonymous: false,
                     name: tmp_name,
                     expr: lhs,
@@ -415,6 +424,9 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
                     is_export: false,
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
+                    has_initializer: false,
+                    constant: None,
+                    bind: None,
                     where_constraint: None,
                 },
                 Stmt::Expr(Expr::Call {
@@ -629,7 +641,10 @@ pub(crate) fn parse_meta_compound_assign_op(input: &str) -> Option<(&str, String
         let rest = input.strip_prefix('Z')?;
         ("Z", rest)
     };
-    if after_meta.starts_with('=') && !after_meta.starts_with("==") && !after_meta.starts_with("=>")
+    if after_meta.starts_with('=')
+        && !after_meta.starts_with("==")
+        && !after_meta.starts_with("=>")
+        && !after_meta.starts_with("=:=")
     {
         return Some((&after_meta[1..], meta.to_string(), "=".to_string()));
     }

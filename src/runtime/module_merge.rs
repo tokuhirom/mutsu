@@ -277,9 +277,10 @@ impl Interpreter {
                 Stmt::VarDecl {
                     name,
                     custom_traits,
+                    constant,
                     is_our: true,
                     ..
-                } if custom_traits.iter().any(|(t, _)| t == "__constant")
+                } if constant.is_some()
                     && name.starts_with(|c: char| c.is_alphabetic() || c == '_') =>
                 {
                     Symbol::intern(name)
@@ -302,9 +303,9 @@ impl Interpreter {
                 // either becoming the provider of the bare name.
                 Stmt::RoleDecl {
                     name,
-                    custom_traits,
+                    is_lexical: false,
                     ..
-                } if !custom_traits.iter().any(|(t, _)| t == "__my_scoped") => *name,
+                } => *name,
                 _ => continue,
             };
             if crate::qualified::is_qualified(name) {
@@ -352,10 +353,9 @@ impl Interpreter {
                     name,
                     is_export: false,
                     multi: false,
-                    custom_traits,
+                    scope: crate::ast::SubScope::Our,
                     ..
-                } if custom_traits.iter().any(|(t, _)| t == "__our_scoped")
-                    && !crate::qualified::is_qualified(*name) =>
+                } if !crate::qualified::is_qualified(*name) =>
                 {
                     Some(*name)
                 }

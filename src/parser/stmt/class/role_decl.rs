@@ -150,7 +150,7 @@ pub(crate) fn parse_optional_role_type_params(
         && let Ok((rest, _)) = parse_char(after_params, ']')
     {
         for pd in &param_defs {
-            if pd.name == "__type_only__"
+            if pd.target == crate::ast::ParamTarget::TypeOnly
                 && let Some(tc) = pd.type_constraint.as_deref()
                 && !tc.starts_with("::")
                 && !role_type_param_constraint_is_known(tc)
@@ -199,6 +199,9 @@ pub(crate) fn parse_optional_role_type_params(
             {
                 params.push(name.clone());
                 param_defs.push(ParamDef {
+                    implicit_invocant: Default::default(),
+                    does_target: Default::default(),
+                    target: Default::default(),
                     spans: Default::default(),
                     trait_meta: Default::default(),
                     type_capture: None,
@@ -240,10 +243,13 @@ pub(crate) fn parse_optional_role_type_params(
                 {
                     params.push(name.clone());
                     param_defs.push(ParamDef {
+                        implicit_invocant: Default::default(),
+                        does_target: Default::default(),
                         spans: Default::default(),
                         trait_meta: Default::default(),
                         type_capture: None,
-                        name: format!("__type_capture__{}", name),
+                        name: format!("{}{}", crate::ast::TYPE_CAPTURE_PREFIX, name),
+                        target: crate::ast::ParamTarget::TypeCapture,
                         default: Some(default_expr),
                         multi_invocant: true,
                         required: false,
@@ -434,6 +440,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
         export_tags,
         body,
         is_rw: role_is_rw,
+        is_lexical: false,
         language_version: super::super::simple::current_language_version(),
         custom_traits,
         decl_id: crate::ast::next_class_decl_id(),

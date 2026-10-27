@@ -146,7 +146,7 @@ impl Interpreter {
         let has_explicit_invocant = def
             .param_defs
             .iter()
-            .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
+            .any(|pd| pd.is_invocant);
         let mut callable_param_defs = Vec::with_capacity(def.param_defs.len() + 1);
         if !has_explicit_invocant {
             callable_param_defs.push(Self::make_invocant_param(&owner.resolve()));

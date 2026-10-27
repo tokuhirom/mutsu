@@ -926,6 +926,7 @@ impl Interpreter {
                 .resolve_module_path(module)
                 .ok_or_else(|| RuntimeError::unsatisfied_dependency(module))?,
         };
+        crate::runtime::bump_unit_scope_epoch();
         crate::runtime::cow_table_mut(&mut self.module.module_source_packages).insert(
             crate::symbol::Symbol::intern(&source_path.to_string_lossy()),
             crate::symbol::Symbol::intern(module),
@@ -1183,6 +1184,7 @@ impl Interpreter {
             // record X so that `register_exported_sub` can mirror exports into
             // `unit_module_exported_subs` for tag validation.
             if let Some(name) = unit_name.as_deref() {
+                crate::runtime::bump_unit_scope_epoch();
                 crate::runtime::cow_table_mut(&mut self.module.unit_module_packages).insert(
                     module_unit_for_loading_stack,
                     crate::symbol::Symbol::intern(name),
@@ -2150,7 +2152,7 @@ impl Interpreter {
                 is_our,
                 is_dynamic,
                 is_export,
-                custom_traits,
+                constant,
                 ..
             } = s
             else {
@@ -2174,7 +2176,7 @@ impl Interpreter {
             // discriminate on the `__constant` trait the same way
             // `collect_unit_package_scope_names` does, rather than on a
             // scope keyword that only incidentally lines up.
-            if custom_traits.iter().any(|(t, _)| t == "__constant") {
+            if constant.is_some() {
                 continue;
             }
             // Anonymous container slots (`@__ANON_ARRAY__`/`%__ANON_HASH__`)
@@ -2332,20 +2334,20 @@ impl Interpreter {
                     name,
                     is_export: _,
                     is_dynamic,
-                    custom_traits,
+                    constant,
                     ..
                 } => {
                     // A `constant` parses to `VarDecl { is_our: true, .. }` with
                     // a `__constant` trait; `is_our` alone cannot tell it from an
                     // ordinary `our $x`, which is a package variable the loading
                     // scope may legitimately share.
-                    if *is_dynamic || !custom_traits.iter().any(|(t, _)| t == "__constant")
+                    if *is_dynamic || !constant.is_some()
                     {
                         continue;
                     }
                     // A sigil-less constant is stored under its term key
                     // (#9962); that is the `env` entry to drop.
-                    if crate::runtime::term_names::is_term_constant_decl(name, custom_traits) {
+                    if crate::runtime::term_names::is_term_constant_decl(name, *constant) {
                         push(&crate::runtime::term_names::term_key(name));
                     } else {
                         push(name);
@@ -2386,19 +2388,19 @@ impl Interpreter {
                 is_our: false,
                 is_dynamic: false,
                 is_export: false,
-                custom_traits,
+                constant,
                 ..
             } = s
             else {
                 continue;
             };
-            if !custom_traits.iter().any(|(t, _)| t == "__constant")
+            if !constant.is_some()
                 || crate::qualified::is_qualified_str(name)
                 || name.contains("__ANON")
             {
                 continue;
             }
-            let key = if crate::runtime::term_names::is_term_constant_decl(name, custom_traits) {
+            let key = if crate::runtime::term_names::is_term_constant_decl(name, *constant) {
                 crate::runtime::term_names::term_key(name)
             } else {
                 name.clone()
@@ -2433,13 +2435,13 @@ impl Interpreter {
                 name,
                 is_our: true,
                 is_dynamic: false,
-                custom_traits,
+                constant,
                 ..
             } = s
             else {
                 continue;
             };
-            if custom_traits.iter().any(|(t, _)| t == "__constant")
+            if constant.is_some()
                 || crate::qualified::is_qualified(crate::symbol::Symbol::intern(name))
                 || name.contains("__ANON")
             {

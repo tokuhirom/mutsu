@@ -11,7 +11,7 @@
 //! ```
 //!
 //! The parser keeps a declaration's traits in source order as
-//! `VarDecl.custom_traits` (beside its `__has_initializer` marker), so the list
+//! `VarDecl.custom_traits`, so the list
 //! renders in that order.
 //!
 //! `my %h is SetHash` is `Trait::Is(type => Type::Simple(SetHash))`: rakudo
@@ -149,16 +149,11 @@ pub(super) fn insert(decl: &mut RakuAstNode, items: Vec<Value>) {
 
 /// `is dynamic`, which the parser keeps as the declaration's `is_dynamic`
 /// flag rather than as a `custom_traits` entry, with the argument a
-/// `is dynamic(ARG)` wrote (the parser's `DYNAMIC_TRAIT_ARGUMENT` entry).
-// Cost: O(t + a), t = custom traits, a = size of the argument.
-pub(super) fn dynamic_trait(
-    custom_traits: &[(String, Option<Expr>)],
-) -> Result<Value, RuntimeError> {
+/// `is dynamic(ARG)` wrote (`VarMarks::dynamic_argument`).
+// Cost: O(a), a = size of the argument.
+pub(super) fn dynamic_trait(argument: Option<&Expr>) -> Result<Value, RuntimeError> {
     let mut fields = vec![node_field(Some("name"), name_from_identifier(DYNAMIC))];
-    if let Some((_, Some(arg))) = custom_traits
-        .iter()
-        .find(|(name, _)| name == crate::ast::DYNAMIC_TRAIT_ARGUMENT)
-    {
+    if let Some(arg) = argument {
         fields.push(node_field(
             Some("argument"),
             super::attribute::paren_argument(arg)?,
@@ -172,18 +167,20 @@ pub(super) fn dynamic_trait(
 }
 
 /// A declaration's `traits` back as `custom_traits` entries, in order, and
-/// whether one of them was `is dynamic`.
+/// the `is dynamic` among them: `None` without one, else its written argument.
 // Cost: O(t + a), t = traits of the declaration, a = size of their arguments.
-pub(super) fn lower(node: &RakuAstNode) -> Result<(CustomTraits, bool), RuntimeError> {
+pub(super) fn lower(
+    node: &RakuAstNode,
+) -> Result<(CustomTraits, Option<Option<Expr>>), RuntimeError> {
     let refuse = || super::lower::unsupported(node);
     let Some(field) = node.fields.iter().find(|f| f.name == Some("traits")) else {
-        return Ok((Vec::new(), false));
+        return Ok((Vec::new(), None));
     };
     let RakuAstFieldValue::List(items) = &field.value else {
         return Err(refuse());
     };
     let mut traits = Vec::with_capacity(items.len());
-    let mut is_dynamic = false;
+    let mut dynamic = None;
     for item in items {
         let ValueView::RakuAst(t) = item.view() else {
             return Err(refuse());
@@ -218,12 +215,10 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<(CustomTraits, bool), RuntimeE
         }
         match t.fields.as_slice() {
             // `is dynamic` is the declaration's flag, not a custom trait.
-            [_] if name == DYNAMIC => is_dynamic = true,
+            [_] if name == DYNAMIC => dynamic = Some(None),
             [_, _] if name == DYNAMIC => {
-                is_dynamic = true;
                 let argument = named_child(t, "argument")?;
-                let value = super::attribute::lower_paren_argument(t, argument)?;
-                traits.push((crate::ast::DYNAMIC_TRAIT_ARGUMENT.to_string(), Some(value)));
+                dynamic = Some(Some(super::attribute::lower_paren_argument(t, argument)?));
             }
             // `is marked`.
             [_] => traits.push((name, None)),
@@ -241,7 +236,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<(CustomTraits, bool), RuntimeE
             _ => return Err(refuse()),
         }
     }
-    Ok((traits, is_dynamic))
+    Ok((traits, dynamic))
 }
 
 /// Whether `name` is a class trait the converter renders as a `Trait::Is` by

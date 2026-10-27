@@ -99,7 +99,7 @@ impl Interpreter {
                         if def
                             .param_defs
                             .iter()
-                            .all(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
+                            .all(|p| p.is_invocant)
                         {
                             resolved = Some((cn.resolve(), def.clone()));
                             break 'scan;
@@ -113,7 +113,7 @@ impl Interpreter {
                         if def
                             .param_defs
                             .iter()
-                            .all(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
+                            .all(|p| p.is_invocant)
                         {
                             resolved = Some((cn.resolve(), def.clone()));
                             break 'scan;

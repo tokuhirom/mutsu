@@ -114,7 +114,7 @@ impl Interpreter {
             // for role/stub conformance: a method whose only difference from a
             // stub is a typed invocant marker (`method !foo(A:D:)` vs the stub
             // `method !foo`) still satisfies it.
-            .filter(|pd| !(pd.is_invocant || pd.traits.iter().any(|t| t == "invocant")))
+            .filter(|pd| !pd.is_invocant)
             .filter(|pd| !(pd.named || (pd.slurpy && pd.name.starts_with('%'))))
             .map(|pd| {
                 if pd.slurpy {
@@ -215,7 +215,7 @@ impl Interpreter {
     fn invocant_type_constraint(def: &MethodDef) -> Option<&str> {
         def.param_defs
             .iter()
-            .find(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
+            .find(|pd| pd.is_invocant)
             .and_then(|pd| pd.type_constraint.as_deref())
     }
 
@@ -275,7 +275,7 @@ impl Interpreter {
     /// is not a positional argument (#9727).
     fn stub_is_nullary(def: &MethodDef) -> bool {
         def.param_defs.iter().all(|pd| {
-            pd.named || pd.slurpy || pd.is_invocant || pd.traits.iter().any(|t| t == "invocant")
+            pd.named || pd.slurpy || pd.is_invocant
         })
     }
 
