@@ -453,8 +453,7 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((r2, wrap_finished_expr(compound)));
         }
     }
-    if let Some((after_op, spelling)) =
-        crate::parser::stmt::assign::parse_set_compound_assign_op(r)
+    if let Some((after_op, spelling)) = crate::parser::stmt::assign::parse_set_compound_assign_op(r)
     {
         let (after_ws, _) = ws(after_op)?;
         if let Ok((r2, rhs)) = precedence::ternary_mode(after_ws, operators::ExprMode::ListopArg) {

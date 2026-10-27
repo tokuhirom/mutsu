@@ -1314,9 +1314,7 @@ pub(crate) fn parse_program_recovering(
     }
 }
 
-fn parse_program_recovering_spelled(
-    input: &str,
-) -> (Vec<Stmt>, Option<String>, Vec<RuntimeError>) {
+fn parse_program_recovering_spelled(input: &str) -> (Vec<Stmt>, Option<String>, Vec<RuntimeError>) {
     let _origins = term_origins::begin(true);
     let memo_enabled = parse_memo_enabled();
     if memo_enabled {

@@ -261,9 +261,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(rest.len())),
             exception: None,
         })?;
-        let stmt = Stmt::Expr(super::written_set_assignment(
-            var_expr, spelling, rhs,
-        ));
+        let stmt = Stmt::Expr(super::written_set_assignment(var_expr, spelling, rhs));
         return parse_statement_modifier(rest, stmt);
     }
 
@@ -627,11 +625,10 @@ fn written_target(var_expr: &Expr) -> Expr {
 /// assignment as a statement and the tail over a re-read of `seed`.
 // Cost: O(n), n = size of the target, source and tail.
 fn assignment_statement(rest: &str, target: Expr, source: Expr) -> PResult<'_, Stmt> {
-    let (rest, expr) =
-        crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
-            rest,
-            super::written_assignment(target, source),
-        )?;
+    let (rest, expr) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
+        rest,
+        super::written_assignment(target, source),
+    )?;
     Ok((rest, Stmt::Expr(expr)))
 }
 

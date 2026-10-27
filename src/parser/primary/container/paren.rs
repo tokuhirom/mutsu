@@ -394,10 +394,9 @@ pub(crate) fn finalize_paren_sections(
         sections.push(current);
     }
     let source = sections.clone();
-    Expr::spelled(
-        lower_paren_sections(sections, Vec::new(), true),
-        || crate::ast::spelled::Spelling::ParenSections(source),
-    )
+    Expr::spelled(lower_paren_sections(sections, Vec::new(), true), || {
+        crate::ast::spelled::Spelling::ParenSections(source)
+    })
 }
 
 /// [`finalize_paren_sections`] without the written sections.

@@ -118,11 +118,8 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             let before = handles.len();
             super::super::decl::parse_handle_specs(r_after, &mut handles, &mut rest_out)?;
             source_traits.push(
-                match super::super::decl::handles_clause_term(
-                    r_after,
-                    rest_out,
-                    &handles[before..],
-                ) {
+                match super::super::decl::handles_clause_term(r_after, rest_out, &handles[before..])
+                {
                     Some(term) => RoutineTrait::Handles(term),
                     None => RoutineTrait::Unsupported(
                         "method with a `handles` spelling not kept as a term".to_string(),
@@ -165,8 +162,7 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 let (r2, tags) = parse_export_trait_tags(r)?;
                 source_traits.push(RoutineTrait::Is {
                     name: trait_name.to_string(),
-                    argument: (!tags.is_empty())
-                        .then(|| TraitArgument::ExportTags(tags.clone())),
+                    argument: (!tags.is_empty()).then(|| TraitArgument::ExportTags(tags.clone())),
                 });
                 if tags.is_empty() {
                     if !export_tags.iter().any(|t| t == "DEFAULT") {
@@ -301,9 +297,9 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                         value
                     };
                     associativity = Some(value.to_string());
-                    source_argument = Some(TraitArgument::Parentheses(
-                        crate::ast::Expr::Literal(Value::str(value.to_string())),
-                    ));
+                    source_argument = Some(TraitArgument::Parentheses(crate::ast::Expr::Literal(
+                        Value::str(value.to_string()),
+                    )));
                 } else {
                     // For custom traits, parse the parenthesized content as an expression
                     let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];
@@ -325,8 +321,7 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                         } else {
                             expr
                         };
-                        if after.trim().is_empty() || after.trim_start().starts_with(',')
-                        {
+                        if after.trim().is_empty() || after.trim_start().starts_with(',') {
                             source_argument = Some(TraitArgument::Parentheses(expr.clone()));
                         }
                         // Update the last custom trait entry with the parsed argument
