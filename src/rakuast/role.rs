@@ -11,8 +11,7 @@
 //! same leading statements, and an `also` one is a `Statement::Also`.
 
 use super::convert::{
-    blockoid, build_type_node, is_colons_package, node_field, package_header_fields, signature,
-    unsupported,
+    blockoid, build_type_node, node_field, package_header_fields, signature, unsupported,
 };
 use super::lower::{
     lower_package_body, lower_signature_parameters, lower_stmts, named_child,
@@ -35,6 +34,7 @@ pub(super) struct RoleDecl<'a> {
     pub is_rw: bool,
     pub is_lexical: bool,
     pub custom_traits: &'a [(String, Option<crate::ast::Expr>)],
+    pub marks: crate::ast::PackageMarks,
 }
 
 /// The `RakuAST::Role` node for a role declaration.
@@ -46,12 +46,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     let user_traits: Vec<(String, Option<crate::ast::Expr>)> = role
         .custom_traits
         .iter()
-        .filter(|(t, _)| {
-            t != crate::parser::ANON_COLONS_TRAIT
-                && t != crate::parser::LEADING_COLONS_TRAIT
-                && t != crate::parser::DECLARE_HOW_TRAIT
-                && t != crate::parser::ANON_DECL_TRAIT
-        })
+        .filter(|(t, _)| t != crate::parser::DECLARE_HOW_TRAIT)
         .cloned()
         .collect();
     // Rakudo drops `is repr<...>` from a role's traits, so it cannot come back.
@@ -131,12 +126,12 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             "rw", None,
         ))));
     }
-    let scope = if super::convert::is_anon_package(role.custom_traits) {
+    let scope = if role.marks.anon {
         Some("anon")
     } else {
         is_lexical.then_some("my")
     };
-    let mut fields = package_header_fields(role.name, scope, is_colons_package(role.custom_traits));
+    let mut fields = package_header_fields(role.name, scope, role.marks.colons);
     super::role_header::retain_name(&mut fields, role.name);
     super::declare_how::add_field(&mut fields, role.custom_traits, "role");
     if !traits.is_empty() {
@@ -283,6 +278,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         language_version: crate::parser::current_language_version(),
         custom_traits,
         decl_id: crate::ast::next_class_decl_id(),
+        marks: Default::default(),
     }))
 }
 

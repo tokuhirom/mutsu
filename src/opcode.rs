@@ -13221,6 +13221,7 @@ impl CompiledCode {
             language_version,
             custom_traits,
             decl_id,
+            marks: _,
         } = stmt
         else {
             panic!("add_role_decl_plan expects RoleDecl");

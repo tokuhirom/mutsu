@@ -823,6 +823,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             is_unit,
             is_native,
             export_tags,
+            marks,
             implicit_grammar_parent,
             is_grammar,
             parent_args,
@@ -849,12 +850,12 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 }
                 let mut fields = package_header_fields(
                     *name,
-                    if is_anon_package(custom_traits) {
+                    if marks.anon {
                         Some("anon")
                     } else {
                         package_scope(*is_lexical, *is_unit)
                     },
-                    is_colons_package(custom_traits),
+                    marks.colons,
                 );
                 super::role_header::retain_name(&mut fields, *name);
                 // The implicit `Grammar` parent is not a written trait.
@@ -933,12 +934,12 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             }
             let mut fields = package_header_fields(
                 *name,
-                if is_anon_package(custom_traits) {
+                if marks.anon {
                     Some("anon")
                 } else {
                     package_scope(*is_lexical, *is_unit)
                 },
-                is_colons_package(custom_traits),
+                marks.colons,
             );
             super::role_header::retain_name(&mut fields, *name);
             if let Some(expr) = name_expr {
@@ -947,7 +948,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     Some(slot) => *slot = name,
                     None => fields.push(name),
                 }
-            } else if has_leading_colons(custom_traits) {
+            } else if marks.leading_colons {
                 name_parts::with_leading_empty(&mut fields);
             }
             super::declare_how::add_field(&mut fields, custom_traits, "class");
@@ -1275,6 +1276,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             is_rw,
             is_lexical,
             custom_traits,
+            marks,
             ..
         } => Ok(Some(statement_expression(super::role::convert(
             super::role::RoleDecl {
@@ -1287,6 +1289,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 is_rw: *is_rw,
                 is_lexical: *is_lexical,
                 custom_traits,
+                marks: *marks,
             },
         )?))),
         Stmt::HasDecl { .. } => super::attribute_decl::convert(stmt),
@@ -2277,16 +2280,11 @@ pub(super) fn package_header_fields(
 }
 
 /// Whether a package declaration's `custom_traits` hold anything but the
-/// parser's empty-name marker and its lexical `is export` marker, which the
-/// node expresses itself.
+/// parser's declarator marker, which the node expresses itself.
 pub(super) fn has_package_traits(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits.iter().any(|(t, _)| {
-        t != crate::parser::ANON_COLONS_TRAIT
-            && t != crate::parser::LEADING_COLONS_TRAIT
-            && t != crate::parser::DECLARE_HOW_TRAIT
-            && t != crate::parser::ANON_DECL_TRAIT
-            && !decl_traits::is_class_trait(t)
-    })
+    custom_traits
+        .iter()
+        .any(|(t, _)| t != crate::parser::DECLARE_HOW_TRAIT && !decl_traits::is_class_trait(t))
 }
 
 /// The `expression` of a `Statement::Expression` node.
@@ -2302,29 +2300,6 @@ pub(super) fn expression_of(statement: &RakuAstNode) -> Option<RakuAstNode> {
             },
             _ => None,
         })
-}
-
-/// Whether a package was declared `anon class Name` (the parser's
-/// `ANON_DECL_TRAIT`; the registry name carries a site suffix).
-// Cost: O(t), t = number of custom traits.
-pub(super) fn is_anon_package(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits
-        .iter()
-        .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT)
-}
-
-/// Whether a class was declared as `class ::Name`.
-pub(super) fn has_leading_colons(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits
-        .iter()
-        .any(|(t, _)| t == crate::parser::LEADING_COLONS_TRAIT)
-}
-
-/// Whether a package declaration was written with the empty name `::`.
-pub(super) fn is_colons_package(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits
-        .iter()
-        .any(|(t, _)| t == crate::parser::ANON_COLONS_TRAIT)
 }
 
 /// `TARGET[INDEX]` / `TARGET{INDEX}` as `ApplyPostfix(operand, Postcircumfix::*Index)`,

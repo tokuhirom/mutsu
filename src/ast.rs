@@ -2842,6 +2842,9 @@ pub(crate) enum Stmt {
         /// see an export statement reads them from here.
         #[serde(default)]
         export_tags: Option<Vec<String>>,
+        /// How the declaration was written, where the written form is not a trait.
+        #[serde(default)]
+        marks: PackageMarks,
         /// Whether the trailing `Grammar` entry in `parents` was supplied
         /// implicitly, because a `grammar` declarator carried no `is` clause.
         /// A later `also is Parent` in the body replaces it rather than adding a
@@ -3054,6 +3057,9 @@ pub(crate) enum Stmt {
         /// for a declaration nobody wrote.
         #[serde(default)]
         spans: Option<Box<parsed::PackageSpans>>,
+        /// How the declaration was written, where the written form is not a trait.
+        #[serde(default)]
+        marks: PackageMarks,
     },
     DoesDecl {
         name: Symbol,
@@ -3951,4 +3957,18 @@ pub(crate) fn escape_user_trait(name: &str) -> std::borrow::Cow<'_, str> {
 // Cost: O(1).
 pub(crate) fn unescape_user_trait(name: &str) -> &str {
     name.strip_prefix(USER_TRAIT_ESCAPE).unwrap_or(name)
+}
+
+/// How a `class` / `role` / `grammar` declaration was written, where the written
+/// form is not a trait: the RakuAST layer renders these, nothing dispatches them.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub struct PackageMarks {
+    /// `anon class Name`: built but not installed under its name.
+    pub anon: bool,
+    /// Written with the empty name `::` (`class ::`).
+    pub colons: bool,
+    /// Written `class ::Name`: the name's leading empty part.
+    pub leading_colons: bool,
 }

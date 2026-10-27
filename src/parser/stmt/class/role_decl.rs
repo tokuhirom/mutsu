@@ -444,6 +444,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
         language_version: super::super::simple::current_language_version(),
         custom_traits,
         decl_id: crate::ast::next_class_decl_id(),
+        marks: Default::default(),
     };
     // The ver/auth/api traits become the declaration's header adverbs, like
     // a class declaration's.

@@ -24,7 +24,7 @@
 //! bumped (#10524).
 
 use super::Compiler;
-use crate::ast::{Expr, NestedTypeShell, Stmt};
+use crate::ast::{NestedTypeShell, Stmt};
 use crate::ast_visit::{Visit, walk_stmt};
 
 /// Collects class/role declarations nested in code, each with the packages
@@ -70,13 +70,13 @@ impl<'ast> Visit<'ast> for NestedTypeDecls {
                 is_unit,
                 name_expr,
                 body,
-                custom_traits,
+                marks,
                 ..
             } => {
                 // A lexical, `anon` or runtime-named class is not installed in
                 // a package, and neither is anything nested in it that this
                 // pass could name.
-                if *is_lexical || name_expr.is_some() || is_anon(custom_traits) {
+                if *is_lexical || name_expr.is_some() || marks.anon {
                     return;
                 }
                 if self.in_code && !*is_unit && !Compiler::is_stub_class_body(body) {
@@ -87,10 +87,10 @@ impl<'ast> Visit<'ast> for NestedTypeDecls {
             Stmt::RoleDecl {
                 name,
                 is_lexical,
-                custom_traits,
+                marks,
                 ..
             } => {
-                if *is_lexical || is_anon(custom_traits) {
+                if *is_lexical || marks.anon {
                     return;
                 }
                 if self.in_code {
@@ -113,15 +113,6 @@ impl<'ast> Visit<'ast> for NestedTypeDecls {
             }
         }
     }
-}
-
-/// Whether a declaration is `anon`-scoped: installed nowhere, so it gets no
-/// compile-time shell.
-// Cost: O(t), t = number of custom traits.
-fn is_anon(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits
-        .iter()
-        .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT)
 }
 
 /// The non-lexical classes and roles declared inside code anywhere in one

@@ -28,6 +28,7 @@ pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut
             is_unit: _,
             is_native: _,
             export_tags: _,
+            marks: _,
             implicit_grammar_parent: _,
             is_grammar: _,
             decl_id: _,
@@ -138,6 +139,7 @@ pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut
             language_version: _,
             custom_traits,
             decl_id: _,
+            marks: _,
         } => {
             params_mut(v, type_param_defs);
             traits_mut(v, custom_traits);

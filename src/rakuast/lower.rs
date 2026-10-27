@@ -1416,6 +1416,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_unit: head.is_unit,
         is_native: false,
         export_tags: None,
+        marks: Default::default(),
         implicit_grammar_parent: false,
         is_grammar: false,
         // Lowering is the parser's counterpart, so the declaration gets its
@@ -1453,6 +1454,10 @@ impl PackageHead {
     /// way the parser marks a named `anon` declaration.
     // Cost: O(k), k = length of the name.
     pub(super) fn finish(&self, mut stmt: Stmt) -> Stmt {
+        if let Stmt::ClassDecl { marks, .. } | Stmt::RoleDecl { marks, .. } = &mut stmt {
+            marks.colons = self.colons;
+            marks.leading_colons = self.leading_colons && !self.colons;
+        }
         if self.anon {
             crate::parser::mark_anon_package_stmt(&mut stmt);
         }
@@ -1461,15 +1466,7 @@ impl PackageHead {
 
     /// The `custom_traits` the head asks the declaration to carry.
     pub(super) fn custom_traits(&self) -> Vec<(String, Option<Expr>)> {
-        let mut traits = if self.colons {
-            vec![(crate::parser::ANON_COLONS_TRAIT.to_string(), None)]
-        } else if self.leading_colons {
-            vec![(crate::parser::LEADING_COLONS_TRAIT.to_string(), None)]
-        } else {
-            Vec::new()
-        };
-        traits.extend(self.declarator.clone());
-        traits
+        self.declarator.iter().cloned().collect()
     }
 }
 
@@ -1599,6 +1596,7 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_unit: head.is_unit,
         is_native: false,
         export_tags: None,
+        marks: Default::default(),
         implicit_grammar_parent,
         is_grammar: true,
         decl_id: crate::ast::next_class_decl_id(),
