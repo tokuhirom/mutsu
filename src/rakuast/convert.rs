@@ -975,7 +975,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     hidden_parents,
                     is_rw: *class_is_rw,
                     is_hidden: *is_hidden,
-                    custom_traits: custom_traits,
+                    custom_traits,
                 },
             )?;
             if !traits.is_empty() {
