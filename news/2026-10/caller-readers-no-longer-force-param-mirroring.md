@@ -12,3 +12,9 @@ into that entry. Deeper (`CALLER::CALLER::`) and cascading readers keep the old 
 `t/routines/signature/caller-lexical-sees-light-caller-params.t` pins the visibility.
 
 Measured: `use Test` + 1000 calls of `f($s)`: `env_deep_copies` 1004 -> 4.
+
+Two bugs the old behaviour hid (they passed only because `use Test` mirrored every parameter, and
+failed in the same script without it): a scalar parameter that vivifies through a push-family
+method (`sub k($p is rw) { $p.push(1) }`) and a `$/` parameter/local across a regex match now keep
+their env mirror (`compute_needs_env_sync`). Pinned by the existing
+`t/types/any-autoviv-*.t` and `t/regex/match/slash-param-survives-smartmatch.t`.

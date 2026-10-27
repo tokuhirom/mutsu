@@ -9602,14 +9602,30 @@ impl CompiledCode {
                 } => Some(*target_name_idx),
                 _ => self.op_container_mutate_const_idx(op),
             };
+            // A scalar target of a push-family method vivifies by name when it
+            // holds a type object (`sub f($p is rw) { $p.push(1) }`): the new
+            // container is written back through the env binding.
+            let scalar_vivifies = matches!(
+                op,
+                OpCode::CallMethodMut { name_idx, .. }
+                    if matches!(
+                        self.constants.get(*name_idx as usize).map(Value::view),
+                        Some(ValueView::Str(method)) if Self::is_mutating_container_method(&method)
+                    )
+            );
             if let Some(idx) = container_idx
                 && let Some(ValueView::Str(name)) =
                     self.constants.get(idx as usize).map(Value::view)
-                && name.starts_with(['@', '%'])
+                && (name.starts_with(['@', '%']) || scalar_vivifies)
                 && let Some(&slot) = locals_map.get(name.as_str())
             {
                 self.needs_env_sync[slot] = true;
             }
+        }
+        // A regex match writes `$/` by name, so a `$/` that is a local or a
+        // parameter lives in the env as well as its slot.
+        if let Some(&slot) = locals_map.get("/") {
+            self.needs_env_sync[slot] = true;
         }
         // `(B)` per-store env-write gate — closure-capture cluster fold.
         // A nested closure normally reads its free variables straight from this
