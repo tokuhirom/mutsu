@@ -96,7 +96,13 @@ impl VisitMut for Replacer<'_> {
                 let original_target = (**target).clone();
                 // The target's `*` is the first parameter (left to right), but
                 // only when the RHS primes as well; see `count_whatever`.
-                if is_whatever(target) && crate::parser::contains_whatever(rhs) {
+                // A compound target (`*.name ~= "!"`) primes on its own.
+                let target_primes = if is_whatever(target) {
+                    crate::parser::contains_whatever(rhs)
+                } else {
+                    crate::parser::contains_whatever(target)
+                };
+                if target_primes {
                     self.visit_expr_mut(target);
                 }
                 self.visit_expr_mut(rhs);
