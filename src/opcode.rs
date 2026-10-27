@@ -37,6 +37,22 @@ static REFLECTIVE_NAME_ACCESS_SEEN: AtomicBool = AtomicBool::new(false);
 /// enclosing chunks' locals, which no per-chunk flag of theirs records.
 static NON_EVAL_REFLECTIVE_SEEN: AtomicBool = AtomicBool::new(false);
 
+/// Process-global latch: some compiled code reads the *immediate* caller's frame
+/// by name (`CALLER::<$x>`, a bare `CALLER::` stash, `&CALLER::LEXICAL::(..)`).
+/// Such a reader is never a light call (`uses_callframe`), so it is reached
+/// through `push_caller_env`, which then copies the slot-only parameters of a
+/// light caller frame into the entry it pushes (`Locals::unmirrored`) -- the
+/// reader no longer forces every routine to mirror its parameters (#14337).
+/// Deeper (`CALLER::CALLER::`) and cascading (`CALLERS::`) readers keep
+/// [`NON_EVAL_REFLECTIVE_SEEN`].
+static CALLER_FRAME_READ_SEEN: AtomicBool = AtomicBool::new(false);
+
+/// See [`CALLER_FRAME_READ_SEEN`].
+#[inline]
+pub(crate) fn caller_frame_read_possible() -> bool {
+    CALLER_FRAME_READ_SEEN.load(Ordering::Relaxed)
+}
+
 /// True if any compiled code may read a caller frame's lexical by dynamic name.
 /// See [`REFLECTIVE_NAME_ACCESS_SEEN`].
 #[inline]
@@ -91,6 +107,7 @@ pub(crate) fn sorted_by_name(set: impl IntoIterator<Item = Symbol>) -> Vec<Symbo
 pub(crate) fn replay_compile_latches(
     reflective: bool,
     non_eval_reflective: bool,
+    caller_frame_read: bool,
     dispatcher: bool,
 ) {
     if reflective {
@@ -98,6 +115,9 @@ pub(crate) fn replay_compile_latches(
     }
     if non_eval_reflective {
         NON_EVAL_REFLECTIVE_SEEN.store(true, Ordering::Relaxed);
+    }
+    if caller_frame_read {
+        CALLER_FRAME_READ_SEEN.store(true, Ordering::Relaxed);
     }
     if dispatcher {
         DISPATCHER_SEEN.store(true, Ordering::Relaxed);
@@ -9852,14 +9872,76 @@ impl CompiledCode {
         NON_EVAL_REFLECTIVE_SEEN.load(Ordering::Relaxed) || self.needs_reflective_capture
     }
 
+    /// Whether every `SymbolicDeref` of this chunk is spelled
+    /// `&CALLER::LEXICAL::(..)`: the constant `CALLER::LEXICAL::` is loaded
+    /// once per deref and the name is spliced after it, so the counts agree. A
+    /// chunk that also derefs a name it computes whole (`::($n)`) disagrees and
+    /// keeps the process-wide latch.
+    // Cost: O(n), n = ops in this chunk.
+    fn symbolic_derefs_name_caller_lexical(&self) -> bool {
+        let loads = self
+            .ops
+            .iter()
+            .filter(|op| {
+                matches!(op, OpCode::LoadConst(idx)
+                    if matches!(
+                        self.constants.get(*idx as usize).map(Value::view),
+                        Some(ValueView::Str(name)) if name.as_str() == "CALLER::LEXICAL::"
+                    ))
+            })
+            .count();
+        let derefs = self
+            .ops
+            .iter()
+            .filter(|op| matches!(op, OpCode::SymbolicDeref { .. }))
+            .count();
+        derefs != 0 && derefs == loads
+    }
+
     pub(crate) fn scan_reflective_name_access(&mut self) {
         let mut own_reflective = false;
         // Whether a reflective op other than `EVAL` was seen: only those latch
         // the process-global flag (see `eval_reads_own_scope_only`).
         let mut latch_reflective = false;
+        // Whether a reader of the immediate caller's frame was seen (see
+        // `CALLER_FRAME_READ_SEEN`).
+        let mut caller_read = false;
+        // Computed on the first `SymbolicDeref`: whether every one in this
+        // chunk is the `&CALLER::LEXICAL::(..)` spelling.
+        let mut derefs_read_caller_lexical: Option<bool> = None;
         for (i, op) in self.ops.iter().enumerate() {
             let mut is_eval = false;
+            let mut op_reads_caller = false;
             let reflective = match op {
+                // The immediate caller's frame, by a statically visible
+                // spelling: no routine has to mirror its parameters for it,
+                // because `push_caller_env` copies the light caller's
+                // slot-only parameters into the entry it pushes (#14337).
+                OpCode::GetCallerVar { depth: 1, .. }
+                | OpCode::GetCallersVar {
+                    depth: 1,
+                    cascade: false,
+                    ..
+                } => {
+                    op_reads_caller = true;
+                    true
+                }
+                OpCode::GetPseudoStash(name_idx) | OpCode::GetPseudoStashKeyed(name_idx)
+                    if matches!(
+                        self.constants.get(*name_idx as usize).map(Value::view),
+                        Some(ValueView::Str(name)) if name.as_str() == "CALLER::"
+                    ) =>
+                {
+                    op_reads_caller = true;
+                    true
+                }
+                OpCode::SymbolicDeref { .. }
+                    if *derefs_read_caller_lexical
+                        .get_or_insert_with(|| self.symbolic_derefs_name_caller_lexical()) =>
+                {
+                    op_reads_caller = true;
+                    true
+                }
                 // `::($name)` / `::('$x')` names a lexical by string unless
                 // its operand is a constant type name (`::('Int')`,
                 // `::('Foo::Bar')`): a sigiled constant or a name computed at
@@ -9918,9 +10000,10 @@ impl CompiledCode {
             };
             if reflective {
                 own_reflective = true;
-                if !is_eval {
+                if op_reads_caller {
+                    caller_read = true;
+                } else if !is_eval {
                     latch_reflective = true;
-                    break;
                 }
             }
         }
@@ -9931,6 +10014,11 @@ impl CompiledCode {
         if !latch_reflective && self.holds_indirect_regex_lookup() {
             own_reflective = true;
             latch_reflective = true;
+        }
+        if caller_read {
+            CALLER_FRAME_READ_SEEN.store(true, Ordering::Relaxed);
+            // Reached through `push_caller_env`, never the light paths.
+            self.uses_callframe = true;
         }
         if own_reflective {
             REFLECTIVE_NAME_ACCESS_SEEN.store(true, Ordering::Relaxed);

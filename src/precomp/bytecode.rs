@@ -56,6 +56,9 @@ pub(crate) struct CompileLatches {
     pub(crate) reflective_name_access: bool,
     /// The non-`EVAL` part of `reflective_name_access` (#14337).
     pub(crate) non_eval_reflective: bool,
+    /// A reader of the immediate caller's frame by name (#14337).
+    #[serde(default)]
+    pub(crate) caller_frame_read: bool,
     pub(crate) dispatcher: bool,
 }
 

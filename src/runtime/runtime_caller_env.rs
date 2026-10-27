@@ -6,6 +6,56 @@ impl Interpreter {
         self.push_caller_env_with_code(None);
     }
 
+    /// Record the light frame that just bound its parameters, when a reader of
+    /// the immediate caller's frame exists and the parameters were not all
+    /// mirrored into `env`: [`Self::mirror_light_caller_params`] needs it.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn note_unmirrored_params(
+        &mut self,
+        code: &std::sync::Arc<crate::opcode::CompiledCode>,
+        params_mirrored: bool,
+    ) {
+        if !params_mirrored && crate::opcode::caller_frame_read_possible() {
+            self.locals
+                .note_unmirrored(self.caller_env_stack.len(), code);
+        }
+    }
+
+    /// Copy the slot-only parameters of the light frame that is making this call
+    /// into the `caller_env_stack` / `callframe_stack` entries just pushed, so a
+    /// by-name read of the immediate caller (`CALLER::<$x>`, `CALLER::`) sees
+    /// them. Does nothing when the calling frame is not a light frame that
+    /// skipped its parameters' env write (#14337).
+    // Cost: O(p), p = the calling frame's parameters.
+    fn mirror_light_caller_params(&mut self) {
+        let pushed = self.caller_env_stack.len();
+        let Some(frame) = pushed
+            .checked_sub(1)
+            .and_then(|before| self.locals.unmirrored_at(before))
+        else {
+            return;
+        };
+        let code = frame.code.clone();
+        let base = frame.base;
+        for (slot, sym) in code.locals_sym.iter().enumerate() {
+            if !code.param_locals.contains(sym)
+                || code.needs_env_sync.get(slot).copied().unwrap_or(true)
+            {
+                continue;
+            }
+            let Some(value) = self.locals.absolute_slot(base + slot).cloned() else {
+                continue;
+            };
+            if let Some(env) = self.caller_env_stack.last_mut() {
+                env.insert_sym(*sym, value.clone());
+            }
+            if let Some(entry) = self.callframe_stack.last_mut() {
+                entry.env.insert_sym(*sym, value);
+            }
+        }
+    }
+
     /// Push caller env with an explicit code (Sub) value for the current frame.
     pub(crate) fn push_caller_env_with_code(&mut self, code: Option<Value>) {
         self.caller_env_stack.push(self.env.clone());
@@ -26,6 +76,9 @@ impl Interpreter {
             synthetic: false,
             routine_depth: self.routine_stack.len(),
         });
+        if crate::opcode::caller_frame_read_possible() {
+            self.mirror_light_caller_params();
+        }
     }
 
     pub(crate) fn pop_caller_env(&mut self) {

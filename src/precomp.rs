@@ -148,7 +148,7 @@ pub(crate) fn interpreter_version() -> String {
     // 54: `Stmt::SetLine` carries the statement's source range (ADR-10723 §4).
     // 55: `OpCode::IndexAssignLocal` split from `IndexAssignExprNamed`, which
     // lost `target_slot` (ADR-14632 §2.5).
-    const CACHE_FORMAT_VERSION: u32 = 55;
+    const CACHE_FORMAT_VERSION: u32 = 56;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
