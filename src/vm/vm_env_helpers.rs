@@ -47,6 +47,21 @@ impl Interpreter {
         }
     }
 
+    /// [`Interpreter::push_caller_env`] for a call that has already opened its
+    /// call frame: the calling frame is the one that frame recorded.
+    pub(super) fn push_caller_env_in_call_frame(&mut self) {
+        let caller = self.call_frames.last().and_then(|frame| {
+            frame
+                .saved_locals_base
+                .as_ref()
+                .map(|base| (frame.caller_code, base.base()))
+        });
+        match caller {
+            Some((code, base)) => self.push_caller_env_of_frame(code, base),
+            None => self.push_caller_env(),
+        }
+    }
+
     /// Save the current env, locals, stack depth, and readonly vars into a new
     /// call frame.
     pub(super) fn push_call_frame(&mut self) {

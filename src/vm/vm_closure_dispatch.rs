@@ -752,7 +752,7 @@ impl Interpreter {
         // back on return (#10389).
         self.reconcile_captured_readonly(data.captured_readonly.as_ref(), cc);
 
-        loan_env!(self, push_caller_env());
+        loan_env!(self, push_caller_env_in_call_frame());
 
         // Push Sub value to block_stack for callframe().code
         // Also set &?BLOCK as a weak self-reference (mirrors resolution.rs).

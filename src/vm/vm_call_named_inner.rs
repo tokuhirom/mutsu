@@ -72,7 +72,7 @@ impl Interpreter {
         }
         let return_spec = cf.return_type.clone();
 
-        loan_env!(self, push_caller_env());
+        loan_env!(self, push_caller_env_in_call_frame());
 
         // The frame's code object for callframe().code / &?ROUTINE, recorded
         // lazily: the `Sub` (and the flatten of the caller env its full

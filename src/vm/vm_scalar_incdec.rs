@@ -141,7 +141,7 @@ impl Interpreter {
         let new_value = Value::int(new);
         self.locals[slot] = new_value.clone();
         if code.needs_env_sync.get(slot).copied().unwrap_or(true)
-            || crate::opcode::reflective_name_access_possible()
+            || code.mirrors_all_params()
         {
             let name = code.locals[slot].clone();
             self.set_env_plain_lexical(&name, Some(name_sym), new_value.clone());

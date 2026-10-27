@@ -684,7 +684,7 @@ impl Interpreter {
         // `is_constant` / term-symbol terms of that condition are all settled
         // above, so only the two live tests remain.
         if code.needs_env_sync.get(idx).copied().unwrap_or(true)
-            || crate::opcode::reflective_name_access_possible()
+            || code.mirrors_all_params()
         {
             let name = code.locals[idx].clone();
             self.set_env_plain_lexical(&name, name_sym, val);
@@ -3496,7 +3496,7 @@ impl Interpreter {
             && !is_constant
             && !bind_marks_type_object
             && !code.needs_env_sync.get(idx).copied().unwrap_or(true)
-            && !crate::opcode::reflective_name_access_possible()
+            && !code.mirrors_all_params()
             && Self::term_symbol_from_name(name).is_none();
         // A rebind (`$a := EXPR`) replaces the name's binding, so the env entry
         // must stop naming the container it was bound to before. When that

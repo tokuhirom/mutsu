@@ -30,19 +30,19 @@ static REFLECTIVE_NAME_ACCESS_SEEN: AtomicBool = AtomicBool::new(false);
 /// The part of [`REFLECTIVE_NAME_ACCESS_SEEN`] that is not an `EVAL`: set by
 /// the ops that can read *another* frame's lexical (`CALLER::`, symbolic
 /// dereference, pseudo-stashes, ...). An `EVAL` resolves names in the scope it
-/// is written in (and its enclosing scopes), so a routine's parameters need the
-/// env write only when this latch is set or the routine's own chunk (or one
-/// nested in it) holds the `EVAL` (#14337). Stores of plain locals keep using
-/// the broader latch: an `EVAL` nested in a closure or routine reads the
-/// enclosing chunks' locals, which no per-chunk flag of theirs records.
+/// is written in (and its enclosing scopes), so a routine's parameters and
+/// local stores need the env write only when this latch is set or the chunk's
+/// own flag says it (or a closure/routine nested in it) holds the `EVAL`
+/// ([`CompiledCode::mirrors_all_params`], #14337, #15048).
 static NON_EVAL_REFLECTIVE_SEEN: AtomicBool = AtomicBool::new(false);
 
 /// Process-global latch: some compiled code reads the *immediate* caller's frame
 /// by name (`CALLER::<$x>`, a bare `CALLER::` stash, `&CALLER::LEXICAL::(..)`).
 /// Such a reader is never a light call (`uses_callframe`), so it is reached
-/// through `push_caller_env`, which then copies the slot-only parameters of a
-/// light caller frame into the entry it pushes (`Locals::unmirrored`) -- the
-/// reader no longer forces every routine to mirror its parameters (#14337).
+/// through `push_caller_env`, which then copies the slot-only locals of the
+/// calling frame into the entry it pushes (`flush_calling_frame_slots`) -- the
+/// reader no longer forces every routine to mirror its parameters and every
+/// local store to write `env` (#14337, #15048).
 /// Deeper (`CALLER::CALLER::`) and cascading (`CALLERS::`) readers keep
 /// [`NON_EVAL_REFLECTIVE_SEEN`].
 static CALLER_FRAME_READ_SEEN: AtomicBool = AtomicBool::new(false);
@@ -9876,8 +9876,8 @@ impl CompiledCode {
         )
     }
 
-    /// Whether this routine's parameters must all be mirrored into `env` by
-    /// name: a reflective op that can reach another frame's lexical exists
+    /// Whether this routine's parameters -- and the stores to its slot-only
+    /// locals -- must be mirrored into `env` by name: a reflective op that can reach another frame's lexical exists
     /// somewhere, or this chunk (or a closure nested in it) looks one up by a
     /// runtime string (`EVAL`, ...). An `EVAL` in an unrelated routine -- as in
     /// every program that loads `JSON::Fast` -- does not make this routine's
