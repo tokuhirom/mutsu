@@ -311,25 +311,34 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
         crate::ast::Expr::ArrayLiteral(items) => Some(format!("[{}]", join_args(items)?)),
         crate::ast::Expr::BracketArray(items, _) => Some(format!("[{}]", join_args(items)?)),
         crate::ast::Expr::Hash(pairs, crate::ast::HashSpelling::Composer) => {
-            let entries = pairs
-                .iter()
-                .map(|(key, value)| {
-                    let pair = crate::ast::Expr::Binary {
-                        left: Box::new(crate::ast::Expr::Literal(
-                            crate::value::Value::str(key.clone()),
-                        )),
-                        op: crate::token_kind::TokenKind::FatArrow,
-                        right: Box::new(value.clone()?),
-                        form: Default::default(),
-                    };
-                    expression_source(&pair)
-                })
-                .collect::<Option<Vec<_>>>()?;
-            Some(format!("{{ {} }}", entries.join(", ")))
+            Some(format!("{{ {} }}", hash_pairs_source(pairs)?))
+        }
+        crate::ast::Expr::Hash(pairs, crate::ast::HashSpelling::Contextualizer) => {
+            Some(format!("%({})", hash_pairs_source(pairs)?))
         }
         crate::ast::Expr::PositionalPair(inner) => Some(format!("({})", expression_source(inner)?)),
         _ => None,
     }
+}
+
+/// The `key => value, ...` text of a hash literal's pairs.
+// Cost: O(n), n = size of the pairs.
+fn hash_pairs_source(pairs: &[(String, Option<crate::ast::Expr>)]) -> Option<String> {
+    let entries = pairs
+        .iter()
+        .map(|(key, value)| {
+            let pair = crate::ast::Expr::Binary {
+                left: Box::new(crate::ast::Expr::Literal(crate::value::Value::str(
+                    key.clone(),
+                ))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(value.clone()?),
+                form: Default::default(),
+            };
+            expression_source(&pair)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(entries.join(", "))
 }
 
 /// Render the expression-only statement subset used by an explicit pointy
