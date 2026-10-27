@@ -10,8 +10,8 @@
 //! parse their RHS with [`expression_no_word_logical`](crate::parser::expr::expression_no_word_logical), which stops before a
 //! top-level (unparenthesized) word-logical. This module then re-attaches the
 //! trailing `... and ...` at the correct, looser precedence: it wraps the
-//! value-producing statement in a scopeless [`Stmt::SyntheticBlock`] whose second
-//! statement re-reads the assigned variable and applies the word-logical tail.
+//! value-producing statement as a `ParsedStmt::DeclTail`, whose tail re-reads the
+//! assigned variable and applies the word-logical tail.
 //!
 //! Re-reading the assigned variable (`seed`) as the tail's left operand is exact
 //! for `= ` assignment: the variable holds precisely the value the assignment
@@ -58,7 +58,7 @@ pub(crate) fn seed_read_expr(name: &str) -> Expr {
 
 /// If `rest` begins with a loose word-logical operator, parse the word-logical
 /// tail (seeded by `seed`, a re-read of the just-assigned variable) and wrap
-/// `stmt` in a scopeless `SyntheticBlock([stmt, Expr(tail)])`. Otherwise returns
+/// `stmt` as a `DeclTail`. Otherwise returns
 /// `(rest, stmt)` unchanged.
 pub(crate) fn wrap_trailing_word_logical<'a>(
     rest: &'a str,
@@ -75,17 +75,14 @@ pub(crate) fn wrap_trailing_word_logical<'a>(
 
 /// A declaration or assignment `head` followed by a loose `tail` that re-reads
 /// its variable: the node RakuAST keeps as one expression
-/// (`ParsedStmt::DeclTail`), or, for a head RakuAST has no such operand for, a
-/// scopeless block of the two.
+/// (`ParsedStmt::DeclTail`).
 // Cost: O(n), n = size of the head and the tail.
 pub(crate) fn tail_stmt(head: Stmt, tail: Expr) -> Stmt {
-    if crate::ast::decl_tail::is_head(&head) {
-        return crate::parser::stmt::control::parsed_block::finish_total(
-            crate::ast::parsed::ParsedStmt::DeclTail {
-                head: Box::new(head),
-                tail,
-            },
-        );
-    }
-    Stmt::SyntheticBlock(vec![head, Stmt::Expr(tail)])
+    debug_assert!(crate::ast::decl_tail::is_head(&head), "{head:?}");
+    crate::parser::stmt::control::parsed_block::finish_total(
+        crate::ast::parsed::ParsedStmt::DeclTail {
+            head: Box::new(head),
+            tail,
+        },
+    )
 }
