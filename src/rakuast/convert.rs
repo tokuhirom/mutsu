@@ -822,6 +822,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             custom_traits,
             is_unit,
             is_native,
+            export_tags,
             implicit_grammar_parent,
             is_grammar,
             parent_args,
@@ -903,12 +904,12 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     class: RakuAstClass::Grammar,
                     fields,
                 };
-                let grammar = match super::package_header::lexical_export_tags(custom_traits) {
+                let grammar = match export_tags {
                     Some(tags) => super::package_header::apply(
                         &grammar,
                         &crate::ast::package_header::Header {
                             adverbs: Vec::new(),
-                            export_tags: Some(tags),
+                            export_tags: Some(tags.clone()),
                         },
                     )?,
                     None => grammar,
@@ -1000,13 +1001,13 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 },
                 fields,
             };
-            // A lexical `my class ... is export` keeps its tags in a marker.
-            let class = match super::package_header::lexical_export_tags(custom_traits) {
+            // A lexical `my class ... is export` records its tags on the node.
+            let class = match export_tags {
                 Some(tags) => super::package_header::apply(
                     &class,
                     &crate::ast::package_header::Header {
                         adverbs: Vec::new(),
-                        export_tags: Some(tags),
+                        export_tags: Some(tags.clone()),
                     },
                 )?,
                 None => class,
@@ -2281,7 +2282,6 @@ pub(super) fn package_header_fields(
 pub(super) fn has_package_traits(custom_traits: &[(String, Option<Expr>)]) -> bool {
     custom_traits.iter().any(|(t, _)| {
         t != crate::parser::ANON_COLONS_TRAIT
-            && t != crate::parser::EXPORT_TYPE_MARKER
             && t != crate::parser::LEADING_COLONS_TRAIT
             && t != crate::parser::DECLARE_HOW_TRAIT
             && t != crate::parser::ANON_DECL_TRAIT

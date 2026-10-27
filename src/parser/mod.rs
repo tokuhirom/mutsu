@@ -39,8 +39,8 @@ pub(crate) use primary::{
 };
 pub(crate) use primary::{decimal_literal_value, numeric_literal_value};
 pub(crate) use stmt::class::{
-    DECLARE_HOW_TRAIT, EXPORT_TYPE_MARKER, LEADING_COLONS_TRAIT, declare_how_keyword,
-    declare_how_marker, export_type_marker, push_also_is_parent,
+    DECLARE_HOW_TRAIT, LEADING_COLONS_TRAIT, declare_how_keyword, declare_how_marker,
+    push_also_is_parent,
 };
 pub(crate) use stmt::control::placeholder_loop_params;
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};

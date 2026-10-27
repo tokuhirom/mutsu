@@ -323,12 +323,10 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
     super::super::simple::register_user_type(&name);
     // `grammar G { ... }.parse($s)` is one expression; see `reject_trailing_postfix`.
     super::reject_trailing_postfix(rest)?;
-    let mut custom_traits = Vec::new();
-    if is_export && is_lexical {
-        // See `class_decl`: a lexical type keeps an internal marker instead of
-        // the synthetic export statement, which would make it block-local.
-        custom_traits.push(super::class_decl::export_type_marker(&export_tags));
-    }
+    let custom_traits = Vec::new();
+    // See `class_decl`: a lexical type records its export tags on the node instead
+    // of the synthetic export statement, which would make it block-local.
+    let lexical_export_tags = (is_export && is_lexical).then(|| export_tags.clone());
     routine_trait::attach(&mut body, written);
     let grammar_stmt = Stmt::ClassDecl {
         spans,
@@ -346,6 +344,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
         custom_traits,
         is_unit: false,
         is_native: false,
+        export_tags: lexical_export_tags,
         implicit_grammar_parent,
         is_grammar: true,
         decl_id: crate::ast::next_class_decl_id(),

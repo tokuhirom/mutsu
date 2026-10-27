@@ -228,11 +228,6 @@ pub(crate) fn push_export_tags(after_export: &str, export_tags: &mut Vec<String>
     }
 }
 
-/// The `__mutsu_export_type` marker a lexical `my class ... is export` carries
-/// in its `custom_traits`; the argument lists the export tags so a consumer
-/// that cannot see an export statement (a role body) can still publish it.
-pub(crate) const EXPORT_TYPE_MARKER: &str = "__mutsu_export_type";
-
 /// The `custom_traits` marker of a class declared as `class ::Name { }`. The
 /// leading `::` does not change the declaration; the marker only lets the
 /// RakuAST conversion render the name with its leading empty part, as rakudo
@@ -262,17 +257,6 @@ pub(crate) fn declare_how_keyword(custom_traits: &[(String, Option<Expr>)]) -> O
         Some(Expr::Literal(kw)) if name == DECLARE_HOW_TRAIT => Some(kw.to_string_value()),
         _ => None,
     })
-}
-
-pub(crate) fn export_type_marker(tags: &[String]) -> (String, Option<Expr>) {
-    let tags = tags
-        .iter()
-        .map(|t| Expr::Literal(Value::str(t.clone())))
-        .collect();
-    (
-        EXPORT_TYPE_MARKER.to_string(),
-        Some(Expr::ArrayLiteral(tags)),
-    )
 }
 
 /// A `.` on the SAME LINE as a type declaration's closing brace is a **postfix
@@ -553,6 +537,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         custom_traits: Vec::new(),
         is_unit: false,
         is_native: false,
+        export_tags: None,
         implicit_grammar_parent: false,
         is_grammar: false,
         decl_id: crate::ast::next_class_decl_id(),
@@ -911,6 +896,7 @@ pub(crate) fn class_decl_body_opt(
         custom_traits,
         is_unit: false,
         is_native: false,
+        export_tags: None,
         implicit_grammar_parent: false,
         is_grammar: false,
         decl_id: crate::ast::next_class_decl_id(),
@@ -922,8 +908,11 @@ pub(crate) fn class_decl_body_opt(
         // the synthetic block would make the class itself block-local. Keep an
         // internal marker on the declaration instead so module loading can
         // distinguish an exported lexical type from a private one.
-        if let Stmt::ClassDecl { custom_traits, .. } = &mut class_stmt {
-            custom_traits.push(export_type_marker(&export_tags));
+        if let Stmt::ClassDecl {
+            export_tags: tags, ..
+        } = &mut class_stmt
+        {
+            *tags = Some(export_tags.clone());
         }
     }
     let adverbs = traits

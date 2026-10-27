@@ -1415,6 +1415,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         },
         is_unit: head.is_unit,
         is_native: false,
+        export_tags: None,
         implicit_grammar_parent: false,
         is_grammar: false,
         // Lowering is the parser's counterpart, so the declaration gets its
@@ -1597,6 +1598,7 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         custom_traits: head.custom_traits(),
         is_unit: head.is_unit,
         is_native: false,
+        export_tags: None,
         implicit_grammar_parent,
         is_grammar: true,
         decl_id: crate::ast::next_class_decl_id(),

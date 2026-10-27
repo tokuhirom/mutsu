@@ -43,12 +43,9 @@ impl<'ast> crate::ast_visit::Visit<'ast> for ExportedTypeNames {
     fn visit_stmt(&mut self, stmt: &'ast crate::ast::Stmt) {
         if let crate::ast::Stmt::ClassDecl {
             name,
-            custom_traits,
+            export_tags: Some(_),
             ..
         } = stmt
-            && custom_traits
-                .iter()
-                .any(|(trait_name, _)| trait_name == "__mutsu_export_type")
         {
             let name = name.resolve();
             // A qualified declarator name publishes its last part, as rakudo does.
