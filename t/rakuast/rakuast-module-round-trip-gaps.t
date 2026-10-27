@@ -7,7 +7,7 @@ use lib $*PROGRAM.parent(2).add('lib-prefix-class-parent');
 # Every program runs at the `convert` level, where no subtree crosses as the
 # parser's own tree, and prints what raku prints.
 
-plan 8;
+plan 9;
 
 sub run-convert(Str $code) {
     my %env = %*ENV;
@@ -87,5 +87,13 @@ sub run-convert(Str $code) {
         CODE
     my ($rc, $out, $err) = run-convert($code);
     is $out, "v1.2mehi\n", 'a unit class with header adverbs absorbs the rest of the unit'
+        or diag $err;
+}
+
+{
+    # `:` right after a literal run binds to its last character (`hos`, then
+    # `t:`), as a quantifier does; HTTP::Request matches `m:i/host:/`.
+    my ($rc, $out, $err) = run-convert('say "Host: x" ~~ m:i/host:/');
+    is $out, "\x[FF62]Host\x[FF63]\n", 'a backtrack control after a multi-character literal round-trips'
         or diag $err;
 }

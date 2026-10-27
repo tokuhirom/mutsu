@@ -1763,11 +1763,23 @@ impl Parser {
             let before_modifier = self.pos;
             self.skip_whitespace();
             let spaced_modifier = self.pos != before_modifier;
-            let backtrack = self.parse_atom_backtrack(&atom);
+            let backtrack = self.parse_atom_backtrack();
             if backtrack.is_none() {
                 self.pos = before_modifier;
             }
+            let mut term_whitespace = saw_whitespace;
             if let Some(backtrack) = backtrack {
+                // The control binds to the final character of a literal run
+                // (`host:` is `hos` then `t:`), as a quantifier does above.
+                if let RegexNode::Literal(text) = &mut atom
+                    && text.chars().count() > 1
+                {
+                    let last = text.pop().expect("literal has more than one character");
+                    let prefix = std::mem::take(text);
+                    self.push_term(&mut nodes, RegexNode::Literal(prefix), saw_whitespace);
+                    *text = last.to_string();
+                    term_whitespace = false;
+                }
                 if spaced_modifier {
                     atom = RegexNode::WithWhitespace(Box::new(atom));
                 }
@@ -1776,7 +1788,7 @@ impl Parser {
                     backtrack,
                 });
             }
-            self.push_term(&mut nodes, atom, saw_whitespace);
+            self.push_term(&mut nodes, atom, term_whitespace);
         }
 
         if nodes.is_empty() {
@@ -2297,17 +2309,12 @@ impl Parser {
         })
     }
 
-    /// `:`, `:!` or `:?` written right after `atom`: its own backtracking
+    /// `:`, `:!` or `:?` written right after an atom: its own backtracking
     /// control. A modifier that could instead start something else (`a:i`, the
     /// cut `a::`) is not taken.
     // Cost: O(1).
-    fn parse_atom_backtrack(&mut self, atom: &RegexNode) -> Option<RegexBacktrack> {
+    fn parse_atom_backtrack(&mut self) -> Option<RegexBacktrack> {
         if self.chars.get(self.pos) != Some(&':') {
-            return None;
-        }
-        // A literal of several characters is split before its last one when a
-        // quantifier follows; the same split is not modelled here.
-        if matches!(atom, RegexNode::Literal(text) if text.chars().count() > 1) {
             return None;
         }
         let (backtrack, width) = match self.chars.get(self.pos + 1) {
