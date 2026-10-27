@@ -294,7 +294,7 @@ impl Interpreter {
     /// with a pending `.map`/`.grep` Seq run, but not yet read as element
     /// lists. A user override of the operator (ADR-0071) takes these.
     // Cost: O(e) once per pending Seq operand, e = its elements; O(1) otherwise.
-    fn pop_set_operands_unwalked(&mut self) -> Result<(Value, Value), RuntimeError> {
+    pub(super) fn pop_set_operands_unwalked(&mut self) -> Result<(Value, Value), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         for v in [&left, &right] {
@@ -311,7 +311,7 @@ impl Interpreter {
     /// [`Self::pop_set_operands`] after the operands are popped: the operands
     /// read as the element lists the built-in operator walks.
     // Cost: O(e) for a user `Iterable` instance, e = its elements; O(1) otherwise.
-    fn walk_set_operands(
+    pub(super) fn walk_set_operands(
         &mut self,
         left: Value,
         right: Value,
