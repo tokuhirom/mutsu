@@ -100,8 +100,7 @@ impl Interpreter {
             // that would extend the left operand's rows.
             let mut operands = Vec::with_capacity(call_args.len());
             for arg in &call_args {
-                operands
-                    .push(self.fetch_proxy_for_store(Self::unwrap_var_ref_value(arg.clone()))?);
+                operands.push(self.fetch_proxy_for_store(Self::unwrap_var_ref_value(arg.clone()))?);
             }
             // An infinite operand makes the product a lazy stage, as for the
             // meta-operator form.
