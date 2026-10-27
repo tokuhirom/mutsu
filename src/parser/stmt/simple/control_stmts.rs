@@ -776,6 +776,13 @@ fn known_call_is_expression_prefix(input: &str, rest_after_call: &str) -> bool {
     if is_stmt_modifier_keyword(rest_after_call) {
         return false;
     }
+    // `f(1), g() if $c`: a comma after the (parenthesised) call makes the call
+    // the first item of a list expression, so the statement modifier governs
+    // the whole list rather than only the trailing item. `expression` does not
+    // consume the comma, so it is checked here.
+    if rest_after_call.starts_with(',') {
+        return true;
+    }
     if let Ok((expr_rest, _)) = expression(input) {
         return expr_rest.len() < rest_after_call.len();
     }
