@@ -1808,10 +1808,7 @@ fn lower_subset(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             };
             match t.class {
                 RakuAstClass::TraitOf => {
-                    base = (
-                        simple_type_name(node, named_child_or_positional(t)?)?,
-                        true,
-                    );
+                    base = (simple_type_name(node, named_child_or_positional(t)?)?, true);
                 }
                 RakuAstClass::TraitIs => is_traits.push(item.clone()),
                 _ => return Err(unsupported(node)),

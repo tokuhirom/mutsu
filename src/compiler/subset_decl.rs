@@ -74,7 +74,9 @@ impl Compiler {
         };
         let traits = match &stmt {
             Stmt::SubsetDecl {
-                name, custom_traits, ..
+                name,
+                custom_traits,
+                ..
             } if !custom_traits.is_empty() => Some((*name, custom_traits.clone())),
             _ => None,
         };
@@ -88,7 +90,9 @@ impl Compiler {
         // a user `trait_mod:<is>` (a `$subset.HOW does Role` it performs
         // persists on the subset's metaobject).
         if let Some((name, traits)) = traits {
-            let name_idx = self.code.add_constant(Value::str(name.resolve().to_string()));
+            let name_idx = self
+                .code
+                .add_constant(Value::str(name.resolve().to_string()));
             self.emit_package_traits(name_idx, &traits);
         }
     }

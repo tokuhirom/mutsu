@@ -371,7 +371,8 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
                 let mut argument = None;
                 if r.starts_with('(') {
                     let (after, parsed) = super::super::class::trait_argument(r);
-                    if let Ok(Some(crate::ast::routine_trait::TraitArgument::Parentheses(expr))) = parsed
+                    if let Ok(Some(crate::ast::routine_trait::TraitArgument::Parentheses(expr))) =
+                        parsed
                         && !matches!(&expr, Expr::ArrayLiteral(items) if items.is_empty())
                     {
                         argument = Some(expr);
