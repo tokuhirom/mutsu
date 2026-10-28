@@ -189,8 +189,27 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
             return InstanceEqv::Decided(false);
         }
         match mode {
-            Some(private) if private.is_empty() => InstanceEqv::Structural,
-            Some(private) => InstanceEqv::Public(private),
+            // Rakudo's `Any:D eqv Any:D` compares the two default `.raku`
+            // renderings, so an attribute counts by how it reads, not by its
+            // identity: two distinct type objects that share a name are equal
+            // (Red's `Select.of` over two generated `TempSensor` types, which
+            // lets its CASE optimizer fold identical branches).
+            Some(_) => {
+                let render = |hook: &mut Self, value: &Value| match hook
+                    .interp
+                    .call_method_with_values(value.clone(), "raku", vec![])
+                {
+                    Ok(rendered) => Some(rendered.to_string_value()),
+                    Err(err) => {
+                        hook.error.get_or_insert(err);
+                        None
+                    }
+                };
+                match (render(self, a), render(self, b)) {
+                    (Some(ra), Some(rb)) => InstanceEqv::Rendered(ra == rb),
+                    _ => InstanceEqv::Decided(false),
+                }
+            }
             None => {
                 let ra = self.user_raku(a);
                 // A throwing `raku` ends the comparison: the right operand's
