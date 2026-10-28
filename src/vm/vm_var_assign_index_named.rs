@@ -5503,7 +5503,10 @@ impl Interpreter {
             // ordinary `%h<a><b><c> = v` walk pays only a discriminant test per
             // level.
             if level < depth - 1
-                && matches!(unsafe { (*current).view() }, ValueView::Instance { .. })
+                && matches!(
+                    unsafe { (*current).view() },
+                    ValueView::Instance { .. } | ValueView::Mixin(..)
+                )
             {
                 let cur_val = unsafe { (*current).clone() };
                 if let Some(accessor) = self.object_subscript_accessor(&cur_val, is_positional) {
