@@ -104,7 +104,8 @@ impl Interpreter {
         {
             return Ok(None);
         }
-        let iterator = self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?;
+        let iterator =
+            self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?;
         if self.is_lazy_user_iterator(&iterator)? {
             return Ok(Some(Self::lazy_list_over_user_iterator(iterator)));
         }
