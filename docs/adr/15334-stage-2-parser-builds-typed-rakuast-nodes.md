@@ -122,9 +122,12 @@ lowered tree, the precompilation cache format (it stores the lowered `Vec<Stmt>`
 
 One family per PR, as ADR-10723 §4 decided. Each slice moves a family's desugaring from the parser
 into `lower`, makes the parser build the typed node, adds the node's view, and deletes the family's
-`convert` arms and parser markers in the same PR. **A slice that is not net-negative in non-test
-`src` lines of `convert.rs` + `lower.rs` + the satellites it touches + `src/parser`, or that leaves a
-parser marker for its family, is not complete.** The order puts the families with the most
+`convert` arms and parser markers in the same PR. **A slice is complete only when, in the same PR, the
+family's old reconstruction (its `convert` arms and recognizers), its parser markers and its
+duplicate desugaring are gone and the family has exactly one lowering.** Line counts are a
+supporting indicator reported in the PR body, not a condition: introducing a typed definition may
+make a slice grow before the deletion lands, and a slice that is smaller but leaves a marker or a
+second lowering behind is not complete. The order puts the families with the most
 reconstruction first; the dependency notes are why the order is not by size alone.
 
 | # | Slice | Families | Deletes (named, not promised sizes) |
@@ -150,15 +153,32 @@ the parser's desugared shapes for T3.
 Slices not in the table are filed as sub-issues of #15334 when found, never as a new table row
 (the S1–S10 rule of #7564).
 
-### 2.3 Parse-time knowledge
+### 2.3 Name resolution: who supplies the scope, and when names are fixed
 
-ADR-10723 §4 left "where compile-time knowledge lives" to be decided per construct. This ADR fixes
-the rule for Stage 2: **a typed node records what the source said; `lower` consults the parser's
-existing tables for what a name means, and Stage 2 adds no resolver.** `convert`'s bareword and
-imported-name classification (`bareword.rs`, `CallerNames`, `core_term_names`) is the part that
-guesses what the parser resolved; each slice that deletes a reader of it also deletes the guess, and
-the slice that cannot (names an `EVAL` string takes from its caller) records the open item in its PR.
-The cut-over (slice 9) is gated on that classification having exactly one site.
+ADR-10723 §4 left "where compile-time knowledge lives" open. The risk is that `lower` reads the
+parser's tables while hand-built trees and `EVAL` strings have no parser, so the same node would
+lower differently by path. The contract:
+
+- **Lowering takes the scope as an argument.** `lower` is a function of the node and an explicit
+  `NameScope` (the type names, term names — constants and sigilless declarations — operator routines
+  and imports visible at that point). It reads no parser global and no thread-local; today's
+  `CallerNames::install` thread-local and `with_caller_operators` become parameters. Stage 2 adds
+  no resolver: `NameScope` is the existing parser tables behind one type, and the classification
+  that `bareword.rs` / `core_term_names` perform lives in one function over it.
+- **Who supplies it, per path.**
+  | Path | Provider | When types and imports are fixed |
+  | --- | --- | --- |
+  | Normal execution (main program, module, lazily parsed fragment) | the parser, from its live tables | at the moment each node is built, in source order: a declaration extends the scope before the next node is built; a `use` extends it with the module's exports as the parser loads it (as now) |
+  | String `EVAL` | the `EVAL` call, which seeds the parser's scope from the calling lexical scope (the names `with_caller_names` takes today), then as above | as above, starting from the seeded scope |
+  | `EVAL($ast)` / hand-built tree | the `EVAL` call, which seeds the scope from the calling lexical scope; there are no parser tables | during the lowering walk, in statement order: lowering a declaration or a `use` node extends the scope with the same code the parser calls, so a later node sees it |
+- **A bare name the scope does not resolve** stays a run-time lookup (`BareWord`), exactly as now,
+  on all three paths. A node that names its class (`Term::Name`, a type node, a call) is never
+  reclassified by the scope.
+- **Consequence.** Whether a program, its `EVAL` string and `EVAL` of its `.AST` mean the same thing
+  is a property of one function, not of three code paths. The cut-over (slice 9) is gated on the
+  classification having exactly one site and `NameScope` being the only way `lower` learns a name.
+
+Every slice therefore carries a **three-path parity test** (§3.1 item 7).
 
 ### 2.4 Safety invariants
 
@@ -189,18 +209,45 @@ Inline lowering must keep every property the parse has today:
 4. `.AST` text parity does not regress: `scripts/ast-text-corpus.sh` against rakudo, per-class
    counts in the PR body.
 5. `scripts/frontend-cost.sh` on the four budget cases, before and after, in the PR body.
-6. The deletion accounting of §2.2 (lines and the three counts below), measured with the commands
-   in the PR body.
+6. Deletion accounting, reported in the PR body: the family's removed reconstruction arms, parser
+   markers and duplicate desugaring (the completion condition of §2.2), plus lines and the three
+   counts of §3.3 as supporting figures.
+7. **Three-path parity test (required).** A `t/rakuast/stage2-<family>-paths.t` that runs the same
+   snippets for the slice's family — including snippets whose meaning depends on a declared type, an
+   imported name, a constant or a user operator — (a) as a file, (b) as `EVAL` of the string, and
+   (c) as `EVAL` of the string's `.AST`, and, for (b) and (c), once with the names declared in the
+   calling scope and once with them declared inside the evaluated unit. The three results must be
+   equal (§2.3). A slice without this test is not complete.
 
 ### 3.2 The cost budget
 
-ADR-10723 §2.4: total frontend time within 10% of the ordinary frontend. The ordinary (unspelled,
-no round trip) frontend no longer exists in the tree, so the baseline is **the callgrind Ir recorded
-once, in slice 0, by building the commit before §6.122's flip**, on the cases of §6.109 (`Zef/CLI`,
-`S32-exceptions/misc.t`, `S12-class/attributes.t`, `emoji-test.t`) plus one declaration-heavy file
-(a `t/` class/role/grammar test) so a T3-dominated program is measured. Slices 1–8 may not raise the
-Ir of any case by more than 2% each; slice 9 must bring the executing path to **at or below the
-baseline**, since it removes the pass that the budget exists to bound.
+**Metric.** ADR-10723 §2.4 bounds *frontend* time (parse + build + lower). The measurement here is
+callgrind Ir of `mutsu -c FILE` (release/profiling build, warm, no execution) with a toggle on the
+frontend entry (`parse_compilation_unit_of`, from its call to the return of the lowered
+`Vec<Stmt>`), so the figure is **frontend Ir**, from parse entry to the statements handed to the
+compiler, with startup and compile excluded. The whole-process `-c` Ir is reported next to it as
+context and is not gated (it includes the compiler, which no slice changes).
+
+**Baseline.** The frontend Ir of the last commit on `main` before the §6.122 flip merged (found with
+`git log -S'MUTSU_LEGACY'`; slice 0 builds it once and records its SHA and the figures in
+`scripts/frontend-cost.sh`'s data file). That commit's frontend is the "ordinary frontend" §2.4
+speaks of.
+
+**Cases.** The four of §6.109 (`Zef/CLI.rakumod`, `S32-exceptions/misc.t`, `S12-class/attributes.t`,
+`emoji-test.t`) plus one declaration-heavy `t/` class/role/grammar test, so a T3-dominated program
+is measured.
+
+**Bound.** *Cumulative*, not per slice: after every slice, the frontend Ir of each case must be at
+most **110% of the baseline** (§2.4's contract). A per-slice rise above 2% is not a failure by
+itself, but the PR must explain it; because the bound is absolute against the baseline, many small
+rises cannot add up past it.
+
+**Slice 9.** The cut-over removes the pass the budget exists to bound, so it is expected to land
+**at or below the baseline**. That is a stricter outcome than the +10% contract, and it is a
+*target*, not the gate: slice 9 passes at ≤ 110%, and a result between 100% and 110% requires a
+short written reason in its PR. The gate stays at the contract the maintainer accepted in
+ADR-10723 because a stricter hard gate would block the deletion of the round trip on a measurement
+noise band, while the target makes the expected saving visible and keeps it from being forgotten.
 
 ### 3.3 The ratchet
 
@@ -227,7 +274,7 @@ thing it counts.
   defined and has been shipping since §6.109: typed nodes and unmigrated subtrees both reach `lower`.
   Each slice is behaviour-neutral by its gate; the default frontend is never switched off.
 - **Risk — slice 9 is the one that touches every program.** It lands only with the ratchet counts at
-  zero, the cost at or below baseline, and the full gate (`--full`) green. It is a revert-safe change
+  zero, the frontend Ir within the §3.2 bound (and, as the target, at or below baseline), and the full gate (`--full`) green. It is a revert-safe change
   to `frontend.rs` and the parse entry points, because the typed nodes are the same ones the earlier
   slices ran through the round trip.
 - **Risk — `.AST` regressions in the corpus.** Mitigated by the parity check per slice; a slice that
@@ -264,9 +311,6 @@ thing it counts.
   several RakuAST classes. Slices 3–5 decide whether the typed node is one struct per RakuAST class
   or one per source construct, by the rule "the parser builds nothing the source did not say";
   recorded in the slice's PR, not here.
-- **`EVAL` string names.** The names an `EVAL` string takes from the scope that runs it are passed
-  to `convert` today (`CallerNames`). The typed node records the bare name; the open item is whether
-  `lower` or the compiler resolves it (§2.3). Decided in slice 2 or 3, whichever first needs it.
 - **Modules before slice 9.** Modules are round-tripped today (§6.127). If a module's precompilation
   shows a cost slice 9 does not recover, a per-module decision follows the measurement; this ADR does
   not pre-decide it.
