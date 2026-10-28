@@ -1252,7 +1252,10 @@ impl Interpreter {
     pub(crate) fn inherit_puller_dynamics(&mut self, puller: &crate::env::Env) {
         for (key, value) in puller.flattened().iter() {
             // `$*x` is keyed `*x`; the other sigils keep theirs (`&*x`).
-            if key.with_str(|name| name.starts_with('*') || name.starts_with(['&', '@', '%']) && name[1..].starts_with('*')) {
+            if key.with_str(|name| {
+                name.starts_with('*')
+                    || name.starts_with(['&', '@', '%']) && name[1..].starts_with('*')
+            }) {
                 self.env_mut().insert_sym(*key, value.clone());
             }
         }
