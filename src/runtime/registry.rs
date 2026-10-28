@@ -682,6 +682,11 @@ pub(crate) struct Registry {
     /// play. The actual proto bodies live in `MethodEntry::proto`
     /// (`method_entries`), read per-owner via [`Registry::method_entry_proto`].
     pub(crate) has_proto_methods: bool,
+    /// The method names some `proto method`/`proto submethod` is declared
+    /// for, in any class: `lookup_proto_method`'s O(1) negative answer, so a
+    /// call of any other method skips the MRO walk. Written only by
+    /// [`Registry::set_proto_method`].
+    proto_method_names: std::collections::HashSet<Symbol>,
     /// Compiled bytecode for a `proto method`/`proto submethod` body, keyed by
     /// `(owner, method_name)`. ADR-0019 D3-8 (`todo/tickets/
     /// adr0019-method-body-compile-dedup-remnants.md` item 2) never covered
@@ -908,6 +913,7 @@ impl Registry {
         self.method_entries.entry(key).or_default().proto = Some(Arc::new(def));
         self.proto_compiled_cache.remove(&key);
         self.has_proto_methods = true;
+        self.proto_method_names.insert(key.name);
         self.bump_method_generation();
     }
 
@@ -961,11 +967,26 @@ impl Registry {
         class_name: &str,
         method_name: &str,
     ) -> Option<Arc<FunctionDef>> {
+        self.method_entry_proto_sym(Symbol::intern(class_name), Symbol::intern(method_name))
+    }
+
+    /// Whether a `proto method` named `name` is declared in any class.
+    // Cost: O(1).
+    pub(crate) fn has_proto_method_named(&self, name: Symbol) -> bool {
+        self.proto_method_names.contains(&name)
+    }
+
+    /// [`Self::method_entry_proto`] for an owner and method already interned
+    /// (the MRO walk of `lookup_proto_method` interns the method name once, not
+    /// once per level).
+    // Cost: O(1).
+    pub(crate) fn method_entry_proto_sym(
+        &self,
+        owner: Symbol,
+        name: Symbol,
+    ) -> Option<Arc<FunctionDef>> {
         self.method_entries
-            .get(&MethodEntryKey {
-                owner: Symbol::intern(class_name),
-                name: Symbol::intern(method_name),
-            })
+            .get(&MethodEntryKey { owner, name })
             .and_then(|entry| entry.proto.clone())
     }
 
