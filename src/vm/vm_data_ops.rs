@@ -265,6 +265,7 @@ impl Interpreter {
                         elems.extend(items);
                     } else if let ValueView::LazyList(ll) = val.view()
                         && ll.lazy_pipe.is_some()
+                        && !ll.coercion_keeps_pipe_lazy()
                     {
                         // A finite lazy map/grep pipe (`[ $gather.map: ... ]`)
                         // has produced nothing yet, and `value_to_list` only
