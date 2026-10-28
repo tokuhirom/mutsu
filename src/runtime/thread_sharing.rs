@@ -96,6 +96,11 @@ pub(crate) struct ThreadSharing {
     /// [`Self::thread_redeclared_vars`] -- `ThreadParamMaskGuard` needs a
     /// stable, `Interpreter`-disjoint pointer into this field too.
     pub(crate) thread_param_shadow_vars: Box<std::cell::RefCell<rustc_hash::FxHashSet<String>>>,
+    /// Set once any thread has spawned (mirrors `shared_vars_active`, but behind
+    /// a `Box` so [`ThreadParamMaskGuard`](crate::vm::vm_call_state_guard::ThreadParamMaskGuard)
+    /// can read it on drop through a raw pointer). A returning routine frame
+    /// re-masks its own `@`/`%` lexicals only when this is set (#15020).
+    pub(crate) frame_remask_armed: Box<std::cell::Cell<bool>>,
     /// Set while an *incidental* locals -> env mirror is running: the regex
     /// interpolation pre-sync before a `~~`. It exists purely so a name-based
     /// reader in THIS interpreter can observe the frame's live slots through
@@ -196,6 +201,7 @@ impl ThreadSharing {
             )),
             thread_decl_in_flight: std::collections::HashSet::new(),
             transient_lane_containers: std::collections::HashSet::new(),
+            frame_remask_armed: Box::default(),
             thread_param_shadow_vars: Box::new(std::cell::RefCell::new(
                 rustc_hash::FxHashSet::default(),
             )),
@@ -257,6 +263,8 @@ impl ThreadSharing {
             // parent's currently-active parameter shadows (see the
             // `thread_redeclared_vars` comment above) — its own subsequent
             // parameter bindings union in as they run.
+            // The child spawns on its own account: armed only once it does.
+            frame_remask_armed: Box::default(),
             thread_param_shadow_vars: Box::new(std::cell::RefCell::new(
                 self.thread_param_shadow_vars.borrow().clone(),
             )),

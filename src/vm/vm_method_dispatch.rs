@@ -955,8 +955,11 @@ impl Interpreter {
         // the mask on drop -- including on a Rust panic unwind through the
         // body below -- rather than the manual `unmask_thread_redeclared_params`
         // call this replaced, which a panic unwind would skip entirely.
-        let thread_param_mask_guard =
-            crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(self, bind_param_defs.iter());
+        let thread_param_mask_guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
+            self,
+            bind_param_defs.iter(),
+            &cc.locals,
+        );
 
         // Initialize locals from env. The parameters are bound, so a linked
         // frame is marked first: a local is never a caller's variable, and
