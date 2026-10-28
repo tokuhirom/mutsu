@@ -45,6 +45,15 @@ impl Interpreter {
                 ValueView::Str(s) => s.to_string(),
                 _ => unreachable!("ForLoop param must be a string constant"),
             });
+        // The loop parameter's prior binding, restored when the loop is done
+        // (`RestoreForParam`, or at once on an abnormal exit), exactly as the
+        // eager path does (`exec_for_loop_body_from`). Left bound, the last
+        // item leaked out through the frame merge into a CALLER that has a
+        // same-named binding (`for self.children -> $child` over a `gather`
+        // clobbered the calling method's `$child`; Selkie, #15208).
+        let saved_param = param_name
+            .as_ref()
+            .map(|name| self.save_for_param(name, spec.param_local));
         let saved_topic = self.env().get("_").cloned();
         // The topic's local slot, when this frame has one (see
         // `save_loop_topic_local`): the loop must mirror each item into it.
@@ -308,6 +317,9 @@ impl Interpreter {
                         self.restore_topic_readonly(saved_topic_readonly);
                         self.topic_state.topic_source_var = saved_topic_source;
                         self.restore_loop_topic(saved_topic, saved_topic_local);
+                        if let Some(entry) = saved_param {
+                            self.restore_saved_for_param(entry);
+                        }
                         return Err(e);
                     }
                     Err(e) => {
@@ -318,6 +330,9 @@ impl Interpreter {
                         }
                         self.restore_topic_readonly(saved_topic_readonly);
                         self.restore_loop_topic(saved_topic, saved_topic_local);
+                        if let Some(entry) = saved_param {
+                            self.restore_saved_for_param(entry);
+                        }
                         return Err(e);
                     }
                 }
@@ -335,6 +350,9 @@ impl Interpreter {
         self.restore_topic_readonly(saved_topic_readonly);
         self.topic_state.topic_source_var = saved_topic_source;
         self.restore_loop_topic(saved_topic, saved_topic_local);
+        if let Some(entry) = saved_param {
+            self.topic_state.for_param_restore_stack.push(entry);
+        }
         if let Some(coll) = collected {
             self.stack.push(Value::array(coll));
         }

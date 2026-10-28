@@ -161,9 +161,14 @@ impl Interpreter {
         .map_err(|e| e.to_runtime_error())?;
 
         if app_lifetime {
-            // For app_lifetime threads, don't store the handle -- the thread
-            // will be killed when the main thread exits
-            drop(handle);
+            // An app_lifetime thread is not waited for at exit (it is killed
+            // when the main thread exits), but `.finish` still joins it, so the
+            // handle is kept apart from the ones `join_outstanding_threads`
+            // drains.
+            super::APP_LIFETIME_THREAD_HANDLES
+                .lock()
+                .unwrap()
+                .insert(thread_id, handle);
         } else {
             THREAD_HANDLES.lock().unwrap().insert(thread_id, handle);
         }
@@ -187,7 +192,16 @@ impl Interpreter {
             })
             .ok_or_else(|| RuntimeError::new("Thread has no thread_id"))?;
 
-        let handle = THREAD_HANDLES.lock().unwrap().remove(&thread_id);
+        let handle = THREAD_HANDLES
+            .lock()
+            .unwrap()
+            .remove(&thread_id)
+            .or_else(|| {
+                super::APP_LIFETIME_THREAD_HANDLES
+                    .lock()
+                    .unwrap()
+                    .remove(&thread_id)
+            });
         if let Some(handle) = handle {
             // STW-aware: a thread blocked in `.finish`/join counts as quiescent
             // for the GC's cooperative stop-the-world (it cannot mutate the Gc
