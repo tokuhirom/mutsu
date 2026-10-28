@@ -265,6 +265,39 @@ fn unsuppressed_write_publishes_to_the_shared_lane() {
     assert!(interp.is_shared_var_dirty("url"));
 }
 
+/// Entering a critical section refreshes only what ANOTHER thread committed.
+/// A value this thread wrote itself (inside an earlier critical section) is in
+/// its env already; pulling it back replaced a same-named lexical of the frame
+/// now entering the section (Red's nested `-> :$guard!` blocks: the outer
+/// block's `$guard` became the inner block's, written under `Lock.protect`).
+#[test]
+fn entering_a_critical_section_keeps_a_same_named_lexical_over_own_writes() {
+    let mut interp = Interpreter::new();
+    interp.threads.shared_vars_active = true;
+    interp
+        .threads
+        .shared_vars
+        .declare("guard", Value::str("seed".to_string()));
+
+    interp.enter_critical_section();
+    interp.set_shared_var_sym("guard", None, Value::str("inner".to_string()));
+    interp.leave_critical_section();
+
+    // The outer frame's own `$guard`, entering a critical section later.
+    interp.env.insert("guard".to_string(), Value::str("outer".to_string()));
+    interp.enter_critical_section();
+
+    assert_eq!(
+        interp.env.get("guard").and_then(|v| match v.view() {
+            ValueView::Str(s) => Some(s.to_string()),
+            _ => None,
+        }),
+        Some("outer".to_string()),
+        "this thread's own earlier write must not replace the entering frame's lexical"
+    );
+    interp.leave_critical_section();
+}
+
 fn seed_dirty_atomic_lane(interp: &mut Interpreter, name: &str, value_key: &str) {
     interp.mark_atomic_var_seen(name);
     let name_key = MetaNs::AtomicName.owned_key_for_str(name);
