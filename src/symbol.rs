@@ -1410,6 +1410,25 @@ mod tests {
     }
 
     #[test]
+    fn as_str_resolves_across_threads_and_chunks() {
+        // Symbols interned on one thread resolve on another through the global
+        // slot table, including ids that land in a later chunk than the first.
+        let syms: Vec<(Symbol, String)> = (0..FLAG_CHUNK_LEN + 8)
+            .map(|i| {
+                let name = format!("as_str_chunk_test_{i}");
+                (Symbol::intern(&name), name)
+            })
+            .collect();
+        std::thread::spawn(move || {
+            for (sym, name) in &syms {
+                assert_eq!(sym.as_str(), name.as_str());
+            }
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[test]
     fn as_str_borrows_without_alloc() {
         let sym = Symbol::intern("as_str_test");
         let a: &'static str = sym.as_str();
