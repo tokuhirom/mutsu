@@ -84,6 +84,34 @@ impl Interpreter {
                 .is_some_and(|source| source.reads(method))
     }
 
+    /// Whether `method` on `target`, an instance of an `is Range` / `is Seq`
+    /// subclass, reads the subclass's own `iterator` (`Range.list` is
+    /// `self.iterator`-based) rather than the range or seq it carries.
+    // Cost: O(m) name scan plus memoized method probes, m = names in the set.
+    pub(crate) fn payload_instance_lists_own_iterator(
+        &mut self,
+        target: &Value,
+        method: &str,
+    ) -> bool {
+        if !Self::list_method_via_own_iterator(method)
+            || !crate::builtins::native_base::has_iterable_payload(target)
+        {
+            return false;
+        }
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return false;
+        };
+        let class = class_name.resolve();
+        self.has_user_method(&class, "iterator")
+            && !self.has_user_method(&class, "list")
+            && !self.has_user_method(&class, method)
+    }
+
+    // Cost: O(m), m = names in the set.
+    fn list_method_via_own_iterator(method: &str) -> bool {
+        matches!(method, "list" | "List" | "Array" | "join")
+    }
+
     /// Whether `target` is buffer-backed storage whose class declares its own
     /// `list` (upstream's `CArray`), so `Any`'s `method` reads that `list`
     /// ([`Self::own_iteration_view`] answers it) and no native entry may.
@@ -120,7 +148,12 @@ impl Interpreter {
             return None;
         }
         let source = self.iteration_source(target, method)?;
-        if !source.reads(method) {
+        // `Range.list` / `Seq.list` read `self.iterator`, so a subclass with its
+        // own `iterator` answers the `self.list` methods from it too (#15361).
+        let payload_reads_iterator = matches!(source, Source::Iterator { .. })
+            && Self::list_method_via_own_iterator(method)
+            && crate::builtins::native_base::has_iterable_payload(target);
+        if !source.reads(method) && !payload_reads_iterator {
             return None;
         }
         let elements = match self.own_elements(target, &source) {

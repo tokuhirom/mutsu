@@ -444,6 +444,15 @@ fn dispatch(
             // A `Seq` payload is consumed through the interpreter (its
             // iterator is user code): the instance dispatch redirects it.
             Some(base) if base.is_seq_value() => return None,
+            // An `is Range`/`is Seq` subclass with its own `iterator` lists
+            // through it, which the interpreter does (#15361).
+            Some(_)
+                if interp.as_deref_mut().is_some_and(|i| {
+                    i.payload_instance_lists_own_iterator(target, method.as_str())
+                }) =>
+            {
+                return None;
+            }
             Some(base) => {
                 payload = base;
                 let receiver = Receiver::of_settled(&payload)?;

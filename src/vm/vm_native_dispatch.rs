@@ -203,6 +203,12 @@ impl Interpreter {
         // `as_str`, not `resolve`: see `native_method_0arg`. An owned copy of
         // an already-`&'static str` per native method call.
         let method_name: &str = method_sym.as_str();
+        // An `is Range`/`is Seq` subclass with its own `iterator` lists through
+        // it, not through the range or seq it carries (#15361): the instance
+        // dispatch (`own_iteration_view`) answers.
+        if args.is_empty() && self.payload_instance_lists_own_iterator(target, method_name) {
+            return None;
+        }
         // `.REPR` / `.WHERE` on a NativeCall handle. Telling a `nativecast`ed
         // CStruct/CUnion/CArray from an ordinary instance needs the class
         // registry, so the pure native path cannot answer these — and it must
