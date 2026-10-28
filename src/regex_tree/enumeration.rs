@@ -365,6 +365,20 @@ fn single_char(element: &EnumerationElement) -> Option<char> {
             let ch = chars.next()?;
             chars.next().is_none().then_some(ch)
         }
+        // `\0`, `\t`, `\e`, `\f`, `\r`, `\b` each denote one character
+        // (`<[\0..\xFF]>`); `\n`, `\s`, `\d`, ... are not range endpoints.
+        EnumerationElement::Class(CharClassAtom::Backslash {
+            class,
+            negated: false,
+        }) => match class {
+            BackslashClass::Nul => Some('\0'),
+            BackslashClass::Tab => Some('\t'),
+            BackslashClass::Escape => Some('\u{1b}'),
+            BackslashClass::FormFeed => Some('\u{0c}'),
+            BackslashClass::CarriageReturn => Some('\r'),
+            BackslashClass::BackSpace => Some('\u{08}'),
+            _ => None,
+        },
         _ => None,
     }
 }

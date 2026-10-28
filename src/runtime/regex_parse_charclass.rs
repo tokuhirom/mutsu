@@ -762,6 +762,7 @@ impl Interpreter {
                 'r' => Some('\r'),
                 'e' => Some('\u{001B}'),
                 'f' => Some('\u{000C}'),
+                'b' => Some('\u{0008}'),
                 '0' => Some('\0'),
                 'c' => {
                     if chars.peek() == Some(&'[') {
