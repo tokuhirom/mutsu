@@ -1488,18 +1488,12 @@ fn stub_node(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, RuntimeErr
     }))
 }
 
-/// The bound value of an indexed bind's `__mutsu_bind_index_value(rhs, meta)`
-/// marker, or `None` for any other value. The marker's source metadata is
-/// derived from `rhs`, so lowering rebuilds it.
+/// The bound value of an indexed bind's `IndexBindValue`, or `None` for any
+/// other value.
 // Cost: O(1).
 fn index_bind_rhs(value: &Expr) -> Option<&Expr> {
     match value {
-        Expr::Call { name, args, .. } if name.as_str() == "__mutsu_bind_index_value" => {
-            match args.as_slice() {
-                [rhs, _] => Some(rhs),
-                _ => None,
-            }
-        }
+        Expr::IndexBindValue(rhs) => Some(rhs),
         _ => None,
     }
 }

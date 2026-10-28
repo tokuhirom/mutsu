@@ -463,7 +463,7 @@ pub(crate) use stmt::control::{
     with_then_branch,
 };
 pub(crate) use stmt::simple::{fold_use_lib_path, use_lib_args};
-pub(crate) use stmt::simple_expr_stmt::lvalue::index_bind_expr;
+pub(crate) use stmt::simple_expr_stmt::lvalue::{bind_source_metadata_expr, index_bind_expr};
 /// Lower a deferred `Expr::Feed` node into its executable (sink-call) form.
 /// Re-exported for the compiler's `Expr::Feed` arm.
 pub(crate) use stmt::sub::is_builtin_param_trait;

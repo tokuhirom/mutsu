@@ -1393,6 +1393,16 @@ impl Compiler {
                 self.compile_expr(inner);
                 self.code.emit(OpCode::DeitemizeForBind);
             }
+            Expr::IndexBindValue(rhs) => {
+                // The VM takes the bound value and its source variables as the
+                // marker call's two arguments; the sources derive from the RHS.
+                let sources = crate::parser::bind_source_metadata_expr(rhs);
+                self.compile_expr(&Expr::Call {
+                    name: Symbol::intern("__mutsu_bind_index_value"),
+                    args: vec![rhs.as_ref().clone(), sources],
+                    listop: false,
+                });
+            }
             Expr::PositionalPair(inner) => {
                 self.compile_expr(inner);
                 self.code.emit(OpCode::ContainerizePair);

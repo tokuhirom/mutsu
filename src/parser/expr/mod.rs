@@ -699,21 +699,16 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
             value: bind,
             is_positional,
             ..
-        } if is_bind_index_value(&bind) => {
-            let Expr::Call { name, mut args, .. } = *bind else {
-                unreachable!("is_bind_index_value checked the shape");
+        } if matches!(*bind, Expr::IndexBindValue(_)) => {
+            let Expr::IndexBindValue(rhs) = *bind else {
+                unreachable!("the guard checked the shape");
             };
-            let rhs = reassociate_fat_arrow_operand(args.remove(0), value);
-            let source_meta =
-                crate::parser::stmt::simple_expr_stmt::lvalue::bind_source_metadata_expr(&rhs);
             Expr::IndexAssign {
                 target,
                 index,
-                value: Box::new(Expr::Call {
-                    name,
-                    args: vec![rhs, source_meta],
-                    listop: false,
-                }),
+                value: Box::new(Expr::IndexBindValue(Box::new(
+                    reassociate_fat_arrow_operand(*rhs, value),
+                ))),
                 is_positional,
                 spelling: Default::default(),
             }
@@ -740,13 +735,8 @@ fn is_kept_variable_assign_node(node: &crate::ast::parsed::ParsedExpr) -> bool {
     )
 }
 
-fn is_bind_index_value(value: &Expr) -> bool {
-    matches!(value, Expr::Call { name, args, .. }
-        if name.resolve() == "__mutsu_bind_index_value" && args.len() == 2)
-}
-
 fn is_indexed_bind(expr: &Expr) -> bool {
-    matches!(expr, Expr::IndexAssign { value, .. } if is_bind_index_value(value))
+    matches!(expr, Expr::IndexAssign { value, .. } if matches!(**value, Expr::IndexBindValue(_)))
 }
 
 fn reassociated_fat_arrow_pair(left: Expr, value: Expr) -> Expr {
