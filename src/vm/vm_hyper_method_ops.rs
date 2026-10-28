@@ -730,6 +730,11 @@ impl Interpreter {
             Symbol::intern(&method)
         };
         for (idx, item) in items.iter_mut().enumerate() {
+            // ADR-0058: an element that is itself a `.map` / `.grep` Seq
+            // (`(<a b>, <c>).map({ $_.grep(...) })».join`) has not run its
+            // callback; the method sees (and the recursion below walks) the
+            // elements, so run it first.
+            self.reify_map_grep_seq(item)?;
             // Special case: CALL-ME on callable items (from >>.(args) syntax).
             // Instead of method dispatch, invoke the item directly as a callable.
             if method == "CALL-ME"
