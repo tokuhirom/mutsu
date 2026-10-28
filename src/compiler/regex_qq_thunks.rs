@@ -87,7 +87,7 @@ impl Compiler {
     /// The closure a `"..."` atom's `body` lowers to: the body read as a qq
     /// string, as a block. `None` when the body interpolates nothing.
     pub(super) fn regex_qq_thunk_expr(body: &str) -> Option<Expr> {
-        let expr = crate::parse_dispatch::parse_qq_interpolation(body);
+        let expr = crate::parse_dispatch::parse_qq_interpolation(body).ok()?;
         if matches!(expr, Expr::Literal(_)) {
             return None;
         }

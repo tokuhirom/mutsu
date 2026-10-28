@@ -285,16 +285,17 @@ pub(crate) fn imported_value_term_names() -> Vec<String> {
 /// specifies as `qq`-quoted but that is not lexically a `"..."` literal — a
 /// heredoc body, an `s///` replacement — must route through here rather than
 /// grow its own partial interpolator.
-pub(crate) fn interpolate_qq_content(content: &str) -> crate::ast::Expr {
+pub(crate) fn interpolate_qq_content(content: &str) -> Result<crate::ast::Expr, RuntimeError> {
     primary::quote_adverbs::process_content_with_flags(
         content,
         &primary::quote_adverbs::QuoteFlags::qq_double(),
     )
+    .map_err(|e| render_parse_error(content, e))
 }
 
 /// Parse a heredoc body string as an interpolated (qq-style) string expression.
 /// Used by the compiler to defer heredoc interpolation to compile time.
-pub(crate) fn interpolate_heredoc_content(content: &str) -> crate::ast::Expr {
+pub(crate) fn interpolate_heredoc_content(content: &str) -> Result<crate::ast::Expr, RuntimeError> {
     interpolate_qq_content(content)
 }
 
@@ -463,7 +464,7 @@ pub(crate) use stmt::control::{
     with_then_branch,
 };
 pub(crate) use stmt::simple::{fold_use_lib_path, use_lib_args};
-pub(crate) use stmt::simple_expr_stmt::lvalue::index_bind_expr;
+pub(crate) use stmt::simple_expr_stmt::lvalue::{bind_source_metadata_expr, index_bind_expr};
 /// Lower a deferred `Expr::Feed` node into its executable (sink-call) form.
 /// Re-exported for the compiler's `Expr::Feed` arm.
 pub(crate) use stmt::sub::is_builtin_param_trait;

@@ -106,7 +106,7 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
             ),
         ));
     }
-    let expr = process_content_with_flags(content, &flags);
+    let expr = process_content_with_flags(content, &flags)?;
 
     // Apply post-processing (execute, word-split, format)
     apply_post_processing(after, expr, &flags)
@@ -389,7 +389,7 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
             ),
         ));
     }
-    let expr = process_content_with_flags(content, &flags);
+    let expr = process_content_with_flags(content, &flags)?;
 
     // Apply post-processing (execute, word-split, format)
     apply_post_processing(rest, expr, &flags)
@@ -433,7 +433,7 @@ pub(crate) fn make_q_content_expr(
     q_closure_interp: bool,
     open: char,
     close: char,
-) -> Expr {
+) -> Result<Expr, PError> {
     if is_qq {
         interpolate_string_content(content)
     } else if q_closure_interp {
@@ -452,7 +452,7 @@ pub(crate) fn make_q_content_expr(
                 s.push(c);
             }
         }
-        Expr::Literal(literal_str(s))
+        Ok(Expr::Literal(literal_str(s)))
     }
 }
 
@@ -489,14 +489,14 @@ pub(crate) fn parse_q_quoted_content(
             let (rest, content) = read_multi_bracketed(input, &open_str, &close_str, true, is_qq)?;
             return Ok((
                 rest,
-                make_q_content_expr(content, is_qq, q_closure_interp, first, close_ch),
+                make_q_content_expr(content, is_qq, q_closure_interp, first, close_ch)?,
             ));
         }
         // Single bracket — use read_bracketed for proper nesting
         let (rest, content) = read_bracketed(input, first, close_ch, true)?;
         return Ok((
             rest,
-            make_q_content_expr(content, is_qq, q_closure_interp, first, close_ch),
+            make_q_content_expr(content, is_qq, q_closure_interp, first, close_ch)?,
         ));
     }
 
@@ -510,7 +510,7 @@ pub(crate) fn parse_q_quoted_content(
         let rest = &rest[end + first.len_utf8()..];
         return Ok((
             rest,
-            make_q_content_expr(content, is_qq, q_closure_interp, first, first),
+            make_q_content_expr(content, is_qq, q_closure_interp, first, first)?,
         ));
     }
 

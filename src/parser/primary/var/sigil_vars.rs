@@ -946,7 +946,8 @@ fn parse_operator_code_ref_suffix<'a>(
         let name_expr = crate::parser::primary::quote_adverbs::process_content_with_flags(
             symbol,
             &crate::parser::primary::quote_adverbs::QuoteFlags::qq_double(),
-        );
+        )
+        .ok()?;
         return Some((after_close, OperatorCodeRefSuffix::Dynamic(name_expr)));
     }
 
@@ -984,7 +985,8 @@ fn parse_operator_code_ref_suffix<'a>(
         let name_expr = crate::parser::primary::quote_adverbs::process_content_with_flags(
             symbol,
             &crate::parser::primary::quote_adverbs::QuoteFlags::qq_double(),
-        );
+        )
+        .ok()?;
         return Some((after_close, OperatorCodeRefSuffix::Dynamic(name_expr)));
     }
 

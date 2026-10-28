@@ -37,12 +37,11 @@ impl Compiler {
             if !key.starts_with(['$', '@', '%', '&'])
                 && !crate::qualified::is_qualified_str(key)
                 && key.starts_with(|c: char| c.is_alphabetic() || c == '_')
-                && let Expr::Call { name, args, .. } = value
-                && *name == "__mutsu_bind_index_value"
+                && let Expr::IndexBindValue(rhs) = value
             {
                 self.compile_expr(&Expr::AssignExpr {
                     name: format!("{stash_name}{key}"),
-                    expr: Box::new(args.first().cloned().unwrap_or(Expr::Literal(Value::NIL))),
+                    expr: rhs.clone(),
                     is_bind: true,
                 });
                 return true;
@@ -50,7 +49,7 @@ impl Compiler {
             // `Pkg::<@a> = ...` / `Pkg::<%h> = ...` (assignment, not bind).
             if key.starts_with(['@', '%'])
                 && key.len() > 1
-                && !matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value")
+                && !matches!(value, Expr::IndexBindValue(_))
             {
                 self.compile_expr(&Expr::Call {
                     name: Symbol::intern("die"),
@@ -63,15 +62,13 @@ impl Compiler {
             }
             // `Pkg::<@a> := v` / `Pkg::<%h> := v`: the stash spelling of
             // `@Pkg::a := v`, which rebinds the package variable (#10546).
-            if let Some(Expr::Call { name, args, .. }) = Some(value)
-                && *name == "__mutsu_bind_index_value"
+            if let Expr::IndexBindValue(rhs) = value
                 && let Some(sigil) = key.chars().next().filter(|c| matches!(c, '@' | '%'))
                 && key[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
             {
-                let rhs = args.first().cloned().unwrap_or(Expr::Literal(Value::NIL));
                 self.compile_expr(&Expr::AssignExpr {
                     name: format!("{sigil}{stash_name}{}", &key[1..]),
-                    expr: Box::new(rhs),
+                    expr: rhs.clone(),
                     is_bind: true,
                 });
                 return true;
@@ -83,10 +80,7 @@ impl Compiler {
                 return false;
             };
             let (is_bind, rhs) = match value {
-                Expr::Call { name, args, .. } if *name == "__mutsu_bind_index_value" => (
-                    true,
-                    args.first().cloned().unwrap_or(Expr::Literal(Value::NIL)),
-                ),
+                Expr::IndexBindValue(rhs) => (true, rhs.as_ref().clone()),
                 other => (false, other.clone()),
             };
             // `GLOBAL::<$x> = v` (plain assign): the statement form's store, so

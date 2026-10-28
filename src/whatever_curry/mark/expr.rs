@@ -351,6 +351,7 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         | Expr::Eager(inner)
         | Expr::Itemize(inner)
         | Expr::DeitemizeForBind(inner)
+        | Expr::IndexBindValue(inner)
         | Expr::IndirectTypeLookup(inner)
         | Expr::IndirectTypeLookupTail { head: inner, .. } => mark_expr(inner),
         Expr::IndirectCodeLookup { package, .. } => mark_expr(package),

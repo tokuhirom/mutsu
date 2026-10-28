@@ -307,7 +307,7 @@ pub(crate) fn parse_quoted_method_name(input: &str) -> Option<(&str, QuotedMetho
         // Check if content has interpolation
         if content.contains('$') || content.contains('@') || content.contains('{') {
             use crate::parser::primary::string::interpolate_string_content_with_modes;
-            let name_expr = interpolate_string_content_with_modes(content, true, true);
+            let name_expr = interpolate_string_content_with_modes(content, true, true).ok()?;
             return Some((rest, QuotedMethodName::Dynamic(name_expr)));
         }
         return Some((rest, QuotedMethodName::Static(content.to_string())));

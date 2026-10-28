@@ -1018,8 +1018,10 @@ impl Compiler {
             // Deferred heredoc interpolation
             Expr::HeredocInterpolation(content, _) => {
                 super::compile_inputs::mark_uncacheable("compile-time heredoc interpolation");
-                let resolved = crate::parser::interpolate_heredoc_content(content);
-                self.compile_expr(&resolved);
+                match crate::parser::interpolate_heredoc_content(content) {
+                    Ok(resolved) => self.compile_expr(&resolved),
+                    Err(error) => self.emit_deferred_error(error),
+                }
             }
             // String interpolation
             Expr::StringInterpolation(parts) => {
@@ -1392,6 +1394,12 @@ impl Compiler {
             Expr::DeitemizeForBind(inner) => {
                 self.compile_expr(inner);
                 self.code.emit(OpCode::DeitemizeForBind);
+            }
+            Expr::IndexBindValue(rhs) => {
+                // The VM takes the bound value and its source variables as the
+                // marker call's two arguments; the sources derive from the RHS.
+                let sources = crate::parser::bind_source_metadata_expr(rhs);
+                self.compile_expr(&Self::index_bind_marker_call(rhs.as_ref().clone(), sources));
             }
             Expr::PositionalPair(inner) => {
                 self.compile_expr(inner);

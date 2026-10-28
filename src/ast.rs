@@ -1404,6 +1404,11 @@ pub(crate) enum Expr {
     /// [`parsed`]). Every other parse lowers it where it is built, so the
     /// compiler never sees one.
     Ast(Box<parsed::ParsedExpr>),
+    /// The value an indexed bind (`@a[i] := v`, `%h<k> := v`) stores through
+    /// [`Expr::IndexAssign`]: the bound right-hand side, marked so the compiler
+    /// takes bind (not assign) semantics. The source-variable metadata the VM
+    /// needs is derived from the right-hand side when it is compiled.
+    IndexBindValue(Box<Expr>),
     /// The current pointy `given`/`with` topic used by its synthetic binding.
     GivenPointyTopic,
     Literal(Value),

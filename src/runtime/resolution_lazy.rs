@@ -116,6 +116,7 @@ impl Interpreter {
         let saved_env = self.env.clone();
         let saved_len = self.async_state.gather_items.len();
         self.env = list.env.clone();
+        self.inherit_puller_dynamics(&saved_env);
         self.async_state.gather_items.push(Vec::new());
         self.async_state.gather_take_limits.push(None);
         // The gather body is a lexical block: a `sub` declared inside it shadows
@@ -166,6 +167,7 @@ impl Interpreter {
         let saved_env = self.env.clone();
         let saved_len = self.async_state.gather_items.len();
         self.env = list.env.clone();
+        self.inherit_puller_dynamics(&saved_env);
         self.async_state.gather_items.push(Vec::new());
         self.async_state.gather_take_limits.push(Some(needed_len));
         self.async_state.gather_suspend_pending = false;

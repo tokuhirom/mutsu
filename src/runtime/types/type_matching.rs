@@ -1,6 +1,40 @@
 use super::*;
 use crate::meta_ns::MetaNs;
 
+/// How deep `type_matches_value_why` may nest in itself (a subset whose base
+/// leads back to it, an alias cycle). A legitimate check nests a handful of
+/// levels: a subset chain, a parameterization, a coercion.
+const MAX_TYPE_CHECK_NESTING: u32 = 256;
+
+thread_local! {
+    static TYPE_CHECK_NESTING: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// One level of `type_matches_value_why` nesting on this thread, released on drop.
+struct TypeCheckNesting;
+
+impl TypeCheckNesting {
+    // Cost: O(1).
+    #[inline]
+    fn enter() -> Option<Self> {
+        TYPE_CHECK_NESTING.with(|depth| {
+            let now = depth.get();
+            if now >= MAX_TYPE_CHECK_NESTING {
+                return None;
+            }
+            depth.set(now + 1);
+            Some(Self)
+        })
+    }
+}
+
+impl Drop for TypeCheckNesting {
+    #[inline]
+    fn drop(&mut self) {
+        TYPE_CHECK_NESTING.with(|depth| depth.set(depth.get() - 1));
+    }
+}
+
 impl Interpreter {
     pub(crate) fn type_arg_value_from_name(&self, name: &str) -> Value {
         let trimmed = name.trim().trim_start_matches('(').trim_end_matches(')');
@@ -184,6 +218,11 @@ impl Interpreter {
     /// instruction count, almost entirely `String` alloc/free churn, even
     /// though the benchmark never uses a package-scoped nested type).
     pub(crate) fn try_resolved_type_capture_name(&self, constraint: &str) -> Option<String> {
+        // A `CORE::`-pinned spelling already names the outer type, and inside
+        // the pinned check a registered name must not be re-aliased.
+        if constraint.starts_with("CORE::") || self.types.core_pin_depth > 0 {
+            return None;
+        }
         if let Some(inner) = constraint
             .strip_prefix("::(")
             .and_then(|s| s.strip_suffix(')'))
@@ -624,6 +663,19 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
+        // The check recurses through subset bases, parameterizations and type
+        // aliases without crossing a Raku call boundary, so the VM's stack
+        // guard never sees a cycle among them. Bound the nesting of the check
+        // itself and refuse with a catchable exception instead of aborting the
+        // process on a native stack overflow (docs/security.md).
+        let Some(_nesting) = TypeCheckNesting::enter() else {
+            if why.is_none() {
+                *why = Some(Box::new(RuntimeError::new(
+                    crate::native_stack::DEEP_RECURSION_MESSAGE,
+                )));
+            }
+            return false;
+        };
         // An object reblessed on another thread may carry a mixin type this
         // thread has not composed yet (#11456).
         if let ValueView::Instance { class_name, .. } = value.view() {
@@ -654,6 +706,19 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
+        // `CORE::Name` names the type the scope outside every `my` declaration
+        // of `Name` sees. The parser writes it for a type position that
+        // precedes a later `my class Name` in its scope (rakudo resolves a
+        // signature's type names where the signature is written).
+        if let Some(pinned) = constraint.strip_prefix("CORE::")
+            && !pinned.contains(['[', '(', '{', ' '])
+            && !pinned.trim_end_matches(":D").trim_end_matches(":U").contains(':')
+        {
+            self.types.core_pin_depth += 1;
+            let matched = self.type_matches_value_unviewed_why(pinned, value, why);
+            self.types.core_pin_depth -= 1;
+            return matched;
+        }
         // `Cursor` is an alias of `Match` (a grammar instance IS a `Match`),
         // so `has Cursor $.cursor` accepts the grammar `self`.
         let constraint = self.resolve_core_type_alias(constraint);
@@ -699,7 +764,8 @@ impl Interpreter {
         // package was declared in, which a loaded module's routine does not
         // see (ADR-12529): a constraint recorded before the type existed (an
         // `EVAL`'d `class Foo {}; my Foo $x`) still names it.
-        if !constraint.contains(['\u{0}', ':', '[', '(', '{', ' '])
+        if self.types.core_pin_depth == 0
+            && !constraint.contains(['\u{0}', ':', '[', '(', '{', ' '])
             && let Some(own) = self.resolve_type_in_current_package(constraint)
             && own != constraint
         {
@@ -712,7 +778,8 @@ impl Interpreter {
         // the spelling is resolved against the registry instead -- but only
         // when exactly one lexical type carries that name, since which of
         // several same-named ones was meant is not recoverable here.
-        if constraint.contains(['\u{0}', ':', '[', '(', '{', ' '])
+        if self.types.core_pin_depth > 0
+            || constraint.contains(['\u{0}', ':', '[', '(', '{', ' '])
             || !self.registry().has_lexical_type_key_for(constraint)
             || self.has_type_direct(constraint)
         {

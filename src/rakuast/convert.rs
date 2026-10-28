@@ -1488,18 +1488,12 @@ fn stub_node(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, RuntimeErr
     }))
 }
 
-/// The bound value of an indexed bind's `__mutsu_bind_index_value(rhs, meta)`
-/// marker, or `None` for any other value. The marker's source metadata is
-/// derived from `rhs`, so lowering rebuilds it.
+/// The bound value of an indexed bind's `IndexBindValue`, or `None` for any
+/// other value.
 // Cost: O(1).
 fn index_bind_rhs(value: &Expr) -> Option<&Expr> {
     match value {
-        Expr::Call { name, args, .. } if name.as_str() == "__mutsu_bind_index_value" => {
-            match args.as_slice() {
-                [rhs, _] => Some(rhs),
-                _ => None,
-            }
-        }
+        Expr::IndexBindValue(rhs) => Some(rhs),
         _ => None,
     }
 }
@@ -2873,17 +2867,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if let Some(words) = super::word_quote::convert_words_atom(name.as_str(), args) {
                 return words;
             }
-            if name.as_str() == "__mutsu_unknown_backslash_escape"
-                && let [Expr::Literal(escape)] = args.as_slice()
-            {
-                return Err(RuntimeError::typed_msg(
-                    "X::Backslash::UnrecognizedSequence",
-                    format!(
-                        "Unrecognized backslash sequence: \\{}",
-                        escape.to_string_value()
-                    ),
-                ));
-            }
             if is_desugar_marker(name.as_str()) {
                 return Err(desugared(name.as_str()));
             }
@@ -4159,7 +4142,7 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // The interpolated code is parsed here, after the unit's own parse
             // ended: it keeps its typed nodes (a statement modifier inside a
             // `{ ... }`) the way the rest of the tree does.
-            convert_expr(&crate::parser::interpolate_heredoc_content(content))
+            convert_expr(&crate::parser::interpolate_heredoc_content(content)?)
         }
         Expr::StringInterpolation(parts) => {
             let mut segments = Vec::with_capacity(parts.len());
@@ -6197,6 +6180,12 @@ pub(super) fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
             Some(tree) if tree.declaration_kind.is_some() => anon_regex_declaration(v, tree),
             _ => Err(unsupported("literal Regex without a declarator tree")),
         },
+        // `∅`
+        ValueView::Set(set, false) if set.iter().next().is_none() => Ok(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::TermEmptySet,
+            fields: Vec::new(),
+        }),
         other => Err(unsupported(&format!("literal {other:?}"))),
     }
 }
