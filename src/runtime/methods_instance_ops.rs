@@ -1941,10 +1941,10 @@ impl Interpreter {
                             || self.is_metamodel_how_class(&n.resolve()))) =>
             {
                 let ValueView::Mixin(inner, mixins) = target.view() else {
-                    unreachable!("guarded by the match above")
+                    return Ok(Value::NIL);
                 };
                 let ValueView::Package(sym) = inner.view() else {
-                    unreachable!("guarded by the match above")
+                    return Ok(Value::NIL);
                 };
                 let minted = self.metamodel_new_type(&sym.resolve(), &args)?;
                 if let ValueView::Package(name) = minted.view() {
