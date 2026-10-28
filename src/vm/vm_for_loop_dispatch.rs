@@ -665,6 +665,22 @@ impl Interpreter {
         &mut self,
         raw: &Value,
     ) -> Result<Option<Value>, RuntimeError> {
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = raw.view()
+        {
+            let cn = class_name.resolve();
+            // An `Iterable` with its own `iterator` populates the array from
+            // it -- lazily when that iterator reports `is-lazy` (#15305).
+            if !attributes.contains_key("__mutsu_array_storage")
+                && self.has_user_method(&cn, "iterator")
+                && self.class_does_role(&cn, "Iterable")
+            {
+                return self.array_from_iterable_instance(raw).map(Some);
+            }
+        }
         if let Some(items) = self.try_iterable_instance_items(raw)? {
             return Ok(Some(crate::runtime::coerce_to_array(Value::real_array(
                 items,

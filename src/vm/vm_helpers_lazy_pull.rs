@@ -701,6 +701,23 @@ impl Interpreter {
                     },
                     _ => Value::NIL,
                 },
+                CatPullMode::UserIterator => {
+                    let item =
+                        self.try_compiled_method_or_interpret(cat.clone(), "pull-one", vec![])?;
+                    if item.is_iteration_end() {
+                        if let Some(spec) = list.cat_pull.as_ref() {
+                            spec.lock().unwrap_or_else(|e| e.into_inner()).done = true;
+                        }
+                        return Ok(());
+                    }
+                    // A `Nil` item is a real element here, not the end marker.
+                    list.cache
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .get_or_insert_with(Vec::new)
+                        .push(item);
+                    continue;
+                }
                 CatPullMode::Lines => self.call_method_with_values(cat.clone(), "get", vec![])?,
                 CatPullMode::Handles if !started => {
                     // First pull: the currently-active handle, opened on demand
