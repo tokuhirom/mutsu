@@ -75,21 +75,6 @@ impl<'a> RakudoInstanceEqv<'a> {
         self.interp.class_mro(class.as_str()).contains(&exception)
     }
 
-    /// `$value.raku` through the compiled user method; `None` when the
-    /// method has no bytecode dispatch (the caller then compares structurally).
-    fn user_raku(&mut self, value: &Value) -> Option<String> {
-        match self
-            .interp
-            .try_dispatch_compiled_method_direct(value, "raku", &[])?
-        {
-            Ok(rendered) => Some(rendered.to_string_value()),
-            Err(err) => {
-                self.error.get_or_insert(err);
-                Some(String::new())
-            }
-        }
-    }
-
     /// `$value.raku` through ordinary method dispatch (the default rendering
     /// included); `None` once it threw, the error kept for the caller.
     // Cost: O(r), r = the cost of one `raku` call.
@@ -102,6 +87,21 @@ impl<'a> RakudoInstanceEqv<'a> {
             Err(err) => {
                 self.error.get_or_insert(err);
                 None
+            }
+        }
+    }
+
+    /// `$value.raku` through the compiled user method; `None` when the
+    /// method has no bytecode dispatch (the caller then compares structurally).
+    fn user_raku(&mut self, value: &Value) -> Option<String> {
+        match self
+            .interp
+            .try_dispatch_compiled_method_direct(value, "raku", &[])?
+        {
+            Ok(rendered) => Some(rendered.to_string_value()),
+            Err(err) => {
+                self.error.get_or_insert(err);
+                Some(String::new())
             }
         }
     }
@@ -122,6 +122,34 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
             (Some(ra), Some(rb)) => ra == rb,
             _ => false,
         }
+    }
+
+    // Cost: O(r), r = the cost of the two `raku` calls; O(1) for plain scalars.
+    fn attribute_value_eqv(&mut self, a: &Value, b: &Value) -> Option<bool> {
+        let plain = |v: &Value| {
+            matches!(
+                v.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Nil
+                    | ValueView::Rat(..)
+                    | ValueView::Complex(..)
+            )
+        };
+        if self.error.is_some() || (plain(a) && plain(b)) {
+            return None;
+        }
+        if let (ValueView::LazyList(la), _) | (_, ValueView::LazyList(la)) = (a.view(), b.view())
+            && la.eqv_would_hang()
+        {
+            return None;
+        }
+        let ra = self.render_raku(a)?;
+        let rb = self.render_raku(b)?;
+        Some(ra == rb)
     }
 
     // Cost: O(r), r = the cost of the two user `raku` calls.
@@ -183,15 +211,8 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
             return InstanceEqv::Decided(false);
         }
         match mode {
-            // Rakudo's `Any:D eqv Any:D` compares the two default `.raku`
-            // renderings, so an attribute counts by how it reads, not by its
-            // identity: two distinct type objects that share a name are equal
-            // (Red's `Select.of` over two generated `TempSensor` types, which
-            // lets its CASE optimizer fold identical branches).
-            Some(_) => match (self.render_raku(a), self.render_raku(b)) {
-                (Some(ra), Some(rb)) => InstanceEqv::Rendered(ra == rb),
-                _ => InstanceEqv::Decided(false),
-            },
+            Some(private) if private.is_empty() => InstanceEqv::Structural,
+            Some(private) => InstanceEqv::Public(private),
             None => {
                 let ra = self.user_raku(a);
                 // A throwing `raku` ends the comparison: the right operand's

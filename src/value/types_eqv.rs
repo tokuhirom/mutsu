@@ -9,6 +9,10 @@ pub(crate) enum InstanceEqv {
     /// Everything that method renders — role attributes carried by a punned
     /// role's mixin included — is covered by the answer.
     Rendered(bool),
+    /// Compare attribute by attribute, skipping the listed private attribute
+    /// names: Rakudo's default `.raku` renders public attributes only, so a
+    /// private-only difference is invisible to `eqv`.
+    Public(std::rc::Rc<[String]>),
     /// No class metadata: compare every attribute slot.
     Structural,
 }
@@ -31,6 +35,14 @@ pub(crate) trait EqvInstanceHook {
     /// method must run on the mixin itself, not its base value. `None` when
     /// the hook cannot decide (the walk then compares the mixins structurally).
     fn mixin_eqv(&mut self, _a: &Value, _b: &Value) -> Option<bool> {
+        None
+    }
+
+    /// Whether two attribute values the structural walk found different are
+    /// still `eqv` the way Rakudo's default `.raku` sees them: that rendering
+    /// reads each attribute by its `.raku`, so two distinct type objects that
+    /// share a name are the same there. `None` when the hook cannot decide.
+    fn attribute_value_eqv(&mut self, _a: &Value, _b: &Value) -> Option<bool> {
         None
     }
 }
@@ -606,10 +618,11 @@ impl Value {
                         return sa.eqv_inner(&sb, seen);
                     }
                 }
-                match seen.hook.instance_eqv(self, other) {
+                let private = match seen.hook.instance_eqv(self, other) {
                     InstanceEqv::Decided(answer) | InstanceEqv::Rendered(answer) => return answer,
-                    InstanceEqv::Structural => {}
-                }
+                    InstanceEqv::Public(private) => Some(private),
+                    InstanceEqv::Structural => None,
+                };
                 let a_map = a_attrs.to_map();
                 let b_map = b_attrs.to_map();
                 // The full object constructor materializes inherited/redeclared
@@ -623,7 +636,8 @@ impl Value {
                 let mut visible_entries = |map: &AttrMap| {
                     map.iter()
                         .filter(|(key, value)| {
-                            !is_redundant_qualified_attribute(map, key, value, seen)
+                            !is_private_attribute(key, private.as_deref())
+                                && !is_redundant_qualified_attribute(map, key, value, seen)
                         })
                         .map(|(key, value)| (*key, value.clone()))
                         .collect::<Vec<_>>()
@@ -635,7 +649,10 @@ impl Value {
                         b_entries
                             .iter()
                             .find(|(other_key, _)| other_key == key)
-                            .is_some_and(|(_, other)| value.eqv_inner(other, seen))
+                            .is_some_and(|(_, other)| {
+                                value.eqv_inner(other, seen)
+                                    || seen.hook.attribute_value_eqv(value, other) == Some(true)
+                            })
                     })
             }
             // The Nil value IS the Nil type object: a `Package("Nil")` obtained
@@ -689,9 +706,10 @@ impl Value {
                     ) if ca == cb => seen.hook.instance_eqv(a, b),
                     _ => InstanceEqv::Structural,
                 };
-                let rendered = match mode {
-                    InstanceEqv::Rendered(answer) => Some(answer),
-                    InstanceEqv::Decided(_) | InstanceEqv::Structural => None,
+                let (rendered, private) = match mode {
+                    InstanceEqv::Rendered(answer) => (Some(answer), None),
+                    InstanceEqv::Public(private) => (None, Some(private)),
+                    InstanceEqv::Decided(_) | InstanceEqv::Structural => (None, None),
                 };
                 match rendered {
                     Some(false) => return false,
@@ -713,7 +731,12 @@ impl Value {
                 let is_role_seq = |k: &str| {
                     k.starts_with("__mutsu_role_seq__")
                         || k.starts_with("__mutsu_role_group__")
-                        || (rendered.is_some() && k.strip_prefix(attr_prefix).is_some())
+                        || k.strip_prefix(attr_prefix).is_some_and(|name| {
+                            rendered.is_some()
+                                || private
+                                    .as_deref()
+                                    .is_some_and(|p| p.iter().any(|n| n == name))
+                        })
                 };
                 let a_relevant = a_mix.iter().filter(|(k, _)| !is_role_seq(k));
                 let a_count = a_mix.keys().filter(|k| !is_role_seq(k)).count();
@@ -729,6 +752,17 @@ impl Value {
             _ => false,
         }
     }
+}
+
+/// Whether an instance slot holds one of `private`'s attribute names (bare or
+/// class- or role-qualified `Owner\0name`).
+fn is_private_attribute(key: &Symbol, private: Option<&[String]>) -> bool {
+    let Some(private) = private else {
+        return false;
+    };
+    let key = key.resolve();
+    let bare = key.rsplit_once('\0').map_or(key.as_str(), |(_, bare)| bare);
+    private.iter().any(|name| name == bare)
 }
 
 /// Whether a qualified instance slot is merely a copy of the corresponding
