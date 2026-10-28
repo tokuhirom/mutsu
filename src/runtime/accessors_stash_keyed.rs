@@ -180,7 +180,15 @@ impl Interpreter {
             rest
         };
         // No `:` at all, so in particular no `::` qualifier.
-        if base.is_empty() || base.contains(':') {
+        // An operator's name carries its own colon (`infix:<graffiti>`): it is
+        // a member of the package like any other routine.
+        let operator_name = base.split_once(':').is_some_and(|(category, tail)| {
+            matches!(
+                category,
+                "infix" | "prefix" | "postfix" | "circumfix" | "postcircumfix" | "term"
+            ) && tail.starts_with(['<', '\u{ab}', '['])
+        });
+        if base.is_empty() || (base.contains(':') && !operator_name) {
             return None;
         }
         // A routine the package's own module body imported is lexical to that

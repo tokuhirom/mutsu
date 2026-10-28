@@ -176,6 +176,23 @@ pub(super) fn try_keyword_dispatch(
         return Ok(Some((r, stmt)));
     }
 
+    // my/our only [sub] name(...) { ... }: `only` is the explicit non-multi
+    // declarator, a plain routine declaration.
+    if let Some(r) = keyword("only", rest)
+        && let Ok((r, _)) = ws1(r)
+        && !r.starts_with('{')
+        && !r.starts_with('(')
+    {
+        let r = keyword("sub", r)
+            .map(|r2| ws(r2).map(|(r3, _)| r3).unwrap_or(r2))
+            .unwrap_or(r);
+        let (r, mut stmt) = sub_decl_body(r, false, false, false)?;
+        if is_our && let Stmt::SubDecl { scope, .. } = &mut stmt {
+            *scope = crate::ast::SubScope::Our;
+        }
+        return Ok(Some((r, stmt)));
+    }
+
     // my sub name(...) { ... }   or anonymous   my sub { ... } / my sub (...) { ... }
     if let Some(after_sub) = keyword("sub", rest) {
         let (after_ws, _) = ws(after_sub)?;

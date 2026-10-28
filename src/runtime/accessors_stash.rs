@@ -44,6 +44,14 @@ impl Interpreter {
             .keys()
             .chain(self.module.module_toplevel.package_symbols.keys())
             .any(|k| k.as_str().starts_with(&prefix))
+            // `OUR::<Name> := ...` in a module body stores under the package
+            // in `our_vars`, which a module read from inside another frame
+            // (`my package EXPORT { Mod::Name }`) only sees there.
+            || self
+                .lexicals
+                .our_vars
+                .keys()
+                .any(|k| k.starts_with(&prefix))
             || self
                 .registry()
                 .classes
@@ -554,6 +562,13 @@ impl Interpreter {
             };
             self.env_mut().insert(env_name.clone(), binding.clone());
             self.set_our_var(env_name, binding.clone());
+            // A routine bound into a module's own export stash
+            // (`OUR.WHO.BIND-KEY: .key, .value for Other::` inside `package
+            // EXPORT::MANDATORY`) is one of its exports, as for `OUR::{'&name'}
+            // := &name`.
+            if sigil == Some('&') {
+                self.publish_our_pseudo_stash_symbol(&format!("&OUR::{bare}"), &binding);
+            }
         }
 
         // Keep the already-materialized stash coherent for an immediate read.
