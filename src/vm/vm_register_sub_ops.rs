@@ -870,15 +870,14 @@ impl Interpreter {
                     // cell, `my @b := @a; sub f { @b := [9] }` stored `[9]`
                     // through the cell `@b` shares with `@a` (#9416).
                     if (rebound_syms.contains(&sym)
-                        || code.rebound_slots.contains(&(slot_idx as u32)))
+                        || code.rebound_slots.contains(&(slot_idx as u32))
+                        // A sibling sub that only reads the variable captures
+                        // the cell first, so it must already be a binding cell
+                        // when another sub of this frame rebinds the variable.
+                        || Self::frame_sub_rebinds_var(code, compiled_fns, sym))
                         && Self::binding_cell_of(&cell).is_none()
                     {
-                        // Keep the cell's identity: a sibling registered earlier
-                        // already captured this very cell, so it becomes the
-                        // binding cell in place (its old content moves into a
-                        // fresh inner container) rather than being wrapped in a
-                        // new one the sibling never sees.
-                        cell = Self::promote_cell_to_binding_cell(cell);
+                        cell = Self::wrap_in_binding_cell(cell);
                         self.locals[slot_idx] = cell.clone();
                         self.env_mut().insert(name.clone(), cell.clone());
                     }

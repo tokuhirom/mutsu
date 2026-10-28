@@ -1673,6 +1673,8 @@ impl Interpreter {
 
     /// Wrap the container `container` (a `ContainerRef`) in a fresh binding
     /// cell — see [`Self::binding_cell_of`].
+    /// Wrap the container `container` (a `ContainerRef`) in a fresh binding
+    /// cell — see [`Self::binding_cell_of`].
     /// Turn the plain cell `cell` into a binding cell without changing its
     /// identity: every closure that captured it keeps sharing it, and its old
     /// content becomes the container it binds.
