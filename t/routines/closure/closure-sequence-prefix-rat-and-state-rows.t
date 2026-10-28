@@ -9,7 +9,7 @@ use Test;
 plan 3;
 
 my @rats = flat 1, 1, -> $a, $b { $b * ($a + $b + $b / $a) }...*;
-is-deeply @rats[^6].List, (1, 1, 3, 21, 651, 457653), 'Rat elements that grow doubly exponentially do not hang';
+is-deeply @rats[^6].map(*.Int).List, (1, 1, 3, 21, 651, 457653), 'Rat elements that grow doubly exponentially do not hang';
 
 my @rows = 0, 1, 2, 1, {
     state @row = 2, 1;
