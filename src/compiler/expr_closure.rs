@@ -716,20 +716,22 @@ impl Compiler {
         // (`@a[0,1] := ...`) and a plain variable-index bind (`@a[$i] := ...`)
         // stay valid. Emit a runtime throw so `throws-like { ... }` catches it
         // (a parse-time error would abort the whole enclosing file).
-        if matches!(value, Expr::IndexBindValue(_)) && matches!(
-            index,
-            // ADR-0033 Phase 1: the index is still an un-expanded
-            // `WhateverCurry` marker here (this runs before the compiler's
-            // `Expr::WhateverCurry` arm would expand it) — check that
-            // directly rather than the built closure the parser used to
-            // produce eagerly. (The `Lambda` arm is kept as a
-            // belt-and-suspenders match; only reachable pre-ADR-0033.)
-            Expr::WhateverCurry(_)
-                | Expr::Lambda {
-                    is_whatever_code: true,
-                    ..
-                }
-        ) {
+        if matches!(value, Expr::IndexBindValue(_))
+            && matches!(
+                index,
+                // ADR-0033 Phase 1: the index is still an un-expanded
+                // `WhateverCurry` marker here (this runs before the compiler's
+                // `Expr::WhateverCurry` arm would expand it) — check that
+                // directly rather than the built closure the parser used to
+                // produce eagerly. (The `Lambda` arm is kept as a
+                // belt-and-suspenders match; only reachable pre-ADR-0033.)
+                Expr::WhateverCurry(_)
+                    | Expr::Lambda {
+                        is_whatever_code: true,
+                        ..
+                    }
+            )
+        {
             // A Whatever index is always positional, so the sliced container is
             // an Array. `type` and `message` mirror what rakudo's exception
             // carries (`X::Bind::Slice.new(type => Array).message` is
