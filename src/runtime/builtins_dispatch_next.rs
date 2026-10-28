@@ -518,6 +518,12 @@ impl Interpreter {
                     std::slice::from_ref(&invocant),
                 )
             }
+            // A user `new` deferring on a type object reaches the base
+            // constructor of its native ancestor (`class R is Range`'s
+            // `nextwith $min, $max`), which is not a `Mu.new` call.
+            "new" if matches!(invocant.view(), ValueView::Package(_)) => {
+                Some(self.dispatch_native_new(invocant, args.to_vec()))
+            }
             "clone" | "new" => {
                 let mut full = vec![invocant];
                 full.extend_from_slice(args);
