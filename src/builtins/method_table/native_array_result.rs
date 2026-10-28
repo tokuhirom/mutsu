@@ -42,14 +42,14 @@ pub(crate) fn retype(receiver: &Value, method: &str, answer: Value) -> Value {
     let Some(elem) = data.value_type.as_deref().filter(|e| is_native_elem(e)) else {
         return answer;
     };
-    let ValueView::Seq(body) = answer.view() else {
-        return answer;
+    // The answer is a `Seq` or, when a native fast path built it, a `List`.
+    let items = match answer.view() {
+        // Only an eagerly produced answer: a deferred source would need pulling.
+        ValueView::Seq(body) if body.is_settled_for_rows() => body.live_generation().to_vec(),
+        ValueView::Array(list, ArrayKind::List) => list.items().to_vec(),
+        _ => return answer,
     };
-    // Only an eagerly produced answer: a deferred source would need pulling.
-    if !body.is_settled_for_rows() {
-        return answer;
-    }
-    let mut out = ArrayData::new(body.live_generation().to_vec());
+    let mut out = ArrayData::new(items);
     out.value_type = data.value_type.clone();
     out.key_type = data.key_type.clone();
     out.declared_type = data.declared_type.clone();
