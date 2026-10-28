@@ -109,14 +109,17 @@ impl Interpreter {
         if !Self::is_baggy_storage_method(method) {
             return None;
         }
-        if !attributes.contains_key("__baggy_data__") {
+        if !attributes.contains_key(crate::symbol::wk::baggy_data()) {
             return None;
         }
         let cn = class_name.resolve();
         if self.has_user_method_including_role(&cn, method) {
             return None;
         }
-        attributes.as_map().get("__baggy_data__").cloned()
+        attributes
+            .as_map()
+            .get(crate::symbol::wk::baggy_data())
+            .cloned()
     }
 
     /// QuantHash-subclass instance delegation (mut path): delegate a

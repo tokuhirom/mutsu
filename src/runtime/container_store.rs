@@ -86,7 +86,7 @@ impl Interpreter {
         // hash; its native `STORE` (what a user `STORE` reaches through
         // `Map.^lookup('STORE')`) stores there and answers the instance.
         if let ValueView::Instance { attributes, .. } = target.view()
-            && let Some(mut storage) = attributes.as_map().get("__mutsu_hash_storage").cloned()
+            && let Some(mut storage) = attributes.as_map().get(crate::symbol::wk::hash_storage()).cloned()
             && matches!(storage.view(), ValueView::Hash(..))
         {
             let stored = self.native_array_storage_mut(&mut storage, "STORE", args)?;

@@ -328,12 +328,12 @@ impl Interpreter {
             // the reserved backing array, which `.elems` and indexing read; a
             // `'$!reified'` bind has to land there (Hash2Class::List, #15138).
             ValueView::Instance { attributes, .. }
-                if attributes.as_map().contains_key("__mutsu_array_storage") =>
+                if attributes.as_map().contains_key(crate::symbol::wk::array_storage()) =>
             {
                 let Some(elems) = Self::nqp_elems_of(storage) else {
                     return false;
                 };
-                let kind = match attributes.as_map().get("__mutsu_array_storage") {
+                let kind = match attributes.as_map().get(crate::symbol::wk::array_storage()) {
                     Some(old) => match old.view() {
                         ValueView::Array(_, kind) => Some(kind),
                         _ => None,
@@ -348,7 +348,7 @@ impl Interpreter {
                 true
             }
             ValueView::Instance { attributes, .. }
-                if attributes.as_map().contains_key("__mutsu_hash_storage") =>
+                if attributes.as_map().contains_key(crate::symbol::wk::hash_storage()) =>
             {
                 let ValueView::Hash(_) = storage.view() else {
                     return false;

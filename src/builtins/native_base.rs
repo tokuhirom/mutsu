@@ -111,7 +111,7 @@ fn subclass_payload(target: &Value) -> Option<Value> {
         .or_else(|| map.get(SEQ_PAYLOAD))
         .or_else(|| map.get(VERSION_PAYLOAD))
         .or_else(|| map.get(DEPSPEC_PAYLOAD))
-        .or_else(|| map.get("__baggy_data__"))
+        .or_else(|| map.get(crate::symbol::wk::baggy_data()))
         .cloned()
 }
 
@@ -164,7 +164,7 @@ pub(crate) fn has_collection_payload(target: &Value) -> bool {
     map.contains_key("__mutsu_pair_value")
         || map.contains_key(SEQ_PAYLOAD)
         || map.contains_key(RANGE_PAYLOAD)
-        || map.contains_key("__baggy_data__")
+        || map.contains_key(crate::symbol::wk::baggy_data())
 }
 
 /// The value standing in for `target` as the invocant of the built-in

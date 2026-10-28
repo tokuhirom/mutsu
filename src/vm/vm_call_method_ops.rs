@@ -756,7 +756,7 @@ impl Interpreter {
         else {
             return false;
         };
-        if !attributes.contains_key("__mutsu_array_storage") {
+        if !attributes.contains_key(crate::symbol::wk::array_storage()) {
             return false;
         }
         let cn = class_name.resolve();
@@ -1792,7 +1792,7 @@ impl Interpreter {
                     let cn = class_name.resolve();
                     if !self.has_user_method(&cn, method)
                         && !Self::is_type_identity_method(method)
-                        && attributes.contains_key("__mutsu_array_storage")
+                        && attributes.contains_key(crate::symbol::wk::array_storage())
                         && self
                             .mro_readonly(&cn)
                             .iter()
@@ -1808,7 +1808,7 @@ impl Interpreter {
                                 Some(source) => source?,
                                 None => attributes
                                     .as_map()
-                                    .get("__mutsu_array_storage")
+                                    .get(crate::symbol::wk::array_storage())
                                     .cloned()
                                     .unwrap_or(Value::real_array(Vec::new())),
                             };

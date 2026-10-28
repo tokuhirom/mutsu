@@ -315,7 +315,7 @@ impl Interpreter {
             if !self.has_user_method(class, method)
                 && !Self::is_type_identity_method(method)
                 && let ValueView::Instance { attributes, .. } = target.view()
-                && attributes.contains_key("__mutsu_array_storage")
+                && attributes.contains_key(crate::symbol::wk::array_storage())
                 && self
                     .mro_readonly(class)
                     .iter()
@@ -323,7 +323,7 @@ impl Interpreter {
             {
                 let storage = attributes
                     .as_map()
-                    .get("__mutsu_array_storage")
+                    .get(crate::symbol::wk::array_storage())
                     .cloned()
                     .unwrap_or(Value::real_array(Vec::new()));
                 if let Some(native_result) = self.try_native_method(&storage, method_sym, &args) {

@@ -716,6 +716,16 @@ pub(crate) mod wk {
     well_known! {
         /// The topic `$_`. Env keys are stored sigil-less, so this is `"_"`.
         topic => "_";
+        /// The backing attributes of an Array-, Hash- or Baggy-subclass
+        /// instance. Asked of every `Instance` that is itemized, passed or
+        /// stored, so the probe must not hash the literal each time
+        /// (`Symbol::lookup` on a `&str` key is ~120 Ir).
+        array_storage => "__mutsu_array_storage";
+        hash_storage => "__mutsu_hash_storage";
+        baggy_data => "__baggy_data__";
+        /// The marker an `Attribute` meta-object's instance carries; asked of every
+        /// `Instance` a type check sees (`attribute_identity::is_bootstrapattr`).
+        bootstrapattr_marker => "__mutsu_is_bootstrapattr";
         /// The dispatcher builtins `callsame` / `nextsame` and the `&`-sigiled
         /// env keys a lexical override of them binds under
         /// (`vm_call_dispatcher_builtin`).

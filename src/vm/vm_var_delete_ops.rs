@@ -537,8 +537,8 @@ impl Interpreter {
         // itself defers to a real user override when the class declares one.
         if let Some(target) = self.env().get(&var_name).cloned()
             && let ValueView::Instance { attributes, .. } = target.view()
-            && (attributes.contains_key("__mutsu_hash_storage")
-                || attributes.contains_key("__baggy_data__"))
+            && (attributes.contains_key(crate::symbol::wk::hash_storage())
+                || attributes.contains_key(crate::symbol::wk::baggy_data()))
         {
             let idx_arg = match idx.view() {
                 ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),

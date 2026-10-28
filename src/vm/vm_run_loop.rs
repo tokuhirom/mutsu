@@ -1438,8 +1438,8 @@ impl Interpreter {
             // type checks, lvalue writes, and subclass delegation remain
             // transparent. Record scalar itemization only as renderer metadata.
             ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_array_storage")
-                    || attributes.contains_key("__mutsu_hash_storage") =>
+                if attributes.contains_key(crate::symbol::wk::array_storage())
+                    || attributes.contains_key(crate::symbol::wk::hash_storage()) =>
             {
                 attributes.insert(
                     crate::builtins::methods_0arg::raku_repr::RAKU_SCALAR_ITEMIZED_KEY,

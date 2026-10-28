@@ -259,8 +259,8 @@ impl Interpreter {
                     // instance) is assignable; a plain object `self` stays
                     // immutable (X::Assignment::RO).
                     None if matches!(aggregate.view(), ValueView::Instance { attributes, .. }
-                        if attributes.as_map().contains_key("__mutsu_hash_storage")
-                            || attributes.as_map().contains_key("__mutsu_array_storage")) =>
+                        if attributes.as_map().contains_key(crate::symbol::wk::hash_storage())
+                            || attributes.as_map().contains_key(crate::symbol::wk::array_storage())) =>
                     {
                         let stored =
                             self.try_compiled_method_or_interpret(current, "STORE", vec![val])?;
