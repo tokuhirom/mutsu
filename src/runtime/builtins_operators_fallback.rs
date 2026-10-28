@@ -1339,6 +1339,18 @@ impl Interpreter {
             return self.eval_call_on_value(sub_val, args.to_vec());
         }
 
+        // A routine a top-level `use` BELOW this call imports: Raku binds the
+        // `use` at compile time, so a name nothing else resolved still means it.
+        match self.unit_late_import(name) {
+            Some(crate::runtime::lexical_imports::LexicalImport::Code(value)) => {
+                return self.eval_call_on_value(value, args.to_vec());
+            }
+            Some(crate::runtime::lexical_imports::LexicalImport::Routine(def)) => {
+                return self.call_routine_def(&def, args.to_vec());
+            }
+            None => {}
+        }
+
         // A CORE term constant called as a routine is `X::Undeclared` naming
         // `&name`, not the undeclared-routine class -- see CORE_TERM_CONSTANTS.
         if crate::runtime::undeclared_routines::CORE_TERM_CONSTANTS.contains(&name) {
