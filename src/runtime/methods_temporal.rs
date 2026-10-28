@@ -47,6 +47,16 @@ impl super::Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let owners = self.temporal_instance_owners(target)?;
+        // `Date.gist` and `Mu.Stringy` are `self.Str`: a subclass that
+        // overrides `Str` answers both through it.
+        if args.is_empty()
+            && matches!(method, "gist" | "Stringy")
+            && let ValueView::Instance { class_name, .. } = target.view()
+            && !matches!(class_name.as_str(), "Date" | "DateTime")
+            && self.has_user_method(&class_name.resolve(), "Str")
+        {
+            return Some(self.call_method_with_values(target.clone(), "Str", Vec::new()));
+        }
         crate::builtins::method_table::invoke_owner(self, owners, method, args, || target.clone())
     }
 }
