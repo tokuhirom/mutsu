@@ -2187,7 +2187,10 @@ impl Compiler {
                     }
                 }
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
-                if let Some(chain_idx) = self.lexical_import_chain_idx(*name) {
+                if let Some(chain_idx) = self
+                    .lexical_import_chain_idx(*name)
+                    .or_else(|| self.late_import_chain_idx(*name))
+                {
                     self.code.emit(OpCode::LexImportCall { chain_idx });
                 }
                 self.code.emit(OpCode::CallFunc {
@@ -2225,7 +2228,9 @@ impl Compiler {
                 // A call a lexical import may answer (ADR-8751) keeps its named
                 // arguments in-band: `LexImportCall` hands the stack to a code
                 // object, which takes the pairs as they are.
-                let lex_import_chain = self.lexical_import_chain_idx(*name);
+                let lex_import_chain = self
+                    .lexical_import_chain_idx(*name)
+                    .or_else(|| self.late_import_chain_idx(*name));
                 // The listop form of the same rule the method form gets in
                 // `expr_method.rs`: `map { $_ = 5 }, 1, 2` binds the callback's
                 // implicit topic to a bare item, which raku refuses to assign

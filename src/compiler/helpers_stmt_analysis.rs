@@ -559,6 +559,60 @@ impl Compiler {
         }
     }
 
+    /// The fallback chain of a bareword call written above the unit's
+    /// top-level `use`: Raku binds the `use` at compile time, so a name that
+    /// meant nothing before it still reaches the imported routine. The sets
+    /// [`Self::lexical_import_chain_idx`] drops for their line are kept behind
+    /// [`crate::runtime::lexical_imports::LATE_IMPORT_MARK`]; the run-time
+    /// call site uses them only when the name resolves nowhere else.
+    // Cost: O(c), c = enclosing `use`-blocks (usually 1).
+    pub(super) fn late_import_chain_idx(&mut self, name: Symbol) -> Option<u32> {
+        if self.lexical_import_chain.is_empty()
+            || self.lexically_in_routine
+            || crate::qualified::is_qualified(name)
+            || name.resolve().starts_with("__mutsu")
+            || crate::runtime::Interpreter::is_builtin_function(&name.resolve())
+            || self.amp_binding_in_active_scope(&name.resolve())
+            || self
+                .inherited_scope_routine_decls
+                .iter()
+                .chain(self.scope_routine_decls.iter())
+                .any(|&(_, decl)| decl == name)
+        {
+            return None;
+        }
+        let line = self.last_source_line?;
+        let mut chain = vec![Symbol::intern(
+            crate::runtime::lexical_imports::LATE_IMPORT_MARK,
+        )];
+        for id in self.lexical_import_chain.iter().rev() {
+            if self
+                .unit_set_line
+                .get(id)
+                .is_some_and(|&use_line| line < use_line)
+                && self.unit_active_sets.contains(id)
+                && self
+                    .lexical_import_chain
+                    .iter()
+                    .filter(|c| *c == id)
+                    .count()
+                    == 1
+                && !chain.contains(id)
+            {
+                chain.push(*id);
+            }
+        }
+        if chain.len() == 1 {
+            return None;
+        }
+        let chains = &mut self.code.lexical_import_chains;
+        if let Some(i) = chains.iter().position(|c| *c == chain) {
+            return Some(i as u32);
+        }
+        chains.push(chain);
+        Some((chains.len() - 1) as u32)
+    }
+
     pub(super) fn lexical_import_chain_idx(&mut self, name: Symbol) -> Option<u32> {
         if self.lexical_import_chain.is_empty()
             || crate::qualified::is_qualified(name)

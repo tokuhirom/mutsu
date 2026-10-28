@@ -30,6 +30,12 @@ pub(crate) enum LexicalImport {
 /// the importing block declares itself (`Compiler::with_block_multis`).
 pub(crate) const BLOCK_MULTIS_MARK: &str = "\u{1}multis:";
 
+/// Leads a lexical import chain that is only the fallback for a bareword call
+/// written above the unit's top-level `use` (see
+/// `Compiler::late_import_chain_idx`): the sets after it answer the call only
+/// when the name means nothing else at run time.
+pub(crate) const LATE_IMPORT_MARK: &str = "\u{1}late-import";
+
 /// Separates a lexical import set id's import list from the variables the
 /// compiler declares in the importing block for it
 /// (`Compiler::bind_block_imported_vars`): the import writes no env alias

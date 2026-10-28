@@ -41,8 +41,26 @@ impl Interpreter {
         let Some(chain) = code.lexical_import_chains.get(chain_idx as usize) else {
             return Ok(false);
         };
-        let Some(target) = self.lexical_import_operator_binding(chain, code.const_sym(name_idx))
-        else {
+        let name = code.const_sym(name_idx);
+        // A fallback chain (a call written above the unit's `use`) answers
+        // only a name that means nothing else here.
+        let chain = match chain.split_first() {
+            Some((mark, late))
+                if mark.with_str(|m| m == crate::runtime::lexical_imports::LATE_IMPORT_MARK) =>
+            {
+                if self.has_function(name.as_str())
+                    || self
+                        .env()
+                        .get_sym(crate::runtime::dispatch_key::amp_sym(name))
+                        .is_some()
+                {
+                    return Ok(false);
+                }
+                late
+            }
+            _ => chain.as_slice(),
+        };
+        let Some(target) = self.lexical_import_operator_binding(chain, name) else {
             return Ok(false);
         };
         let Some((arity, arg_sources_idx, bare_args)) = call else {
