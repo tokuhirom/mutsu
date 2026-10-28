@@ -157,7 +157,15 @@ impl Interpreter {
     /// so a bound alias of a subscriptable object (`my $t := $u.query`) is
     /// recognized as one.
     pub(crate) fn index_assign_root_object(&mut self, var_name: &str) -> Option<Value> {
-        let root = self.env().get(var_name)?.clone();
+        let mut root = self.env().get(var_name)?.clone();
+        // An `is rw` accessor's `Proxy` (Red's `has Json $.data is rw is
+        // column`, the root of `.data<a><b> = v`): the chain stores through the
+        // object the Proxy FETCHes to.
+        if root.is_proxy_value()
+            && let Ok(fetched) = self.auto_fetch_proxy(&root)
+        {
+            root = fetched;
+        }
         Some(
             if matches!(
                 root.view(),
