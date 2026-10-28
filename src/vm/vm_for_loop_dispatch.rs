@@ -264,6 +264,10 @@ impl Interpreter {
             *ip = loop_end;
             return Ok(());
         }
+        // A bare instance with its own lazy `iterator` is pulled per iteration.
+        if let Some(lazy) = self.lazy_for_source_of_instance(&iterable)? {
+            iterable = lazy;
+        }
         // For gather-based, sequence-spec, or lazy map/grep pipeline LazyList
         // iterables, iterate lazily by pulling items one at a time. This avoids
         // materializing infinite sequences.
@@ -841,6 +845,14 @@ impl Interpreter {
     ) -> Result<Option<Vec<Value>>, RuntimeError> {
         if !crate::builtins::native_base::has_iterable_payload(iterable) {
             return Ok(None);
+        }
+        // A subclass with its own `iterator` (and no `list`) is iterated through
+        // it: `Range.list` / `Seq.list` read `self.iterator` (#15353).
+        if let ValueView::Instance { class_name, .. } = iterable.view() {
+            let cn = class_name.resolve();
+            if self.has_user_method(&cn, "iterator") && !self.has_user_method(&cn, "list") {
+                return Ok(None);
+            }
         }
         let list = self.try_compiled_method_or_interpret(iterable.clone(), "list", vec![])?;
         Ok(Some(crate::runtime::utils::value_to_list(&list)))

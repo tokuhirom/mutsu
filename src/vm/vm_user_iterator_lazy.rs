@@ -77,3 +77,43 @@ impl Interpreter {
         Ok(crate::runtime::coerce_to_array(Value::real_array(items)))
     }
 }
+
+impl Interpreter {
+    /// `for $instance -> ...` over a bare instance whose class has its own
+    /// `iterator` (`for.map` reads `self.iterator`): the lazy list over it
+    /// when that iterator is lazy, so a never-ending iterator is pulled one
+    /// iteration at a time, else the list of its drained items; `None` when
+    /// `iterable` is anything else.
+    // Cost: O(1) for a lazy iterator, O(n) pulls (n = items) for a finite one,
+    // plus one user `iterator` call and one `is-lazy` call.
+    pub(crate) fn lazy_for_source_of_instance(
+        &mut self,
+        iterable: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = iterable.view()
+        else {
+            return Ok(None);
+        };
+        let cn = class_name.resolve();
+        if attributes.contains_key(crate::symbol::wk::array_storage())
+            || !self.has_user_method(&cn, "iterator")
+        {
+            return Ok(None);
+        }
+        let iterator = self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?;
+        if self.is_lazy_user_iterator(&iterator)? {
+            return Ok(Some(Self::lazy_list_over_user_iterator(iterator)));
+        }
+        // A finite iterator is drained here: it was already obtained, and
+        // asking the class for `iterator` again could repeat its side effects.
+        let (items, _) = self.drive_iterator_value_items(iterator)?;
+        Ok(Some(Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+            crate::value::ArrayKind::List,
+        )))
+    }
+}
