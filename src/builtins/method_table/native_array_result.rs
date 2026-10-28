@@ -35,6 +35,7 @@ pub(crate) fn retype(receiver: &Value, method: &str, answer: Value) -> Value {
     if !retypes(method) {
         return answer;
     }
+    let receiver = receiver.deref_container();
     let ValueView::Array(data, ArrayKind::Array) = receiver.view() else {
         return answer;
     };
