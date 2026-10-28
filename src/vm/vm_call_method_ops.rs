@@ -456,9 +456,7 @@ impl Interpreter {
                 // plain scalar read skips the MRO attribute collection, which
                 // clones every attribute definition (#10229).
                 let attr = if matches!(out.view(), ValueView::Array(..) | ValueView::Hash(_)) {
-                    self.collect_class_attributes(&cn)
-                        .into_iter()
-                        .find(|attr| attr.is_public && attr.name == method)
+                    self.find_public_class_attribute(&cn, method)
                 } else {
                     None
                 };

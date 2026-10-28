@@ -739,6 +739,35 @@ impl Interpreter {
         attrs
     }
 
+    /// The public attribute `name` of `class_name` exactly as
+    /// `collect_class_attributes(class_name).into_iter().find(|a| a.is_public
+    /// && a.name == name)` would answer, but cloning only the candidates named
+    /// `name` instead of every attribute definition of the MRO.
+    // Cost: O(m * a), m = classes in the MRO, a = attributes per class; clones only the
+    // attributes named `name` (collect_class_attributes clones all of them).
+    pub(crate) fn find_public_class_attribute(
+        &mut self,
+        class_name: &str,
+        name: &str,
+    ) -> Option<ClassAttributeDef> {
+        let mro = self.class_mro(class_name);
+        let mut found: Vec<ClassAttributeDef> = Vec::new();
+        for cn in mro.iter().rev() {
+            if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
+                for attr in class_def.attributes.iter().filter(|a| a.name == name) {
+                    // Same override rule as `collect_class_attributes`: a
+                    // redeclaration of the same name and sigil replaces the
+                    // base-class slot, public or not.
+                    if let Some(pos) = found.iter().position(|a| a.sigil == attr.sigil) {
+                        found.remove(pos);
+                    }
+                    found.push(attr.clone());
+                }
+            }
+        }
+        found.into_iter().find(|a| a.is_public)
+    }
+
     /// Collect a class's attributes in *introspection* order — the order
     /// `.^attributes`, `.raku` and the default `.gist` enumerate them in.
     ///
