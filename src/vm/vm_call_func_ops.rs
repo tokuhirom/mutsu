@@ -2215,7 +2215,7 @@ impl Interpreter {
         // internal builtin. No user routine can carry the name, so the
         // resolution ladder below could only conclude what the name already
         // says: it ends at the interpreter terminal.
-        if call_me_override.is_none() && name_sym == crate::symbol::wk::subscript_adverb() {
+        if false && call_me_override.is_none() && name_sym == crate::symbol::wk::subscript_adverb() {
             return self.dispatch_interpreter_terminal(code, name, args, arg_sources);
         }
         if let Some(callable) = call_me_override {
