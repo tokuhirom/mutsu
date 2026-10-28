@@ -201,6 +201,31 @@ pub(super) fn platform_library_name(name: &str) -> String {
     }
 }
 
+/// The file name a `libraries/<name>` resource of an uninstalled distribution
+/// directory resolves to: the platform name (`libfoo.so`) when it exists,
+/// otherwise the library file of another platform's naming that the directory
+/// ships (`foo.dll`, `foo.so`, `libfoo.dylib`), as rakudo's `-I` repository
+/// answers; the platform name when nothing matches.
+// Cost: O(f), f = entries of `resources/libraries`.
+pub(super) fn library_resource_file_name(libraries_dir: &std::path::Path, name: &str) -> String {
+    let platform = platform_library_name(name);
+    if libraries_dir.join(&platform).exists() {
+        return platform;
+    }
+    let mut candidates: Vec<String> = std::fs::read_dir(libraries_dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|file| {
+            let stem = file.split('.').next().unwrap_or(file);
+            file.contains('.') && (stem == name || stem.strip_prefix("lib") == Some(name))
+        })
+        .collect();
+    candidates.sort();
+    candidates.into_iter().next().unwrap_or(platform)
+}
+
 pub(super) fn hash_strings(strings: &[&str]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
