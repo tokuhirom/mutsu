@@ -406,7 +406,16 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
     // the variable name: without this, the first `@` falls through as an
     // anonymous array and leaves `@array` as a discarded following term.
     if twigil.is_empty() && rest.starts_with('@') {
-        return array_var(rest);
+        let (after, var) = array_var(rest)?;
+        // `@@x` is `@(@x)`: a user `Positional` bound to `@x` answers its
+        // `.list` (an Array is its own list context).
+        return Ok((
+            after,
+            Expr::Contextualizer {
+                kind: crate::ast::ContextKind::List,
+                inner: Box::new(Expr::Grouped(Box::new(var))),
+            },
+        ));
     }
     // Bare @ (anonymous array variable) — each occurrence gets a unique name
     let next_is_ident =
