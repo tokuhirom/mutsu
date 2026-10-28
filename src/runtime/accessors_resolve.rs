@@ -810,9 +810,11 @@ impl Interpreter {
             });
         // A routine lexical to a scope that has since exited (a class body's
         // `my method`) is still carried by the closure env under its reserved
-        // key.
+        // key, for the routines (methods) that close over that scope; code
+        // outside any routine does not see a block's `sub` after it ends.
         if def.is_none()
             && !has_packages
+            && self.inside_routine()
             && let Some(sub_val) = self
                 .env
                 .get(&format!("{}{lookup_name}", crate::env::BLOCK_LEXICAL_SUB_PREFIX))
