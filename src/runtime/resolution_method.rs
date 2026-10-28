@@ -146,9 +146,18 @@ impl Interpreter {
                 }
             }
             // `multi method m($self where { ... }:)`: the invocant's own `where`.
+            // The clause was compiled in the method's declaring compunit, so
+            // a type that unit imported (`Json`) must resolve here too.
             if let Some(inv) = invocant
                 && pd.where_constraint.is_some()
-                && !self.invocant_where_accepts(pd, inv, Some(Symbol::intern(class_name)))
+                && !(match def.source_file.as_deref() {
+                    Some(file) => self.with_candidate_unit(file, |this| {
+                        this.invocant_where_accepts(pd, inv, Some(Symbol::intern(class_name)))
+                    }),
+                    None => {
+                        self.invocant_where_accepts(pd, inv, Some(Symbol::intern(class_name)))
+                    }
+                })
             {
                 self.restore_env_preserving_dynamics(saved_env);
                 self.set_current_package(saved_package);
