@@ -2039,6 +2039,20 @@ impl SubData {
             .is_none_or(|cf| cf.returns_container())
     }
 
+    /// [`Self::returns_container`] for a multi candidate: a compiled routine
+    /// answers exactly; one with no compiled body (the forwarding sub an
+    /// `is export` method installs) answers from its own declaration instead
+    /// of the "unknown means container" default, which made every call of
+    /// such a dispatcher run its callee under `rw_return_context` (#15094).
+    // Cost: O(1) for a compiled routine; as [`Self::declares_container_return`] otherwise.
+    pub(crate) fn candidate_returns_container(&self) -> bool {
+        if self.compiled_routine.is_some() {
+            self.returns_container()
+        } else {
+            self.declares_container_return()
+        }
+    }
+
     /// The strict twin of [`Self::returns_container`]: whether this code
     /// object's *own declaration* says it hands back a container, answering
     /// "decontainerizes" for a routine whose traits are unknown instead of

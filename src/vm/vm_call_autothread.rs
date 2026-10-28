@@ -427,8 +427,11 @@ impl Interpreter {
                 std::option::Option::None => junction_indices,
             }
         } else {
+            // A type-object receiver (`Path::Finder.skip-dir(any(...))`) binds
+            // its parameters by the same rules as an instance: a `Mu` parameter
+            // takes the junction whole.
             match target.view() {
-                ValueView::Instance { class_name, .. } => {
+                ValueView::Instance { class_name, .. } | ValueView::Package(class_name) => {
                     let resolved_args: Vec<Value> =
                         args.iter().map(Self::unwrap_junction_deep).collect();
                     match self.resolve_method_with_owner(
