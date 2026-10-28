@@ -440,15 +440,22 @@ impl Interpreter {
         // as a plain container. Instance-internal mutation travels through
         // the shared attribute cell, so no write-back is needed.
         if let ValueView::Instance { class_name, .. } = current.view() {
+            // An Int index may be either bracket (`[1]` or `{1}`), so the other
+            // protocol method stands in when the preferred one is absent; any
+            // other index is an associative subscript (`<k>`, `{"k"}`) and
+            // never reaches `ASSIGN-POS` -- Red's ColumnMethods has an
+            // ASSIGN-POS and serves `<k>` through AT-KEY.
             let (primary, secondary) = if matches!(index.view(), ValueView::Int(_)) {
-                ("ASSIGN-POS", "ASSIGN-KEY")
+                ("ASSIGN-POS", Some("ASSIGN-KEY"))
             } else {
-                ("ASSIGN-KEY", "ASSIGN-POS")
+                ("ASSIGN-KEY", None)
             };
             let cn = class_name.resolve();
             let m = if self.has_user_method(&cn, primary) {
                 Some(primary)
-            } else if self.has_user_method(&cn, secondary) {
+            } else if let Some(secondary) = secondary
+                && self.has_user_method(&cn, secondary)
+            {
                 Some(secondary)
             } else {
                 None

@@ -638,6 +638,47 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // `my $c = Col.new but Meths; $c<k> = v` where the role supplies a
+        // user AT-KEY/AT-POS: as for an instance below, the accessor owns the
+        // element container (it may be a Proxy), so the store goes through the
+        // method-lvalue machinery unless the role also supplies ASSIGN-KEY /
+        // ASSIGN-POS, which then owns the assignment.
+        if let Some(target) = target_slot
+            .and_then(|slot| self.locals.get(slot as usize).cloned())
+            .or_else(|| self.place_env_get(place, &var_name).cloned())
+            .map(|t| t.deref_container())
+            && let ValueView::Mixin(..) = target.view()
+            && !matches!(
+                self.stack.last().map(Value::view),
+                Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
+            )
+        {
+            let (at_method, assign_method) = if is_positional {
+                ("AT-POS", "ASSIGN-POS")
+            } else {
+                ("AT-KEY", "ASSIGN-KEY")
+            };
+            if self.mixin_composes_method(&target, at_method)
+                && !self.mixin_composes_method(&target, assign_method)
+            {
+                let idx_arg = match idx.view() {
+                    ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                    _ => idx.clone(),
+                };
+                let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+                let (val, _) = Self::unwrap_bind_index_value(raw_val);
+                let assigned = self.assign_method_lvalue_with_values(
+                    Some(&var_name),
+                    target,
+                    at_method,
+                    vec![idx_arg],
+                    val,
+                    false,
+                )?;
+                self.stack.push(assigned);
+                return Ok(());
+            }
+        }
         if let Some(target) = target_slot
             .and_then(|slot| self.locals.get(slot as usize).cloned())
             .or_else(|| self.place_env_get(place, &var_name).cloned())

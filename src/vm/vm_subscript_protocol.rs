@@ -36,13 +36,46 @@ impl Interpreter {
             }
             _ => false,
         };
-        if !dispatches {
-            return None;
-        }
         let idx_arg = match idx.view() {
             ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
             _ => idx.clone(),
         };
+        if !dispatches {
+            // No ASSIGN-* of its own: Any's default assigns through the object's
+            // `is rw` AT-POS / AT-KEY, which may hand back a Proxy
+            // (`make-column()<k> = v`), exactly as the variable-rooted op does.
+            let at_method = if is_positional { "AT-POS" } else { "AT-KEY" };
+            let owns_rw_accessor = match object.view() {
+                ValueView::Mixin(_, mixins) => {
+                    self.mixin_composes_method(object, at_method)
+                        && self.delegated_mixin_attr_key(mixins, at_method).is_none()
+                }
+                ValueView::Instance { class_name, attributes, .. } => {
+                    !crate::runtime::instance_backing::InstanceBacking::Array.is_in(&attributes)
+                        && !crate::runtime::instance_backing::InstanceBacking::Hash.is_in(&attributes)
+                        && !crate::runtime::instance_backing::InstanceBacking::Baggy.is_in(&attributes)
+                        && self
+                            .resolve_method_with_owner(
+                                class_name.as_str(),
+                                at_method,
+                                std::slice::from_ref(&idx_arg),
+                            )
+                            .is_some_and(|(_, def)| def.is_rw)
+                }
+                _ => false,
+            };
+            if !owns_rw_accessor {
+                return None;
+            }
+            return Some(self.assign_method_lvalue_with_values(
+                None,
+                object.clone(),
+                at_method,
+                vec![idx_arg],
+                val.clone(),
+                false,
+            ));
+        }
         Some(self.call_method_with_values(object.clone(), method, vec![idx_arg, val.clone()]))
     }
 }
