@@ -102,6 +102,16 @@ impl Interpreter {
             how_args.insert(0, target_package());
             return how_args;
         }
+        // `H.^mixin(R)` on a metaobject instance `H` is `H.HOW.mixin(H, R)`:
+        // the mixin must change `H` itself (and its cached `.HOW` slot), so
+        // the instance stays the invocant instead of its metaclass's type.
+        if method == "mixin"
+            && how_args
+                .first()
+                .is_some_and(|a| Self::how_target_from_value(a).is_some())
+        {
+            return how_args;
+        }
         match how_args.first().map(Value::view) {
             None => how_args.insert(0, target_package()),
             Some(ValueView::Instance { class_name, .. })
