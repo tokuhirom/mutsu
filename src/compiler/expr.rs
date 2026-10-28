@@ -377,7 +377,9 @@ impl Compiler {
                 if let Some(bare) = name
                     .strip_prefix("UNIT::")
                     .or_else(|| name.strip_prefix("MY::"))
-                    .filter(|bare| !bare.contains("::") && self.lexical_types_in_scope.contains(*bare))
+                    .filter(|bare| {
+                        !bare.contains("::") && self.lexical_types_in_scope.contains(*bare)
+                    })
                 {
                     let name_idx = self.code.add_constant(Value::str(bare.to_string()));
                     self.code.emit(OpCode::GetGlobal(name_idx));
