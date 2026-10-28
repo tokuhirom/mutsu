@@ -10,6 +10,13 @@ fn parse_single_handle_spec<'a>(input: &'a str, specs: &mut Vec<HandleSpec>) -> 
     if r.starts_with('<') {
         return parse_handle_word_list(r, specs);
     }
+    // A variable holding the names inside the parentheses: `handles(@PathAPI)`
+    // (HTML::Canvas), the parenthesised spelling of `handles @PathAPI`.
+    if r.starts_with(['$', '@', '%']) {
+        let (rest, expr) = expression(r)?;
+        specs.push(HandleSpec::Expr(Box::new(expr)));
+        return Ok((rest, ()));
+    }
     // Capture slips in a parenthesized list, e.g. `|SomeType.methods`.
     // The slip itself is only syntax here; declaration composition expands the
     // resulting value into individual method names.
