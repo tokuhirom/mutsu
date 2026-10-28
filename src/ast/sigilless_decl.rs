@@ -36,7 +36,7 @@ pub(crate) fn call_assign_expansion(
     is_state: bool,
     is_our: bool,
 ) -> Stmt {
-    Stmt::VarDecl {
+    Stmt::SyntheticBlock(vec![Stmt::VarDecl {
         marks: VarMarks {
             term: TermMark::Readonly,
             ..Default::default()
@@ -55,5 +55,5 @@ pub(crate) fn call_assign_expansion(
         constant: None,
         bind: None,
         where_constraint: None,
-    }
+    }])
 }

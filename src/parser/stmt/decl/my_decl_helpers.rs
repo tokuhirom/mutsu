@@ -133,7 +133,8 @@ pub(crate) fn build_sigilless_bind_stmt(
         Expr::BareWord(n) => is_value_term(n),
         _ => false,
     };
-    Stmt::VarDecl {
+    // A scopeless expansion, as in expression position (`foo(my \x = 1)`).
+    Stmt::SyntheticBlock(vec![Stmt::VarDecl {
         marks: crate::ast::var_marks::VarMarks {
             sigilless_decl: true,
             bound: binds_a_container,
@@ -161,7 +162,7 @@ pub(crate) fn build_sigilless_bind_stmt(
         constant: None,
         bind: None,
         where_constraint: None,
-    }
+    }])
 }
 
 /// The statement for a sigilless declaration as written: kept as a
