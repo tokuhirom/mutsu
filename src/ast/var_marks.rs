@@ -54,6 +54,29 @@ pub(crate) struct VarMarks {
     /// sat in a bind group before the mark existed and every "plain `my`"
     /// test still saw it as plain.
     pub(crate) bound: bool,
+    /// The declared name is a sigilless term, which the compiler tracks as such
+    /// (see [`TermMark`]).
+    pub(crate) term: TermMark,
+}
+
+/// How a declaration introduces a sigilless term (`my \x = 5`, `my \x := $y`,
+/// a pointy `-> \x`): the name reads from its local slot, not through `env`
+/// as a `$`-scalar or a bare package lookup.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum TermMark {
+    /// An ordinary declaration.
+    #[default]
+    No,
+    /// A term whose readonly state something else settles; the declaration only
+    /// stores it under its term key.
+    Slot,
+    /// A term that is readonly once declared: the value itself is bound, and a
+    /// later write is refused.
+    Readonly,
+    /// A term bound to whatever its initializer denotes (`my \x := $y`):
+    /// whether it is writable depends on that value, which only the run time
+    /// knows (`OpCode::MarkSigillessBind`).
+    Bound,
 }
 
 impl VarMarks {
@@ -74,6 +97,7 @@ impl VarMarks {
             && !self.method_assign_decl
             && !self.begin_static
             && !self.begin_static_definite
+            && self.term == TermMark::No
     }
 }
 
@@ -83,6 +107,16 @@ impl VarMarks {
 pub(crate) fn with_bound_mark(mut decl: super::Stmt) -> super::Stmt {
     if let super::Stmt::VarDecl { marks, .. } = &mut decl {
         marks.bound = true;
+    }
+    decl
+}
+
+/// `decl` with its [`VarMarks::term`] mark set; anything but a `VarDecl` is
+/// returned as is.
+// Cost: O(1).
+pub(crate) fn with_term_mark(mut decl: super::Stmt, term: TermMark) -> super::Stmt {
+    if let super::Stmt::VarDecl { marks, .. } = &mut decl {
+        marks.term = term;
     }
     decl
 }

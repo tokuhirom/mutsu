@@ -315,7 +315,7 @@ impl Interpreter {
         // return — out of whatever sub later called that block — instead of
         // throwing `X::ControlFlow::Return`
         // (`roast/S04-statements/return.t` test 15). Both flags feed the same
-        // decision (`compile_closure_body_with_routine_flag` ORs them into a
+        // decision (`compile_closure_body_of_kind` ORs them into a
         // nested block's own), so both ask the same question.
         //
         // Only for an EVAL unit. The other callers hand this an ordinary
@@ -397,7 +397,7 @@ impl Interpreter {
         // past any intervening routine boundary, instead of being caught by
         // the first one the signal reaches. A nested closure/sub compiled
         // from *inside* this body gets its own fresh `Compiler`/`CompiledCode`
-        // (`compile_closure_body_with_routine_flag`) that never sees this
+        // (`compile_closure_body_of_kind`) that never sees this
         // field, so this only affects `return` written directly in the EVAL
         // unit's own mainline -- exactly `EVAL`'s own compilation unit, not
         // a routine the snippet itself declares.

@@ -1,4 +1,5 @@
 use super::*;
+use crate::ast::var_marks::TermMark;
 
 impl Compiler {
     pub(super) fn compile_expr_do_stmt(&mut self, stmt: &Stmt) {
@@ -1171,9 +1172,9 @@ impl Compiler {
                 self.compile_do_block_expr_scoped(inner, &None, crate::ast::DoBlockOrigin::Desugar);
             }
             Stmt::SyntheticBlock(inner)
-                if inner.last().is_some_and(|s| {
-                    matches!(s, Stmt::MarkSigillessReadonly(_) | Stmt::MarkSigilless(_))
-                }) =>
+                if inner.last().is_some_and(
+                    |s| matches!(s, Stmt::VarDecl { marks, .. } if marks.term != TermMark::No),
+                ) =>
             {
                 self.compile_synthetic_block_inline(inner);
             }

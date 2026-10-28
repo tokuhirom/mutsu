@@ -1854,11 +1854,6 @@ pub(crate) struct Compiler {
     /// degrade to the literal name string once the creating frame is gone
     /// (escaping closure / `.^add_method`).
     enclosing_sigilless: std::collections::HashSet<String>,
-    /// Set just before compiling a `VarDecl` that declares a sigilless TERM
-    /// (`my \x`, a `with`/`if` pointy `-> \x`): the parser spells it bare,
-    /// like a scalar `my $x`, and this is what stores it under the term key
-    /// instead (ADR-12441).
-    decl_is_term: bool,
     /// Local names visible in enclosing compiled frames. A same-named local
     /// declaration in this compiler shadows a captured binding even though the
     /// outer binding has no slot in this chunk.
@@ -2198,7 +2193,6 @@ impl Compiler {
             outer_constant_names: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
             enclosing_sigilless: std::collections::HashSet::new(),
-            decl_is_term: false,
             enclosing_local_names: std::collections::HashSet::new(),
             implicit_underscore: false,
             enclosing_underscore_implicit: false,
@@ -4354,10 +4348,10 @@ impl Compiler {
         // type object of the value its parameter received, like `my \T = $x.WHAT`.
         // A bare capture's parameter is named `__type_capture__T` by the parser.
         let capture_bind = |var: &str, cap: &str| {
-            Stmt::SyntheticBlock(vec![
-                Stmt::VarDecl {
+            Stmt::SyntheticBlock(vec![Stmt::VarDecl {
                     marks: crate::ast::var_marks::VarMarks {
                         bound: true,
+                        term: crate::ast::var_marks::TermMark::Bound,
                         ..Default::default()
                     },
                     anonymous: false,
@@ -4381,9 +4375,7 @@ impl Compiler {
                     constant: None,
                     bind: None,
                     where_constraint: None,
-                },
-                Stmt::MarkSigilless(cap.to_string()),
-            ])
+            }])
         };
         if let (Some(name), Some(def)) = (param, param_def)
             && let Some(cap) = &def.type_capture

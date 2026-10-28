@@ -195,9 +195,7 @@ fn flatten_synthetic_blocks(stmts: &mut Vec<Stmt>) {
     let old = std::mem::take(stmts);
     for stmt in old {
         if let Stmt::SyntheticBlock(ref inner) = stmt {
-            let has_mark_readonly = inner
-                .iter()
-                .any(|s| matches!(s, Stmt::MarkReadonly(..) | Stmt::MarkSigillessReadonly(_)));
+            let has_mark_readonly = inner.iter().any(|s| matches!(s, Stmt::MarkReadonly(..)));
             // Keep SyntheticBlocks with a bind marker intact so the compiler
             // can detect `:=` bind context.
             let has_mark_bind = crate::ast::var_marks::is_bind_group(inner);
@@ -579,6 +577,10 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
         return None;
     };
     if constant.is_some() {
+        return None;
+    }
+    // A sigilless term has no container to declare ahead of its binding.
+    if marks.term != crate::ast::var_marks::TermMark::No {
         return None;
     }
     // A shaped declaration (`my @a[2;2]`, `my @a[2;2] = (1,2;3,4)`) builds its

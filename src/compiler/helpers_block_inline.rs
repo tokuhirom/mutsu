@@ -1,4 +1,5 @@
 use super::*;
+use crate::ast::var_marks::TermMark;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
@@ -295,31 +296,10 @@ impl Compiler {
         self.note_block_lexsubs(stmts);
         // Hoist `my TYPE $var;` type constraints (see `hoist_typed_var_decls`).
         self.hoist_typed_var_decls(stmts);
-        // Register sigilless names BEFORE compiling their VarDecl (mirroring
-        // the `Stmt::SyntheticBlock` arm of `compile_stmt`): the marker
-        // statement comes AFTER the decl, but the decl must already know the
-        // name is sigilless so its store binds the value itself instead of
-        // itemizing it into a scalar container. This value-position path is
-        // how `if my \r = @rows { r.Array }` compiles its condition
-        // (`DoStmt(SyntheticBlock([VarDecl, MarkSigillessReadonly]))`) —
-        // without the pre-pass, `r` became `$[...]` and `r.Array` nested.
-        let term_names = Self::sigilless_mark_names(stmts);
-        for name in &term_names {
-            self.sigilless_locals.insert((*name).to_string());
-        }
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last {
                 match stmt {
-                    // MarkSigillessReadonly at block-final position: compile
-                    // the mark statement, then load the variable's value so
-                    // `my \x = 42` used in expression context returns 42.
-                    Stmt::MarkSigillessReadonly(name) | Stmt::MarkSigilless(name) => {
-                        self.compile_stmt(stmt);
-                        self.compile_expr(&Expr::BareWord(name.clone()));
-                        self.pop_dynamic_scope_lexical(saved);
-                        return;
-                    }
                     Stmt::Expr(expr) => {
                         self.with_stmt_root(|c| c.compile_expr(expr));
                         // Don't emit Pop — leave value on stack as block's return value
@@ -424,6 +404,14 @@ impl Compiler {
                     // expression-position path already applies the traits and
                     // reads the container back, so route the declaration
                     // through it rather than growing a second copy of the rule.
+                    // A sigilless term declaration (`my \x = 42` as a value) is the
+                    // value of the term it declares.
+                    Stmt::VarDecl { name, marks, .. } if marks.term != TermMark::No => {
+                        self.compile_stmt(stmt);
+                        self.compile_expr(&Expr::BareWord(name.clone()));
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
                     Stmt::VarDecl {
                         name,
                         custom_traits,
@@ -694,10 +682,7 @@ impl Compiler {
                     _ => {}
                 }
             }
-            self.decl_is_term =
-                matches!(stmt, Stmt::VarDecl { name, .. } if term_names.contains(&name.as_str()));
             self.compile_stmt(stmt);
-            self.decl_is_term = false;
             // ADR-0052: a `given`/`when`/`default` statement nets one stack
             // value. A non-last one must be popped, or it would shadow the
             // block's real tail value (the stack top wins). The last one is

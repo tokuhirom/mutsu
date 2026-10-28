@@ -9,6 +9,7 @@
 
 use super::InlineModuleExport;
 use crate::ast::Stmt;
+use crate::ast::var_marks::TermMark;
 use std::collections::HashMap;
 
 /// Does this module install its imports at run time through a `sub EXPORT`
@@ -152,12 +153,10 @@ fn export_body_members(body: &[Stmt]) -> Vec<&Stmt> {
 /// (`Unknown function: et`) — the infix guess never even got a chance,
 /// because the term guess ran first and swallowed it as an argument.
 ///
-/// `my \x = ...` compiles to a `VarDecl` immediately followed by a sibling
-/// `MarkSigillessReadonly` naming the same variable (the parser's marker for
-/// a sigilless declaration); this walks the hook's body
-/// ([`export_body_members`]: through the `SyntheticBlock` such a pair is
-/// nested in, and into a bare block that ends the body) collecting
-/// every one it finds, so the importer's parse learns `vrai` is a term with
+/// `my \x = ...` compiles to a `VarDecl` marked [`TermMark::Readonly`]
+/// (the parser's mark for a sigilless declaration); this walks the hook's body
+/// ([`export_body_members`]: through a `SyntheticBlock`, and into a bare block
+/// that ends the body) collecting every one it finds, so the importer's parse learns `vrai` is a term with
 /// no arguments to swallow, the same way an exported `constant` already does.
 fn collect_export_body_value_terms(stmts: &[Stmt], out: &mut Vec<String>) {
     let members = export_body_members(stmts);
@@ -169,12 +168,9 @@ fn collect_export_body_value_terms(stmts: &[Stmt], out: &mut Vec<String>) {
             out.push(decl.name.clone());
         }
     }
-    for pair in members.windows(2) {
-        if let [
-            Stmt::VarDecl { name, .. },
-            Stmt::MarkSigillessReadonly(marked),
-        ] = pair
-            && marked == name
+    for member in &members {
+        if let Stmt::VarDecl { name, marks, .. } = member
+            && marks.term == TermMark::Readonly
         {
             out.push(name.clone());
         }

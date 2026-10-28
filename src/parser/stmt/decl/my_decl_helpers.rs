@@ -5,6 +5,7 @@ use super::super::{keyword, qualified_ident};
 use super::constant_subset::constant_decl;
 use super::helpers::{parse_sigilless_decl_name, register_term_symbol_from_decl_name};
 use super::{parse_decl_type_constraint, parse_statement_modifier};
+use crate::ast::var_marks::TermMark;
 use crate::ast::{Expr, Stmt};
 use crate::parser::stmt::assign::parse_colon_args;
 use crate::symbol::Symbol;
@@ -132,10 +133,15 @@ pub(crate) fn build_sigilless_bind_stmt(
         Expr::BareWord(n) => is_value_term(n),
         _ => false,
     };
-    let decl = Stmt::VarDecl {
+    Stmt::VarDecl {
         marks: crate::ast::var_marks::VarMarks {
             sigilless_decl: true,
             bound: binds_a_container,
+            term: if binds_a_container {
+                TermMark::Bound
+            } else {
+                TermMark::Readonly
+            },
             ..Default::default()
         },
         anonymous: false,
@@ -155,11 +161,6 @@ pub(crate) fn build_sigilless_bind_stmt(
         constant: None,
         bind: None,
         where_constraint: None,
-    };
-    if binds_a_container {
-        Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigilless(name)])
-    } else {
-        Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)])
     }
 }
 

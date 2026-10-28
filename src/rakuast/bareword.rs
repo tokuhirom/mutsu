@@ -14,6 +14,7 @@ use std::collections::HashMap;
 
 use super::convert::{leaf_field, name_from_identifier, node_field};
 use super::{RakuAstClass, RakuAstNode, core_term_names, core_type_names, name_parts};
+use crate::ast::var_marks::TermMark;
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_param, walk_stmt, walk_stmts};
 use crate::qualified::qualified;
@@ -339,8 +340,8 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                     }
                 }
                 // A method literal's folded sigilless invocant is a bind
-                // followed by this marker, just like any other term binding.
-                Stmt::MarkSigilless(name) | Stmt::MarkSigillessReadonly(name) => {
+                // marked as a term, just like any other term binding.
+                Stmt::VarDecl { name, marks, .. } if marks.term != TermMark::No => {
                     insert_term(self.0, name.clone());
                 }
                 Stmt::VarDecl {

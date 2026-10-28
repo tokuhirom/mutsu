@@ -70,7 +70,6 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             closure,
             routines: _,
         } => v.visit_expr_mut(closure),
-        Stmt::MarkSigillessReadonly(_name) | Stmt::MarkSigilless(_name) => {}
         Stmt::Assign {
             name: _,
             expr,

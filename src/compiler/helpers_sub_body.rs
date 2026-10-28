@@ -1,5 +1,20 @@
 use super::*;
 
+/// What a closure body is compiled as, beyond its parameters.
+#[derive(Clone, Copy, Default)]
+struct BodyKind<'a> {
+    /// A routine body: its `return` stops here.
+    is_routine: bool,
+    /// The routine is `is rw` / `is raw`: its bare tail compiles to the
+    /// container it denotes (ADR-0059 Slice 2).
+    rw_tail: bool,
+    /// The declarations a WhateverCode body shares with the surrounding source
+    /// block.
+    promoted_decls: &'a [String],
+    /// The sigilless pointy parameter the body reads as a bare word.
+    term_param: Option<&'a str>,
+}
+
 impl Compiler {
     /// Borrow the functions compiled so far (routines declared within the body
     /// just compiled, e.g. a `sub` nested inside a method). Used by a one-shot
@@ -79,28 +94,25 @@ impl Compiler {
         }
     }
 
-    /// Collect `MarkSigillessReadonly` prologue statements for every sigilless
-    /// destructured sub-param (`-> (\i, \j)`), so a bare-word read of the name
-    /// inside the body resolves the binding rather than a same-named term
-    /// constant. Recurses into nested sub-signatures.
-    fn collect_sigilless_subsig_markers(param_defs: &[crate::ast::ParamDef]) -> Vec<Stmt> {
-        fn walk(sub_params: &[crate::ast::ParamDef], out: &mut Vec<Stmt>) {
+    /// Mark every sigilless destructured sub-param (`-> (\i, \j)`) readonly, so a
+    /// bare-word read of the name inside the body resolves the binding rather
+    /// than a same-named term constant. Recurses into nested sub-signatures.
+    fn mark_sigilless_subsig_params(compiler: &mut Compiler, param_defs: &[crate::ast::ParamDef]) {
+        fn walk(compiler: &mut Compiler, sub_params: &[crate::ast::ParamDef]) {
             for sp in sub_params {
                 if sp.sigilless && !sp.name.is_empty() {
-                    out.push(Stmt::MarkSigillessReadonly(sp.name.clone()));
+                    compiler.emit_sigilless_readonly(&sp.name);
                 }
                 if let Some(nested) = &sp.sub_signature {
-                    walk(nested, out);
+                    walk(compiler, nested);
                 }
             }
         }
-        let mut out = Vec::new();
         for pd in param_defs {
             if let Some(sub_params) = &pd.sub_signature {
-                walk(sub_params, &mut out);
+                walk(compiler, sub_params);
             }
         }
-        out
     }
 
     /// The listop invocant colon: `foo($obj:)`, and the no-paren `foo $obj: @a`,
@@ -644,7 +656,7 @@ impl Compiler {
         sub_compiler.resolve_frame_lexical_routines(body);
         sub_compiler.note_routines_naming_lexicals();
         sub_compiler.code.compute_needs_env_sync();
-        // See the twin call in `compile_closure_body_with_routine_flag`: a
+        // See the twin call in `compile_closure_body_of_kind`: a
         // parameter default / `where` constraint reads its outer lexicals from
         // the `ParamDef` AST at call time, invisibly to the op scan. A named
         // sub has no runtime closure-creation op, so this set is what
@@ -1292,7 +1304,24 @@ impl Compiler {
         param_defs: &[crate::ast::ParamDef],
         body: &[Stmt],
     ) -> CompiledCode {
-        self.compile_closure_body_with_routine_flag(params, param_defs, body, false, false, &[])
+        self.compile_closure_body_of_kind(params, param_defs, body, BodyKind::default())
+    }
+
+    /// Compile the body of a sigilless pointy block (`-> \x { }`): `term_param`
+    /// shadows a same-named term constant (e.g. the imaginary unit `i`), so a
+    /// bare-word read of it resolves the parameter, not the constant.
+    pub(crate) fn compile_closure_body_with_term_param(
+        &mut self,
+        params: &[String],
+        param_defs: &[crate::ast::ParamDef],
+        body: &[Stmt],
+        term_param: &str,
+    ) -> CompiledCode {
+        let kind = BodyKind {
+            term_param: Some(term_param),
+            ..BodyKind::default()
+        };
+        self.compile_closure_body_of_kind(params, param_defs, body, kind)
     }
 
     /// Compile a synthesized WhateverCode body whose expression-position
@@ -1304,14 +1333,11 @@ impl Compiler {
         body: &[Stmt],
         promoted_decls: &[String],
     ) -> CompiledCode {
-        self.compile_closure_body_with_routine_flag(
-            params,
-            param_defs,
-            body,
-            false,
-            false,
+        let kind = BodyKind {
             promoted_decls,
-        )
+            ..BodyKind::default()
+        };
+        self.compile_closure_body_of_kind(params, param_defs, body, kind)
     }
 
     /// Compile a routine body (a method, or an anonymous `sub`) as a closure
@@ -1325,7 +1351,12 @@ impl Compiler {
         body: &[Stmt],
         is_rw: bool,
     ) -> CompiledCode {
-        self.compile_closure_body_with_routine_flag(params, param_defs, body, true, is_rw, &[])
+        let kind = BodyKind {
+            is_routine: true,
+            rw_tail: is_rw,
+            ..BodyKind::default()
+        };
+        self.compile_closure_body_of_kind(params, param_defs, body, kind)
     }
 
     /// Whether a `return` compiled here stops at this body (`OpCode::Return`)
@@ -1345,15 +1376,19 @@ impl Compiler {
             .map_or(self.lexically_in_routine, |r| r.1)
     }
 
-    fn compile_closure_body_with_routine_flag(
+    fn compile_closure_body_of_kind(
         &mut self,
         params: &[String],
         param_defs: &[crate::ast::ParamDef],
         body: &[Stmt],
-        is_routine: bool,
-        rw_tail: bool,
-        promoted_decls: &[String],
+        kind: BodyKind<'_>,
     ) -> CompiledCode {
+        let BodyKind {
+            is_routine,
+            rw_tail,
+            promoted_decls,
+            term_param,
+        } = kind;
         self.attach_param_chunks(param_defs, "<anon>");
         let hoisted_enter_body = Self::hoist_enter_phaser_exprs(body);
         let body: &[Stmt] = hoisted_enter_body.as_deref().unwrap_or(body);
@@ -1469,22 +1504,6 @@ impl Compiler {
         if sub_compiler.lexically_in_method && Self::signature_declares_self(params, param_defs) {
             sub_compiler.declare_param(crate::env::LEX_SELF);
         }
-        // The destructure bind statements are prepended to the body at runtime by
-        // by-name assignment (not into the freshly-allocated local slots), so a
-        // sigilless sub-param read still routes through GetBareWord. Emit a
-        // `MarkSigillessReadonly` marker for each sigilless sub-param so that
-        // GetBareWord's `i`/`NaN`-term guard sees a sigilless binding and falls
-        // through to the env value instead of the term constant.
-        let subsig_markers = Self::collect_sigilless_subsig_markers(param_defs);
-        let augmented_body: Vec<Stmt>;
-        let body: &[Stmt] = if subsig_markers.is_empty() {
-            body
-        } else {
-            let mut v = subsig_markers;
-            v.extend_from_slice(body);
-            augmented_body = v;
-            &augmented_body
-        };
         // Bake the positional-param → slot map now, while `local_map` still holds
         // exactly the parameter slots (before the body can shadow them). §1.5.
         sub_compiler.note_decont_scalar_params(param_defs);
@@ -1514,6 +1533,12 @@ impl Compiler {
         sub_compiler.note_block_lexsubs(body);
         // ...and the body's typed `my` declarations (see `hoist_typed_var_decls`).
         sub_compiler.hoist_typed_var_decls(body);
+        // A sigilless pointy parameter, and the sigilless names a destructured
+        // sub-signature declares, shadow a same-named term constant.
+        if let Some(term) = term_param {
+            sub_compiler.emit_sigilless_readonly(term);
+        }
+        Self::mark_sigilless_subsig_params(&mut sub_compiler, param_defs);
         // If body contains CATCH/CONTROL, wrap in implicit try. compile_try
         // leaves the body's final-expression value on the stack, which is the
         // closure's implicit return value, so keep it (do not Pop).

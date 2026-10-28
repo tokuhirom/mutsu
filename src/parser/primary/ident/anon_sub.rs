@@ -94,21 +94,19 @@ pub(crate) fn folded_invocant<'a>(
             };
             (Some((name, false)), &body[1..])
         }
-        Some(Stmt::SyntheticBlock(inner)) => match inner.as_slice() {
-            [
-                Stmt::VarDecl {
-                    name,
-                    expr,
-                    type_constraint: None,
-                    custom_traits,
-                    ..
-                },
-                Stmt::MarkSigillessReadonly(marked),
-            ] if is_self(expr) && custom_traits.is_empty() && name == marked => {
-                (Some((name.clone(), true)), &body[1..])
-            }
-            _ => (None, body),
-        },
+        Some(Stmt::VarDecl {
+            name,
+            expr,
+            type_constraint: None,
+            custom_traits,
+            marks,
+            ..
+        }) if is_self(expr)
+            && custom_traits.is_empty()
+            && marks.term == crate::ast::var_marks::TermMark::Readonly =>
+        {
+            (Some((name.clone(), true)), &body[1..])
+        }
         _ => (None, body),
     };
     Some(FoldedInvocant {
@@ -237,8 +235,8 @@ pub(crate) fn method_literal_params(
 ///
 /// A **sigilless** invocant (`method (\SELF: |)`, OO::Monitors' wrapper
 /// idiom) is declared like `my \SELF := self`: it carries the
-/// `MarkSigillessReadonly` marker that tells the compiler the bare word reads
-/// the local slot. Without it `SELF` compiled to a bare-word lookup, which
+/// [`TermMark::Readonly`](crate::ast::var_marks::TermMark::Readonly) mark that
+/// tells the compiler the bare word reads the local slot. Without it `SELF` compiled to a bare-word lookup, which
 /// only found the binding when the dual env store happened to be synced, so
 /// the invocant read as `(Any)` in a program that loaded no module.
 pub(crate) fn bind_invocant_aliases(expr: Expr, aliases: &[(String, bool)]) -> Expr {

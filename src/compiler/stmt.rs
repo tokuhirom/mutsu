@@ -1,5 +1,6 @@
 use super::block_imported_vars::ImportedVarSource;
 use super::*;
+use crate::ast::var_marks::TermMark;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
@@ -957,7 +958,17 @@ impl Compiler {
         // one frame below it, and a `Stmt::Expr` root is reset to depth 0
         // below (see `Compiler::expr_depth`).
         let saved = std::mem::replace(&mut self.expr_depth, 1);
+        let term = match stmt {
+            Stmt::VarDecl { name, marks, .. } if marks.term != TermMark::No => {
+                self.begin_term_decl(name, marks.term);
+                Some((name, marks.term))
+            }
+            _ => None,
+        };
         self.compile_stmt_inner(stmt);
+        if let Some((name, kind)) = term {
+            self.end_term_decl(name, kind);
+        }
         self.expr_depth = saved;
         self.share_outer_written_decl(stmt);
     }
@@ -1130,37 +1141,6 @@ impl Compiler {
                 let idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::MarkVarReadonly(idx, *kind));
             }
-            Stmt::MarkSigilless(name) => {
-                // Track a sigilless local so BareWord compilation reads it from its
-                // slot (GetLocal), not via GetBareWord/env. Unlike
-                // MarkSigillessReadonly this does NOT set the readonly flag: a typed
-                // sigilless bind (`my Int \d := 7`) keeps container mutability.
-                self.sigilless_locals.insert(name.clone());
-                // Whether this term is writable depends on what the declaration
-                // bound it to, which only the runtime knows. The verdict is
-                // taken with the bind source still on the stack, by the
-                // `MarkSigillessBindSource` the declaration itself emits (see
-                // `bind_vardecl && marks.sigilless_decl` in the `Stmt::VarDecl` arm); this op
-                // writes the readonly marker, and has to run AFTER the store
-                // because a declaration clears that marker.
-                let name_idx = self
-                    .code
-                    .add_constant(Value::str(crate::runtime::term_names::term_key(name)));
-                self.code.emit(OpCode::MarkSigillessBind(name_idx));
-            }
-            Stmt::MarkSigillessReadonly(name) => {
-                // Track sigilless locals so BareWord compilation can
-                // distinguish them from `$`-sigiled variables.
-                self.sigilless_locals.insert(name.clone());
-                // Set __mutsu_sigilless_readonly::\NAME = true in env
-                let key = crate::runtime::sigilless_readonly_key(
-                    &crate::runtime::term_names::term_key(name),
-                );
-                let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));
-                let true_idx = self.code.add_constant(Value::TRUE);
-                self.code.emit(OpCode::LoadConst(true_idx));
-                self.code.emit(OpCode::SetGlobal(key_idx));
-            }
             Stmt::Say(exprs) => {
                 self.compile_slurpy_out_args(exprs);
                 self.code.emit(OpCode::Say(exprs.len() as u32));
@@ -1222,7 +1202,7 @@ impl Compiler {
                 // is a term too, and lives under the same key (ADR-12441).
                 let spelled = name;
                 let term_storage;
-                let declares_term = std::mem::take(&mut self.decl_is_term)
+                let declares_term = marks.term != TermMark::No
                     && !name.starts_with(['$', '@', '%', '&', '\\']);
                 let name = if declares_term
                     || crate::runtime::term_names::is_term_constant_decl(name, *constant)
