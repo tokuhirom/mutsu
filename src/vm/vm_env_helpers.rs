@@ -3194,8 +3194,15 @@ impl Interpreter {
         if slot_val.is_nil() {
             return;
         }
+        // A same-variant mirror is only current when it is the slot's own
+        // container: a loop body's `my $h = %(...)` makes a fresh Hash each
+        // iteration while the mirror still holds the previous iteration's.
         let stale = match self.env().get(var_name) {
-            Some(mirror) => !mirror.same_variant(&slot_val),
+            Some(mirror) => {
+                !mirror.same_variant(&slot_val)
+                    || (matches!(slot_val.view(), ValueView::Hash(_) | ValueView::Array(..))
+                        && !crate::value::identity::values_identical(mirror, &slot_val))
+            }
             None => true,
         };
         if stale {
