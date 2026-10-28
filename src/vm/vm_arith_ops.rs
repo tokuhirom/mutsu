@@ -408,6 +408,45 @@ impl Interpreter {
         }
     }
 
+    /// The materialized `&infix:<op>` family a `sub EXPORT` hook handed to the
+    /// unit running right now, from `env`.
+    ///
+    /// The hook installs its value in the shared `env`, so a routine of
+    /// ANOTHER unit (a role module that never imported the operator, loaded
+    /// while the exporting module was still loading) would otherwise find the
+    /// importer's family there and have its own `infix:<op>` replaced by it.
+    /// Raku scopes the import to the importing unit (GH-15203). A unit that
+    /// imported nothing under the name gets none; a unit that imported its own
+    /// family gets that one.
+    // Cost: O(1) hash probes, plus O(e) over the recorded EXPORT imports when
+    // the executing unit imported none of the name, e = their count.
+    fn unit_visible_captured_family(&self, op_sym: Symbol) -> Option<Value> {
+        let env_value = self
+            .env()
+            .get_sym(crate::runtime::dispatch_key::amp_sym(op_sym))
+            .cloned();
+        if !self.module.export_amp_override_names.contains(&op_sym) {
+            return env_value;
+        }
+        // A multi candidate's `where` runs before the candidate has a frame:
+        // its declaring unit is then the one asking, not the caller's.
+        let unit = match self.lexicals.candidate_scope_unit {
+            Some((unit, depth)) if depth == self.routine_stack().len() => unit,
+            _ => self.executing_unit_sym(),
+        };
+        let mut imported_elsewhere = false;
+        for ((file, name), value) in &self.module.unit_imported_callables {
+            if *name != op_sym {
+                continue;
+            }
+            if self.unit_of_source_sym(Some(*file)) == unit {
+                return Some(value.clone());
+            }
+            imported_elsewhere = true;
+        }
+        if imported_elsewhere { None } else { env_value }
+    }
+
     /// Try to dispatch a binary operation to a user-defined infix operator.
     /// Returns Some(result) if a user-defined candidate matched, None otherwise.
     pub(crate) fn try_user_infix(
@@ -496,8 +535,7 @@ impl Interpreter {
             return result;
         }
         let captured_family = Symbol::lookup(op_name)
-            .map(crate::runtime::dispatch_key::amp_sym)
-            .and_then(|amp| self.env().get_sym(amp))
+            .and_then(|op_sym| self.unit_visible_captured_family(op_sym))
             .and_then(|value| match value.view() {
                 ValueView::Sub(data) => data
                     .env
