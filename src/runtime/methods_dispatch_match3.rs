@@ -415,7 +415,10 @@ impl Interpreter {
                     Ok(s) => s,
                     Err(e) => return Some(Err(e)),
                 };
-                resolved.push(Value::str(s.to_string_value()));
+                match crate::runtime::unbox_str_answer(&s) {
+                    Ok(text) => resolved.push(Value::str(text)),
+                    Err(e) => return Some(Err(e)),
+                }
             } else if (v.as_list_items().is_some() || matches!(v.view(), ValueView::Hash(_)))
                 && crate::value::gist::str_needs_dispatch(&v)
             {

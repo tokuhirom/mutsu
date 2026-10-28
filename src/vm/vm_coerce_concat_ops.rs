@@ -531,7 +531,7 @@ impl Interpreter {
             || crate::builtins::methods_0arg::temporal::carries_formatter(&v)
         {
             let r = self.try_compiled_method_or_interpret(v, "Stringy", Vec::new())?;
-            return Ok(Value::str(r.to_string_value()));
+            return Ok(Value::str(crate::runtime::unbox_str_answer(&r)?));
         }
         // A subclass of `Array`/`Hash`/a QuantHash stringifies its backing
         // storage through the `Str` its built-in ancestor declares (#14016);
@@ -552,7 +552,7 @@ impl Interpreter {
                 ))
         {
             let r = self.try_compiled_method_or_interpret(v, "Str", Vec::new())?;
-            return Ok(Value::str(r.to_string_value()));
+            return Ok(Value::str(crate::runtime::unbox_str_answer(&r)?));
         }
         // A bare type object without a user stringifier warns and resumes with
         // the empty string, matching Rakudo (`"a" ~ Int`, `Int eq "x"`). An

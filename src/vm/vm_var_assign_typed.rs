@@ -694,6 +694,24 @@ impl Interpreter {
         // coerce_numeric_bridge_value / exec_say_op).
         let caller_code = self.current_code;
         let mut result = crate::builtins::str_prim::Joiner::new();
+        // A user `Str`/`Stringy` answer is unboxed to a native string; an answer
+        // that is a plain object dies, except as a lone piece (`"$f"`), where
+        // the interpolation is the object itself, as in rakudo (#15117).
+        macro_rules! push_user_answer {
+            ($self:ident, $result:ident, $answer:expr, $n:expr, $caller:expr) => {{
+                let answer = $answer;
+                match crate::runtime::unbox_str_answer(&answer) {
+                    Ok(text) => $result.push_str(&text),
+                    Err(_) if $n == 1 => {
+                        $self.reconcile_caller_after_internal_dispatch($caller);
+                        $self.stack.push(answer);
+                        return Ok(());
+                    }
+                    Err(e) => return Err(e),
+                }
+            }};
+        }
+
         // Whether any type declares a `^find_method`, the one hook below a
         // plain `Str`/`Int` piece could still reach. Read once per op.
         let plain_pieces_take_fast_path =
@@ -814,7 +832,7 @@ impl Interpreter {
                 if self.is_native_method(&cn, "Str") && !self.has_user_method(&cn, "Stringy") {
                     let str_result =
                         self.try_compiled_method_or_interpret(v.clone(), "Str", Vec::new())?;
-                    result.push_str(&str_result.to_string_value());
+                    push_user_answer!(self, result, str_result, n, caller_code);
                     continue;
                 }
                 // As for prefix `~`: only a missing method falls back to the
@@ -823,7 +841,7 @@ impl Interpreter {
                 if self.probes_stringy_before_str(&cn) {
                     match self.try_compiled_method_or_interpret(v.clone(), "Stringy", Vec::new()) {
                         Ok(str_result) => {
-                            result.push_str(&str_result.to_string_value());
+                            push_user_answer!(self, result, str_result, n, caller_code);
                             continue;
                         }
                         Err(e) if !e.is_method_not_found_for("Stringy") => return Err(e),
@@ -832,7 +850,7 @@ impl Interpreter {
                 }
                 match self.try_compiled_method_or_interpret(v.clone(), "Str", Vec::new()) {
                     Ok(str_result) => {
-                        result.push_str(&str_result.to_string_value());
+                        push_user_answer!(self, result, str_result, n, caller_code);
                         continue;
                     }
                     Err(e) if !e.is_method_not_found_for("Str") => return Err(e),
