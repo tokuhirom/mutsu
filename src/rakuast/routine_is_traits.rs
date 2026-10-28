@@ -87,7 +87,10 @@ fn is_operator_reference(reference: &str) -> bool {
                 && category.chars().all(|c| c.is_ascii_alphabetic())
                 && op.ends_with('>')
                 && !op[..op.len() - 1].is_empty()
-                && !op[..op.len() - 1].contains(['<', '>', ' '])
+                && !op[..op.len() - 1].contains(['<', '>'])
+                // Only a bracketing operator's name holds a space
+                // (`&postcircumfix:<[ ]>`); `<a b>` is not an operator.
+                && (!op.contains(' ') || category.ends_with("circumfix"))
         })
     })
 }
