@@ -50,6 +50,9 @@ impl Interpreter {
             }
             Some(crate::opcode::CompiledDeclPlanRef::Class(plan_idx)) => {
                 self.note_type_body_written_lexicals(code);
+                // Copy-on-write snapshot: the classes this declaration adds are
+                // the keys missing from it if the declaration dies.
+                let classes_before = self.registry().classes.clone();
                 match self.exec_register_class_op(code, plan_idx, compiled_fns) {
                     Ok(()) => Ok(()),
                     Err(_)
@@ -60,7 +63,10 @@ impl Interpreter {
                     {
                         Ok(())
                     }
-                    Err(error) => Err(error),
+                    Err(error) => {
+                        self.note_failed_eval_class_decl(&classes_before);
+                        Err(error)
+                    }
                 }
             }
             Some(crate::opcode::CompiledDeclPlanRef::Role(plan_idx)) => {
