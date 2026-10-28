@@ -1291,6 +1291,7 @@ impl Interpreter {
             // with -- or silently overwrite -- a same-named one the loading
             // scope already declared.
             let hidden_toplevel = self.hide_toplevel_global_routines();
+            let functions_before_body = std::sync::Arc::clone(&self.registry().functions);
             // The importer's hoisted `multi`s are already registered; they are
             // lexical to it and must not take part in this module's dispatch
             // (#11310).
@@ -1791,7 +1792,7 @@ impl Interpreter {
                 // (candidates are additive across compunits) but become
                 // visible only to it and to whoever imports them (#11004).
                 self.scope_unit_multi_families(&module_path);
-                self.remember_own_families(module, &module_path);
+                self.remember_own_families(module, &module_path, &functions_before_body);
             }
             // See `hide_toplevel_global_routines`: restore the loading scope's
             // own top-level routines regardless of whether the module's body
