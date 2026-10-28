@@ -32,8 +32,13 @@ pub(crate) struct ModuleState {
     /// operator candidate that a `use` imported is visible only to its
     /// declaring unit and to these importers (#9944); see
     /// `runtime/operator_scope.rs`.
+    ///
+    /// An `rustc_hash` map: [`Interpreter::operator_has_import_scope_sym`]
+    /// probes it on every function call once any unit imported an operator
+    /// (`use Test` does), and std's SipHash made that probe ~65 instructions
+    /// for a `Symbol` that is already a small integer (#7565).
     pub(crate) operator_import_units:
-        std::sync::Arc<HashMap<Symbol, HashMap<Symbol, HashSet<Symbol>>>>,
+        std::sync::Arc<rustc_hash::FxHashMap<Symbol, HashMap<Symbol, HashSet<Symbol>>>>,
     /// Bumped whenever `operator_import_units` gains an entry, so a memo of an
     /// operator-visibility answer (`bare_multi_plan_cache`) can key on it.
     pub(crate) operator_import_gen: u64,
@@ -881,5 +886,19 @@ impl ModuleState {
             unit_imported_callables: self.unit_imported_callables.clone(),
             export_term_override_names: self.export_term_override_names.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `operator_has_import_scope_sym` probes this table on every call once a
+    /// unit imported an operator, so it must stay a cheap-hash map (#7565).
+    /// Compile-time check: it stops compiling if the table is a std map again.
+    #[allow(dead_code)]
+    fn operator_import_units_is_an_fx_map(state: &ModuleState) {
+        fn is_fx<K, V>(_: &std::sync::Arc<rustc_hash::FxHashMap<K, V>>) {}
+        is_fx(&state.operator_import_units);
     }
 }
