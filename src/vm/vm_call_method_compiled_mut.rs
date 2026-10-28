@@ -8,6 +8,36 @@ impl Interpreter {
         target_name: &str,
         target: Value,
         method_sym: crate::symbol::Symbol,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        // A native array's `sort`/`reverse`/... answer is a native array.
+        if !crate::builtins::method_table::native_array_result::retypes(method_sym.as_str()) {
+            return self.try_compiled_method_mut_or_interpret_sym_inner(
+                target_name,
+                target,
+                method_sym,
+                args,
+            );
+        }
+        let receiver = target.clone();
+        let answer = self.try_compiled_method_mut_or_interpret_sym_inner(
+            target_name,
+            target,
+            method_sym,
+            args,
+        )?;
+        Ok(crate::builtins::method_table::native_array_result::retype(
+            &receiver,
+            method_sym.as_str(),
+            answer,
+        ))
+    }
+
+    fn try_compiled_method_mut_or_interpret_sym_inner(
+        &mut self,
+        target_name: &str,
+        target: Value,
+        method_sym: crate::symbol::Symbol,
         mut args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         // #8880: the caller has already established that this receiver class and
