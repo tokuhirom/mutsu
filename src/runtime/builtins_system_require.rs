@@ -601,6 +601,20 @@ impl Interpreter {
                 .keys()
                 .any(|k| k.resolve().starts_with(&candidate_prefix))
             {
+                // The listed name denotes the whole family: bind a dispatcher
+                // over its candidates, not the (absent) single routine.
+                let candidates: Vec<_> = self
+                    .registry()
+                    .functions
+                    .iter()
+                    .filter(|(k, _)| k.resolve().starts_with(&candidate_prefix))
+                    .map(|(_, def)| def.clone())
+                    .collect();
+                let value = if candidates.is_empty() {
+                    value
+                } else {
+                    self.sub_value_from_multi_candidates(name, candidates)
+                };
                 return Some((value, RequiredKey::Routine));
             }
             // A package-less module declares its routines in GLOBAL.
