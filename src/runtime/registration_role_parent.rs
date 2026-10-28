@@ -97,7 +97,10 @@ impl Interpreter {
                     });
                 return Ok(());
             }
-            if !op.from_is {
+            // A parameterised role may compose its own unparameterised
+            // candidate (`role R[Int $n] does R`); only a parameterless role
+            // composing itself is refused.
+            if !op.from_is && cx.type_params.is_empty() {
                 return Err(RuntimeError::new(format!(
                     "X::InvalidType: role '{name}' cannot compose itself"
                 )));
