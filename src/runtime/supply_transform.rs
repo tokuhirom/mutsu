@@ -233,6 +233,81 @@ impl Interpreter {
         }
     }
 
+    /// `Supply.stable($seconds)` of the live supplier `source_id`: a worker holds
+    /// the newest value back until `seconds` pass without another one, then emits
+    /// it into the returned supply. `done` flushes the held value first; a `quit`
+    /// drops it and quits the output.
+    // Cost: O(1) per source event; one pooled worker per stable supply.
+    fn stable_live_supply(&mut self, source_id: u64, seconds: f64) -> Value {
+        use crate::value::waker::SinkEvent;
+        let out_supplier_id = next_supplier_id();
+        let window = std::time::Duration::from_secs_f64(seconds);
+        let mut thread_interp = self.clone_for_thread();
+        // Registers with the source before returning, so nothing the caller
+        // emits right after `.stable` is missed.
+        let waker = crate::value::waker::ReactWaker::new();
+        let sink_id = supplier_sink_register(source_id, 0, &waker, true);
+        crate::runtime::worker_pool::submit(move || {
+            let mut pending: Option<(Value, crate::thread_compat::Instant)> = None;
+            let mut quit: Option<Value> = None;
+            let mut finished = false;
+            while !finished {
+                let wait = match &pending {
+                    Some((_, deadline)) => {
+                        deadline.duration_since(crate::thread_compat::Instant::now())
+                    }
+                    None => std::time::Duration::from_millis(100),
+                };
+                if !wait.is_zero() {
+                    waker.wait_activity(wait);
+                }
+                for (_, event, _) in waker.drain() {
+                    match event {
+                        SinkEvent::Emit(v) => {
+                            pending = Some((v, crate::thread_compat::Instant::now() + window));
+                        }
+                        SinkEvent::Done => finished = true,
+                        SinkEvent::Quit(reason) => {
+                            quit = Some(reason);
+                            finished = true;
+                        }
+                    }
+                }
+                let due = match &pending {
+                    Some((_, deadline)) => {
+                        finished && quit.is_none()
+                            || *deadline <= crate::thread_compat::Instant::now()
+                    }
+                    None => false,
+                };
+                if due && let Some((v, _)) = pending.take() {
+                    supplier_emit(out_supplier_id, v.clone());
+                    let actions = supplier_emit_callbacks(out_supplier_id, &v);
+                    let _ = thread_interp.drive_supplier_emit_actions(out_supplier_id, actions);
+                }
+            }
+            supplier_sink_unregister(source_id, sink_id);
+            if let Some(reason) = quit {
+                supplier_quit(out_supplier_id, reason.clone());
+                let _ = thread_interp.propagate_supplier_quit(out_supplier_id, reason);
+            } else {
+                supplier_done(out_supplier_id);
+                for done_cb in take_supplier_done_callbacks(out_supplier_id) {
+                    let _ = thread_interp.call_sub_value(done_cb, Vec::new());
+                }
+            }
+        });
+        let mut new_attrs = HashMap::new();
+        new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+        new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        new_attrs.insert("live".to_string(), Value::TRUE);
+        new_attrs.insert(
+            "supplier_id".to_string(),
+            Value::int(out_supplier_id as i64),
+        );
+        Value::make_instance(Symbol::intern("Supply"), new_attrs)
+    }
+
     /// Create a new non-live Supply from a list of values.
     pub(super) fn make_supply_from_values(
         &self,
@@ -269,14 +344,17 @@ impl Interpreter {
                 if seconds <= 0.0 {
                     return Ok(target.clone());
                 }
-                // Best-effort debounce for a materialized (non-live) Supply:
-                // when every value is emitted within the stable window (as with
-                // from-list, which emits instantaneously), only the final value
-                // survives.
-                // TODO: proper timer-based debounce for live Suppliers needs the
-                // async scheduler; that path is exercised only by fudge-skipped
-                // tests today.
                 let attrs = attributes.as_map();
+                // A live source is debounced in real time: a value is emitted once
+                // `seconds` pass without a newer one, and `done` flushes the pending
+                // value before it is passed on (Rakudo's `Supply.stable`).
+                if let Some(source_id) = supplier_id_from_attrs(&attrs)
+                    && attrs.get("live").is_some_and(Value::truthy)
+                {
+                    return Ok(self.stable_live_supply(source_id, seconds));
+                }
+                // A materialized (non-live) Supply emits every value at once,
+                // inside the stable window, so only the final value survives.
                 let values = self.supply_get_values(&attrs)?;
                 let out: Vec<Value> = values.last().cloned().into_iter().collect();
                 return Ok(self.make_supply_from_values(out, &attrs));

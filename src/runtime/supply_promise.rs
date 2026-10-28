@@ -169,6 +169,30 @@ impl Interpreter {
             .unwrap_or((None, false))
     }
 
+    /// Run `tap` on `args` with the emitter of the `supply` block it was written
+    /// in as the innermost active one, so an `emit` the parser did not rewrite
+    /// (one written in a `sub` the block calls, which never captured the
+    /// emitter) reaches that block's supply. The act loop of a native source
+    /// (`Supply.interval`, `IO::Path.watch`) dispatches its callbacks this way;
+    /// `call_supply_tap` does the same for the supplier-driven path.
+    // Cost: O(1) plus the callback.
+    pub(crate) fn call_sub_value_with_stamped_emitter(
+        &mut self,
+        tap: Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let (emitter, stamped) = Self::whenever_tap_emitter(&tap);
+        let emitter = emitter.filter(|_| stamped);
+        if let Some(ref e) = emitter {
+            self.async_state.active_supply_emitters.push(e.clone());
+        }
+        let res = self.call_sub_value(tap, args);
+        if emitter.is_some() {
+            self.async_state.active_supply_emitters.pop();
+        }
+        res
+    }
+
     /// `Some(supplier_id)` when `emitter` is a `Supplier` instance carrying a
     /// `supplier_id` attribute (i.e. it stands for a live `supply` block's
     /// emitter, as opposed to the id-less emitter `run_on_demand_body` mints
