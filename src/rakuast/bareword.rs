@@ -36,7 +36,7 @@ use crate::value::Value;
 mod caller_names;
 mod package_alias;
 
-pub(super) use caller_names::CallerNames;
+pub(super) use caller_names::{CallerNames, CallerTraitTypes};
 
 /// What a bareword naming something the same compilation unit declared means.
 ///
@@ -192,6 +192,7 @@ pub(super) fn names_type(name: &str) -> bool {
     setting_type(name)
         || declared_kind(name) == Some(DeclaredKind::Type)
         || crate::parser::is_user_declared_type(name)
+        || caller_names::declares_trait_type(name)
 }
 
 /// Whether a `::`-qualified package name resolves at parse time: a run of

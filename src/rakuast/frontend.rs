@@ -104,6 +104,15 @@ pub(crate) fn round_trip_eval(
     .map_err(refusal)
 }
 
+/// Run `convert` with `types` installed as the type names the calling scope of a
+/// `Str.AST` declares, for the `is NAME` traits of the declarations in its
+/// source (a bare class name is still a `Term::Name`: see [`with_caller_names`]).
+// Cost: O(n) to install, n = number of caller type names, plus `convert`.
+pub(crate) fn with_caller_trait_types<T>(types: Vec<String>, convert: impl FnOnce() -> T) -> T {
+    let _caller = super::bareword::CallerTraitTypes::install(types);
+    convert()
+}
+
 /// Run `convert` with `types` and `terms` installed as the names the calling
 /// scope declares: rakudo resolves the bare names of an `EVAL` string or of a
 /// `Str.AST` against the scope that runs it (`constant b = 1; q[b].AST` is a
