@@ -224,7 +224,7 @@ impl Compiler {
                     // where raku gives `[0 0 0]`. `compile_block_inline`'s own
                     // tail arm already routes this way — this mirrors it.
                     Stmt::Block(inner) => {
-                        if Self::has_block_enter_leave_phasers(inner) {
+                        if Self::needs_phaser_block_scope(inner) {
                             self.compile_phaser_block_literal_inline(inner);
                         } else {
                             self.compile_bare_block_inline(inner);

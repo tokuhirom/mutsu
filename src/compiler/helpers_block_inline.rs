@@ -87,7 +87,7 @@ impl Compiler {
             Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
                 // A tail block with ENTER/LEAVE/... phasers must run them through a
                 // real `BlockScope` rather than being inlined (which drops them).
-                if Self::has_block_enter_leave_phasers(inner) {
+                if Self::needs_phaser_block_scope(inner) {
                     // Only a genuine `{ ... }` is a lexical scope for the
                     // `X::Dynamic::Postdeclaration` bookkeeping.
                     let saved =
@@ -333,7 +333,7 @@ impl Compiler {
                         // real `BlockScope` (inlining would silently drop them);
                         // `result_on_stack` keeps its value on the stack, matching
                         // the inline path.
-                        if Self::has_block_enter_leave_phasers(inner) {
+                        if Self::needs_phaser_block_scope(inner) {
                             if matches!(stmt, Stmt::Block(_)) {
                                 self.compile_phaser_block_literal_inline(inner);
                             } else {

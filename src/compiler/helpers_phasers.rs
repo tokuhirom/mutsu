@@ -82,6 +82,15 @@ impl Compiler {
         self.code.patch_body_end(idx);
     }
 
+    /// Whether a bare block must run as a real phaser block scope
+    /// (`BlockScope`): it has `ENTER`/`LEAVE`/... phasers and no `CATCH` or
+    /// `CONTROL`. A block with both is an implicit `try` region whose body is
+    /// the phaser scope (`compile_try_region`), so it takes that path instead.
+    // Cost: O(s), s = the block's statements.
+    pub(super) fn needs_phaser_block_scope(stmts: &[Stmt]) -> bool {
+        Self::has_block_enter_leave_phasers(stmts) && !Self::has_catch_or_control(stmts)
+    }
+
     pub(super) fn has_block_enter_leave_phasers(stmts: &[Stmt]) -> bool {
         stmts.iter().any(|s| {
             matches!(
