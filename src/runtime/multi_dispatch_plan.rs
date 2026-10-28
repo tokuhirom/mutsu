@@ -257,7 +257,10 @@ impl Interpreter {
         let mut entries: Vec<PlanEntry> = candidates
             .into_iter()
             .map(|(_, def)| PlanEntry {
-                key: self.candidate_rank_key(&def, args),
+                // The candidate's parameter types are named in the scope that
+                // declared it: a module-private `my constant` type is not
+                // visible from the caller (#15087).
+                key: self.with_candidate_scope(&def, |this| this.candidate_rank_key(&def, args)),
                 reads_value: self.candidate_rank_reads_value(&def),
                 def,
             })
@@ -315,7 +318,9 @@ impl Interpreter {
                 continue;
             }
             let key = if entry.reads_value {
-                self.candidate_rank_key(&entry.def, args)
+                self.with_candidate_scope(&entry.def, |this| {
+                    this.candidate_rank_key(&entry.def, args)
+                })
             } else {
                 entry.key
             };
