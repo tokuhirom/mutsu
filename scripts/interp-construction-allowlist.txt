@@ -21,5 +21,5 @@ src/runtime/react_whenever.rs                     1  # thread spawn: clone_for_t
 src/runtime/regex_parse.rs                        1  # thread_local! VALIDATE_INTERP, built once per thread
 src/runtime/slang_activation.rs                   1  # parse-time slang activation, fresh thread once per `use`
 src/runtime/supply_promise.rs                     1  # thread spawn: clone_for_thread
-src/runtime/supply_transform.rs                   4  # thread spawn: clone_for_thread
+src/runtime/supply_transform.rs                   5  # thread spawn: clone_for_thread (5th: Supply.stable worker, a timer thread that emits on its own)
 src/vm/vm_hyper_race_parallel.rs                  3  # thread spawn: clone_for_thread
