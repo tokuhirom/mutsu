@@ -42,6 +42,18 @@ impl Compiler {
         }
     }
 
+    /// [`Compiler::begin_term_decl`] for `stmt` when it declares a sigilless
+    /// term; the name and mark to hand to [`Compiler::end_term_decl`] after it.
+    pub(super) fn begin_term_decl_of<'a>(&mut self, stmt: &'a Stmt) -> Option<(&'a str, TermMark)> {
+        if let Stmt::VarDecl { name, marks, .. } = stmt
+            && marks.term != TermMark::No
+        {
+            self.begin_term_decl(name, marks.term);
+            return Some((name, marks.term));
+        }
+        None
+    }
+
     /// What a sigilless term declaration needs before its store: the name
     /// reads from its local slot, and (for a readonly term) a previous
     /// iteration's readonly mark is cleared so a re-declaration in a loop

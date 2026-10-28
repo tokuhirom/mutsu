@@ -958,13 +958,7 @@ impl Compiler {
         // one frame below it, and a `Stmt::Expr` root is reset to depth 0
         // below (see `Compiler::expr_depth`).
         let saved = std::mem::replace(&mut self.expr_depth, 1);
-        let term = match stmt {
-            Stmt::VarDecl { name, marks, .. } if marks.term != TermMark::No => {
-                self.begin_term_decl(name, marks.term);
-                Some((name, marks.term))
-            }
-            _ => None,
-        };
+        let term = self.begin_term_decl_of(stmt);
         self.compile_stmt_inner(stmt);
         if let Some((name, kind)) = term {
             self.end_term_decl(name, kind);
