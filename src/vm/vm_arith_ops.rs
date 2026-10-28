@@ -447,6 +447,39 @@ impl Interpreter {
         if imported_elsewhere { None } else { env_value }
     }
 
+    /// The captured family a `sub EXPORT` hook handed the running unit as
+    /// `&{op_name}`, with its candidates; `None` when the unit has none.
+    // Cost: as `unit_visible_captured_family`.
+    fn exported_captured_family(&self, op_name: &str) -> Option<(Value, Vec<Value>)> {
+        let value = Symbol::lookup(op_name)
+            .and_then(|op_sym| self.unit_visible_captured_family(op_sym))?;
+        let ValueView::Sub(data) = value.view() else {
+            return None;
+        };
+        let candidates = data
+            .env
+            .get("__mutsu_multi_dispatch_candidates")
+            .and_then(|candidates| candidates.as_list_items().map(ToOwned::to_owned))?;
+        Some((value.clone(), candidates))
+    }
+
+    /// [`Self::try_captured_candidates`] over the family a `sub EXPORT` hook
+    /// handed the running unit as `&{op_name}`: `None` when the unit has no
+    /// such family or none of its candidates accepts `args`, so the built-in
+    /// operator runs.
+    // Cost: O(c * p) to rank, c = candidates, p = parameters bound per
+    // candidate, plus the winner's call.
+    pub(crate) fn try_exported_captured_family(
+        &mut self,
+        op_name: &str,
+        args: Vec<Value>,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let Some((dispatcher, candidates)) = self.exported_captured_family(op_name) else {
+            return Ok(None);
+        };
+        self.try_captured_candidates(&dispatcher, &candidates, op_name, args)
+    }
+
     /// Try to dispatch a binary operation to a user-defined infix operator.
     /// Returns Some(result) if a user-defined candidate matched, None otherwise.
     pub(crate) fn try_user_infix(
@@ -534,17 +567,7 @@ impl Interpreter {
         if let Some(result) = self.try_lexical_operator_candidates(op_name, args.clone()) {
             return result;
         }
-        let captured_family = Symbol::lookup(op_name)
-            .and_then(|op_sym| self.unit_visible_captured_family(op_sym))
-            .and_then(|value| match value.view() {
-                ValueView::Sub(data) => data
-                    .env
-                    .get("__mutsu_multi_dispatch_candidates")
-                    .and_then(|candidates| candidates.as_list_items().map(ToOwned::to_owned))
-                    .map(|candidates| (value.clone(), candidates)),
-                _ => None,
-            });
-        if let Some((dispatcher, candidates)) = captured_family {
+        if let Some((dispatcher, candidates)) = self.exported_captured_family(op_name) {
             // The family's candidates are ranked by narrowness like any other
             // multi (and compete with the operator's core candidates): a
             // re-exported family lists them in stash order, so taking the first
