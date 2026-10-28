@@ -25,6 +25,16 @@ impl Interpreter {
             Value::NIL
         };
 
+        // An `is rw` accessor answers a Proxy (`.col<k>:exists`, Red's JSON
+        // column): the subscripted object is what it FETCHes.
+        if !is_zen && self.stack.len() >= 2 {
+            let n = self.stack.len();
+            if self.stack[n - 2].is_proxy_value() {
+                let proxy = self.stack[n - 2].clone();
+                self.stack[n - 2] = self.auto_fetch_proxy(&proxy)?;
+            }
+        }
+
         // Determine effective negation
         let effective_negated = if has_arg {
             !arg_val.truthy() // falsy arg => negate
