@@ -178,7 +178,9 @@ impl Interpreter {
                 ip = coro.ip;
                 self.locals.refill_from(&coro.locals.clone());
                 self.stack = coro.stack.clone();
+                let puller = self.env().clone();
                 *self.env_mut() = coro.env.clone();
+                self.inherit_puller_dynamics(&puller);
                 self.async_state.gather_for_loop_resume = coro.for_loop_resume.clone();
                 has_prior_state = true;
             } else {
@@ -188,7 +190,9 @@ impl Interpreter {
                 // preserves overlay+parent+tombstones), so the body's writes
                 // accumulate across takes without forking `list.env`.
                 ip = 0;
+                let puller = self.env().clone();
                 *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
+                self.inherit_puller_dynamics(&puller);
                 self.locals.refill_slots(cc.locals.len());
                 for (i, name) in cc.locals.iter().enumerate() {
                     if let Some(val) = self.env().get(name) {
@@ -201,7 +205,9 @@ impl Interpreter {
         } else {
             // Fresh start (no coroutine slot yet)
             ip = 0;
+            let puller = self.env().clone();
             *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
+            self.inherit_puller_dynamics(&puller);
             self.locals.refill_slots(cc.locals.len());
             for (i, name) in cc.locals.iter().enumerate() {
                 if let Some(val) = self.env().get(name) {
