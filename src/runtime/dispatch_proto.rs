@@ -337,7 +337,7 @@ impl Interpreter {
         let mut method_def = MethodDef {
             value_prototype: None,
             syms: Default::default(),
-            lexical_package: proto.package.clone(),
+            lexical_package: proto.package,
             params: (if only_star { Vec::new() } else { proto.params.clone() }).into(),
             param_defs: (if only_star { Vec::new() } else { proto.param_defs.clone() }).into(),
             // A `{*}`-only body is the routine-level onlystar: the bare `*`
