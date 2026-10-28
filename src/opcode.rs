@@ -694,6 +694,10 @@ pub(crate) struct RuntimeHasDeclSpec {
 
 /// Slot marker in [`OpCode::LoadRegexClosure`]'s capture list: the captured
 /// name has no local slot in the creating frame and must be read from `env`.
+/// `GetCallerVar` depth meaning `CLIENT::<$x>`: the frame count to the nearest
+/// caller in another package is resolved when the op runs
+/// ([`crate::runtime::Interpreter::client_frame_depth`]).
+pub(crate) const CLIENT_CALLER_DEPTH: u32 = u32::MAX;
 pub(crate) const NOT_A_LOCAL: u32 = u32::MAX;
 
 /// Slot marker in [`OpCode::LoadRegexClosure`]'s capture list: a kebab-case

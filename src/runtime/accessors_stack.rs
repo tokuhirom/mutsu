@@ -659,6 +659,21 @@ impl Interpreter {
         "GLOBAL".to_string()
     }
 
+    /// How many `CALLER::` steps reach the nearest caller frame whose package
+    /// differs from the running routine's -- the frame `CLIENT::` names. The
+    /// mainline (depth `len`) answers when every live frame shares the package.
+    // Cost: O(d), d = call depth walked until the package changes.
+    pub(crate) fn client_frame_depth(&self) -> usize {
+        let len = self.routine_stack.len();
+        let Some(current) = self.routine_stack.last().map(|f| f.package) else {
+            return 1;
+        };
+        (1..len)
+            .find(|d| self.routine_stack[len - 1 - d].package != current)
+            .unwrap_or(len)
+            .max(1)
+    }
+
     /// `package::name` of the routine that dynamically encloses the frame
     /// `CALLER::` names — walking down past any *block* frames (a bare
     /// `{ ... }`, a `for` body, a closure) starting at `caller_frame_package`'s

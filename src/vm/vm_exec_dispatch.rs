@@ -7708,7 +7708,12 @@ impl Interpreter {
             // Cost: O(1) (one indexed caller frame, one hashed probe).
             OpCode::GetCallerVar { name_idx, depth } => {
                 let name = Self::const_str(code, *name_idx);
-                let val = loan_env!(self, get_caller_var(name, *depth as usize))?;
+                let depth = if *depth == crate::opcode::CLIENT_CALLER_DEPTH {
+                    self.client_frame_depth()
+                } else {
+                    *depth as usize
+                };
+                let val = loan_env!(self, get_caller_var(name, depth))?;
                 // An rvalue read: the frame's cell must not travel onto the
                 // stack, or `our $*d = CALLERS::<$*d>` stores a cell into itself.
                 self.stack.push(val.into_deref());

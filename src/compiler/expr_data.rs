@@ -692,6 +692,28 @@ impl Compiler {
             return;
         }
 
+        // Special case: CLIENT::<$x> is the lexical `CALLER::<$x>` of the nearest
+        // caller living in another package, so the frame depth is only known at
+        // run time: `GetCallerVar` with the `CLIENT_CALLER_DEPTH` sentinel.
+        if let Expr::PseudoStash(stash) = target
+            && stash == "CLIENT::"
+            && let Expr::Literal(lit) = index
+            && let ValueView::Str(key) = lit.view()
+        {
+            let bare: String = match key.chars().next() {
+                Some('$' | '@' | '%' | '&') => key.chars().skip(1).collect(),
+                _ => String::clone(&key),
+            };
+            let name_idx = self.code.add_constant(Value::str(bare));
+            self.code.emit(OpCode::GetCallerVar {
+                name_idx,
+                depth: crate::opcode::CLIENT_CALLER_DEPTH,
+            });
+            self.bind_terminal = saved_terminal;
+            self.raw_list_elem_terminal = saved_raw_list_elem_terminal;
+            return;
+        }
+
         // Special case: OUTER::<$x> / OUTERS::<$x> stash-subscript access resolves a
         // lexical of an enclosing scope, exactly like the `$OUTER::x` / `$OUTERS::x`
         // symbolic forms. Route both spellings to the same scope walk; without this
