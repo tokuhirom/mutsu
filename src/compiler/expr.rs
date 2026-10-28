@@ -1102,6 +1102,8 @@ impl Compiler {
                         if let Some(chain_idx) = self.lexical_import_chain_idx(Symbol::intern(name))
                         {
                             self.code.emit(OpCode::LexImportCall { chain_idx });
+                        } else {
+                            self.register_late_import_fallback(Symbol::intern(name));
                         }
                         self.code.emit(OpCode::GetCodeVar(name_idx))
                     }

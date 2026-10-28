@@ -9,6 +9,7 @@
 //! is kept in the set too; the block's bareword reads find it through their
 //! `OpCode::LexImportCall` prefix.
 
+use super::lexical_imports::{LATE_IMPORT_MARK, LexicalImport};
 use super::*;
 
 impl Interpreter {
@@ -96,6 +97,26 @@ impl Interpreter {
             .get(&unit)?
             .get(&Symbol::intern(name))
             .cloned()
+    }
+
+    /// What a top-level `use` of the running code binds `name` to, for a use
+    /// written BELOW the call that names it. Raku binds the `use` at compile
+    /// time, so a name that resolved nowhere else still reaches it; this is
+    /// consulted only where the lookup would report the name as unknown.
+    /// The sets come from the code's fallback chains
+    /// (`Compiler::register_late_import_fallback`).
+    // Cost: O(c + s), c = the code's import chains, s = sets in the fallback chains.
+    pub(crate) fn unit_late_import(&self, name: &str) -> Option<LexicalImport> {
+        let code = self.running_code()?;
+        let name = Symbol::intern(name);
+        code.lexical_import_chains
+            .iter()
+            .filter(|chain| {
+                chain
+                    .first()
+                    .is_some_and(|mark| mark.with_str(|m| m == LATE_IMPORT_MARK))
+            })
+            .find_map(|chain| self.lexical_import_binding(&chain[1..], name))
     }
 
     /// The value a `sub EXPORT` hook returned for the declaration key `name`
