@@ -256,6 +256,7 @@ impl Compiler {
             is_hidden,
             is_lexical,
             decl_id,
+            marks,
             ..
         } = stmt
         else {
@@ -308,9 +309,7 @@ impl Compiler {
         let lexical_type_short_name = lexical_type_name.as_deref().and_then(|name| {
             (self.in_unit_package
                 && !name.starts_with("GLOBAL::")
-                && !custom_traits
-                    .iter()
-                    .any(|(trait_name, _)| trait_name == "__source_compound_name"))
+                && marks.source_compound_name.is_none())
             .then(|| name.rsplit("::").next().unwrap_or(name).to_string())
         });
         let method_outer_lexical_slots = self.local_slots_by_name();
@@ -880,6 +879,7 @@ impl Compiler {
             is_lexical,
             body,
             type_param_defs,
+            marks,
             ..
         } = stmt
         else {
@@ -912,9 +912,7 @@ impl Compiler {
         let lexical_type_short_name = lexical_type_name.as_deref().and_then(|name| {
             (self.in_unit_package
                 && !name.starts_with("GLOBAL::")
-                && !custom_traits
-                    .iter()
-                    .any(|(trait_name, _)| trait_name == "__source_compound_name"))
+                && marks.source_compound_name.is_none())
             .then(|| name.rsplit("::").next().unwrap_or(name).to_string())
         });
         let role_param_scope: crate::compiler::lex_scope::ScopeFrame = type_param_defs

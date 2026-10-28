@@ -3997,4 +3997,12 @@ pub struct PackageMarks {
     /// with: registration resolves the HOW from it, and the RakuAST layer renders it
     /// as the package's `parsed-declarator`.
     pub declarator: Option<String>,
+    /// The name as written when the compiler package-qualified a compound
+    /// declaration name (`class M::R` inside a package): the spelling the
+    /// declaration also binds in its scope.
+    pub source_compound_name: Option<String>,
+    /// For each parent the compiler package-qualified, `(qualified, written)`:
+    /// when the name is a trait instead (`is foo`) it is dispatched as written
+    /// (#11349).
+    pub parent_spellings: Vec<(String, String)>,
 }

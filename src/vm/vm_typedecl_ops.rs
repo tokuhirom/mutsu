@@ -3,36 +3,14 @@ use super::*;
 use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
-fn source_compound_name(
-    traits: &[(String, Option<crate::opcode::DeclTraitArg>)],
-) -> Option<String> {
-    traits.iter().find_map(|(name, arg)| {
-        if name == "__source_compound_name" {
-            arg.as_ref()?.literal()?.as_str().map(str::to_owned)
-        } else {
-            None
-        }
-    })
-}
-
 /// The source spelling of a parent the compiler package-qualified (`foo` for
-/// `M::foo` inside `unit module M`), recorded as a `__parent_spelling` trait.
-// Cost: O(t), t = the declaration's traits.
-fn parent_spelling<'a>(
-    traits: &'a [(String, Option<crate::opcode::DeclTraitArg>)],
-    qualified: &str,
-) -> Option<&'a str> {
-    traits.iter().find_map(|(name, arg)| {
-        if name != "__parent_spelling" {
-            return None;
-        }
-        let ValueView::Pair(key, value) = arg.as_ref()?.literal()?.view() else {
-            return None;
-        };
-        (key.as_str() == qualified)
-            .then(|| value.as_str())
-            .flatten()
-    })
+/// `M::foo` inside `unit module M`), recorded in `parent_spellings`.
+// Cost: O(p), p = the declaration's package-qualified parents.
+fn parent_spelling<'a>(spellings: &'a [(String, String)], qualified: &str) -> Option<&'a str> {
+    spellings
+        .iter()
+        .find(|(q, _)| q == qualified)
+        .map(|(_, written)| written.as_str())
 }
 
 impl Interpreter {
@@ -223,6 +201,8 @@ impl Interpreter {
             is_native,
             export_tags,
             declarator,
+            source_compound_name,
+            parent_spellings,
             language_version,
             custom_traits,
             pass,
@@ -352,7 +332,7 @@ impl Interpreter {
                 let qualified_sym = Symbol::intern(&qualified_name);
                 let short = crate::qualified::is_qualified(qualified_sym)
                     .then(|| crate::qualified::unqualified_part(qualified_sym).as_str());
-                let alias = source_compound_name(custom_traits);
+                let alias = source_compound_name.clone();
                 for bound in [
                     Some(qualified_name.as_str()),
                     Some(resolved_name.as_str()),
@@ -726,8 +706,9 @@ impl Interpreter {
             // The bare name resolves to the (possibly mangled) storage name so
             // that `Foo.new` inside this scope produces instances tagged with
             // this declaration's identity, not an earlier same-named class's.
-            let source_alias =
-                source_compound_name(custom_traits).filter(|alias| !self.has_type_direct(alias));
+            let source_alias = source_compound_name
+                .clone()
+                .filter(|alias| !self.has_type_direct(alias));
             let skip_identity_binding =
                 self.qualified_identity_binding_is_redundant(&qualified_name, &storage_name);
             if !*is_lexical {
@@ -995,7 +976,8 @@ impl Interpreter {
                         &deferred_traits
                     };
                 for trait_name in deferred_traits {
-                    let spelling = parent_spelling(custom_traits, trait_name).unwrap_or(trait_name);
+                    let spelling =
+                        parent_spelling(parent_spellings, trait_name).unwrap_or(trait_name);
                     let named_arg = Value::pair(spelling.to_string(), Value::TRUE);
                     match self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])
                     {
@@ -1334,6 +1316,7 @@ impl Interpreter {
             is_lexical,
             language_version,
             declarator,
+            source_compound_name,
             custom_traits,
             pass,
             own_attribute_names,
@@ -1385,7 +1368,7 @@ impl Interpreter {
                 &source_qualified_name,
                 &current_package,
                 *is_lexical,
-                source_compound_name(custom_traits).is_some(),
+                source_compound_name.is_some(),
                 *decl_id,
             );
             // If the short name was suppressed by an earlier lexical type with
@@ -1528,8 +1511,9 @@ impl Interpreter {
                     Value::package(Symbol::intern(&qualified_name)),
                 );
             }
-            if let Some(alias) =
-                source_compound_name(custom_traits).filter(|alias| !self.has_type_direct(alias))
+            if let Some(alias) = source_compound_name
+                .clone()
+                .filter(|alias| !self.has_type_direct(alias))
             {
                 // See the class twin: a module mainline's qualified spelling
                 // is a package symbol of the program (#7817).

@@ -5771,6 +5771,10 @@ pub(crate) struct CompiledClassDeclPlan {
     pub(crate) export_tags: Option<Vec<String>>,
     /// The `EXPORTHOW` declarator keyword (`ast::PackageMarks::declarator`).
     pub(crate) declarator: Option<String>,
+    /// `ast::PackageMarks::source_compound_name`.
+    /// `ast::PackageMarks::parent_spellings`.
+    pub(crate) parent_spellings: Vec<(String, String)>,
+    pub(crate) source_compound_name: Option<String>,
     pub(crate) language_version: String,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
     /// Which registration this plan is for (see [`crate::ast::DeclPass`]).
@@ -6434,6 +6438,8 @@ pub(crate) struct CompiledRoleDeclPlan {
     pub(crate) language_version: String,
     /// The `EXPORTHOW` declarator keyword (`ast::PackageMarks::declarator`).
     pub(crate) declarator: Option<String>,
+    /// `ast::PackageMarks::source_compound_name`.
+    pub(crate) source_compound_name: Option<String>,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
     /// Which registration this plan is for (see [`crate::ast::DeclPass`]).
     pub(crate) pass: crate::ast::DeclPass,
@@ -13196,6 +13202,8 @@ impl CompiledCode {
             is_native: *is_native,
             export_tags: export_tags.clone(),
             declarator: marks.declarator.clone(),
+            parent_spellings: marks.parent_spellings.clone(),
+            source_compound_name: marks.source_compound_name.clone(),
             language_version: language_version.clone(),
             custom_traits: plan_traits,
             pass,
@@ -13292,6 +13300,7 @@ impl CompiledCode {
             is_lexical: *is_lexical,
             language_version: language_version.clone(),
             declarator: marks.declarator.clone(),
+            source_compound_name: marks.source_compound_name.clone(),
             custom_traits: zip_decl_trait_args(custom_traits, trait_args),
             pass,
             own_attribute_names,
