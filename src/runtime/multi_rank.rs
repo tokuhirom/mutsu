@@ -153,8 +153,38 @@ impl RankProfile {
         other: &RankProfile,
         conforms: &dyn Fn(Symbol, Symbol) -> bool,
     ) -> bool {
+        match self.refined_wins(other, conforms) {
+            Some((self_wins, other_wins)) => self_wins && other_wins,
+            None => false,
+        }
+    }
+
+    /// Whether `other` is ahead of `self` on a related parameter both candidates
+    /// type and `self` is ahead on none, with a refinement involved. The rank
+    /// order may still put `self` first (an unrelated parameter sat nearer the
+    /// argument), but rakudo needs `self` at least as narrow on every
+    /// parameter to call it narrower.
+    // Cost: O(r), r = the cost of one `conforms` call; the profile length is a constant.
+    pub(crate) fn dominated_by(
+        &self,
+        other: &RankProfile,
+        conforms: &dyn Fn(Symbol, Symbol) -> bool,
+    ) -> bool {
+        matches!(self.refined_wins(other, conforms), Some((false, true)))
+    }
+
+    /// `(self wins one, other wins one)` over the related positional slots
+    /// both candidates type, by their argument-dependent scores. `None` when
+    /// neither candidate carries a refinement (a purely nominal split stays
+    /// the ambiguity the tier order reports).
+    // Cost: O(r), r = the cost of one `conforms` call; the profile length is a constant.
+    fn refined_wins(
+        &self,
+        other: &RankProfile,
+        conforms: &dyn Fn(Symbol, Symbol) -> bool,
+    ) -> Option<(bool, bool)> {
         if !(self.refined || other.refined) {
-            return false;
+            return None;
         }
         let (mut self_wins, mut other_wins) = (false, false);
         for i in 0..PROFILE_LEN {
@@ -175,7 +205,7 @@ impl RankProfile {
             self_wins |= a < b;
             other_wins |= b < a;
         }
-        self_wins && other_wins
+        Some((self_wins, other_wins))
     }
 
     /// Whether some positional slot both candidates type has a different
@@ -465,17 +495,15 @@ impl MultiRank {
         }
         match self.rank_cmp(other) {
             // Ahead in the rank order only by the argument distances is no
-            // narrowness when `other` is narrower on a declared parameter and
+            // narrowness when `other` leads on a related, refined parameter and
             // `self` on none: rakudo needs `self` at least as narrow on every
             // parameter. `(ElementWrapper, Attribute, Mu)` is not narrower than
             // `(XML::Node-subset, Attribute-subset, $obj where ...)` because
             // an unrelated first parameter happened to sit nearer the argument
             // (XML::Class's `deserialise`, #15085).
             Ordering::Less => {
-                !self.incomparable(other, conforms) && {
-                    let (self_wins, other_wins) = self.profile.declared_wins(&other.profile, conforms);
-                    self_wins || !other_wins
-                }
+                !self.incomparable(other, conforms)
+                    && !self.profile.dominated_by(&other.profile, conforms)
             }
             Ordering::Equal => self_wins && !self.incomparable(other, conforms),
             Ordering::Greater => decl_self && !decl_other && self.nominal == other.nominal,
