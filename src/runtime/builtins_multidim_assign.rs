@@ -947,6 +947,24 @@ impl Interpreter {
             _ => None,
         };
 
+        // The accessor answered an object that declares the subscript protocol
+        // itself (Red's `.num1<k>:delete`, `.num1` a column whose `DELETE-KEY`
+        // records the removal): the object owns the delete, nothing is written
+        // back.
+        // (An `is rw` accessor answers a Proxy: the object is what it FETCHes.)
+        let protocol_object = if current.is_proxy_value() {
+            self.auto_fetch_proxy(&current)?
+        } else {
+            current.clone()
+        };
+        if let Some(answer) = self.delete_through_subscript_protocol(
+            &protocol_object,
+            &index,
+            crate::opcode::SubscriptKind::Unknown,
+        )? {
+            return Ok(answer);
+        }
+
         let (removed, updated) = match current.view() {
             ValueView::Hash(h) => {
                 // An object hash (`has %.a{Str:D}`) stores `.WHICH` keys.

@@ -50,10 +50,16 @@ impl Interpreter {
                     self.mixin_composes_method(object, at_method)
                         && self.delegated_mixin_attr_key(mixins, at_method).is_none()
                 }
-                ValueView::Instance { class_name, attributes, .. } => {
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } => {
                     !crate::runtime::instance_backing::InstanceBacking::Array.is_in(&attributes)
-                        && !crate::runtime::instance_backing::InstanceBacking::Hash.is_in(&attributes)
-                        && !crate::runtime::instance_backing::InstanceBacking::Baggy.is_in(&attributes)
+                        && !crate::runtime::instance_backing::InstanceBacking::Hash
+                            .is_in(&attributes)
+                        && !crate::runtime::instance_backing::InstanceBacking::Baggy
+                            .is_in(&attributes)
                         && self
                             .resolve_method_with_owner(
                                 class_name.as_str(),
