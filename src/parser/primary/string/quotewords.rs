@@ -23,7 +23,7 @@ pub(crate) fn parse_quotewords_items(
         let atom_len = find_quotewords_atom_end(rest);
         let (atom, next) = rest.split_at(atom_len);
         let atom_expr =
-            crate::parser::primary::quote_adverbs::process_content_with_flags(atom, flags);
+            crate::parser::primary::quote_adverbs::process_content_with_flags(atom, flags)?;
         items.push(quotewords_atom_expr_allomorphic(atom_expr, flags.val));
         rest = next;
     }
@@ -134,7 +134,7 @@ pub(crate) fn parse_quotewords_unicode_quoted_atom(input: &str) -> Option<(&str,
         '‘' | '’' | '‚' => parse_quotewords_single_quote_atom(input),
         '“' | '”' | '„' => {
             let (rest, content) = parse_quotewords_quote_span(input, &['“', '”'])?;
-            Some((rest, interpolate_string_content(content)))
+            Some((rest, interpolate_string_content(content).ok()?))
         }
         '｢' => corner_bracket_string(input).ok(),
         _ => None,
@@ -186,14 +186,15 @@ pub(crate) fn quotewords_spelled_parts(
     let mut parts = Vec::new();
     let mut run_start = 0;
     let mut pos = 0;
-    let flush = |parts: &mut Vec<QuoteWordsPart>, from: usize, to: usize| {
+    let flush = |parts: &mut Vec<QuoteWordsPart>, from: usize, to: usize| -> Option<()> {
         if from < to {
             parts.push(QuoteWordsPart::Text(if interpolates {
-                crate::parser::interpolate_qq_content(&content[from..to])
+                crate::parser::interpolate_qq_content(&content[from..to]).ok()?
             } else {
                 Expr::Literal(crate::value::Value::str(content[from..to].to_string()))
             }));
         }
+        Some(())
     };
     while pos < content.len() {
         let rest = &content[pos..];
@@ -207,14 +208,14 @@ pub(crate) fn quotewords_spelled_parts(
         {
             let body = &rest[open.len()..];
             let end = crate::parser::primary::container::find_quote_word_close(body, open, close)?;
-            flush(&mut parts, run_start, pos + open.len());
+            flush(&mut parts, run_start, pos + open.len())?;
             parts.push(QuoteWordsPart::Nested(body[..end].to_string()));
             pos += open.len() + end;
             run_start = pos;
             continue;
         }
         if let Some((next, quoted)) = parse_quotewords_quoted_atom(rest).ok()? {
-            flush(&mut parts, run_start, pos);
+            flush(&mut parts, run_start, pos)?;
             parts.push(QuoteWordsPart::Atom(quoted));
             pos = content.len() - next.len();
             run_start = pos;
@@ -233,7 +234,7 @@ pub(crate) fn quotewords_spelled_parts(
         };
         pos += step.max(1);
     }
-    flush(&mut parts, run_start, content.len());
+    flush(&mut parts, run_start, content.len())?;
     Some(parts)
 }
 

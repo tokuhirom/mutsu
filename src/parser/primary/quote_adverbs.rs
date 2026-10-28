@@ -1,9 +1,10 @@
 use crate::ast::Expr;
+use crate::parser::parse_result::PError;
 use crate::symbol::Symbol;
 use crate::value::Value;
 
 use super::super::expr::expression;
-use super::string::{finalize_interpolation, process_escape_sequence, try_interpolate_var};
+use super::string::{unrecognized_backslash_perror, finalize_interpolation, process_escape_sequence, try_interpolate_var};
 
 /// Flags representing which interpolation modes are active in a Q/q quoting form.
 #[derive(Clone, Default)]
@@ -275,10 +276,13 @@ pub(super) fn parse_fused_adverbs_small_q<'a>(input: &'a str, flags: &mut QuoteF
 
 /// Process quoted content according to the given flags.
 /// This is the unified content processing function for all Q/q forms.
-pub(in crate::parser) fn process_content_with_flags(content: &str, flags: &QuoteFlags) -> Expr {
+pub(in crate::parser) fn process_content_with_flags(
+    content: &str,
+    flags: &QuoteFlags,
+) -> Result<Expr, PError> {
     // Raw Q mode — no processing at all
     if flags.is_raw() {
-        return Expr::Literal(Value::str(content.to_string()));
+        return Ok(Expr::Literal(Value::str(content.to_string())));
     }
 
     // q mode with only :q (single-quote semantics) — minimal processing
@@ -298,7 +302,7 @@ pub(in crate::parser) fn process_content_with_flags(content: &str, flags: &Quote
                 // `\q[...]`/`\qq[...]`/`\qw[...]` re-quote their body; they
                 // produce an expression, so they are tried before the
                 // char-level escape handler (which only appends to `current`).
-                if let Some(r) = process_q_escape(rest, &mut parts, &mut current) {
+                if let Some(r) = process_q_escape(rest, &mut parts, &mut current)? {
                     rest = r;
                     continue;
                 }
@@ -308,16 +312,7 @@ pub(in crate::parser) fn process_content_with_flags(content: &str, flags: &Quote
                 }
                 let (c, after_escape) = escaped_char(rest).unwrap();
                 if c.is_alphanumeric() || c == '_' {
-                    if !current.is_empty() {
-                        parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
-                    }
-                    parts.push(Expr::Call {
-                        name: Symbol::intern("__mutsu_unknown_backslash_escape"),
-                        args: vec![Expr::Literal(Value::str(c.to_string()))],
-                        listop: false,
-                    });
-                    let _ = after_escape;
-                    return finalize_interpolation(parts, current);
+                    return Err(unrecognized_backslash_perror(c));
                 }
                 // Unknown non-word escape in :b mode stays literal.
                 current.push('\\');
@@ -327,7 +322,7 @@ pub(in crate::parser) fn process_content_with_flags(content: &str, flags: &Quote
             } else if flags.q_mode {
                 // q-mode: handle \\, \', and \qq[]/\q:adverb{} escapes
                 if let Some(r) =
-                    process_q_escape_in_interpolating(rest, &mut parts, &mut current, flags)
+                    process_q_escape_in_interpolating(rest, &mut parts, &mut current, flags)?
                 {
                     rest = r;
                     continue;
@@ -372,7 +367,7 @@ pub(in crate::parser) fn process_content_with_flags(content: &str, flags: &Quote
         rest = &rest[ch.len_utf8()..];
     }
 
-    finalize_interpolation(parts, current)
+    Ok(finalize_interpolation(parts, current))
 }
 
 fn escaped_char(rest: &str) -> Option<(char, &str)> {
@@ -383,7 +378,7 @@ fn escaped_char(rest: &str) -> Option<(char, &str)> {
 
 /// Process content in q mode (single-quote semantics).
 /// Only handles \\, \', and \qq[]/\q:adverb{} escapes.
-fn process_q_mode_content(content: &str, flags: &QuoteFlags) -> Expr {
+fn process_q_mode_content(content: &str, flags: &QuoteFlags) -> Result<Expr, PError> {
     // Check for \qq or \q: escape sequences that need special handling
     if content.contains("\\qq")
         || content.contains("\\q:")
@@ -400,14 +395,14 @@ fn process_q_mode_content(content: &str, flags: &QuoteFlags) -> Expr {
 }
 
 /// Process q-mode content that contains \qq[] or \q:adverb{} escapes.
-fn process_q_mode_with_escapes(content: &str, flags: &QuoteFlags) -> Expr {
+fn process_q_mode_with_escapes(content: &str, flags: &QuoteFlags) -> Result<Expr, PError> {
     let mut parts: Vec<Expr> = Vec::new();
     let mut current = String::new();
     let mut rest = content;
 
     while !rest.is_empty() {
         if rest.starts_with('\\') && rest.len() > 1 {
-            if let Some(r) = process_q_escape(rest, &mut parts, &mut current) {
+            if let Some(r) = process_q_escape(rest, &mut parts, &mut current)? {
                 rest = r;
                 continue;
             }
@@ -431,7 +426,7 @@ fn process_q_mode_with_escapes(content: &str, flags: &QuoteFlags) -> Expr {
         rest = &rest[ch.len_utf8()..];
     }
 
-    finalize_interpolation(parts, current)
+    Ok(finalize_interpolation(parts, current))
 }
 
 /// Handle the embedded-quote escape family — `\q[...]`, `\qq[...]`,
@@ -451,27 +446,27 @@ pub(in crate::parser::primary) fn process_q_escape<'a>(
     input: &'a str,
     parts: &mut Vec<Expr>,
     current: &mut String,
-) -> Option<&'a str> {
+) -> Result<Option<&'a str>, PError> {
     // \qqw[...] / \qw[...] — embedded quote-words (checked before \qq so the
     // trailing `w` isn't consumed as a plain \qq delimiter).
-    if let Some((after, words)) = super::string::try_embedded_qw(input) {
+    if let Some((after, words)) = super::string::try_embedded_qw(input)? {
         if !current.is_empty() {
             parts.push(Expr::Literal(Value::str(std::mem::take(current))));
         }
         parts.push(words);
-        return Some(after);
+        return Ok(Some(after));
     }
 
     // \qq[...] — interpolate inner content as qq
     if let Some(after_qq) = input.strip_prefix("\\qq")
-        && let Some(r) = parse_inline_quote(after_qq, &QuoteFlags::qq_double())
+        && let Some(r) = parse_inline_quote(after_qq, &QuoteFlags::qq_double())?
     {
         let (after, expr) = r;
         if !current.is_empty() {
             parts.push(Expr::Literal(Value::str(std::mem::take(current))));
         }
         parts.push(expr);
-        return Some(after);
+        return Ok(Some(after));
     }
 
     // \q:adverb{...} — interpolate with specified adverbs
@@ -479,39 +474,46 @@ pub(in crate::parser::primary) fn process_q_escape<'a>(
         if after_q.starts_with(':') {
             let mut flags = QuoteFlags::q_single();
             let after_adverbs = parse_colon_adverbs(after_q, &mut flags);
-            if let Some(r) = parse_inline_quote(after_adverbs, &flags) {
+            if let Some(r) = parse_inline_quote(after_adverbs, &flags)? {
                 let (after, expr) = r;
                 if !current.is_empty() {
                     parts.push(Expr::Literal(Value::str(std::mem::take(current))));
                 }
                 parts.push(expr);
-                return Some(after);
+                return Ok(Some(after));
             }
         }
         // \q/.../ — plain q (no interpolation)
-        let first = after_q.chars().next()?;
+        let Some(first) = after_q.chars().next() else {
+            return Ok(None);
+        };
         if !first.is_alphanumeric() && !first.is_whitespace() {
             let flags = QuoteFlags::q_single();
-            if let Some(r) = parse_inline_quote(after_q, &flags) {
+            if let Some(r) = parse_inline_quote(after_q, &flags)? {
                 let (after, expr) = r;
                 if !current.is_empty() {
                     parts.push(Expr::Literal(Value::str(std::mem::take(current))));
                 }
                 parts.push(expr);
-                return Some(after);
+                return Ok(Some(after));
             }
         }
     }
 
-    None
+    Ok(None)
 }
 
 /// Parse an inline quote from the given position (after \qq or \q:adverb).
 /// Returns (remaining, expr) on success.
-fn parse_inline_quote<'a>(input: &'a str, flags: &QuoteFlags) -> Option<(&'a str, Expr)> {
-    let first = input.chars().next()?;
+fn parse_inline_quote<'a>(
+    input: &'a str,
+    flags: &QuoteFlags,
+) -> Result<Option<(&'a str, Expr)>, PError> {
+    let Some(first) = input.chars().next() else {
+        return Ok(None);
+    };
     if first.is_alphanumeric() || first.is_whitespace() {
-        return None;
+        return Ok(None);
     }
     let mut flags = flags.clone();
 
@@ -527,18 +529,22 @@ fn parse_inline_quote<'a>(input: &'a str, flags: &QuoteFlags) -> Option<(&'a str
     flags.quote_close = Some(bracket_close.unwrap_or(first));
 
     if let Some(close) = bracket_close {
-        let (rest, content) = super::string::read_bracketed(input, first, close, true).ok()?;
-        let expr = process_content_with_flags(content, &flags);
-        return Some((rest, expr));
+        let Ok((rest, content)) = super::string::read_bracketed(input, first, close, true) else {
+            return Ok(None);
+        };
+        let expr = process_content_with_flags(content, &flags)?;
+        return Ok(Some((rest, expr)));
     }
 
     // Symmetric delimiter
     let body = &input[first.len_utf8()..];
-    let end = body.find(first)?;
+    let Some(end) = body.find(first) else {
+        return Ok(None);
+    };
     let content = &body[..end];
     let rest = &body[end + first.len_utf8()..];
-    let expr = process_content_with_flags(content, &flags);
-    Some((rest, expr))
+    let expr = process_content_with_flags(content, &flags)?;
+    Ok(Some((rest, expr)))
 }
 
 /// Process a backslash escape in :b mode (full backslash + optional sigil escaping).
@@ -599,15 +605,17 @@ fn process_q_escape_in_interpolating<'a>(
     parts: &mut Vec<Expr>,
     current: &mut String,
     _flags: &QuoteFlags,
-) -> Option<&'a str> {
-    let (c, after_escape) = escaped_char(rest)?;
+) -> Result<Option<&'a str>, PError> {
+    let Some((c, after_escape)) = escaped_char(rest) else {
+        return Ok(None);
+    };
     match c {
         _ if is_q_literal_escape(c, _flags) => {
             current.push(c);
-            Some(after_escape)
+            Ok(Some(after_escape))
         }
         'q' => process_q_escape(rest, parts, current),
-        _ => None,
+        _ => Ok(None),
     }
 }
 

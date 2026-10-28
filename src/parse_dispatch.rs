@@ -71,6 +71,8 @@ pub(crate) fn parse_compilation_unit_of(
 /// body that is not lexically a `"..."` literal (notably the `s///` / `S///`
 /// replacement, which Raku also treats as a `qq` quote) must come through here
 /// rather than growing a second, partial interpolator.
-pub(crate) fn parse_qq_interpolation(content: &str) -> crate::ast::Expr {
+pub(crate) fn parse_qq_interpolation(
+    content: &str,
+) -> Result<crate::ast::Expr, crate::value::RuntimeError> {
     parser::interpolate_qq_content(content)
 }

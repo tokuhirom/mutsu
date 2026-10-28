@@ -285,16 +285,19 @@ pub(crate) fn imported_value_term_names() -> Vec<String> {
 /// specifies as `qq`-quoted but that is not lexically a `"..."` literal — a
 /// heredoc body, an `s///` replacement — must route through here rather than
 /// grow its own partial interpolator.
-pub(crate) fn interpolate_qq_content(content: &str) -> crate::ast::Expr {
+pub(crate) fn interpolate_qq_content(content: &str) -> Result<crate::ast::Expr, RuntimeError> {
     primary::quote_adverbs::process_content_with_flags(
         content,
         &primary::quote_adverbs::QuoteFlags::qq_double(),
     )
+    .map_err(|e| render_parse_error(content, e))
 }
 
 /// Parse a heredoc body string as an interpolated (qq-style) string expression.
 /// Used by the compiler to defer heredoc interpolation to compile time.
-pub(crate) fn interpolate_heredoc_content(content: &str) -> crate::ast::Expr {
+pub(crate) fn interpolate_heredoc_content(
+    content: &str,
+) -> Result<crate::ast::Expr, RuntimeError> {
     interpolate_qq_content(content)
 }
 

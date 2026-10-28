@@ -45,9 +45,11 @@ impl Ctx {
         if text.is_empty() {
             return;
         }
-        let mut parsed = vec![Stmt::Expr(crate::parse_dispatch::parse_qq_interpolation(
-            text,
-        ))];
+        // A text the `qq` grammar rejects is reported where it runs; it reads nothing here.
+        let Ok(expr) = crate::parse_dispatch::parse_qq_interpolation(text) else {
+            return;
+        };
+        let mut parsed = vec![Stmt::Expr(expr)];
         self.visit_stmts_mut(&mut parsed);
     }
 }

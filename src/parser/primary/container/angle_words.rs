@@ -353,7 +353,7 @@ fn split_quotish_words(content: &str, delims: Option<(&str, &str)>) -> Result<Ve
             || word.contains('\\')
         {
             let expr =
-                crate::parser::primary::quote_adverbs::process_content_with_flags(word, &flags);
+                crate::parser::primary::quote_adverbs::process_content_with_flags(word, &flags)?;
             words.push(quotewords_atom_expr(expr));
         } else {
             // «...» and <<...>> are equivalent to qqww:v, so fractions

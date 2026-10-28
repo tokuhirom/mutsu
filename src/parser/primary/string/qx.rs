@@ -45,7 +45,7 @@ pub(crate) fn qx_string(input: &str) -> PResult<'_, Expr> {
         // Closures are disabled only when the quote delimiter is itself a brace
         // (`qqx{ ... }`), where `{`/`}` are the delimiters, not interpolation.
         let closures = unicode_bracket_close(delim) != Some('}');
-        interpolate_string_content_with_modes(content, true, closures)
+        interpolate_string_content_with_modes(content, true, closures)?
     } else {
         // qx uses q-style backslash (only \\ → \)
         let s = content.replace("\\\\", "\\");
@@ -78,7 +78,7 @@ pub(crate) fn backtick_qx_string(input: &str) -> PResult<'_, Expr> {
     let rest = &body[end + 1..];
     // Backtick command quoting is qqx-equivalent: full interpolation, including
     // `{ EXPR }` closure blocks (the delimiter is a backtick, never a brace).
-    let command_expr = interpolate_string_content_with_modes(content, true, true);
+    let command_expr = interpolate_string_content_with_modes(content, true, true)?;
     Ok((
         rest,
         Expr::Call {
