@@ -2934,42 +2934,6 @@ fn postfix_expr_loop_from<'a>(
             }
         }
 
-        // General :delete adverb. Index targets are lowered to dedicated delete
-        // opcodes by the compiler; non-index targets die at runtime.
-        let (r_delete, _) = ws(rest)?;
-        if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_delete) {
-            rest = r_after_delete;
-            match delete_adv {
-                DeleteAdverb::NoDelete => {}
-                DeleteAdverb::Delete(None) => {
-                    expr = Expr::MethodCall {
-                        target: Box::new(expr),
-                        name: Symbol::intern("DELETE-KEY"),
-                        args: vec![],
-                        modifier: None,
-                        quoted: false,
-                        sugar: false,
-                    };
-                }
-                DeleteAdverb::Delete(Some(cond)) => {
-                    let delete_expr = Expr::MethodCall {
-                        target: Box::new(expr.clone()),
-                        name: Symbol::intern("DELETE-KEY"),
-                        args: vec![],
-                        modifier: None,
-                        quoted: false,
-                        sugar: false,
-                    };
-                    expr = Expr::Ternary {
-                        cond: Box::new(cond),
-                        then_expr: Box::new(delete_expr),
-                        else_expr: Box::new(expr),
-                    };
-                }
-            }
-            continue;
-        }
-
         // Hyper method call: »/>> followed by .method or method name
         // Also hyper postfix: » followed by superscript digits (e.g. »²)
         if rest.starts_with('\u{00BB}') || rest.starts_with(">>") {
