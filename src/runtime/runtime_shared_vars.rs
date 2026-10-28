@@ -493,6 +493,15 @@ impl Interpreter {
             if self.threads.shared_vars.is_seed_or_own_write(&key) {
                 continue;
             }
+            // A name this thread re-declared, or captured from its spawn (the
+            // child's `thread_redeclared_vars`), is its own binding: the store's
+            // entry under the bare name belongs to another binding of it (an
+            // earlier call's `$guard` in Red's `Guard.start`, whose worker
+            // then ran with that stale guard), the same exclusion
+            // `sync_shared_vars_to_env` applies.
+            if self.threads.thread_redeclared_vars.borrow().contains(&key) {
+                continue;
+            }
             if let Some(val) = self.threads.shared_vars.get(&key) {
                 self.env.insert(key, val);
             }
