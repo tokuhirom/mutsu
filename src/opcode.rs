@@ -9435,6 +9435,13 @@ impl CompiledCode {
         // unaffected and still skips the per-call flush for its slot-only params.
         let n = self.locals.len();
         self.needs_env_sync = vec![false; n];
+        // A dynamic `&*name` parameter is read by name from callees' frames, so
+        // its slot is always mirrored into the env (a `$*name` has no slot).
+        for (slot, name) in self.locals.iter().enumerate() {
+            if name.starts_with("&*") {
+                self.needs_env_sync[slot] = true;
+            }
+        }
         self.env_consumer_slots = EnvConsumerSlots::default();
         let mut has_for_loop = false;
         let mut has_block_scope = false;
