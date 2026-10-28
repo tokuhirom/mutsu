@@ -1261,7 +1261,7 @@ impl Interpreter {
             let is_unwritten_capture = |sym: Symbol, v: &Value| -> bool {
                 method_def.captured_env.as_ref().is_some_and(|c| {
                     c.get_sym(sym)
-                        .is_some_and(|captured| cheaply_unchanged(captured, v))
+                        .is_some_and(|captured| unwritten_capture_value(captured, v))
                 })
             };
             let rw_writeback: Vec<(String, Value)> = rw_bindings
@@ -2989,7 +2989,7 @@ impl Interpreter {
                 let is_unwritten_capture = |sym: Symbol, v: &Value| -> bool {
                     method_def.captured_env.as_ref().is_some_and(|c| {
                         c.get_sym(sym)
-                            .is_some_and(|captured| cheaply_unchanged(captured, v))
+                            .is_some_and(|captured| unwritten_capture_value(captured, v))
                     })
                 };
                 // Own both envs (frame already popped above; take the live callee
@@ -3097,6 +3097,21 @@ fn could_name_caller_local(name: &str) -> bool {
         || name.starts_with('=')
         || name.contains('*')
         || name.starts_with("__mutsu_"))
+}
+
+/// Whether `frame` is the value the method received for a captured variable
+/// whose captured binding is `captured`: the same value, whether or not the
+/// frame (or the capture) holds it through a `ContainerRef` cell. A cell and
+/// the plain value it holds are one variable's two spellings, so reading the
+/// cell's contents is not a write -- reported as one, the method's frame setup
+/// was merged back into a caller's same-named variable (Red's nested
+/// `-> :$guard!` blocks: the outer block's `$guard` became the inner guard).
+// Cost: O(1).
+fn unwritten_capture_value(captured: &Value, frame: &Value) -> bool {
+    cheaply_unchanged(captured, frame)
+        || (matches!(captured.view(), ValueView::ContainerRef(_))
+            != matches!(frame.view(), ValueView::ContainerRef(_))
+            && cheaply_unchanged(&captured.deref_container(), &frame.deref_container()))
 }
 
 /// O(1), conservative "is this value provably unchanged?" check used by
