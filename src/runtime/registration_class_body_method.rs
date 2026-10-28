@@ -469,6 +469,16 @@ impl Interpreter {
                 body_facts_cache: std::sync::OnceLock::new(),
                 routine_cell: Default::default(),
             };
+            // The class body's registry restore drops the short name, but the
+            // methods of the class are closures over this scope: carry the
+            // routine in the env under the reserved block-lexical key, the way
+            // a `my sub` of the body does, so `foo(self)` / `&foo` resolve from
+            // a sibling method (Proxy's `callwith :&FETCH, :&STORE`).
+            let lexical_sub = self.sub_value_from_function_def(func_def.clone());
+            self.env.insert(
+                format!("{}{resolved_method_name}", crate::env::BLOCK_LEXICAL_SUB_PREFIX),
+                lexical_sub,
+            );
             // Register under the short name (lexical scope)
             self.registry_mut().functions_mut().insert(
                 Symbol::intern(&resolved_method_name),

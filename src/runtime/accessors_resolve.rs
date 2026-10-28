@@ -808,6 +808,17 @@ impl Interpreter {
                     None
                 }
             });
+        // A routine lexical to a scope that has since exited (a class body's
+        // `my method`) is still carried by the closure env under its reserved
+        // key.
+        if def.is_none()
+            && !has_packages
+            && let Some(sub_val) = self
+                .env
+                .get(&format!("{}{lookup_name}", crate::env::BLOCK_LEXICAL_SUB_PREFIX))
+        {
+            return sub_val.clone();
+        }
         if def.is_none() && core_visible {
             match lookup_name {
                 "sleep" | "sleep-timer" | "now" | "time" => {

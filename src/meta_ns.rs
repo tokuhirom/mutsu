@@ -133,6 +133,10 @@ pub(crate) enum MetaNs {
     /// `__mutsu_bound_decont::<name>` — a `$x := @a` scalar that must
     /// decontainerize on read.
     BoundDecont,
+    /// `__mutsu_bound_attr::<name>` — an attribute cell of an instance whose
+    /// `$!name` was bound (`:=`) to a non-container value, so it is no longer
+    /// a writable container (`nqp::isrwcont`).
+    BoundAttr,
     /// `__mutsu_compunit::<prefix>::<short-name>` — a loaded compunit, cached
     /// per repository prefix. Built with [`MetaNs::key_pair`].
     Compunit,
@@ -264,6 +268,7 @@ impl MetaNs {
         MetaNs::AtomicName,
         MetaNs::AtomicValue,
         MetaNs::BoundDecont,
+        MetaNs::BoundAttr,
         MetaNs::Compunit,
         MetaNs::ConstantVar,
         MetaNs::ModuleMerge,
@@ -318,6 +323,7 @@ impl MetaNs {
             MetaNs::AtomicName => "__mutsu_atomic_name::",
             MetaNs::AtomicValue => "__mutsu_atomic_value::",
             MetaNs::BoundDecont => "__mutsu_bound_decont::",
+            MetaNs::BoundAttr => "__mutsu_bound_attr::",
             MetaNs::Compunit => "__mutsu_compunit::",
             MetaNs::ConstantVar => "__mutsu_constant_var::",
             MetaNs::ModuleMerge => "__mutsu_module_merge::",

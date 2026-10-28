@@ -959,6 +959,9 @@ impl Interpreter {
     /// assignment to a scalar clears any stale marker (guarded by
     /// `bound_decont_active` so the common no-bind case stays cheap).
     pub(super) fn update_bound_decont_marker(&mut self, name: &str, is_bind: bool, val: &Value) {
+        if is_bind && name.starts_with('!') {
+            self.note_bound_private_attr(name, val);
+        }
         // Scalar local names carry no sigil (e.g. "y"); `@`/`%`/`&` vars do.
         if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
             return;
