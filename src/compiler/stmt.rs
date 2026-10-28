@@ -3243,7 +3243,7 @@ impl Compiler {
                 // routine returns (#9060). Taken first so the topic never sees it.
                 let rw_branch = std::mem::take(&mut self.rw_tail_branch);
                 // A pointy `-> $_ is copy` block starts with a parser-generated
-                // lexical declaration carrying the `__pointy_copy` marker: the
+                // lexical declaration carrying `VarMarks::pointy_copy`: the
                 // topic becomes a fresh, writable copy with NO writeback to the
                 // source. Detect that declaration so the topic is not marked
                 // read-only (`given 42 -> $_ is copy` must allow `$_ = ...`) and
@@ -3252,8 +3252,7 @@ impl Compiler {
                 let is_copy_topic = body.first().is_some_and(|stmt| {
                     matches!(
                         stmt,
-                        Stmt::VarDecl { custom_traits, .. }
-                            if custom_traits.iter().any(|(name, _)| name == "__pointy_copy")
+                        Stmt::VarDecl { marks, .. } if marks.pointy_copy
                     )
                 });
                 // An lvalue container *element* topic (`given %h<k>` /
@@ -3353,13 +3352,10 @@ impl Compiler {
                 // back.
                 // A native-typed pointy param (`given $x -> int $v is rw {...}`)
                 // cannot use `:=` (see `pointy_topic_bind`'s native branch), so
-                // it carries `__pointy_native_param` instead of `MarkBind` —
+                // it carries `VarMarks::pointy_native_param` instead of `MarkBind` —
                 // either bare (`is rw`) or wrapped in a `SyntheticBlock` with a
                 // trailing `MarkReadonly` (the default, readonly case).
-                let is_pointy_native_decl = |s: &Stmt| {
-                    matches!(s, Stmt::VarDecl { custom_traits, .. }
-                        if custom_traits.iter().any(|(t, _)| t == "__pointy_native_param"))
-                };
+                let is_pointy_native_decl = |s: &Stmt| matches!(s, Stmt::VarDecl { marks, .. } if marks.pointy_native_param);
                 let pointy_param_name = match body.first() {
                     Some(Stmt::SyntheticBlock(inner))
                         if inner
@@ -3406,8 +3402,7 @@ impl Compiler {
                 }
                 let restore_outer_topic = body.first().is_some_and(|stmt| match stmt {
                     Stmt::SyntheticBlock(stmts) => stmts.iter().any(|stmt| {
-                        matches!(stmt, Stmt::VarDecl { custom_traits, .. }
-                            if custom_traits.iter().any(|(name, _)| name == "__restore_pointy_given_topic"))
+                        matches!(stmt, Stmt::VarDecl { marks, .. } if marks.restore_pointy_given_topic)
                     }),
                     _ => false,
                 });

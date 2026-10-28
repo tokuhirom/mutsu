@@ -143,8 +143,7 @@ impl Compiler {
                 }
                 let restore_outer_topic = body.first().is_some_and(|stmt| match stmt {
                     Stmt::SyntheticBlock(stmts) => stmts.iter().any(|stmt| {
-                        matches!(stmt, Stmt::VarDecl { custom_traits, .. }
-                            if custom_traits.iter().any(|(name, _)| name == "__restore_pointy_given_topic"))
+                        matches!(stmt, Stmt::VarDecl { marks, .. } if marks.restore_pointy_given_topic)
                     }),
                     _ => false,
                 });
