@@ -6044,9 +6044,9 @@ fn body_bind_source_slots<'a>(
 /// an immutable Int" (Math::Interval 0.0.3's `Operation` helper class).
 fn synthetic_block_needs_atomic_compile(stmts: &[Stmt]) -> bool {
     crate::ast::var_marks::is_bind_group(stmts)
-        || stmts.iter().any(|s| {
-            matches!(s, Stmt::MarkSigilless(_) | Stmt::MarkSigillessReadonly(_))
-        })
+        || stmts
+            .iter()
+            .any(|s| matches!(s, Stmt::MarkSigilless(_) | Stmt::MarkSigillessReadonly(_)))
 }
 
 /// `has` declarations nested anywhere below a class body's own statements —

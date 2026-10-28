@@ -321,28 +321,26 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         // enclosing same-named lexical. Use the same bound declaration as
         // `my $x := EXPR`; this both preserves aliasing and lets block-scope
         // tracking restore the outer binding when the given body exits.
-        let mut stmts = vec![
-            Stmt::VarDecl {
-                marks: crate::ast::var_marks::VarMarks {
-                    bound: true,
-                    ..Default::default()
-                },
-                anonymous: false,
-                name: pd.name.clone(),
-                expr: topic,
-                type_constraint: pd.type_constraint.clone(),
-                is_state: false,
-                is_our: false,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: Vec::new(),
-                custom_traits: Vec::new(),
-                has_initializer: true,
-                constant: None,
-                bind: None,
-                where_constraint: None,
+        let mut stmts = vec![Stmt::VarDecl {
+            marks: crate::ast::var_marks::VarMarks {
+                bound: true,
+                ..Default::default()
             },
-        ];
+            anonymous: false,
+            name: pd.name.clone(),
+            expr: topic,
+            type_constraint: pd.type_constraint.clone(),
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: Vec::new(),
+            has_initializer: true,
+            constant: None,
+            bind: None,
+            where_constraint: None,
+        }];
         // A `@`/`%` pointy param is always a fully-writable alias regardless of
         // any trait (verified against raku: `given @a -> @p { @p[0] = 99 }`
         // mutates `@a` with no `is rw` needed). Only a plain scalar (`$`,

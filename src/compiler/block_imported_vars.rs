@@ -386,7 +386,9 @@ impl Compiler {
                 bind: None,
                 where_constraint: None,
             };
-            return Some(Stmt::SyntheticBlock(vec![crate::ast::var_marks::bound(decl)]));
+            return Some(Stmt::SyntheticBlock(vec![crate::ast::var_marks::bound(
+                decl,
+            )]));
         }
         Self::imported_var_binding(&var)
     }
