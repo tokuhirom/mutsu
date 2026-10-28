@@ -568,6 +568,14 @@ impl Interpreter {
             // := &name`.
             if sigil == Some('&') {
                 self.publish_our_pseudo_stash_symbol(&format!("&OUR::{bare}"), &binding);
+            } else if Self::export_stash_tag(&package).is_some() {
+                // A type or variable copied across (`ANN`, `$var`) is an export
+                // of the module just the same.
+                let sigil = match sigil {
+                    Some(sigil @ ('@' | '%')) => sigil.to_string(),
+                    _ => String::new(),
+                };
+                self.publish_package_stash_symbol(package.clone(), &sigil, bare, &binding);
             }
         }
 

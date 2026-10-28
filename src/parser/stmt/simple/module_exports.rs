@@ -1004,6 +1004,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // L10N distributions do not `use Slangify` themselves; their generated
     // EXPORT hook calls `$*LANG.define_slang(...)` (see `decl_scan`).
     let uses_slangify = decls.defines_slang
+        || decls.binds_lexical_exporthow
         || stmts.iter().any(|s| {
             matches!(s, Stmt::Use { module, .. }
             if module == "Slangify" || module.starts_with("Slangify:"))

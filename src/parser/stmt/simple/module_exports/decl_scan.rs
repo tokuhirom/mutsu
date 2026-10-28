@@ -56,6 +56,10 @@ pub(super) struct ModuleDecls {
     /// Whether the module calls `.define_slang` (an L10N distribution's
     /// generated EXPORT hook).
     pub(super) defines_slang: bool,
+    /// Whether an `EXPORT` hook binds `LEXICAL::<EXPORTHOW>`: the declarators
+    /// it publishes depend on the `use` arguments, so the importer's parse has
+    /// to run the hook to learn them (annotations' `annotation`).
+    pub(super) binds_lexical_exporthow: bool,
     /// Whether the module binds into an export stash under a key that is not
     /// a literal (`dynamic_stash.rs`, #9500).
     pub(super) dynamic_export_stash: bool,

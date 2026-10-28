@@ -18,6 +18,17 @@ impl DeclScan {
             {
                 self.out.defines_slang = true;
             }
+            // `LEXICAL::<EXPORTHOW> := PACKAGE ...` in an `EXPORT` hook hands
+            // the importing unit declarators (`EXPORTHOW::DECLARE`) chosen by
+            // the hook's arguments; the module is run for the importer's
+            // parse like a slang activation.
+            Expr::IndexAssign { target, index, .. }
+                if matches!(target.as_ref(), Expr::PseudoStash(s) if s == "LEXICAL::")
+                    && matches!(index.as_ref(), Expr::Literal(key)
+                        if key.as_str() == Some("EXPORTHOW")) =>
+            {
+                self.out.binds_lexical_exporthow = true;
+            }
             // `OUR.WHO.BIND-KEY: .key, .value for Other::;` in an export stash
             // package copies another package's symbols into the export list
             // under keys only known at run time (annotations' `EXPORT::MANDATORY`):

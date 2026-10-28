@@ -36,6 +36,9 @@ use crate::value::ValueView;
 pub(crate) struct SlangActivation {
     pub(crate) rules: Vec<SlangRuleOverride>,
     pub(crate) declarators: Vec<SlangDeclarator>,
+    /// Built-in declarators whose HOW an `EXPORT` hook replaced through
+    /// `LEXICAL::<EXPORTHOW>` (`EXPORTHOW::SUPERSEDE`).
+    pub(crate) supersede_keywords: Vec<String>,
 }
 
 /// Classes of the compile-time `$*LANG` object graph. `.^name` on these must
@@ -85,6 +88,27 @@ pub(crate) struct SlangRuleOverride {
     /// which is where the generated roles keep the identifier-position half of
     /// a vocabulary. Empty for every other kind of override.
     pub(crate) aliases: Vec<(String, String)>,
+}
+
+/// The metaclass the language builds a declaration written with `declarator`
+/// with, as Rakudo's `EXPORTHOW` stash lists them.
+// Cost: O(1).
+fn lang_how_type(declarator: &str) -> Option<&'static str> {
+    Some(match declarator {
+        "class" => "Perl6::Metamodel::ClassHOW",
+        "role" => "Perl6::Metamodel::ParametricRoleHOW",
+        "role-group" => "Perl6::Metamodel::ParametricRoleGroupHOW",
+        "package" => "Perl6::Metamodel::PackageHOW",
+        "module" => "Perl6::Metamodel::ModuleHOW",
+        "grammar" => "Perl6::Metamodel::GrammarHOW",
+        "native" => "Perl6::Metamodel::NativeHOW",
+        "subset" => "Perl6::Metamodel::SubsetHOW",
+        "enum" => "Perl6::Metamodel::EnumHOW",
+        "coercion" => "Perl6::Metamodel::CoercionHOW",
+        "definite" => "Perl6::Metamodel::DefiniteHOW",
+        "generic" => "Perl6::Metamodel::GenericHOW",
+        _ => return None,
+    })
 }
 
 pub(crate) fn comp_lang_instance() -> Value {
@@ -175,9 +199,21 @@ pub(crate) fn run_slang_activation(
             interp
                 .use_module(&module)
                 .map_err(|e| e.message.to_string())?;
+            let mut declarators = std::mem::take(&mut interp.regex_state.defined_slang_declarators);
+            // What the hook bound into `LEXICAL::<EXPORTHOW>` for the importer.
+            for keyword in interp.exporthow_stash_keywords("DECLARE") {
+                if !declarators.iter().any(|d| d.keyword == keyword) {
+                    declarators.push(SlangDeclarator {
+                        keyword,
+                        kind: "class".to_string(),
+                        how_type: String::new(),
+                    });
+                }
+            }
             Ok(SlangActivation {
                 rules: std::mem::take(&mut interp.regex_state.defined_slang_rules),
-                declarators: std::mem::take(&mut interp.regex_state.defined_slang_declarators),
+                declarators,
+                supersede_keywords: interp.exporthow_stash_keywords("SUPERSEDE"),
             })
         },
     )
@@ -187,6 +223,48 @@ pub(crate) fn run_slang_activation(
 }
 
 impl Interpreter {
+    /// The HOW bound under `keyword` in the `EXPORTHOW::<directive>` stash (an
+    /// `EXPORT` hook's `LEXICAL::<EXPORTHOW> := ...`), if any.
+    // Cost: O(k), k = entries of the stash.
+    pub(crate) fn exporthow_stash_entry(&self, directive: &str, keyword: &str) -> Option<Value> {
+        let stash = self.package_stash_value(
+            crate::qualified::qualified_text("EXPORTHOW", directive).as_str(),
+        );
+        let ValueView::Instance { attributes, .. } = stash.view() else {
+            return None;
+        };
+        let symbols = attributes.as_map().get("symbols").cloned()?;
+        let ValueView::Hash(map) = symbols.view() else {
+            return None;
+        };
+        let sigiled = format!("${keyword}");
+        map.iter()
+            .find(|(key, _)| key.as_str() == keyword || key.as_str() == sigiled)
+            .map(|(_, value)| value.clone())
+    }
+
+    /// The declarator names in the `EXPORTHOW::<directive>` stash the loaded
+    /// modules published (a stash key keeps the `$` of its scalar binding).
+    // Cost: O(k), k = entries of the stash.
+    fn exporthow_stash_keywords(&self, directive: &str) -> Vec<String> {
+        let stash = self.package_stash_value(
+            crate::qualified::qualified_text("EXPORTHOW", directive).as_str(),
+        );
+        let ValueView::Instance { attributes, .. } = stash.view() else {
+            return Vec::new();
+        };
+        let Some(symbols) = attributes.as_map().get("symbols").cloned() else {
+            return Vec::new();
+        };
+        let ValueView::Hash(map) = symbols.view() else {
+            return Vec::new();
+        };
+        map.keys()
+            .map(|key| key.to_string())
+            .map(|key| key.strip_prefix('$').map_or(key.clone(), str::to_string))
+            .collect()
+    }
+
     /// Native methods of the `$*LANG` object graph. Returns `None` for
     /// methods this dispatcher does not know, letting the normal instance
     /// dispatch produce its usual error.
@@ -212,6 +290,19 @@ impl Interpreter {
                 Some(Ok(handle_instance(ACTIONS_HANDLE_CLASS, &kind, Vec::new())))
             }
             (COMP_LANG_CLASS, "define_slang") => Some(self.slang_define_slang(args)),
+            // `$*LANG.how('class')` is the metaclass the language builds a
+            // `class` declaration with (the value of `EXPORTHOW::class`);
+            // `know_how` asks whether the language has one for that name.
+            (COMP_LANG_CLASS, "how") => Some(Ok(args
+                .first()
+                .and_then(|name| lang_how_type(&name.to_string_value()))
+                .map_or(Value::NIL, |how| {
+                    Value::package(crate::symbol::Symbol::intern(how))
+                }))),
+            (COMP_LANG_CLASS, "know_how") => Some(Ok(Value::truth(
+                args.first()
+                    .is_some_and(|name| lang_how_type(&name.to_string_value()).is_some()),
+            ))),
             // `$*LANG.actions` is the host actions object; mutsu never runs a
             // slang's actions methods (they build QAST), so the handle only
             // has to accept `.^mixin`.

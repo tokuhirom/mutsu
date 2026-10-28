@@ -1129,6 +1129,16 @@ impl Interpreter {
             // registered at this name in the type registry.
             this.get_env_with_main_alias_sym(name.as_str(), name)
                 .or_else(|| {
+                    // An entry bound into the stash at run time (an `EXPORT`
+                    // hook's `LEXICAL::<EXPORTHOW> := ...`) keeps the `$` of
+                    // its scalar binding in the key.
+                    let sigiled = crate::qualified::qualified_text(package, &format!("${keyword}"));
+                    this.get_env_with_main_alias_sym(
+                        sigiled.as_str(),
+                        crate::symbol::Symbol::intern(sigiled.as_str()),
+                    )
+                })
+                .or_else(|| {
                     this.registry()
                         .classes
                         .contains_key(name.as_str())
@@ -1137,6 +1147,8 @@ impl Interpreter {
         };
         probe(self, "EXPORTHOW::DECLARE")
             .or_else(|| probe(self, "EXPORTHOW::SUPERSEDE"))
+            .or_else(|| self.exporthow_stash_entry("DECLARE", keyword))
+            .or_else(|| self.exporthow_stash_entry("SUPERSEDE", keyword))
             .or_else(|| self.slang_declarator_how(keyword))
     }
 

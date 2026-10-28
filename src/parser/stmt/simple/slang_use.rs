@@ -104,7 +104,10 @@ pub(in crate::parser) fn maybe_activate_slang_use(
     for decl in &activation.declarators {
         register_declare_keyword(module, &decl.keyword, decl.is_role());
     }
-    if !activation.declarators.is_empty() {
+    for keyword in &activation.supersede_keywords {
+        register_supersede_keyword(module, keyword);
+    }
+    if !activation.declarators.is_empty() || !activation.supersede_keywords.is_empty() {
         // A memoized parse from before the keyword existed must not be
         // replayed now that it is a declarator.
         crate::parser::invalidate_all_memos();
@@ -120,13 +123,13 @@ pub(in crate::parser) fn maybe_activate_slang_use(
 /// string/number/boolean literal: such a `use` activates with no arguments, as
 /// it did before arguments were passed at all.
 fn literal_use_args(arg: &Expr) -> Option<Vec<crate::runtime::slang_activation::SlangUseArg>> {
-    let items: &[Expr] = match arg {
+    let items: &[Expr] = match arg.peel_parens() {
         Expr::ArrayLiteral(items) => items,
         single => std::slice::from_ref(single),
     };
     items
         .iter()
-        .map(|item| match item {
+        .map(|item| match item.peel_parens() {
             Expr::Literal(v) => crate::runtime::slang_activation::SlangUseArg::from_literal(v),
             _ => None,
         })

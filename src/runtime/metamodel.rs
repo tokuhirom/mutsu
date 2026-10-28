@@ -488,22 +488,30 @@ impl Interpreter {
         how_type: Value,
         keep_shell_how: bool,
     ) -> Result<bool, RuntimeError> {
+        // A role used as the metaclass (annotations' `MetamodelX::AnnotationHOW[C, H]
+        // is H`): it is punned into a class that inherits the HOW it names,
+        // so its `.new` is the metaobject.
+        let role_how = !matches!(how_type.view(), ValueView::Package(sym)
+            if self.registry().classes.contains_key(&sym.resolve()))
+            && self.is_role_application(&how_type);
         let how_class = match how_type.view() {
+            _ if role_how => String::new(),
             ValueView::Package(sym) => sym.resolve(),
             _ => return Ok(false),
         };
         // The HOW type must be a user-declared class (a stale/foreign stash
         // entry is ignored rather than failing the class declaration).
-        if !self.registry().classes.contains_key(&how_class) {
+        if !role_how && !self.registry().classes.contains_key(&how_class) {
             return Ok(false);
         }
         // `class_mro` computes and caches the MRO on demand — `ClassDef::mro`
         // itself is lazily filled and still empty right after a module load.
-        let has_user_compose = self.class_mro(&how_class).iter().any(|c| {
-            self.registry()
-                .user_method_overloads(c.as_str(), "compose")
-                .is_some()
-        });
+        let mut has_user_compose = !role_how
+            && self.class_mro(&how_class).iter().any(|c| {
+                self.registry()
+                    .user_method_overloads(c.as_str(), "compose")
+                    .is_some()
+            });
         // A nested declaration's shell already installed the metaobject and ran
         // the class's traits on it (#12708), which do not run again: what they
         // mixed into it (`$class.HOW does R[Arg]`, role arguments included) is
@@ -511,6 +519,11 @@ impl Interpreter {
         // below would lose the arguments.
         if keep_shell_how && self.registry().class_how_values.contains_key(class_name) {
             return Ok(has_user_compose);
+        }
+        if role_how
+            && let Some((role_name, _, _)) = self.extract_role_application(&how_type)
+        {
+            has_user_compose = self.role_has_method(&role_name, "compose");
         }
         let mut instance = self.call_method_with_values(how_type, "new", Vec::new())?;
         // A hoisted forward declaration composed the class's roles (and ran

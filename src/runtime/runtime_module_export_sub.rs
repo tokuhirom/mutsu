@@ -142,7 +142,15 @@ impl Interpreter {
         // actual `use` arguments first (Red's `multi EXPORT(+@experimentals)`,
         // FINALIZER's `multi EXPORT()` / `multi EXPORT('class-only')`), then
         // fall back to the ordinary hook.
-        let Some(def) = self.resolve_export_hook(&export_args) else {
+        // Candidate selection runs the candidates' `where` clauses, and an
+        // EXPORT multi may ask the language (`$*LANG.know_how: $^how`) there.
+        let lang_was_bound = self.env.get("*LANG").is_some();
+        self.bind_compile_time_lang();
+        let hook = self.resolve_export_hook(&export_args);
+        if !lang_was_bound {
+            self.env.remove("*LANG");
+        }
+        let Some(def) = hook else {
             if let Some(export_sub) = inherited {
                 // Same env discipline as the compiled path below: the imported
                 // EXPORT's effects are its return value, not caller-env writes.
