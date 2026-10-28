@@ -125,34 +125,27 @@ impl Compiler {
         package_body_lexicals: &std::collections::HashSet<String>,
         static_class: Option<(&str, bool)>,
     ) -> crate::opcode::CompiledDeclExpr {
-        self.compile_decl_stmts_chunk_in_package_as(
-            stmts,
+        let chunk_compiler = self.package_chunk_compiler(
             package,
             class_body_static_code_vars,
             class_body_type_aliases,
             package_body_lexicals,
             static_class,
-            crate::ast::DeclPass::default(),
-        )
+        );
+        Self::compile_decl_chunk(chunk_compiler, stmts)
     }
 
-    /// [`Self::compile_decl_stmts_chunk_in_package`] for a routine declaration
-    /// registered in the given pass (its single `SubDecl` is lowered to a plan
-    /// carrying `pass`).
-    // Cost: O(n), n = size of `stmts`.
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn compile_decl_stmts_chunk_in_package_as(
+    /// The child compiler of a package-scoped declaration chunk.
+    // Cost: O(v + a + l), v/a/l = the static code vars, type aliases and body lexicals.
+    fn package_chunk_compiler(
         &self,
-        stmts: &[Stmt],
         package: &str,
         class_body_static_code_vars: &std::collections::HashSet<String>,
         class_body_type_aliases: &std::collections::HashMap<String, String>,
         package_body_lexicals: &std::collections::HashSet<String>,
         static_class: Option<(&str, bool)>,
-        pass: crate::ast::DeclPass,
-    ) -> crate::opcode::CompiledDeclExpr {
+    ) -> Compiler {
         let mut chunk_compiler = self.new_decl_chunk_compiler();
-        chunk_compiler.next_sub_decl_pass = pass;
         chunk_compiler.set_current_package(package.to_string());
         chunk_compiler.static_class = static_class.map(|(name, _)| name.to_string());
         chunk_compiler.static_class_hidden = static_class.is_some_and(|(_, hidden)| hidden);
@@ -161,6 +154,14 @@ impl Compiler {
         chunk_compiler
             .type_aliases
             .extend(class_body_type_aliases.clone());
+        chunk_compiler
+    }
+
+    // Cost: O(n), n = size of `stmts`.
+    fn compile_decl_chunk(
+        chunk_compiler: Compiler,
+        stmts: &[Stmt],
+    ) -> crate::opcode::CompiledDeclExpr {
         let (code, fns) = chunk_compiler.compile(stmts);
         crate::opcode::CompiledDeclExpr {
             code: std::sync::Arc::new(code),
@@ -495,17 +496,20 @@ impl Compiler {
                     Some((package_name, is_hidden)),
                 ));
                 let hoisted_raw = Self::hoisted_class_sub_decl(raw);
-                *hoist_chunk = Some(self.compile_decl_stmts_chunk_in_package_as(
-                    std::slice::from_ref(&hoisted_raw),
+                let mut hoist_compiler = self.package_chunk_compiler(
                     package_name,
                     &class_body_static_code_vars,
                     &class_body_type_aliases,
                     &body_lexicals,
                     Some((package_name, is_hidden)),
-                    crate::ast::DeclPass {
-                        hoisted: true,
-                        ..Default::default()
-                    },
+                );
+                hoist_compiler.next_sub_decl_pass = crate::ast::DeclPass {
+                    hoisted: true,
+                    ..Default::default()
+                };
+                *hoist_chunk = Some(Self::compile_decl_chunk(
+                    hoist_compiler,
+                    std::slice::from_ref(&hoisted_raw),
                 ));
                 continue;
             }
