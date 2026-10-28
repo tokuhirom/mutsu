@@ -1,10 +1,14 @@
 use super::*;
 
 pub(crate) fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    // A declared (or imported) `prefix:<not>` replaces the loose-unary builtin:
+    // `not $x` then parses as that operator's call, as `!` does (Red's
+    // `multi prefix:<not>(Red::AST $a)`).
     if input.starts_with("not")
         && !is_ident_char(input.as_bytes().get(3).copied())
         && !input[3..].starts_with('(')
         && !followed_by_fat_arrow(&input[3..])
+        && !crate::parser::stmt::simple::is_user_declared_prefix_sub("not")
     {
         let r = &input[3..];
         let (r, _) = ws(r)?;
