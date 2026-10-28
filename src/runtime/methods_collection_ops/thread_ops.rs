@@ -165,10 +165,9 @@ impl Interpreter {
             // when the main thread exits), but `.finish` still joins it, so the
             // handle is kept apart from the ones `join_outstanding_threads`
             // drains.
-            super::APP_LIFETIME_THREAD_HANDLES
-                .lock()
-                .unwrap()
-                .insert(thread_id, handle);
+            if let Ok(mut handles) = super::APP_LIFETIME_THREAD_HANDLES.lock() {
+                handles.insert(thread_id, handle);
+            }
         } else {
             THREAD_HANDLES.lock().unwrap().insert(thread_id, handle);
         }
@@ -199,8 +198,8 @@ impl Interpreter {
             .or_else(|| {
                 super::APP_LIFETIME_THREAD_HANDLES
                     .lock()
-                    .unwrap()
-                    .remove(&thread_id)
+                    .ok()
+                    .and_then(|mut handles| handles.remove(&thread_id))
             });
         if let Some(handle) = handle {
             // STW-aware: a thread blocked in `.finish`/join counts as quiescent
