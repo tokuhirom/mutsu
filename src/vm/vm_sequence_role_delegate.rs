@@ -56,6 +56,11 @@ impl Interpreter {
                 | "roll"
                 | "AT-POS"
                 | "Numeric"
+                | "classify"
+                | "categorize"
+                | "combinations"
+                | "permutations"
+                | "end"
         )
     }
 

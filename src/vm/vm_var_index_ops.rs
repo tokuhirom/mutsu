@@ -618,6 +618,21 @@ impl Interpreter {
         }
     }
 
+    /// `.elems` of a subscripted instance or mixin, for resolving a WhateverCode
+    /// index: a `does Sequence` class's is its iterator's (the delegate), any
+    /// other is its own `elems` method.
+    // Cost: O(n) for a Sequence class (drains its iterator), n = elements; else the method's.
+    fn subscripted_elems(&mut self, target: &Value) -> i64 {
+        let elems = self
+            .try_sequence_role_delegate(target, crate::symbol::Symbol::intern("elems"), &[])
+            .and_then(Result::ok)
+            .or_else(|| {
+                self.try_compiled_method_or_interpret(target.clone(), "elems", vec![])
+                    .ok()
+            });
+        elems.map_or(0, |value| crate::runtime::to_int(&value).max(0))
+    }
+
     /// Evaluate a `WhateverCode` subscript (`*-1`, `*-3`, `* div 2`) against the
     /// container's element count, or `None` when the index is not one.
     ///
@@ -2431,10 +2446,7 @@ impl Interpreter {
             {
                 // A `Sequence` class's `elems` is the delegate's, which reads
                 // its iterator; `call_method_with_values` reaches it.
-                let len = self
-                    .call_method_with_values(target.clone(), "elems", vec![])
-                    .map(|value| crate::runtime::to_int(&value).max(0))
-                    .unwrap_or(0);
+                let len = self.subscripted_elems(&target);
                 let resolved = self
                     .eval_whatever_code_index(&index, len)
                     .unwrap_or(Value::NIL);
@@ -2571,10 +2583,7 @@ impl Interpreter {
             // object directly to the role method and returned the whole
             // object instead of its final element.
             (ValueView::Mixin(..), ValueView::Sub(_)) if is_positional => {
-                let len = self
-                    .call_method_with_values(target.clone(), "elems", vec![])
-                    .map(|value| crate::runtime::to_int(&value).max(0))
-                    .unwrap_or(0);
+                let len = self.subscripted_elems(&target);
                 let resolved = self
                     .eval_whatever_code_index(&index, len)
                     .unwrap_or(Value::NIL);
