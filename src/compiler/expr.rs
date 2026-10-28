@@ -1367,6 +1367,7 @@ impl Compiler {
             Expr::Gather(body) if self.emit_block_placeholder_die(body) => {}
             Expr::Gather(_) => {
                 if let Expr::Gather(body) = expr {
+                    let body = &Self::lower_sunk_list_repeat(body);
                     let idx = self.code.add_stmt(Stmt::Block(body.clone()));
                     // A gather body pulls lazily after this frame moves on, so a
                     // captured-and-mutated lexical it reads must be cell-promoted

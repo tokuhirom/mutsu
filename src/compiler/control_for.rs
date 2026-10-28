@@ -174,13 +174,16 @@ impl Compiler {
             || params_def
                 .iter()
                 .any(|def| def.traits.iter().any(|t| t == "rw"));
-        // `is copy` also makes the param writable (but without writeback).
+        // `is copy` also makes the param writable (but without writeback); so
+        // does `is raw`, which aliases whatever container the element is (a
+        // Proxy element runs its STORE; a plain value stays refused when the
+        // alias is assigned).
         let has_copy = param_def
             .as_ref()
-            .is_some_and(|def| def.traits.iter().any(|t| t == "copy"))
+            .is_some_and(|def| def.traits.iter().any(|t| t == "copy" || t == "raw"))
             || params_def
                 .iter()
-                .any(|def| def.traits.iter().any(|t| t == "copy"));
+                .any(|def| def.traits.iter().any(|t| t == "copy" || t == "raw"));
 
         // Statements that bind the loop parameters (`-> \a, @b, %c`) and mark
         // them read-only. They must run — and the params must be bound —
@@ -211,7 +214,10 @@ impl Compiler {
             if !rw_block && !params.is_empty() {
                 for (i, p) in params.iter().enumerate() {
                     let per_param_writable = params_def.get(i).is_some_and(|d| {
-                        d.sigilless || d.traits.iter().any(|t| t == "rw" || t == "copy")
+                        d.sigilless
+                            || d.traits
+                                .iter()
+                                .any(|t| t == "rw" || t == "raw" || t == "copy")
                     }) || (params_def.get(i).is_none()
                         && p.starts_with('\\'));
                     if !p.starts_with('@') && !p.starts_with('%') && !per_param_writable {

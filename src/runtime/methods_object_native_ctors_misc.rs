@@ -124,11 +124,14 @@ impl Interpreter {
             )));
         }
         // Unwrap allomorphic (Mixin) arguments to get the inner numeric value.
-        let numeric = match args[0].view() {
+        // An `is raw` argument arrives as its container; the allomorph holds
+        // the value.
+        let first = args[0].deref_container();
+        let numeric = match first.view() {
             ValueView::Mixin(inner, _) => (**inner).clone(),
-            _ => args[0].clone(),
+            _ => first.clone(),
         };
-        let string = args[1].to_string_value();
+        let string = args[1].deref_container().to_string_value();
         let mut mixins = ValueMap::default();
         mixins.insert("Str".to_string(), Value::str(string));
         Ok(Value::mixin(numeric, mixins))

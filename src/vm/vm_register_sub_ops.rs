@@ -870,7 +870,11 @@ impl Interpreter {
                     // cell, `my @b := @a; sub f { @b := [9] }` stored `[9]`
                     // through the cell `@b` shares with `@a` (#9416).
                     if (rebound_syms.contains(&sym)
-                        || code.rebound_slots.contains(&(slot_idx as u32)))
+                        || code.rebound_slots.contains(&(slot_idx as u32))
+                        // A sibling sub that only reads the variable captures
+                        // the cell first, so it must already be a binding cell
+                        // when another sub of this frame rebinds the variable.
+                        || Self::frame_sub_rebinds_var(code, compiled_fns, sym))
                         && Self::binding_cell_of(&cell).is_none()
                     {
                         cell = Self::wrap_in_binding_cell(cell);

@@ -1673,6 +1673,8 @@ impl Interpreter {
 
     /// Wrap the container `container` (a `ContainerRef`) in a fresh binding
     /// cell — see [`Self::binding_cell_of`].
+    /// Wrap the container `container` (a `ContainerRef`) in a fresh binding
+    /// cell — see [`Self::binding_cell_of`].
     pub(crate) fn wrap_in_binding_cell(container: Value) -> Value {
         debug_assert!(container.is_container_ref());
         Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
