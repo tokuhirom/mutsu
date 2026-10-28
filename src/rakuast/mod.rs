@@ -475,6 +475,8 @@ pub enum RakuAstClass {
     StatementSequence,
     // Phase 2 slice 34: the `*` whatever term.
     TermWhatever,
+    // The `∅` empty-set term.
+    TermEmptySet,
     // ADR-0033 Phase 2: a `*` that participates in Whatever-priming
     // (`* + 1`'s left operand) vs a bare Whatever value.
     WhateverCodeArgument,
@@ -822,6 +824,7 @@ impl RakuAstClass {
             ContextualizerList => "RakuAST::Contextualizer::List",
             StatementSequence => "RakuAST::StatementSequence",
             TermWhatever => "RakuAST::Term::Whatever",
+            TermEmptySet => "RakuAST::Term::EmptySet",
             WhateverCodeArgument => "RakuAST::WhateverCode::Argument",
             TermHyperWhatever => "RakuAST::Term::HyperWhatever",
             FatArrow => "RakuAST::FatArrow",
@@ -904,6 +907,7 @@ impl RakuAstClass {
                 | RakuAstClass::DottyInfixCallAssign
                 | RakuAstClass::DottyInfixCall
                 | RakuAstClass::TermWhatever
+                | RakuAstClass::TermEmptySet
                 | RakuAstClass::PrefixMultislice
                 | RakuAstClass::WhateverCodeArgument
                 | RakuAstClass::TermHyperWhatever
@@ -1324,6 +1328,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::ContextualizerList,
     RakuAstClass::StatementSequence,
     RakuAstClass::TermWhatever,
+    RakuAstClass::TermEmptySet,
     RakuAstClass::PrefixMultislice,
     RakuAstClass::WhateverCodeArgument,
     RakuAstClass::TermHyperWhatever,
@@ -3192,6 +3197,7 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         ("RakuAST::OnlyStar", "new") => RakuAstClass::OnlyStar,
         ("RakuAST::Regex::MatchTo", "new") => RakuAstClass::RegexMatchTo,
         ("RakuAST::Term::Whatever", "new") => RakuAstClass::TermWhatever,
+        ("RakuAST::Term::EmptySet", "new") => RakuAstClass::TermEmptySet,
         ("RakuAST::Prefix::Multislice", "new") => RakuAstClass::PrefixMultislice,
         ("RakuAST::Term::HyperWhatever", "new") => RakuAstClass::TermHyperWhatever,
         ("RakuAST::Name::Part::Empty", "new") => RakuAstClass::NamePartEmpty,
@@ -3666,6 +3672,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::TermNamed
             | RakuAstClass::TermTopicCall
             | RakuAstClass::TermWhatever
+            | RakuAstClass::TermEmptySet
             | RakuAstClass::TermHyperWhatever
             | RakuAstClass::CallName
             | RakuAstClass::CallNameWithoutParentheses
