@@ -462,7 +462,7 @@ impl Interpreter {
         self.lexicals.hll_syms.insert((hll, name), value);
     }
 
-    /// Seeds the one HLL symbol mutsu itself relies on: Rakudo's core setting
+    /// Seeds the HLL symbols mutsu itself relies on: Rakudo's core setting
     /// reads `nqp::gethllsym("default", "SysConfig")` from a `BEGIN` block in
     /// several bootstrap-adjacent modules (e.g. `Rakudo::CORE::META`, see
     /// issue #8775) to get at `.rakudo-build-config`. Real Rakudo installs
@@ -476,6 +476,15 @@ impl Interpreter {
             "default".to_string(),
             "SysConfig".to_string(),
             Value::make_instance(Symbol::intern("Perl6::SysConfig"), HashMap::new()),
+        );
+        // Rakudo's compiler binds the frontend it runs on, and distributions
+        // branch on it (`nqp::gethllsym('Raku', 'COMPILER-FRONTEND')`, e.g.
+        // Red's `todo ... if ... eq 'rakuast'`). mutsu's frontend is RakuAST
+        // (ADR-10723), the value Rakudo's default frontend reports.
+        self.set_hll_sym(
+            "Raku".to_string(),
+            "COMPILER-FRONTEND".to_string(),
+            Value::str("rakuast".to_string()),
         );
     }
 
