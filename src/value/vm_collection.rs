@@ -31,7 +31,11 @@ impl Value {
     /// A fresh raw `VMHash` holding `map` (`nqp::hash`).
     // Cost: O(1) beyond moving `map`.
     pub(crate) fn vm_hash(map: impl Into<HashData>) -> Value {
-        Value::from_repr(ValueRepr::VmHash(Gc::new(map.into())))
+        // A fresh raw `VMHash` stores bare values; only a Hash's own node,
+        // viewed through `raw_storage_view`, holds element containers.
+        let mut data = map.into();
+        data.bare_values = true;
+        Value::from_repr(ValueRepr::VmHash(Gc::new(data)))
     }
 
     /// A raw `VMHash` over an existing storage node.

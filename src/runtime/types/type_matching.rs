@@ -595,9 +595,15 @@ impl Interpreter {
     /// parameter grants a Seq (`sub f(Positional $p)`, rakudo#4864).
     // Cost: O(1) amortized, as `type_matches_value`.
     pub(crate) fn param_constraint_accepts(&mut self, constraint: &str, value: &Value) -> bool {
-        self.type_matches_value(constraint, value)
-            || (constraint == "Positional"
-                && self.type_matches_value("PositionalBindFailover", value))
+        if self.type_matches_value(constraint, value) {
+            return true;
+        }
+        // `Positional:D` takes the failover Seq too (a defined one); `:U`
+        // never does.
+        let (base, smiley) = super::strip_type_smiley(constraint);
+        base == "Positional"
+            && smiley != Some(":U")
+            && self.type_matches_value("PositionalBindFailover", value)
     }
 
     // Cost: O(1) when the constraint matches or names no lexical type; the

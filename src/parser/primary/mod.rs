@@ -10,8 +10,8 @@ pub(crate) use container::angle_list;
 pub(in crate::parser) mod ident;
 pub(in crate::parser) mod misc;
 pub(crate) use misc::{
-    ANON_COLONS_TRAIT, ANON_DECL_TRAIT, mark_anon_package_stmt, next_anon_class_name,
-    next_anon_grammar_name, next_anon_role_name, prepend_does_header,
+    mark_anon_package_stmt, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,
+    prepend_does_header,
 };
 pub(in crate::parser) mod fragment_attempts;
 mod hexfloat;

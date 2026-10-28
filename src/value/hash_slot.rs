@@ -112,6 +112,19 @@ impl Value {
         Some(promote_leaf(elem, &tag))
     }
 
+    /// Promote every value of this hash to its element cell once and mark the
+    /// hash, so `nqp::atkey` can tell a value left in its cell from one
+    /// `nqp::bindkey` replaced with a bare value (#15106).
+    // Cost: O(n), n = number of elements, once per hash.
+    pub(crate) fn promote_storage_cells(&self) {
+        if self.hash_element_cells(|_, _| ()).is_some()
+            && let ValueView::Hash(arc) = self.view()
+        {
+            // SAFETY: aliased in-place flag write; see `gc_contents_mut`.
+            unsafe { crate::value::gc_contents_mut(&arc) }.storage_cells = true;
+        }
+    }
+
     /// Every element of this hash promoted to its own cell, in the map's
     /// iteration order (the order `keys()` yields), each passed with its key
     /// to `f` — the bulk form of `hash_slot_ref(key, true)` for every key.

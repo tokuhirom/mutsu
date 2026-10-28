@@ -2393,6 +2393,11 @@ pub struct HashData {
     /// by `Value::hash`, which must not itemize the values of a hash that has
     /// declared they are not containers.
     pub bare_values: bool,
+    /// `true` once `nqp::atkey` has promoted every value of this hash to its
+    /// element cell, the Scalar containers Rakudo's `$!storage` holds (#15106).
+    /// From then on a bare value in the map is one `nqp::bindkey` bound on
+    /// purpose, and `atkey` answers it as it is.
+    pub storage_cells: bool,
 }
 
 /// Backing data for `Value::Array`: the element vector plus embedded

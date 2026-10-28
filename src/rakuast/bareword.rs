@@ -184,11 +184,13 @@ fn declared_kind(name: &str) -> Option<DeclaredKind> {
 }
 
 /// Whether `name` names a type at parse time: a builtin type or one the unit
-/// declares. Rakudo's `is NAME` trait takes this test to choose between a
-/// container type (`Trait::Is(type => …)`) and a named trait.
+/// declares or imports (the parser's user-type registry). Rakudo's `is NAME` trait takes
+/// this test to choose between a container type (`Trait::Is(type => …)`) and a named trait.
 // Cost: O(k), k = length of `name`.
 pub(super) fn names_type(name: &str) -> bool {
-    setting_type(name) || declared_kind(name) == Some(DeclaredKind::Type)
+    setting_type(name)
+        || declared_kind(name) == Some(DeclaredKind::Type)
+        || crate::parser::is_user_declared_type(name)
 }
 
 /// Whether a `::`-qualified package name resolves at parse time: a run of
