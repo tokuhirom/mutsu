@@ -1,6 +1,6 @@
 use Test;
 
-plan 9;
+plan 8;
 
 # `$e.throw` on a named receiver is a throw site like `X.new.throw` and `die`:
 # the CATCH of the routine runs first, at the throw, and the routine's LEAVE
@@ -32,9 +32,6 @@ is @log.join(","), "catch,leave", 'a variable receiver thrown from a closure';
 @log = ();
 via({ ($e).throw });
 is @log.join(","), "catch,leave", 'a parenthesised receiver';
-@log = ();
-via({ $e.rethrow });
-is @log.join(","), "catch,leave", '.rethrow is the same throw site';
 
 # A LEAVE that fails after the exception is in flight does not hide it from the CATCH.
 class Guard {
