@@ -17,12 +17,16 @@
 //! - the arithmetic, comparison, string and boolean operators;
 //! - plain `=` / compound assignment to, and `++`/`--` of, a scalar other than
 //!   `$_`, and `my $x = ...` of an untyped, non-`state` scalar;
-//! - `say` / `put` / `print` / `note`, `if` / `unless` / ternary, `next` / `last`.
+//! - `say` / `put` / `print` / `note`, `if` / `unless` / ternary, `next` / `last`;
+//! - an associative store into a `%` variable, `%h{$k} = $v`: a hash element
+//!   is never an array element, so the store cannot reach the source array,
+//!   and the stored value is a copy of what the operands evaluate to.
 //!
 //! Accepted limits, all of which need the loop to mutate the very array it
 //! iterates and to read `$_` afterwards in the same iteration: an operator
 //! overloaded by user code, a tied (`Proxy`) scalar, a `.gist`/`.Str` that
-//! mutates the source, and a scalar bound to one of the source's elements.
+//! mutates the source, a scalar bound to one of the source's elements, and a
+//! `%` variable bound to a user class whose `ASSIGN-KEY` mutates the source.
 
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_stmt};
@@ -151,9 +155,16 @@ impl<'ast> Visit<'ast> for AliasScan {
             return;
         }
         let allowed = match expr {
-            Expr::Literal(_) | Expr::Var(_) | Expr::Grouped(_) | Expr::StringInterpolation(_) => {
-                true
-            }
+            Expr::Literal(_)
+            | Expr::Var(_)
+            | Expr::HashVar(_)
+            | Expr::Grouped(_)
+            | Expr::StringInterpolation(_) => true,
+            Expr::IndexAssign {
+                target,
+                is_positional: false,
+                ..
+            } => matches!(**target, Expr::HashVar(_)),
             Expr::Ternary { .. } => true,
             Expr::Binary { op, .. } => safe_binary(op),
             Expr::Unary { op, expr, .. } => {
@@ -209,6 +220,8 @@ mod tests {
         ));
         assert!(unobservable("for @a { my $y = $_ + 1; say $y }"));
         assert!(unobservable("my $c = 0; for @a { $c++ }"));
+        assert!(unobservable("my %h; for @a { %h{$_} = 1 }"));
+        assert!(unobservable("my %h; for @a { %h{$_ ~ 'x'} = $_ + 1 }"));
     }
 
     #[test]
@@ -223,5 +236,10 @@ mod tests {
         assert!(!unobservable("my @o; for @a { @o.push($_) }"));
         assert!(!unobservable("for @a { my $f = { $_ } }"));
         assert!(!unobservable("for @a { s/a/b/ }"));
+        assert!(!unobservable("my %h; for @a { %h{$_} = 1; $_ = 5 }"));
+        assert!(!unobservable("my %h; for @a { %h{$_} = foo($_) }"));
+        assert!(!unobservable("my %h; for @a { %h{$_}[0] = 1 }"));
+        assert!(!unobservable("my %h; for @a { %h{$_} := $_ }"));
+        assert!(!unobservable("my @o; for @a { @o[0] = $_ }"));
     }
 }
