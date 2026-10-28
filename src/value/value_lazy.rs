@@ -178,7 +178,8 @@ impl LazyList {
     /// `CatHandle`'s handles, a `Channel`'s close), unlike a user iterator.
     pub(crate) fn is_finite_cat_pull(&self) -> bool {
         self.cat_pull.as_ref().is_some_and(|spec| {
-            spec.lock().unwrap().mode != crate::value::CatPullMode::UserIterator
+            spec.lock().unwrap_or_else(|e| e.into_inner()).mode
+                != crate::value::CatPullMode::UserIterator
         })
     }
 

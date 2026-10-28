@@ -23,10 +23,8 @@ impl Interpreter {
         {
             return Ok(false);
         }
-        // TODO: compile to bytecode -- a user method on an arbitrary instance
-        // goes through the generic method call, as in `resolve_seq_iterator_laziness`.
         Ok(self
-            .call_method_with_values(iterator.clone(), "is-lazy", Vec::new())?
+            .try_compiled_method_or_interpret(iterator.clone(), "is-lazy", Vec::new())?
             .truthy())
     }
 
