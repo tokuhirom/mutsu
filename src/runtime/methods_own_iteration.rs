@@ -117,6 +117,12 @@ impl Interpreter {
             Ok(elements) => elements,
             Err(err) => return Some(Err(err)),
         };
+        // `.head(n)` / `.first` pull only the prefix they need from the Seq.
+        let elements = match self.take_seq_prefix(&elements, method, args) {
+            Ok(Some(prefix)) => prefix,
+            Ok(None) => elements,
+            Err(err) => return Some(Err(err)),
+        };
         Some(self.call_method_with_values(elements, method, args.to_vec()))
     }
 
@@ -182,7 +188,8 @@ impl Interpreter {
     }
 
     /// The elements `source` gives for `target`, as a `List`.
-    // Cost: O(n), n = elements.
+    // Cost: O(1) for an `iterator` source (pulled on demand by the consumer),
+    // O(n), n = elements, for a `list` source.
     fn own_elements(&mut self, target: &Value, source: &Source) -> Result<Value, RuntimeError> {
         if let ValueView::Instance {
             class_name,
@@ -220,7 +227,26 @@ impl Interpreter {
                 let list = self.call_method_with_values(target.clone(), "list", Vec::new())?;
                 Ok(Value::array(crate::runtime::utils::value_to_list(&list)))
             }
-            Source::Iterator { .. } => Ok(Value::array(self.drive_user_iterator_items(target)?)),
+            // The class's own `iterator` becomes a deferred `Seq` over it, as
+            // `Seq.new($iterator)`: Rakudo's `Any.map`/`head`/... pull from
+            // `self.iterator` on demand, so an iterator that never ends
+            // (`is-lazy`) must not be drained up front.
+            Source::Iterator { .. } => {
+                let iterator = if let Some(result) =
+                    self.dispatch_mixin_method_call(target, "iterator", Vec::new())
+                {
+                    result?
+                } else {
+                    self.try_compiled_method_or_interpret(target.clone(), "iterator", vec![])?
+                };
+                let seq = self.try_native_seq_construct(&[iterator]);
+                if let ValueView::Seq(body) = seq.view() {
+                    // Ask the user iterator its `is-lazy`, so `.head(n)` pulls
+                    // only `n` items from one that never ends.
+                    self.resolve_seq_iterator_laziness(&body)?;
+                }
+                Ok(seq)
+            }
         }
     }
 }
