@@ -49,8 +49,10 @@ measure_one() {
         "$bin" -c "$file" >/dev/null 2>"$out.err" || true
     local collected total
     collected=$(sed -n 's/^==[0-9]*== Collected : *\([0-9]*\).*/\1/p' "$out.err" | tail -1)
-    total=$(sed -n 's/^==[0-9]*== *Events *: .*//p;s/^==[0-9]*== I *refs: *\([0-9,]*\).*/\1/p' "$out.err" \
-        | tail -1 | tr -d ',')
+    # With a toggle, "I refs" repeats the collected figure; the whole-process figure needs its own run.
+    MUTSU_FUDGE=1 timeout 1800 valgrind --tool=callgrind --cache-sim=no --branch-sim=no \
+        --callgrind-out-file="$out" "$bin" -c "$file" >/dev/null 2>"$out.err" || true
+    total=$(sed -n 's/^==[0-9]*== I *refs: *\([0-9,]*\).*/\1/p' "$out.err" | tail -1 | tr -d ',')
     rm -f "$out" "$out.err"
     if [ -z "$collected" ]; then
         echo "frontend-cost: no 'Collected' line for $file (is $bin a profiling build?)" >&2
