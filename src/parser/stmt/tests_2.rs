@@ -125,13 +125,13 @@ fn parse_topic_mutating_method_stmt() {
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
     // `.=method` on the topic is the `.=` metaop (`$_ = $_.method`), routed through
-    // the `__mutsu_topic_dotassign` marker so it can reassign a read-only whole-
+    // `Expr::TopicDotAssign` so it can reassign a read-only whole-
     // container topic while a plain `$_ = ...` still throws X::Assignment::RO.
     // The expansion carries the source-level `.=` marker the RakuAST conversion
     // reads.
     assert!(matches!(
         dotty_expansion(&stmts[0]),
-        Some(Expr::Call { name, .. }) if name.resolve() == "__mutsu_topic_dotassign"
+        Some(Expr::TopicDotAssign(_))
     ));
 }
 
@@ -142,14 +142,10 @@ fn parse_topic_mutating_method_stmt_with_colon_args() {
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
     match dotty_expansion(&stmts[0]) {
-        Some(Expr::Call { name, args, .. }) => {
-            assert_eq!(name.resolve(), "__mutsu_topic_dotassign");
-            assert_eq!(args.len(), 1);
-            assert!(
-                matches!(args[0], Expr::MethodCall { ref name, ref args, .. }
+        Some(Expr::TopicDotAssign(call)) => {
+            assert!(matches!(**call, Expr::MethodCall { ref name, ref args, .. }
                 if name.resolve() == "trans" && args.len() == 1
-                    && matches!(args[0], Expr::CallOn { .. }))
-            );
+                    && matches!(args[0], Expr::CallOn { .. })));
         }
         other => panic!("expected topic dotassign call, got {other:?}"),
     }

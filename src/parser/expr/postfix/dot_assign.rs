@@ -187,7 +187,7 @@ fn expand_dot_assign(
         // NOTE: an *expression*-position `$_ .= meth` keeps the plain `AssignExpr`
         // form (so a chain-retarget can redirect the implied `$_`). The whole-
         // container topic write-through (`given @a { $_ .= uc }`) is a *statement*
-        // and is handled via the `__mutsu_topic_dotassign` marker in the statement
+        // and is handled via `Expr::TopicDotAssign` in the statement
         // assign parser instead.
         Expr::Var(name) => {
             let name = name.clone();
