@@ -170,10 +170,10 @@ impl Compiler {
             || has_sigilless
             || param_def
                 .as_ref()
-                .is_some_and(|def| def.traits.iter().any(|t| t == "rw"))
+                .is_some_and(|def| def.traits.iter().any(|t| t == "rw" || t == "raw"))
             || params_def
                 .iter()
-                .any(|def| def.traits.iter().any(|t| t == "rw"));
+                .any(|def| def.traits.iter().any(|t| t == "rw" || t == "raw"));
         // `is copy` also makes the param writable (but without writeback).
         let has_copy = param_def
             .as_ref()
@@ -211,7 +211,7 @@ impl Compiler {
             if !rw_block && !params.is_empty() {
                 for (i, p) in params.iter().enumerate() {
                     let per_param_writable = params_def.get(i).is_some_and(|d| {
-                        d.sigilless || d.traits.iter().any(|t| t == "rw" || t == "copy")
+                        d.sigilless || d.traits.iter().any(|t| t == "rw" || t == "raw" || t == "copy")
                     }) || (params_def.get(i).is_none()
                         && p.starts_with('\\'));
                     if !p.starts_with('@') && !p.starts_with('%') && !per_param_writable {
@@ -415,7 +415,7 @@ impl Compiler {
                         || rw_block
                         || params_def
                             .get(i)
-                            .is_some_and(|d| d.sigilless || d.traits.iter().any(|t| t == "rw"))
+                            .is_some_and(|d| d.sigilless || d.traits.iter().any(|t| t == "rw" || t == "raw"))
                         // No per-param def (fallback): keep prior behavior and
                         // treat a `\`-prefixed name as rw.
                         || (params_def.get(i).is_none() && p.starts_with('\\'));
