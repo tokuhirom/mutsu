@@ -705,9 +705,9 @@ impl Interpreter {
                     let item =
                         self.try_compiled_method_or_interpret(cat.clone(), "pull-one", vec![])?;
                     if item.is_iteration_end() {
-                        list.cat_pull
-                            .as_ref()
-                            .map(|p| p.lock().unwrap_or_else(|e| e.into_inner()).done = true);
+                        if let Some(spec) = list.cat_pull.as_ref() {
+                            spec.lock().unwrap_or_else(|e| e.into_inner()).done = true;
+                        }
                         return Ok(());
                     }
                     // A `Nil` item is a real element here, not the end marker.
