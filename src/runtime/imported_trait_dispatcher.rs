@@ -33,7 +33,21 @@ impl Interpreter {
         if !self.module.export_amp_override_names.contains(&name_sym) {
             return None;
         }
-        let value = dispatch_key::with_amp_name(name, |amp| self.env.get(amp).cloned())?;
+        // The unit running the declaration imported its own `&name`: a routine
+        // called later from another unit (`NatB::copyit` called by a script
+        // that loaded `NatC` first) must apply traits through what ITS unit
+        // imported, not the caller's env, which holds the plain `is export`
+        // import of an earlier importer without the `sub EXPORT` candidates.
+        let own = self.executing_source_file_sym().and_then(|file| {
+            self.module
+                .unit_imported_callables
+                .get(&(file, name_sym))
+                .cloned()
+        });
+        let value = match own {
+            Some(own) => own,
+            None => dispatch_key::with_amp_name(name, |amp| self.env.get(amp).cloned())?,
+        };
         match value.view() {
             ValueView::Sub(data)
                 if data
