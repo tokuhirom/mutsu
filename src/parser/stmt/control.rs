@@ -211,7 +211,9 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         // An aggregate-sigil pattern (`-> % (:$k is rw)`) BINDS the topic, so its
         // elements alias the source rather than a copy.
         if target.starts_with(['@', '%']) {
-            stmts = vec![Stmt::SyntheticBlock(vec![Stmt::MarkBind, stmts.remove(0)])];
+            stmts = vec![Stmt::SyntheticBlock(vec![crate::ast::var_marks::bound(
+                stmts.remove(0),
+            )])];
         }
         crate::param_destructure::destructure_declaring(target, sub_params, &mut stmts);
         return Stmt::SyntheticBlock(stmts);
@@ -262,7 +264,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         // given/with pointy parameter (see the matching detection in
         // `compiler/stmt.rs`'s `pointy_param_name`) — without it, `is rw`
         // writeback never fires because `Given`'s `pointy_param_idx` stays
-        // `None`, the same way the general branch below needs `MarkBind`.
+        // `None`, the same way the general branch below needs a bound declaration.
         let decl = Stmt::VarDecl {
             marks: crate::ast::var_marks::VarMarks {
                 pointy_native_param: true,
@@ -316,13 +318,15 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         }
     } else {
         // A pointy parameter is a declaration, not an assignment to an
-        // enclosing same-named lexical. Use the same MarkBind + VarDecl form as
+        // enclosing same-named lexical. Use the same bound declaration as
         // `my $x := EXPR`; this both preserves aliasing and lets block-scope
         // tracking restore the outer binding when the given body exits.
         let mut stmts = vec![
-            Stmt::MarkBind,
             Stmt::VarDecl {
-                marks: Default::default(),
+                marks: crate::ast::var_marks::VarMarks {
+                    bound: true,
+                    ..Default::default()
+                },
                 anonymous: false,
                 name: pd.name.clone(),
                 expr: topic,

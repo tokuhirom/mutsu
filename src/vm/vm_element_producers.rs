@@ -73,7 +73,7 @@ use super::*;
 /// `$v` as a plain value and the write was lost — while the writeback that used
 /// to carry it had been retired for the iteration precisely because the chunk
 /// carried a cell. A *writable* scalar multi-parameter now binds raw
-/// (`Stmt::MarkBind` + a declaration, the shape `@`/`%`-sigil multi-params
+/// (a bound declaration, the shape `@`/`%`-sigil multi-params
 /// already had), and `array_slot_ref`'s idempotence makes that bind alias the
 /// SOURCE element rather than the temporary chunk. ADR-0045 row 16.
 ///

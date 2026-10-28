@@ -253,7 +253,7 @@ fn is_decl_value_head(body: &[Stmt], elems: &[Expr]) -> bool {
 
 /// Whether `body` is the desugaring of a `my (...) = RHS` / `my (...) := RHS`
 /// destructuring declaration: it opens with the staging-temp declaration,
-/// wrapped in a `MarkBind` block in binding mode.
+/// wrapped in a bound block in binding mode.
 pub(crate) fn is_destructure_block(body: &[Stmt]) -> bool {
     fn is_tmp_decl(stmt: &Stmt) -> bool {
         matches!(stmt, Stmt::VarDecl { name, .. }
@@ -265,7 +265,7 @@ pub(crate) fn is_destructure_block(body: &[Stmt]) -> bool {
         |s: &Stmt| matches!(s, Stmt::VarDecl { name, .. } if !name.contains("__destructure_tmp__"));
     match body.iter().find(|s| !is_predecl(s)) {
         Some(Stmt::SyntheticBlock(inner)) => {
-            matches!(inner.as_slice(), [Stmt::MarkBind, decl] if is_tmp_decl(decl))
+            matches!(inner.as_slice(), [decl] if is_tmp_decl(decl))
         }
         Some(first) => is_tmp_decl(first),
         None => false,

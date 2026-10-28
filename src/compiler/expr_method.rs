@@ -656,8 +656,7 @@ impl Compiler {
             sugar: false,
         };
         self.compile_expr(&Expr::desugar_block(vec![
-            Stmt::MarkBind,
-            bind_decl,
+            crate::ast::var_marks::bound(bind_decl),
             Stmt::Expr(delete_through),
         ]));
     }

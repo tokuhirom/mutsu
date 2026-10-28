@@ -198,7 +198,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
     };
     // In BINDING mode the staging temp must keep the RHS elements' CONTAINERS,
     // not copies of their values: `my (\a, \b) := ($x, $y)` makes `a` an alias
-    // of `$x`, so `a = 10` has to reach `$x`. Declaring the temp with `MarkBind`
+    // of `$x`, so `a = 10` has to reach `$x`. Declaring the temp as a bound declaration
     // (the same marker `my @t := (...)` uses) keeps the element cells the RHS
     // list already carries; a plain assigning declaration deitemizes them away.
     // Targets that read a VALUE out of the temp are unaffected -- a `$` target
@@ -248,7 +248,9 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         }
     }
     if is_binding {
-        stmts.push(Stmt::SyntheticBlock(vec![Stmt::MarkBind, tmp_decl]));
+        stmts.push(Stmt::SyntheticBlock(vec![crate::ast::var_marks::bound(
+            tmp_decl,
+        )]));
     } else {
         stmts.push(tmp_decl);
     }
@@ -391,7 +393,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         // In BINDING mode a non-slurpy `@`/`%` target BINDS the staged element
         // rather than assigning it: `my @x = 1, 2; my (@a,) := (@x,);
         // @a.push(3)` writes through to `@x` in raku, so `@a` must be the
-        // element itself and not a copy. `MarkBind` is the same marker the
+        // element itself and not a copy. `VarMarks::bound` is the same mark the
         // plain `my @a := expr` declaration uses.
         //
         // A slurpy `*@rest` is excluded: its read is a SLICE of the staging
@@ -404,7 +406,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         //
         // A SIGILLESS target binds the same way for the same reason: `my (\a,
         // \b) := ($x, $y)` aliases `$x`/`$y`, exactly as the single-variable
-        // `my \a := $x` does. That form emits `MarkBind` + the declaration +
+        // `my \a := $x` does. That form emits the bound declaration +
         // `MarkSigilless` (see `my_decl_helpers::build_sigilless_bind_stmt`),
         // which leaves writability to the runtime `MarkSigillessBind` check --
         // so a non-container element (`my (\a) := (5,)`) still stays immutable.
@@ -470,12 +472,11 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
             // the compiler learns -- before compiling the declaration -- that
             // this bind's target is sigilless.
             Stmt::SyntheticBlock(vec![
-                Stmt::MarkBind,
-                decl,
+                crate::ast::var_marks::bound(decl),
                 Stmt::MarkSigilless(dvar.name.clone()),
             ])
         } else if binds_element {
-            Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl])
+            Stmt::SyntheticBlock(vec![crate::ast::var_marks::bound(decl)])
         } else {
             decl
         };

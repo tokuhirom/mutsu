@@ -202,7 +202,7 @@ pub(crate) fn with_then_branch(
                 // An aggregate-sigil pattern (`-> % (:$k is rw)`) BINDS the value,
                 // so its elements alias the source rather than a copy.
                 with_body.push(if pname.starts_with(['@', '%']) {
-                    Stmt::SyntheticBlock(vec![Stmt::MarkBind, unpack_target])
+                    Stmt::SyntheticBlock(vec![crate::ast::var_marks::bound(unpack_target)])
                 } else {
                     unpack_target
                 });

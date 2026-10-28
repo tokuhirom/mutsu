@@ -581,7 +581,7 @@ mod declaration_plan_tests {
             typed[10],
             ClassBodyOp::Attr { name, .. } if name.as_str() == "v"
         ));
-        // `my ($p, $q) := ...` nests its `MarkBind` group inside the outer
+        // `my ($p, $q) := ...` nests its bind group inside the outer
         // destructuring `SyntheticBlock`: the outer one is looked through, the
         // bind group stays one `Other` op so it compiles with its context.
         let bind_groups = plan_a
@@ -589,14 +589,14 @@ mod declaration_plan_tests {
             .iter()
             .filter(|op| {
                 matches!(op, ClassBodyOp::Other { raw: Stmt::SyntheticBlock(inner), .. }
-                    if matches!(inner.first(), Some(Stmt::MarkBind)))
+                    if crate::ast::var_marks::is_bind_group(inner))
             })
             .count();
         assert_eq!(bind_groups, 1);
         assert!(!plan_a.body_plan.iter().any(|op| matches!(
             op,
             ClassBodyOp::Other { raw: Stmt::SyntheticBlock(inner), .. }
-                if !matches!(inner.first(), Some(Stmt::MarkBind))
+                if !crate::ast::var_marks::is_bind_group(inner)
         )));
     }
 
@@ -1622,13 +1622,11 @@ pub(crate) struct Compiler {
     /// invocant. Inherited by nested blocks and closures, exactly like the
     /// lexical scope it describes.
     pub(crate) self_is_signature_param: bool,
-    /// When true, the current VarDecl is from a `:=` bind declaration.
-    bind_vardecl: bool,
     /// When true, the current VarDecl is a `:=` bind whose target is a
     /// SIGILLESS term (`my \a := ...`, or a sigilless target of a
     /// list-destructuring bind). Set by the enclosing `SyntheticBlock`, which is
     /// the only place that knows -- the trailing `MarkSigilless` compiles after
-    /// the declaration. One-shot, like [`Self::bind_vardecl`].
+    /// the declaration. One-shot.
     sigilless_bind_vardecl: bool,
     /// True while compiling a terminal subscript whose consumer settles its own
     /// writability from the element it receives — the RHS of a `:=`
@@ -2172,7 +2170,6 @@ impl Compiler {
             lexically_in_method: false,
             capture_enclosing_method_named_args: false,
             self_is_signature_param: false,
-            bind_vardecl: false,
             sigilless_bind_vardecl: false,
             raw_list_elem_terminal: false,
             do_stmt_yields_value: false,
@@ -4304,7 +4301,7 @@ impl Compiler {
             // it instead, so each iteration gets a genuinely fresh container
             // and the outer variable is shadowed rather than clobbered. See
             // todo/tickets/for-multi-param-array-hash-shadow-clobbers-outer-container.md.
-            // `MarkBind` (the same marker `my @a := expr` uses) makes the
+            // a bound declaration (the same mark `my @a := expr` uses) makes the
             // declaration a raw bind rather than a `my @a = expr`-style
             // coercing assignment, which would collapse an already
             // element-typed source array (`array[int8]`) to a plain `Array`.
@@ -4316,7 +4313,7 @@ impl Compiler {
             // producer handed out arrived at `$v` as a bare value and the write
             // was lost, while the writeback that used to carry it had already
             // been retired for the iteration precisely BECAUSE the chunk carried
-            // a cell. `MarkBind` + a declaration is the shape that does not
+            // a cell. A bound declaration is the shape that does not
             // coerce, and `array_slot_ref` is idempotent, so binding
             // `_[1]` over a chunk holding a source cell aliases the SOURCE
             // element rather than the temporary chunk.
@@ -4332,10 +4329,10 @@ impl Compiler {
                         .get(i)
                         .is_some_and(|d| d.sigilless || d.traits.iter().any(|t| t == "rw")));
             let stmt = if actual_name.starts_with(['@', '%']) || rw_scalar_alias {
-                Stmt::SyntheticBlock(vec![
-                    Stmt::MarkBind,
-                    decl_stmt(actual_name.clone(), value_expr),
-                ])
+                Stmt::SyntheticBlock(vec![crate::ast::var_marks::bound(decl_stmt(
+                    actual_name.clone(),
+                    value_expr,
+                ))])
             } else if actual_name == "_" {
                 bind_stmt(actual_name.clone(), value_expr)
             } else {
@@ -4365,9 +4362,11 @@ impl Compiler {
         // A bare capture's parameter is named `__type_capture__T` by the parser.
         let capture_bind = |var: &str, cap: &str| {
             Stmt::SyntheticBlock(vec![
-                Stmt::MarkBind,
                 Stmt::VarDecl {
-                    marks: Default::default(),
+                    marks: crate::ast::var_marks::VarMarks {
+                        bound: true,
+                        ..Default::default()
+                    },
                     anonymous: false,
                     name: cap.to_string(),
                     expr: Expr::MethodCall {

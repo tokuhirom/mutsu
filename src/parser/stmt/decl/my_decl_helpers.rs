@@ -21,7 +21,7 @@ use super::parse_comma_or_expr;
 ///
 /// Mirrors the sigilled `:=` logic in `my_decl_assign::handle_binding`: when
 /// the RHS can denote a CONTAINER, the sigilless name becomes an alias of it
-/// through the same `MarkBind`/`WrapVarRef`/`bind_source` machinery the sigilled
+/// through the same bound-declaration/`WrapVarRef`/`bind_source` machinery the sigilled
 /// case uses (raku: `my $a = 5; my \x := $a; x = 10; say $a` prints `10`).
 ///
 /// The set of such shapes is a variable, an element (`@a[0]`, `%h<k>`, a
@@ -135,6 +135,7 @@ pub(crate) fn build_sigilless_bind_stmt(
     let decl = Stmt::VarDecl {
         marks: crate::ast::var_marks::VarMarks {
             sigilless_decl: true,
+            bound: binds_a_container,
             ..Default::default()
         },
         anonymous: false,
@@ -156,7 +157,7 @@ pub(crate) fn build_sigilless_bind_stmt(
         where_constraint: None,
     };
     if binds_a_container {
-        Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl, Stmt::MarkSigilless(name)])
+        Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigilless(name)])
     } else {
         Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)])
     }

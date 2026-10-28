@@ -199,7 +199,7 @@ impl VisitMut for Ctx {
                     }
                     ParsedStmt::WillDecl { decl, phasers } => {
                         // The declaration runs in the enclosing scope.
-                        let mut one = vec![std::mem::replace(decl.as_mut(), Stmt::MarkBind)];
+                        let mut one = vec![std::mem::replace(decl.as_mut(), Stmt::SyntheticBlock(Vec::new()))];
                         self.visit_stmts_mut(&mut one);
                         *decl.as_mut() = one.pop().expect("one statement");
                         for (_, body) in phasers {

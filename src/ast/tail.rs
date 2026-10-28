@@ -31,7 +31,6 @@ impl TailSkip {
         match stmt {
             Stmt::SetLine(..)
             | Stmt::Trace { .. }
-            | Stmt::MarkBind
             | Stmt::MarkReadonly(..)
             | Stmt::MarkSigilless(_)
             | Stmt::MarkSigillessReadonly(_) => true,

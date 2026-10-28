@@ -47,6 +47,13 @@ pub(crate) struct VarMarks {
     /// The static half of a `:D` scalar, which holds its nominal type object until the
     /// run-time assignment.
     pub(crate) begin_static_definite: bool,
+    /// A `:=` declaration that aliases the container its initializer names
+    /// (`my @a := @b`, `my $x := $y`, a pointy parameter): the compiler binds
+    /// instead of storing a copy, so the bound container keeps its type (a
+    /// List stays a List). Not part of [`VarMarks::is_plain`]: the declaration
+    /// sat in a bind group before the mark existed and every "plain `my`"
+    /// test still saw it as plain.
+    pub(crate) bound: bool,
 }
 
 impl VarMarks {
@@ -68,4 +75,23 @@ impl VarMarks {
             && !self.begin_static
             && !self.begin_static_definite
     }
+}
+
+/// `decl` with its [`VarMarks::bound`] mark set; anything but a `VarDecl` is
+/// returned as is.
+// Cost: O(1).
+pub(crate) fn bound(mut decl: super::Stmt) -> super::Stmt {
+    if let super::Stmt::VarDecl { marks, .. } = &mut decl {
+        marks.bound = true;
+    }
+    decl
+}
+
+/// Whether `stmts` is a bind group: a parser or compiler expansion with a
+/// declaration marked [`VarMarks::bound`].
+// Cost: O(s), s = statements.
+pub(crate) fn is_bind_group(stmts: &[super::Stmt]) -> bool {
+    stmts
+        .iter()
+        .any(|s| matches!(s, super::Stmt::VarDecl { marks, .. } if marks.bound))
 }
