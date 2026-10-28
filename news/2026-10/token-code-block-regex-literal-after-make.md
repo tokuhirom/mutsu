@@ -1,0 +1,3 @@
+# A regex literal after `make` in a token's code block keeps the token's source tree
+
+`token star { '*' { make /<-[/]>*?/ } }` lost its regex source tree: the code-block scanner read the `/` after `make` as a division (the previous character is a letter), so the literal's closing `/` opened a second literal that never closed. A declaration without a source tree cannot round-trip through RakuAST, so the whole compilation unit was refused (Path::Finder's glob grammar). The scanner now also treats a `/` after whitespace and a term-taking word (`make`, `return`, `say`, `push`, `if`, ...) as a literal opener, unless a sigil or method dot makes the word a value.
