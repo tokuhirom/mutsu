@@ -239,7 +239,6 @@ impl Interpreter {
                         .thread_redeclared_vars
                         .borrow_mut()
                         .insert(name.to_string());
-                    self.note_frame_declared_aggregate(name);
                 }
                 if hoisted {
                     // The seed creates a binding for a name nothing bound yet.

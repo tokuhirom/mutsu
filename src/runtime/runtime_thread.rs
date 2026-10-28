@@ -495,6 +495,7 @@ impl Interpreter {
             self.seed_unmigrated_state_vars(&shared);
         }
         self.threads.shared_vars_active = true;
+        self.threads.frame_remask_armed.set(true);
         // The child captures the parent's CURRENT bindings — including any
         // name the parent re-declared since an earlier spawn (its current
         // value was force-seeded above). From this spawn on, writes to those

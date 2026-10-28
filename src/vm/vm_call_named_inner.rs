@@ -304,7 +304,7 @@ impl Interpreter {
         // `unmask_thread_redeclared_params` call this replaced, which a panic
         // unwind would skip entirely.
         let thread_param_mask_guard =
-            crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(self, cf.param_defs.iter());
+            crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(self, cf.param_defs.iter(), &cf.code.locals);
         self.prepare_definite_return_slot(return_spec.as_deref());
 
         // Raku: $! is scoped per routine — fresh Nil on entry.

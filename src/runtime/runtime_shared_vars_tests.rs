@@ -53,6 +53,7 @@ fn thread_param_mask_guard_restores_on_panic_unwind() {
         let _guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
             &mut interp,
             param_defs.iter(),
+            &[],
         );
         assert!(
             interp
@@ -113,6 +114,7 @@ fn thread_param_mask_guard_restores_on_normal_drop() {
         let _guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
             &mut interp,
             param_defs.iter(),
+            &[],
         );
         assert!(
             interp
@@ -170,6 +172,7 @@ fn thread_param_mask_guard_does_not_disturb_an_ancestor_mask() {
         let _guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
             &mut interp,
             param_defs.iter(),
+            &[],
         );
     }
 
