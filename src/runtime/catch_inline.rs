@@ -43,7 +43,7 @@ impl Interpreter {
     ) -> bool {
         matches!(
             code.constants.get(name_idx as usize).map(|c| c.view()),
-            Some(ValueView::Str(s)) if s.as_str() == "throw"
+            Some(ValueView::Str(s)) if matches!(s.as_str(), "throw" | "rethrow")
         )
     }
 
