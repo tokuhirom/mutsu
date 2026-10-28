@@ -569,7 +569,7 @@ impl Interpreter {
             self.registry_mut().set_user_methods(
                 Symbol::intern(cx.name),
                 Symbol::intern(&alias),
-                overloads,
+                overloads.to_vec(),
             );
         }
         // Also execute the statement so the code variable is set
