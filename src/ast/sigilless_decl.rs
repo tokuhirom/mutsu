@@ -2,7 +2,7 @@
 //!
 //! The parser builds one expansion for both spellings: the declaration wrapped
 //! in the bookkeeping statements the compiler needs (`MarkSigillessReadonly`,
-//! or `MarkBind` + `MarkSigilless` when the right-hand side can denote a
+//! or a bound declaration + `MarkSigilless` when the right-hand side can denote a
 //! container). The spelling itself is not part of the expansion, and rakudo
 //! renders the two differently (`Initializer::Assign` / `Initializer::Bind`),
 //! so the declaration carries it as `VarMarks::sigilless_decl`.

@@ -4,12 +4,11 @@ use super::*;
 
 impl Compiler {
     pub(super) fn compile_synthetic_stmt(&mut self, stmts: &[Stmt]) {
-        // Detect `:=` bind context via MarkBind: the parser wraps `my @a :=
+        // Detect `:=` bind context via a bound declaration: the parser wraps `my @a :=
         // expr` (and the `%`/`$` forms) in a SyntheticBlock that starts with
-        // it. Set bind_vardecl so the VarDecl compilation emits
+        // it. The VarDecl compilation reads the mark and emits
         // MarkBindContext before SetLocal, making the VM preserve the
         // container type (e.g. List stays List).
-        let has_mark_bind = stmts.iter().any(|s| matches!(s, Stmt::MarkBind));
         let restore_pointy_given_topic = stmts
             .iter()
             .any(|s| matches!(s, Stmt::VarDecl { marks, .. } if marks.restore_pointy_given_topic));
@@ -18,7 +17,6 @@ impl Compiler {
         // element's mutability is settled (see
         // `OpCode::IndexAutovivifyLazyTerminal`). It compiles AFTER the
         // declaration, so the block has to tell the VarDecl itself.
-        let has_mark_sigilless = stmts.iter().any(|s| matches!(s, Stmt::MarkSigilless(_)));
         // The names this expansion declares as sigilless TERMS: a `VarDecl`
         // its `MarkSigilless`/`MarkSigillessReadonly` names is stored under
         // the term key (ADR-12441).
@@ -39,15 +37,11 @@ impl Compiler {
         // trailing Var statement that would force the LazyList via SinkPop.
         let mut bound_array_var: Option<String> = None;
         for s in stmts {
-            if has_mark_bind
-                && let Stmt::VarDecl { name, .. } = s
+            if let Stmt::VarDecl { name, marks, .. } = s
+                && marks.bound
                 && name.starts_with('@')
             {
                 bound_array_var = Some(name.clone());
-            }
-            if has_mark_bind && matches!(s, Stmt::VarDecl { .. }) {
-                self.bind_vardecl = true;
-                self.sigilless_bind_vardecl = has_mark_sigilless;
             }
             // Before compiling a VarDecl that will be followed by
             // MarkSigillessReadonly, clear the old readonly flag so

@@ -200,7 +200,7 @@ fn flatten_synthetic_blocks(stmts: &mut Vec<Stmt>) {
                 .any(|s| matches!(s, Stmt::MarkReadonly(..) | Stmt::MarkSigillessReadonly(_)));
             // Keep SyntheticBlocks with a bind marker intact so the compiler
             // can detect `:=` bind context.
-            let has_mark_bind = inner.iter().any(|s| matches!(s, Stmt::MarkBind));
+            let has_mark_bind = crate::ast::var_marks::is_bind_group(inner);
             if has_mark_readonly || has_mark_bind {
                 stmts.push(stmt);
             } else if let Stmt::SyntheticBlock(inner) = stmt {

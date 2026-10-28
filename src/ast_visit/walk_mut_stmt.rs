@@ -46,8 +46,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
         // copies as the parser wrote them, which is the source form.
         Stmt::Ast(node) => super::walk_parsed_mut(v, node),
         Stmt::MarkReadonly(_name, _) => {}
-        Stmt::MarkBind
-        | Stmt::Proceed
+        Stmt::Proceed
         | Stmt::Succeed
         | Stmt::ReactDone
         | Stmt::SupplyBodyDone

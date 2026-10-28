@@ -2347,8 +2347,6 @@ pub(crate) enum Stmt {
     /// The [`ReadonlyKind`] records *why* it is readonly, which decides the
     /// exception Rakudo reports for an assignment through it.
     MarkReadonly(String, ReadonlyKind),
-    /// Flag that the next VarDecl in this SyntheticBlock uses `:=` binding.
-    MarkBind,
     /// The site of a `method` declared in a nested block of a package body
     /// (`class C { do { sub helper { }; method m { helper() } } }`).
     ///

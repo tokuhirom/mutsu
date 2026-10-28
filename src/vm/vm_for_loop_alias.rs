@@ -308,7 +308,7 @@ impl Interpreter {
     /// statements read from carries the SOURCE's element containers.
     ///
     /// A multi-parameter loop does not bind at the native bind site — it binds
-    /// through `build_for_bind_stmts`'s `MarkBind` declarations, which read
+    /// through `build_for_bind_stmts`'s bound declarations, which read
     /// `_[i]` out of a chunk built by `items.chunks(arity)`. That chunk is a
     /// fresh `Array`, so promoting *it* would alias the temporary, not `@a`.
     /// Promoting the items first makes `array_slot_ref`'s idempotence do the
@@ -328,7 +328,7 @@ impl Interpreter {
     /// Only the positions whose parameter actually aliases are promoted.
     /// `rw_param_names` is positionally aligned with the chunk and holds `""`
     /// for a slot that is not genuinely rw, which is the same distinction
-    /// `build_for_bind_stmts` makes when it decides between a raw `MarkBind`
+    /// `build_for_bind_stmts` makes when it decides between a raw bound
     /// declaration and a coercing `Stmt::Assign`. Promoting a non-rw slot would
     /// make a plain `-> $x` read-alias, which rows 45/46 forbid.
     pub(super) fn promote_multi_param_elements(

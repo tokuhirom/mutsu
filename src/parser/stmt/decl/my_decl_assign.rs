@@ -998,7 +998,7 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         return Err(PError::fatal_with_exception(msg, Box::new(ex)));
     }
     let custom_traits = s.custom_traits.clone();
-    // The bookkeeping around the declaration (`MarkBind`, `MarkReadonly`, the
+    // The bookkeeping around the declaration (`VarMarks::bound`, `MarkReadonly`, the
     // bound-array records) is added by the lowering of the node
     // (`ast::bind_decl::expand`), shared with the RakuAST lowerer.
     let stmt = crate::parser::stmt::control::parsed_block::finish(
