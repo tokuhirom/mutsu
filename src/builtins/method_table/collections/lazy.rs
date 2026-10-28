@@ -203,7 +203,12 @@ fn retag_lazy_list(list: &crate::value::LazyList) -> Value {
         cache: std::sync::Mutex::new(cache),
         // The producer's own trailing history: a closure sequence generates its
         // next element from it, so a retagged copy must carry it along.
-        generation_state: std::sync::Mutex::new(list.generation_state.lock().unwrap().clone()),
+        generation_state: std::sync::Mutex::new(
+            list.generation_state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
+        ),
         compiled_code: list.compiled_code.clone(),
         compiled_fns: list.compiled_fns.clone(),
         elems_count: list.elems_count.clone(),
