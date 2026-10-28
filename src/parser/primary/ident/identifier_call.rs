@@ -2358,6 +2358,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         // parentheses, but cannot gobble a following infix as a listop arg.
         && (!crate::parser::stmt::simple::is_user_declared_type(&name)
             || crate::parser::stmt::simple::is_user_declared_sub(&name))
+        // So is a built-in or package-qualified type name (`Int (elem) @types`,
+        // `IO::Path (elem) @types`): an infix follows, not `Int((elem) ...)`.
+        && (!(crate::runtime::utils::is_known_type_constraint(&name)
+            || name
+                .rsplit_once("::")
+                .is_some_and(|(_, last)| last.starts_with(|c: char| c.is_ascii_uppercase())))
+            || crate::parser::stmt::simple::is_user_declared_sub(&name))
         // An infix word (`before`, `eq`, `and`, ...) is refused as a listop
         // head UNLESS a `sub` of that exact name is declared and in scope —
         // this is term position (a fresh term is being parsed), so a
