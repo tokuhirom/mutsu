@@ -124,8 +124,7 @@ fn content(interp: &mut Interpreter, target: &Value, args: &[Value], _: Named<'_
         // A `Distribution::Path` over a relative prefix already maps its files
         // to `prefix/...`: joining the prefix again would double it.
         Some(relative)
-            if !prefix.is_empty()
-                && std::path::Path::new(&relative).starts_with(&prefix) =>
+            if !prefix.is_empty() && std::path::Path::new(&relative).starts_with(&prefix) =>
         {
             relative
         }
