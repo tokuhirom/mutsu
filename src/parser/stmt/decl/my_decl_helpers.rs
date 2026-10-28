@@ -57,7 +57,6 @@ pub(crate) fn build_sigilless_bind_stmt(
     type_constraint: Option<String>,
     is_state: bool,
     is_our: bool,
-    assigned: bool,
     is_value_term: fn(&str) -> bool,
 ) -> Stmt {
     // `my \foo = my $x = 3` / `my \foo = my $ = -3`: the RHS declaration
@@ -99,7 +98,6 @@ pub(crate) fn build_sigilless_bind_stmt(
             type_constraint,
             is_state,
             is_our,
-            assigned,
             is_value_term,
         );
         return Stmt::SyntheticBlock(vec![inner_decl, bind]);
