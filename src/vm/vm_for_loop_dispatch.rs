@@ -673,7 +673,11 @@ impl Interpreter {
         let ValueView::Instance { attributes, .. } = raw.view() else {
             return Ok(None);
         };
-        let Some(storage) = attributes.as_map().get(crate::symbol::wk::array_storage()).cloned() else {
+        let Some(storage) = attributes
+            .as_map()
+            .get(crate::symbol::wk::array_storage())
+            .cloned()
+        else {
             return Ok(None);
         };
         Ok(Some(crate::runtime::coerce_to_array(Value::real_array(

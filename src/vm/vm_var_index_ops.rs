@@ -2064,7 +2064,11 @@ impl Interpreter {
             ) if attributes.contains_key(crate::symbol::wk::baggy_data())
                 && !self.has_user_method_including_role(&class_name.resolve(), "AT-KEY") =>
             {
-                let inner = attributes.as_map().get(crate::symbol::wk::baggy_data()).unwrap().clone();
+                let inner = attributes
+                    .as_map()
+                    .get(crate::symbol::wk::baggy_data())
+                    .unwrap()
+                    .clone();
                 let idx_clone = index.clone();
                 // Re-enter the index logic with the inner bag/set value
                 self.stack.push(inner);

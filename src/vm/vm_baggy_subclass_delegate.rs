@@ -116,7 +116,10 @@ impl Interpreter {
         if self.has_user_method_including_role(&cn, method) {
             return None;
         }
-        attributes.as_map().get(crate::symbol::wk::baggy_data()).cloned()
+        attributes
+            .as_map()
+            .get(crate::symbol::wk::baggy_data())
+            .cloned()
     }
 
     /// QuantHash-subclass instance delegation (mut path): delegate a
