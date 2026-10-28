@@ -44,6 +44,9 @@ const VIA_LIST: [&str; 21] = [
     "minpairs",
 ];
 
+/// What `Sequence` answers from its elements besides the [`VIA_LIST`] methods.
+const VIA_SEQUENCE: [&str; 3] = ["values", "reduce", "Numeric"];
+
 /// Where a receiver's elements come from.
 enum Source {
     /// Its own `iterator`: the [`VIA_ITERATOR`] methods, and `flat` when it
@@ -61,8 +64,8 @@ impl Source {
         match self {
             Source::Iterator { iterable, sequence } => {
                 VIA_ITERATOR.contains(&method)
-                    || (*iterable && method == "flat")
-                    || (*sequence && VIA_LIST.contains(&method))
+                    || ((*iterable || *sequence) && method == "flat")
+                    || (*sequence && (VIA_LIST.contains(&method) || VIA_SEQUENCE.contains(&method)))
             }
             Source::List => VIA_ITERATOR.contains(&method) || VIA_LIST.contains(&method),
         }
@@ -109,7 +112,11 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !VIA_ITERATOR.contains(&method) && !VIA_LIST.contains(&method) && method != "flat" {
+        if !VIA_ITERATOR.contains(&method)
+            && !VIA_LIST.contains(&method)
+            && !VIA_SEQUENCE.contains(&method)
+            && method != "flat"
+        {
             return None;
         }
         let source = self.iteration_source(target, method)?;
