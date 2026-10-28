@@ -735,10 +735,11 @@ impl Interpreter {
         for cn in mro.iter().rev() {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in &class_def.attributes {
-                    if let Some(pos) = attrs
-                        .iter()
-                        .position(|a| a.name == attr.name && a.sigil == attr.sigil)
-                    {
+                    // A redeclaration replaces the base class's slot of the
+                    // same bare name, whatever its sigil (`$.v` in the base,
+                    // `@.v` in the derived class): the instance has one bare
+                    // key per name, held by the most-derived declaration.
+                    if let Some(pos) = attrs.iter().position(|a| a.name == attr.name) {
                         attrs.remove(pos);
                     }
                     attrs.push(attr.clone());
@@ -764,11 +765,9 @@ impl Interpreter {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in class_def.attributes.iter().filter(|a| a.name == name) {
                     // Same override rule as `collect_class_attributes`: a
-                    // redeclaration of the same name and sigil replaces the
-                    // base-class slot, public or not.
-                    if let Some(pos) = found.iter().position(|a| a.sigil == attr.sigil) {
-                        found.remove(pos);
-                    }
+                    // redeclaration of the same name replaces the base-class
+                    // slot, public or not.
+                    found.clear();
                     found.push(PublicAttributeShape {
                         sigil: attr.sigil,
                         is_public: attr.is_public,
@@ -830,14 +829,13 @@ impl Interpreter {
     ) -> Vec<(String, ClassAttributeDef)> {
         let mro = self.class_mro(class_name);
         let mut result: Vec<(String, ClassAttributeDef)> = Vec::new();
-        // Track which attribute names appear in multiple classes (need qualified storage)
-        let mut attr_counts: HashMap<(String, char), usize> = HashMap::new();
+        // Track which attribute names appear in multiple classes (need qualified
+        // storage); the sigil does not matter: `$.v` and `@.v` share the bare key.
+        let mut attr_counts: HashMap<String, usize> = HashMap::new();
         for cn in mro.iter() {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in &class_def.attributes {
-                    *attr_counts
-                        .entry((attr.name.clone(), attr.sigil))
-                        .or_insert(0) += 1;
+                    *attr_counts.entry(attr.name.clone()).or_insert(0) += 1;
                 }
             }
         }
@@ -845,12 +843,7 @@ impl Interpreter {
         for cn in mro.iter() {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in &class_def.attributes {
-                    if attr_counts
-                        .get(&(attr.name.clone(), attr.sigil))
-                        .copied()
-                        .unwrap_or(0)
-                        > 1
-                    {
+                    if attr_counts.get(&attr.name).copied().unwrap_or(0) > 1 {
                         result.push((cn.resolve(), attr.clone()));
                     }
                 }
