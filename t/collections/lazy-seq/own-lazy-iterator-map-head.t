@@ -5,7 +5,7 @@ use Test;
 # front. Found with Math::Sequences (`class Integers is Range` with its own
 # lazy `iterator`; `use Math::Sequences::Integer` hung). #15288
 
-plan 7;
+plan 8;
 
 class Nat {
     method iterator {
@@ -34,3 +34,6 @@ class Three {
 
 is-deeply Three.new.map(* * 10).List, (0, 10, 20), 'a finite own iterator still maps fully';
 is Three.new.sum, 3, 'a finite own iterator still sums';
+
+# Reading the own iterator through a Seq must not change what deepmap answers.
+is (4, 5).Seq.deepmap(* + 1).WHAT.gist, '(List)', 'Seq.deepmap answers a List';
