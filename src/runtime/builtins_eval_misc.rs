@@ -396,11 +396,6 @@ impl Interpreter {
             }
         }
         let code = Self::positional_string(args, 0);
-        if Self::has_invalid_anonymous_rw_trait(&code) {
-            return Err(RuntimeError::new(
-                "X::Trait::Invalid: trait 'rw' is not valid on anonymous parameter",
-            ));
-        }
         if let Some(lang) = Self::named_value(args, "lang") {
             let lang = lang.to_string_value();
             if !lang.eq_ignore_ascii_case("raku") && !lang.eq_ignore_ascii_case("perl6") {

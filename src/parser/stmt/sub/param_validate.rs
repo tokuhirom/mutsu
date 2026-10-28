@@ -414,12 +414,24 @@ pub(crate) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
             // `raku -e 'sub foo($x? is rw) {}'`.
             // `ParamDef::name` keeps the `@`/`%`/`&` sigil but not a leading
             // `$`, so restore it for the user-facing spelling rakudo uses.
-            let display_name = if pd.name.starts_with(['$', '@', '%', '&']) {
+            let anonymous = matches!(pd.target, crate::ast::ParamTarget::Anonymous(_));
+            let display_name = if anonymous {
+                String::new()
+            } else if pd.name.starts_with(['$', '@', '%', '&']) {
                 pd.name.clone()
             } else {
                 format!("${}", pd.name)
             };
-            let msg = format!("Cannot use 'is rw' on optional parameter '{display_name}'.");
+            let declaring = if anonymous {
+                "an anonymous optional parameter"
+            } else {
+                "optional parameter"
+            };
+            let msg = if anonymous {
+                format!("Cannot use 'is rw' on {declaring}.")
+            } else {
+                format!("Cannot use 'is rw' on {declaring} '{display_name}'.")
+            };
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
             attrs.insert("name".to_string(), crate::value::Value::str(display_name));
@@ -433,7 +445,7 @@ pub(crate) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
             );
             attrs.insert(
                 "declaring".to_string(),
-                crate::value::Value::str("optional parameter".to_string()),
+                crate::value::Value::str(declaring.to_string()),
             );
             let ex = crate::value::Value::make_instance(
                 crate::symbol::Symbol::intern("X::Trait::Invalid"),
@@ -443,6 +455,11 @@ pub(crate) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
                 format!("X::Trait::Invalid: {msg}"),
                 Box::new(ex),
             ));
+        }
+        // A sub-signature (`+$x [$ is rw = False]`) is checked as a signature
+        // of its own.
+        if let Some(inner) = &pd.sub_signature {
+            validate_signature_params(inner)?;
         }
         // X::Parameter::TypedSlurpy: a slurpy *array* (`*@`, `**@`, `+@`) or
         // *hash* (`*%`, `+%`) parameter may not carry an explicit type

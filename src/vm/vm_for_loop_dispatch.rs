@@ -711,7 +711,7 @@ impl Interpreter {
         else {
             return Ok(None);
         };
-        if let Some(items) = self.seq_subclass_items(iterable)? {
+        if let Some(items) = self.iterable_payload_items(iterable)? {
             return Ok(Some(items));
         }
         let cn = class_name.as_str().to_string();
@@ -777,7 +777,7 @@ impl Interpreter {
         if attributes.contains_key(crate::symbol::wk::array_storage()) {
             return Ok(None);
         }
-        if let Some(items) = self.seq_subclass_items(iterable)? {
+        if let Some(items) = self.iterable_payload_items(iterable)? {
             return Ok(Some(items));
         }
         let cn = class_name.as_str().to_string();
@@ -815,11 +815,15 @@ impl Interpreter {
         Self::array_element_cells(&storage)
     }
 
-    /// The elements of an instance of a `Seq` subclass: the Seq it carries,
-    /// drained through its `list` (the inherited `Seq.list`).
+    /// The elements of an instance of a `Seq` or `Range` subclass: the value
+    /// it carries, read through its `list` (the inherited `Seq.list` /
+    /// `Range.list`).
     // Cost: O(n), n = the sequence's elements.
-    fn seq_subclass_items(&mut self, iterable: &Value) -> Result<Option<Vec<Value>>, RuntimeError> {
-        if crate::builtins::native_base::seq_payload(iterable).is_none() {
+    fn iterable_payload_items(
+        &mut self,
+        iterable: &Value,
+    ) -> Result<Option<Vec<Value>>, RuntimeError> {
+        if !crate::builtins::native_base::has_iterable_payload(iterable) {
             return Ok(None);
         }
         let list = self.try_compiled_method_or_interpret(iterable.clone(), "list", vec![])?;

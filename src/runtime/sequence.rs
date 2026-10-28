@@ -1,6 +1,10 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// Size (bits of an integer, bytes of a string) of a closure-sequence element
+/// past which `eval_sequence` stops pre-computing its eager prefix.
+const SEQ_EAGER_PREFIX_MAX_SIZE: u64 = 4096;
+
 impl Interpreter {
     pub(super) fn normalize_sequence_arg(value: &Value) -> Value {
         match value.view() {
@@ -862,6 +866,24 @@ impl Interpreter {
                             if let ValueView::Seq(body) = v.view() {
                                 let body = std::sync::Arc::clone(&body);
                                 self.reify_seq_body(&body)?;
+                            }
+                            // The eager prefix is only a warm-up: cut it off once
+                            // the elements get expensive (`2, { $_**2 - $_ + 1 }
+                            // ... *` doubles its digit count each step, a
+                            // look-and-say string grows ~30% per step) and let the
+                            // lazy continuation compute the rest on demand.
+                            // TODO: drop the prefix altogether once `Array.clone`
+                            // shares the generator (roast S32-array/create.t
+                            // "clone and original array share reifier" leans on
+                            // the first elements being cached).
+                            let expensive = match v.view() {
+                                ValueView::BigInt(b) => b.bits() > SEQ_EAGER_PREFIX_MAX_SIZE,
+                                ValueView::Str(s) => s.len() as u64 > SEQ_EAGER_PREFIX_MAX_SIZE,
+                                _ => false,
+                            };
+                            if expensive {
+                                result.push(v);
+                                break 'seq_gen;
                             }
                             v
                         }

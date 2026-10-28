@@ -871,8 +871,25 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
                         continue;
                     }
                     // This is the final name
-                    qualified.push_str(&normalize_raku_identifier(ident));
                     pos += ident.len();
+                    // `&CORE::infix:<+>`: the operator suffix follows the
+                    // category, as in the package-qualified form below.
+                    if matches!(
+                        ident,
+                        "infix"
+                            | "prefix"
+                            | "postfix"
+                            | "term"
+                            | "circumfix"
+                            | "postcircumfix"
+                            | "trait_mod"
+                    ) && let Some((r, OperatorCodeRefSuffix::Static(op_name))) =
+                        parse_operator_code_ref_suffix(ident, &input[pos..])
+                    {
+                        qualified.push_str(&op_name);
+                        return Ok((r, Expr::CodeVar(qualified)));
+                    }
+                    qualified.push_str(&normalize_raku_identifier(ident));
                     return Ok((&input[pos..], Expr::CodeVar(qualified)));
                 }
                 break;

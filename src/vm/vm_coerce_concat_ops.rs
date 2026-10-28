@@ -44,7 +44,12 @@ impl Interpreter {
         // `call_method_with_values`, like `try_any_list_view_method`.
         if let ValueView::Instance { class_name, .. } = val.view() {
             let cn = class_name.resolve();
-            if self.has_user_method(&cn, "list") && !self.has_user_method(&cn, "Slip") {
+            // A `Seq` or `Range` subclass slips the elements of the value it
+            // carries (its inherited `list`).
+            if (self.has_user_method(&cn, "list")
+                || crate::builtins::native_base::has_iterable_payload(&val))
+                && !self.has_user_method(&cn, "Slip")
+            {
                 let list = self.call_method_with_values(val.clone(), "list", Vec::new())?;
                 if !matches!(list.view(), ValueView::Instance { .. }) {
                     self.stack.push(list);
@@ -315,6 +320,8 @@ impl Interpreter {
         Value::truth(!self.eval_truthy(val))
     }
 
+    // Cost: O(1) for most values; O(1) amortized more for an instance whose
+    // type declares `^find_method` (the user metamethod runs).
     pub(super) fn exec_bool_coerce_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
         let out = match val.view() {
@@ -324,6 +331,13 @@ impl Interpreter {
                 // The IMPLICIT topic of a bare regex coerces quietly -- see
                 // `quiet_topic_for_regex_match`.
                 Value::truth(self.regex_bool(&val, true))
+            }
+            // A type with a user `^find_method` answers `.Bool` itself, as
+            // `?$obj` is `$obj.Bool` (Object::Trampoline).
+            ValueView::Instance { .. }
+                if let Some(r) = self.try_user_find_method_dispatch(&val, "Bool", &[]) =>
+            {
+                Value::truth(self.eval_truthy_result(&r?)?)
             }
             _ => {
                 // Boolifying a Failure marks it as handled
