@@ -121,7 +121,7 @@ impl Compiler {
         };
         let incdec = wrap(with_elem_chain_root(expr, &Expr::Var(tmp)));
         self.compile_expr(&Expr::desugar_block(vec![
-            crate::ast::var_marks::bound(bind_decl),
+            crate::ast::var_marks::with_bound_mark(bind_decl),
             Stmt::Expr(incdec),
         ]));
         true

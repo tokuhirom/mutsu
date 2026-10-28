@@ -80,7 +80,7 @@ impl VarMarks {
 /// `decl` with its [`VarMarks::bound`] mark set; anything but a `VarDecl` is
 /// returned as is.
 // Cost: O(1).
-pub(crate) fn bound(mut decl: super::Stmt) -> super::Stmt {
+pub(crate) fn with_bound_mark(mut decl: super::Stmt) -> super::Stmt {
     if let super::Stmt::VarDecl { marks, .. } = &mut decl {
         marks.bound = true;
     }

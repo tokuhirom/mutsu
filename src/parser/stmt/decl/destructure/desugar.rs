@@ -248,9 +248,9 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         }
     }
     if is_binding {
-        stmts.push(Stmt::SyntheticBlock(vec![crate::ast::var_marks::bound(
-            tmp_decl,
-        )]));
+        stmts.push(Stmt::SyntheticBlock(vec![
+            crate::ast::var_marks::with_bound_mark(tmp_decl),
+        ]));
     } else {
         stmts.push(tmp_decl);
     }
@@ -475,11 +475,11 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
             // the compiler learns -- before compiling the declaration -- that
             // this bind's target is sigilless.
             Stmt::SyntheticBlock(vec![
-                crate::ast::var_marks::bound(decl),
+                crate::ast::var_marks::with_bound_mark(decl),
                 Stmt::MarkSigilless(dvar.name.clone()),
             ])
         } else if binds_element {
-            Stmt::SyntheticBlock(vec![crate::ast::var_marks::bound(decl)])
+            Stmt::SyntheticBlock(vec![crate::ast::var_marks::with_bound_mark(decl)])
         } else {
             decl
         };

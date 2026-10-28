@@ -663,10 +663,9 @@ impl Compiler {
         // In particular, `$r := 0..2` is a bare Range slice selector; a plain
         // `=` store here would turn the temporary into a Scalar-wrapped Range
         // and misclassify the bound range as a single element.
-        let idx_decl = Stmt::SyntheticBlock(vec![crate::ast::var_marks::bound(Self::init_decl(
-            &idx_tmp,
-            (**index).clone(),
-        ))]);
+        let idx_decl = Stmt::SyntheticBlock(vec![crate::ast::var_marks::with_bound_mark(
+            Self::init_decl(&idx_tmp, (**index).clone()),
+        )]);
         // A literal subscript can never turn into a slice selector at
         // runtime, so the `$idx ~~ Iterable` half folds to `False` and only
         // the element-itemization check remains live.

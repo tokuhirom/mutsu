@@ -4322,7 +4322,7 @@ impl Compiler {
                         .get(i)
                         .is_some_and(|d| d.sigilless || d.traits.iter().any(|t| t == "rw")));
             let stmt = if actual_name.starts_with(['@', '%']) || rw_scalar_alias {
-                Stmt::SyntheticBlock(vec![crate::ast::var_marks::bound(decl_stmt(
+                Stmt::SyntheticBlock(vec![crate::ast::var_marks::with_bound_mark(decl_stmt(
                     actual_name.clone(),
                     value_expr,
                 ))])

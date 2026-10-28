@@ -261,9 +261,12 @@ pub(crate) fn destructure_binds(
                 // `:$count! is rw` aliases the element, so a write through it
                 // reaches the unpacked Hash (rakudo binds the container).
                 if sub.traits.iter().any(|t| t == "rw" || t == "raw") {
-                    bind_stmts.push(Stmt::SyntheticBlock(vec![crate::ast::var_marks::bound(
-                        decl_stmt(sub.name.clone(), target_expr),
-                    )]));
+                    bind_stmts.push(Stmt::SyntheticBlock(vec![
+                        crate::ast::var_marks::with_bound_mark(decl_stmt(
+                            sub.name.clone(),
+                            target_expr,
+                        )),
+                    ]));
                 } else {
                     bind_stmts.push(decl_stmt(sub.name.clone(), target_expr));
                 }
@@ -492,7 +495,7 @@ fn positional_decl_stmt(sub: &crate::ast::ParamDef, value_expr: Expr) -> Stmt {
         || sub.sigilless
         || sub.traits.iter().any(|t| t == "rw" || t == "raw");
     if binds_container {
-        Stmt::SyntheticBlock(vec![crate::ast::var_marks::bound(decl_stmt(
+        Stmt::SyntheticBlock(vec![crate::ast::var_marks::with_bound_mark(decl_stmt(
             name.clone(),
             value_expr,
         ))])

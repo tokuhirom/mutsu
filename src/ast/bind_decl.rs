@@ -61,7 +61,7 @@ pub(crate) fn expand(mut decl: Stmt) -> Stmt {
     if is_array || is_hash {
         // The bound mark tells the compiler the declaration binds (keeps the
         // bound container's type: a List stays a List).
-        let mut stmts = vec![super::var_marks::bound(decl)];
+        let mut stmts = vec![super::var_marks::with_bound_mark(decl)];
         if is_hash {
             // A `SyntheticBlock` yields its LAST statement's value, so re-read
             // the now-bound hash to keep `my %h := %src` usable in expression
@@ -98,7 +98,7 @@ pub(crate) fn expand(mut decl: Stmt) -> Stmt {
     // A conditional whose every branch is such a container binds the branch
     // it selects (`my $x := $c ?? @a[0] !! @a[1]`).
     if binds_a_container(expr) {
-        return Stmt::SyntheticBlock(vec![super::var_marks::bound(decl)]);
+        return Stmt::SyntheticBlock(vec![super::var_marks::with_bound_mark(decl)]);
     }
     decl
 }
