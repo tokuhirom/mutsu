@@ -965,6 +965,12 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         && name.resolve() == "hash"
         && args.is_empty()
         && let Expr::Var(var_name) = target.as_ref()
+        // TODO: `my %args := %$args` (the scalar and the hash share a name)
+        // keeps the `.hash` copy: the rewritten `HashVar(args)` is spelled like
+        // the hash being declared, so the declaration scan would take it for
+        // `my %args := %args` ("initialize itself"). The right fix is a
+        // distinct node for the scalar deref, which also lets this bind alias.
+        && bound_name.get(1..) != Some(var_name.as_str())
     {
         expr = Expr::HashVar(var_name.clone());
     }
