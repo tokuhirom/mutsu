@@ -441,7 +441,7 @@ impl Interpreter {
     /// paths share.
     // Cost: O(m), m = mixin layers of `self_val` (bounded by 8); O(1) for a
     // plain instance: a few attribute-map probes, no registry access.
-    fn with_self_attr<R>(
+    pub(crate) fn with_self_attr<R>(
         &self,
         self_val: &Value,
         site: Option<(&CompiledCode, usize)>,
@@ -753,6 +753,39 @@ impl Interpreter {
             sigil,
             val,
         );
+    }
+
+    /// `$!attr := VALUE` seats VALUE itself as the attribute: unless it is a
+    /// container (a cell or a Proxy), the attribute stops being a writable
+    /// container, which `nqp::isrwcont($!attr)` reports. The state lives on
+    /// the instance, so a later method call sees it.
+    // Cost: O(1) (one attribute lookup and one map write).
+    pub(super) fn note_bound_private_attr(&self, name: &str, val: &Value) {
+        let Some((bare, true)) = Self::attr_twigil_base(name) else {
+            return;
+        };
+        if crate::value::attr_twigil_sigil(name).unwrap_or('$') != '$' {
+            return;
+        }
+        let Some(self_val) = self.get_env_self() else {
+            return;
+        };
+        let bound_value = !val.is_container_ref() && !val.is_proxy_value();
+        let marker = crate::meta_ns::MetaNs::BoundAttr.key_for_str(bare);
+        if let Some(attributes) = self.with_self_attr(
+            &self_val,
+            None,
+            crate::symbol::Symbol::intern(bare),
+            true,
+            '$',
+            |attributes, _, _| attributes.clone(),
+        ) {
+            if bound_value {
+                attributes.insert(marker, Value::TRUE);
+            } else {
+                attributes.with_map_mut(|map| map.remove(marker));
+            }
+        }
     }
 
     /// The shared tail of both write paths. Unwraps a `Mixin` self to the inner

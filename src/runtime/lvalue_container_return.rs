@@ -243,7 +243,10 @@ impl Interpreter {
                     })
             }
         } else {
-            self.call_method_with_values(target.clone(), method, method_args.to_vec())
+            // The path an ordinary `Type.method(args)` call takes: a user
+            // `method new` (a `Proxy` subclass's, say) runs before any native
+            // constructor.
+            self.try_compiled_method_or_interpret(target.clone(), method, method_args.to_vec())
         };
         self.set_pending_call_arg_sources(saved_sources);
         self.in_lvalue_assignment = was_lvalue;

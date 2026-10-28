@@ -84,6 +84,7 @@ impl Interpreter {
             // container) still has a container, but not a writable one.
             "isrwcont" => {
                 is_container
+                    && !self.private_attr_is_bound(name.as_deref())
                     && name
                         .as_deref()
                         .is_none_or(|n| n.starts_with(['!', '.']) || !self.is_readonly(n))
@@ -93,6 +94,28 @@ impl Interpreter {
             "iscont_s" => kind == Some('s'),
             _ => false,
         }
+    }
+
+    /// Whether `$!attr` of the current invocant was bound (`:=`) to a plain
+    /// value, which leaves it without a writable container.
+    // Cost: O(1).
+    fn private_attr_is_bound(&self, name: Option<&str>) -> bool {
+        let Some(attr) = name.and_then(|n| n.strip_prefix('!')) else {
+            return false;
+        };
+        let Some(invocant) = self.env_self_value() else {
+            return false;
+        };
+        let marker = crate::meta_ns::MetaNs::BoundAttr.key_for_str(attr);
+        self.with_self_attr(
+            &invocant,
+            None,
+            crate::symbol::Symbol::intern(attr),
+            true,
+            '$',
+            |attributes, _, _| attributes.contains_key(marker),
+        )
+        .unwrap_or(false)
     }
 
     /// The native kind of attribute `attr` of the current invocant's class.

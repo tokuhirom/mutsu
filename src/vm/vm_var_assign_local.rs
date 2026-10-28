@@ -55,9 +55,11 @@ impl Interpreter {
             // (`record_caller_var_writeback`); drain it here so the slot refreshes
             // (see the other Proxy-STORE assign site).
             self.apply_pending_rw_writeback(code);
-            // Assignment is an expression: `($p = 42)` yields the assigned
-            // value, whatever the STORE block itself returned.
-            self.stack.push(val);
+            // Assignment is an expression yielding the container: `($p = 42)`
+            // is the Proxy itself, whose FETCH answers when something reads it
+            // (not the assigned value, and not whatever the STORE block itself
+            // returned).
+            self.stack.push(self.locals[idx].clone());
             return Ok(());
         }
 
