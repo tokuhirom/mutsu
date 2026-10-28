@@ -145,6 +145,16 @@ impl Interpreter {
                     }
                 }
             }
+            // `multi method m($self where { ... }:)`: the invocant's own `where`.
+            if let Some(inv) = invocant
+                && pd.where_constraint.is_some()
+                && !self.invocant_where_accepts(pd, inv, Some(Symbol::intern(class_name)))
+            {
+                self.restore_env_preserving_dynamics(saved_env);
+                self.set_current_package(saved_package);
+                self.pending_call_arg_sources = saved_arg_sources;
+                return false;
+            }
         }
         // The `where` clauses and defaults of the signature were compiled in
         // the method's declaring compunit, so a type that unit imported (a

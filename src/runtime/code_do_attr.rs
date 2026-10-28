@@ -348,6 +348,49 @@ impl Interpreter {
         Ok(())
     }
 
+    /// A method whose traits composed a role with a `CALL-ME` onto its code
+    /// object (`$r does Provider[&get, &set]`, AccessorFacade): a call of the
+    /// method runs that `CALL-ME` with the invocant first, as rakudo invokes a
+    /// code object that does. The body dispatch runs is a closure forwarding
+    /// its whole argument list to the composed object's `CALL-ME`; it is bound
+    /// as the candidate's innermost wrap-chain entry, like a `$!do` rebind
+    /// (#15127).
+    // Cost: O(r) to look for the role's `CALL-ME` (r = composed roles); a
+    // closure creation and one registry write when there is one.
+    pub(crate) fn bind_method_call_me_body(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        candidate_idx: usize,
+        method_code: &Value,
+    ) -> Result<(), RuntimeError> {
+        use std::sync::OnceLock;
+        static FACTORY: OnceLock<Vec<crate::ast::Stmt>> = OnceLock::new();
+        let Some(view) = self.routine_call_me_view(method_code) else {
+            return Ok(());
+        };
+        let stmts = match FACTORY.get() {
+            Some(stmts) => stmts,
+            None => {
+                let (stmts, _) =
+                    crate::parser::parse_program("-> $cm { -> |c { $cm.CALL-ME(|c) } }")?;
+                FACTORY.get_or_init(|| stmts)
+            }
+        };
+        let factory = self.eval_block_value(stmts)?;
+        let forwarder = self.call_sub_value(factory, vec![view])?;
+        let ValueView::Sub(forwarder_data) = forwarder.view() else {
+            return Ok(());
+        };
+        self.registry_mut().bind_method_do_body(
+            class_name,
+            method_name,
+            candidate_idx,
+            direct_code(&forwarder_data),
+        );
+        Ok(())
+    }
+
     /// `nqp::bindattr($method, Code, '$!do', $body)` on a `Method` object:
     /// `body` becomes what dispatch runs for that candidate.
     // Cost: O(c + e), c = wrappers on the candidate, e = entries of the
