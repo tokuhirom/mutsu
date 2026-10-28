@@ -11,6 +11,7 @@ impl CompiledCode {
     ) -> u32 {
         let Stmt::ProtoDecl {
             is_hidden_from_backtrace: _,
+            is_hoisted_copy: _,
             name,
             params,
             param_defs,

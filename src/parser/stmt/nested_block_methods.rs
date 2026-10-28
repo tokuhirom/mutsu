@@ -19,8 +19,7 @@
 //! the body, so [`hoist`] rewrites the body once it has parsed:
 //!
 //! - the declaration is appended to the package body as an ordinary method
-//!   statement, carrying the [`NESTED_BLOCK_METHOD_TRAIT`] marker with a
-//!   per-body index. Every registration pass then sees an ordinary method:
+//!   statement, carrying its `nested_capture_index` (a per-body index). Every registration pass then sees an ordinary method:
 //!   the method table, `.^methods`, role requirements, return type,
 //!   private/submethod/multi status and traits all come from the one path.
 //!   Like rakudo, it is installed whether or not the block ever runs;
@@ -40,13 +39,6 @@
 
 use crate::ast::{Expr, RoutineDeclarator, Stmt};
 use crate::symbol::Symbol;
-use crate::value::Value;
-
-/// The parser marker trait on a hoisted nested-block method; its argument is
-/// the per-package-body index shared with the in-block
-/// [`Stmt::NestedMethodCapture`]. Read back into
-/// `CompiledMethodDecl::nested_capture_index`.
-pub(crate) const NESTED_BLOCK_METHOD_TRAIT: &str = "__nested_block_method";
 
 /// Hoist every has-scoped `method` declared in a nested block of the package
 /// body `body` (see the module doc).
@@ -141,11 +133,12 @@ impl crate::ast_visit::VisitMut for Hoister {
                 routines: self.routines.clone(),
             },
         );
-        if let Stmt::MethodDecl { custom_traits, .. } = &mut decl {
-            custom_traits.push((
-                NESTED_BLOCK_METHOD_TRAIT.to_string(),
-                Some(Expr::Literal(Value::int(i64::from(index)))),
-            ));
+        if let Stmt::MethodDecl {
+            nested_capture_index,
+            ..
+        } = &mut decl
+        {
+            *nested_capture_index = Some(index);
         }
         self.hoisted.push(decl);
     }
@@ -173,18 +166,14 @@ fn owns_its_scope(stmt: &Stmt) -> bool {
 /// in-place registration is a no-op for a method proto) and, as a term,
 /// evaluates to that proto (`Compiler::compile_expr_do_stmt`). A proto's
 /// `{*}` body closes over nothing worth capturing, so the copy carries no
-/// capture index; it carries the [`NESTED_BLOCK_METHOD_TRAIT`] marker (with
-/// no argument) so [`unhoist`] can tell it from a proto written in the body.
+/// capture index; it is marked `is_hoisted_copy` so [`unhoist`] can tell it from a proto written in the body.
 fn marked_proto_copy(stmt: &Stmt) -> Stmt {
     let mut copy = stmt.clone();
     if let Stmt::ProtoDecl {
-        custom_traits,
-        trait_args,
-        ..
+        is_hoisted_copy, ..
     } = &mut copy
     {
-        custom_traits.push(NESTED_BLOCK_METHOD_TRAIT.to_string());
-        trait_args.push((NESTED_BLOCK_METHOD_TRAIT.to_string(), None));
+        *is_hoisted_copy = true;
     }
     copy
 }
@@ -268,14 +257,15 @@ fn capture_closure(decl: &Stmt) -> Expr {
 }
 
 /// Whether `stmt` is a declaration [`hoist`] appended to the package body.
-fn is_hoisted_copy(stmt: &Stmt) -> bool {
+fn was_hoisted(stmt: &Stmt) -> bool {
     match stmt {
-        Stmt::MethodDecl { custom_traits, .. } => custom_traits
-            .iter()
-            .any(|(t, _)| t == NESTED_BLOCK_METHOD_TRAIT),
-        Stmt::ProtoDecl { custom_traits, .. } => {
-            custom_traits.iter().any(|t| t == NESTED_BLOCK_METHOD_TRAIT)
-        }
+        Stmt::MethodDecl {
+            nested_capture_index,
+            ..
+        } => nested_capture_index.is_some(),
+        Stmt::ProtoDecl {
+            is_hoisted_copy, ..
+        } => *is_hoisted_copy,
         _ => false,
     }
 }
@@ -289,24 +279,26 @@ pub(crate) fn unhoist(body: &[Stmt]) -> Vec<Stmt> {
     let mut methods: Vec<Option<Stmt>> = Vec::new();
     let mut written = Vec::with_capacity(body.len());
     for stmt in body {
-        if !is_hoisted_copy(stmt) {
+        if !was_hoisted(stmt) {
             written.push(stmt.clone());
             continue;
         }
-        let Stmt::MethodDecl { custom_traits, .. } = stmt else {
-            continue;
-        };
-        let Some(index) = custom_traits.iter().find_map(|(t, arg)| match arg {
-            Some(Expr::Literal(v)) if t == NESTED_BLOCK_METHOD_TRAIT => v.as_int(),
-            _ => None,
-        }) else {
+        let Stmt::MethodDecl {
+            nested_capture_index: Some(index),
+            ..
+        } = stmt
+        else {
             continue;
         };
         let mut decl = stmt.clone();
-        if let Stmt::MethodDecl { custom_traits, .. } = &mut decl {
-            custom_traits.retain(|(t, _)| t != NESTED_BLOCK_METHOD_TRAIT);
+        if let Stmt::MethodDecl {
+            nested_capture_index,
+            ..
+        } = &mut decl
+        {
+            *nested_capture_index = None;
         }
-        let index = index as usize;
+        let index = *index as usize;
         if methods.len() <= index {
             methods.resize(index + 1, None);
         }

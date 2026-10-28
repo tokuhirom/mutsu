@@ -411,6 +411,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
         } => super::walk_stmts(v, body),
         Stmt::ProtoDecl {
             is_hidden_from_backtrace: _,
+            is_hoisted_copy: _,
             name,
             params: flat,
             param_defs,

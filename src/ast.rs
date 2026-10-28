@@ -2349,7 +2349,7 @@ pub(crate) enum Stmt {
     /// A `method` declarator is has-scoped: it installs the method in the
     /// package wherever it lexically sits, while its body closes over the
     /// block's lexicals. The parser therefore hoists the declaration itself to
-    /// the package body (carrying the `__nested_block_method` trait with the
+    /// the package body (carrying `nested_capture_index`, the
     /// same `index`) and leaves this marker in the block. When the block runs,
     /// `closure` -- an anonymous method with the declaration's signature and
     /// body -- is built only for the lexical capture the ordinary closure
@@ -3026,6 +3026,11 @@ pub(crate) enum Stmt {
         /// methods are made available as their sub-form (e.g. operator subs).
         is_export: bool,
         export_tags: Vec<String>,
+        /// For a method hoisted out of a nested block of the package body, the
+        /// per-body index its in-block `Stmt::NestedMethodCapture` files the
+        /// block's lexical capture under.
+        #[serde(default)]
+        nested_capture_index: Option<u32>,
         /// Where the name, signature and block were written (ADR-10723
         /// Stage 2); `None` for a declaration nobody wrote.
         #[serde(default)]
@@ -3190,6 +3195,10 @@ pub(crate) enum Stmt {
         trait_args: Vec<(String, Option<Expr>)>,
         /// `is hidden-from-backtrace` on a `proto method`.
         is_hidden_from_backtrace: bool,
+        /// A copy of a nested-block `proto method` appended to the package body
+        /// (`parser::stmt::nested_block_methods`); the written one stays in place.
+        #[serde(default)]
+        is_hoisted_copy: bool,
         /// True when declared as `proto method`/`proto submethod` (inside a
         /// class/role body). Such a proto registers a method-level proto body
         /// whose `{*}` dispatches to the matching multi method candidate,

@@ -254,7 +254,7 @@ impl Drop for NestingGuard {
 pub(crate) const SUPPLY_EMITTER_PREFIX: &str = "__mutsu_supply_emitter_";
 
 pub(crate) use stmt::nested_block_methods::{
-    NESTED_BLOCK_METHOD_TRAIT, hoist as hoist_nested_methods, unhoist as unhoist_nested_methods,
+    hoist as hoist_nested_methods, unhoist as unhoist_nested_methods,
 };
 
 pub(crate) use primary::var::is_known_word_infix;
