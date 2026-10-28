@@ -508,6 +508,18 @@ impl Compiler {
                             target_is_sigilless: false,
                         });
                     }
+                    // A trailing assignment (`$n += 1`, `$x = 5`) evaluates to the
+                    // assigned container, so the body's value is the variable's
+                    // post-assignment value, not an undefined `Nil`.
+                    Stmt::Assign { name, .. } => {
+                        loop_body.push(last.clone());
+                        loop_body.push(Stmt::Assign {
+                            name: cap_var,
+                            expr: Expr::Var(name.clone()),
+                            op: AssignOp::Assign,
+                            target_is_sigilless: false,
+                        });
+                    }
                     other => {
                         loop_body.push(other.clone());
                         loop_body.push(Stmt::Assign {
@@ -571,7 +583,16 @@ impl Compiler {
             && (!keep_ph.is_empty() || !undo_ph.is_empty())
         {
             loop_body.push(Stmt::If {
-                cond: Expr::Var(result_var),
+                // KEEP vs UNDO is decided by definedness, not truthiness: a
+                // falsy-but-defined value (`0`, `""`) still runs KEEP.
+                cond: Expr::MethodCall {
+                    target: Box::new(Expr::Var(result_var)),
+                    name: crate::symbol::Symbol::intern("defined"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                    sugar: false,
+                },
                 then_branch: keep_ph,
                 else_branch: undo_ph,
                 binding_var: None,
