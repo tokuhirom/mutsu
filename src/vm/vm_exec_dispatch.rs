@@ -7415,9 +7415,16 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(f * d + n + l + m + w), f = captures, d = env depth, n = narrow env entries, l = system layers, m = prototype metadata, w = declaration wrappers.
-            OpCode::MakeAnonSubParams(idx, cc_idx, is_wc, prototype) => {
+            OpCode::MakeAnonSubParams(idx, cc_idx, is_wc, prototype, declarator) => {
                 self.sync_source_line(code, *ip);
-                self.exec_make_anon_sub_params_op(code, *idx, *cc_idx, *is_wc, *prototype)?;
+                self.exec_make_anon_sub_params_op(
+                    code,
+                    *idx,
+                    *cc_idx,
+                    *is_wc,
+                    *prototype,
+                    *declarator,
+                )?;
                 *ip += 1;
             }
             // Cost: O(f * d + n + l), f = free vars, d = creating chain depth, n = entries of its narrow (< 32) top tiers, l = shared system-name layers (see capture_closure_env).

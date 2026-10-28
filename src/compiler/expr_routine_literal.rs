@@ -288,24 +288,17 @@ impl Compiler {
             is_test_assertion: false,
             supersede: false,
             scope: crate::ast::SubScope::My,
-            // A `method`/`submethod` literal is a Routine like a `sub`, but it
-            // reports its own type. The declarator rides the pooled decl as a
-            // `__mutsu_callable_type::<Type>` marker, which is what the
-            // closure-building opcode installs in the captured environment —
-            // the same marker a class-body method declaration sets.
-            custom_traits: {
-                let mut traits = custom_traits.to_vec();
-                if let Some(marker) = declarator.literal_marker() {
-                    traits.push((marker.to_string(), None));
-                }
-                traits
-            },
+            custom_traits: custom_traits.to_vec(),
         });
         self.code.emit(OpCode::MakeAnonSubParams(
             idx,
             Some(cc_idx),
             is_whatever_code,
             prototype,
+            // A `method`/`submethod` literal is a Routine like a `sub`, but it
+            // reports its own type: the closure-building opcode installs the
+            // declarator's `__mutsu_callable_type` in the captured environment.
+            declarator,
         ));
     }
 }

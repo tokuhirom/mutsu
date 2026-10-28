@@ -118,8 +118,13 @@ impl Compiler {
                 scope: crate::ast::SubScope::My,
                 custom_traits: Vec::new(),
             });
-            self.code
-                .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false, None));
+            self.code.emit(OpCode::MakeAnonSubParams(
+                idx,
+                Some(cc_idx),
+                false,
+                None,
+                Default::default(),
+            ));
         } else {
             // Conflict checking, like params, uses the *shallow* collector: a
             // placeholder belongs to its innermost enclosing block, so a
@@ -189,8 +194,13 @@ impl Compiler {
         let esc = self.escaping_position;
         let cc_idx = self.add_closure_code_baked(compiled, esc);
         let idx = self.code.add_stmt(stmt.clone());
-        self.code
-            .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false, None));
+        self.code.emit(OpCode::MakeAnonSubParams(
+            idx,
+            Some(cc_idx),
+            false,
+            None,
+            Default::default(),
+        ));
     }
 
     /// Compile Lambda expression.
