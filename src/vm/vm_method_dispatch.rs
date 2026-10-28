@@ -1782,22 +1782,32 @@ impl Interpreter {
         // the rest are inherited copies, which the overlay-only rule above
         // already excludes. See `merge_method_env`.
         let env = self.env();
-        let overlay: Box<dyn Iterator<Item = (&Symbol, &Value)> + '_> = match env.frame_writes() {
-            Some(log) => Box::new(
-                log.iter()
-                    .filter_map(|k| env.overlay_get_sym(*k).map(|v| (k, v))),
-            ),
-            None => Box::new(env.overlay_iter()),
-        };
-        for (sym, v) in overlay {
+        // One visitor over either overlay shape: a boxed iterator here cost a
+        // heap allocation on every method exit, for an overlay that almost
+        // never holds a ContainerRef.
+        let mut visit = |sym: &Symbol, v: &Value| {
             if !v.is_container_ref() {
-                continue;
+                return;
             }
             let name = sym.as_str();
             if code.locals.iter().any(|n| n == name) {
-                continue;
+                return;
             }
             refs.push((name, v.clone()));
+        };
+        match env.frame_writes() {
+            Some(log) => {
+                for k in log.iter() {
+                    if let Some(v) = env.overlay_get_sym(*k) {
+                        visit(k, v);
+                    }
+                }
+            }
+            None => {
+                for (k, v) in env.overlay_iter() {
+                    visit(k, v);
+                }
+            }
         }
         refs
     }

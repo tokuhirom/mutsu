@@ -726,13 +726,20 @@ impl Interpreter {
             self.stack.push(slip);
             return Ok(());
         }
-        let target = Self::lazy_slip_receiver(target, method);
-        let target = Self::shaped_iteration_receiver(target, method);
-        let target = match self.take_seq_prefix(&target, method, &args)? {
-            Some(prefix) => prefix,
-            None => target,
+        // An `Instance` is none of what the four steps below act on (a lazy-tail
+        // Slip, a shaped array, a Seq or a Scalar/container holding one), so the
+        // ubiquitous user-class receiver skips the whole chain.
+        let target = if matches!(target.view(), ValueView::Instance { .. }) {
+            target
+        } else {
+            let target = Self::lazy_slip_receiver(target, method);
+            let target = Self::shaped_iteration_receiver(target, method);
+            let target = match self.take_seq_prefix(&target, method, &args)? {
+                Some(prefix) => prefix,
+                None => target,
+            };
+            self.consume_seq_for_call(target, method, &mut args, false)?
         };
-        let target = self.consume_seq_for_call(target, method, &mut args, false)?;
         // A `does Sequence` class with its own `iterator`: see
         // `vm_sequence_role_delegate.rs`.
         if let Some(result) = self.try_sequence_role_delegate(&target, method_sym, &args) {
