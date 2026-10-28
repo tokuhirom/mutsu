@@ -143,8 +143,14 @@ impl Compiler {
         {
             return Some(false);
         }
+        // A smiley (`buf8:D`, `int:D`) leaves the name a type.
+        let unsmiled = s
+            .strip_suffix(":D")
+            .or_else(|| s.strip_suffix(":U"))
+            .or_else(|| s.strip_suffix(":_"))
+            .unwrap_or(s);
         if s.chars().next().is_some_and(|c| c.is_ascii_lowercase())
-            && !crate::runtime::utils::is_known_type_constraint(s)
+            && !crate::runtime::utils::is_known_type_constraint(unsmiled)
         {
             if super::compile_inputs::is_imported_value_term(s) {
                 return None;

@@ -119,7 +119,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                     && r.starts_with('(')
                     && super::super::simple::slang_use_if_adverb()
                 {
-                    let inner = &r[1..];
+                    let (inner, _) = ws(&r[1..])?;
                     let (after_expr, cond) = expression(inner)?;
                     let (after_expr, _) = ws(after_expr)?;
                     let after = after_expr
