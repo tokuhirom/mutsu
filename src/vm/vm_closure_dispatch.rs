@@ -582,7 +582,22 @@ impl Interpreter {
             // fallback tier installed above already implements: it provides
             // the captured cell only when no live dynamic frame has one.
             if !k.is_dynamic_var_env_key() {
-                self.env_mut().insert_sym(k, v.clone());
+                // The overwrite only matters when the env resolves `k` to
+                // something else: when the frame already answers with this
+                // very cell (the common case for an `our` or outer lexical
+                // the caller shares with the closure), the insert changes
+                // nothing a read can see, and cost ~1.5k Ir per captured
+                // cell per call (#7565).
+                let already_this_cell = self.env().get_sym(k).is_some_and(|cur| {
+                    matches!(
+                        (cur.view(), v.view()),
+                        (ValueView::ContainerRef(a), ValueView::ContainerRef(b))
+                            if crate::gc::Gc::ptr_eq(&a, &b)
+                    )
+                });
+                if !already_this_cell {
+                    self.env_mut().insert_sym(k, v.clone());
+                }
             }
         }
         // `self` is LEXICAL in Raku: a block has no invocant of its own, so
