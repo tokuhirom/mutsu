@@ -148,13 +148,13 @@ impl Interpreter {
                     }
                     let actual_path = if key.starts_with("libraries/") {
                         let lib_name = key.strip_prefix("libraries/").unwrap_or(&key);
-                        let platform_name = if cfg!(target_os = "macos") {
-                            format!("lib{lib_name}.dylib")
-                        } else if cfg!(target_os = "windows") {
-                            format!("{lib_name}.dll")
-                        } else {
-                            format!("lib{lib_name}.so")
-                        };
+                        let libraries_dir = std::path::Path::new(&prefix)
+                            .join("resources")
+                            .join("libraries");
+                        let platform_name = super::methods_distribution_helpers::library_resource_file_name(
+                            &libraries_dir,
+                            lib_name,
+                        );
                         if prefix.is_empty() {
                             format!("resources/libraries/{platform_name}")
                         } else {

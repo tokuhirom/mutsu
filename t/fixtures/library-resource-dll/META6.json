@@ -1,0 +1,1 @@
+{"name":"LibResDll","version":"0.1","provides":{"LibResDll":"lib/LibResDll.rakumod"},"resources":["libraries/fixture"]}
