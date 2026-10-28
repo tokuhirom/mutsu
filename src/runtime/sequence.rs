@@ -735,6 +735,11 @@ impl Interpreter {
             // them through their explicit forcing paths.
             (SeqMode::Closure, Some(EndpointKind::Value(_))) => 0,
             (_, Some(_)) => 10000,
+            // An unbounded closure sequence is lazy: Rakudo runs the generator
+            // only as elements are asked for, so no prefix is pre-computed (the
+            // generator may be expensive -- `2, { $_**2 - $_ + 1 } ... *` doubles
+            // its digit count each step -- or have side effects).
+            (SeqMode::Closure, None) => 0,
             (_, None) => 32,
         };
         let is_string_seq =
