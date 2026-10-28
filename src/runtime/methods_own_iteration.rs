@@ -45,7 +45,7 @@ const VIA_LIST: [&str; 21] = [
 ];
 
 /// What `Sequence` answers from its elements besides the [`VIA_LIST`] methods.
-const VIA_SEQUENCE: [&str; 3] = ["values", "reduce", "Numeric"];
+const VIA_SEQUENCE: [&str; 4] = ["values", "reduce", "produce", "Numeric"];
 
 /// Where a receiver's elements come from.
 enum Source {

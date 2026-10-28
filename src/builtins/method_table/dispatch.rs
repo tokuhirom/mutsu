@@ -1008,7 +1008,7 @@ pub(crate) fn shapeless_row(
     let mu_owner = Symbol::intern("Mu");
     // A role mixed into a class with its own `iterator` or `list` keeps the
     // class listing itself (`own_iteration_view` answers it).
-    if list
+    if (list || iterable)
         && let ValueView::Mixin(inner, _) = target.view()
         && let ValueView::Instance { class_name, .. } = inner.view()
         && let Some(interp) = interp.as_deref_mut()
