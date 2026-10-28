@@ -324,12 +324,9 @@ impl Interpreter {
                     call_arg_sources,
                 }),
             );
-            let frame = self
-                .dispatch
-                .proto_dispatch_stack
-                .last()
-                .cloned()
-                .expect("push_proto_dispatch_frame pushed a frame");
+            let Some(frame) = self.dispatch.proto_dispatch_stack.last().cloned() else {
+                return Err(RuntimeError::new("proto dispatch frame was not pushed"));
+            };
             // `current_code` names the caller's bytecode here, not a proto body.
             let saved_code = std::mem::replace(&mut self.current_code, 0);
             let result = self.in_method_call(|interp| interp.dispatch_proto_frame(frame));
