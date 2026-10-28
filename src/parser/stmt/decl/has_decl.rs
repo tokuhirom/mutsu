@@ -1133,6 +1133,9 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         && sigil != b'%'
         && !has_explicit_default
         && is_required.is_none()
+        // rakudo reads `has Str:D $.x where ...` as a constrained subtype and
+        // does not demand an initializer for it.
+        && where_constraint.is_none()
         // A custom trait runs before Rakudo checks (it may mark the attribute
         // required, as AttrX::Mooish does for `:lazy`); class registration
         // repeats this check once the traits have been applied.
