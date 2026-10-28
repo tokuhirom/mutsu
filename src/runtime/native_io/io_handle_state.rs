@@ -272,13 +272,18 @@ impl Interpreter {
         Ok(Value::truth(chomp))
     }
 
-    // Cost: TODO
+    // Cost: O(1) plus the flush of buffered output.
     pub(crate) fn io_handle_close(
         &mut self,
         target_val: &Value,
         _args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        Ok(Value::truth(self.close_handle_value(target_val)?))
+        // A handle that was never opened (`IO::Handle.new(:path(...))`, a
+        // `Distribution::Path.content`) has nothing to close: True, as in rakudo.
+        Ok(Value::truth(
+            self.with_handle_mut_opt(target_val, |state| state.close())?
+                .unwrap_or(true),
+        ))
     }
 
     // Cost: TODO
