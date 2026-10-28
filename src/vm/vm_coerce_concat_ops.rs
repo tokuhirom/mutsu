@@ -320,6 +320,8 @@ impl Interpreter {
         Value::truth(!self.eval_truthy(val))
     }
 
+    // Cost: O(1) for most values; O(1) amortized more for an instance whose
+    // type declares `^find_method` (the user metamethod runs).
     pub(super) fn exec_bool_coerce_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
         let out = match val.view() {
@@ -329,6 +331,13 @@ impl Interpreter {
                 // The IMPLICIT topic of a bare regex coerces quietly -- see
                 // `quiet_topic_for_regex_match`.
                 Value::truth(self.regex_bool(&val, true))
+            }
+            // A type with a user `^find_method` answers `.Bool` itself, as
+            // `?$obj` is `$obj.Bool` (Object::Trampoline).
+            ValueView::Instance { .. }
+                if let Some(r) = self.try_user_find_method_dispatch(&val, "Bool", &[]) =>
+            {
+                Value::truth(self.eval_truthy_result(&r?)?)
             }
             _ => {
                 // Boolifying a Failure marks it as handled
