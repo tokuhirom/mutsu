@@ -15,7 +15,7 @@ use crate::value::Value;
 /// `sub list($a, $b) { }; my $x = qw<a b c>` died with
 /// "Too many positionals passed; expected 2 arguments but got 3". Every other
 /// lowering the parser synthesizes already uses a `__mutsu_`-prefixed name for
-/// exactly this reason (`__mutsu_qw_result` right below).
+/// exactly this reason (`__mutsu_word_list`).
 pub(crate) fn make_list_expr(items: Vec<Expr>) -> Expr {
     Expr::Call {
         name: Symbol::intern("__mutsu_word_list"),
@@ -25,14 +25,9 @@ pub(crate) fn make_list_expr(items: Vec<Expr>) -> Expr {
 }
 
 pub(crate) fn make_word_result_expr(items: Vec<Expr>) -> Expr {
-    if items.len() == 1 {
-        Expr::Call {
-            name: Symbol::intern("__mutsu_qw_result"),
-            args: items,
-            listop: false,
-        }
-    } else {
-        make_list_expr(items)
+    match <[Expr; 1]>::try_from(items) {
+        Ok([item]) => item,
+        Err(items) => make_list_expr(items),
     }
 }
 
