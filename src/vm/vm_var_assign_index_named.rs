@@ -3801,18 +3801,27 @@ impl Interpreter {
                 // (`$obj<support><source> = v` with both levels custom
                 // Associative — META6's AutoAssoc). The instance's attribute
                 // cell is shared, so the mutation is visible through the base.
-                if let ValueView::Instance {
-                    class_name: inner_cn,
-                    ..
-                } = inner.view()
-                {
-                    let icn = inner_cn.resolve();
+                // An instance with a role mixed in (`$obj but Role`, Red's JSON
+                // items) is one too: the role serves the subscripts.
+                let inner_object = match inner.view() {
+                    ValueView::Instance { class_name, .. } => Some((class_name.resolve(), false)),
+                    ValueView::Mixin(wrapped, _) => match wrapped.view() {
+                        ValueView::Instance { class_name, .. } => {
+                            Some((class_name.resolve(), true))
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some((icn, mixed)) = inner_object {
                     let assign = if outer_positional {
                         "ASSIGN-POS"
                     } else {
                         "ASSIGN-KEY"
                     };
-                    if self.has_user_method(&icn, assign) {
+                    if self.has_user_method(&icn, assign)
+                        || (mixed && self.mixin_composes_method(&inner, assign))
+                    {
                         self.call_method_with_values(inner, assign, vec![outer_idx, val.clone()])?;
                         self.stack.push(val);
                         return Ok(());
@@ -3824,7 +3833,7 @@ impl Interpreter {
                     // Fusing the two levels (`$obj[i][j] = v`) used to drop the
                     // write: nothing here descended past the inner collection.
                     if let Some(at_outer) = self.object_subscript_accessor(&inner, outer_positional)
-                        && self.class_method_is_rw_capable(&icn, at_outer)
+                        && (mixed || self.class_method_is_rw_capable(&icn, at_outer))
                     {
                         let location = self.call_method_with_values(
                             inner.clone(),
@@ -5690,6 +5699,37 @@ impl Interpreter {
                     }
                 }
             } else {
+                // Final level through an object that serves the subscript
+                // protocol itself (`.data<a><b>[1] = v` where the walk reached a
+                // role-mixed JSON item): its `ASSIGN-POS`/`ASSIGN-KEY`, else the
+                // location its rw `AT-POS`/`AT-KEY` hands back, takes the store.
+                if !is_bind_value {
+                    let cur_val = unsafe { (*current).clone() };
+                    if matches!(cur_val.view(), ValueView::Instance { .. } | ValueView::Mixin(..)) {
+                        if let Some(result) = self.assign_through_subscript_protocol(
+                            &cur_val,
+                            &indices_val[level],
+                            &val,
+                            is_positional,
+                        ) {
+                            result?;
+                            continue;
+                        }
+                        if let Some(at) = self.object_subscript_accessor(&cur_val, is_positional) {
+                            let location = self.call_method_with_values(
+                                cur_val.clone(),
+                                at,
+                                vec![indices_val[level].clone()],
+                            )?;
+                            if let Some(assigned) =
+                                self.assign_lvalue_container(&location, val.clone())
+                            {
+                                assigned?;
+                                continue;
+                            }
+                        }
+                    }
+                }
                 // Final level: assign the value. When binding, install the
                 // shared cell *directly* (replacing any prior leaf), rather than
                 // writing through it — a fresh `:=` rebinds the element to the
