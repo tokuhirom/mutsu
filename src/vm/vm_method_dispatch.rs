@@ -1229,6 +1229,7 @@ impl Interpreter {
                     s,
                     "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_" | "@_" | "%_"
                 ) || method_def.params.iter().any(|p| p == s)
+                    || bound_by_sub_signature(&method_def.param_defs, s)
                     || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                     || cc.env_only_decls.iter().any(|n| n == s)
                     || dynamic_decl_local(&cc.locals, s)
@@ -2966,6 +2967,7 @@ impl Interpreter {
                 let is_method_local = |s: &str| -> bool {
                     matches!(s, "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_")
                         || method_def.params.iter().any(|p| p == s)
+                        || bound_by_sub_signature(&method_def.param_defs, s)
                         || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                         // Env-only `my` declarations (no compiled slot, e.g.
                         // `if (my $file = ...)`) are frame state too — same
@@ -3204,6 +3206,23 @@ fn is_attr_twigil_shaped(s: &str) -> bool {
         s.as_bytes(),
         [b'@' | b'%', b'!' | b'.', ..] | [b'!' | b'.', ..]
     )
+}
+
+/// Whether `name` is bound by a parameter's sub-signature (`:mq(@)! ($media,)`):
+/// such a variable is as frame-local as the parameter itself.
+// Cost: O(p), p = parameters and sub-signature entries of the method.
+fn bound_by_sub_signature(param_defs: &[crate::ast::ParamDef], name: &str) -> bool {
+    param_defs.iter().any(|pd| {
+        [
+            pd.sub_signature.as_deref(),
+            pd.outer_sub_signature.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|sub| {
+            sub.iter().any(|p| p.storage_name() == name) || bound_by_sub_signature(sub, name)
+        })
+    })
 }
 
 /// The env keys every method frame writes for itself -- see the fixture
