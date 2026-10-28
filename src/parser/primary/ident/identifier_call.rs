@@ -2351,6 +2351,16 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let is_nullary_term_keyword = crate::parser::primary::ident::predicates::is_term_keyword(&name)
         && !crate::parser::stmt::simple::is_user_declared_sub(&name)
         && !crate::parser::stmt::simple::is_imported_function(&name);
+    // A built-in or package-qualified type name (`Int (elem) @types`,
+    // `IO::Path (elem) @types`) is a complete term: a following `(` starts an
+    // infix, not the argument list of a call. A type is spelled with a capital
+    // and a lowercase letter in its last component (`TEST-ITER-OPT args` is an
+    // all-caps routine, and `Keccak $x, ...` still reads as a listop call).
+    let is_type_like_name = name.rsplit("::").next().is_some_and(|last| {
+        last.starts_with(|c: char| c.is_ascii_uppercase())
+            && last.chars().any(|c| c.is_ascii_lowercase())
+    }) && !crate::parser::stmt::simple::is_user_declared_sub(&name)
+        && !crate::parser::stmt::simple::is_imported_function(&name);
     if !is_keyword(&name)
         && !is_declarator_head
         && !is_nullary_term_keyword
@@ -2484,7 +2494,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || next == '\u{201D}'
             || next == '\u{201E}'
             || next == '\u{FF62}'
-            || next == '('
+            || (next == '(' && !is_type_like_name)
             || (next == '\\' && r.starts_with("\\("))
             || next.is_ascii_digit()
             // A Unicode numeric literal (vulgar fraction `⅔`, superscript, ...)
