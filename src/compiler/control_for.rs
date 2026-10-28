@@ -211,7 +211,10 @@ impl Compiler {
             if !rw_block && !params.is_empty() {
                 for (i, p) in params.iter().enumerate() {
                     let per_param_writable = params_def.get(i).is_some_and(|d| {
-                        d.sigilless || d.traits.iter().any(|t| t == "rw" || t == "raw" || t == "copy")
+                        d.sigilless
+                            || d.traits
+                                .iter()
+                                .any(|t| t == "rw" || t == "raw" || t == "copy")
                     }) || (params_def.get(i).is_none()
                         && p.starts_with('\\'));
                     if !p.starts_with('@') && !p.starts_with('%') && !per_param_writable {
