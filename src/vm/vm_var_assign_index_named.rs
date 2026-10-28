@@ -582,10 +582,7 @@ impl Interpreter {
             // A role that only `handles` the method forwards it to an
             // attribute; the mixin delegation path owns that write.
             && self.delegated_mixin_attr_key(mixins, assign_method).is_none()
-            && !matches!(
-                self.stack.last().map(Value::view),
-                Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
-            )
+            && !self.stack.last().is_some_and(Self::is_bind_index_value)
         {
             let val = self.stack.pop().unwrap_or(Value::NIL);
             let idx_arg = match idx.view() {
@@ -617,10 +614,7 @@ impl Interpreter {
             .map(|t| t.deref_container())
             && let ValueView::Mixin(..) = target.view()
             && self.mixin_composes_method(&target, bind_method)
-            && matches!(
-                self.stack.last().map(Value::view),
-                Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
-            )
+            && self.stack.last().is_some_and(Self::is_bind_index_value)
         {
             let raw_val = self.stack.pop().unwrap_or(Value::NIL);
             let (val, _bind_source) = Self::unwrap_bind_index_value(raw_val);
@@ -687,10 +681,7 @@ impl Interpreter {
                     .resolve_method_with_owner(&cls, at_method, std::slice::from_ref(&idx_arg))
                     .is_some_and(|(_, def)| def.is_rw)
                 && !self.has_user_method_including_role(&cls, assign_method)
-                && !matches!(
-                    self.stack.last().map(Value::view),
-                    Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
-                )
+                && !self.stack.last().is_some_and(Self::is_bind_index_value)
             {
                 let raw_val = self.stack.pop().unwrap_or(Value::NIL);
                 let (val, _) = Self::unwrap_bind_index_value(raw_val);
@@ -706,13 +697,10 @@ impl Interpreter {
                 return Ok(());
             }
             // A `:=` element bind (`%h<c> := $x`) arrives with the RHS wrapped in
-            // a `__mutsu_bind_index_value` marker; route it to the class's
+            // a bind-marker marker; route it to the class's
             // BIND-KEY/BIND-POS when declared, so the class controls the bind
             // instead of the marker being stored verbatim via ASSIGN.
-            let is_bind = matches!(
-                self.stack.last().map(Value::view),
-                Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
-            );
+            let is_bind = self.stack.last().is_some_and(Self::is_bind_index_value);
             // A user-declared 3-argument `multi sub postcircumfix:<[
             // ]>(SELF, index, value)` / `postcircumfix:<{ }>` candidate
             // intercepts a subscript ASSIGNMENT (`@obj[i] = v`) — a genuine
@@ -1066,27 +1054,9 @@ impl Interpreter {
             _ => idx,
         };
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);
-        let (val, bind_mode, bind_sources) = match raw_val.view() {
-            ValueView::Pair(name, payload) if name == "__mutsu_bind_index_value" => {
-                match payload.view() {
-                    ValueView::Array(items, ..) if items.len() >= 2 => {
-                        let value = items.first().cloned().unwrap_or(Value::NIL);
-                        let sources = match items.get(1).map(Value::view) {
-                            Some(ValueView::Array(srcs, ..)) => srcs
-                                .iter()
-                                .map(|src| match src.view() {
-                                    ValueView::Str(s) if !s.is_empty() => Some((**s).clone()),
-                                    _ => None,
-                                })
-                                .collect(),
-                            _ => Vec::new(),
-                        };
-                        (value, true, sources)
-                    }
-                    _ => (payload.clone(), true, Vec::new()),
-                }
-            }
-            _ => (raw_val, false, Vec::new()),
+        let (val, bind_mode, bind_sources) = match Self::split_bind_index_marker(raw_val) {
+            Ok((value, sources)) => (value, true, sources),
+            Err(raw_val) => (raw_val, false, Vec::new()),
         };
         // A `$` holding a DEFINED value the subscript's protocol does not apply
         // to refuses the store instead of being replaced by a fresh container.
@@ -3683,20 +3653,8 @@ impl Interpreter {
             outer_idx
         };
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);
-        // Detect bind marker (__mutsu_bind_index_value) and extract the actual value
-        let mut is_bind_value = false;
-        let val = match raw_val.view() {
-            ValueView::Pair(name, payload) if name == "__mutsu_bind_index_value" => {
-                is_bind_value = true;
-                match payload.view() {
-                    ValueView::Array(items, ..) if !items.is_empty() => {
-                        items.first().cloned().unwrap_or(Value::NIL)
-                    }
-                    _ => payload.clone(),
-                }
-            }
-            _ => raw_val,
-        };
+        let is_bind_value = Self::is_bind_index_value(&raw_val);
+        let (val, _) = Self::unwrap_bind_index_value(raw_val);
         // ADR-0040's store boundary, Proxy half: a chained subscript still
         // lands in an element `Scalar`, so an assigned `Proxy` FETCHes. A `:=`
         // bind installs the Proxy itself and is exempt.
@@ -5210,7 +5168,7 @@ impl Interpreter {
 
         let raw_val_for_junction = self.stack.pop().unwrap_or(Value::NIL);
         // ADR-0040's store boundary, Proxy half — see the two-level op. The
-        // bind marker (`__mutsu_bind_index_value`) is a `Pair`, never a
+        // bind marker (bind-marker) is a `Pair`, never a
         // `Proxy`, so the probe inside skips it.
         let raw_val_for_junction = self.fetch_proxy_for_store(raw_val_for_junction)?;
 
@@ -5219,7 +5177,7 @@ impl Interpreter {
         // outermost key, so re-dispatch for each expanded key (previously the
         // junction/array was stringified into one garbage entry).
         let outermost = &indices_val[depth - 1];
-        if !matches!(raw_val_for_junction.view(), ValueView::Pair(n, _) if n == "__mutsu_bind_index_value")
+        if !Self::is_bind_index_value(&raw_val_for_junction)
             && matches!(
                 outermost.view(),
                 ValueView::Junction { .. } | ValueView::Array(..)
@@ -5317,8 +5275,7 @@ impl Interpreter {
         // those two stay `None` while the statement is still a bind. The
         // junction re-dispatch above already keys on the marker for the same
         // reason; the hooks below need the same answer.
-        let is_bind_value =
-            matches!(val.view(), ValueView::Pair(n, _) if n == "__mutsu_bind_index_value");
+        let is_bind_value = Self::is_bind_index_value(&val);
         let (val, bind_source) = Self::unwrap_bind_index_value(val);
         let bind_source =
             bind_source.filter(|s| !s.contains("\x00idx\x00") && !s.starts_with(['@', '%']));
@@ -5913,27 +5870,9 @@ impl Interpreter {
             _ => true,
         };
 
-        // Detect bind marker (__mutsu_bind_index_value) and extract the actual value
-        let (val, bind_source, was_bind) = match raw_val.view() {
-            ValueView::Pair(name, payload) if name == "__mutsu_bind_index_value" => {
-                match payload.view() {
-                    ValueView::Array(items, ..) if items.len() >= 2 => {
-                        let value = items.first().cloned().unwrap_or(Value::NIL);
-                        let source = match items.get(1).map(Value::view) {
-                            Some(ValueView::Array(srcs, ..)) => srcs.first().and_then(|s| match s
-                                .view()
-                            {
-                                ValueView::Str(name) if !name.is_empty() => Some((**name).clone()),
-                                _ => None,
-                            }),
-                            _ => None,
-                        };
-                        (value, source, true)
-                    }
-                    _ => (payload.clone(), None, true),
-                }
-            }
-            _ => (raw_val, None, false),
+        let (val, bind_source, was_bind) = match Self::split_bind_index_marker(raw_val) {
+            Ok((value, sources)) => (value, sources.into_iter().next().flatten(), true),
+            Err(raw_val) => (raw_val, None, false),
         };
 
         // An element that IS a `Proxy` (`@bound[1] := item(...)`) mediates its

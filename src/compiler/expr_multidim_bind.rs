@@ -1,17 +1,6 @@
 use super::*;
 
 impl Compiler {
-    /// The call that builds the VM's bind-value marker from the bound value
-    /// and the names of its source variables.
-    // Cost: O(1).
-    pub(super) fn index_bind_marker_call(value: Expr, sources: Expr) -> Expr {
-        Expr::Call {
-            name: Symbol::intern("__mutsu_bind_index_value"),
-            args: vec![value, sources],
-            listop: false,
-        }
-    }
-
     /// Semicolon subscripts bind the RHS value, unlike chained subscripts.
     // Cost: O(n + d), n = RHS expression size, d = dimensions.
     pub(super) fn compile_multidim_value_bind(
@@ -26,14 +15,13 @@ impl Compiler {
         };
         // No source metadata and no lvalue promotion: BIND-POS receives the
         // value, even when the expression names a writable scalar container.
-        self.compile_expr(&Self::index_bind_marker_call(
-            Expr::Call {
-                name: Symbol::intern("nqp::decont"),
-                args: vec![rhs.as_ref().clone()],
-                listop: false,
-            },
-            Expr::Literal(Value::NIL),
-        ));
+        self.compile_call_arg(&Expr::Call {
+            name: Symbol::intern("nqp::decont"),
+            args: vec![rhs.as_ref().clone()],
+            listop: false,
+        });
+        self.compile_call_arg(&Expr::Literal(Value::NIL));
+        self.code.emit(OpCode::IndexBindValue);
         for dimension in dimensions.iter().rev() {
             self.compile_expr(dimension);
         }

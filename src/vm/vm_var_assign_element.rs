@@ -48,9 +48,7 @@ impl Interpreter {
             return None;
         }
         // Reject bind-mode markers and Nil values (need default/type handling).
-        if matches!(val_ref.view(), ValueView::Pair(name, _) if name == "__mutsu_bind_index_value")
-            || matches!(val_ref.view(), ValueView::Nil)
-        {
+        if Self::is_bind_index_value(val_ref) || matches!(val_ref.view(), ValueView::Nil) {
             return None;
         }
         // Reject when type/key constraints, defaults, readonly, or bound indices
@@ -137,9 +135,7 @@ impl Interpreter {
             _ => return None,
         };
         let val_ref = &self.stack[stack_len - 2];
-        if matches!(val_ref.view(), ValueView::Pair(name, _) if name == "__mutsu_bind_index_value")
-            || matches!(val_ref.view(), ValueView::Nil)
-        {
+        if Self::is_bind_index_value(val_ref) || matches!(val_ref.view(), ValueView::Nil) {
             return None;
         }
         // Reject typed / defaulted / shaped / readonly / bound arrays — those need
@@ -258,8 +254,7 @@ impl Interpreter {
             return None;
         }
         // Reject bind-mode marker values
-        if matches!(val_ref.view(), ValueView::Pair(name, _) if name == "__mutsu_bind_index_value")
-        {
+        if Self::is_bind_index_value(val_ref) {
             return None;
         }
         // Reject Nil values (need default/type-object handling)
@@ -761,9 +756,7 @@ impl Interpreter {
             && gc.declared_type.as_deref() != Some("Map")
         {
             let rhs = self.stack[self.stack.len() - 2].clone();
-            if let ValueView::Pair(marker, _) = rhs.view()
-                && marker.as_str() == "__mutsu_bind_index_value"
-            {
+            if Self::is_bind_index_value(&rhs) {
                 return Err(RuntimeError::bind("Hash"));
             }
             self.stack.truncate(self.stack.len() - 2);
@@ -1105,10 +1098,7 @@ impl Interpreter {
             && matches!(self.stack[self.stack.len() - 1].view(), ValueView::Str(_))
             // A `:=` bind installs a container and is rejected outright further
             // down; it must not be read as a store.
-            && !matches!(
-                self.stack[self.stack.len() - 2].view(),
-                ValueView::Pair(n, _) if n.as_str() == "__mutsu_bind_index_value"
-            )
+            && !Self::is_bind_index_value(&self.stack[self.stack.len() - 2])
             && let Some(target) = target_slot
                 .and_then(|slot| self.locals.get(slot as usize).cloned())
                 .or_else(|| self.env().get_sym(code.const_sym(name_idx)).cloned())
@@ -1138,7 +1128,7 @@ impl Interpreter {
                 // the plain value is what lands (`@a[0] = Proxy.new(...)`).
                 let old = self.fetch_proxy_for_store(old)?;
                 // An element ASSIGNMENT stores a COPY; only a `:=` bind (which
-                // arrives wrapped in a `__mutsu_bind_index_value` Pair, so it is
+                // arrives wrapped in a bind marker, so it is
                 // untouched here) aliases. The RHS can BE a first-class element
                 // cell when it came from a read that does not decontainerize --
                 // a method return, most visibly `.value` on a Pair carrying an
@@ -1212,14 +1202,11 @@ impl Interpreter {
             // every one of them ends in a plain `items_mut()[i] = ...` /
             // `insert(k, v)` that would replace it -- the same "one hook above
             // the dispatch" shape slice 1's itemization uses. A `:=` bind (a
-            // `__mutsu_bind_index_value` marker Pair) is deliberately excluded:
+            // bind marker) is deliberately excluded:
             // it is installing a container, not storing.
             let stack_len = self.stack.len();
             if stack_len >= 2
-                && !matches!(
-                    self.stack[stack_len - 2].view(),
-                    ValueView::Pair(n, _) if n.as_str() == "__mutsu_bind_index_value"
-                )
+                && !Self::is_bind_index_value(&self.stack[stack_len - 2])
                 && let Some(existing) = Self::existing_element_container(
                     &target,
                     &self.stack[stack_len - 1],

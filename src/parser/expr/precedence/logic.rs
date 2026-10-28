@@ -399,8 +399,8 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     ));
                 }
                 // Indexed element bind: `%h<k> := v`, `@a[i] := v`. Desugar to an
-                // IndexAssign whose value carries the `__mutsu_bind_index_value`
-                // marker so the VM takes *bind* (not assign) semantics — matching
+                // IndexAssign whose value is an `Expr::IndexBindValue`
+                // node so the VM takes *bind* (not assign) semantics — matching
                 // the statement-level handler. This lets an indexed bind parse in
                 // expression context (`my $c = %h<k> := v`, `$c = %h<k> := X.new: ...`,
                 // `return @a[i] := v`); previously only simple sigil variables bound

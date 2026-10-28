@@ -57,6 +57,7 @@ impl Interpreter {
             | OpCode::EnterPointyTopic
             | OpCode::ExitPointyTopic
             | OpCode::GetGivenPointyTopic
+            | OpCode::IndexBindValue
             | OpCode::IntBitNeg
             | OpCode::Itemize
             | OpCode::ItemizeVar(..)
