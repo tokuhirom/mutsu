@@ -1132,7 +1132,7 @@ impl Interpreter {
                     // An entry bound into the stash at run time (an `EXPORT`
                     // hook's `LEXICAL::<EXPORTHOW> := ...`) keeps the `$` of
                     // its scalar binding in the key.
-                    let sigiled = crate::qualified::qualified_text(package, &format!("${keyword}"));
+                    let sigiled = crate::qualified::qualified_text(package, format!("${keyword}"));
                     this.get_env_with_main_alias_sym(
                         sigiled.as_str(),
                         crate::symbol::Symbol::intern(sigiled.as_str()),
