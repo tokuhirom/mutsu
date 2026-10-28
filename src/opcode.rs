@@ -132,7 +132,7 @@ pub(crate) fn replay_compile_latches(
 /// builtins ([`DISPATCHER_SEEN`]) and the gather-body capture of them read
 /// the invocant and arguments; every other reader (a parameter-binding error
 /// message) wants the name alone. So a program that names none of those never
-/// needs the copies, and [`Interpreter::push_method_samewith_context`] pushes
+/// needs the copies, and `Interpreter::push_method_samewith_context` pushes
 /// the name only. Monotonic and global, so an over-set only forces the full
 /// context.
 static SAMEWITH_SEEN: AtomicBool = AtomicBool::new(false);
