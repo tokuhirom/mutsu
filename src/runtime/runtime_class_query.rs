@@ -529,8 +529,15 @@ impl Interpreter {
         // `Inner`), tested without building the `::name` strings: this runs on
         // every method call, over every class that declares a sub.
         let qualified_by = |long: &str, short: &str| {
-            long.strip_suffix(short)
-                .is_some_and(|prefix| prefix.ends_with("::"))
+            let mut head = long;
+            while let Some((outer, _)) = crate::str_scan::rsplit_once_double_colon(head) {
+                // `short` is the run of segments after `outer::`.
+                if long[outer.len() + 2..] == *short {
+                    return true;
+                }
+                head = outer;
+            }
+            false
         };
         registry
             .class_subs
