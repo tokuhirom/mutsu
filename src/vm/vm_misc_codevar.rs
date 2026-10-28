@@ -803,7 +803,14 @@ impl Interpreter {
         let attr_name = name.strip_prefix('!').filter(|n| !n.is_empty())?;
         let self_val = self.get_env_self()?;
         let object = match self_val.view() {
-            ValueView::Mixin(inner, _) => Value::clone(inner.as_ref()),
+            // A role's own attribute lives in the Mixin-owned role cell, not in
+            // the wrapped object.
+            ValueView::Mixin(inner, mixins) => {
+                if let Some(value) = mixins.role_attribute_by_name(attr_name) {
+                    return Some(value);
+                }
+                Value::clone(inner.as_ref())
+            }
             _ => self_val.clone(),
         };
         match object.view() {

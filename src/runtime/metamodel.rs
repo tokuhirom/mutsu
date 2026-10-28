@@ -199,7 +199,14 @@ impl Interpreter {
             ValueView::CustomType(c) => c.id,
             _ => package_cache_id(&root),
         };
-        let list = args[1].clone();
+        // `parameterize_type(Mu \type, *@params)`: several positionals are the
+        // parameter list; a single iterable argument is flattened into it (the
+        // one-argument rule), so it already is the list.
+        let list = if args.len() == 2 && matches!(args[1].view(), ValueView::Array(..)) {
+            args[1].clone()
+        } else {
+            Value::array(args[1..].to_vec())
+        };
         // A List's own identity is per-object; the arguments' element keys
         // are what make two calls with the same arguments share a result.
         let key = match list.view() {
