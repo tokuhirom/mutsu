@@ -1,6 +1,6 @@
 use Test;
 
-plan 21;
+plan 31;
 
 # A class that `does Sequence` with its own `iterator` answers Any's
 # `self.list` methods (`pairs`, `kv`, `keys`, ...) from its elements,
@@ -22,6 +22,11 @@ for 'plain' => S.new, 'mixin' => (S.new but R) -> $case {
     is-deeply $s.squish.list, (0, 1, 2, 0, 1, 2).list, "$case.key(): squish";
     is-deeply $s.values.list, (0, 1, 2, 0, 1, 2).list, "$case.key(): values";
     is $s.reduce(&[+]), 6, "$case.key(): reduce";
+    ok so($s.any == 2), "$case.key(): any junction";
+    ok so($s.none > 2), "$case.key(): none junction";
+    is $s[0], 0, "$case.key(): [0]";
+    is $s[*-1], 2, "$case.key(): [*-1]";
+    is-deeply $s.batch(4).map(*.List).list, ((0, 1, 2, 0), (1, 2)).list, "$case.key(): batch";
     is-deeply $s.flat.list, (0, 1, 2, 0, 1, 2).list, "$case.key(): flat";
 }
 is (S.new but R).foo, 1, 'the mixed-in role method is still callable';
