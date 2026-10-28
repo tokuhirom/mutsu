@@ -10,6 +10,13 @@ use crate::value::{Value, ValueView};
 /// in object hashes (`my %h{Any}`).
 pub(crate) fn value_which_key(value: &Value) -> String {
     match value.view() {
+        // An itemized key (`%h{$array}`) reaches the subscript paths wrapped in
+        // a `Scalar` -- the transport that keeps the slice machinery from
+        // reading it as a list. The wrapper is not part of the key's identity:
+        // the store, `:exists`, `:delete` and the read must all file the same
+        // object under the same string, or a later `ensure_object_hash_which_keys`
+        // re-keys the entry and the lookups miss.
+        ValueView::Scalar(inner) => value_which_key(inner),
         ValueView::Int(n) => format!("Int|{}", n),
         ValueView::BigInt(n) => format!("Int|{}", *n),
         ValueView::Num(n) => format!("Num|{}", n),
