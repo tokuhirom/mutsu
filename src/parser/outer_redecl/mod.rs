@@ -51,8 +51,6 @@ use crate::ast::{ParamDef, Stmt};
 use crate::ast_visit::VisitMut;
 use std::collections::HashSet;
 
-pub(crate) use crate::ast::method_assign_decl::METHOD_ASSIGN_DECL_TRAIT;
-
 /// A single lexical scope: names declared here so far, and names referenced here
 /// that resolved to an enclosing scope (before any local redeclaration).
 struct Scope {
@@ -317,10 +315,7 @@ fn walk_var_decl(stmt: &mut Stmt, check_self: bool, ctx: &mut Ctx) {
     // *after* declaring (a self-reference is then local, not outer) -- and a
     // direct self-reference there is `X::Syntax::Variable::Initializer`.
     let (sigil, bare) = split_sigil(name);
-    let check_self = check_self
-        && !custom_traits
-            .iter()
-            .any(|(t, _)| t == METHOD_ASSIGN_DECL_TRAIT);
+    let check_self = check_self && !marks.method_assign_decl;
     let armed_key = if check_self {
         key.or_else(|| dynamic_key(sigil, bare))
     } else {

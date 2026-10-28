@@ -189,7 +189,10 @@ impl Compiler {
         let qualified = format!("{}::{bare}", var.package);
         if var.term {
             let decl = Stmt::VarDecl {
-                marks: Default::default(),
+                marks: crate::ast::var_marks::VarMarks {
+                    sigilless_decl: true,
+                    ..Default::default()
+                },
                 anonymous: false,
                 name: var.name.clone(),
                 expr: Expr::BareWord(qualified),
@@ -199,10 +202,7 @@ impl Compiler {
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
-                custom_traits: vec![(
-                    crate::ast::sigilless_decl::SIGILLESS_DECL.to_string(),
-                    Some(Expr::Literal(Value::FALSE)),
-                )],
+                custom_traits: Vec::new(),
                 has_initializer: true,
                 constant: None,
                 bind: None,

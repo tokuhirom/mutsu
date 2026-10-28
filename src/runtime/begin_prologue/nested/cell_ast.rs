@@ -57,7 +57,7 @@ pub(super) fn renamed_static_decl(static_decl: &Stmt, cell_name: &str) -> Stmt {
         type_constraint,
         is_export,
         export_tags,
-        custom_traits,
+        marks,
         has_initializer,
         bind: decl_bind,
         ..
@@ -71,9 +71,8 @@ pub(super) fn renamed_static_decl(static_decl: &Stmt, cell_name: &str) -> Stmt {
         // A `:D` variable's cell holds its type object until the run-time
         // assignment, which the constraint rejects. The cell is storage only;
         // the variable itself keeps the constraint.
-        let definite = crate::runtime::phasers::BEGIN_STATIC_DEFINITE_TRAIT;
-        if custom_traits.iter().any(|(t, _)| t == definite) {
-            custom_traits.retain(|(t, _)| t != definite);
+        if marks.begin_static_definite {
+            marks.begin_static_definite = false;
             *type_constraint = None;
         }
     }
@@ -93,6 +92,7 @@ pub(super) fn untyped_cell_decl(mut decl: Stmt) -> Stmt {
         type_constraint,
         where_constraint,
         custom_traits,
+        marks,
         ..
     } = &mut decl
     {
@@ -100,7 +100,7 @@ pub(super) fn untyped_cell_decl(mut decl: Stmt) -> Stmt {
         *where_constraint = None;
         if sigil_of(name).is_empty() {
             *expr = Expr::Literal(crate::value::Value::NIL);
-            custom_traits.retain(|(t, _)| t != crate::runtime::phasers::BEGIN_STATIC_DEFINITE_TRAIT);
+            marks.begin_static_definite = false;
             custom_traits.push((
                 "default".to_string(),
                 Some(Expr::Literal(crate::value::Value::NIL)),
@@ -124,14 +124,13 @@ pub(super) fn decl_from_cell(static_decl: &Stmt, cell_name: &str, bind: bool) ->
     let mut decl = static_decl.clone();
     if let Stmt::VarDecl {
         expr,
-        custom_traits,
+        marks,
         has_initializer,
         bind: decl_bind,
         ..
     } = &mut decl
     {
-        let definite = crate::runtime::phasers::BEGIN_STATIC_DEFINITE_TRAIT;
-        *expr = if custom_traits.iter().any(|(t, _)| t == definite) {
+        *expr = if marks.begin_static_definite {
             Expr::Binary {
                 left: Box::new(read_var(cell_name)),
                 op: crate::token_kind::TokenKind::SlashSlash,
@@ -142,13 +141,8 @@ pub(super) fn decl_from_cell(static_decl: &Stmt, cell_name: &str, bind: bool) ->
             read_var(cell_name)
         };
         *decl_bind = None;
-        let mut traits = custom_traits.clone();
         *has_initializer = !bind;
-        traits.push((
-            crate::runtime::phasers::BEGIN_STATIC_TRAIT.to_string(),
-            None,
-        ));
-        *custom_traits = traits;
+        marks.begin_static = true;
     }
     if bind {
         // The same bookkeeping the parser wraps around `my @a := …`.

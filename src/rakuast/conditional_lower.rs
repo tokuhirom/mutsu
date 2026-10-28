@@ -403,13 +403,12 @@ pub(crate) fn lower_sigilless(
             d.is_state,
             d.is_our,
         ),
-        form => crate::parser::build_sigilless_bind_stmt(
+        SigillessForm::Assign | SigillessForm::Bind => crate::parser::build_sigilless_bind_stmt(
             d.name,
             d.expr,
             d.type_constraint,
             d.is_state,
             d.is_our,
-            form == SigillessForm::Assign,
             is_value_term,
         ),
     })
