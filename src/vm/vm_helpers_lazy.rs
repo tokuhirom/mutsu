@@ -1245,6 +1245,18 @@ impl Interpreter {
         }
     }
 
+    /// A gather body runs in the dynamic scope of whoever pulls it, not of
+    /// whoever created it: the dynamic variables (`$*DB`) the pulling frame
+    /// sees replace the captured ones in the body's env (#15112).
+    // Cost: O(e), e = entries of the pulling frame's env (a flatten and one scan).
+    pub(crate) fn inherit_puller_dynamics(&mut self, puller: &crate::env::Env) {
+        for (key, value) in puller.flattened().iter() {
+            if key.with_str(|name| name.starts_with('*')) {
+                self.env_mut().insert_sym(*key, value.clone());
+            }
+        }
+    }
+
     /// Force a LazyList by running its compiled bytecode in the Interpreter.
     /// Falls back to interpreter if no compiled code is available.
     pub(crate) fn force_lazy_list_vm(
@@ -1531,7 +1543,9 @@ impl Interpreter {
         // own writes land in a fresh born-owned overlay (no fork of `list.env`).
         // The merge below iterates the overlay (overlay-only) = the body's writes.
         // See docs/vm-dual-store.md (Slice 6).
+        let puller = self.env().clone();
         *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
+        self.inherit_puller_dynamics(&puller);
 
         // Push gather items collector
         let saved_gather_len = self.gather_items_len();
