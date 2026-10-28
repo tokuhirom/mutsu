@@ -284,8 +284,14 @@ impl Interpreter {
             && (package == "EXPORT" || package.ends_with("::EXPORT"))
             && let ValueView::Package(source) = value.view()
         {
-            self.reexport_package_as_tag(&package, bare, &source.resolve());
-            return;
+            let source = source.resolve();
+            // An export stash handed on by an import (`use Inner :EXPORT`
+            // binds `Outer::EXPORT::DEFAULT := Inner::EXPORT::DEFAULT`) is
+            // the importer's ordinary stash pointer, not a package to expand.
+            if !crate::qualified::is_qualified_str(&source) || !source.contains("::EXPORT") {
+                self.reexport_package_as_tag(&package, bare, &source);
+                return;
+            }
         }
         let qualified =
             if crate::qualified::is_global_package(crate::qualified::known_symbol(&package)) {
