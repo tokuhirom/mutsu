@@ -5763,6 +5763,8 @@ pub(crate) struct CompiledClassDeclPlan {
     /// The export tags of an `is export` class published without an export statement
     /// (`ast::Stmt::ClassDecl::export_tags`).
     pub(crate) export_tags: Option<Vec<String>>,
+    /// The `EXPORTHOW` declarator keyword (`ast::PackageMarks::declarator`).
+    pub(crate) declarator: Option<String>,
     pub(crate) language_version: String,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
     pub(crate) decl_id: u64,
@@ -6422,6 +6424,8 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// A `my role`: stored under its declaration-site storage name.
     pub(crate) is_lexical: bool,
     pub(crate) language_version: String,
+    /// The `EXPORTHOW` declarator keyword (`ast::PackageMarks::declarator`).
+    pub(crate) declarator: Option<String>,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
     /// Attribute names this role declares in its own body (ADR-0019 D2a),
     /// precomputed at plan lowering instead of `walk_role_body`'s pre-scan
@@ -13126,6 +13130,7 @@ impl CompiledCode {
             body_parents,
             is_native,
             export_tags,
+            marks,
             ..
         } = stmt
         else {
@@ -13175,6 +13180,7 @@ impl CompiledCode {
             repr: repr.clone(),
             is_native: *is_native,
             export_tags: export_tags.clone(),
+            declarator: marks.declarator.clone(),
             language_version: language_version.clone(),
             custom_traits: plan_traits,
             decl_id: *decl_id,
@@ -13221,7 +13227,7 @@ impl CompiledCode {
             language_version,
             custom_traits,
             decl_id,
-            marks: _,
+            marks,
         } = stmt
         else {
             panic!("add_role_decl_plan expects RoleDecl");
@@ -13268,6 +13274,7 @@ impl CompiledCode {
             is_rw: *is_rw,
             is_lexical: *is_lexical,
             language_version: language_version.clone(),
+            declarator: marks.declarator.clone(),
             custom_traits: zip_decl_trait_args(custom_traits, trait_args),
             own_attribute_names,
             body_used_modules,

@@ -442,15 +442,16 @@ pub(crate) fn register_supersede_keyword(module: &str, keyword: &str) {
     });
 }
 
-/// The `__mutsu_declare_how` marker a declaration written with the built-in
-/// declarator `keyword` carries when `EXPORTHOW::SUPERSEDE` replaced its HOW.
-pub(crate) fn supersede_marker(keyword: &str) -> Option<(String, Option<crate::ast::Expr>)> {
+/// The declarator keyword a declaration written with the built-in declarator
+/// `keyword` records (`PackageMarks::declarator`) when `EXPORTHOW::SUPERSEDE`
+/// replaced its HOW.
+pub(crate) fn superseded_declarator(keyword: &str) -> Option<String> {
     DECLARE_KEYWORDS
         .with(|m| {
             m.borrow()
                 .contains_key(&format!("{SUPERSEDE_PREFIX}{keyword}"))
         })
-        .then(|| crate::parser::declare_how_marker(keyword.to_string()))
+        .then(|| keyword.to_string())
 }
 
 /// Does `keyword` declare a role rather than a class?

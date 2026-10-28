@@ -1408,11 +1408,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         repr,
         body,
         language_version: crate::parser::current_language_version(),
-        custom_traits: {
-            let mut custom = head.custom_traits();
-            custom.extend(written_traits);
-            custom
-        },
+        custom_traits: written_traits,
         is_unit: head.is_unit,
         is_native: false,
         export_tags: None,
@@ -1442,9 +1438,8 @@ pub(super) struct PackageHead {
     pub colons: bool,
     /// Written `class ::Name`: the name's leading empty part.
     pub leading_colons: bool,
-    /// Written with a registered `EXPORTHOW::DECLARE` declarator: the
-    /// parser's marker for its keyword (`declare_how`).
-    pub declarator: Option<(String, Option<Expr>)>,
+    /// Written with a registered `EXPORTHOW::DECLARE` declarator: its keyword.
+    pub declarator: Option<String>,
     /// Written `anon class Name`: built but not installed under its name.
     pub anon: bool,
 }
@@ -1457,16 +1452,14 @@ impl PackageHead {
         if let Stmt::ClassDecl { marks, .. } | Stmt::RoleDecl { marks, .. } = &mut stmt {
             marks.colons = self.colons;
             marks.leading_colons = self.leading_colons && !self.colons;
+            if self.declarator.is_some() {
+                marks.declarator = self.declarator.clone();
+            }
         }
         if self.anon {
             crate::parser::mark_anon_package_stmt(&mut stmt);
         }
         stmt
-    }
-
-    /// The `custom_traits` the head asks the declaration to carry.
-    pub(super) fn custom_traits(&self) -> Vec<(String, Option<Expr>)> {
-        self.declarator.iter().cloned().collect()
     }
 }
 
@@ -1592,7 +1585,7 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         repr: None,
         body,
         language_version: crate::parser::current_language_version(),
-        custom_traits: head.custom_traits(),
+        custom_traits: Vec::new(),
         is_unit: head.is_unit,
         is_native: false,
         export_tags: None,
