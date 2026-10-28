@@ -449,6 +449,7 @@ pub(crate) fn supports_postfix_call_adverbs(expr: &Expr) -> bool {
         | Expr::CallOn { .. }
         | Expr::HyperMethodCall { .. }
         | Expr::HyperMethodCallDynamic { .. } => true,
+        Expr::Spelled(spelled) => supports_postfix_call_adverbs(&spelled.expr),
         _ => false,
     }
 }

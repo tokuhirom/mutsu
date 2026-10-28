@@ -60,6 +60,9 @@ pub(crate) fn append_call_arg(expr: &mut Expr, arg: Expr) -> bool {
             args.push(arg);
             true
         }
+        // A call remembered as spelled in a particular way (the dotty infix
+        // call of `$x\n.meth(...)`) still takes the adverb.
+        Expr::Spelled(spelled) => append_call_arg(&mut spelled.expr, arg),
         _ => false,
     }
 }
