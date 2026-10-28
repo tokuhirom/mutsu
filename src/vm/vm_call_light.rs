@@ -1414,7 +1414,8 @@ impl Interpreter {
         }
         // Type objects (Package values) that match the return type pass
         if let ValueView::Package(sym) = val.view() {
-            return sym.resolve() == type_name;
+            let sym = sym.resolve();
+            return sym == type_name || type_name == "Mu" || (type_name == "Any" && sym != "Mu");
         }
         Self::fast_type_check(val, type_name)
     }
@@ -1457,7 +1458,17 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => {
                 class_name.resolve() == "Failure" || kind == T::Wild
             }
-            ValueView::Package(sym) => sym == name_sym,
+            // A returned type object satisfies the return type it is named
+            // after; `Mu` takes every one (`sub f(Mu $n --> Mu) {
+            // $n.parent }` returning a `Bt` type object, Selkie's
+            // `next-ancestor`) and `Any` every one but `Mu` itself.
+            ValueView::Package(sym) => {
+                sym == name_sym
+                    || match kind {
+                        T::Wild => name_sym.with_str(|n| n == "Mu") || sym.with_str(|s| s != "Mu"),
+                        _ => false,
+                    }
+            }
             ValueView::Mixin(..) => name_sym.with_str(|n| val.isa_check(n)),
             ValueView::Int(_) | ValueView::BigInt(_) => matches!(kind, T::Int | T::Wild),
             ValueView::Str(_) => matches!(kind, T::Str | T::Wild),
