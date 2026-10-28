@@ -257,7 +257,7 @@ fn capture_closure(decl: &Stmt) -> Expr {
 }
 
 /// Whether `stmt` is a declaration [`hoist`] appended to the package body.
-fn is_hoisted_copy(stmt: &Stmt) -> bool {
+fn was_hoisted(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::MethodDecl {
             nested_capture_index,
@@ -279,7 +279,7 @@ pub(crate) fn unhoist(body: &[Stmt]) -> Vec<Stmt> {
     let mut methods: Vec<Option<Stmt>> = Vec::new();
     let mut written = Vec::with_capacity(body.len());
     for stmt in body {
-        if !is_hoisted_copy(stmt) {
+        if !was_hoisted(stmt) {
             written.push(stmt.clone());
             continue;
         }
