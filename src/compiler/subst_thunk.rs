@@ -50,7 +50,12 @@ impl Compiler {
             scope: crate::ast::SubScope::My,
             custom_traits: Vec::new(),
         });
-        self.code
-            .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false, None));
+        self.code.emit(OpCode::MakeAnonSubParams(
+            idx,
+            Some(cc_idx),
+            false,
+            None,
+            Default::default(),
+        ));
     }
 }

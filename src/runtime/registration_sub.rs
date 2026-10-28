@@ -882,15 +882,11 @@ impl Interpreter {
                 return outcome;
             }
         }
-        let is_method_value_decl = custom_traits
-            .iter()
-            .any(|(t, _)| t == "__mutsu_method_decl");
-        // Which declarator the source wrote, recovered from the marker the
-        // `Stmt::MethodDecl` lowering left behind (`src/compiler/stmt.rs`).
-        // `Sub` for every ordinary `sub` declaration, which carries no marker.
-        let declarator = crate::ast::RoutineDeclarator::from_markers(
-            custom_traits.iter().map(|(t, _)| t.as_str()),
-        );
+        // Which declarator the source wrote, from the plan's pass (the
+        // `Stmt::MethodDecl` lowering in `src/compiler/stmt.rs` sets it);
+        // `Sub` for every ordinary `sub` declaration.
+        let declarator = pass.declarator;
+        let is_method_value_decl = declarator != crate::ast::RoutineDeclarator::Sub;
         let allow_redeclare = supersede || is_method_value_decl;
         let is_our_scoped = scope == crate::ast::SubScope::Our;
         let is_lexical_hoist = pass.lexical_hoist;

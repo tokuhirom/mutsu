@@ -4339,11 +4339,9 @@ impl Compiler {
                 // code objects (&name), so lower them through sub registration.
                 //
                 // The lowering is to a `SubDecl`, so the declarator has to ride
-                // along as a marker or it is lost here -- which is what made
-                // `my method foo` and `my submethod foo` both register as a
-                // plain `Sub`. `register_sub` reads it back with
-                // `RoutineDeclarator::from_markers`, the same way the closure
-                // opcode does for a `method (...) { }` literal.
+                // along on the plan's `DeclPass` or it is lost here -- which is
+                // what made `my method foo` and `my submethod foo` both
+                // register as a plain `Sub`.
                 let declarator = if *is_submethod {
                     crate::ast::RoutineDeclarator::Submethod
                 } else {
@@ -4410,16 +4408,13 @@ impl Compiler {
                     } else {
                         crate::ast::SubScope::My
                     },
-                    custom_traits: {
-                        let mut traits = custom_traits.clone();
-                        traits.push(("__mutsu_method_decl".to_string(), None));
-                        if let Some(marker) = declarator.literal_marker() {
-                            traits.push((marker.to_string(), None));
-                        }
-                        traits
-                    },
+                    custom_traits: custom_traits.clone(),
                 };
-                let idx = self.add_sub_decl_plan(&lowered, Default::default());
+                let pass = crate::ast::DeclPass {
+                    declarator,
+                    ..Default::default()
+                };
+                let idx = self.add_sub_decl_plan(&lowered, pass);
                 self.code.emit(OpCode::RegisterDecl(idx));
                 if name_expr.is_none() {
                     let mut method_params: Vec<String> = vec![

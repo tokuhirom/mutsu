@@ -1200,12 +1200,25 @@ fn declarator_sub() -> RoutineDeclarator {
     RoutineDeclarator::Sub
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    bincode::Encode,
+    bincode::Decode,
+)]
 pub(crate) enum RoutineDeclarator {
     /// A placeholder block (`{ $^a }`) or a compiler/runtime closure.
     Block,
     /// `sub ($x) { }`, `anon Str sub { }`, one candidate of an anonymous
     /// `multi sub`.
+    #[default]
     Sub,
     /// A `method (...) { }` literal, including its `anon` and `my` spellings.
     Method,
@@ -1228,39 +1241,6 @@ impl RoutineDeclarator {
         )
     }
 
-    /// The `custom_traits` marker this declarator leaves on the declaration
-    /// the compiler pools, so the closure-building opcode knows which
-    /// `__mutsu_callable_type` to install in the captured environment.
-    /// `Block` and `Sub` need none: each is what its compile path already
-    /// produces.
-    pub(crate) fn literal_marker(self) -> Option<&'static str> {
-        match self {
-            RoutineDeclarator::Method => Some(METHOD_LITERAL_MARKER),
-            RoutineDeclarator::Submethod => Some(SUBMETHOD_LITERAL_MARKER),
-            RoutineDeclarator::Block | RoutineDeclarator::PointyBlock | RoutineDeclarator::Sub => {
-                None
-            }
-        }
-    }
-
-    /// Recover the declarator from the markers [`RoutineDeclarator::literal_marker`]
-    /// left on a pooled declaration's `custom_traits`. `Sub` when no marker is
-    /// present, which is what an unmarked routine declaration is.
-    ///
-    /// Both routine paths read the markers through this: the closure-building
-    /// opcode for a `method (...) { }` literal, and `register_sub` for a named
-    /// `my method foo` / `my submethod foo` declaration.
-    pub(crate) fn from_markers<'a>(markers: impl IntoIterator<Item = &'a str>) -> Self {
-        for marker in markers {
-            match marker {
-                METHOD_LITERAL_MARKER => return RoutineDeclarator::Method,
-                SUBMETHOD_LITERAL_MARKER => return RoutineDeclarator::Submethod,
-                _ => {}
-            }
-        }
-        RoutineDeclarator::Sub
-    }
-
     /// The `__mutsu_callable_type` this declarator installs, which is what
     /// `.^name` / `.WHAT` report (see `value::types_isa`). `None` for the two
     /// spellings whose compile path already produces the right type.
@@ -1275,12 +1255,6 @@ impl RoutineDeclarator {
     }
 }
 
-/// See [`RoutineDeclarator::literal_marker`]. Spelled out rather than built
-/// from the type name: these are declaration markers, not the `__mutsu_<ns>::`
-/// environment keys `MetaNs` owns.
-pub(crate) const METHOD_LITERAL_MARKER: &str = "__method_literal";
-/// See [`RoutineDeclarator::literal_marker`].
-pub(crate) const SUBMETHOD_LITERAL_MARKER: &str = "__submethod_literal";
 /// Marks the pooled copy of a `multi` declaration that a `multi` term in
 /// expression position evaluates to (`my $t := multi foo(...) { ... }`): the
 /// closure built from it is that candidate, so it answers `.multi` True and
@@ -1307,6 +1281,9 @@ pub(crate) struct DeclPass {
     /// it may shadow an outer `&name` binding instead of redeclaring it
     /// (#13855).
     pub(crate) nested_scope: bool,
+    /// The declarator a `my method` / `my submethod` declaration lowered to a
+    /// routine plan was written with (`Sub` for every ordinary routine).
+    pub(crate) declarator: RoutineDeclarator,
 }
 
 /// The source spelling of an [`Expr::Hash`] literal.
