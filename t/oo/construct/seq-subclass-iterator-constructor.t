@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 13;
+plan 14;
 
 # A user subclass of Seq (`unit class Gauge is Seq`) constructs from an
 # Iterator like Seq.new, also through `callwith`/`nextwith` from its own `new`,
@@ -24,6 +24,8 @@ my @seen;
 @seen.push($_) for Plain.new(It.new);
 is-deeply @seen, [0, 1, 2], '`for` iterates it';
 is-deeply Plain.new(It.new).map(* * 2).List, (0, 2, 4), '.map';
+my @slipped = |Plain.new(It.new);
+is-deeply @slipped, [0, 1, 2], '`|` slips its elements';
 
 class G is Seq {
     method new(::?CLASS:_: Iterator:D $it --> ::?CLASS:D) { callwith $it }

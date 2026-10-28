@@ -52,6 +52,15 @@ impl Interpreter {
                 }
             }
         }
+        // `|$obj` of a `Seq` or `Range` subclass slips the elements of the
+        // value it carries.
+        if crate::builtins::native_base::has_iterable_payload(&val) {
+            let list = self.call_method_with_values(val.clone(), "list", Vec::new())?;
+            if !matches!(list.view(), ValueView::Instance { .. }) {
+                self.stack.push(list);
+                return self.exec_make_slip_op();
+            }
+        }
         // A `Stash` is a `Map` of its symbols, so `|$pkg.WHO` slips the
         // symbol pairs exactly as `|%h` does (UML::Translators builds
         // `($name => $pkg, |$pkg.WHO)` to walk a namespace).
