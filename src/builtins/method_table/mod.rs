@@ -59,6 +59,7 @@ pub(crate) mod lazy_pull;
 mod lazy_refusal;
 pub(crate) mod lazy_stream;
 mod mutating;
+pub(crate) mod native_array_result;
 mod place;
 pub(crate) mod receiver_step;
 mod row;
