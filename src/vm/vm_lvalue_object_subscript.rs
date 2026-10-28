@@ -53,7 +53,8 @@ impl Interpreter {
             ("AT-KEY", "AT-POS")
         };
         let serves = |this: &mut Self, method: &str| {
-            this.has_user_method(&cn, method) || (mixed && this.mixin_composes_method(target, method))
+            this.has_user_method(&cn, method)
+                || (mixed && this.mixin_composes_method(target, method))
         };
         if serves(self, primary) {
             Some(primary)
@@ -80,10 +81,16 @@ impl Interpreter {
         // object serving its own `AT-KEY`/`AT-POS` (Red's JSON items).
         if returned.is_proxy_value() {
             let fetched = self.auto_fetch_proxy(&returned)?;
-            if self.object_subscript_accessor(&fetched, next_positional).is_some() {
+            if self
+                .object_subscript_accessor(&fetched, next_positional)
+                .is_some()
+            {
                 return Ok(Some(fetched));
             }
-            return Ok(Self::lvalue_object_step_container(&fetched, next_positional));
+            return Ok(Self::lvalue_object_step_container(
+                &fetched,
+                next_positional,
+            ));
         }
         Ok(Self::lvalue_object_step_container(
             &returned,
