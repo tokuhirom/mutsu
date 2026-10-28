@@ -421,7 +421,7 @@ impl Interpreter {
     /// declared element and key type, re-injected with the statics so the
     /// class's methods check their stores against their own declarations.
     // Cost: O(t), t = typed statics of `class_name`.
-    fn class_body_static_meta_lanes(&self, class_name: &str) -> Vec<(String, Value)> {
+    pub(crate) fn class_body_static_meta_lanes(&self, class_name: &str) -> Vec<(String, Value)> {
         self.lexicals
             .class_body_static_types
             .get(class_name)
