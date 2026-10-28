@@ -1,6 +1,40 @@
 use super::*;
 use crate::meta_ns::MetaNs;
 
+/// How deep `type_matches_value_why` may nest in itself (a subset whose base
+/// leads back to it, an alias cycle). A legitimate check nests a handful of
+/// levels: a subset chain, a parameterization, a coercion.
+const MAX_TYPE_CHECK_NESTING: u32 = 256;
+
+thread_local! {
+    static TYPE_CHECK_NESTING: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// One level of `type_matches_value_why` nesting on this thread, released on drop.
+struct TypeCheckNesting;
+
+impl TypeCheckNesting {
+    // Cost: O(1).
+    #[inline]
+    fn enter() -> Option<Self> {
+        TYPE_CHECK_NESTING.with(|depth| {
+            let now = depth.get();
+            if now >= MAX_TYPE_CHECK_NESTING {
+                return None;
+            }
+            depth.set(now + 1);
+            Some(Self)
+        })
+    }
+}
+
+impl Drop for TypeCheckNesting {
+    #[inline]
+    fn drop(&mut self) {
+        TYPE_CHECK_NESTING.with(|depth| depth.set(depth.get() - 1));
+    }
+}
+
 impl Interpreter {
     pub(crate) fn type_arg_value_from_name(&self, name: &str) -> Value {
         let trimmed = name.trim().trim_start_matches('(').trim_end_matches(')');
@@ -625,18 +659,18 @@ impl Interpreter {
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
         // The check recurses through subset bases, parameterizations and type
-        // aliases without passing a Raku call boundary, so the VM's stack guard
-        // never sees a cycle among them. A thread near the bottom of its stack
-        // refuses the check with a catchable exception instead of aborting the
-        // process (docs/security.md, ADR-0100).
-        if crate::native_stack::headroom_exhausted() {
+        // aliases without crossing a Raku call boundary, so the VM's stack
+        // guard never sees a cycle among them. Bound the nesting of the check
+        // itself and refuse with a catchable exception instead of aborting the
+        // process on a native stack overflow (docs/security.md).
+        let Some(_nesting) = TypeCheckNesting::enter() else {
             if why.is_none() {
                 *why = Some(Box::new(RuntimeError::new(
                     crate::native_stack::DEEP_RECURSION_MESSAGE,
                 )));
             }
             return false;
-        }
+        };
         // An object reblessed on another thread may carry a mixin type this
         // thread has not composed yet (#11456).
         if let ValueView::Instance { class_name, .. } = value.view() {
