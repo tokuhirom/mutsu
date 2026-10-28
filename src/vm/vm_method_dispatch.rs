@@ -112,7 +112,7 @@ impl Interpreter {
             );
         }
         // Build the base (self) value
-        let mut base = if let Some(inv) = invocant {
+        let base = if let Some(inv) = invocant {
             inv
         } else {
             let attributes = attributes.materialize();
@@ -643,164 +643,53 @@ impl Interpreter {
         }
 
         // Skip invocant param, bind remaining
-        let mut bind_params = Vec::new();
-        let mut bind_param_defs = Vec::new();
-        for (idx, param_name) in method_def.params.iter().enumerate() {
-            let is_invocant = method_def
-                .param_defs
-                .get(idx)
-                .map(|pd| pd.is_invocant)
-                .unwrap_or(false);
-            if is_invocant {
-                if let Some(pd) = method_def.param_defs.get(idx) {
-                    // `method m(::T Foo:D: ...)` captures the invocant's type
-                    // AND constrains it, so the capture is bound first and the
-                    // nominal check below still runs (#7984).
-                    if let Some(captured_name) = pd.captured_type_name() {
-                        loan_env!(self, bind_type_capture(captured_name, &base));
-                    }
-                }
-                if let Some(pd) = method_def.param_defs.get(idx)
-                    && let Some(constraint) = &pd.type_constraint
-                {
-                    if crate::qualified::is_type_capture(constraint) {
-                        // `::?CLASS` / `::?ROLE` / `::(expr)`: bound above, not a
-                        // nominal constraint.
-                    } else {
-                        let coercion_target = if let Some(open) = constraint.find('(') {
-                            if constraint.ends_with(')') && open > 0 {
-                                Some(&constraint[..open])
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        };
-                        let expected = coercion_target.unwrap_or(constraint.as_str());
-                        if coercion_target.is_some() {
-                            let mut candidate = loan_env!(
-                                self,
-                                try_coerce_value_for_constraint(constraint, base.clone())
-                            )
-                            .unwrap_or_else(|_| base.clone());
-                            if !self.type_matches_value(expected, &candidate)
-                                && let Ok(coerced) = self.try_compiled_method_or_interpret(
-                                    base.clone(),
-                                    expected,
-                                    vec![],
-                                )
-                            {
-                                candidate = coerced;
-                            }
-                            if self.type_matches_value(expected, &candidate) {
-                                base = candidate;
-                                self.env_mut().insert("self".to_string(), base.clone());
-                            }
-                        } else if !self.type_matches_value(constraint, &base)
-                            && let Ok(coerced) = loan_env!(
-                                self,
-                                try_coerce_value_for_constraint(constraint, base.clone())
-                            )
-                        {
-                            base = coerced;
-                            self.env_mut().insert("self".to_string(), base.clone());
-                        }
-                        if !self.type_matches_value(expected, &base) {
-                            self.restore_var_bindings(saved_var_bindings);
-                            if cc.uses_dispatcher {
-                                self.pop_method_samewith_context();
-                            }
-                            self.pop_method_class();
-                            self.set_current_package_sym(saved_package);
-                            self.stack.truncate(saved_stack_depth);
-                            if pushed_caller {
-                                self.pop_caller_env();
-                            }
-                            let frame = self.pop_call_frame();
-                            *self.env_mut() = frame.saved_env;
-                            // :D/:U smiley mismatch → X::Parameter::InvalidConcreteness
-                            if constraint.ends_with(":D") || constraint.ends_with(":U") {
-                                let (base_type, _) =
-                                    crate::runtime::types::strip_type_smiley(constraint);
-                                let should_be_concrete = constraint.ends_with(":D");
-                                return Err(RuntimeError::parameter_invalid_concreteness(
-                                    base_type,
-                                    base_type,
-                                    method_name,
-                                    &format!("${}", param_name),
-                                    should_be_concrete,
-                                    pd.is_invocant,
-                                ));
-                            }
-                            return Err(RuntimeError::typecheck_binding_parameter(
-                                param_name,
-                                constraint,
-                                crate::runtime::value_type_name(&base),
-                                None,
-                            ));
-                        }
-                    }
-                }
-                // ADR-0067 slice 3b: a raw invocant parameter binds the
-                // caller's container, not a copy of its contents, so
-                // `method m($s is raw:) { $s = 7 }` writes the caller's
-                // variable. `base` itself stays the plain value — it is what
-                // `self`, the attribute seeding and the dispatch frame use.
-                let arrival = self
-                    .take_raw_invocant_arrival(method_name, method_def.param_defs.get(idx))
-                    .or_else(|| {
-                        self.take_implicit_self_invocant_arrival(
-                            method_name,
-                            method_def.param_defs.get(idx),
-                        )
-                    });
-                // A location either arrived boxed from the VM's gate, or `base`
-                // is itself the caller's container (the `$a.m = v` lvalue path
-                // hands one straight in).
-                let bound_to_container = arrival.is_some() || base.is_container_ref();
-                let invocant_value = arrival.unwrap_or_else(|| base.clone());
-                // A sigilless invocant (`sub (\obj)` installed by `^add_method`)
-                // binds its term key (ADR-12441).
-                let storage_name = method_def
-                    .param_defs
-                    .get(idx)
-                    .filter(|pd| pd.name == *param_name)
-                    .map_or_else(|| param_name.clone(), |pd| pd.storage_name().into_owned());
-                self.env_mut().insert(storage_name.clone(), invocant_value);
-                if method_def
-                    .param_defs
-                    .get(idx)
-                    .is_some_and(|pd| pd.declares_self_lexical())
-                {
-                    self.env_mut()
-                        .insert(crate::env::LEX_SELF.to_string(), base.clone());
-                }
-                // No container arrived: the invocant was an immutable value with
-                // no location (`(1, 2)[0]`, `42`, `$a + 1`). raku refuses the
-                // body's write to it -- "Cannot modify an immutable Int (1)" --
-                // where mutsu bound it by value and dropped the write silently.
-                // The same readonly marker a raw PARAMETER gets
-                // (`bind_function_args_values`, which already produces exactly
-                // that diagnostic for `sub g(\S) { S = 7 }; g(5)`) makes the
-                // invocant refuse identically.
-                if let Some(pd) = method_def.param_defs.get(idx)
-                    && crate::runtime::raw_invocant::param_is_raw_invocant(pd)
-                    && pd.sigilless
-                {
-                    let key = crate::runtime::sigilless_readonly_key(&storage_name);
-                    if bound_to_container {
-                        self.env_mut().remove_sym(key);
-                    } else {
-                        self.env_mut().insert_sym_noting(key, Value::TRUE);
-                    }
-                }
+        let mut skipped_invocant = false;
+        for (idx, _) in method_def.params.iter().enumerate() {
+            let Some(pd) = method_def.param_defs.get(idx).filter(|pd| pd.is_invocant) else {
                 continue;
+            };
+            // `method m(::T Foo:D: ...)` captures the invocant's type
+            // AND constrains it, so the capture is bound first and the
+            // nominal check below still runs (#7984).
+            if let Some(captured_name) = pd.captured_type_name() {
+                loan_env!(self, bind_type_capture(captured_name, &base));
             }
-            bind_params.push(param_name.clone());
-            if let Some(pd) = method_def.param_defs.get(idx) {
-                bind_param_defs.push(pd.clone());
-            }
+            skipped_invocant = true;
         }
+        // Without an explicit invocant parameter (the common case) the
+        // signature is bound as declared: borrow it instead of cloning every
+        // parameter name and `ParamDef` on each call.
+        let (bind_params, bind_param_defs): (
+            std::borrow::Cow<'_, [String]>,
+            std::borrow::Cow<'_, [crate::ast::ParamDef]>,
+        ) = if skipped_invocant {
+            let is_invocant = |idx: usize| {
+                method_def
+                    .param_defs
+                    .get(idx)
+                    .is_some_and(|pd| pd.is_invocant)
+            };
+            let params: Vec<String> = method_def
+                .params
+                .iter()
+                .enumerate()
+                .filter(|(idx, _)| !is_invocant(*idx))
+                .map(|(_, name)| name.clone())
+                .collect();
+            let defs: Vec<crate::ast::ParamDef> = (0..method_def.params.len())
+                .filter(|idx| !is_invocant(*idx))
+                .filter_map(|idx| method_def.param_defs.get(idx).cloned())
+                .collect();
+            (params.into(), defs.into())
+        } else {
+            (
+                std::borrow::Cow::Borrowed(&method_def.params[..]),
+                std::borrow::Cow::Borrowed(
+                    &method_def.param_defs
+                        [..method_def.params.len().min(method_def.param_defs.len())],
+                ),
+            )
+        };
 
         // Bind attributes
         for (attr_name, attr_val) in attributes {
