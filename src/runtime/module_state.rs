@@ -888,3 +888,17 @@ impl ModuleState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `operator_has_import_scope_sym` probes this table on every call once a
+    /// unit imported an operator, so it must stay a cheap-hash map (#7565).
+    /// Compile-time check: it stops compiling if the table is a std map again.
+    #[allow(dead_code)]
+    fn operator_import_units_is_an_fx_map(state: &ModuleState) {
+        fn is_fx<K, V>(_: &std::sync::Arc<rustc_hash::FxHashMap<K, V>>) {}
+        is_fx(&state.operator_import_units);
+    }
+}
