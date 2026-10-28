@@ -1,14 +1,10 @@
 use super::*;
 
 pub(crate) fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
-    // A declared (or imported) `prefix:<not>` replaces the loose-unary builtin:
-    // `not $x` then parses as that operator's call, as `!` does (Red's
-    // `multi prefix:<not>(Red::AST $a)`).
     if input.starts_with("not")
         && !is_ident_char(input.as_bytes().get(3).copied())
         && !input[3..].starts_with('(')
         && !followed_by_fat_arrow(&input[3..])
-        && !crate::parser::stmt::simple::is_user_declared_prefix_sub("not")
     {
         let r = &input[3..];
         let (r, _) = ws(r)?;
@@ -16,6 +12,21 @@ pub(crate) fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         // the operand is a whole item-level expression: `not $x = 42` is
         // `not($x = 42)` and `not A ?? B !! C` is `not(A ?? B !! C)` (#11478).
         let (r, expr) = item_expr(r, mode)?;
+        // A declared (or imported) `prefix:<not>` multi takes the call, with the
+        // builtin as its fallback for other argument types (Red's
+        // `multi prefix:<not>(Red::AST $a)`). The precedence stays the builtin's:
+        // a candidate added to `not` does not make it a tight prefix, so
+        // `not *.name in <b c>` is still `not(*.name in <b c>)`.
+        if crate::parser::stmt::simple::is_user_declared_prefix_sub("not") {
+            return Ok((
+                r,
+                Expr::Call {
+                    name: crate::symbol::Symbol::intern("prefix:<not>"),
+                    args: vec![expr],
+                    listop: true,
+                },
+            ));
+        }
         return Ok((
             r,
             Expr::Unary {

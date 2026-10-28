@@ -10,10 +10,9 @@ impl Compiler {
         // MarkBindContext before SetLocal, making the VM preserve the
         // container type (e.g. List stays List).
         let has_mark_bind = stmts.iter().any(|s| matches!(s, Stmt::MarkBind));
-        let restore_pointy_given_topic = stmts.iter().any(|s| {
-            matches!(s, Stmt::VarDecl { custom_traits, .. }
-            if custom_traits.iter().any(|(name, _)| name == "__restore_pointy_given_topic"))
-        });
+        let restore_pointy_given_topic = stmts
+            .iter()
+            .any(|s| matches!(s, Stmt::VarDecl { marks, .. } if marks.restore_pointy_given_topic));
         // A trailing `MarkSigilless` marks the bind target as a
         // sigilless term, which changes how an immutable `List`
         // element's mutability is settled (see

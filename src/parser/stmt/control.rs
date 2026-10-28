@@ -164,12 +164,12 @@ fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
         let Stmt::SyntheticBlock(stmts) = &mut binding else {
             unreachable!()
         };
-        if let Some(Stmt::VarDecl { custom_traits, .. }) = stmts
+        if let Some(Stmt::VarDecl { marks, .. }) = stmts
             .iter_mut()
             .rev()
             .find(|stmt| matches!(stmt, Stmt::VarDecl { .. }))
         {
-            custom_traits.push(("__restore_pointy_given_topic".to_string(), None));
+            marks.restore_pointy_given_topic = true;
         }
     }
     binding
@@ -231,7 +231,10 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             topic
         };
         Stmt::VarDecl {
-            marks: Default::default(),
+            marks: crate::ast::var_marks::VarMarks {
+                pointy_copy: true,
+                ..Default::default()
+            },
             anonymous: false,
             name: pd.name.clone(),
             expr,
@@ -241,7 +244,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![("__pointy_copy".to_string(), None)],
+            custom_traits: Vec::new(),
             has_initializer: true,
             constant: None,
             bind: None,
@@ -255,13 +258,16 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         // Native-typed lexicals cannot participate in `:=` binding. A native
         // pointy parameter receives a checked/unboxed value in its own lexical
         // container, matching ordinary native routine parameters. It still
-        // needs `__pointy_native_param` so the compiler recognizes it as the
+        // needs `VarMarks::pointy_native_param` so the compiler recognizes it as the
         // given/with pointy parameter (see the matching detection in
         // `compiler/stmt.rs`'s `pointy_param_name`) — without it, `is rw`
         // writeback never fires because `Given`'s `pointy_param_idx` stays
         // `None`, the same way the general branch below needs `MarkBind`.
         let decl = Stmt::VarDecl {
-            marks: Default::default(),
+            marks: crate::ast::var_marks::VarMarks {
+                pointy_native_param: true,
+                ..Default::default()
+            },
             anonymous: false,
             name: pd.name.clone(),
             expr: topic,
@@ -271,7 +277,7 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![("__pointy_native_param".to_string(), None)],
+            custom_traits: Vec::new(),
             has_initializer: true,
             constant: None,
             bind: None,
