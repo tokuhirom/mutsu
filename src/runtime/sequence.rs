@@ -1,7 +1,7 @@
 use super::*;
 use crate::symbol::Symbol;
 
-/// Size (bits of an integer, bytes of a string) of a closure-sequence element
+/// Size (bits of an integer, bytes of a string, items of a list) of a closure-sequence element
 /// past which `eval_sequence` stops pre-computing its eager prefix.
 const SEQ_EAGER_PREFIX_MAX_SIZE: u64 = 4096;
 
@@ -867,6 +867,20 @@ impl Interpreter {
                                 let body = std::sync::Arc::clone(&body);
                                 self.reify_seq_body(&body)?;
                             }
+                            // A generator that returns a container it keeps mutating
+                            // (`state @row`) hands back the SAME array every step. The
+                            // eager prefix runs ahead of its consumer, so snapshot it:
+                            // a lazily consuming `flat` would have read each row
+                            // before the next step changed it.
+                            let v = match v.view() {
+                                ValueView::Array(items, kind) => Value::array_with_kind(
+                                    crate::gc::Gc::new(crate::value::ArrayData::new(
+                                        items.to_vec(),
+                                    )),
+                                    kind,
+                                ),
+                                _ => v,
+                            };
                             // The eager prefix is only a warm-up: cut it off once
                             // the elements get expensive (`2, { $_**2 - $_ + 1 }
                             // ... *` doubles its digit count each step, a
@@ -878,6 +892,14 @@ impl Interpreter {
                             // the first elements being cached).
                             let expensive = match v.view() {
                                 ValueView::BigInt(b) => b.bits() > SEQ_EAGER_PREFIX_MAX_SIZE,
+                                // A sequence of ever-growing lists (the generator keeps a
+                                // `state @row` it doubles each step).
+                                ValueView::Array(items, ..) => {
+                                    items.len() as u64 > SEQ_EAGER_PREFIX_MAX_SIZE
+                                }
+                                ValueView::BigRat(n, d) => {
+                                    n.bits().max(d.bits()) > SEQ_EAGER_PREFIX_MAX_SIZE
+                                }
                                 ValueView::Str(s) => s.len() as u64 > SEQ_EAGER_PREFIX_MAX_SIZE,
                                 _ => false,
                             };
