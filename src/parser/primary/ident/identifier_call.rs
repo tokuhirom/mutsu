@@ -2360,11 +2360,15 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || crate::parser::stmt::simple::is_user_declared_sub(&name))
         // So is a built-in or package-qualified type name (`Int (elem) @types`,
         // `IO::Path (elem) @types`): an infix follows, not `Int((elem) ...)`. A
-        // type name is spelled with a capital in its last component.
+        // type name is spelled with a capital and a lowercase letter in its last
+        // component (`TEST-ITER-OPT args` is an all-caps routine, not a type).
         && (!name
             .rsplit("::")
             .next()
-            .is_some_and(|last| last.starts_with(|c: char| c.is_ascii_uppercase()))
+            .is_some_and(|last| {
+                last.starts_with(|c: char| c.is_ascii_uppercase())
+                    && last.chars().any(|c| c.is_ascii_lowercase())
+            })
             || crate::parser::stmt::simple::is_user_declared_sub(&name)
             || crate::parser::stmt::simple::is_imported_function(&name))
         // An infix word (`before`, `eq`, `and`, ...) is refused as a listop
