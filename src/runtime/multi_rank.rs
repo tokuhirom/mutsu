@@ -464,7 +464,19 @@ impl MultiRank {
             return false;
         }
         match self.rank_cmp(other) {
-            Ordering::Less => !self.incomparable(other, conforms),
+            // Ahead in the rank order only by the argument distances is no
+            // narrowness when `other` is narrower on a declared parameter and
+            // `self` on none: rakudo needs `self` at least as narrow on every
+            // parameter. `(ElementWrapper, Attribute, Mu)` is not narrower than
+            // `(XML::Node-subset, Attribute-subset, $obj where ...)` because
+            // an unrelated first parameter happened to sit nearer the argument
+            // (XML::Class's `deserialise`, #15085).
+            Ordering::Less => {
+                !self.incomparable(other, conforms) && {
+                    let (self_wins, other_wins) = self.profile.declared_wins(&other.profile, conforms);
+                    self_wins || !other_wins
+                }
+            }
             Ordering::Equal => self_wins && !self.incomparable(other, conforms),
             Ordering::Greater => decl_self && !decl_other && self.nominal == other.nominal,
         }
