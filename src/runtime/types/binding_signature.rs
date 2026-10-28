@@ -853,10 +853,15 @@ impl Interpreter {
                 // Verified against `raku -e 'sub f(::T $x, T $y) {}; f(1, "s")'`
                 // and its anonymous-parameter twin.
                 let param_display = param_display_name(pd);
+                // The value is not even of the nominal type here (a smiley
+                // mismatch on a matching base was reported above), and rakudo
+                // names that type without its smiley: `Str:D $k` given `123`
+                // reads `expected Str but got Int (123)`.
+                let expected_shown = crate::runtime::types::strip_type_smiley(&resolved_constraint).0;
                 return Err(self
                     .typecheck_binding_parameter_failure(
                         &param_display,
-                        &resolved_constraint,
+                        expected_shown,
                         &value,
                     )
                     .with_parameter_object(pd, Some(&*self)));

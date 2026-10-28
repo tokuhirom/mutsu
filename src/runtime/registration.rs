@@ -711,17 +711,27 @@ impl Interpreter {
         let Some(caller_class) = caller_class else {
             return false;
         };
-        canonical_owner == caller_class
-            || self
-                .registry()
-                .class_trusts
-                .get(canonical_owner)
-                .is_some_and(|trusted| {
-                    trusted.iter().any(|t| t == caller_class)
-                        || trusted.iter().any(|t| {
-                            self.resolve_private_class_name(canonical_owner, t) == caller_class
-                        })
-                })
+        if canonical_owner == caller_class {
+            return true;
+        }
+        let registry = self.registry();
+        let trusts_caller = |owner: &str, trusted: &Vec<String>| {
+            trusted.iter().any(|t| t == caller_class)
+                || trusted
+                    .iter()
+                    .any(|t| self.resolve_private_class_name(owner, t) == caller_class)
+        };
+        if let Some(trusted) = registry.class_trusts.get(canonical_owner) {
+            return trusts_caller(canonical_owner, trusted);
+        }
+        // A `my class` of a module file is also visible under its plain
+        // qualified name, which is what the call site resolves; its `trusts`
+        // list is keyed by the mangled storage name (`Foo\u{0}<decl-id>`).
+        registry.class_trusts.iter().any(|(owner, trusted)| {
+            owner.contains('\u{0}')
+                && crate::value::user_facing_type_name(owner) == canonical_owner
+                && trusts_caller(owner, trusted)
+        })
     }
 
     /// Resolve a qualified private call's source-written owner
