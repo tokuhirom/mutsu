@@ -591,6 +591,18 @@ impl Interpreter {
             if value.truthy() {
                 return Some((value, RequiredKey::Routine));
             }
+            // A module that exports only `multi` candidates has no single
+            // `Module::name` entry; its candidates are keyed `Module::name/<sig>`
+            // (`multi crypt(...) is export` of Crypt::Libcrypt).
+            let candidate_prefix = format!("{}/", source.as_str());
+            if self
+                .registry()
+                .functions
+                .keys()
+                .any(|k| k.resolve().starts_with(&candidate_prefix))
+            {
+                return Some((value, RequiredKey::Routine));
+            }
             // A package-less module declares its routines in GLOBAL.
             let global = Symbol::intern(&format!("GLOBAL::{name}"));
             return self
