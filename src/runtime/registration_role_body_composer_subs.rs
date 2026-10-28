@@ -28,7 +28,10 @@ impl Interpreter {
     /// the names itself, the subs go into the role's composition scope in
     /// `class` instead (`role_composition_scope`), where the composed role
     /// methods run; the class's own methods keep calling the class's (#14177).
-    // Cost: O(s + v), s = the body's statements, v = `declared`; plus one
+    /// `params` are the composition's value parameters (`:$prefix`), bound in
+    /// the env as well so a `sub` that reads one sees this composition's value
+    /// (#15100).
+    // Cost: O(s + v + p), s = the body's statements, v = `declared`, p = `params`; plus one
     // sub registration per re-declared sub.
     pub(super) fn register_role_body_subs_per_composer(
         &mut self,
@@ -37,6 +40,7 @@ impl Interpreter {
         role_name: &str,
         role: &RoleDef,
         declared: &HashSet<String>,
+        params: &[(String, Value)],
     ) -> Result<(), RuntimeError> {
         let class_sym = Symbol::intern(class);
         let scope = crate::runtime::registration_role_composition_scope::role_composition_scope(
@@ -95,6 +99,10 @@ impl Interpreter {
                 .collect(),
             None => Vec::new(),
         };
+        // The composition's value parameters (`:$prefix`) are bound the same
+        // way: the role's own registration was made without them (#15100).
+        let mut cells = cells;
+        cells.extend(params.iter().cloned());
         // With no body lexicals to close over, the role's own registration
         // already serves every composer that does not shadow one of its subs.
         if subs.is_empty() || (cells.is_empty() && !shadowed) {
@@ -106,6 +114,13 @@ impl Interpreter {
         }
         // A sub declaration also binds `&name` in the env, where the class's
         // own same-named sub is bound; that binding is put back afterwards.
+        let redeclared: Vec<String> = subs
+            .iter()
+            .filter_map(|op| match &op.raw {
+                Stmt::SubDecl { name, .. } => Some(name.to_string()),
+                _ => None,
+            })
+            .collect();
         let amp_names: Vec<String> = if shadowed {
             subs.iter()
                 .filter_map(|op| match &op.raw {
@@ -143,6 +158,13 @@ impl Interpreter {
         self.set_current_package(saved_package);
         for (name, prior) in saved {
             Self::restore_env_entry(&mut self.env, &name, prior);
+        }
+        // A parametric composition's lexical-package copy of each re-declared
+        // sub knows nothing of the composition's parameters (#15100).
+        if result.is_ok() && !params.is_empty() {
+            for name in &redeclared {
+                self.unseclude_role_lexical_routine(name, class, role.decl_file.as_deref());
+            }
         }
         result
     }

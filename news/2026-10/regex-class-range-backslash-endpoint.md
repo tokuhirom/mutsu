@@ -1,0 +1,3 @@
+# A regex class range may start or end at `\0`, `\t`, `\e`, `\f`, `\r` or `\b`
+
+`<-[\0..\xFF]>` left the regex without a source tree: the class parser accepted only plain characters and `\x` escapes as range endpoints. Without a tree the RakuAST round-trip refused the compilation unit ("literal Regex without a declarator tree"), so PDF::Content's `PDF::Content::Text::Box` (and PDF::Font::Loader) could not load. The single-character backslash escapes are now range endpoints, as in rakudo; `\n`, `\s`, `\d`, ... still are not. The legacy class parser also read `\b` as the letter `b` in the upper position (`<[\x1..\b]>` matched `a`); it is backspace now.

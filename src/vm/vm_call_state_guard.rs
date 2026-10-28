@@ -295,6 +295,12 @@ pub(crate) struct ThreadParamMaskGuard {
     redeclared_cell: *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
     /// Raw pointer into `thread_param_shadow_vars`'s OWN `Box` allocation.
     shadow_cell: *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
+    /// Raw pointer into `frame_remask_armed`'s OWN `Box` allocation.
+    armed_cell: *const std::cell::Cell<bool>,
+    /// The routine's compiled locals (`CompiledCode::locals`), re-masked on
+    /// return when a thread has spawned. SAFETY of the pointer: the code is
+    /// kept alive by the caller for the whole call, which outlives the guard.
+    locals: *const [String],
     mask: crate::runtime::runtime_shared_vars::ThreadParamMask,
 }
 
@@ -304,9 +310,12 @@ impl ThreadParamMaskGuard {
     pub(crate) fn new<'a>(
         interp: &mut Interpreter,
         param_defs: impl Iterator<Item = &'a crate::ast::ParamDef>,
+        locals: &[String],
     ) -> Self {
         let mask = interp.mask_thread_redeclared_params(param_defs);
         ThreadParamMaskGuard {
+            armed_cell: &*interp.threads.frame_remask_armed as *const std::cell::Cell<bool>,
+            locals: locals as *const [String],
             redeclared_cell: &*interp.threads.thread_redeclared_vars
                 as *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
             shadow_cell: &*interp.threads.thread_param_shadow_vars
@@ -326,6 +335,21 @@ impl Drop for ThreadParamMaskGuard {
         // `&mut self` calls made elsewhere while the guard was alive.
         unsafe {
             self.mask.unmask(&*self.redeclared_cell, &*self.shadow_cell);
+            // The routine's own `@`/`%` lexicals stop being the live binding of
+            // their names here, but a spawn in the body published them under
+            // the bare name; re-mask them so the caller's same-named binding
+            // is not answered with the callee's lane entry (#15020).
+            // SAFETY: see the `locals` field.
+            if (*self.armed_cell).get() {
+                let mut redeclared = (*self.redeclared_cell).borrow_mut();
+                for name in &*self.locals {
+                    if crate::runtime::Interpreter::is_plain_lexical_name(name)
+                        && !redeclared.contains(name.as_str())
+                    {
+                        redeclared.insert(name.clone());
+                    }
+                }
+            }
         }
     }
 }
