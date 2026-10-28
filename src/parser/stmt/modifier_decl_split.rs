@@ -406,7 +406,6 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, Runtim
             }
             Stmt::SyntheticBlock(inner) => match inner.as_slice() {
                 [
-                    Stmt::MarkBind,
                     Stmt::VarDecl {
                         name,
                         expr,
@@ -415,7 +414,7 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, Runtim
                         marks,
                         ..
                     },
-                ] if custom_traits.is_empty() && marks.is_plain() => {
+                ] if custom_traits.is_empty() && marks.is_plain() && marks.bound => {
                     out.push(Stmt::Assign {
                         name: name.clone(),
                         expr: expr.clone(),

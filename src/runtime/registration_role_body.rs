@@ -57,9 +57,14 @@ impl Interpreter {
         // stays unresolved here — it names the *consuming* class, so
         // it is substituted at composition.
         if let Some(tc) = &decl.type_constraint {
+            // A type imported under its short name (`has Pointer $!p` after
+            // `use NativeCall`) is named by what the DECLARING scope maps the
+            // spelling to, as a class attribute's is
+            // (`class_body_has_decl`): the consuming class may not import it.
+            let tc = self.lexical_type_storage_name(tc.clone());
             self.registry_mut()
                 .role_attribute_types
-                .insert((cx.name.to_string(), attr_name_str.clone()), tc.clone());
+                .insert((cx.name.to_string(), attr_name_str.clone()), tc);
         }
         if let Some(ts) = &decl.type_smiley {
             self.registry_mut()

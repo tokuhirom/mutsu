@@ -279,11 +279,16 @@ impl Interpreter {
         if !self.registry().has_proto_methods {
             return None;
         }
+        let method_sym = Symbol::intern(method_name);
+        let registry = self.registry();
+        if !registry.has_proto_method_named(method_sym) {
+            return None;
+        }
         let mro = self.class_mro(class_name);
-        mro.iter().map(|s| s.resolve()).find_map(|cn| {
-            self.registry()
-                .method_entry_proto(&cn, method_name)
-                .map(|f| (cn, f))
+        mro.iter().find_map(|owner| {
+            registry
+                .method_entry_proto_sym(*owner, method_sym)
+                .map(|f| (owner.resolve(), f))
         })
     }
 

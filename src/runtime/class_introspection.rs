@@ -15,6 +15,15 @@ pub(crate) enum UserMethodOrAccessor {
     Accessor,
 }
 
+/// What a read of a public attribute accessor needs to know about its
+/// declaration (see `Interpreter::find_public_class_attribute`).
+#[derive(Clone, Copy)]
+pub(crate) struct PublicAttributeShape {
+    pub(crate) sigil: char,
+    pub(crate) is_public: bool,
+    pub(crate) is_rw: bool,
+}
+
 impl Interpreter {
     pub(crate) fn class_has_method(&mut self, class_name: &str, method_name: &str) -> bool {
         // Read guard first: this is a pure question, and `registry_mut()`'s
@@ -739,19 +748,18 @@ impl Interpreter {
         attrs
     }
 
-    /// The public attribute `name` of `class_name` exactly as
+    /// The shape of the public attribute `name` of `class_name`, exactly as
     /// `collect_class_attributes(class_name).into_iter().find(|a| a.is_public
-    /// && a.name == name)` would answer, but cloning only the candidates named
-    /// `name` instead of every attribute definition of the MRO.
-    // Cost: O(m * a), m = classes in the MRO, a = attributes per class; clones only the
-    // attributes named `name` (collect_class_attributes clones all of them).
+    /// && a.name == name)` would answer, without cloning any attribute
+    /// definition.
+    // Cost: O(m * a), m = classes in the MRO, a = attributes per class.
     pub(crate) fn find_public_class_attribute(
         &mut self,
         class_name: &str,
         name: &str,
-    ) -> Option<ClassAttributeDef> {
+    ) -> Option<PublicAttributeShape> {
         let mro = self.class_mro(class_name);
-        let mut found: Vec<ClassAttributeDef> = Vec::new();
+        let mut found: Vec<PublicAttributeShape> = Vec::new();
         for cn in mro.iter().rev() {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in class_def.attributes.iter().filter(|a| a.name == name) {
@@ -761,7 +769,11 @@ impl Interpreter {
                     if let Some(pos) = found.iter().position(|a| a.sigil == attr.sigil) {
                         found.remove(pos);
                     }
-                    found.push(attr.clone());
+                    found.push(PublicAttributeShape {
+                        sigil: attr.sigil,
+                        is_public: attr.is_public,
+                        is_rw: attr.is_rw,
+                    });
                 }
             }
         }

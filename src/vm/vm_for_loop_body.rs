@@ -333,7 +333,7 @@ impl Interpreter {
         let container_reversed = self.topic_state.container_ref_reversed;
         self.topic_state.container_ref_reversed = false;
         // ADR-0045 slice 6: a multi-parameter rw loop binds through the
-        // bind-prefix `MarkBind` declarations, which read out of the CHUNK. So
+        // bound declarations, which read out of the CHUNK. So
         // the source's elements must be promoted before the chunk is built —
         // promoting the chunk itself would alias the temporary. Doing it here
         // is what retires the last surviving arm of the writeback family; see

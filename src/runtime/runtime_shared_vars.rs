@@ -483,6 +483,16 @@ impl Interpreter {
             d.iter().cloned().collect()
         };
         for key in keys {
+            // Only a value ANOTHER thread committed is stale here. A mere seed
+            // is the spawning binding's snapshot, and a value this thread wrote
+            // itself is in its env already: pulling either replaced whatever
+            // another binding of the same bare name holds in the frame that
+            // enters the critical section (Red's nested `-> :$guard!` blocks:
+            // the outer block's `$guard` became the inner guard, written by
+            // this thread inside `Lock.protect`).
+            if self.threads.shared_vars.is_seed_or_own_write(&key) {
+                continue;
+            }
             if let Some(val) = self.threads.shared_vars.get(&key) {
                 self.env.insert(key, val);
             }

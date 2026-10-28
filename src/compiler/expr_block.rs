@@ -1179,14 +1179,14 @@ impl Compiler {
             }
             // A `my @x := LIST` / `my %h := ...` declaration used in expression
             // position (e.g. `+my @x := 1,2,3` or `plan +my @x := ...`); its
-            // synthetic block carries a `MarkBind` marker. Like the other
+            // synthetic block carries a bound declaration. Like the other
             // declaration synthetic blocks above, compile it inline (NOT
             // scope-isolated) so the `my` declaration leaks into the enclosing
             // lexical scope — a `my` always declares in the current block
             // regardless of expression nesting. Scope-isolating it (the generic
             // arm below) would confine the binding to the synthetic block,
             // leaving the outer `@x` undeclared (read as Nil).
-            Stmt::SyntheticBlock(inner) if inner.iter().any(|s| matches!(s, Stmt::MarkBind)) => {
+            Stmt::SyntheticBlock(inner) if crate::ast::var_marks::is_bind_group(inner) => {
                 self.compile_synthetic_block_inline(inner);
             }
             // A scalar bind to a readonly RHS used in expression position

@@ -5985,7 +5985,7 @@ pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
 
 /// The outer-lexical slots a type body's `:=` declarations bind: for each
 /// bind group kept whole by [`synthetic_block_needs_atomic_compile`]
-/// (`[MarkBind, VarDecl, ...]`), the slot of a `VarDecl` whose right-hand
+/// (`[VarDecl { marks.bound }, ...]`), the slot of a `VarDecl` whose right-hand
 /// side is a plain variable of the declaring frame. Shared by the class and
 /// role plans: see [`CompiledClassDeclPlan::body_bind_source_slots`] and
 /// [`CompiledRoleDeclPlan::body_bind_source_slots`].
@@ -5999,7 +5999,7 @@ fn body_bind_source_slots<'a>(
         let Stmt::SyntheticBlock(inner) = stmt else {
             continue;
         };
-        if !inner.iter().any(|s| matches!(s, Stmt::MarkBind)) {
+        if !crate::ast::var_marks::is_bind_group(inner) {
             continue;
         }
         for stmt in inner {
@@ -6026,7 +6026,7 @@ fn body_bind_source_slots<'a>(
 /// [`class_body_plan`]'s flatten step.
 ///
 /// `Compiler::compile_stmt`'s own `Stmt::SyntheticBlock` arm scans its
-/// statement list for these same markers (`Stmt::MarkBind`,
+/// statement list for these same markers (a bound declaration,
 /// `Stmt::MarkSigilless`, `Stmt::MarkSigillessReadonly`, and the `@`-bind
 /// marker call) to decide how the `Stmt::VarDecl` sitting alongside them
 /// should store its value — e.g. whether a sigilless bind (`my \x := $y`)
@@ -6043,12 +6043,10 @@ fn body_bind_source_slots<'a>(
 /// nothing, and the first later write from a method died with "Cannot modify
 /// an immutable Int" (Math::Interval 0.0.3's `Operation` helper class).
 fn synthetic_block_needs_atomic_compile(stmts: &[Stmt]) -> bool {
-    stmts.iter().any(|s| {
-        matches!(
-            s,
-            Stmt::MarkBind | Stmt::MarkSigilless(_) | Stmt::MarkSigillessReadonly(_)
-        )
-    })
+    crate::ast::var_marks::is_bind_group(stmts)
+        || stmts
+            .iter()
+            .any(|s| matches!(s, Stmt::MarkSigilless(_) | Stmt::MarkSigillessReadonly(_)))
 }
 
 /// `has` declarations nested anywhere below a class body's own statements —

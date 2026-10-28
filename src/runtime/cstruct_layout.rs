@@ -414,6 +414,10 @@ impl crate::runtime::Interpreter {
         // handle, the same field reads and writes, and the same body, with every
         // offset 0 (ADR-11209).
         let sets = [&reg.cstruct_classes, &reg.cunion_classes];
+        // Almost no program declares one: nothing to look up.
+        if sets.iter().all(|set| set.is_empty()) {
+            return None;
+        }
         if sets.iter().any(|set| set.contains(name)) {
             return Some(name.to_string());
         }

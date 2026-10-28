@@ -45,8 +45,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
         }
         Stmt::Ast(node) => super::walk_parsed(v, node),
         Stmt::MarkReadonly(name, _) => v.visit_name(name, NameKind::MarkReadonly),
-        Stmt::MarkBind
-        | Stmt::Proceed
+        Stmt::Proceed
         | Stmt::Succeed
         | Stmt::ReactDone
         | Stmt::SupplyBodyDone

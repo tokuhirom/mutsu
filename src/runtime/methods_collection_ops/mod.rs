@@ -120,6 +120,14 @@ static THREAD_HANDLES: std::sync::LazyLock<
     Mutex<HashMap<u64, crate::thread_compat::JoinHandle<()>>>,
 > = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// The handles of `:app_lifetime` threads. Kept apart from `THREAD_HANDLES` so
+/// [`join_outstanding_threads`] does not wait for them at exit (rakudo ends the
+/// process without them), while `Thread.finish` / `.join` still waits for the
+/// thread it is called on (`Thread.start(:app_lifetime, ...).finish`).
+static APP_LIFETIME_THREAD_HANDLES: std::sync::LazyLock<
+    Mutex<HashMap<u64, crate::thread_compat::JoinHandle<()>>>,
+> = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
 /// Starts at 2: id 1 is the initial thread's (`current_mutsu_thread_id`), and
 /// the first `Thread` created used to be handed that id too.
 static NEXT_THREAD_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(2);

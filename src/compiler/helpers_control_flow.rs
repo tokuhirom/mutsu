@@ -411,9 +411,9 @@ impl Compiler {
         } else {
             source.clone()
         };
-        self.bind_vardecl = true;
-        self.compile_stmt(&Self::plain_var_decl(name.clone(), source));
-        self.bind_vardecl = false;
+        self.compile_stmt(&crate::ast::var_marks::with_bound_mark(
+            Self::plain_var_decl(name.clone(), source),
+        ));
     }
 
     /// A `my NAME = EXPR;` declaration with no traits/constraints.

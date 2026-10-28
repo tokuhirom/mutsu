@@ -277,9 +277,6 @@ impl Compiler {
             self.pop_dynamic_scope_lexical(saved);
             return;
         }
-        let has_mark_bind = stmts.iter().any(|s| matches!(s, Stmt::MarkBind));
-        // See the matching flag in `compile_stmt`'s `Stmt::SyntheticBlock` arm.
-        let has_mark_sigilless = stmts.iter().any(|s| matches!(s, Stmt::MarkSigilless(_)));
         // Names marked readonly by a preceding `MarkReadonly` statement. A `:=`
         // scalar bind to a readonly RHS (`my $x := 42`) is lowered to
         // `[MarkReadonly(x), VarDecl{__scalar_bind}]`; when that VarDecl is in
@@ -454,11 +451,9 @@ impl Compiler {
                     // the declaration through the statement compile (which
                     // emits the `WrapVarRef` + `MarkBindContext` bind) and read
                     // the bound variable back as the block's value.
-                    Stmt::VarDecl { name, .. }
-                        if has_mark_bind && !name.starts_with(['@', '%']) =>
+                    Stmt::VarDecl { name, marks, .. }
+                        if marks.bound && !name.starts_with(['@', '%']) =>
                     {
-                        self.bind_vardecl = true;
-                        self.sigilless_bind_vardecl = has_mark_sigilless;
                         self.compile_stmt(stmt);
                         self.emit_get_named_var(name);
                         self.pop_dynamic_scope_lexical(saved);
@@ -475,6 +470,7 @@ impl Compiler {
                         has_initializer,
                         constant,
                         bind,
+                        marks,
                         ..
                     } => {
                         // my $x = expr in block-final position: declare and return value
@@ -530,7 +526,7 @@ impl Compiler {
                             self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                             self.local_types.insert(name.clone(), tc.clone());
                         }
-                        if has_mark_bind && (name.starts_with('@') || name.starts_with('%')) {
+                        if marks.bound && (name.starts_with('@') || name.starts_with('%')) {
                             // Bind context for @/% variables (e.g. `my %h := :{ }`):
                             // use SetLocal with MarkBindContext and MarkVarDeclContext
                             // to avoid the readonly check that SetGlobal performs.
@@ -697,10 +693,6 @@ impl Compiler {
                     }
                     _ => {}
                 }
-            }
-            if has_mark_bind && matches!(stmt, Stmt::VarDecl { .. }) {
-                self.bind_vardecl = true;
-                self.sigilless_bind_vardecl = has_mark_sigilless;
             }
             self.decl_is_term =
                 matches!(stmt, Stmt::VarDecl { name, .. } if term_names.contains(&name.as_str()));

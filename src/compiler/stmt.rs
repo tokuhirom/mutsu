@@ -663,10 +663,9 @@ impl Compiler {
         // In particular, `$r := 0..2` is a bare Range slice selector; a plain
         // `=` store here would turn the temporary into a Scalar-wrapped Range
         // and misclassify the bound range as a single element.
-        let idx_decl = Stmt::SyntheticBlock(vec![
-            Stmt::MarkBind,
+        let idx_decl = Stmt::SyntheticBlock(vec![crate::ast::var_marks::with_bound_mark(
             Self::init_decl(&idx_tmp, (**index).clone()),
-        ]);
+        )]);
         // A literal subscript can never turn into a slice selector at
         // runtime, so the `$idx ~~ Iterable` half folds to `False` and only
         // the element-itemization check remains live.
@@ -1131,9 +1130,6 @@ impl Compiler {
                 let idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::MarkVarReadonly(idx, *kind));
             }
-            Stmt::MarkBind => {
-                // Handled by SyntheticBlock detection; no-op when compiled standalone.
-            }
             Stmt::MarkSigilless(name) => {
                 // Track a sigilless local so BareWord compilation reads it from its
                 // slot (GetLocal), not via GetBareWord/env. Unlike
@@ -1144,7 +1140,7 @@ impl Compiler {
                 // bound it to, which only the runtime knows. The verdict is
                 // taken with the bind source still on the stack, by the
                 // `MarkSigillessBindSource` the declaration itself emits (see
-                // `sigilless_bind_vardecl` in the `Stmt::VarDecl` arm); this op
+                // `bind_vardecl && marks.sigilless_decl` in the `Stmt::VarDecl` arm); this op
                 // writes the readonly marker, and has to run AFTER the store
                 // because a declaration clears that marker.
                 let name_idx = self
@@ -1244,20 +1240,12 @@ impl Compiler {
                 let binds_term = self
                     .sigilless_locals
                     .contains(spelled.strip_prefix('\\').unwrap_or(spelled));
-                // Snapshot-and-clear `bind_vardecl` immediately: it is a
-                // one-shot signal meant for THIS declaration's own store
-                // (set by an enclosing `SyntheticBlock`/inline-block for a
-                // `:=` bind). Left set on `self` while the RHS below is
-                // compiled, it would leak into any nested `my`-declared
-                // variable inside that RHS (e.g. `@state` in `my @x := do {
-                // my uint8 @state = 0..255; ...; @state }`), wrongly giving
-                // that unrelated declaration bind-context treatment and
-                // skipping the array-from-Range materialization it needs
-                // ("Cannot modify an immutable Range").
-                let bind_vardecl = self.bind_vardecl;
-                self.bind_vardecl = false;
-                let sigilless_bind_vardecl = self.sigilless_bind_vardecl;
-                self.sigilless_bind_vardecl = false;
+                // The declaration's own `:=` bind: a mark on THIS declaration,
+                // so the RHS compiled below cannot hand it to a nested `my`
+                // (e.g. `@state` in `my @x := do { my uint8 @state = 0..255;
+                // ...; @state }`).
+                let bind_vardecl = marks.bound;
+                let sigilless_bind_vardecl = bind_vardecl && marks.sigilless_decl;
                 // `my &infix:<+> = ...` installs a user operator just like a
                 // `sub infix:<+>` does — disable constant folding (ADR-0006 §2.1).
                 self.note_operator_decl(name);
@@ -1624,7 +1612,7 @@ impl Compiler {
                 // branches consume `bind_vardecl`; recorded on the CompiledCode so
                 // `compute_free_vars` can vouch for it despite it reaching a call as
                 // an argument (an immutable binding never goes stale). Both the
-                // MarkBind form (`my $x := $y`, sets `bind_vardecl`) and the inline
+                // bound form (`my $x := $y`, sets `bind_vardecl`) and the inline
                 // `__scalar_bind` trait form (`my $x := my $y`) count.
                 let is_scalar_colon_bind = (bind_vardecl || scalar_bind_decont)
                     && !name.starts_with('@')
@@ -1704,7 +1692,7 @@ impl Compiler {
                     // The signal is `scalar_bind_decont`, i.e. the parser's
                     // `__scalar_bind` tag, NOT `bind_vardecl`: a multi-
                     // parameter loop chunk is desugared into the very same
-                    // `SyntheticBlock([MarkBind, VarDecl])` shape (see
+                    // `SyntheticBlock([bound VarDecl])` shape (see
                     // `build_for_bind_stmts`) and DOES depend on the promotion
                     // to refresh its parameter each iteration. Only a
                     // declaration the parser itself tagged is a declaration
@@ -1772,7 +1760,7 @@ impl Compiler {
                     // Likewise a bind to an inline declaration (`my $a := my $b`,
                     // which the parser leaves as a bare `VarDecl` with the
                     // `__scalar_bind` trait rather than wrapping it in the
-                    // MarkBind SyntheticBlock that `my $a := $b` gets) must alias
+                    // bound SyntheticBlock that `my $a := $b` gets) must alias
                     // the freshly-declared variable's container.
                     // Route through compile_call_arg so WrapVarRef is emitted and
                     // SetLocal's bind path shares one cell. (Scalar binds normally
@@ -1907,7 +1895,7 @@ impl Compiler {
                     // check wrapped in a VarRef, which only the bind check
                     // looks through. A sigilless name in a list declaration
                     // (`my (\b where "x") = ...`) is assigned, not bound.
-                    if sigilless_bind_vardecl || marks.sigilless_decl {
+                    if marks.sigilless_decl {
                         self.code
                             .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
                     } else if scalar_bind_decont && !name.starts_with('@') && !name.starts_with('%')
@@ -3340,7 +3328,7 @@ impl Compiler {
                         && topic_decl_scalar.is_none();
                 }
                 // A pointy block (`given @a -> @p { ... }`) starts with a
-                // parser-generated synthetic declaration containing MarkBind.
+                // parser-generated synthetic declaration containing a bound declaration.
                 // Record that bound parameter so topic-source writeback reads its
                 // final value (e.g. after `@p.push`) instead of `$_`, propagating
                 // the mutation back to the source. `is copy` carries a declaration
@@ -3348,15 +3336,14 @@ impl Compiler {
                 // back.
                 // A native-typed pointy param (`given $x -> int $v is rw {...}`)
                 // cannot use `:=` (see `pointy_topic_bind`'s native branch), so
-                // it carries `VarMarks::pointy_native_param` instead of `MarkBind` —
+                // it carries `VarMarks::pointy_native_param` instead of `VarMarks::bound` —
                 // either bare (`is rw`) or wrapped in a `SyntheticBlock` with a
                 // trailing `MarkReadonly` (the default, readonly case).
                 let is_pointy_native_decl = |s: &Stmt| matches!(s, Stmt::VarDecl { marks, .. } if marks.pointy_native_param);
                 let pointy_param_name = match body.first() {
                     Some(Stmt::SyntheticBlock(inner))
-                        if inner
-                            .iter()
-                            .any(|s| matches!(s, Stmt::MarkBind) || is_pointy_native_decl(s)) =>
+                        if crate::ast::var_marks::is_bind_group(inner)
+                            || inner.iter().any(is_pointy_native_decl) =>
                     {
                         inner.iter().find_map(|s| match s {
                             Stmt::VarDecl { name, .. }

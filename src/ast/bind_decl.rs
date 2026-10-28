@@ -2,7 +2,7 @@
 //! `my %h := …`.
 //!
 //! The compiler needs a binding declaration wrapped in bookkeeping statements
-//! (`MarkBind`, `MarkReadonly`, the bound-array length record) chosen by the
+//! (`VarMarks::bound`, `MarkReadonly`, the bound-array length record) chosen by the
 //! sigil and the right-hand side. The parser keeps the declaration as written
 //! (`ParsedStmt::BindDecl`, ADR-10723 Stage 2) and [`expand`] is the one place
 //! the wrapping is built: the lowering of that node calls it, for the parser's
@@ -59,11 +59,9 @@ pub(crate) fn expand(mut decl: Stmt) -> Stmt {
     let is_array = bound_name.starts_with('@');
     let is_hash = bound_name.starts_with('%');
     if is_array || is_hash {
-        let mut stmts = Vec::new();
-        // The bind marker tells the compiler the declaration binds (keeps the
+        // The bound mark tells the compiler the declaration binds (keeps the
         // bound container's type: a List stays a List).
-        stmts.push(Stmt::MarkBind);
-        stmts.push(decl);
+        let mut stmts = vec![super::var_marks::with_bound_mark(decl)];
         if is_hash {
             // A `SyntheticBlock` yields its LAST statement's value, so re-read
             // the now-bound hash to keep `my %h := %src` usable in expression
@@ -94,13 +92,13 @@ pub(crate) fn expand(mut decl: Stmt) -> Stmt {
     }
     // A multi-dimensional subscript RHS (`my $x := @a[0;0;3]`) binds the leaf
     // element's container exactly like the single-dimension form, so it takes
-    // the same `MarkBind` route: the compiler then emits `MultiDimIndexBindRef`
+    // the same bound-declaration route: the compiler then emits `MultiDimIndexBindRef`
     // (via `compile_call_arg`) instead of a plain read, and a later `$x = v`
     // writes through to the real nested slot.
     // A conditional whose every branch is such a container binds the branch
     // it selects (`my $x := $c ?? @a[0] !! @a[1]`).
     if binds_a_container(expr) {
-        return Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl]);
+        return Stmt::SyntheticBlock(vec![super::var_marks::with_bound_mark(decl)]);
     }
     decl
 }
@@ -144,7 +142,9 @@ pub(crate) fn declared(stmt: &Stmt) -> Option<&Stmt> {
                 .map(|_| stmt)
         }
         Stmt::SyntheticBlock(stmts) => {
-            if !matches!(stmts.first(), Some(Stmt::MarkBind | Stmt::MarkReadonly(..))) {
+            if !matches!(stmts.first(), Some(Stmt::MarkReadonly(..)))
+                && !super::var_marks::is_bind_group(stmts)
+            {
                 return None;
             }
             let mut decls = stmts.iter().filter(|s| matches!(s, Stmt::VarDecl { .. }));

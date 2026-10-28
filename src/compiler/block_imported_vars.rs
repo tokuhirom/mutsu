@@ -209,8 +209,7 @@ impl Compiler {
                 where_constraint: None,
             };
             return Some(Stmt::SyntheticBlock(vec![
-                Stmt::MarkBind,
-                decl,
+                crate::ast::var_marks::with_bound_mark(decl),
                 Stmt::MarkSigilless(var.name.clone()),
             ]));
         }
@@ -387,7 +386,9 @@ impl Compiler {
                 bind: None,
                 where_constraint: None,
             };
-            return Some(Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl]));
+            return Some(Stmt::SyntheticBlock(vec![
+                crate::ast::var_marks::with_bound_mark(decl),
+            ]));
         }
         Self::imported_var_binding(&var)
     }
