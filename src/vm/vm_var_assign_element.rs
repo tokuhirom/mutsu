@@ -48,9 +48,7 @@ impl Interpreter {
             return None;
         }
         // Reject bind-mode markers and Nil values (need default/type handling).
-        if Self::is_bind_index_value(val_ref)
-            || matches!(val_ref.view(), ValueView::Nil)
-        {
+        if Self::is_bind_index_value(val_ref) || matches!(val_ref.view(), ValueView::Nil) {
             return None;
         }
         // Reject when type/key constraints, defaults, readonly, or bound indices
@@ -137,9 +135,7 @@ impl Interpreter {
             _ => return None,
         };
         let val_ref = &self.stack[stack_len - 2];
-        if Self::is_bind_index_value(val_ref)
-            || matches!(val_ref.view(), ValueView::Nil)
-        {
+        if Self::is_bind_index_value(val_ref) || matches!(val_ref.view(), ValueView::Nil) {
             return None;
         }
         // Reject typed / defaulted / shaped / readonly / bound arrays — those need
@@ -258,8 +254,7 @@ impl Interpreter {
             return None;
         }
         // Reject bind-mode marker values
-        if Self::is_bind_index_value(val_ref)
-        {
+        if Self::is_bind_index_value(val_ref) {
             return None;
         }
         // Reject Nil values (need default/type-object handling)

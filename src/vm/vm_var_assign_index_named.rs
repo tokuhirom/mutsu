@@ -5275,8 +5275,7 @@ impl Interpreter {
         // those two stay `None` while the statement is still a bind. The
         // junction re-dispatch above already keys on the marker for the same
         // reason; the hooks below need the same answer.
-        let is_bind_value =
-            Self::is_bind_index_value(&val);
+        let is_bind_value = Self::is_bind_index_value(&val);
         let (val, bind_source) = Self::unwrap_bind_index_value(val);
         let bind_source =
             bind_source.filter(|s| !s.contains("\x00idx\x00") && !s.starts_with(['@', '%']));

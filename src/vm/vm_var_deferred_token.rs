@@ -64,8 +64,7 @@ impl Interpreter {
         let raw_val = self.stack[base].clone();
         // A `:=` bind RHS arrives wrapped in a marker pair and installs a shared
         // cell at the element — a different mechanism, left to its own handler.
-        if Self::is_bind_index_value(&raw_val)
-        {
+        if Self::is_bind_index_value(&raw_val) {
             return None;
         }
         // Indices, innermost (top of stack) first — the path order.
