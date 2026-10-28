@@ -707,6 +707,9 @@ impl Interpreter {
         else {
             return Ok(None);
         };
+        if let Some(items) = self.seq_subclass_items(iterable)? {
+            return Ok(Some(items));
+        }
         let cn = class_name.as_str().to_string();
         if !self.has_user_method(&cn, "iterator") {
             // A class that composes `Iterable` without declaring its own
@@ -770,6 +773,9 @@ impl Interpreter {
         if attributes.contains_key("__mutsu_array_storage") {
             return Ok(None);
         }
+        if let Some(items) = self.seq_subclass_items(iterable)? {
+            return Ok(Some(items));
+        }
         let cn = class_name.as_str().to_string();
         if !self.has_user_method(&cn, "iterator") {
             // The inherited `Any.iterator` is `self.list.iterator`, so a class
@@ -803,6 +809,20 @@ impl Interpreter {
             .get("__mutsu_array_storage")?
             .deref_container();
         Self::array_element_cells(&storage)
+    }
+
+    /// The elements of an instance of a `Seq` subclass: the Seq it carries,
+    /// drained through its `list` (the inherited `Seq.list`).
+    // Cost: O(n), n = the sequence's elements.
+    fn seq_subclass_items(
+        &mut self,
+        iterable: &Value,
+    ) -> Result<Option<Vec<Value>>, RuntimeError> {
+        if crate::builtins::native_base::seq_payload(iterable).is_none() {
+            return Ok(None);
+        }
+        let list = self.try_compiled_method_or_interpret(iterable.clone(), "list", vec![])?;
+        Ok(Some(crate::runtime::utils::value_to_list(&list)))
     }
 
     /// Drain a value's user-defined `iterator` method into its elements.

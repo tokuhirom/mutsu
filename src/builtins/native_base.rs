@@ -131,6 +131,15 @@ pub(crate) const VERSION_PAYLOAD: &str = "__mutsu_version_value";
 /// `CompUnit::DependencySpecification` carries its specification in (#14850).
 pub(crate) const DEPSPEC_PAYLOAD: &str = "__mutsu_depspec_value";
 
+/// The `Seq` an instance of a user subclass of `Seq` carries.
+// Cost: O(1), one attribute-map lookup.
+pub(crate) fn seq_payload(target: &Value) -> Option<Value> {
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return None;
+    };
+    attributes.as_map().get(SEQ_PAYLOAD).cloned()
+}
+
 /// Whether `target` is an instance of an `is Pair`, `is Seq` or quant-hash subclass:
 /// its base's methods (`Pair.Hash`, inherited from `Any`) answer on the
 /// payload, so `Any`'s rows read through the instance's own MRO walk must not
