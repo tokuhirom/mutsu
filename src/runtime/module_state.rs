@@ -492,6 +492,11 @@ pub(crate) struct ModuleState {
     /// owner): code of any other compunit it calls reads its own top-level
     /// `use`s, not the chain (#14481).
     pub(crate) eval_import_unit: Option<Symbol>,
+    /// Classes whose declaration died while an `EVAL` unit was compiling it
+    /// (a trait or `BEGIN` that throws). Rakudo discards a unit that fails to
+    /// compile, so `isolated_eval_unit` does not merge these into the
+    /// registry the caller sees.
+    pub(crate) eval_failed_classes: HashSet<String>,
     /// The modules an `EVAL` unit's pre-run already `use`d while its CHECK-time
     /// validation runs, whose names the checks read from the interpreter, not
     /// from the module's source (`run_eval_hook_uses`, #13441).
@@ -739,6 +744,7 @@ impl ModuleState {
             lexical_operator_import_sets: HashSet::new(),
             eval_import_chain: None,
             eval_import_unit: None,
+            eval_failed_classes: HashSet::new(),
             eval_prerun_modules: HashSet::new(),
             eval_hook_results: HashMap::new(),
             eval_hook_recording: false,
@@ -846,6 +852,7 @@ impl ModuleState {
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
             eval_import_chain: self.eval_import_chain.clone(),
             eval_import_unit: self.eval_import_unit,
+            eval_failed_classes: HashSet::new(),
             eval_prerun_modules: self.eval_prerun_modules.clone(),
             eval_hook_results: self.eval_hook_results.clone(),
             eval_hook_recording: false,

@@ -289,6 +289,23 @@ impl Interpreter {
                 &grep_adverb,
             ),
             ValueView::Seq(items) => {
+                // A materialized Seq receiver defers like a Range: the matcher
+                // runs when the result is consumed, so a `return seq.grep: &f`
+                // from a callee calls `&f` under the consumer's dynamic scope
+                // (Red's `ResultSeq.grep` fallback, t/41-fallback). The
+                // adverbed forms need indices over the whole result.
+                if matches!(grep_adverb, GrepAdverb::V) {
+                    return Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
+                        items: crate::value::MapGrepItems::Snapshot(std::sync::Arc::new(
+                            items.to_vec(),
+                        )),
+                        pos: 0,
+                        func: args.first().cloned(),
+                        fatal: self.module.fatal_mode,
+                        mode: crate::value::MapGrepMode::Grep,
+                        plan: Default::default(),
+                    }));
+                }
                 self.eval_grep_with_adverb(args.first().cloned(), items.to_vec(), &grep_adverb)
             }
             ValueView::Slip(items) => {
