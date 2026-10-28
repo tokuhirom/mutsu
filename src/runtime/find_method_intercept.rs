@@ -95,14 +95,21 @@ impl Interpreter {
         if !self.has_user_method_sym(class.as_str(), Symbol::intern(USER_FIND_METHOD)) {
             return None;
         }
+        // The call's argument sources and the caller's containers belong to
+        // the FOUND method's parameters; the metamethod binds its own
+        // arguments first and would consume them.
+        let sources = self.pending_call_arg_sources.take();
+        self.publish_rw_arg_cells_by_source();
         // The metamethod path expects the type argument prepended (see the
         // `^`-method branch of `call_method_with_values`); like Rakudo, the
         // receiver itself is passed as `type`.
-        Some(self.call_method_with_values(
+        let found = self.call_method_with_values(
             target.clone(),
             USER_FIND_METHOD,
             vec![target.clone(), Value::str(method.to_string())],
-        ))
+        );
+        self.set_pending_call_arg_sources_shared(sources);
+        Some(found)
     }
 
     /// The string a user `^find_method` answers for the stringifier `method`
@@ -131,6 +138,18 @@ impl Interpreter {
         let mut call_args = Vec::with_capacity(args.len() + 1);
         call_args.push(target.descalarize().clone());
         call_args.extend_from_slice(args);
+        // The sources name the call's arguments; a plain Callable is invoked
+        // with the receiver first, whose slot has no source. A looked-up Method
+        // object dispatches by name and takes them as they are.
+        if !matches!(found.view(), ValueView::Instance { .. })
+            && let Some(names) = self.pending_call_arg_sources.take()
+            && names.len() == args.len()
+        {
+            let mut with_invocant = Vec::with_capacity(names.len() + 1);
+            with_invocant.push(None);
+            with_invocant.extend(names.iter().cloned());
+            self.pending_call_arg_sources = Some(std::sync::Arc::new(with_invocant));
+        }
         self.vm_call_on_value(found, call_args, None)
     }
 

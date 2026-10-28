@@ -144,7 +144,7 @@ impl Interpreter {
     /// `VarRef` (a method call): the caller's argument variables are named by
     /// the call site's slot map instead.
     // Cost: O(s), s = slotted argument sources of the call.
-    pub(super) fn publish_rw_arg_cells_by_source(&mut self) {
+    pub(crate) fn publish_rw_arg_cells_by_source(&mut self) {
         if self.pending_call_arg_source_slots.is_empty() {
             return;
         }
