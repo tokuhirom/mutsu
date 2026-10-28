@@ -572,7 +572,20 @@ impl Interpreter {
         // (DELETE-POS/DELETE-KEY). The opcode does not carry the subscript
         // kind, so pick by the index's type, falling back to whichever
         // protocol method the class declares.
-        if let Some(target) = self.env().get(&var_name).cloned()
+        // The variable may hold the object through a `:=`-bound cell, or as the
+        // `Proxy` an rw accessor / subscript handed back (`my $t := $d<a><b>`,
+        // Red's JSON items): the delete addresses what that FETCHes to.
+        let held = self
+            .env()
+            .get(&var_name)
+            .cloned()
+            .map(|value| value.deref_container());
+        let object_target = match held {
+            Some(value) if value.is_proxy_value() => self.auto_fetch_proxy(&value).ok(),
+            other => other,
+        }
+        .map(|value| value.descalarize().clone());
+        if let Some(target) = object_target
             && matches!(
                 target.view(),
                 ValueView::Instance { .. } | ValueView::Mixin(..)
