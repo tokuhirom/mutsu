@@ -324,6 +324,29 @@ impl Interpreter {
                 }
                 true
             }
+            // An `is List` / `is Array` subclass instance keeps its elements in
+            // the reserved backing array, which `.elems` and indexing read; a
+            // `'$!reified'` bind has to land there (Hash2Class::List, #15138).
+            ValueView::Instance { attributes, .. }
+                if attributes.as_map().contains_key("__mutsu_array_storage") =>
+            {
+                let Some(elems) = Self::nqp_elems_of(storage) else {
+                    return false;
+                };
+                let kind = match attributes.as_map().get("__mutsu_array_storage") {
+                    Some(old) => match old.view() {
+                        ValueView::Array(_, kind) => Some(kind),
+                        _ => None,
+                    },
+                    None => None,
+                };
+                let fresh = match kind {
+                    Some(kind) => Value::array_with_kind(crate::gc::Gc::new(elems.into()), kind),
+                    None => Value::real_array(elems),
+                };
+                attributes.bind_attr_through("__mutsu_array_storage", fresh);
+                true
+            }
             ValueView::Instance { attributes, .. }
                 if attributes.as_map().contains_key("__mutsu_hash_storage") =>
             {

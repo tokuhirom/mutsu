@@ -82,6 +82,9 @@ pub(crate) struct CreateShape {
     /// An `is Hash` / `is Map` subclass, which also needs a reserved backing
     /// store even when it is allocated without `new`.
     associative: bool,
+    /// An `is Array` / `is List` subclass, whose elements live in a reserved
+    /// backing array even when it is allocated without `new` (#15138).
+    positional: bool,
     /// An `is IterationBuffer` subclass: nqp code pushes onto `self`, so the
     /// element storage is allocated up front.
     iteration_buffer: bool,
@@ -263,6 +266,10 @@ impl Interpreter {
                     .class_mro(class.as_str())
                     .iter()
                     .any(|name| Self::is_associative_base(name.as_str()));
+                let positional = self
+                    .class_mro(class.as_str())
+                    .iter()
+                    .any(|name| Self::is_positional_base(name.as_str()));
                 let iteration_buffer = self
                     .class_mro(class.as_str())
                     .iter()
@@ -270,6 +277,7 @@ impl Interpreter {
                 let shape = CreateShape {
                     template,
                     associative,
+                    positional,
                     iteration_buffer,
                 };
                 // Building the plan or the MRO may cache into the registry;
@@ -317,6 +325,12 @@ impl Interpreter {
             attributes.insert(
                 "__mutsu_hash_storage",
                 self.associative_base_storage(class.as_str(), Vec::new()),
+            );
+        }
+        if shape.positional && !attributes.contains_key("__mutsu_array_storage") {
+            attributes.insert(
+                "__mutsu_array_storage",
+                self.positional_base_storage(class.as_str(), Vec::new()),
             );
         }
         if shape.iteration_buffer {
