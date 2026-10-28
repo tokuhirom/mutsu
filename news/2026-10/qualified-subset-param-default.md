@@ -1,0 +1,3 @@
+# A package-qualified subset accepts its default value in a signature
+
+`method createPattern(HTML::Canvas::Pattern::Repetition $repetition = 'repeat')`, where the qualified type is a `subset ... where 'repeat'|...`, failed to compile: the parse-time default check took every `::`-qualified constraint for a class the default cannot satisfy ("Default value type 'Str' does not satisfy ..."). A qualified constraint is now left to the declaration-time check, which cut `X::AdHoc` down to `X` at the first `:` and so skipped it; it now stops only at a type smiley. HTML::Canvas loads. (A class declared in the same unit with a mismatched default is reported when the sub is called rather than at its declaration, as an unqualified class already was.)
