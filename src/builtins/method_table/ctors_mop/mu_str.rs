@@ -137,5 +137,7 @@ fn stringy_in(
     _args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
-    Some(interp.call_method_with_values(target.clone(), "Str", Vec::new()))
+    // The compiled path finds a user `Str` ahead of a built-in ancestor's
+    // native one (a `Date` subclass overriding `Str`).
+    Some(interp.try_compiled_method_or_interpret(target.clone(), "Str", Vec::new()))
 }
