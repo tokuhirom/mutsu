@@ -5,7 +5,7 @@
 //! own type), where the same methods on an `Int @` or an untyped array answer a
 //! `Seq`. The rows compute the elements as a `Seq` either way; this retypes that
 //! answer to the receiver's native array type. A native array's `values` is a
-//! plain `List`. It runs where a row answers ([`super::dispatch::call`], which
+//! plain `List`. It runs where a row answers (`dispatch::call`, which
 //! the method-site lane uses) and at the VM's `CallMethod` sites, since the full
 //! path reaches the same elements through producers that never pass a row.
 
