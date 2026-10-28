@@ -145,7 +145,7 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
 pub(crate) enum NilPredispatchVerdict {
     Error(RuntimeError),
     Warn {
-        message: &'static str,
+        message: std::borrow::Cow<'static, str>,
         resume: Value,
     },
 }
@@ -198,31 +198,41 @@ pub(crate) fn nil_predispatch_verdict(
                 _ => unreachable!(),
             };
             Some(NilPredispatchVerdict::Warn {
-                message: "Use of Nil in numeric context",
+                message: "Use of Nil in numeric context".into(),
                 resume: zero,
             })
         }
         "abs" | "floor" | "ceiling" | "round" | "truncate" | "sign" if no_args => {
             Some(NilPredispatchVerdict::Warn {
-                message: "Use of Nil in numeric context",
+                message: "Use of Nil in numeric context".into(),
                 resume: Value::int(0),
             })
         }
         "Str" | "Stringy" if no_args => Some(NilPredispatchVerdict::Warn {
-            message: "Use of Nil in string context",
+            message: "Use of Nil in string context".into(),
             resume: Value::str(String::new()),
         }),
         // `Nil.join` / `Nil.join($sep)` joins the one stringified `Nil`.
         "join" => Some(NilPredispatchVerdict::Warn {
-            message: "Use of Nil in string context",
+            message: "Use of Nil in string context".into(),
             resume: Value::str(String::new()),
         }),
+        // Cool's string methods coerce the `Nil` invocant through `Nil.Str`:
+        // rakudo warns "Use of Nil.<method> coerced to empty string" and
+        // resumes with the empty string (not the method's usual result type).
+        "chars" | "chop" | "chomp" | "uc" | "lc" | "tc" | "flip" | "codes" | "lines" | "words"
+        | "comb" | "index" | "rindex" | "contains" | "starts-with" | "ends-with" | "substr" => {
+            Some(NilPredispatchVerdict::Warn {
+                message: format!("Use of Nil.{method} coerced to empty string").into(),
+                resume: Value::str(String::new()),
+            })
+        }
         "ords" if no_args => Some(NilPredispatchVerdict::Warn {
-            message: "Use of Nil in string context",
+            message: "Use of Nil in string context".into(),
             resume: Value::seq(vec![]),
         }),
         "chrs" if no_args => Some(NilPredispatchVerdict::Warn {
-            message: "Use of Nil in string context",
+            message: "Use of Nil in string context".into(),
             resume: Value::str("\0".to_string()),
         }),
         _ => None,
@@ -1890,7 +1900,7 @@ impl Interpreter {
                                 "callmethod",
                                 "nil-predispatch",
                             );
-                            let resumed = self.raise_resumable_warning(message, resume)?;
+                            let resumed = self.raise_resumable_warning(&message, resume)?;
                             self.stack.push(resumed);
                             return Ok(());
                         }
