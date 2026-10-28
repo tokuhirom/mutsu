@@ -283,19 +283,9 @@ fn iterates_elsewhere(interp: &mut Interpreter, target: &Value, method: &str) ->
             interp.has_user_method(class_name.as_str(), "iterator")
                 && !interp.has_user_method(class_name.as_str(), method)
         }
-        ValueView::Mixin(inner, _) => {
-            if interp.mixin_composes_method(target, method) {
-                return false;
-            }
-            // A `Sequence` class's own `iterator` under a mixin (`ResultSeq`).
+        ValueView::Mixin(..) => {
             interp.mixin_composes_method(target, "iterator")
-                || matches!(
-                    inner.view(),
-                    ValueView::Instance { class_name, .. }
-                        if interp.has_user_method(class_name.as_str(), "iterator")
-                            && !interp.has_user_method(class_name.as_str(), method)
-                            && interp.class_does_role(class_name.as_str(), "Sequence")
-                )
+                && !interp.mixin_composes_method(target, method)
         }
         _ => false,
     }

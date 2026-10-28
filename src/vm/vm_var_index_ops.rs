@@ -2416,13 +2416,19 @@ impl Interpreter {
             // only answers AT-POS (Trie's `$t[*-1]`).
             (ValueView::Instance { class_name, .. }, ValueView::Sub(_))
                 if is_positional
-                    && self.type_matches_value("Positional", &target)
-                    && (self.has_user_method_including_role(&class_name.resolve(), "keys")
-                        || self
-                            .has_user_method_including_role(&class_name.resolve(), "AT-POS")) =>
+                    && ((self.type_matches_value("Positional", &target)
+                        && (self
+                            .has_user_method_including_role(&class_name.resolve(), "keys")
+                            || self.has_user_method_including_role(
+                                &class_name.resolve(),
+                                "AT-POS",
+                            )))
+                        || self.is_iterator_sequence_instance(&target)) =>
             {
+                // A `Sequence` class's `elems` is the delegate's, which reads
+                // its iterator; `call_method_with_values` reaches it.
                 let len = self
-                    .try_compiled_method_or_interpret(target.clone(), "elems", vec![])
+                    .call_method_with_values(target.clone(), "elems", vec![])
                     .map(|value| crate::runtime::to_int(&value).max(0))
                     .unwrap_or(0);
                 let resolved = self
@@ -2562,7 +2568,7 @@ impl Interpreter {
             // object instead of its final element.
             (ValueView::Mixin(..), ValueView::Sub(_)) if is_positional => {
                 let len = self
-                    .try_compiled_method_or_interpret(target.clone(), "elems", vec![])
+                    .call_method_with_values(target.clone(), "elems", vec![])
                     .map(|value| crate::runtime::to_int(&value).max(0))
                     .unwrap_or(0);
                 let resolved = self
