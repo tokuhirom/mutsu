@@ -206,8 +206,5 @@ pub(crate) use set_compound::{
     build_set_compound_assign_expr, parse_set_compound_assign_op, preserve_set_compound_assign,
     set_op_from_spelling,
 };
-pub(crate) use sink::{
-    parse_assign_expr_or_comma, parse_assign_expr_or_comma_no_word_logical,
-    rewrite_scalar_assignment_rhs_as_sink, rewrite_scalar_assignment_stmt_as_sink,
-};
+pub(crate) use sink::{parse_assign_expr_or_comma, parse_assign_expr_or_comma_no_word_logical};
 pub(crate) use try_assign::{parse_colon_args, parse_colon_args_with};

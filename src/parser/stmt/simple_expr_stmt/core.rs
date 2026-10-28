@@ -1,4 +1,4 @@
-use crate::ast::{AssignOp, Expr, Stmt};
+use crate::ast::{Expr, Stmt};
 use crate::parser::expr::expression;
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{
@@ -554,35 +554,6 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)])
         };
         return parse_statement_modifier(r, stmt);
-    }
-
-    // Check for assignment after parenthesized assign expression: ($x = $y) = 5
-    if let Expr::AssignExpr { ref name, .. } = expr
-        && rest.starts_with('=')
-        && !rest.starts_with("==")
-        && !rest.starts_with("=>")
-    {
-        let var_name = name.clone();
-        let r = &rest[1..];
-        let (r, _) = ws(r)?;
-        let (r, rhs) = parse_assign_expr_or_comma(r).map_err(|err| PError {
-            messages: merge_expected_messages(
-                "expected right-hand expression after '='",
-                &err.messages,
-            ),
-            remaining_len: err.remaining_len.or(Some(r.len())),
-            exception: None,
-        })?;
-        let stmts = vec![
-            Stmt::Expr(expr),
-            Stmt::Assign {
-                name: var_name,
-                expr: rhs,
-                op: AssignOp::Assign,
-                target_is_sigilless: false,
-            },
-        ];
-        return parse_statement_modifier(r, Stmt::Block(stmts));
     }
 
     // Check for comma-separated expressions (e.g., "1,2, until $++")

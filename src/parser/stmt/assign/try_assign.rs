@@ -720,10 +720,6 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         if is_atomic {
             return Ok((rest, crate::ast::atomic_op::store_var(name, rhs)));
         }
-        let name = format!("{}{}", prefix, var);
-        if let Some(expr) = rewrite_scalar_assignment_rhs_as_sink(name, rhs.clone()) {
-            return Ok((rest, expr));
-        }
         let target = match sigil {
             b'@' => Expr::ArrayVar(var),
             b'%' => Expr::HashVar(var),
