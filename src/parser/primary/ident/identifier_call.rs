@@ -2211,6 +2211,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !r.starts_with(')')
         && !r.starts_with(']')
         && !r.starts_with(',')
+        // `-->` is a signature's return arrow, never a listop argument:
+        // `:$id = uuid-v4 --> Str:D` calls `uuid-v4` with no arguments.
+        && !r.starts_with("-->")
         && !rest.starts_with('.')
         && !rest.starts_with('[')
         // A `{` with NO whitespace after the name is a postcircumfix hash
