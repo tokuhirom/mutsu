@@ -624,6 +624,19 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
+        // The check recurses through subset bases, parameterizations and type
+        // aliases without passing a Raku call boundary, so the VM's stack guard
+        // never sees a cycle among them. A thread near the bottom of its stack
+        // refuses the check with a catchable exception instead of aborting the
+        // process (docs/security.md, ADR-0100).
+        if crate::native_stack::headroom_exhausted() {
+            if why.is_none() {
+                *why = Some(Box::new(RuntimeError::new(
+                    crate::native_stack::DEEP_RECURSION_MESSAGE,
+                )));
+            }
+            return false;
+        }
         // An object reblessed on another thread may carry a mixin type this
         // thread has not composed yet (#11456).
         if let ValueView::Instance { class_name, .. } = value.view() {
