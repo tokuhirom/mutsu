@@ -4681,7 +4681,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // The `*` whatever term — the *value* leaf (`1..*`, `@a[*]`).
         RakuAstClass::TermWhatever => Ok(Expr::Whatever),
         // `∅`: the parser's literal empty Set.
-        RakuAstClass::TermEmptySet => Ok(Expr::Literal(Value::set(std::collections::HashSet::new()))),
+        RakuAstClass::TermEmptySet => {
+            Ok(Expr::Literal(Value::set(std::collections::HashSet::new())))
+        }
         RakuAstClass::TermHyperWhatever => Ok(Expr::HyperWhatever),
         // The `*` priming-argument leaf (`* + 1`, `* > 3`). ADR-0033 splits the
         // two leaf roles; the enclosing priming *scope* is planted afterwards by
