@@ -166,9 +166,11 @@ impl Interpreter {
                 } else {
                     "EXISTS-KEY"
                 };
-                let exists = self
-                    .try_compiled_method_or_interpret(target, method, vec![index])?
-                    .truthy();
+                // The adverb asks the result for its `Bool`, so a user
+                // `EXISTS-KEY` answering an object (Red's AST node) has its own
+                // `Bool` run -- and any control exception it throws unwinds.
+                let found = self.try_compiled_method_or_interpret(target, method, vec![index])?;
+                let exists = self.eval_truthy_result(&found)?;
                 Ok(Value::truth(exists ^ !val.truthy()))
             }
             "delete" if val.truthy() => {
