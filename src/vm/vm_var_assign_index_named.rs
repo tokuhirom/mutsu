@@ -5013,6 +5013,10 @@ impl Interpreter {
             && let Ok(fetched) = self.auto_fetch_proxy(&root)
         {
             root = fetched.deref_container();
+            // The temp is compiler-made and read again by the chain walk: leave
+            // it holding the fetched object, which is what the walk descends
+            // through.
+            self.env_mut().insert(var_name.to_string(), root.clone());
         }
         if matches!(root.view(), ValueView::Array(..) | ValueView::Hash(..)) {
             return None;
