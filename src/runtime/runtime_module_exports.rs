@@ -278,6 +278,15 @@ impl Interpreter {
         if bare.is_empty() || crate::qualified::is_qualified_str(bare) {
             return;
         }
+        // `OUR::<DEFAULT> := Pkg` inside a module's `EXPORT` package makes the
+        // whole symbol table of `Pkg` the export list of that tag.
+        if sigil.is_empty()
+            && (package == "EXPORT" || package.ends_with("::EXPORT"))
+            && let ValueView::Package(source) = value.view()
+        {
+            self.reexport_package_as_tag(&package, bare, &source.resolve());
+            return;
+        }
         let qualified =
             if crate::qualified::is_global_package(crate::qualified::known_symbol(&package)) {
                 format!("{sigil}{bare}")
@@ -306,6 +315,33 @@ impl Interpreter {
         self.set_our_var(module_key.clone(), value.clone());
         self.env_mut().insert(module_key, value.clone());
         self.register_exported_var(module, format!("{sigil}{bare}"), vec![tag]);
+    }
+
+    /// Export every symbol of the package `source` under `tag` of the module
+    /// being loaded (`OUR::<DEFAULT> := Pkg` in `my package EXPORT`).
+    // Cost: O(s), s = the symbols in `source`'s stash.
+    fn reexport_package_as_tag(&mut self, export_package: &str, tag: &str, source: &str) {
+        let stash = self.package_stash_value(source);
+        let symbols = match stash.view() {
+            ValueView::Instance { attributes, .. } => attributes.as_map().get("symbols").cloned(),
+            _ => None,
+        };
+        let Some(symbols) = symbols else {
+            return;
+        };
+        let entries: Vec<(String, Value)> = match symbols.view() {
+            ValueView::Hash(map) => map.iter().map(|(k, v)| (k.to_string(), v.clone())).collect(),
+            _ => return,
+        };
+        let target = format!("{export_package}::{tag}");
+        for (key, value) in entries {
+            let (sigil, bare) = match key.as_bytes().first() {
+                Some(b'&' | b'@' | b'%' | b'$') => (&key[..1], &key[1..]),
+                _ => ("", key.as_str()),
+            };
+            let sigil = if sigil == "$" { "" } else { sigil };
+            self.publish_package_stash_symbol(target.clone(), sigil, bare, &value);
+        }
     }
 
     /// Register a value assigned directly into an `EXPORT::<tag>` stash.
