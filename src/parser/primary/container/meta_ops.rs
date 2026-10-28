@@ -1,5 +1,7 @@
 use crate::ast::{Expr, Stmt};
-use crate::parser::expr::{contains_whatever, expression, expression_no_sequence};
+use crate::parser::expr::{
+    contains_whatever, contains_xx_with_bare_whatever, expression, expression_no_sequence,
+};
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::parser::stmt::keyword;
@@ -101,6 +103,9 @@ fn operand_curries(e: &Expr) -> bool {
     match e {
         Expr::ArrayLiteral(_) => false,
         Expr::MetaOp { meta, .. } if meta == "X" || meta == "Z" => xz_metaop_curries(e),
+        // `(1 xx *) Z ...`: a bare `*` under `xx` is the infinite repeat, not a
+        // curry point.
+        _ if contains_xx_with_bare_whatever(e) => false,
         _ => contains_whatever(e) || matches!(e, Expr::WhateverCurry(_)),
     }
 }

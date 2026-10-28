@@ -263,6 +263,43 @@ impl Compiler {
         self.compile_expr(&gather_expr);
     }
 
+    /// A gather body is sunk, so a top-level `EXPR xx N` (N possibly `*`, held
+    /// in a variable) runs EXPR N times, suspending at each `take` inside it.
+    /// The native `xx` adaptor calls EXPR from Rust, which cannot suspend the
+    /// gather coroutine; the same sink is a plain `for ^N { EXPR }` here, which
+    /// the VM can.
+    pub(super) fn lower_sunk_list_repeat(body: &[Stmt]) -> Vec<Stmt> {
+        body.iter()
+            .map(|stmt| match stmt {
+                Stmt::Expr(Expr::Binary {
+                    left,
+                    op: crate::token_kind::TokenKind::Ident(name),
+                    right,
+                    ..
+                }) if name == "xx" => Stmt::For {
+                    iterable: Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::int(0))),
+                        op: crate::token_kind::TokenKind::DotDotCaret,
+                        right: right.clone(),
+                        form: crate::ast::BinaryForm::CaretPrefix,
+                    },
+                    param: None,
+                    param_def: Box::new(None),
+                    params: Vec::new(),
+                    params_def: Vec::new(),
+                    body: vec![Stmt::Expr((**left).clone())],
+                    label: None,
+                    mode: crate::ast::ForMode::Normal,
+                    rw_block: false,
+                    explicit_zero_params: false,
+                    is_statement_modifier: false,
+                    uses_block_magic: false,
+                },
+                other => other.clone(),
+            })
+            .collect()
+    }
+
     pub(super) fn do_if_branch_supported(stmts: &[Stmt]) -> bool {
         if Self::has_phasers(stmts) {
             return false;

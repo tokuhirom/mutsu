@@ -135,7 +135,7 @@ pub(crate) fn fat_arrow_curries(left: &Expr, right: &Expr) -> bool {
     operand_curries(left) || operand_curries(right)
 }
 
-fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
+pub(crate) fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
     match expr.peel_parens() {
         Expr::Binary {
             left,
@@ -154,6 +154,11 @@ fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
                 || contains_xx_with_bare_whatever(right)
         }
         Expr::Unary { expr, .. } => contains_xx_with_bare_whatever(expr),
+        // `(1 xx *) Z <a b>`: a meta operator's operands are curry-spine
+        // positions too, so the infinite repeat inside them stays a repeat.
+        Expr::MetaOp { left, right, .. } => {
+            contains_xx_with_bare_whatever(left) || contains_xx_with_bare_whatever(right)
+        }
         // Follow only the curry spine (the operand positions `contains_whatever`
         // follows): a method/call/subscript *argument* is its own expression, so
         // a `1 xx *` there (`*.push(1 xx *)`) does not stop the target currying.

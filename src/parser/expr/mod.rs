@@ -48,7 +48,7 @@ use precedence::ternary;
 // out of the parser per ADR-0033) also calls them.
 use whatever::fat_arrow_curries;
 pub(crate) use whatever::{
-    contains_whatever, is_frozen_whatever, is_whatever, is_whatever_operand,
+    contains_whatever, contains_xx_with_bare_whatever, is_frozen_whatever, is_whatever, is_whatever_operand,
     operator_call_operands, should_wrap_whatevercode,
 };
 
