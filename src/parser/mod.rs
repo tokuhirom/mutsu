@@ -295,9 +295,7 @@ pub(crate) fn interpolate_qq_content(content: &str) -> Result<crate::ast::Expr, 
 
 /// Parse a heredoc body string as an interpolated (qq-style) string expression.
 /// Used by the compiler to defer heredoc interpolation to compile time.
-pub(crate) fn interpolate_heredoc_content(
-    content: &str,
-) -> Result<crate::ast::Expr, RuntimeError> {
+pub(crate) fn interpolate_heredoc_content(content: &str) -> Result<crate::ast::Expr, RuntimeError> {
     interpolate_qq_content(content)
 }
 

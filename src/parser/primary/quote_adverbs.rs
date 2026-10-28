@@ -4,7 +4,10 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 
 use super::super::expr::expression;
-use super::string::{unrecognized_backslash_perror, finalize_interpolation, process_escape_sequence, try_interpolate_var};
+use super::string::{
+    finalize_interpolation, process_escape_sequence, try_interpolate_var,
+    unrecognized_backslash_perror,
+};
 
 /// Flags representing which interpolation modes are active in a Q/q quoting form.
 #[derive(Clone, Default)]
