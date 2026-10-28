@@ -29,6 +29,25 @@ fn is_dead_end_self_referential_routine(v: &Value, name: &str) -> bool {
 }
 
 impl Interpreter {
+    /// Call what a top-level `use` BELOW the running call imports under `name`
+    /// (see [`Self::unit_late_import`]); `None` when it binds nothing.
+    // Cost: O(c + s) in the lookup, c = the code's import chains, s = sets in
+    // its fallback chains; plus the call.
+    fn call_unit_late_import(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        match self.unit_late_import(name)? {
+            crate::runtime::lexical_imports::LexicalImport::Code(value) => {
+                Some(self.eval_call_on_value(value, args.to_vec()))
+            }
+            crate::runtime::lexical_imports::LexicalImport::Routine(def) => {
+                Some(self.call_routine_def(&def, args.to_vec()))
+            }
+        }
+    }
+
     pub(crate) fn call_function_fallback(
         &mut self,
         name: &str,
@@ -577,6 +596,15 @@ impl Interpreter {
             return self.call_method_with_values(callable, "CALL-ME", args.to_vec());
         }
         if let Some((proto_name, proto_def)) = self.resolve_proto_function_with_alias(name) {
+            // A `{*}`-only proto whose candidates were never registered under
+            // this spelling (`Red::Database`'s `proto database`, whose multis
+            // live in the module's own scope) is no routine the call can reach:
+            // a `use` BELOW the call that imports the name answers it (#15246).
+            if self.is_candidate_less_proto(&proto_name)
+                && let Some(result) = self.call_unit_late_import(name, args)
+            {
+                return result;
+            }
             return self.call_proto_function(&proto_name, &proto_def, args);
         }
         // Check wrap chain for named function calls
@@ -1341,14 +1369,8 @@ impl Interpreter {
 
         // A routine a top-level `use` BELOW this call imports: Raku binds the
         // `use` at compile time, so a name nothing else resolved still means it.
-        match self.unit_late_import(name) {
-            Some(crate::runtime::lexical_imports::LexicalImport::Code(value)) => {
-                return self.eval_call_on_value(value, args.to_vec());
-            }
-            Some(crate::runtime::lexical_imports::LexicalImport::Routine(def)) => {
-                return self.call_routine_def(&def, args.to_vec());
-            }
-            None => {}
+        if let Some(result) = self.call_unit_late_import(name, args) {
+            return result;
         }
 
         // A CORE term constant called as a routine is `X::Undeclared` naming
