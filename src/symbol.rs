@@ -1024,6 +1024,7 @@ impl Symbol {
     /// and no lock is held after this returns — safe to keep across arbitrary
     /// downstream calls, unlike `with_str`'s old lock-scoped borrow.
     // Cost: O(1), two atomic loads; no thread-local, no lock for any id below the table's reach.
+    #[inline]
     pub fn as_str(&self) -> &'static str {
         let idx = self.0 as usize;
         if let Some(s) = str_slot(idx) {
