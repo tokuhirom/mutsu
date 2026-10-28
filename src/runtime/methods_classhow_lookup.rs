@@ -397,11 +397,19 @@ impl Interpreter {
             // (`class H is Hash`: `Hash`'s `AT-KEY`): calling the Method
             // object on an `H` must not look the name up on `H` again, where a
             // composed role's own method of that name would answer.
-            let owner = self
-                .builtin_method_ancestors(&class_name_str)
-                .into_iter()
-                .find(|level| self.registry().declares_builtin_method(level, method_name))
-                .unwrap_or(class_name_str);
+            let owner = if crate::builtin_types::catalog::builtin_type_info(&class_name_str)
+                .is_some()
+            {
+                class_name_str
+            } else {
+                self.builtin_method_ancestors(&class_name_str)
+                    .into_iter()
+                    .find(|level| {
+                        crate::builtin_types::catalog::builtin_type_info(level).is_some()
+                            && self.registry().declares_builtin_method(level, method_name)
+                    })
+                    .unwrap_or(class_name_str)
+            };
             return Some(self.make_native_method_object(method_name, &owner));
         }
         // A built-in type outside the introspected owner set (`DateTime`,
