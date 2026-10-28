@@ -2,7 +2,6 @@
 
 use super::*;
 use crate::ast::var_marks::TermMark;
-use crate::token_kind::TokenKind;
 
 impl Compiler {
     pub(super) fn compile_synthetic_stmt(&mut self, stmts: &[Stmt]) {
@@ -17,14 +16,7 @@ impl Compiler {
         // Collect the bound array variable name for skipping the
         // trailing Var statement that would force the LazyList via SinkPop.
         let mut bound_array_var: Option<String> = None;
-        let does_decl_init = Self::does_decl_initializer(stmts);
-        for (i, s) in stmts.iter().enumerate() {
-            // `my %h does R = ...`: the declaration's own initializer reaches the
-            // role's `STORE` as `:INITIALIZE`, a later plain assignment does not
-            // (`maybe_mixin_container_store` consumes the mark).
-            if does_decl_init == Some(i) {
-                self.code.emit(OpCode::MarkExplicitInitializerContext);
-            }
+        for s in stmts {
             if let Stmt::VarDecl { name, marks, .. } = s
                 && marks.bound
                 && name.starts_with('@')
@@ -48,28 +40,6 @@ impl Compiler {
         if restore_pointy_given_topic {
             self.code.emit(OpCode::ExitPointyTopic);
         }
-    }
-
-    /// The index of the initializer in the `my @a/%h does R = init` expansion
-    /// (`SyntheticBlock([VarDecl, Expr(var does R), Assign])`, see
-    /// `ast::var_does::expand`), if `stmts` has exactly that shape.
-    // Cost: O(1).
-    fn does_decl_initializer(stmts: &[Stmt]) -> Option<usize> {
-        let [
-            Stmt::VarDecl { name, .. },
-            Stmt::Expr(Expr::Binary { left, op, .. }),
-            Stmt::Assign {
-                name: target,
-                op: crate::ast::AssignOp::Assign,
-                ..
-            },
-        ] = stmts
-        else {
-            return None;
-        };
-        let does = matches!(op, TokenKind::Ident(w) if w == "does");
-        let same = matches!(left.as_ref(), Expr::Var(v) if v == name) && target == name;
-        (does && same && name.starts_with(['@', '%'])).then_some(2)
     }
 
     /// [`Compiler::begin_term_decl`] for `stmt` when it declares a sigilless
