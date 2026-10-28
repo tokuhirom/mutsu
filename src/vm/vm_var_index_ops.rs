@@ -1132,6 +1132,12 @@ impl Interpreter {
                     self.stack.push(value);
                     return Ok(());
                 }
+            } else if let Some(value) = self.try_exported_captured_family(op_name, args.clone())? {
+                // A `sub EXPORT` hook handed the family out as `&postcircumfix:<[ ]>`:
+                // its candidates are private to the exporter, so the registry
+                // below never holds them (Red's JSON-column subscripts).
+                self.stack.push(value);
+                return Ok(());
             } else if let Some(def) = self
                 .resolve_function_with_types(op_name, &args)
                 .ok()
