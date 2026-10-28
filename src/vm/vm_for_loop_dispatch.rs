@@ -814,10 +814,7 @@ impl Interpreter {
     /// The elements of an instance of a `Seq` subclass: the Seq it carries,
     /// drained through its `list` (the inherited `Seq.list`).
     // Cost: O(n), n = the sequence's elements.
-    fn seq_subclass_items(
-        &mut self,
-        iterable: &Value,
-    ) -> Result<Option<Vec<Value>>, RuntimeError> {
+    fn seq_subclass_items(&mut self, iterable: &Value) -> Result<Option<Vec<Value>>, RuntimeError> {
         if crate::builtins::native_base::seq_payload(iterable).is_none() {
             return Ok(None);
         }
