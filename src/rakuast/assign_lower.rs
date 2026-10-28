@@ -29,7 +29,6 @@ pub(crate) fn is_expression_target(target: &Expr) -> bool {
         Expr::Var(_)
         | Expr::ArrayVar(_)
         | Expr::HashVar(_)
-        | Expr::CodeVar(_)
         | Expr::Index { .. }
         | Expr::Call { .. }
         | Expr::MultiDimIndex { .. }
