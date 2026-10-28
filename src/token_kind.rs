@@ -286,6 +286,18 @@ impl Hash for TokenKind {
 }
 
 pub(crate) fn lookup_unicode_char_by_name(name: &str) -> Option<char> {
+    // `\c[0x0730]` / `\c[0o1460]` / `\c[0b11]`: a radix-prefixed codepoint
+    // among the names, as rakudo reads it.
+    if let Some((radix, digits)) = name
+        .strip_prefix("0x")
+        .map(|d| (16, d))
+        .or_else(|| name.strip_prefix("0o").map(|d| (8, d)))
+        .or_else(|| name.strip_prefix("0b").map(|d| (2, d)))
+        && !digits.is_empty()
+        && let Ok(code) = u32::from_str_radix(digits, radix)
+    {
+        return char::from_u32(code);
+    }
     if let Some(c) = crate::builtins::unicode_name::char_by_name(name) {
         return Some(c);
     }
