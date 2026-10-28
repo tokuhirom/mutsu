@@ -74,6 +74,19 @@ fn mark_parenthesized(expr: Expr) -> Expr {
     }
 }
 
+/// The `)` that closes a parenthesized statement carrying a modifier; the
+/// statement may end with its own `;` first (`(|(1, 2) if $x;)`).
+// Cost: O(1).
+fn close_after_modified_statement(input: &str) -> Result<&str, PError> {
+    let (rest, _) = ws(input)?;
+    let rest = match rest.strip_prefix(';') {
+        Some(after) if !after.starts_with(';') => ws(after)?.0,
+        _ => rest,
+    };
+    let (rest, _) = parse_char(rest, ')')?;
+    Ok(rest)
+}
+
 fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
     // Try the comprehensive parenthesized assignment parser first.
     // This handles complex LHS forms like %hash{...}, @arr[...], method calls, etc.
@@ -238,8 +251,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
     // Check for inline statement modifier: ($_ with data), (expr if cond), etc.
     if let Some(result) = try_inline_modifier(input, first.clone()) {
         let (rest, modified_expr) = result?;
-        let (rest, _) = ws(rest)?;
-        let (rest, _) = parse_char(rest, ')')?;
+        let rest = close_after_modified_statement(rest)?;
         return Ok((rest, modified_expr));
     }
     // Check for sequence operator after single item: (1 ... 5)
@@ -330,8 +342,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
             && let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone()))
         {
             let (rest, modified_expr) = result?;
-            let (rest, _) = ws(rest)?;
-            let (rest, _) = parse_char(rest, ')')?;
+            let rest = close_after_modified_statement(rest)?;
             return Ok((rest, modified_expr));
         }
         let sep = if input.starts_with(',') {
@@ -351,8 +362,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
             && let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone()))
         {
             let (rest, modified_expr) = result?;
-            let (rest, _) = ws(rest)?;
-            let (rest, _) = parse_char(rest, ')')?;
+            let rest = close_after_modified_statement(rest)?;
             return Ok((rest, modified_expr));
         }
         if let Ok((input, _)) = parse_char(input, ')') {
