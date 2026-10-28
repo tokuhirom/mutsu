@@ -280,6 +280,30 @@ impl Interpreter {
         })
     }
 
+    /// Whether `err` is a non-local `return` that is merely passing through
+    /// the innermost routine frame: it is stamped with the routine it leaves
+    /// and that routine is not the one running. The passed-through frame exits
+    /// by unwinding, so its KEEP/UNDO phasers see an unsuccessful exit (UNDO)
+    /// whatever value the `return` carries.
+    // Cost: O(1) plus one registration-id lookup.
+    pub(crate) fn return_passes_through_innermost_routine(&self, err: &RuntimeError) -> bool {
+        let Some(target) = err.return_target_callable_id() else {
+            return false;
+        };
+        if err.return_value.is_none() {
+            return false;
+        }
+        match self.routine_stack.iter().rev().find(|f| !f.is_block) {
+            Some(frame) => {
+                !((frame.callable_id != 0 && frame.callable_id == target)
+                    || self
+                        .registration_clone_id(&frame.package.resolve(), &frame.name.resolve())
+                        == Some(target))
+            }
+            None => false,
+        }
+    }
+
     /// Stamp `id` on the innermost routine frame, for a routine that has no
     /// registry entry to resolve its id from (an anonymous `sub`).
     // Cost: O(1).
