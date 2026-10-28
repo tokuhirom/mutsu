@@ -311,9 +311,14 @@ impl Interpreter {
     }
 
     fn default_check_constraint_base(constraint: &str) -> &str {
+        let bytes = constraint.as_bytes();
         let mut end = constraint.len();
         for (idx, ch) in constraint.char_indices() {
-            if ch == '[' || ch == '(' || ch == ':' {
+            // A `:` ends the name only as a type smiley (`Int:D`); the `::` of a
+            // package-qualified name (`X::AdHoc`) is part of it.
+            let package_separator = ch == ':'
+                && (bytes.get(idx + 1) == Some(&b':') || (idx > 0 && bytes[idx - 1] == b':'));
+            if ch == '[' || ch == '(' || (ch == ':' && !package_separator) {
                 end = idx;
                 break;
             }

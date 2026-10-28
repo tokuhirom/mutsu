@@ -306,8 +306,12 @@ pub(crate) fn default_type_matches_constraint(
     if base == default_type {
         return Some(true);
     }
+    // A package-qualified constraint (`Pat::Repetition`) may be a subset, enum or
+    // role declared in that package, which the default can satisfy: leave it to
+    // the runtime check at declaration (`validate_static_default_typechecks`),
+    // as for any constraint this table does not know.
     if base.contains("::") {
-        return Some(false);
+        return None;
     }
     match base {
         // `Bool` enumerates to `Int` (`enum Bool does Int`), so a `Bool` default
