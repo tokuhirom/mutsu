@@ -65,10 +65,15 @@ pub(crate) fn probe_module_exports(
             for path in lib_paths {
                 interp.add_lib_path(path);
             }
-            interp
-                .use_module(&module)
-                .map_err(|e| e.message.to_string())?;
-            Ok(interp.module_exported_routine_names(&module))
+            let loaded = interp.use_module(&module);
+            let names = interp.module_exported_routine_names(&module);
+            // A module whose `EXPORT` hook wants arguments (`use M <a b>`)
+            // dies when probed with none, but its body has already bound the
+            // routines it exports through the stash: keep those names.
+            match loaded {
+                Err(e) if names.is_empty() => Err(e.message.to_string()),
+                _ => Ok(names),
+            }
         },
     )
     .map_err(|e| e.message())?;

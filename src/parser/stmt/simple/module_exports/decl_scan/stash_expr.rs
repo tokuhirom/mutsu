@@ -18,6 +18,20 @@ impl DeclScan {
             {
                 self.out.defines_slang = true;
             }
+            // `OUR.WHO.BIND-KEY: .key, .value for Other::;` in an export stash
+            // package copies another package's symbols into the export list
+            // under keys only known at run time (annotations' `EXPORT::MANDATORY`):
+            // flag the module for the parse-time probe, as for a computed
+            // `OUR::{...}` key.
+            Expr::MethodCall { name, target, .. }
+                if matches!(name.resolve().as_str(), "BIND-KEY" | "ASSIGN-KEY")
+                    && is_export_stash_package(&self.package)
+                    && matches!(target.as_ref(), Expr::MethodCall { name: who, target: ours, .. }
+                        if who.resolve() == "WHO"
+                            && matches!(ours.as_ref(), Expr::BareWord(w) if w == "OUR")) =>
+            {
+                self.out.dynamic_export_stash = true;
+            }
             // Literal package subscripts keep their IndexAssign form. Read
             // only the key: neither BEGIN nor the initializer runs in a scan.
             Expr::IndexAssign { target, index, .. }
@@ -106,5 +120,17 @@ mod tests {
         assert!(decls.constant_names.iter().any(|name| name == "Other"));
         assert!(decls.exports.contains_key("helper"));
         assert!(!decls.dynamic_export_stash);
+    }
+
+    #[test]
+    fn bind_key_of_our_who_in_an_export_stash_is_dynamic() {
+        let _no_execute = crate::parser::no_execute::NoExecuteGuard::enter();
+        let (stmts, _) = crate::parser::parse_program(
+            "my package EXPORT { package MANDATORY { \
+             OUR.WHO.BIND-KEY: .key, .value for Other::; } }",
+        )
+        .unwrap();
+        let decls = super::super::scan_module_decls(&stmts);
+        assert!(decls.dynamic_export_stash);
     }
 }

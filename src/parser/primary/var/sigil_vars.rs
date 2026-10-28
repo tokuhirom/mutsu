@@ -363,6 +363,24 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
+    // `@%hash` applies list context to a hash variable (`.list`).
+    if twigil.is_empty()
+        && rest.starts_with('%')
+        && rest[1..].chars().next().is_some_and(is_raku_identifier_start)
+        && let Ok((r2, expr)) = hash_var(rest)
+    {
+        return Ok((
+            r2,
+            Expr::MethodCall {
+                target: Box::new(expr),
+                name: crate::symbol::Symbol::intern("list"),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+                sugar: false,
+            },
+        ));
+    }
     // `@@array` applies list context to an array variable.  It is equivalent
     // to `@array` for an ordinary array, but the second sigil still belongs to
     // the variable name: without this, the first `@` falls through as an
@@ -508,6 +526,24 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
+    }
+    // `%@array` applies hash context to an array variable (`.hash`).
+    if twigil.is_empty()
+        && rest.starts_with('@')
+        && rest[1..].chars().next().is_some_and(is_raku_identifier_start)
+        && let Ok((r2, expr)) = array_var(rest)
+    {
+        return Ok((
+            r2,
+            Expr::MethodCall {
+                target: Box::new(expr),
+                name: crate::symbol::Symbol::intern("hash"),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+                sugar: false,
+            },
+        ));
     }
     // `%%hash` applies hash context to a hash variable, and a bare `%%` is the
     // anonymous hash (an empty Hash term), mirroring `@@` above.  Only reached
