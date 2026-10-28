@@ -31,7 +31,7 @@ pub(crate) fn qualify_program(stmts: &mut [Stmt]) {
     for stmt in stmts.iter() {
         decls.visit_stmt(stmt);
     }
-    if !decls.opens_package && !decls.block_use {
+    if !decls.opens_package && !decls.block_use && !decls.shadows_core {
         return;
     }
     let mut pass = Qualify {
@@ -39,10 +39,14 @@ pub(crate) fn qualify_program(stmts: &mut [Stmt]) {
         local_names: decls.local_names,
         packages: Vec::new(),
         scopes: Vec::new(),
+        pinned: Vec::new(),
     };
+    let later = later_core_types(stmts);
     pass.in_scope(stmts, |pass, stmts| {
-        for stmt in stmts.iter_mut() {
+        for (stmt, later) in stmts.iter_mut().zip(later) {
+            pass.pinned.push(later);
             pass.visit_stmt_mut(stmt);
+            pass.pinned.pop();
         }
     });
 }
@@ -120,6 +124,32 @@ fn lexical_type(stmt: &Stmt) -> Option<&str> {
     }
 }
 
+/// For each statement of `body`, the names of core types that a `my` type
+/// declared at a later statement of `body` takes over.
+// Cost: O(n), n = statements of `body`.
+fn later_core_types(body: &[Stmt]) -> Vec<HashSet<String>> {
+    let mut later = vec![HashSet::new(); body.len()];
+    let mut seen_after: HashSet<String> = HashSet::new();
+    for (i, stmt) in body.iter().enumerate().rev() {
+        later[i] = seen_after.clone();
+        // A traited declaration is wrapped with its metadata.
+        let mut pending = vec![stmt];
+        while let Some(stmt) = pending.pop() {
+            match stmt {
+                Stmt::SyntheticBlock(inner) => pending.extend(inner.iter()),
+                _ => {
+                    if let Some(name) = lexical_type(stmt)
+                        && crate::builtin_types::catalog::builtin_type_info(name).is_some()
+                    {
+                        seen_after.insert(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    later
+}
+
 /// The stack of open packages, `None` for a `my`-scoped one.
 type Packages<'a> = Vec<Option<&'a str>>;
 
@@ -148,6 +178,9 @@ struct PackageTypes<'a> {
     opens_package: bool,
     /// A `use` below the unit's top level was seen.
     block_use: bool,
+    /// A `my` type takes the name of a core type (`my class DateTime is
+    /// DateTime`), so type positions before it must keep the core meaning.
+    shadows_core: bool,
     depth: usize,
 }
 
@@ -164,6 +197,7 @@ impl<'a> Visit<'a> for PackageTypes<'a> {
         }
         if let Some(name) = lexical_type(stmt) {
             self.local_names.insert(name.to_string());
+            self.shadows_core |= crate::builtin_types::catalog::builtin_type_info(name).is_some();
         }
         if let Stmt::VarDecl { name, .. } = stmt
             && name.starts_with(|c: char| c.is_alphabetic() || c == '_')
@@ -200,6 +234,11 @@ struct Qualify<'d> {
     /// the `my` classes it declares inside a package, under the storage name
     /// the run time registers them by (`Pkg::Name\u{0}<decl-id>`, ADR-0047).
     scopes: Vec<HashMap<String, String>>,
+    /// Per open statement list, the core-named `my` types declared at a
+    /// LATER statement than the one being visited. A type position names the
+    /// scope as it stands where it is written, so it keeps the core type and
+    /// is spelled `CORE::Name` (the `my class` is not yet in scope there).
+    pinned: Vec<HashSet<String>>,
 }
 
 impl Qualify<'_> {
@@ -278,6 +317,9 @@ impl Qualify<'_> {
     /// packages outwards.
     // Cost: O(d * |name|), d = package nesting depth.
     fn resolve(&self, name: &str) -> Option<String> {
+        if self.pinned.iter().any(|later| later.contains(name)) {
+            return Some(format!("CORE::{name}"));
+        }
         if let Some(full) = self.scopes.iter().rev().find_map(|scope| scope.get(name)) {
             return Some(full.clone());
         }
@@ -378,10 +420,13 @@ impl Qualify<'_> {
 
 impl VisitMut for Qualify<'_> {
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
+        let later = later_core_types(body);
         self.in_scope(body, |pass, body| {
-            for stmt in body.iter_mut() {
+            for (stmt, later) in body.iter_mut().zip(later) {
                 pass.note_block_use(stmt);
+                pass.pinned.push(later);
                 pass.visit_stmt_mut(stmt);
+                pass.pinned.pop();
             }
         });
     }

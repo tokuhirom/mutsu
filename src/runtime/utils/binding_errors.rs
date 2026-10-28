@@ -55,15 +55,18 @@ pub(crate) fn typecheck_binding_parameter_with_hint(
     hint: Option<&str>,
 ) -> RuntimeError {
     let got_type = crate::runtime::utils::got_type_name(value);
+    // A `CORE::`-pinned type (the parser's spelling for a name that a later
+    // `my` type takes over) reads as the type's own name, as in rakudo.
+    let shown = expected.strip_prefix("CORE::").unwrap_or(expected);
     // Unlike several sibling constructors in this file, the class name is
     // NOT baked into this message: `RuntimeError::typed` copies it verbatim into
     // both the top-level uncaught display AND the exception's own
     // `.message`/`.Str`, and raku's own text for this exception has no
     // "X::...: " prefix on either.
     let mut explain = if repr.is_empty() {
-        format!("expected {expected} but got {got_type}")
+        format!("expected {shown} but got {got_type}")
     } else {
-        format!("expected {expected} but got {got_type} {repr}")
+        format!("expected {shown} but got {got_type} {repr}")
     };
     if let Some(hint) = hint {
         explain.push_str(". ");
