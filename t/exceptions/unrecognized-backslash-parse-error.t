@@ -12,7 +12,7 @@ throws-like { EVAL Q{my $x = "a\qq[b\z]"; 1} }, X::Backslash::UnrecognizedSequen
     'nested inline quote';
 throws-like { EVAL 'my $r = 1; "ok"; if 0 { say "x\Ay" }; 1' }, X::Backslash::UnrecognizedSequence,
     'a branch that never runs is still rejected';
-throws-like { EVAL 'my $u = <<"END";' ~ "\nbad \\z\nEND\n" ~ '1' }, X::Backslash::UnrecognizedSequence,
+throws-like { EVAL 'my $u = qq:to/END/;' ~ "\nbad \\z\nEND\n" ~ '1' }, X::Backslash::UnrecognizedSequence,
     'interpolating heredoc';
 
 # Known escapes and non-word escapes are untouched.
