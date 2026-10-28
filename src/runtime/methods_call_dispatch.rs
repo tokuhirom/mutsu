@@ -325,6 +325,18 @@ impl Interpreter {
         }
     }
 
+    /// Whether `arg` is an object an `IO::Path` segment method (`add`,
+    /// `child`, `sibling`) must first stringify through its `Str` (an
+    /// `IO::Path` argument stringifies natively).
+    // Cost: O(1).
+    fn io_path_segment_needs_str(arg: &Value) -> bool {
+        let inner = arg.descalarize();
+        matches!(
+            inner.view(),
+            ValueView::Instance { .. } | ValueView::Mixin(..)
+        ) && !Self::is_io_path_value(inner)
+    }
+
     /// `.raku` of a `Scalar` container: the `$` sigil of an itemized aggregate
     /// shows, an element whose repr needs method dispatch (`$[Foo.new]`) is
     /// rendered through it, and an itemized lazy sequence renders the prefix
@@ -440,6 +452,25 @@ impl Interpreter {
         if Self::renders_receiver_elements(method) && Self::holds_nested_proxy(&target) {
             let resolved = self.resolve_proxies_in_value(&target)?;
             return self.call_method_with_values_inner(resolved, method, args, reify_seq);
+        }
+        // An `IO::Path` joins a segment object by its `Str`, which is pure in
+        // the rows: resolve an instance argument to the string it answers
+        // first (a `Str` answering an object dies, as in rakudo).
+        if matches!(method, "add" | "child" | "sibling")
+            && Self::is_io_path_value(&target)
+            && args.iter().any(Self::io_path_segment_needs_str)
+        {
+            let mut resolved = Vec::with_capacity(args.len());
+            for arg in &args {
+                let inner = arg.descalarize();
+                if Self::io_path_segment_needs_str(arg) {
+                    let s = self.call_method_with_values_unviewed(inner.clone(), "Str", vec![])?;
+                    resolved.push(Value::str(crate::runtime::unbox_str_answer(&s)?));
+                } else {
+                    resolved.push(arg.clone());
+                }
+            }
+            return self.call_method_with_values_inner(target, method, resolved, reify_seq);
         }
         // A quant hash renders each element through the element's own
         // `Str`/`gist` (`quanthash_element_stringify.rs`).
