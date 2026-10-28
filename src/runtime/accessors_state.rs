@@ -1357,6 +1357,8 @@ impl Interpreter {
     /// dispatch context when the receiver is a user-defined HOW class (so
     /// `callsame` can reach the native metamodel method as the last
     /// candidate). Always pair with `pop_method_samewith_context`.
+    // Cost: O(1) when no unit mentions `samewith` or a deferral builtin;
+    // otherwise O(a), a = the call's argument count (copied into the context).
     pub(crate) fn push_method_samewith_context(
         &mut self,
         receiver_class: &str,
@@ -1364,6 +1366,13 @@ impl Interpreter {
         args: &[Value],
         invocant: Option<Value>,
     ) {
+        // Nothing in the program can read the invocant, the arguments or the
+        // metamodel entry below (see `opcode::samewith_context_possible`): the
+        // only reader left wants the routine name for an error message.
+        if !crate::opcode::samewith_context_possible() {
+            self.push_samewith_context(method_name, None, None);
+            return;
+        }
         // A role mixed into a class's native HOW (`$class.HOW does
         // SomeHOWRole`, Staticish) dispatches with the role as
         // `receiver_class`; its `callsame` must still reach the native
