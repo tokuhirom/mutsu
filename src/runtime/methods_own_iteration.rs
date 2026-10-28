@@ -44,11 +44,15 @@ const VIA_LIST: [&str; 21] = [
     "minpairs",
 ];
 
+/// What `Sequence` answers from its elements besides the [`VIA_LIST`] methods.
+const VIA_SEQUENCE: [&str; 4] = ["values", "reduce", "produce", "Numeric"];
+
 /// Where a receiver's elements come from.
 enum Source {
     /// Its own `iterator`: the [`VIA_ITERATOR`] methods, and `flat` when it
-    /// is `Iterable` (the role declares `flat` on the iterator).
-    Iterator { iterable: bool },
+    /// is `Iterable` (the role declares `flat` on the iterator). A `Sequence`
+    /// also answers the [`VIA_LIST`] methods: the role's `list` is its iterator.
+    Iterator { iterable: bool, sequence: bool },
     /// Its own `list`: those and the [`VIA_LIST`] methods.
     List,
 }
@@ -58,8 +62,10 @@ impl Source {
     // Cost: O(m), m = names in the two sets.
     fn reads(&self, method: &str) -> bool {
         match self {
-            Source::Iterator { iterable } => {
-                VIA_ITERATOR.contains(&method) || (*iterable && method == "flat")
+            Source::Iterator { iterable, sequence } => {
+                VIA_ITERATOR.contains(&method)
+                    || ((*iterable || *sequence) && method == "flat")
+                    || (*sequence && (VIA_LIST.contains(&method) || VIA_SEQUENCE.contains(&method)))
             }
             Source::List => VIA_ITERATOR.contains(&method) || VIA_LIST.contains(&method),
         }
@@ -106,7 +112,11 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !VIA_ITERATOR.contains(&method) && !VIA_LIST.contains(&method) && method != "flat" {
+        if !VIA_ITERATOR.contains(&method)
+            && !VIA_LIST.contains(&method)
+            && !VIA_SEQUENCE.contains(&method)
+            && method != "flat"
+        {
             return None;
         }
         let source = self.iteration_source(target, method)?;
@@ -136,6 +146,7 @@ impl Interpreter {
         self.has_user_method(class, "iterator")
             .then(|| Source::Iterator {
                 iterable: self.class_does_role(class, "Iterable"),
+                sequence: self.class_does_role(class, "Sequence"),
             })
     }
 
@@ -155,12 +166,35 @@ impl Interpreter {
             if self.has_user_method(&class.resolve(), "list") {
                 return Some(Source::List);
             }
-            return Some(Source::Iterator { iterable: true });
+            return Some(Source::Iterator {
+                iterable: true,
+                sequence: false,
+            });
         }
         match target.view() {
-            ValueView::Mixin(..) => (self.mixin_composes_method(target, "iterator")
-                && !self.mixin_composes_method(target, method))
-            .then_some(Source::Iterator { iterable: false }),
+            ValueView::Mixin(inner, _) => {
+                if self.mixin_composes_method(target, method) {
+                    return None;
+                }
+                if self.mixin_composes_method(target, "iterator") {
+                    return Some(Source::Iterator {
+                        iterable: false,
+                        sequence: false,
+                    });
+                }
+                // A `Sequence` class's own `iterator` is the mixin's too.
+                let ValueView::Instance { class_name, .. } = inner.view() else {
+                    return None;
+                };
+                let class = class_name.resolve();
+                if self.has_user_method(&class, method) {
+                    return None;
+                }
+                match self.class_source(&class)? {
+                    source @ Source::Iterator { sequence: true, .. } => Some(source),
+                    _ => None,
+                }
+            }
             ValueView::Instance {
                 class_name,
                 attributes,
@@ -179,7 +213,10 @@ impl Interpreter {
                     return Some(Source::List);
                 }
                 if crate::runtime::nqp_ops_list::is_iteration_buffer(target) {
-                    return Some(Source::Iterator { iterable: false });
+                    return Some(Source::Iterator {
+                        iterable: false,
+                        sequence: false,
+                    });
                 }
                 self.class_source(&class)
             }
@@ -236,6 +273,10 @@ impl Interpreter {
                     self.dispatch_mixin_method_call(target, "iterator", Vec::new())
                 {
                     result?
+                } else if matches!(target.view(), ValueView::Mixin(..)) {
+                    // A class `iterator` under a mixin runs on the mixin, which
+                    // delegates to the wrapped instance.
+                    self.call_method_with_values(target.clone(), "iterator", Vec::new())?
                 } else {
                     self.try_compiled_method_or_interpret(target.clone(), "iterator", vec![])?
                 };
