@@ -77,7 +77,7 @@ pub(crate) struct MethodEntry {
     /// The proto declared `is hidden-from-backtrace`: its dispatch frame is
     /// left out of a `Backtrace` like any other hidden routine's.
     pub(crate) proto_hidden_from_backtrace: bool,
-    pub(crate) proto: Option<FunctionDef>,
+    pub(crate) proto: Option<Arc<FunctionDef>>,
 }
 
 /// The grammar token/rule table's shape: name -> its registered overloads.
@@ -905,7 +905,7 @@ impl Registry {
             owner: Symbol::intern(class_name),
             name: Symbol::intern(method_name),
         };
-        self.method_entries.entry(key).or_default().proto = Some(def);
+        self.method_entries.entry(key).or_default().proto = Some(Arc::new(def));
         self.proto_compiled_cache.remove(&key);
         self.has_proto_methods = true;
         self.bump_method_generation();
@@ -960,7 +960,7 @@ impl Registry {
         &self,
         class_name: &str,
         method_name: &str,
-    ) -> Option<FunctionDef> {
+    ) -> Option<Arc<FunctionDef>> {
         self.method_entries
             .get(&MethodEntryKey {
                 owner: Symbol::intern(class_name),

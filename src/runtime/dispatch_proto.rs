@@ -275,7 +275,7 @@ impl Interpreter {
         &mut self,
         class_name: &str,
         method_name: &str,
-    ) -> Option<(String, FunctionDef)> {
+    ) -> Option<(String, Arc<FunctionDef>)> {
         if !self.registry().has_proto_methods {
             return None;
         }
@@ -297,7 +297,7 @@ impl Interpreter {
         owner_class: &str,
         method_name: &str,
         args: Vec<Value>,
-        proto: FunctionDef,
+        proto: Arc<FunctionDef>,
     ) -> Result<Value, RuntimeError> {
         // A `{*}`-only proto never binds its own signature: Rakudo hands the
         // arguments straight to the candidates, so a call only a candidate
@@ -306,7 +306,7 @@ impl Interpreter {
         let mut method_def = MethodDef {
             value_prototype: None,
             syms: Default::default(),
-            lexical_package: proto.package,
+            lexical_package: proto.package.clone(),
             params: if only_star { Vec::new() } else { proto.params.clone() },
             param_defs: if only_star { Vec::new() } else { proto.param_defs.clone() },
             // A `{*}`-only body is the routine-level onlystar: the bare `*`
@@ -338,7 +338,7 @@ impl Interpreter {
                     .registry()
                     .method_entry_proto_hidden(owner_class, method_name),
             captured_env: None,
-            source_file: proto.source_file,
+            source_file: proto.source_file.clone(),
             role_param_bindings: None,
             nested_capture_index: None,
             captured_readonly: None,

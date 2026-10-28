@@ -234,7 +234,7 @@ impl Interpreter {
                         is_submethod: false,
                         is_hidden_from_backtrace: false,
                         captured_env: None,
-                        source_file: proto.source_file,
+                        source_file: proto.source_file.clone(),
                         role_param_bindings: None,
                         nested_capture_index: None,
                         captured_readonly: None,
