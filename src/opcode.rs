@@ -1548,6 +1548,10 @@ pub(crate) enum OpCode {
     /// array's element type (see `Expr::DeitemizeForBind`). Falls back to plain
     /// list flattening for non-array values.
     DeitemizeForBind,
+    /// Pop the bound value's source-variable names and the bound value and
+    /// push the bind marker an indexed `:=` hands the index-assign ops (see
+    /// `Interpreter::unwrap_bind_index_value`).
+    IndexBindValue,
     /// Strip ONE level of itemization for a zen slice (`$a[]` / `$a<>`):
     /// an itemized Array/List drops its Scalar container (kind flag) so a
     /// following list context flattens it; a `Scalar` wrapper unwraps.

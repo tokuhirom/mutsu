@@ -129,7 +129,7 @@ impl Interpreter {
         // IDENTITY on a plain scalar rvalue, which is what lets this lane skip
         // the body's rvalue hooks. Deliberately the same allow-list as the
         // single-subscript lanes: an aggregate rvalue itemizes and can be the
-        // target, a `Proxy` rvalue must FETCH, and a `__mutsu_bind_index_value`
+        // target, a `Proxy` rvalue must FETCH, and a bind-marker
         // marker is a `:=` bind installing a container rather than a store.
         if !matches!(
             self.stack[stack_len - 3].view(),

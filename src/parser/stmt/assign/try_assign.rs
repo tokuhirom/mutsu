@@ -294,7 +294,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 b'%' => Expr::HashVar(var),
                 _ => Expr::Var(var),
             };
-            // Wrap the RHS in the `__mutsu_bind_index_value` marker so the
+            // Wrap the RHS in `Expr::IndexBindValue` so the
             // IndexAssign VM path takes *bind* semantics (write-time values, no
             // boundary truncation) rather than plain assignment — matching the
             // statement-level `:=` handler (`simple_expr_stmt::core`). Without

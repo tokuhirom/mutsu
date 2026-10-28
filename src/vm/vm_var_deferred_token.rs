@@ -64,7 +64,7 @@ impl Interpreter {
         let raw_val = self.stack[base].clone();
         // A `:=` bind RHS arrives wrapped in a marker pair and installs a shared
         // cell at the element — a different mechanism, left to its own handler.
-        if matches!(raw_val.view(), ValueView::Pair(name, _) if name == "__mutsu_bind_index_value")
+        if Self::is_bind_index_value(&raw_val)
         {
             return None;
         }

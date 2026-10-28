@@ -307,7 +307,7 @@ impl Interpreter {
         let val_ref = &self.stack[stack_len - 2];
         // A `:=` element bind arrives wrapped in this marker Pair; `Nil` needs
         // the full path's container-default / type-object handling.
-        if matches!(val_ref.view(), ValueView::Pair(name, _) if name == "__mutsu_bind_index_value")
+        if Self::is_bind_index_value(val_ref)
             || matches!(val_ref.view(), ValueView::Nil)
         {
             return None;

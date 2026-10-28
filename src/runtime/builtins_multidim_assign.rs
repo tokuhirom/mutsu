@@ -96,13 +96,7 @@ impl Interpreter {
         }
         let index = args[2 + offset].clone();
         let raw_value = args[3 + offset].clone();
-        let is_bind = matches!(
-            raw_value.view(),
-            ValueView::Pair(name, _) if name == "__mutsu_bind_index_value"
-        ) || matches!(
-            raw_value.view(),
-            ValueView::ValuePair(name, _) if name.as_str() == Some("__mutsu_bind_index_value")
-        );
+        let is_bind = Self::is_bind_index_value(&raw_value);
         let (value, bind_source) = Self::unwrap_bind_index_value(raw_value);
         let var_name = args[4 + offset].to_string_value();
 

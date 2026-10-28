@@ -145,6 +145,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::SeqToList
             | OpCode::ListToSeq
             | OpCode::Itemize
+            | OpCode::IndexBindValue
             | OpCode::DeitemizeZen
             | OpCode::Decont
             | OpCode::DerefContainer

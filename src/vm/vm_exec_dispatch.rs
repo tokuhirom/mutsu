@@ -3461,6 +3461,16 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1).
+            OpCode::IndexBindValue => {
+                let sources = self.stack.pop().unwrap_or(Value::NIL);
+                let value = self.stack.pop().unwrap_or(Value::NIL);
+                // The call-site `VarRef` tag is provenance; the marker carries
+                // the variable's value or cell.
+                let value = Self::unwrap_var_ref_value(value);
+                self.stack.push(Self::bind_index_marker(value, sources));
+                *ip += 1;
+            }
+            // Cost: O(1).
             OpCode::DeitemizeZen => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 // A lazy match is itself (`$/<>`); its `view()` would build it.

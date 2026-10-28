@@ -51,6 +51,7 @@ impl Interpreter {
             | OpCode::Decont
             | OpCode::DecontListElems
             | OpCode::DeitemizeForBind
+            | OpCode::IndexBindValue
             | OpCode::DeitemizeZen
             | OpCode::DerefContainer
             | OpCode::Div

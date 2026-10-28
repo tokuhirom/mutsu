@@ -1396,10 +1396,11 @@ impl Compiler {
                 self.code.emit(OpCode::DeitemizeForBind);
             }
             Expr::IndexBindValue(rhs) => {
-                // The VM takes the bound value and its source variables as the
-                // marker call's two arguments; the sources derive from the RHS.
-                let sources = crate::parser::bind_source_metadata_expr(rhs);
-                self.compile_expr(&Self::index_bind_marker_call(rhs.as_ref().clone(), sources));
+                // The VM takes the bound value and its source variables; the
+                // sources derive from the RHS.
+                self.compile_call_arg(rhs);
+                self.compile_call_arg(&crate::parser::bind_source_metadata_expr(rhs));
+                self.code.emit(OpCode::IndexBindValue);
             }
             Expr::PositionalPair(inner) => {
                 self.compile_expr(inner);
