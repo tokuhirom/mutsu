@@ -39,7 +39,7 @@ impl Interpreter {
     ) -> (usize, usize, usize, usize) {
         let mut rank = (0, 0, 0, 0);
         let mut positional_index = 0;
-        for p in &def.param_defs {
+        for p in def.param_defs.iter() {
             if !p.is_invocant && !p.named && !p.is_variadic() {
                 let shared = positional_index < shared_positions;
                 positional_index += 1;

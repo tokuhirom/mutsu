@@ -149,8 +149,8 @@ pub(super) fn make_delegation_method(attr_var_name: &str, target_method: &str) -
         value_prototype: None,
         syms: Default::default(),
         lexical_package: crate::symbol::wk::global_package(),
-        params: vec!["@_".to_string(), "%_".to_string()],
-        param_defs: vec![delegation_slurpy_param(), delegation_double_slurpy_param()],
+        params: (vec!["@_".to_string(), "%_".to_string()]).into(),
+        param_defs: (vec![delegation_slurpy_param(), delegation_double_slurpy_param()]).into(),
         body: std::sync::Arc::new(Vec::new()),
         is_rw: false,
         is_raw: false,
@@ -462,7 +462,8 @@ pub(super) fn substitute_type_params_in_method(
         .param_defs
         .iter()
         .map(|pd| substitute_param_def(pd, type_subs))
-        .collect();
+        .collect::<Vec<_>>()
+        .into();
     MethodDef {
         value_prototype: method.value_prototype.clone(),
         syms: Default::default(),
@@ -555,7 +556,8 @@ pub(super) fn resolve_role_pseudo_types_in_method(
         .param_defs
         .iter()
         .map(|pd| resolve_param_def(pd, class_name, role_name))
-        .collect();
+        .collect::<Vec<_>>()
+        .into();
     // The rebuilt `param_defs` must not keep a name cache filled from the old.
     method.syms = Default::default();
     method.return_type = method

@@ -307,8 +307,8 @@ impl Interpreter {
             value_prototype: None,
             syms: Default::default(),
             lexical_package: proto.package.clone(),
-            params: if only_star { Vec::new() } else { proto.params.clone() },
-            param_defs: if only_star { Vec::new() } else { proto.param_defs.clone() },
+            params: (if only_star { Vec::new() } else { proto.params.clone() }).into(),
+            param_defs: (if only_star { Vec::new() } else { proto.param_defs.clone() }).into(),
             // A `{*}`-only body is the routine-level onlystar: the bare `*`
             // in it is the dispatch (the onlystar *term* in a longer body is
             // parsed into the dispatch call already, #10746).

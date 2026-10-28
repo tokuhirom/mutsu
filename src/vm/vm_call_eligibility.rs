@@ -637,7 +637,7 @@ impl Interpreter {
         // is the method-call equivalent of the sub path's varref container arg.
         let arg_sources = self.pending_call_arg_sources();
         let mut arg_idx = 0usize;
-        for pd in &method_def.param_defs {
+        for pd in method_def.param_defs.iter() {
             if pd.is_invocant || pd.named {
                 continue;
             }

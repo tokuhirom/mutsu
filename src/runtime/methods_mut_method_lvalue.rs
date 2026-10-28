@@ -2058,7 +2058,7 @@ impl Interpreter {
         };
         bind(self, "self".to_string(), target.clone());
         let mut ai = 0;
-        for pd in &method_def.param_defs {
+        for pd in method_def.param_defs.iter() {
             if pd.is_invocant || pd.named || pd.slurpy {
                 continue;
             }

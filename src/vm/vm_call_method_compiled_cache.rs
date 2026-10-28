@@ -434,7 +434,7 @@ impl Interpreter {
                 if def.is_multi {
                     any_multi = true;
                 }
-                for pd in &def.param_defs {
+                for pd in def.param_defs.iter() {
                     if pd.where_constraint.is_some() || pd.literal_value.is_some() {
                         value_dependent = true;
                         break 'outer;

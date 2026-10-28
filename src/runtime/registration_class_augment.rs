@@ -256,8 +256,8 @@ impl Interpreter {
                         value_prototype: prototype.clone(),
                         syms: Default::default(),
                         lexical_package: self.current_package_sym(),
-                        params: effective_params.clone(),
-                        param_defs: effective_param_defs.clone(),
+                        params: (effective_params.clone()).into(),
+                        param_defs: (effective_param_defs.clone()).into(),
                         body: std::sync::Arc::new(if needs_placeholder_die {
                             crate::method_signature_shared::direct_positional_placeholder_die_body()
                         } else {
