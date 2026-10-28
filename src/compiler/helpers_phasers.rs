@@ -511,11 +511,17 @@ impl Compiler {
                     // A trailing assignment (`$n += 1`, `$x = 5`) evaluates to the
                     // assigned container, so the body's value is the variable's
                     // post-assignment value, not an undefined `Nil`.
-                    Stmt::Assign { name, .. } => {
+                    Stmt::Assign { name, .. } | Stmt::VarDecl { name, .. } => {
                         loop_body.push(last.clone());
+                        // An aggregate target is a defined container, not a value to read back.
+                        let value = if name.starts_with(['@', '%']) {
+                            Expr::Literal(Value::TRUE)
+                        } else {
+                            Expr::Var(name.clone())
+                        };
                         loop_body.push(Stmt::Assign {
                             name: cap_var,
-                            expr: Expr::Var(name.clone()),
+                            expr: value,
                             op: AssignOp::Assign,
                             target_is_sigilless: false,
                         });
