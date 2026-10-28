@@ -434,15 +434,22 @@ impl Interpreter {
         // as a plain container. Instance-internal mutation travels through
         // the shared attribute cell, so no write-back is needed.
         if let ValueView::Instance { class_name, .. } = current.view() {
+            // An Int index may be either bracket (`[1]` or `{1}`), so the other
+            // protocol method stands in when the preferred one is absent; any
+            // other index is an associative subscript (`<k>`, `{"k"}`) and
+            // never reaches `ASSIGN-POS` -- Red's ColumnMethods has an
+            // ASSIGN-POS and serves `<k>` through AT-KEY.
             let (primary, secondary) = if matches!(index.view(), ValueView::Int(_)) {
-                ("ASSIGN-POS", "ASSIGN-KEY")
+                ("ASSIGN-POS", Some("ASSIGN-KEY"))
             } else {
-                ("ASSIGN-KEY", "ASSIGN-POS")
+                ("ASSIGN-KEY", None)
             };
             let cn = class_name.resolve();
             let m = if self.has_user_method(&cn, primary) {
                 Some(primary)
-            } else if self.has_user_method(&cn, secondary) {
+            } else if let Some(secondary) = secondary
+                && self.has_user_method(&cn, secondary)
+            {
                 Some(secondary)
             } else {
                 None
@@ -933,6 +940,24 @@ impl Interpreter {
             ValueView::Hash(arc) => Some(arc.clone()),
             _ => None,
         };
+
+        // The accessor answered an object that declares the subscript protocol
+        // itself (Red's `.num1<k>:delete`, `.num1` a column whose `DELETE-KEY`
+        // records the removal): the object owns the delete, nothing is written
+        // back.
+        // (An `is rw` accessor answers a Proxy: the object is what it FETCHes.)
+        let protocol_object = if current.is_proxy_value() {
+            self.auto_fetch_proxy(&current)?
+        } else {
+            current.clone()
+        };
+        if let Some(answer) = self.delete_through_subscript_protocol(
+            &protocol_object,
+            &index,
+            crate::opcode::SubscriptKind::Unknown,
+        )? {
+            return Ok(answer);
+        }
 
         let (removed, updated) = match current.view() {
             ValueView::Hash(h) => {

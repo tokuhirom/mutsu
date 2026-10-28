@@ -115,18 +115,6 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             modifier,
             ..
         } => {
-            if name == "AT-POS"
-                && args.len() == 1
-                && !matches!(target.as_ref(), Expr::Var(name) | Expr::BareWord(name) if name == "self")
-            {
-                return Expr::IndexAssign {
-                    target,
-                    index: Box::new(args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL))),
-                    value: Box::new(value),
-                    is_positional: true,
-                    spelling: Default::default(),
-                };
-            }
             // Match the expression-context lowering in `paren.rs` (NOT the
             // statement-level `lvalue_assign_to_expr`, which drops a
             // `BareWord` target to `None`): a sigilless raw binding (`\h`)

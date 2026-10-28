@@ -994,6 +994,12 @@ impl Interpreter {
         if matches!(target.view(), ValueView::Array(..)) && Self::is_type_object_index(&idx) {
             return Err(Self::type_object_index_error());
         }
+        // An object reached through an expression (`$m.num1<k>:delete`,
+        // `make()<k>:delete`) that declares the subscript protocol itself.
+        if let Some(answer) = self.delete_through_subscript_protocol(&target, &idx, kind)? {
+            self.stack.push(answer);
+            return Ok(());
+        }
         // Note: We cannot distinguish Bag from BagHash or Set from SetHash
         // in the expression form (no variable metadata), so immutability
         // checks for Bag/Set are only in the named op path.
