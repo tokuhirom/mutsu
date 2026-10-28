@@ -65,17 +65,12 @@ pub(crate) fn lower_compound_statement(node: CompoundAssign) -> Result<Stmt, PEr
             return Ok(Stmt::Expr(bracketed_meta_expression(node)?));
         }
         let (name, value) = meta_assignment(node)?;
-        return Ok(
-            match rewrite_scalar_assignment_stmt_as_sink(name.clone(), value.clone()) {
-                Some(stmt) => stmt,
-                None => Stmt::Assign {
-                    name,
-                    expr: value,
-                    op: AssignOp::Assign,
-                    target_is_sigilless: false,
-                },
-            },
-        );
+        return Ok(Stmt::Assign {
+            name,
+            expr: value,
+            op: AssignOp::Assign,
+            target_is_sigilless: false,
+        });
     }
     if matches!(node.meta, CompoundMeta::Reverse | CompoundMeta::Set) {
         return Ok(Stmt::Expr(lower_compound_expression(node)?));
