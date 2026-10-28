@@ -2942,12 +2942,7 @@ impl Interpreter {
         // Proxy itself (AttrX::Mooish's `AttrProxy`).
         let auto_fetch = !matches!(
             name,
-            "substr-rw"
-                | "subbuf-rw"
-                | "callwith"
-                | "callsame"
-                | "nextwith"
-                | "nextsame"
+            "substr-rw" | "subbuf-rw" | "callwith" | "callsame" | "nextwith" | "nextsame"
         );
         let result = result?;
         if name == "make" {
