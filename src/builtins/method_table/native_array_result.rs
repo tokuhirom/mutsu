@@ -45,7 +45,8 @@ pub(crate) fn retype(receiver: &Value, method: &str, answer: Value) -> Value {
     let ValueView::Seq(body) = answer.view() else {
         return answer;
     };
-    if body.needs_touch() || body.has_deferred_source() {
+    // Only an eagerly produced answer: a deferred source would need pulling.
+    if !body.is_settled_for_rows() {
         return answer;
     }
     let mut out = ArrayData::new(body.live_generation().to_vec());
