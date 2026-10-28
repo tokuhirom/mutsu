@@ -6197,6 +6197,12 @@ pub(super) fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
             Some(tree) if tree.declaration_kind.is_some() => anon_regex_declaration(v, tree),
             _ => Err(unsupported("literal Regex without a declarator tree")),
         },
+        // `∅`
+        ValueView::Set(set, false) if set.iter().next().is_none() => Ok(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::TermEmptySet,
+            fields: Vec::new(),
+        }),
         other => Err(unsupported(&format!("literal {other:?}"))),
     }
 }
