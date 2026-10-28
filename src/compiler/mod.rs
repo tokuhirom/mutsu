@@ -1622,12 +1622,6 @@ pub(crate) struct Compiler {
     /// invocant. Inherited by nested blocks and closures, exactly like the
     /// lexical scope it describes.
     pub(crate) self_is_signature_param: bool,
-    /// When true, the current VarDecl is a `:=` bind whose target is a
-    /// SIGILLESS term (`my \a := ...`, or a sigilless target of a
-    /// list-destructuring bind). Set by the enclosing `SyntheticBlock`, which is
-    /// the only place that knows -- the trailing `MarkSigilless` compiles after
-    /// the declaration. One-shot.
-    sigilless_bind_vardecl: bool,
     /// True while compiling a terminal subscript whose consumer settles its own
     /// writability from the element it receives — the RHS of a `:=`
     /// DECLARATION (`my \a := ...`, `my $x := ...`) and a `return-rw` operand —
@@ -2170,7 +2164,6 @@ impl Compiler {
             lexically_in_method: false,
             capture_enclosing_method_named_args: false,
             self_is_signature_param: false,
-            sigilless_bind_vardecl: false,
             raw_list_elem_terminal: false,
             do_stmt_yields_value: false,
             scalar_bind_autovivify: false,

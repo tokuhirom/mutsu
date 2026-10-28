@@ -449,7 +449,10 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
             custom_traits.push(("default".to_string(), Some(def_expr.clone())));
         }
         let decl = Stmt::VarDecl {
-            marks: Default::default(),
+            marks: crate::ast::var_marks::VarMarks {
+                sigilless_decl: binds_element && dvar.sigilless,
+                ..Default::default()
+            },
             anonymous: false,
             name: dvar.name.clone(),
             expr,

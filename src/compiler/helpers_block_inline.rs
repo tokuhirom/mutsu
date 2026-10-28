@@ -277,8 +277,6 @@ impl Compiler {
             self.pop_dynamic_scope_lexical(saved);
             return;
         }
-        // See the matching flag in `compile_stmt`'s `Stmt::SyntheticBlock` arm.
-        let has_mark_sigilless = stmts.iter().any(|s| matches!(s, Stmt::MarkSigilless(_)));
         // Names marked readonly by a preceding `MarkReadonly` statement. A `:=`
         // scalar bind to a readonly RHS (`my $x := 42`) is lowered to
         // `[MarkReadonly(x), VarDecl{__scalar_bind}]`; when that VarDecl is in
@@ -456,7 +454,6 @@ impl Compiler {
                     Stmt::VarDecl { name, marks, .. }
                         if marks.bound && !name.starts_with(['@', '%']) =>
                     {
-                        self.sigilless_bind_vardecl = has_mark_sigilless;
                         self.compile_stmt(stmt);
                         self.emit_get_named_var(name);
                         self.pop_dynamic_scope_lexical(saved);
@@ -696,9 +693,6 @@ impl Compiler {
                     }
                     _ => {}
                 }
-            }
-            if matches!(stmt, Stmt::VarDecl { marks, .. } if marks.bound) {
-                self.sigilless_bind_vardecl = has_mark_sigilless;
             }
             self.decl_is_term =
                 matches!(stmt, Stmt::VarDecl { name, .. } if term_names.contains(&name.as_str()));

@@ -1141,7 +1141,7 @@ impl Compiler {
                 // bound it to, which only the runtime knows. The verdict is
                 // taken with the bind source still on the stack, by the
                 // `MarkSigillessBindSource` the declaration itself emits (see
-                // `sigilless_bind_vardecl` in the `Stmt::VarDecl` arm); this op
+                // `bind_vardecl && marks.sigilless_decl` in the `Stmt::VarDecl` arm); this op
                 // writes the readonly marker, and has to run AFTER the store
                 // because a declaration clears that marker.
                 let name_idx = self
@@ -1246,8 +1246,7 @@ impl Compiler {
                 // (e.g. `@state` in `my @x := do { my uint8 @state = 0..255;
                 // ...; @state }`).
                 let bind_vardecl = marks.bound;
-                let sigilless_bind_vardecl = self.sigilless_bind_vardecl;
-                self.sigilless_bind_vardecl = false;
+                let sigilless_bind_vardecl = bind_vardecl && marks.sigilless_decl;
                 // `my &infix:<+> = ...` installs a user operator just like a
                 // `sub infix:<+>` does — disable constant folding (ADR-0006 §2.1).
                 self.note_operator_decl(name);
@@ -1897,7 +1896,7 @@ impl Compiler {
                     // check wrapped in a VarRef, which only the bind check
                     // looks through. A sigilless name in a list declaration
                     // (`my (\b where "x") = ...`) is assigned, not bound.
-                    if sigilless_bind_vardecl || marks.sigilless_decl {
+                    if marks.sigilless_decl {
                         self.code
                             .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
                     } else if scalar_bind_decont && !name.starts_with('@') && !name.starts_with('%')

@@ -6,7 +6,7 @@ impl Compiler {
     pub(super) fn compile_synthetic_stmt(&mut self, stmts: &[Stmt]) {
         // Detect `:=` bind context via a bound declaration: the parser wraps `my @a :=
         // expr` (and the `%`/`$` forms) in a SyntheticBlock that starts with
-        // it. Set bind_vardecl so the VarDecl compilation emits
+        // it. The VarDecl compilation reads the mark and emits
         // MarkBindContext before SetLocal, making the VM preserve the
         // container type (e.g. List stays List).
         let restore_pointy_given_topic = stmts
@@ -17,7 +17,6 @@ impl Compiler {
         // element's mutability is settled (see
         // `OpCode::IndexAutovivifyLazyTerminal`). It compiles AFTER the
         // declaration, so the block has to tell the VarDecl itself.
-        let has_mark_sigilless = stmts.iter().any(|s| matches!(s, Stmt::MarkSigilless(_)));
         // The names this expansion declares as sigilless TERMS: a `VarDecl`
         // its `MarkSigilless`/`MarkSigillessReadonly` names is stored under
         // the term key (ADR-12441).
@@ -40,11 +39,9 @@ impl Compiler {
         for s in stmts {
             if let Stmt::VarDecl { name, marks, .. } = s
                 && marks.bound
+                && name.starts_with('@')
             {
-                if name.starts_with('@') {
-                    bound_array_var = Some(name.clone());
-                }
-                self.sigilless_bind_vardecl = has_mark_sigilless;
+                bound_array_var = Some(name.clone());
             }
             // Before compiling a VarDecl that will be followed by
             // MarkSigillessReadonly, clear the old readonly flag so
