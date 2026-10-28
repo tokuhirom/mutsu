@@ -956,6 +956,10 @@ impl Interpreter {
                 // to it rather than report a missing `&foo`.
                 && !self.package_namespace_exists(Interpreter::strip_pseudo_packages(name))
                 && !self.export_namespace_exists(name)
+                // A `package`/`module` the name itself declares (`module A::b`
+                // in a module file, read from a sub of that file, whose frame
+                // carries none of the package's `our` members).
+                && !self.is_declared_package(name)
             {
                 // The last segment starts with lowercase, indicating a qualified
                 // function/sub call (e.g. `Our::Package::pkg`). If the prefix
