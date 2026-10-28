@@ -59,6 +59,7 @@ impl HashData {
             default: None,
             descriptor_name: None,
             bare_values: false,
+            storage_cells: false,
         }
     }
 
