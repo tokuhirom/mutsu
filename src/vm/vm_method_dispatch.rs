@@ -267,11 +267,16 @@ impl Interpreter {
             // `:$x`, attributive `:$!x`/`:@!a`/`:%!h` via the live attribute
             // cell). Everything else named-shaped bails via this predicate.
             let base_is_instance = matches!(base.view(), ValueView::Instance { .. });
-            let named_params_fast_ok = method_def.param_defs.iter().all(|pd| {
+            let named_params_fast_ok = method_def.param_defs.iter().enumerate().all(|(idx, pd)| {
                 if pd.is_invocant || !pd.named {
                     return true;
                 }
-                Self::named_param_fast_eligible(pd, &args, base_is_instance)
+                Self::named_param_fast_eligible(
+                    pd,
+                    &args,
+                    base_is_instance,
+                    method_def.named_fast(idx),
+                )
             });
             // A named `@`/`%`-container argument bound to a plain named scalar
             // param shares the caller's container (slow-path ContainerRef
@@ -643,8 +648,7 @@ impl Interpreter {
         }
 
         // Skip invocant param, bind remaining
-        let mut bind_params = Vec::new();
-        let mut bind_param_defs = Vec::new();
+        let mut skipped_invocant = false;
         for (idx, param_name) in method_def.params.iter().enumerate() {
             let is_invocant = method_def
                 .param_defs
@@ -652,6 +656,7 @@ impl Interpreter {
                 .map(|pd| pd.is_invocant)
                 .unwrap_or(false);
             if is_invocant {
+                skipped_invocant = true;
                 if let Some(pd) = method_def.param_defs.get(idx) {
                     // `method m(::T Foo:D: ...)` captures the invocant's type
                     // AND constrains it, so the capture is bound first and the
@@ -796,11 +801,41 @@ impl Interpreter {
                 }
                 continue;
             }
-            bind_params.push(param_name.clone());
-            if let Some(pd) = method_def.param_defs.get(idx) {
-                bind_param_defs.push(pd.clone());
-            }
         }
+        // Without an explicit invocant parameter (the common case) the
+        // signature is bound as declared: borrow it instead of cloning every
+        // parameter name and `ParamDef` on each call.
+        let (bind_params, bind_param_defs): (
+            std::borrow::Cow<'_, [String]>,
+            std::borrow::Cow<'_, [crate::ast::ParamDef]>,
+        ) = if skipped_invocant {
+            let is_invocant = |idx: usize| {
+                method_def
+                    .param_defs
+                    .get(idx)
+                    .is_some_and(|pd| pd.is_invocant)
+            };
+            let params: Vec<String> = method_def
+                .params
+                .iter()
+                .enumerate()
+                .filter(|(idx, _)| !is_invocant(*idx))
+                .map(|(_, name)| name.clone())
+                .collect();
+            let defs: Vec<crate::ast::ParamDef> = (0..method_def.params.len())
+                .filter(|idx| !is_invocant(*idx))
+                .filter_map(|idx| method_def.param_defs.get(idx).cloned())
+                .collect();
+            (params.into(), defs.into())
+        } else {
+            (
+                std::borrow::Cow::Borrowed(&method_def.params[..]),
+                std::borrow::Cow::Borrowed(
+                    &method_def.param_defs
+                        [..method_def.params.len().min(method_def.param_defs.len())],
+                ),
+            )
+        };
 
         // Bind attributes
         for (attr_name, attr_val) in attributes {
@@ -2124,7 +2159,13 @@ impl Interpreter {
                     // default. For an attributive param this overwrites the
                     // attribute — the slow path and rakudo both do (pinned by
                     // t/tweak-named-fast-path.t).
-                    None => Self::missing_optional_param_value(pd),
+                    None => match method_def
+                        .named_fast(idx)
+                        .and_then(|plan| plan.fill.clone())
+                    {
+                        Some(default) => default,
+                        None => Self::missing_optional_param_value(pd),
+                    },
                 };
                 // `:$!x` binds by assignment: an explicit Nil stores the
                 // attribute's container default (`BUILD(:$!x)` with

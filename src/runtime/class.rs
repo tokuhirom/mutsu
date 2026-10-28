@@ -590,7 +590,7 @@ impl Interpreter {
                     continue;
                 }
                 let mut parts = Vec::new();
-                for pd in &def.param_defs {
+                for pd in def.param_defs.iter() {
                     if pd.is_invocant {
                         continue;
                     }

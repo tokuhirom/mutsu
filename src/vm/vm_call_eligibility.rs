@@ -637,7 +637,7 @@ impl Interpreter {
         // is the method-call equivalent of the sub path's varref container arg.
         let arg_sources = self.pending_call_arg_sources();
         let mut arg_idx = 0usize;
-        for pd in &method_def.param_defs {
+        for pd in method_def.param_defs.iter() {
             if pd.is_invocant || pd.named {
                 continue;
             }
@@ -876,7 +876,24 @@ impl Interpreter {
         pd: &crate::ast::ParamDef,
         args: &[Value],
         base_is_instance: bool,
+        named_fast: Option<&crate::runtime::NamedFast>,
     ) -> bool {
+        // A typed parameter, or an unsupplied one with a constant default, is
+        // admitted by its precomputed plan (`MethodDef::named_fast`) alone.
+        if let Some(plan) = named_fast {
+            let key = pd.name.as_str();
+            let supplied = args
+                .iter()
+                .rev()
+                .find_map(|a| match a.unwrap_varref().view() {
+                    ValueView::Pair(k, v) if k.as_str() == key => Some(v.clone()),
+                    _ => None,
+                });
+            return match supplied {
+                Some(v) => plan.accepts(&v),
+                None => plan.fill.is_some(),
+            };
+        }
         if pd.has_traits()
             || pd.slurpy
             || pd.double_slurpy

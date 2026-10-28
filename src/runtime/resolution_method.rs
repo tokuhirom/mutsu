@@ -112,7 +112,7 @@ impl Interpreter {
         if let Some(inv) = invocant {
             self.env.insert("self".to_string(), inv.clone());
         }
-        for pd in &def.param_defs {
+        for pd in def.param_defs.iter() {
             if !pd.is_invocant {
                 continue;
             }

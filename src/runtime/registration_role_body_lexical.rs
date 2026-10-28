@@ -34,7 +34,7 @@ impl Interpreter {
         };
         for overloads in methods.values_mut() {
             for method in overloads {
-                self.resolve_owned_param_types(owner, &mut method.param_defs, &type_params, 0)?;
+                self.resolve_owned_param_types(owner, &mut std::sync::Arc::make_mut(&mut method.param_defs)[..], &type_params, 0)?;
                 if let Some(return_type) = method.return_type.as_mut() {
                     *return_type =
                         self.resolve_role_owned_type_name(owner, return_type, &type_params);

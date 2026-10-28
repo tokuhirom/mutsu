@@ -152,7 +152,7 @@ impl Interpreter {
             callable_param_defs.push(Self::make_invocant_param(&owner.resolve()));
         }
         callable_param_defs.extend(def.param_defs.iter().cloned());
-        let sig = (Arc::new(def.params.clone()), Arc::new(callable_param_defs));
+        let sig = (def.params.clone(), Arc::new(callable_param_defs));
         if cache.len() >= MAX_ENTRIES {
             cache.clear();
         }

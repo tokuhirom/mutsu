@@ -58,7 +58,7 @@ impl Interpreter {
     /// resolves to its ultimate base type first, same as the arg-distance ranking does.
     fn nominal_positional_narrowness(&mut self, def: &MethodDef) -> usize {
         let mut total = 0usize;
-        for pd in &def.param_defs {
+        for pd in def.param_defs.iter() {
             if pd.is_invocant || pd.named || pd.slurpy || pd.double_slurpy {
                 continue;
             }
