@@ -249,7 +249,11 @@ pub(crate) fn destructure_binds(
                         args: Vec::new(),
                         modifier: None,
                         quoted: false,
-                        sugar: false,
+                        // The contextualizer form (`@$v`) re-reads a `Seq`
+                        // instead of consuming it, so unpacking the same hash
+                        // twice (`for @tests -> (:@expected!)`, Red t/41) still
+                        // sees the elements.
+                        sugar: true,
                     }
                 } else {
                     method_result

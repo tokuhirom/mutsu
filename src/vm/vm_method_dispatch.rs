@@ -1228,6 +1228,7 @@ impl Interpreter {
                 ) || method_def.params.iter().any(|p| p == s)
                     || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                     || cc.env_only_decls.iter().any(|n| n == s)
+                    || dynamic_decl_local(&cc.locals, s)
                     // A composed role's type parameter (`T` of `role R[::T]` /
                     // `role R[$T]`) is bound into the callee env for this
                     // call only. Merging it back would clobber the caller's
@@ -2968,6 +2969,7 @@ impl Interpreter {
                         // exclusion as the primary merge path above (Text::CSV's
                         // `method csv` clobbered a same-named caller `$file`).
                         || cc.env_only_decls.iter().any(|n| n == s)
+                        || dynamic_decl_local(&cc.locals, s)
                         || class_body_static_names
                             .get(owner_class)
                             .is_some_and(|names| names.contains(s))
@@ -3150,6 +3152,16 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
 /// form of the former per-call set build, which inserted all 6 twigil forms
 /// for every attribute key (skipping class-qualified `"C\0attr"` storage keys
 /// and `__mutsu_attr_alias::` metadata keys).
+/// A `my $*x` declared in the method frame is stored under both `*x` (its
+/// compiled local) and `$*x`; the `$*x` spelling is as frame-local as `*x`, so
+/// the merge must not hand the method's `my $*OUT` back to the caller (where
+/// `print` reads it by its `$*OUT` key).
+// Cost: O(l), l = compiled locals.
+fn dynamic_decl_local(locals: &[String], s: &str) -> bool {
+    s.strip_prefix('$')
+        .is_some_and(|bare| bare.starts_with('*') && locals.iter().any(|l| l == bare))
+}
+
 fn attr_twigil_local(attributes: &AttrMap, s: &str) -> bool {
     let bare = match s.as_bytes() {
         [b'@' | b'%', b'!' | b'.', ..] => &s[2..],
