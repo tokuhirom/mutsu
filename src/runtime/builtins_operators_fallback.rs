@@ -380,6 +380,11 @@ impl Interpreter {
                 // The coercion protocol: `Int("50")` is `"50".Int`.
                 let coerced = if self.type_matches_value(&base, &args[0]) {
                     args[0].clone()
+                } else if base.contains('[') {
+                    // A parameterized refinee (`subset Names of Array[Name]`)
+                    // has no method of its own name to call: it coerces as
+                    // `Array[Name](value)` does.
+                    self.try_coerce_value_for_constraint(&format!("{base}()"), args[0].clone())?
                 } else {
                     self.call_method_with_values(args[0].clone(), &base, vec![])?
                 };
