@@ -44,21 +44,17 @@ impl Interpreter {
         // `call_method_with_values`, like `try_any_list_view_method`.
         if let ValueView::Instance { class_name, .. } = val.view() {
             let cn = class_name.resolve();
-            if self.has_user_method(&cn, "list") && !self.has_user_method(&cn, "Slip") {
+            // A `Seq` or `Range` subclass slips the elements of the value it
+            // carries (its inherited `list`).
+            if (self.has_user_method(&cn, "list")
+                || crate::builtins::native_base::has_iterable_payload(&val))
+                && !self.has_user_method(&cn, "Slip")
+            {
                 let list = self.call_method_with_values(val.clone(), "list", Vec::new())?;
                 if !matches!(list.view(), ValueView::Instance { .. }) {
                     self.stack.push(list);
                     return self.exec_make_slip_op();
                 }
-            }
-        }
-        // `|$obj` of a `Seq` or `Range` subclass slips the elements of the
-        // value it carries.
-        if crate::builtins::native_base::has_iterable_payload(&val) {
-            let list = self.call_method_with_values(val.clone(), "list", Vec::new())?;
-            if !matches!(list.view(), ValueView::Instance { .. }) {
-                self.stack.push(list);
-                return self.exec_make_slip_op();
             }
         }
         // A `Stash` is a `Map` of its symbols, so `|$pkg.WHO` slips the

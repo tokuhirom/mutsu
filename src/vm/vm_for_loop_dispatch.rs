@@ -815,7 +815,10 @@ impl Interpreter {
     /// it carries, read through its `list` (the inherited `Seq.list` /
     /// `Range.list`).
     // Cost: O(n), n = the sequence's elements.
-    fn iterable_payload_items(&mut self, iterable: &Value) -> Result<Option<Vec<Value>>, RuntimeError> {
+    fn iterable_payload_items(
+        &mut self,
+        iterable: &Value,
+    ) -> Result<Option<Vec<Value>>, RuntimeError> {
         if !crate::builtins::native_base::has_iterable_payload(iterable) {
             return Ok(None);
         }
