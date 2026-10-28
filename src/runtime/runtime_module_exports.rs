@@ -333,7 +333,9 @@ impl Interpreter {
             ValueView::Hash(map) => map.iter().map(|(k, v)| (k.to_string(), v.clone())).collect(),
             _ => return,
         };
-        let target = format!("{export_package}::{tag}");
+        let target = crate::qualified::qualified_text(export_package, tag)
+            .as_str()
+            .to_string();
         for (key, value) in entries {
             let (sigil, bare) = match key.as_bytes().first() {
                 Some(b'&' | b'@' | b'%' | b'$') => (&key[..1], &key[1..]),
