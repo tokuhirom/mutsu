@@ -2214,8 +2214,20 @@ impl Interpreter {
         // The value adverbs of a subscript (`%h<a>:p`) lower to this compiler-
         // internal builtin. No user routine can carry the name, so the
         // resolution ladder below could only conclude what the name already
-        // says: it ends at the interpreter terminal.
-        if false && call_me_override.is_none() && name_sym == crate::symbol::wk::subscript_adverb() {
+        // says: it ends at the interpreter terminal. The one thing the ladder
+        // does on the way is `try_native_function`'s argument preparation (a
+        // deferred `.map` Seq index such as `EXPORT::all::{ @a.map(..) }:p` is
+        // pulled there, and the terminal receives the pulled value), so that
+        // preparation runs here too.
+        if call_me_override.is_none() && name_sym == crate::symbol::wk::subscript_adverb() {
+            let mut args = args;
+            if Self::has_builtin_seq_read(&args) {
+                args = self.builtin_gather_args(name, &args)?.into_owned();
+            }
+            if let Some(leaves) = Self::shaped_routine_args(name, &args) {
+                args = leaves;
+            }
+            self.reify_map_grep_seq_args(&args)?;
             return self.dispatch_interpreter_terminal(code, name, args, arg_sources);
         }
         if let Some(callable) = call_me_override {
