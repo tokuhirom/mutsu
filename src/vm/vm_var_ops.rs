@@ -411,7 +411,10 @@ impl Interpreter {
             if info.value_type.is_empty() {
                 return Value::package(crate::symbol::wk::any());
             }
-            Value::package(Symbol::intern(&info.value_type))
+            // A coercion-typed element (`my P() %h`) defaults to the TARGET type
+            // object, as a `my P() $x` does: `%h<a>.new` is `P.new`.
+            let nominal = self.nominal_type_object_name_for_constraint(&info.value_type);
+            Value::package(Symbol::intern(&nominal))
         } else if matches!(target.view(), ValueView::Hash(_))
             || matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array())
         {
