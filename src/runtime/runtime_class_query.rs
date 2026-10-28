@@ -119,7 +119,21 @@ impl Interpreter {
         {
             return None;
         }
-        self.bare_name_packages().into_iter().find_map(|pkg| {
+        // A method/sub body runs with the interpreter's current package still
+        // GLOBAL when it was called from outside its package; the routine's own
+        // package then supplies the chain (`It($x)` in a method of `class
+        // Gauge` names the nested `Gauge::It`).
+        let mut packages = self.bare_name_packages();
+        if let Some(frame_pkg) = self.routine_stack.last().map(|frame| frame.package)
+            && frame_pkg != self.current_package_sym()
+        {
+            for pkg in self.bare_name_packages_for(frame_pkg) {
+                if !packages.contains(&pkg) {
+                    packages.push(pkg);
+                }
+            }
+        }
+        packages.into_iter().find_map(|pkg| {
             if crate::qualified::is_global_name(&pkg) {
                 return None;
             }

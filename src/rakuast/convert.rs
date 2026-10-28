@@ -5508,6 +5508,7 @@ pub(super) fn is_pseudo_type(t: &str) -> bool {
     let base = t
         .strip_suffix(":D")
         .or_else(|| t.strip_suffix(":U"))
+        .or_else(|| t.strip_suffix(":_"))
         .unwrap_or(t);
     matches!(base, "::?CLASS" | "::?ROLE" | "::?PACKAGE")
 }

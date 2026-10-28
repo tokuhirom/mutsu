@@ -65,16 +65,46 @@ impl Interpreter {
         // `Base`); only a top-level role can shadow a core type this way, and
         // its parent is that core type, spelled so it cannot resolve back to
         // the role.
-        if op.from_is
-            && crate::qualified::type_capture_name(&role_name_str).unwrap_or(&role_name_str) == name
-            && crate::builtin_types::catalog::builtin_type_info(name).is_some()
-        {
-            self.registry_mut()
-                .role_parents
-                .entry(name.to_string())
-                .or_default()
-                .push(format!("CORE::{name}"));
-            return Ok(());
+        // `role Iterator does Iterator` (also inside `unit class Gauge`, where
+        // the role is `Gauge::Iterator`) composes the like-named core role.
+        let self_short = crate::qualified::unqualified_part(Symbol::intern(name)).resolve();
+        let core_self = if op.from_is {
+            (crate::qualified::type_capture_name(&role_name_str).unwrap_or(&role_name_str) == name)
+                .then(|| name.to_string())
+        } else {
+            (op.name.resolve() == self_short
+                && (role_name_str == name || role_name_str == self_short))
+                .then(|| self_short.to_string())
+        };
+        if let Some(core) = core_self {
+            // Inside a package the role is `Pkg::R`, so a bare `R` is another
+            // role already registered; at top level only the catalog can
+            // stand behind the name.
+            let core_exists = crate::builtin_types::catalog::builtin_type_info(&core).is_some()
+                || crate::runtime::types::is_builtin_role_name(&core)
+                || (name != core && self.registry().roles.contains_key(core.as_str()));
+            if core_exists {
+                self.registry_mut()
+                    .role_parents
+                    .entry(name.to_string())
+                    .or_default()
+                    // `Pkg::R` composing the plain `R`: no `CORE::` pin is
+                    // needed, the two names differ.
+                    .push(if name != core {
+                        core.clone()
+                    } else {
+                        format!("CORE::{core}")
+                    });
+                return Ok(());
+            }
+            // A parameterised role may compose its own unparameterised
+            // candidate (`role R[Int $n] does R`); only a parameterless role
+            // composing itself is refused.
+            if !op.from_is && cx.type_params.is_empty() {
+                return Err(RuntimeError::new(format!(
+                    "X::InvalidType: role '{name}' cannot compose itself"
+                )));
+            }
         }
         // A sibling role referenced by its short name (`role Derived
         // does Base` inside `unit module M`, where Base is registered
