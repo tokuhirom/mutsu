@@ -16,7 +16,7 @@ class C2 { has P $.p is rw handles(@Names) .= new; }
 is C2.new.b, 2, 'with a trait before it and .= new after it';
 
 class C3 { has P $.p handles @Names = P.new; }
-is C3.new.a, 1, 'the unparenthesised spelling still works';
+is C3.new.a, 1, 'the unparenthesised spelling takes an initializer too';
 
 class C4 { has P $.p handles(<c>) = P.new; }
 is C4.new.c, 3, 'and so does a word list in parentheses';
