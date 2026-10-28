@@ -583,6 +583,7 @@ mod tests {
             (MetaNs::AtomicName, "__mutsu_atomic_name::@a"),
             (MetaNs::AtomicValue, "__mutsu_atomic_value::@a"),
             (MetaNs::BoundDecont, "__mutsu_bound_decont::@a"),
+            (MetaNs::BoundAttr, "__mutsu_bound_attr::@a"),
             (MetaNs::ConstantVar, "__mutsu_constant_var::@a"),
             (MetaNs::ModuleMerge, "__mutsu_module_merge::@a"),
             (MetaNs::EvalRole, "__mutsu_eval_role::@a"),
