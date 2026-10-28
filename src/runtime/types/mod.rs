@@ -618,7 +618,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         // A sigilless bind (`my \G = 5`) is marked via a SEPARATE mechanism
         // from `readonly_vars`/`ReadonlyKind` -- the `__mutsu_sigilless_readonly::
-        // NAME` env key `Stmt::MarkSigillessReadonly` sets (see
+        // NAME` env key `TermMark::Readonly` sets (see
         // `CheckReadOnly`'s own probe of the same key in `vm_exec_dispatch.rs`).
         // Plain assignment (`G = 10`) already consulted it; `G++`/`G--` did
         // not, so `my \G = 5; G++` silently mutated the "value" in place

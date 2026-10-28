@@ -191,6 +191,8 @@ impl Compiler {
             let decl = Stmt::VarDecl {
                 marks: crate::ast::var_marks::VarMarks {
                     sigilless_decl: true,
+                    bound: true,
+                    term: crate::ast::var_marks::TermMark::Bound,
                     ..Default::default()
                 },
                 anonymous: false,
@@ -208,10 +210,7 @@ impl Compiler {
                 bind: None,
                 where_constraint: None,
             };
-            return Some(Stmt::SyntheticBlock(vec![
-                crate::ast::var_marks::with_bound_mark(decl),
-                Stmt::MarkSigilless(var.name.clone()),
-            ]));
+            return Some(Stmt::SyntheticBlock(vec![decl]));
         }
         let (expr, bind) = match sigil {
             Some('@') => (Expr::ArrayVar(qualified), None),

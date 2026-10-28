@@ -365,7 +365,15 @@ impl Compiler {
             (bare.clone(), Expr::Var(bare))
         };
         let var_decl = Stmt::VarDecl {
-            marks: Default::default(),
+            // A sigilless pointy parameter is a term (ADR-12441).
+            marks: crate::ast::var_marks::VarMarks {
+                term: if is_term {
+                    crate::ast::var_marks::TermMark::Slot
+                } else {
+                    crate::ast::var_marks::TermMark::No
+                },
+                ..Default::default()
+            },
             anonymous: false,
             name: bare_name,
             expr: cond.clone(),
@@ -381,10 +389,7 @@ impl Compiler {
             bind: None,
             where_constraint: None,
         };
-        // A sigilless pointy parameter is a term (ADR-12441).
-        self.decl_is_term = is_term;
         self.compile_stmt(&var_decl);
-        self.decl_is_term = false;
         (read_expr, None)
     }
 

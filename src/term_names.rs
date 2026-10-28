@@ -124,6 +124,14 @@ pub(crate) fn decl_storage_name(name: &str, constant: Option<ConstantSigil>) -> 
 // Cost: O(|name|).
 pub(crate) fn stmt_decl_storage_name(stmt: &crate::ast::Stmt) -> Option<String> {
     match stmt {
+        // A sigilless term declaration (`my \x`) is stored under its term key
+        // (ADR-12441).
+        crate::ast::Stmt::VarDecl { name, marks, .. }
+            if marks.term != crate::ast::var_marks::TermMark::No
+                && !name.starts_with(['$', '@', '%', '&', '\\']) =>
+        {
+            Some(term_key(name))
+        }
         crate::ast::Stmt::VarDecl { name, constant, .. } => {
             Some(decl_storage_name(name, *constant))
         }

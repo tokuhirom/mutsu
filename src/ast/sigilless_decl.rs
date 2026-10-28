@@ -1,15 +1,15 @@
 //! A sigilless declaration, `my \x = 5` / `my Int \x := $s`.
 //!
-//! The parser builds one expansion for both spellings: the declaration wrapped
-//! in the bookkeeping statements the compiler needs (`MarkSigillessReadonly`,
-//! or a bound declaration + `MarkSigilless` when the right-hand side can denote a
-//! container). The spelling itself is not part of the expansion, and rakudo
+//! The parser builds one declaration for both spellings, marked as a sigilless
+//! term ([`TermMark`]: readonly, or bound when the right-hand side can denote
+//! a container). The spelling itself is not part of the expansion, and rakudo
 //! renders the two differently (`Initializer::Assign` / `Initializer::Bind`),
 //! so the declaration carries it as `VarMarks::sigilless_decl`.
 //!
 //! The parser keeps the declaration as written (`ParsedStmt::SigillessDecl`);
 //! its lowering builds the expansion.
 
+use super::var_marks::{TermMark, VarMarks};
 use super::{Expr, Stmt};
 
 /// What a sigilless declaration says.
@@ -25,9 +25,9 @@ pub(crate) struct SigillessDecl<'a> {
     pub call_assign: Option<(&'a crate::symbol::Symbol, &'a [Expr])>,
 }
 
-/// The compiler's form of `my \name .= method` (the declaration plus its
-/// readonly marker), for the declaration's initializer `expr` (the method call
-/// on the declared type).
+/// The compiler's form of `my \name .= method` (a readonly sigilless
+/// declaration), for the declaration's initializer `expr` (the method call on
+/// the declared type).
 // Cost: O(1).
 pub(crate) fn call_assign_expansion(
     name: String,
@@ -36,24 +36,24 @@ pub(crate) fn call_assign_expansion(
     is_state: bool,
     is_our: bool,
 ) -> Stmt {
-    Stmt::SyntheticBlock(vec![
-        Stmt::VarDecl {
-            marks: Default::default(),
-            anonymous: false,
-            name: name.clone(),
-            expr,
-            type_constraint,
-            is_state,
-            is_our,
-            is_dynamic: false,
-            is_export: false,
-            export_tags: Vec::new(),
-            custom_traits: Vec::new(),
-            has_initializer: false,
-            constant: None,
-            bind: None,
-            where_constraint: None,
+    Stmt::SyntheticBlock(vec![Stmt::VarDecl {
+        marks: VarMarks {
+            term: TermMark::Readonly,
+            ..Default::default()
         },
-        Stmt::MarkSigillessReadonly(name),
-    ])
+        anonymous: false,
+        name,
+        expr,
+        type_constraint,
+        is_state,
+        is_our,
+        is_dynamic: false,
+        is_export: false,
+        export_tags: Vec::new(),
+        custom_traits: Vec::new(),
+        has_initializer: false,
+        constant: None,
+        bind: None,
+        where_constraint: None,
+    }])
 }

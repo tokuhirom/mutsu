@@ -3,6 +3,7 @@ use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{MISSING_BLOCK, PError, PResult, opt_char, parse_char};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::ast::var_marks::TermMark;
 use crate::ast::{
     AssignOp, Expr, GivenWithKind, ParamDef, ReadonlyKind, Stmt, WithBlockKind,
     collect_placeholders_shallow,
@@ -324,6 +325,15 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         let mut stmts = vec![Stmt::VarDecl {
             marks: crate::ast::var_marks::VarMarks {
                 bound: true,
+                // A sigilless parameter (`given $x -> \ex`) is a term: the body spells
+                // it as a bare word, so, as for `with`/`if` (`simple_pointy_bind`), the
+                // declaration says the name reads from its slot and is not a
+                // `$`-scalar (#11898).
+                term: if pd.sigilless {
+                    TermMark::Readonly
+                } else {
+                    TermMark::No
+                },
                 ..Default::default()
             },
             anonymous: false,
@@ -354,13 +364,6 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         {
             stmts.push(Stmt::MarkReadonly(pd.name.clone(), ReadonlyKind::Alias));
         }
-        // A sigilless parameter (`given $x -> \ex`) is a term: the body spells
-        // it as a bare word, so — as for `with`/`if` (`simple_pointy_bind`) —
-        // the declaration carries the marker that tells the compiler the name
-        // reads from its slot and is not a `$`-scalar (#11898).
-        if pd.sigilless {
-            stmts.push(Stmt::MarkSigillessReadonly(pd.name.clone()));
-        }
         Stmt::SyntheticBlock(stmts)
     }
 }
@@ -370,14 +373,17 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
 ///
 /// A **sigilless** parameter (`with $x -> \\v { ... }`) is a term binding, not an
 /// ordinary lexical: the body spells it as a bare word, so the declaration has
-/// to carry the `MarkSigillessReadonly` marker that tells the compiler this
-/// name reads from its local slot. Without it `with 1 -> \\v { say v }` declared
+/// to carry [`TermMark::Readonly`], which tells the compiler this name reads
+/// from its local slot. Without it `with 1 -> \\v { say v }` declared
 /// `v` and then read the bare word as a package lookup, printing `(Any)` where
 /// rakudo prints `1` (#7954). The marker also makes the binding read-only,
 /// which is what rakudo gives a `\\name` parameter.
 pub(crate) fn simple_pointy_bind(name: &str, source: &Expr, sigilless: bool) -> Stmt {
-    let decl = Stmt::VarDecl {
-        marks: Default::default(),
+    Stmt::VarDecl {
+        marks: crate::ast::var_marks::VarMarks {
+            term: sigilless_term(sigilless),
+            ..Default::default()
+        },
         anonymous: false,
         name: name.to_string(),
         expr: source.clone(),
@@ -392,11 +398,15 @@ pub(crate) fn simple_pointy_bind(name: &str, source: &Expr, sigilless: bool) -> 
         constant: None,
         bind: None,
         where_constraint: None,
-    };
+    }
+}
+
+/// The term mark of a pointy parameter: a sigilless one is a readonly term.
+fn sigilless_term(sigilless: bool) -> TermMark {
     if sigilless {
-        Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name.to_string())])
+        TermMark::Readonly
     } else {
-        decl
+        TermMark::No
     }
 }
 
@@ -409,8 +419,11 @@ pub(crate) fn simple_pointy_bind(name: &str, source: &Expr, sigilless: bool) -> 
 /// declaration binder performs the same conversion and checks as an ordinary
 /// lexical initialization.
 pub(crate) fn pointy_param_bind_decl(pd: &ParamDef, source: &Expr) -> Stmt {
-    let decl = Stmt::VarDecl {
-        marks: Default::default(),
+    Stmt::VarDecl {
+        marks: crate::ast::var_marks::VarMarks {
+            term: sigilless_term(pd.sigilless),
+            ..Default::default()
+        },
         anonymous: false,
         name: pd.name.clone(),
         expr: source.clone(),
@@ -425,11 +438,6 @@ pub(crate) fn pointy_param_bind_decl(pd: &ParamDef, source: &Expr) -> Stmt {
         constant: None,
         bind: None,
         where_constraint: pd.where_constraint.clone(),
-    };
-    if pd.sigilless {
-        Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(pd.name.clone())])
-    } else {
-        decl
     }
 }
 
