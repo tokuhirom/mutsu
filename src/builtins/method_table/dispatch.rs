@@ -59,8 +59,11 @@ fn call(
     };
     // #11217: a renderer (`.Str` / `.gist` / `.raku`) that ran out of native
     // stack truncated its text; raise instead of answering with it.
-    answer
-        .map(|(result, rerunnable)| (crate::value::render_guard::check_render(result), rerunnable))
+    answer.map(|(result, rerunnable)| {
+        let result =
+            result.map(|value| super::native_array_result::retype(target, row.name, value));
+        (crate::value::render_guard::check_render(result), rerunnable)
+    })
 }
 
 /// The List of elements `Any`'s row reads from a built-in receiver with an

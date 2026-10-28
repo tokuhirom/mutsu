@@ -24,6 +24,25 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // A native array's `sort`/`reverse`/... answer is a native array.
+        if !crate::builtins::method_table::native_array_result::retypes(method_sym.as_str()) {
+            return self.try_compiled_method_or_interpret_sym_inner(target, method_sym, args);
+        }
+        let receiver = target.clone();
+        let answer = self.try_compiled_method_or_interpret_sym_inner(target, method_sym, args)?;
+        Ok(crate::builtins::method_table::native_array_result::retype(
+            &receiver,
+            method_sym.as_str(),
+            answer,
+        ))
+    }
+
+    fn try_compiled_method_or_interpret_sym_inner(
+        &mut self,
+        target: Value,
+        method_sym: crate::symbol::Symbol,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
         // See `call_method_with_values`: a user `^find_method` answers first.
         if let Some(result) =
             self.try_user_find_method_dispatch(&target, method_sym.as_str(), &args)
