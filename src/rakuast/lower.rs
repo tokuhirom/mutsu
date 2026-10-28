@@ -1799,23 +1799,38 @@ fn lower_subset(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         Some(f) => Some(lower_expr(child_node(&f.value)?)?),
         None => None,
     };
-    let (base, base_is_explicit) = match node.fields.iter().find(|f| f.name == Some("traits")) {
-        None => ("Any".to_string(), false),
-        Some(_) => {
-            let [trait_of] = list_field(node, "traits")? else {
+    let mut base = ("Any".to_string(), false);
+    let mut is_traits: Vec<Value> = Vec::new();
+    if node.fields.iter().any(|f| f.name == Some("traits")) {
+        for item in list_field(node, "traits")? {
+            let ValueView::RakuAst(t) = item.view() else {
                 return Err(unsupported(node));
             };
-            let ValueView::RakuAst(trait_of) = trait_of.view() else {
-                return Err(unsupported(node));
-            };
-            if trait_of.class != RakuAstClass::TraitOf {
-                return Err(unsupported(node));
+            match t.class {
+                RakuAstClass::TraitOf => {
+                    base = (
+                        simple_type_name(node, named_child_or_positional(t)?)?,
+                        true,
+                    );
+                }
+                RakuAstClass::TraitIs => is_traits.push(item.clone()),
+                _ => return Err(unsupported(node)),
             }
-            (
-                simple_type_name(node, named_child_or_positional(trait_of)?)?,
-                true,
-            )
         }
+    }
+    let (base, base_is_explicit) = base;
+    let custom_traits = if is_traits.is_empty() {
+        Vec::new()
+    } else {
+        let holder = RakuAstNode {
+            origin: Default::default(),
+            class: node.class,
+            fields: vec![super::RakuAstField {
+                name: Some("traits"),
+                value: super::RakuAstFieldValue::List(is_traits),
+            }],
+        };
+        super::decl_traits::lower(&holder)?.0
     };
     Ok(Stmt::SubsetDecl {
         spans: Default::default(),
@@ -1826,6 +1841,7 @@ fn lower_subset(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         version: crate::parser::current_language_version(),
         is_export,
         export_tags,
+        custom_traits,
         is_my,
         decl_id: crate::ast::next_class_decl_id(),
     })

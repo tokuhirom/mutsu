@@ -3116,6 +3116,11 @@ pub(crate) enum Stmt {
         version: String,
         is_export: bool,
         export_tags: Vec<String>,
+        /// Non-builtin `is` traits (`subset S is foo of T`), each handed to a
+        /// user `trait_mod:<is>` with the subset's type object after it is
+        /// registered. `is export` is a field of the declaration instead.
+        #[serde(default)]
+        custom_traits: Vec<(String, Option<Expr>)>,
         /// `my subset F ...` — lexically scoped: NOT reachable (nor
         /// registered) under the enclosing package's qualified name.
         is_my: bool,

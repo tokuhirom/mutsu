@@ -72,12 +72,25 @@ impl Compiler {
             }
             _ => (false, false),
         };
+        let traits = match &stmt {
+            Stmt::SubsetDecl {
+                name, custom_traits, ..
+            } if !custom_traits.is_empty() => Some((*name, custom_traits.clone())),
+            _ => None,
+        };
         let idx = self.code.add_stmt(stmt);
         self.code.emit(OpCode::RegisterSubset {
             idx,
             with_closure,
             with_refinement,
         });
+        // `subset S is foo of T`: hand the registered subset's type object to
+        // a user `trait_mod:<is>` (a `$subset.HOW does Role` it performs
+        // persists on the subset's metaobject).
+        if let Some((name, traits)) = traits {
+            let name_idx = self.code.add_constant(Value::str(name.resolve().to_string()));
+            self.emit_package_traits(name_idx, &traits);
+        }
     }
 
     /// A predicate written as a code literal, which evaluates to the callable

@@ -340,12 +340,14 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             version: _,
             is_export: _,
             export_tags: _,
+            custom_traits,
             is_my: _,
             decl_id: _,
         } => {
             if let Some(e) = predicate {
                 v.visit_expr_mut(e);
             }
+            traits_mut(v, custom_traits);
         }
         Stmt::Phaser {
             spans: _,
