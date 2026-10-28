@@ -149,8 +149,15 @@ pub(super) fn assign_target(node: &RakuAstNode) -> Result<String, RuntimeError> 
     if is_my(node)? {
         return Err(unsupported(node));
     }
+    // `@ = 1, 2` / `% = a => 1` (and the `=@=` / `=%=` meta-assignments of a
+    // constant initializer): the targets are named as the parser's bare `@` /
+    // `%` terms are (`lower_term`), with the sigil kept as a `Stmt::Assign` does.
     match parts(node)? {
         (sigil, false) if sigil == "$" => Ok(mint_scalar()),
+        (sigil, false) if sigil == "@" => {
+            Ok(format!("@{}", crate::parser::fresh_anon_array_name()))
+        }
+        (sigil, false) if sigil == "%" => Ok("%__ANON_HASH__".to_string()),
         _ => Err(unsupported(node)),
     }
 }
