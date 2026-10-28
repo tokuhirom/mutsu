@@ -247,6 +247,13 @@ impl Interpreter {
                 if *arity == 0 && Self::const_str(code, *name_idx) == "VAR" {
                     self.publish_reflected_binding(code, *target_name_idx, *target_slot);
                 }
+                // ADR-0072: `$ex.throw` on a named receiver is a resumable throw
+                // site too, exactly as in `exec_call_method_site`: a CATCH up
+                // the stack handles it INLINE, before the frames between unwind,
+                // so a LEAVE of the routine owning the CATCH runs after it.
+                let throw_base = self
+                    .method_name_is_resumable_throw(code, *name_idx)
+                    .then(|| self.stack.len().saturating_sub(*arity as usize + 1));
                 // A native array's `sort`/`reverse`/... answers a native array.
                 let retype_receiver = self.retype_receiver(code, *name_idx, *arity);
                 let result =
@@ -265,7 +272,24 @@ impl Interpreter {
                 if result.is_ok() {
                     self.retype_answer(code, *name_idx, retype_receiver);
                 }
-                result
+                match result {
+                    Err(e) if throw_base.is_some() && !e.is_resume() => {
+                        match self.try_catch_inline(e) {
+                            Ok(v) => {
+                                self.stack.truncate(throw_base.unwrap_or(0));
+                                self.stack.push(v);
+                                Ok(())
+                            }
+                            Err(e) => {
+                                if self.resume_ip.is_none() {
+                                    self.resume_ip = Some((Self::resume_code_fp(code), ip + 1));
+                                }
+                                Err(e)
+                            }
+                        }
+                    }
+                    other => other,
+                }
             }
             // The run-time-named spelling (`$var."$name"(...)`) shares every
             // step around the dispatch -- above all the rebound-receiver
