@@ -87,7 +87,8 @@ fn prefix(interp: &mut Interpreter, target: &Value, _: &[Value], _: Named<'_>) -
     Some(Ok(interp.make_io_path_instance(&prefix)))
 }
 
-/// `.content($address)`: the file a distribution-relative address names. The
+/// `.content($address)`: an unopened `IO::Handle` on the file a
+/// distribution-relative address names. The
 /// `files` map comes first (it resolves the platform-specific library names:
 /// `resources/libraries/foo` -> `$prefix/resources/libraries/libfoo.so`, and an
 /// installed distribution's hashed file names); any other address is a path
@@ -120,6 +121,14 @@ fn content(interp: &mut Interpreter, target: &Value, args: &[Value], _: Named<'_
         });
     let full_path = match mapped.or_else(|| provided_source.map(|id| format!("sources/{id}"))) {
         Some(abs) if std::path::Path::new(&abs).is_absolute() => abs,
+        // A `Distribution::Path` over a relative prefix already maps its files
+        // to `prefix/...`: joining the prefix again would double it.
+        Some(relative)
+            if !prefix.is_empty()
+                && std::path::Path::new(&relative).starts_with(&prefix) =>
+        {
+            relative
+        }
         Some(relative) => std::path::Path::new(&prefix)
             .join(relative)
             .to_string_lossy()
@@ -129,7 +138,14 @@ fn content(interp: &mut Interpreter, target: &Value, args: &[Value], _: Named<'_
             .to_string_lossy()
             .to_string(),
     };
-    Some(Ok(interp.make_io_path_instance(&full_path)))
+    // Rakudo's `Distribution::Path.content` answers an unopened `IO::Handle`
+    // on the file (`$dist.content($name).open.slurp`, zef's
+    // `$handle.close; $handle.path`).
+    let path = interp.make_io_path_instance(&full_path);
+    Some(interp.dispatch_new(
+        Value::package(crate::symbol::Symbol::intern("IO::Handle")),
+        vec![Value::pair("path".to_string(), path)],
+    ))
 }
 
 /// `.Str` (and a `$?DISTRIBUTION`'s `.dist-id`): the identity
