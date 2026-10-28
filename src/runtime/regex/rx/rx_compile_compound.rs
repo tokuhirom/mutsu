@@ -197,7 +197,12 @@ impl Compiler {
         let inner_result = self.pattern(inner);
         self.goal_inner_source_order = prior_goal_inner_source_order;
         inner_result?;
-        if let Some(h) = height {
+        // A frugal tail (`'(' ~ ')' .*?`) keeps growing under ratchet until
+        // the goal matches, so its choice points must stay live for the goal.
+        let frugal_tail = inner.tokens.last().is_some_and(|t| t.frugal);
+        if let Some(h) = height
+            && !frugal_tail
+        {
             // A token's `~` commits the inner pattern before testing its goal:
             // the goal may not make a later LTM branch win retroactively.
             // Rules leave these choices live so a failed goal can backtrack
