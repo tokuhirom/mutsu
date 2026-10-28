@@ -153,8 +153,12 @@ struct PackageTypes<'a> {
 
 impl<'a> Visit<'a> for PackageTypes<'a> {
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        // A compound name (`class Type::Blob` in `unit module PP`) lives in the
+        // stash of `PP::Type` but binds no lexical `Blob` inside the package
+        // `PP::Type` (a `role Type` writing `Blob:D` means the core `Blob`).
         if let Some(prefix) = prefix(&self.packages)
             && let Some(name) = declared_type(stmt)
+            && !name.contains("::")
         {
             self.declared.insert(format!("{prefix}::{name}"));
         }
