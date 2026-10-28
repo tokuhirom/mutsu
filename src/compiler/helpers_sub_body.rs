@@ -1093,7 +1093,7 @@ impl Compiler {
                         // phasers entirely. Same rule as the mainline tail-block site
                         // in `compiler/mod.rs` -- `{ ...; LEAVE $service.stop() }` as
                         // a routine's last statement never cleaned up.
-                        if Self::has_block_enter_leave_phasers(stmts) {
+                        if Self::needs_phaser_block_scope(stmts) {
                             sub_compiler.compile_real_phaser_block_scope(stmts);
                         } else {
                             sub_compiler.compile_block_inline(stmts);
@@ -1676,7 +1676,7 @@ impl Compiler {
                 if is_value && let Stmt::Block(stmts) = stmt {
                     // See the tail-block site below: phasers must go through a
                     // real `BlockScope` or they are silently dropped.
-                    if Self::has_block_enter_leave_phasers(stmts) {
+                    if Self::needs_phaser_block_scope(stmts) {
                         sub_compiler.compile_real_phaser_block_scope(stmts);
                     } else {
                         sub_compiler.compile_block_inline(stmts);
@@ -1827,7 +1827,7 @@ impl Compiler {
                                     .emit_inlined_body_placeholder_binds(stmts, ArgSupply::None)
                             {
                                 // fatal: the block never runs
-                            } else if Self::has_block_enter_leave_phasers(stmts) {
+                            } else if Self::needs_phaser_block_scope(stmts) {
                                 // A tail block carrying ENTER/LEAVE/KEEP/UNDO/PRE/POST
                                 // must run them through a real `BlockScope` -- inlining
                                 // (below) drops the phasers entirely, so a closure
