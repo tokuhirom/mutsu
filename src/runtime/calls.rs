@@ -388,6 +388,14 @@ impl Interpreter {
             if failed_has_default {
                 return err;
             }
+            // Likewise a mismatch on an `is rw` parameter: rakudo defers it to
+            // the binder (`Type check failed in binding to parameter ...`).
+            let failed_is_rw = param_defs
+                .iter()
+                .any(|pd| pd.name == bare && pd.traits.iter().any(|t| t == "rw"));
+            if failed_is_rw {
+                return err;
+            }
         }
         // Capture the hint before `err.exception` is (possibly) moved out below,
         // so the later `set_hint` does not clash with that partial move.
