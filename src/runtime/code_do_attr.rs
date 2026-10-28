@@ -369,11 +369,15 @@ impl Interpreter {
         let Some(view) = self.routine_call_me_view(method_code) else {
             return Ok(());
         };
-        if FACTORY.get().is_none() {
-            let (stmts, _) = crate::parser::parse_program("-> $cm { -> |c { $cm.CALL-ME(|c) } }")?;
-            let _ = FACTORY.set(stmts);
-        }
-        let factory = self.eval_block_value(FACTORY.get().expect("parsed above"))?;
+        let stmts = match FACTORY.get() {
+            Some(stmts) => stmts,
+            None => {
+                let (stmts, _) =
+                    crate::parser::parse_program("-> $cm { -> |c { $cm.CALL-ME(|c) } }")?;
+                FACTORY.get_or_init(|| stmts)
+            }
+        };
+        let factory = self.eval_block_value(stmts)?;
         let forwarder = self.call_sub_value(factory, vec![view])?;
         let ValueView::Sub(forwarder_data) = forwarder.view() else {
             return Ok(());
