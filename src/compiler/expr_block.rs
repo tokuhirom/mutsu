@@ -703,6 +703,14 @@ impl Compiler {
                         self.compile_expr(&Self::any_type_object_expr());
                     } else if let Some(native_default) = native_default.as_ref() {
                         self.compile_expr(native_default);
+                    } else if Self::is_scalar_bind_decl(name, *bind)
+                        && matches!(expr, Expr::MethodCall { .. })
+                    {
+                        // `(my $c := $obj.attr)`: as the statement form, flag the
+                        // accessor call so an `is rw` attribute hands back its own
+                        // container and the new variable aliases it.
+                        self.bind_target_direct = true;
+                        self.compile_call_arg(expr);
                     } else {
                         self.compile_expr(expr);
                     }
