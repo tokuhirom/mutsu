@@ -45,12 +45,15 @@ pub(crate) fn wrap_trailing_word_logical_expr(rest: &str, assigned: Expr) -> PRe
 
 /// The read expression for an assignment target's variable, used to re-read the
 /// just-assigned value as the left operand of the hoisted word-logical.
-/// `$x` is stored as `Var("x")`, `@a` as `ArrayVar("a")`, `%h` as `HashVar("h")`.
+/// `$x` is stored as `Var("x")`, `@a` as `ArrayVar("a")`, `%h` as `HashVar("h")`,
+/// `&f` as `CodeVar("f")`.
 pub(crate) fn seed_read_expr(name: &str) -> Expr {
     if let Some(n) = name.strip_prefix('@') {
         Expr::ArrayVar(n.to_string())
     } else if let Some(n) = name.strip_prefix('%') {
         Expr::HashVar(n.to_string())
+    } else if let Some(n) = name.strip_prefix('&') {
+        Expr::CodeVar(n.to_string())
     } else {
         Expr::Var(name.trim_start_matches('$').to_string())
     }
