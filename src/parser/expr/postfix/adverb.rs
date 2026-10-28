@@ -440,6 +440,10 @@ pub(crate) fn try_parse_exists_adverb(input: &str, target: Expr) -> Option<(&str
 }
 
 pub(crate) fn supports_postfix_call_adverbs(expr: &Expr) -> bool {
+    let mut expr = expr;
+    while let Expr::Spelled(spelled) = expr {
+        expr = &spelled.expr;
+    }
     match expr {
         Expr::Call { name, .. } => {
             let n = name.resolve();
@@ -449,7 +453,6 @@ pub(crate) fn supports_postfix_call_adverbs(expr: &Expr) -> bool {
         | Expr::CallOn { .. }
         | Expr::HyperMethodCall { .. }
         | Expr::HyperMethodCallDynamic { .. } => true,
-        Expr::Spelled(spelled) => supports_postfix_call_adverbs(&spelled.expr),
         _ => false,
     }
 }

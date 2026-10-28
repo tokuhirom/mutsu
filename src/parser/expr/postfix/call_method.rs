@@ -39,6 +39,12 @@ pub(crate) fn auto_invoke_bareword_method_target(expr: Expr) -> Expr {
 }
 
 pub(crate) fn append_call_arg(expr: &mut Expr, arg: Expr) -> bool {
+    // A call remembered as spelled in a particular way (the dotty infix call
+    // of `$x\n.meth(...)`) still takes the adverb.
+    let mut expr = expr;
+    while let Expr::Spelled(spelled) = expr {
+        expr = &mut spelled.expr;
+    }
     match expr {
         Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
             args.push(arg);
@@ -60,9 +66,6 @@ pub(crate) fn append_call_arg(expr: &mut Expr, arg: Expr) -> bool {
             args.push(arg);
             true
         }
-        // A call remembered as spelled in a particular way (the dotty infix
-        // call of `$x\n.meth(...)`) still takes the adverb.
-        Expr::Spelled(spelled) => append_call_arg(&mut spelled.expr, arg),
         _ => false,
     }
 }
