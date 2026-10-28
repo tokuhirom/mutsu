@@ -739,7 +739,10 @@ impl Interpreter {
             // only as elements are asked for, so no prefix is pre-computed (the
             // generator may be expensive -- `2, { $_**2 - $_ + 1 } ... *` doubles
             // its digit count each step -- or have side effects).
-            (SeqMode::Closure, None) => 0,
+            //
+            // TODO: a seedless generator (`{ $i++ } ... *`) still pre-computes its
+            // prefix: the lazy continuation needs a history to start from.
+            (SeqMode::Closure, None) if !seeds.is_empty() => 0,
             (_, None) => 32,
         };
         let is_string_seq =
