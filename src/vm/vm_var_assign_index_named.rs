@@ -5705,29 +5705,14 @@ impl Interpreter {
                 // location its rw `AT-POS`/`AT-KEY` hands back, takes the store.
                 if !is_bind_value {
                     let cur_val = unsafe { (*current).clone() };
-                    if matches!(cur_val.view(), ValueView::Instance { .. } | ValueView::Mixin(..)) {
-                        if let Some(result) = self.assign_through_subscript_protocol(
-                            &cur_val,
-                            &indices_val[level],
-                            &val,
-                            is_positional,
-                        ) {
-                            result?;
-                            continue;
-                        }
-                        if let Some(at) = self.object_subscript_accessor(&cur_val, is_positional) {
-                            let location = self.call_method_with_values(
-                                cur_val.clone(),
-                                at,
-                                vec![indices_val[level].clone()],
-                            )?;
-                            if let Some(assigned) =
-                                self.assign_lvalue_container(&location, val.clone())
-                            {
-                                assigned?;
-                                continue;
-                            }
-                        }
+                    if let Some(result) = self.assign_through_object_location(
+                        &cur_val,
+                        &indices_val[level],
+                        &val,
+                        is_positional,
+                    ) {
+                        result?;
+                        continue;
                     }
                 }
                 // Final level: assign the value. When binding, install the
@@ -6011,7 +5996,7 @@ impl Interpreter {
         // `CArray[T]` is such an object).
         if !was_bind
             && let Some(result) =
-                self.assign_through_subscript_protocol(&target, &idx, &val, is_positional)
+                self.assign_through_object_location(&target, &idx, &val, is_positional)
         {
             result?;
             self.stack.push(val);
