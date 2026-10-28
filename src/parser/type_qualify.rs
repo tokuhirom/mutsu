@@ -128,25 +128,24 @@ fn lexical_type(stmt: &Stmt) -> Option<&str> {
 /// declared at a later statement of `body` takes over.
 // Cost: O(n), n = statements of `body`.
 fn later_core_types(body: &[Stmt]) -> Vec<HashSet<String>> {
-    fn declared(stmt: &Stmt, out: &mut Vec<String>) {
-        match stmt {
-            Stmt::SyntheticBlock(inner) => inner.iter().for_each(|s| declared(s, out)),
-            _ => {
-                if let Some(name) = lexical_type(stmt)
-                    && crate::builtin_types::catalog::builtin_type_info(name).is_some()
-                {
-                    out.push(name.to_string());
-                }
-            }
-        }
-    }
     let mut later = vec![HashSet::new(); body.len()];
     let mut seen_after: HashSet<String> = HashSet::new();
     for (i, stmt) in body.iter().enumerate().rev() {
         later[i] = seen_after.clone();
-        let mut names = Vec::new();
-        declared(stmt, &mut names);
-        seen_after.extend(names);
+        // A traited declaration is wrapped with its metadata.
+        let mut pending = vec![stmt];
+        while let Some(stmt) = pending.pop() {
+            match stmt {
+                Stmt::SyntheticBlock(inner) => pending.extend(inner.iter()),
+                _ => {
+                    if let Some(name) = lexical_type(stmt)
+                        && crate::builtin_types::catalog::builtin_type_info(name).is_some()
+                    {
+                        seen_after.insert(name.to_string());
+                    }
+                }
+            }
+        }
     }
     later
 }
