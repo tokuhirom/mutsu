@@ -498,7 +498,15 @@ impl Interpreter {
         is_inlined: bool,
     ) {
         let invocation_id = self.take_invocation_id();
-        let lexical_package = self.lexical_package_for_frame(def_file);
+        // A block without a declaring file of its own (a `try` body, an
+        // inlined bare block) belongs to the routine that lexically encloses
+        // it: it inherits that frame's lexical package, so a name the
+        // enclosing unit imported (`unit role R; use P;`) still resolves
+        // inside it. Only a block with nothing around it asks the ambient unit.
+        let lexical_package = match (def_file, self.routine_stack.last()) {
+            (None, Some(enclosing)) => enclosing.lexical_package,
+            _ => self.lexical_package_for_frame(def_file),
+        };
         let frame = super::RoutineFrame {
             package,
             lexical_package,
