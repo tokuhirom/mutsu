@@ -68,6 +68,9 @@ pub(crate) fn imported_value_term(input: &str) -> PResult<'_, Expr> {
         && !is_fat_arrow_key(rest)
         && !(starts_with_type_smiley(rest) && can_name_type_smiley(name))
         && !(rest.starts_with('(') && crate::parser::stmt::simple::is_imported_function(name))
+        // `phi(...)` after a `sub phi` declared in an enclosing scope is that
+        // sub's call, not a call on the imported `phi` term.
+        && !(rest.starts_with('(') && crate::parser::stmt::simple::is_user_declared_sub(name))
     {
         return Ok((
             rest,
