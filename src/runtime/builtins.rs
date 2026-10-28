@@ -757,7 +757,6 @@ impl Interpreter {
             "__mutsu_make_format" => self.builtin_make_format(&args),
             "__mutsu_quotewords_atom" => self.builtin_quotewords_atom(&args),
             "__mutsu_words_atom" => self.builtin_words_atom(&args),
-            "__mutsu_qw_result" => Ok(args.first().cloned().unwrap_or(Value::NIL)),
             "undefine" => Ok(Value::package(crate::symbol::wk::any())),
             "__mutsu_undefine_rvalue" => {
                 // Called when undefine receives a non-variable expression.
