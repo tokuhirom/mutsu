@@ -89,6 +89,22 @@ impl<'a> RakudoInstanceEqv<'a> {
             }
         }
     }
+
+    /// `$value.raku` through ordinary method dispatch (the default rendering
+    /// included); `None` once it threw, the error kept for the caller.
+    // Cost: O(r), r = the cost of one `raku` call.
+    fn render_raku(&mut self, value: &Value) -> Option<String> {
+        match self
+            .interp
+            .call_method_with_values(value.clone(), "raku", vec![])
+        {
+            Ok(rendered) => Some(rendered.to_string_value()),
+            Err(err) => {
+                self.error.get_or_insert(err);
+                None
+            }
+        }
+    }
 }
 
 impl EqvInstanceHook for RakudoInstanceEqv<'_> {
@@ -118,19 +134,8 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
         {
             return None;
         }
-        let render = |hook: &mut Self, value: &Value| match hook.interp.call_method_with_values(
-            value.clone(),
-            "raku",
-            vec![],
-        ) {
-            Ok(rendered) => Some(rendered.to_string_value()),
-            Err(err) => {
-                hook.error.get_or_insert(err);
-                None
-            }
-        };
-        let ra = render(self, a)?;
-        let rb = render(self, b)?;
+        let ra = self.render_raku(a)?;
+        let rb = self.render_raku(b)?;
         Some(ra == rb)
     }
 
@@ -170,19 +175,8 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
             && cb == class_name
             && self.is_exception_class(class_name)
         {
-            let render = |hook: &mut Self, value: &Value| match hook.interp.call_method_with_values(
-                value.clone(),
-                "raku",
-                vec![],
-            ) {
-                Ok(rendered) => Some(rendered.to_string_value()),
-                Err(err) => {
-                    hook.error.get_or_insert(err);
-                    None
-                }
-            };
-            if let Some(ra) = render(self, a)
-                && let Some(rb) = render(self, b)
+            if let Some(ra) = self.render_raku(a)
+                && let Some(rb) = self.render_raku(b)
             {
                 return InstanceEqv::Rendered(ra == rb);
             }
@@ -194,22 +188,10 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
             // identity: two distinct type objects that share a name are equal
             // (Red's `Select.of` over two generated `TempSensor` types, which
             // lets its CASE optimizer fold identical branches).
-            Some(_) => {
-                let render = |hook: &mut Self, value: &Value| match hook
-                    .interp
-                    .call_method_with_values(value.clone(), "raku", vec![])
-                {
-                    Ok(rendered) => Some(rendered.to_string_value()),
-                    Err(err) => {
-                        hook.error.get_or_insert(err);
-                        None
-                    }
-                };
-                match (render(self, a), render(self, b)) {
-                    (Some(ra), Some(rb)) => InstanceEqv::Rendered(ra == rb),
-                    _ => InstanceEqv::Decided(false),
-                }
-            }
+            Some(_) => match (self.render_raku(a), self.render_raku(b)) {
+                (Some(ra), Some(rb)) => InstanceEqv::Rendered(ra == rb),
+                _ => InstanceEqv::Decided(false),
+            },
             None => {
                 let ra = self.user_raku(a);
                 // A throwing `raku` ends the comparison: the right operand's
