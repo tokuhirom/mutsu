@@ -205,7 +205,16 @@ impl Interpreter {
         let list = if args.len() == 2 && matches!(args[1].view(), ValueView::Array(..)) {
             args[1].clone()
         } else {
-            Value::array(args[1..].to_vec())
+            // A Slip argument (`Empty`, `|(...)`) flattens into the slurpy.
+            Value::array(
+                args[1..]
+                    .iter()
+                    .flat_map(|arg| match arg.view() {
+                        ValueView::Slip(items) => items.iter().cloned().collect::<Vec<_>>(),
+                        _ => vec![arg.clone()],
+                    })
+                    .collect(),
+            )
         };
         // A List's own identity is per-object; the arguments' element keys
         // are what make two calls with the same arguments share a result.

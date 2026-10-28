@@ -458,6 +458,13 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
     row!(
         "Metamodel::ClassHOW",
+        "set_language_revision",
+        2,
+        false,
+        |interp, _target, args, _named| Some(interp.mop_set_language_revision(args.to_vec()))
+    ),
+    row!(
+        "Metamodel::ClassHOW",
         "method_table",
         1,
         true,
