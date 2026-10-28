@@ -1321,6 +1321,16 @@ impl Interpreter {
             .collect()
     }
 
+    /// The bare-name package chain for running inside `package` (no lexical
+    /// package), unmemoized: for a rare fallback probe, not a hot path.
+    // Cost: O(d), d = nesting depth of `package`.
+    pub(crate) fn bare_name_packages_for(&self, package: Symbol) -> Vec<String> {
+        Self::compute_bare_name_packages(package, None)
+            .iter()
+            .map(|s| s.as_str().to_string())
+            .collect()
+    }
+
     /// [`Self::bare_name_packages`] as interned symbols, memoized on the only
     /// two inputs it reads (see [`ResolutionCaches::bare_name_packages_memo`](crate::runtime::resolution_caches::ResolutionCaches::bare_name_packages_memo)).
     ///

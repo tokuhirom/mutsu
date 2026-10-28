@@ -344,7 +344,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
             custom_traits,
             written,
         },
-    ) = header::parse(rest, &name, &type_params)?;
+    ) = header::parse(rest)?;
     rest = after_header;
 
     // A role can refer to itself from its own methods. Register its name before
