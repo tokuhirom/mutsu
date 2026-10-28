@@ -422,34 +422,6 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn has_invalid_anonymous_rw_trait(code: &str) -> bool {
-        let bytes = code.as_bytes();
-        let mut i = 0usize;
-        while i < bytes.len() {
-            if bytes[i] != b'$' {
-                i += 1;
-                continue;
-            }
-            let mut j = i + 1;
-            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
-                j += 1;
-            }
-            if j + 1 >= bytes.len() || bytes[j] != b'i' || bytes[j + 1] != b's' {
-                i += 1;
-                continue;
-            }
-            j += 2;
-            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
-                j += 1;
-            }
-            if j + 1 < bytes.len() && bytes[j] == b'r' && bytes[j + 1] == b'w' {
-                return true;
-            }
-            i += 1;
-        }
-        false
-    }
-
     // Cost: O(v), v = number of variants.
     /// The variant of `enum_name` named `name` (a CLI argument spelling such as
     /// `Rock`), unlike [`Self::coerce_to_enum_variant`], which looks up by value.
