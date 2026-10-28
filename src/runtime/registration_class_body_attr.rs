@@ -449,9 +449,20 @@ impl Interpreter {
             self.register_box_target(cx.name, &attr_name_str);
         }
         if let Some(it) = &decl.is_type {
+            // A lexical (`my class`) container type is registered under its
+            // storage name (`Name\0<id>`); resolve it here, where the lexical
+            // is in scope, so construction elsewhere builds the right type.
+            let stored = if it.contains('[') {
+                it.clone()
+            } else {
+                match self.resolve_type_object(it).as_ref().map(|v| v.view()) {
+                    Some(ValueView::Package(p)) => p.resolve().to_string(),
+                    _ => it.clone(),
+                }
+            };
             self.registry_mut()
                 .class_attribute_is_types
-                .insert((cx.name.to_string(), attr_name_str.clone()), it.clone());
+                .insert((cx.name.to_string(), attr_name_str.clone()), stored);
         }
         if let Some(dm) = &decl.deprecated_message {
             self.registry_mut()
