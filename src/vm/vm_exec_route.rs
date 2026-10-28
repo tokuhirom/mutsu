@@ -51,13 +51,13 @@ impl Interpreter {
             | OpCode::Decont
             | OpCode::DecontListElems
             | OpCode::DeitemizeForBind
-            | OpCode::IndexBindValue
             | OpCode::DeitemizeZen
             | OpCode::DerefContainer
             | OpCode::Div
             | OpCode::EnterPointyTopic
             | OpCode::ExitPointyTopic
             | OpCode::GetGivenPointyTopic
+            | OpCode::IndexBindValue
             | OpCode::IntBitNeg
             | OpCode::Itemize
             | OpCode::ItemizeVar(..)
