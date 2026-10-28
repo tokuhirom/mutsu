@@ -5005,7 +5005,15 @@ impl Interpreter {
         if !var_name.starts_with(crate::runtime::utils::LVALUE_ROOT_TEMP_PREFIX) {
             return None;
         }
-        let root = self.env().get(var_name)?.deref_container();
+        let mut root = self.env().get(var_name)?.deref_container();
+        // An `is rw` accessor hands its container back as a `Proxy` (Red's
+        // `has Json $.data is rw is column`): the chain stores through what
+        // that FETCHes to, so judge the fetched value.
+        if root.is_proxy_value()
+            && let Ok(fetched) = self.auto_fetch_proxy(&root)
+        {
+            root = fetched.deref_container();
+        }
         if matches!(root.view(), ValueView::Array(..) | ValueView::Hash(..)) {
             return None;
         }
