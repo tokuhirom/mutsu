@@ -386,7 +386,7 @@ impl Interpreter {
                 }
             }
             _ if needs_method_dispatch(v) => {
-                lines.push(loan_env!(self, render_str_value(v)));
+                lines.push(loan_env!(self, render_str_value_checked(v))?);
             }
             _ => {
                 lines.push(v.to_str_context());
@@ -423,7 +423,7 @@ impl Interpreter {
                 }
             }
             _ if needs_method_dispatch(v) => {
-                out.push_str(&loan_env!(self, render_str_value(v)));
+                out.push_str(&loan_env!(self, render_str_value_checked(v))?);
             }
             _ => {
                 out.push_str(&v.to_str_context());

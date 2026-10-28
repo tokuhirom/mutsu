@@ -11,6 +11,7 @@
 //! (prefix `~`, `.Str`) reach a user `Str`. This is the mirror image of an `Int`/`Num`
 //! subclass, whose `Numeric.Stringy` is `self.Str` (#10992).
 
+use crate::value::RuntimeError;
 use crate::runtime::Interpreter;
 use crate::value::{Value, ValueView};
 
@@ -35,6 +36,26 @@ pub(crate) fn str_mixin_payload(value: &Value) -> Option<Value> {
         return None;
     };
     matches!(inner.view(), ValueView::Str(_)).then(|| Value::clone(inner))
+}
+
+/// What a user `Str`/`Stringy` answered, unboxed to the native string a string
+/// context (`~`, interpolation inside text, `join`, `print`, `IO.add`) needs.
+/// Rakudo unboxes the answer with `nqp::unbox_s`, so an answer that is an
+/// object with no string payload (`method Str { self }`) dies instead of
+/// stringifying silently (#15117). A `Str`, a `Str` subclass or mixin and every
+/// value that is not a plain object unbox as before.
+// Cost: O(n) in the length of the string, O(1) for the refusal.
+pub(crate) fn unbox_str_answer(answer: &Value) -> Result<String, RuntimeError> {
+    if let ValueView::Instance { class_name, .. } = answer.view()
+        && str_subclass_payload(answer).is_none()
+        && !answer.is_match_instance()
+    {
+        return Err(RuntimeError::new(format!(
+            "This type cannot unbox to a native string: P6opaque, {}",
+            class_name.resolve()
+        )));
+    }
+    Ok(answer.to_string_value())
 }
 
 impl Interpreter {
