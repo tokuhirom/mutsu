@@ -4349,32 +4349,32 @@ impl Compiler {
         // A bare capture's parameter is named `__type_capture__T` by the parser.
         let capture_bind = |var: &str, cap: &str| {
             Stmt::SyntheticBlock(vec![Stmt::VarDecl {
-                    marks: crate::ast::var_marks::VarMarks {
-                        bound: true,
-                        term: crate::ast::var_marks::TermMark::Bound,
-                        ..Default::default()
-                    },
-                    anonymous: false,
-                    name: cap.to_string(),
-                    expr: Expr::MethodCall {
-                        target: Box::new(Expr::Var(var.to_string())),
-                        name: Symbol::intern("WHAT"),
-                        args: Vec::new(),
-                        modifier: None,
-                        quoted: false,
-                        sugar: false,
-                    },
-                    type_constraint: None,
-                    is_state: false,
-                    is_our: false,
-                    is_dynamic: false,
-                    is_export: false,
-                    export_tags: Vec::new(),
-                    custom_traits: Vec::new(),
-                    has_initializer: true,
-                    constant: None,
-                    bind: None,
-                    where_constraint: None,
+                marks: crate::ast::var_marks::VarMarks {
+                    bound: true,
+                    term: crate::ast::var_marks::TermMark::Bound,
+                    ..Default::default()
+                },
+                anonymous: false,
+                name: cap.to_string(),
+                expr: Expr::MethodCall {
+                    target: Box::new(Expr::Var(var.to_string())),
+                    name: Symbol::intern("WHAT"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                    sugar: false,
+                },
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                has_initializer: true,
+                constant: None,
+                bind: None,
+                where_constraint: None,
             }])
         };
         if let (Some(name), Some(def)) = (param, param_def)

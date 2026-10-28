@@ -62,7 +62,9 @@ pub(crate) struct VarMarks {
 /// How a declaration introduces a sigilless term (`my \x = 5`, `my \x := $y`,
 /// a pointy `-> \x`): the name reads from its local slot, not through `env`
 /// as a `$`-scalar or a bare package lookup.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub(crate) enum TermMark {
     /// An ordinary declaration.
     #[default]

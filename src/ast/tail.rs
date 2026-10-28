@@ -28,9 +28,7 @@ impl TailSkip {
     // Cost: O(1).
     fn skips(self, stmt: &Stmt) -> bool {
         match stmt {
-            Stmt::SetLine(..)
-            | Stmt::Trace { .. }
-            | Stmt::MarkReadonly(..) => true,
+            Stmt::SetLine(..) | Stmt::Trace { .. } | Stmt::MarkReadonly(..) => true,
             Stmt::Phaser { .. } => self == TailSkip::MarkersAndPhasers,
             _ => false,
         }

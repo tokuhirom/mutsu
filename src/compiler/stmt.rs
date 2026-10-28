@@ -1202,8 +1202,8 @@ impl Compiler {
                 // is a term too, and lives under the same key (ADR-12441).
                 let spelled = name;
                 let term_storage;
-                let declares_term = marks.term != TermMark::No
-                    && !name.starts_with(['$', '@', '%', '&', '\\']);
+                let declares_term =
+                    marks.term != TermMark::No && !name.starts_with(['$', '@', '%', '&', '\\']);
                 let name = if declares_term
                     || crate::runtime::term_names::is_term_constant_decl(name, *constant)
                 {

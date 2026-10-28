@@ -50,9 +50,8 @@ impl Compiler {
     pub(super) fn begin_term_decl(&mut self, name: &str, kind: TermMark) {
         self.sigilless_locals.insert(name.to_string());
         if kind == TermMark::Readonly {
-            let key = crate::runtime::sigilless_readonly_key(
-                &crate::runtime::term_names::term_key(name),
-            );
+            let key =
+                crate::runtime::sigilless_readonly_key(&crate::runtime::term_names::term_key(name));
             let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));
             let false_idx = self.code.add_constant(Value::FALSE);
             self.code.emit(OpCode::LoadConst(false_idx));

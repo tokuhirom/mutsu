@@ -245,9 +245,9 @@ pub(super) fn stmt_needs_interp(stmt: &Stmt) -> bool {
 /// The variable name `stmt` carries, if any.
 fn stmt_name(stmt: &Stmt) -> Option<&str> {
     match stmt {
-        Stmt::VarDecl { name, .. }
-        | Stmt::Assign { name, .. }
-        | Stmt::MarkReadonly(name, _) => Some(name),
+        Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } | Stmt::MarkReadonly(name, _) => {
+            Some(name)
+        }
         _ => None,
     }
 }
