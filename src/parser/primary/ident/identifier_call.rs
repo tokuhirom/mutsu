@@ -2093,7 +2093,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((r3, make_listop_expr(name, input, vec![block_expr])));
             }
             let mut method_args = Vec::new();
-            let (mut r3, first_arg) = expression(r3)?;
+            // The arguments after the block are a listop's: the loose
+            // word-logicals end them (`lives-ok { ... }, "x" and is ...`).
+            let (mut r3, first_arg) = crate::parser::expr::listop_arg_expr_list_infix(r3)?;
             method_args.push(first_arg);
             loop {
                 let (r4, _) = ws(r3)?;
@@ -2106,7 +2108,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     r3 = r4;
                     break;
                 }
-                let (r4, next_arg) = expression(r4)?;
+                let (r4, next_arg) = crate::parser::expr::listop_arg_expr_list_infix(r4)?;
                 method_args.push(next_arg);
                 r3 = r4;
             }
