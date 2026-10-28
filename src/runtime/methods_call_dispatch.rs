@@ -1808,6 +1808,11 @@ impl Interpreter {
                 }
                 return Ok(rendered);
             }
+            // `(Metamodel::SubsetHOW but Role).new_type(...)` keeps the role on
+            // the minted type's HOW (`dispatch_instance_and_fallback`).
+            if method == "new_type" && matches!(inner.view(), ValueView::Package(_)) {
+                return self.dispatch_instance_and_fallback(target, method, args);
+            }
             return self.call_method_with_values_unviewed(inner.as_ref().clone(), method, args);
         }
 

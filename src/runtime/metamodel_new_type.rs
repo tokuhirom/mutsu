@@ -67,6 +67,27 @@ impl Interpreter {
                 .or_else(|| native.strip_prefix("Metamodel::"))
                 .unwrap_or(native)
         });
+        // A subset metaclass mints a SUBSET: `:refinee` is the base type and
+        // `:refinement` the predicate, registered like a `subset ... of ...
+        // where ...` declaration so `~~`, parameter binding and `.^refinee`
+        // see it.
+        if native_short == Some("SubsetHOW") {
+            let named = |key: &str| {
+                args.iter().find_map(|a| match a.view() {
+                    ValueView::Pair(k, v) if k == key => Some(v.clone()),
+                    ValueView::ValuePair(k, v) if k.to_string_value() == key => Some(v.clone()),
+                    _ => None,
+                })
+            };
+            let base = named("refinee")
+                .map(|v| match v.view() {
+                    ValueView::Package(sym) => sym.resolve().to_string(),
+                    _ => v.to_string_value(),
+                })
+                .unwrap_or_else(|| "Any".to_string());
+            let refinement = named("refinement").filter(|v| matches!(v.view(), ValueView::Sub(_) | ValueView::Routine { .. }));
+            self.register_subset_decl(&name, &base, None, refinement.clone(), refinement, "", false, 0);
+        }
         // A role metaclass mints a ROLE: its methods, added with `.^add_method`,
         // must reach whatever composes it (`.^mixin`, `does`, `but`), and
         // composition reads a role's `RoleDef`, not a class definition.
@@ -80,7 +101,7 @@ impl Interpreter {
                     .how_enums
                     .insert(name.clone(), Default::default());
             }
-            if !self.registry().classes.contains_key(&name) {
+            if native_short != Some("SubsetHOW") && !self.registry().classes.contains_key(&name) {
                 self.registry_mut()
                     .classes
                     .insert(name.clone(), Default::default());
