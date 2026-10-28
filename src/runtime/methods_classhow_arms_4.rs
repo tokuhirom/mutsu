@@ -353,7 +353,10 @@ impl Interpreter {
                 }
                 (Some(inv_name), _) => {
                     let mut body = vec![
-                        crate::ast::Stmt::VarDecl { marks: Default::default(),
+                        crate::ast::Stmt::VarDecl { marks: crate::ast::var_marks::VarMarks {
+                                term: crate::ast::var_marks::TermMark::Readonly,
+                                ..Default::default()
+                            },
                             anonymous: false,
                             name: inv_name.clone(),
                             expr: crate::ast::Expr::BareWord("self".to_string()),
@@ -369,7 +372,6 @@ impl Interpreter {
                             bind: None,
                             where_constraint: None,
                         },
-                        crate::ast::Stmt::MarkSigillessReadonly(inv_name),
                     ];
                     body.extend(sub_data.body.iter().cloned());
                     (std::sync::Arc::new(body), None)

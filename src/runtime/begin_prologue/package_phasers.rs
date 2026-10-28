@@ -435,7 +435,6 @@ impl<'ast> Visit<'ast> for Locals {
                 | NameKind::SubDecl
                 | NameKind::Param
                 | NameKind::BlockParam
-                | NameKind::Sigilless
         ) {
             self.0.insert(bare(name).to_string());
         }

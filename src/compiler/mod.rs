@@ -1854,11 +1854,6 @@ pub(crate) struct Compiler {
     /// degrade to the literal name string once the creating frame is gone
     /// (escaping closure / `.^add_method`).
     enclosing_sigilless: std::collections::HashSet<String>,
-    /// Set just before compiling a `VarDecl` that declares a sigilless TERM
-    /// (`my \x`, a `with`/`if` pointy `-> \x`): the parser spells it bare,
-    /// like a scalar `my $x`, and this is what stores it under the term key
-    /// instead (ADR-12441).
-    decl_is_term: bool,
     /// Local names visible in enclosing compiled frames. A same-named local
     /// declaration in this compiler shadows a captured binding even though the
     /// outer binding has no slot in this chunk.
@@ -2198,7 +2193,6 @@ impl Compiler {
             outer_constant_names: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
             enclosing_sigilless: std::collections::HashSet::new(),
-            decl_is_term: false,
             enclosing_local_names: std::collections::HashSet::new(),
             implicit_underscore: false,
             enclosing_underscore_implicit: false,
@@ -4354,36 +4348,34 @@ impl Compiler {
         // type object of the value its parameter received, like `my \T = $x.WHAT`.
         // A bare capture's parameter is named `__type_capture__T` by the parser.
         let capture_bind = |var: &str, cap: &str| {
-            Stmt::SyntheticBlock(vec![
-                Stmt::VarDecl {
-                    marks: crate::ast::var_marks::VarMarks {
-                        bound: true,
-                        ..Default::default()
-                    },
-                    anonymous: false,
-                    name: cap.to_string(),
-                    expr: Expr::MethodCall {
-                        target: Box::new(Expr::Var(var.to_string())),
-                        name: Symbol::intern("WHAT"),
-                        args: Vec::new(),
-                        modifier: None,
-                        quoted: false,
-                        sugar: false,
-                    },
-                    type_constraint: None,
-                    is_state: false,
-                    is_our: false,
-                    is_dynamic: false,
-                    is_export: false,
-                    export_tags: Vec::new(),
-                    custom_traits: Vec::new(),
-                    has_initializer: true,
-                    constant: None,
-                    bind: None,
-                    where_constraint: None,
+            Stmt::SyntheticBlock(vec![Stmt::VarDecl {
+                marks: crate::ast::var_marks::VarMarks {
+                    bound: true,
+                    term: crate::ast::var_marks::TermMark::Bound,
+                    ..Default::default()
                 },
-                Stmt::MarkSigilless(cap.to_string()),
-            ])
+                anonymous: false,
+                name: cap.to_string(),
+                expr: Expr::MethodCall {
+                    target: Box::new(Expr::Var(var.to_string())),
+                    name: Symbol::intern("WHAT"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                    sugar: false,
+                },
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                has_initializer: true,
+                constant: None,
+                bind: None,
+                where_constraint: None,
+            }])
         };
         if let (Some(name), Some(def)) = (param, param_def)
             && let Some(cap) = &def.type_capture
@@ -5131,7 +5123,7 @@ impl Compiler {
                             // real `BlockScope` instead, which also delivers the
                             // block value via the topic (matching the SetTopic the
                             // inline path emits).
-                            if Self::has_block_enter_leave_phasers(body) {
+                            if Self::needs_phaser_block_scope(body) {
                                 self.compile_phaser_block_scope(
                                     body,
                                     PhaserBlockResult::ReturnViaTopic,

@@ -5992,7 +5992,7 @@ pub(crate) enum ClassBodyOp {
 /// `SetLine` marker immediately preceding it in the body does.
 pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
     let mut flattened: Vec<&Stmt> = crate::ast::scope_members(body)
-        .keep_whole(synthetic_block_needs_atomic_compile)
+        .keep_whole(crate::ast::var_marks::is_bind_group)
         .collect();
     collect_nested_has_decl_stmts(body, &mut flattened);
     let mut decl_line: Option<i64> = None;
@@ -6008,7 +6008,7 @@ pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
 }
 
 /// The outer-lexical slots a type body's `:=` declarations bind: for each
-/// bind group kept whole by [`synthetic_block_needs_atomic_compile`]
+/// bind group kept whole by [`crate::ast::var_marks::is_bind_group`]
 /// (`[VarDecl { marks.bound }, ...]`), the slot of a `VarDecl` whose right-hand
 /// side is a plain variable of the declaring frame. Shared by the class and
 /// role plans: see [`CompiledClassDeclPlan::body_bind_source_slots`] and
@@ -6043,34 +6043,6 @@ fn body_bind_source_slots<'a>(
         }
     }
     slots
-}
-
-/// Whether a `SyntheticBlock`'s statements must be compiled together, as one
-/// `Compiler::compile_stmt` call, rather than split apart by
-/// [`class_body_plan`]'s flatten step.
-///
-/// `Compiler::compile_stmt`'s own `Stmt::SyntheticBlock` arm scans its
-/// statement list for these same markers (a bound declaration,
-/// `Stmt::MarkSigilless`, `Stmt::MarkSigillessReadonly`, and the `@`-bind
-/// marker call) to decide how the `Stmt::VarDecl` sitting alongside them
-/// should store its value — e.g. whether a sigilless bind (`my \x := $y`)
-/// aliases `$y`'s container or snapshots its value. That decision needs the
-/// WHOLE block as context. Splitting the block into independent
-/// single-statement chunks (each compiled by its own child `Compiler`, as a
-/// top-level class-body "Other" statement is) loses that context: the
-/// `VarDecl`'s own compile no longer sees the `MarkSigilless` that follows
-/// it, so the runtime's `OpCode::MarkSigillessBind` handler falls back to
-/// inspecting the already-stored (and already-dereferenced) value instead of
-/// the compiler's verdict — turning a container bind into an immutable-value
-/// one. A `my \x := $x` placed directly at class-body top level (a common
-/// class-scoped-scratch-variable idiom) hit exactly this: the bind aliased
-/// nothing, and the first later write from a method died with "Cannot modify
-/// an immutable Int" (Math::Interval 0.0.3's `Operation` helper class).
-fn synthetic_block_needs_atomic_compile(stmts: &[Stmt]) -> bool {
-    crate::ast::var_marks::is_bind_group(stmts)
-        || stmts
-            .iter()
-            .any(|s| matches!(s, Stmt::MarkSigilless(_) | Stmt::MarkSigillessReadonly(_)))
 }
 
 /// `has` declarations nested anywhere below a class body's own statements —
@@ -6308,7 +6280,7 @@ pub(crate) enum RoleBodyOp {
 /// does.
 pub(crate) fn role_body_plan(body: &[Stmt]) -> Vec<RoleBodyOp> {
     crate::ast::scope_members(body)
-        .keep_whole(synthetic_block_needs_atomic_compile)
+        .keep_whole(crate::ast::var_marks::is_bind_group)
         .map(classify_role_body_stmt)
         .collect()
 }

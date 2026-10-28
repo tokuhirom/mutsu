@@ -633,7 +633,12 @@ impl Interpreter {
                         crate::value::ArrayKind::ItemList,
                     ))
                 } else {
-                    Ok(Value::seq(result))
+                    // Like duckmap, deepmap on a Seq answers a List
+                    // (`(4, 5).Seq.deepmap(...).WHAT` is `List` in Rakudo).
+                    Ok(Value::array_with_kind(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(result)),
+                        crate::value::ArrayKind::List,
+                    ))
                 }
             }
             ValueView::Hash(map) => {

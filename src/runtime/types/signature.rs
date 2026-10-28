@@ -1462,14 +1462,14 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             // binding like a top-level `sub f(\a) { a = 1 }` param, and a
             // `$`-sigiled leaf (`sub f($ ($x, $y)) { $x = 1 }`) is a readonly
             // ALIAS like any other non-`is rw` parameter. Both are marked at
-            // the ordinary top-level binding site -- `MarkSigillessReadonly`
-            // (a parser/compiler prologue, `compiler/helpers_sub_body.rs`)
+            // the ordinary top-level binding site -- `TermMark::Readonly`
+            // (`Compiler::mark_sigilless_subsig_params`)
             // for the former, `mark_readonly` (`binding_signature.rs`'s
             // "correct" branch) for the latter -- but a destructure leaf is
             // bound purely at RUNTIME, here, and neither mechanism reaches
             // it, so an assignment silently succeeded where Raku throws.
             if sub_pd.sigilless {
-                // Mirror the exact env-key marker `Stmt::MarkSigillessReadonly`
+                // Mirror the exact env-key marker `TermMark::Readonly`
                 // compiles to, so `CheckReadOnly` treats this identically to a
                 // top-level sigilless param or a `my \x = 5` bind (X::Assignment::RO,
                 // "Cannot modify an immutable TYPE (VALUE)").

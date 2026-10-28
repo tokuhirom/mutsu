@@ -82,6 +82,15 @@ impl Compiler {
         self.code.patch_body_end(idx);
     }
 
+    /// Whether a bare block must run as a real phaser block scope
+    /// (`BlockScope`): it has `ENTER`/`LEAVE`/... phasers and no `CATCH` or
+    /// `CONTROL`. A block with both is an implicit `try` region whose body is
+    /// the phaser scope (`compile_try_region`), so it takes that path instead.
+    // Cost: O(s), s = the block's statements.
+    pub(super) fn needs_phaser_block_scope(stmts: &[Stmt]) -> bool {
+        Self::has_block_enter_leave_phasers(stmts) && !Self::has_catch_or_control(stmts)
+    }
+
     pub(super) fn has_block_enter_leave_phasers(stmts: &[Stmt]) -> bool {
         stmts.iter().any(|s| {
             matches!(
@@ -511,11 +520,17 @@ impl Compiler {
                     // A trailing assignment (`$n += 1`, `$x = 5`) evaluates to the
                     // assigned container, so the body's value is the variable's
                     // post-assignment value, not an undefined `Nil`.
-                    Stmt::Assign { name, .. } => {
+                    Stmt::Assign { name, .. } | Stmt::VarDecl { name, .. } => {
                         loop_body.push(last.clone());
+                        // An aggregate target is a defined container, not a value to read back.
+                        let value = if name.starts_with(['@', '%']) {
+                            Expr::Literal(Value::TRUE)
+                        } else {
+                            Expr::Var(name.clone())
+                        };
                         loop_body.push(Stmt::Assign {
                             name: cap_var,
-                            expr: Expr::Var(name.clone()),
+                            expr: value,
                             op: AssignOp::Assign,
                             target_is_sigilless: false,
                         });

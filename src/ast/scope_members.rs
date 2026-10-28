@@ -162,11 +162,14 @@ mod tests {
     #[test]
     fn keep_whole_yields_the_wrapper() {
         let stmts = vec![
-            Stmt::SyntheticBlock(vec![Stmt::MarkSigilless("x".to_string()), lit(1)]),
+            Stmt::SyntheticBlock(vec![
+                Stmt::MarkReadonly("x".to_string(), crate::ast::ReadonlyKind::Alias),
+                lit(1),
+            ]),
             Stmt::SyntheticBlock(vec![lit(2)]),
         ];
         let members: Vec<&Stmt> = scope_members(&stmts)
-            .keep_whole(|inner| inner.iter().any(|s| matches!(s, Stmt::MarkSigilless(_))))
+            .keep_whole(|inner| inner.iter().any(|s| matches!(s, Stmt::MarkReadonly(..))))
             .collect();
         assert_eq!(members.len(), 2);
         assert!(matches!(members[0], Stmt::SyntheticBlock(_)));

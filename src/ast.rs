@@ -2394,15 +2394,6 @@ pub(crate) enum Stmt {
     /// undeclared-routine guards (ADR-0134). An error raised before this
     /// point is a compile-time failure, which skips the END phasers (#10977).
     BeginPrologueEnd,
-    /// Flag that the next slice assignment is a HYPER one (`%h<a b c> »=» 7`).
-    ///
-    /// Mark a sigilless variable as readonly via `__mutsu_sigilless_readonly::NAME` env key.
-    MarkSigillessReadonly(String),
-    /// Register a sigilless variable name in the compiler's `sigilless_locals`
-    /// (so a bare-word read resolves to its local slot) WITHOUT marking it
-    /// readonly. Used for a *typed* sigilless bind (`my Int \d := 7`), which keeps
-    /// the container's mutability but must still read from the slot, not `env`.
-    MarkSigilless(String),
     Assign {
         name: String,
         expr: Expr,

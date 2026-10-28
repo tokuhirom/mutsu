@@ -108,6 +108,7 @@ fn subclass_payload(target: &Value) -> Option<Value> {
     let map = attributes.as_map();
     map.get("__mutsu_pair_value")
         .or_else(|| map.get(RANGE_PAYLOAD))
+        .or_else(|| map.get(SEQ_PAYLOAD))
         .or_else(|| map.get(VERSION_PAYLOAD))
         .or_else(|| map.get(DEPSPEC_PAYLOAD))
         .or_else(|| map.get(crate::symbol::wk::baggy_data()))
@@ -118,6 +119,10 @@ fn subclass_payload(target: &Value) -> Option<Value> {
 /// its range in (#14015).
 pub(crate) const RANGE_PAYLOAD: &str = "__mutsu_range_value";
 
+/// The reserved attribute an instance of a user subclass of `Seq` carries
+/// its sequence in.
+pub(crate) const SEQ_PAYLOAD: &str = "__mutsu_seq_value";
+
 /// The reserved attribute an instance of a user subclass of `Version` carries
 /// its version in (#8070).
 pub(crate) const VERSION_PAYLOAD: &str = "__mutsu_version_value";
@@ -126,17 +131,28 @@ pub(crate) const VERSION_PAYLOAD: &str = "__mutsu_version_value";
 /// `CompUnit::DependencySpecification` carries its specification in (#14850).
 pub(crate) const DEPSPEC_PAYLOAD: &str = "__mutsu_depspec_value";
 
-/// Whether `target` is an instance of an `is Pair` or quant-hash subclass:
+/// The `Seq` an instance of a user subclass of `Seq` carries.
+// Cost: O(1), one attribute-map lookup.
+pub(crate) fn seq_payload(target: &Value) -> Option<Value> {
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return None;
+    };
+    attributes.as_map().get(SEQ_PAYLOAD).cloned()
+}
+
+/// Whether `target` is an instance of an `is Pair`, `is Seq` or quant-hash subclass:
 /// its base's methods (`Pair.Hash`, inherited from `Any`) answer on the
 /// payload, so `Any`'s rows read through the instance's own MRO walk must not
 /// answer for it (`shapeless_row`).
-// Cost: O(1), two attribute-map lookups.
+// Cost: O(1), three attribute-map lookups.
 pub(crate) fn has_collection_payload(target: &Value) -> bool {
     let ValueView::Instance { attributes, .. } = target.view() else {
         return false;
     };
     let map = attributes.as_map();
-    map.contains_key("__mutsu_pair_value") || map.contains_key(crate::symbol::wk::baggy_data())
+    map.contains_key("__mutsu_pair_value")
+        || map.contains_key(SEQ_PAYLOAD)
+        || map.contains_key(crate::symbol::wk::baggy_data())
 }
 
 /// The value standing in for `target` as the invocant of the built-in
@@ -191,6 +207,9 @@ pub(crate) fn dispatch(
 ) -> Option<Result<Value, RuntimeError>> {
     let method = method_sym.as_str();
     let payload = subclass_payload(target)?;
+    if payload.is_seq_value() {
+        return None;
+    }
     if args.is_empty() && returns_the_instance(&payload, method) {
         return Some(Ok(target.clone()));
     }

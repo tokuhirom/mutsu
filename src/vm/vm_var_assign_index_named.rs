@@ -3801,18 +3801,27 @@ impl Interpreter {
                 // (`$obj<support><source> = v` with both levels custom
                 // Associative — META6's AutoAssoc). The instance's attribute
                 // cell is shared, so the mutation is visible through the base.
-                if let ValueView::Instance {
-                    class_name: inner_cn,
-                    ..
-                } = inner.view()
-                {
-                    let icn = inner_cn.resolve();
+                // An instance with a role mixed in (`$obj but Role`, Red's JSON
+                // items) is one too: the role serves the subscripts.
+                let inner_object = match inner.view() {
+                    ValueView::Instance { class_name, .. } => Some((class_name.resolve(), false)),
+                    ValueView::Mixin(wrapped, _) => match wrapped.view() {
+                        ValueView::Instance { class_name, .. } => {
+                            Some((class_name.resolve(), true))
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some((icn, mixed)) = inner_object {
                     let assign = if outer_positional {
                         "ASSIGN-POS"
                     } else {
                         "ASSIGN-KEY"
                     };
-                    if self.has_user_method(&icn, assign) {
+                    if self.has_user_method(&icn, assign)
+                        || (mixed && self.mixin_composes_method(&inner, assign))
+                    {
                         self.call_method_with_values(inner, assign, vec![outer_idx, val.clone()])?;
                         self.stack.push(val);
                         return Ok(());
@@ -3824,7 +3833,7 @@ impl Interpreter {
                     // Fusing the two levels (`$obj[i][j] = v`) used to drop the
                     // write: nothing here descended past the inner collection.
                     if let Some(at_outer) = self.object_subscript_accessor(&inner, outer_positional)
-                        && self.class_method_is_rw_capable(&icn, at_outer)
+                        && (mixed || self.class_method_is_rw_capable(&icn, at_outer))
                     {
                         let location = self.call_method_with_values(
                             inner.clone(),
@@ -5005,7 +5014,19 @@ impl Interpreter {
         if !var_name.starts_with(crate::runtime::utils::LVALUE_ROOT_TEMP_PREFIX) {
             return None;
         }
-        let root = self.env().get(var_name)?.deref_container();
+        let mut root = self.env().get(var_name)?.deref_container();
+        // An `is rw` accessor hands its container back as a `Proxy` (Red's
+        // `has Json $.data is rw is column`): the chain stores through what
+        // that FETCHes to, so judge the fetched value.
+        if root.is_proxy_value()
+            && let Ok(fetched) = self.auto_fetch_proxy(&root)
+        {
+            root = fetched.deref_container();
+            // The temp is compiler-made and read again by the chain walk: leave
+            // it holding the fetched object, which is what the walk descends
+            // through.
+            self.env_mut().insert(var_name.to_string(), root.clone());
+        }
         if matches!(root.view(), ValueView::Array(..) | ValueView::Hash(..)) {
             return None;
         }
@@ -5491,7 +5512,10 @@ impl Interpreter {
             // ordinary `%h<a><b><c> = v` walk pays only a discriminant test per
             // level.
             if level < depth - 1
-                && matches!(unsafe { (*current).view() }, ValueView::Instance { .. })
+                && matches!(
+                    unsafe { (*current).view() },
+                    ValueView::Instance { .. } | ValueView::Mixin(..)
+                )
             {
                 let cur_val = unsafe { (*current).clone() };
                 if let Some(accessor) = self.object_subscript_accessor(&cur_val, is_positional) {
@@ -5675,6 +5699,22 @@ impl Interpreter {
                     }
                 }
             } else {
+                // Final level through an object that serves the subscript
+                // protocol itself (`.data<a><b>[1] = v` where the walk reached a
+                // role-mixed JSON item): its `ASSIGN-POS`/`ASSIGN-KEY`, else the
+                // location its rw `AT-POS`/`AT-KEY` hands back, takes the store.
+                if !is_bind_value {
+                    let cur_val = unsafe { (*current).clone() };
+                    if let Some(result) = self.assign_through_object_location(
+                        &cur_val,
+                        &indices_val[level],
+                        &val,
+                        is_positional,
+                    ) {
+                        result?;
+                        continue;
+                    }
+                }
                 // Final level: assign the value. When binding, install the
                 // shared cell *directly* (replacing any prior leaf), rather than
                 // writing through it — a fresh `:=` rebinds the element to the
@@ -5956,7 +5996,7 @@ impl Interpreter {
         // `CArray[T]` is such an object).
         if !was_bind
             && let Some(result) =
-                self.assign_through_subscript_protocol(&target, &idx, &val, is_positional)
+                self.assign_through_object_location(&target, &idx, &val, is_positional)
         {
             result?;
             self.stack.push(val);

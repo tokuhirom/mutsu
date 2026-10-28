@@ -523,7 +523,6 @@ pub(crate) fn destructure_declaring(
 ) {
     let from = bind_stmts.len();
     destructure_binds(target_name, sub_params, bind_stmts);
-    let mut marks = Vec::new();
     for stmt in &mut bind_stmts[from..] {
         let Stmt::Assign { name, expr, .. } = stmt else {
             continue;
@@ -532,12 +531,13 @@ pub(crate) fn destructure_declaring(
             .iter()
             .any(|p| p.slurpy && p.sigilless && p.name == *name)
         {
-            marks.push(Stmt::MarkSigillessReadonly(name.clone()));
-            *stmt = decl_stmt(
-                name.clone(),
-                std::mem::replace(expr, Expr::Literal(Value::NIL)),
+            *stmt = crate::ast::var_marks::with_term_mark(
+                decl_stmt(
+                    name.clone(),
+                    std::mem::replace(expr, Expr::Literal(Value::NIL)),
+                ),
+                crate::ast::var_marks::TermMark::Readonly,
             );
         }
     }
-    bind_stmts.extend(marks);
 }

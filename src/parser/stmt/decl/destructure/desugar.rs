@@ -7,6 +7,7 @@
 use super::bind_arity::{optional_param_default, push_bind_arity_check, staged_exists};
 use super::native_type_default;
 use crate::ast::parsed::ParsedStmt;
+use crate::ast::var_marks::TermMark;
 use crate::ast::{Expr, ParamTrait, SignatureDecl, SignatureInit, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
@@ -407,7 +408,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         // A SIGILLESS target binds the same way for the same reason: `my (\a,
         // \b) := ($x, $y)` aliases `$x`/`$y`, exactly as the single-variable
         // `my \a := $x` does. That form emits the bound declaration +
-        // `MarkSigilless` (see `my_decl_helpers::build_sigilless_bind_stmt`),
+        // `TermMark::Bound` (see `my_decl_helpers::build_sigilless_bind_stmt`),
         // which leaves writability to the runtime `MarkSigillessBind` check --
         // so a non-container element (`my (\a) := (5,)`) still stays immutable.
         //
@@ -451,6 +452,15 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         let decl = Stmt::VarDecl {
             marks: crate::ast::var_marks::VarMarks {
                 sigilless_decl: binds_element && dvar.sigilless,
+                // The same marks `my \a := $x` carries
+                // (`my_decl_helpers::build_sigilless_bind_stmt`): the compiler learns
+                // before compiling the declaration that this bind's target is
+                // sigilless.
+                term: match (dvar.sigilless, binds_element) {
+                    (false, _) => TermMark::No,
+                    (true, true) => TermMark::Bound,
+                    (true, false) => TermMark::Readonly,
+                },
                 ..Default::default()
             },
             anonymous: false,
@@ -468,25 +478,12 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
             bind,
             where_constraint: effective_where,
         };
-        let decl = if binds_element && dvar.sigilless {
-            // The same block shape `my \a := $x` uses
-            // (`my_decl_helpers::build_sigilless_bind_stmt`): the trailing
-            // `MarkSigilless` has to sit INSIDE the block, because that is how
-            // the compiler learns -- before compiling the declaration -- that
-            // this bind's target is sigilless.
-            Stmt::SyntheticBlock(vec![
-                crate::ast::var_marks::with_bound_mark(decl),
-                Stmt::MarkSigilless(dvar.name.clone()),
-            ])
-        } else if binds_element {
+        let decl = if binds_element {
             Stmt::SyntheticBlock(vec![crate::ast::var_marks::with_bound_mark(decl)])
         } else {
             decl
         };
         stmts.push(decl);
-        if dvar.sigilless && !binds_element {
-            stmts.push(Stmt::MarkSigillessReadonly(dvar.name.clone()));
-        }
         // `is copy` / `is readonly` fall through to the read-only copy: rakudo
         // does not give an `is copy` element of a `my (...)` bind a writable
         // container either (`my ($a is copy) := ($x,); $a = 3` dies).
@@ -501,8 +498,8 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
     // not the last element). This also keeps the per-element check declarations off
     // the block-final position, so a postconstraint (`where`/literal) on the LAST
     // element still enforces in value context — e.g. an EVAL'd `my (\b, "foo") =
-    // ...` whose trailing `MarkSigillessReadonly` would otherwise leave a
-    // constrained decl block-final and skip its check. (subtypes.t 90)
+    // ...`, whose constrained declaration would otherwise be block-final and
+    // skip its check. (subtypes.t 90)
     //
     // In ASSIGNMENT mode the value is the LHS after the assignment -- the
     // declared targets themselves, as Rakudo's `List.STORE` returns its

@@ -1,4 +1,5 @@
 use super::*;
+use crate::ast::var_marks::TermMark;
 
 impl Compiler {
     pub(super) fn compile_expr_do_stmt(&mut self, stmt: &Stmt) {
@@ -703,6 +704,14 @@ impl Compiler {
                         self.compile_expr(&Self::any_type_object_expr());
                     } else if let Some(native_default) = native_default.as_ref() {
                         self.compile_expr(native_default);
+                    } else if Self::is_scalar_bind_decl(name, *bind)
+                        && matches!(expr, Expr::MethodCall { .. })
+                    {
+                        // `(my $c := $obj.attr)`: as the statement form, flag the
+                        // accessor call so an `is rw` attribute hands back its own
+                        // container and the new variable aliases it.
+                        self.bind_target_direct = true;
+                        self.compile_call_arg(expr);
                     } else {
                         self.compile_expr(expr);
                     }
@@ -1171,9 +1180,9 @@ impl Compiler {
                 self.compile_do_block_expr_scoped(inner, &None, crate::ast::DoBlockOrigin::Desugar);
             }
             Stmt::SyntheticBlock(inner)
-                if inner.last().is_some_and(|s| {
-                    matches!(s, Stmt::MarkSigillessReadonly(_) | Stmt::MarkSigilless(_))
-                }) =>
+                if inner.last().is_some_and(
+                    |s| matches!(s, Stmt::VarDecl { marks, .. } if marks.term != TermMark::No),
+                ) =>
             {
                 self.compile_synthetic_block_inline(inner);
             }

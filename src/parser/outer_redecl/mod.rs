@@ -236,21 +236,18 @@ fn param_keys(params: &[String], param_defs: &[ParamDef]) -> Vec<String> {
 /// Walks a statement list in order, so each declaration is registered before
 /// the statements after it are examined.
 fn walk_list(stmts: &mut [Stmt], ctx: &mut Ctx) {
-    for i in 0..stmts.len() {
-        // `my \x = ...` lowers to a `VarDecl` of `x` followed by a sigilless
-        // marker. The sigilless `x` is a different symbol from `$x`, so the
+    for stmt in stmts.iter_mut() {
+        // `my \x = ...` lowers to a `VarDecl` of `x` marked as a sigilless
+        // term. The sigilless `x` is a different symbol from `$x`, so the
         // initializer may freely read `$x`.
-        let sigilless = match (&stmts[i], stmts.get(i + 1)) {
-            (
-                Stmt::VarDecl { name, .. },
-                Some(Stmt::MarkSigilless(n) | Stmt::MarkSigillessReadonly(n)),
-            ) => n == name,
-            _ => false,
-        };
+        let sigilless = matches!(
+            stmt,
+            Stmt::VarDecl { marks, .. } if marks.term != crate::ast::var_marks::TermMark::No
+        );
         if sigilless {
-            walk_var_decl(&mut stmts[i], false, ctx);
+            walk_var_decl(stmt, false, ctx);
         } else {
-            ctx.visit_stmt_mut(&mut stmts[i]);
+            ctx.visit_stmt_mut(stmt);
         }
     }
 }

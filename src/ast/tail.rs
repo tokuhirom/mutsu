@@ -13,8 +13,7 @@ pub enum TailSkip {
     /// `use trace` hooks (`Stmt::Trace`: one left behind once the phasers
     /// around it are filtered out must not become a block's value) and the
     /// compile-time binding markers a declaration lowering appends after its
-    /// `VarDecl` (`my \x = 1` is `SyntheticBlock[VarDecl, MarkSigillessReadonly]`,
-    /// whose value is the declaration's). A trailing phaser IS the last
+    /// `VarDecl` (`MarkReadonly`, whose value is the declaration's). A trailing phaser IS the last
     /// statement, as in rakudo (`sub f { 42; ENTER { 7 } }` returns 7 and
     /// `sub g { 42; LEAVE { } }` returns Nil).
     Markers,
@@ -29,11 +28,7 @@ impl TailSkip {
     // Cost: O(1).
     fn skips(self, stmt: &Stmt) -> bool {
         match stmt {
-            Stmt::SetLine(..)
-            | Stmt::Trace { .. }
-            | Stmt::MarkReadonly(..)
-            | Stmt::MarkSigilless(_)
-            | Stmt::MarkSigillessReadonly(_) => true,
+            Stmt::SetLine(..) | Stmt::Trace { .. } | Stmt::MarkReadonly(..) => true,
             Stmt::Phaser { .. } => self == TailSkip::MarkersAndPhasers,
             _ => false,
         }
@@ -97,7 +92,7 @@ mod tests {
         let stmts = vec![
             Stmt::SetLine(1, SrcSpan::NONE),
             decl.clone(),
-            Stmt::MarkSigillessReadonly("x".into()),
+            Stmt::MarkReadonly("x".into(), crate::ast::ReadonlyKind::Alias),
             Stmt::SetLine(2, SrcSpan::NONE),
         ];
         assert_eq!(last_value_stmt_index(&stmts, TailSkip::Markers), Some(1));

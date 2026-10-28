@@ -245,11 +245,9 @@ pub(super) fn stmt_needs_interp(stmt: &Stmt) -> bool {
 /// The variable name `stmt` carries, if any.
 fn stmt_name(stmt: &Stmt) -> Option<&str> {
     match stmt {
-        Stmt::VarDecl { name, .. }
-        | Stmt::Assign { name, .. }
-        | Stmt::MarkReadonly(name, _)
-        | Stmt::MarkSigillessReadonly(name)
-        | Stmt::MarkSigilless(name) => Some(name),
+        Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } | Stmt::MarkReadonly(name, _) => {
+            Some(name)
+        }
         _ => None,
     }
 }
@@ -280,9 +278,7 @@ impl Compiler {
         match &mut resolved {
             Stmt::VarDecl { name: n, .. }
             | Stmt::Assign { name: n, .. }
-            | Stmt::MarkReadonly(n, _)
-            | Stmt::MarkSigillessReadonly(n)
-            | Stmt::MarkSigilless(n) => *n = name,
+            | Stmt::MarkReadonly(n, _) => *n = name,
             _ => {}
         }
         Ok(resolved)

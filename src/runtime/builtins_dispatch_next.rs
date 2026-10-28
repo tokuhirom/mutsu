@@ -493,21 +493,20 @@ impl Interpreter {
     /// MRO, but mutsu implements it natively (`bless`), so it never appears
     /// among the `MethodDef` candidates. `push_method_dispatch_frame`'s
     /// `new_base_override` is what guarantees the frame this leg exhausts.
-    /// Whether `invocant` is a type object whose class derives from `Range`
-    /// or `Pair`, the core types whose constructor a subclass's `new` defers
+    /// Whether `invocant` is a type object whose class derives from `Range`,
+    /// `Pair` or `Seq`, the core types whose constructor a subclass's `new` defers
     /// to instead of `Mu.new` (`dispatch_native_new` builds their payload).
     // Cost: O(m), m = the class's MRO length.
-    fn package_has_native_range_or_pair_base(&self, invocant: &Value) -> bool {
+    fn package_has_native_ctor_base(&self, invocant: &Value) -> bool {
         let ValueView::Package(name) = invocant.view() else {
             return false;
         };
         let name = name.resolve();
-        name != "Range"
-            && name != "Pair"
+        !matches!(name.as_str(), "Range" | "Pair" | "Seq")
             && self
                 .mro_readonly(&name)
                 .iter()
-                .any(|c| c == "Range" || c == "Pair")
+                .any(|c| matches!(c.as_str(), "Range" | "Pair" | "Seq"))
     }
 
     pub(super) fn native_mu_base(
@@ -538,7 +537,7 @@ impl Interpreter {
             // A user `new` deferring on a type object reaches the base
             // constructor of its native ancestor (`class R is Range`'s
             // `nextwith $min, $max`), which is not a `Mu.new` call.
-            "new" if self.package_has_native_range_or_pair_base(&invocant) => {
+            "new" if self.package_has_native_ctor_base(&invocant) => {
                 Some(self.dispatch_native_new(invocant, args.to_vec()))
             }
             "clone" | "new" => {

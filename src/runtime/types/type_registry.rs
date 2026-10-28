@@ -597,7 +597,12 @@ impl Interpreter {
         let target = self.lookup_in_running_package(&self.types.package_type_aliases, name)?;
         // A block-scoped `use` gave the importer package this alias; a
         // top-level routine the block calls does not see it (ADR-8751).
-        if Symbol::lookup(name).is_some_and(|key| self.env.frame_hides_unit_name(key)) {
+        // A module's own body running (a `use` in its file, loaded from an
+        // `EVAL` inside a top-level routine) is not such a routine: the
+        // importer package is the module itself and the import is its own.
+        if self.module.module_load_stack.is_empty()
+            && Symbol::lookup(name).is_some_and(|key| self.env.frame_hides_unit_name(key))
+        {
             return None;
         }
         // A directly registered name is its own resolution; the module alias is

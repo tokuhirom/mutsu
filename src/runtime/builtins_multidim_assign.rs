@@ -250,7 +250,7 @@ impl Interpreter {
         // replace it with a fresh aggregate. The bracket form is not passed
         // down, so an Int index is the positional one.
         if !is_bind
-            && let Some(result) = self.assign_through_subscript_protocol(
+            && let Some(result) = self.assign_through_object_location(
                 &current,
                 &index,
                 &value,

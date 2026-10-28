@@ -143,8 +143,14 @@ impl Compiler {
         {
             return Some(false);
         }
+        // A smiley (`buf8:D`, `int:D`) leaves the name a type.
+        let unsmiled = s
+            .strip_suffix(":D")
+            .or_else(|| s.strip_suffix(":U"))
+            .or_else(|| s.strip_suffix(":_"))
+            .unwrap_or(s);
         if s.chars().next().is_some_and(|c| c.is_ascii_lowercase())
-            && !crate::runtime::utils::is_known_type_constraint(s)
+            && !crate::runtime::utils::is_known_type_constraint(unsmiled)
         {
             if super::compile_inputs::is_imported_value_term(s) {
                 return None;
@@ -218,7 +224,7 @@ impl Compiler {
                     // where raku gives `[0 0 0]`. `compile_block_inline`'s own
                     // tail arm already routes this way — this mirrors it.
                     Stmt::Block(inner) => {
-                        if Self::has_block_enter_leave_phasers(inner) {
+                        if Self::needs_phaser_block_scope(inner) {
                             self.compile_phaser_block_literal_inline(inner);
                         } else {
                             self.compile_bare_block_inline(inner);
@@ -359,7 +365,15 @@ impl Compiler {
             (bare.clone(), Expr::Var(bare))
         };
         let var_decl = Stmt::VarDecl {
-            marks: Default::default(),
+            // A sigilless pointy parameter is a term (ADR-12441).
+            marks: crate::ast::var_marks::VarMarks {
+                term: if is_term {
+                    crate::ast::var_marks::TermMark::Slot
+                } else {
+                    crate::ast::var_marks::TermMark::No
+                },
+                ..Default::default()
+            },
             anonymous: false,
             name: bare_name,
             expr: cond.clone(),
@@ -375,10 +389,7 @@ impl Compiler {
             bind: None,
             where_constraint: None,
         };
-        // A sigilless pointy parameter is a term (ADR-12441).
-        self.decl_is_term = is_term;
         self.compile_stmt(&var_decl);
-        self.decl_is_term = false;
         (read_expr, None)
     }
 

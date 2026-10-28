@@ -2789,6 +2789,18 @@ impl Interpreter {
                                 // A bare cell IS a writable lvalue (mirrors the
                                 // positional arm's deepmap/hyper case).
                             } else if named_is_rw {
+                                // The nominal type is checked before the
+                                // container requirement (`Str:D $k is rw` given
+                                // `123` is the type error).
+                                if pd.type_constraint.is_some() {
+                                    self.check_and_coerce_param_type(
+                                        pd,
+                                        bound_value.clone(),
+                                        None,
+                                        None,
+                                        false,
+                                    )?;
+                                }
                                 return Err(crate::runtime::utils::parameter_rw_not_container(
                                     &param_display_name(pd),
                                     &bound_value,
@@ -3353,6 +3365,16 @@ impl Interpreter {
                             // ADR-0059 Slice 3): the first write creates the
                             // element.
                         } else if is_rw {
+                            // As for the named parameter: the type error wins.
+                            if pd.type_constraint.is_some() {
+                                self.check_and_coerce_param_type(
+                                    pd,
+                                    args[positional_idx].clone(),
+                                    None,
+                                    None,
+                                    false,
+                                )?;
+                            }
                             return Err(crate::runtime::utils::parameter_rw_not_container(
                                 &param_display_name(pd),
                                 &args[positional_idx],

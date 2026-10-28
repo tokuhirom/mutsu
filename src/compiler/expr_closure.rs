@@ -220,20 +220,6 @@ impl Compiler {
         } else {
             vec![param.to_string()]
         };
-        // A sigilless pointy parameter (`-> \x { }`) shadows a same-named term
-        // constant (e.g. the imaginary unit `i`) inside the body. Mark it with
-        // the same `__mutsu_sigilless_readonly::<name>` marker that `my \x = ...`
-        // uses, so a bareword read resolves the parameter, not the constant.
-        let sigilless_body: Vec<Stmt>;
-        let body: &[Stmt] = if param_sigilless && !param.is_empty() {
-            let mut v = Vec::with_capacity(body.len() + 1);
-            v.push(Stmt::MarkSigillessReadonly(param.to_string()));
-            v.extend_from_slice(body);
-            sigilless_body = v;
-            &sigilless_body
-        } else {
-            body
-        };
         // A `$`-sigiled single pointy-block parameter (`-> $v { }`) reaches this
         // function with an empty `param_defs` (see the module doc on
         // `bind_function_args_values`'s legacy binding path), so it never passes
@@ -337,6 +323,11 @@ impl Compiler {
                 body,
                 &promoted_decls,
             )
+        } else if param_sigilless && !param.is_empty() {
+            // A sigilless pointy parameter (`-> \x { }`) shadows a same-named term
+            // constant (e.g. the imaginary unit `i`) inside the body, as `my \x = ...`
+            // does, so a bareword read resolves the parameter, not the constant.
+            self.compile_closure_body_with_term_param(&params, &wc_param_defs, body, param)
         } else {
             self.compile_closure_body(&params, &wc_param_defs, body)
         };

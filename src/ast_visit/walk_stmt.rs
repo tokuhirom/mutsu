@@ -74,9 +74,6 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
                 v.visit_name(r.as_str(), NameKind::Decl);
             }
         }
-        Stmt::MarkSigillessReadonly(name) | Stmt::MarkSigilless(name) => {
-            v.visit_name(name, NameKind::Sigilless)
-        }
         Stmt::Assign {
             name,
             expr,
