@@ -1158,7 +1158,15 @@ impl Interpreter {
         {
             let name = &code.locals[idx];
             if name.starts_with('@') || name.starts_with('%') {
-                if body.needs_touch() {
+                // A Seq over a lazy user iterator stays a lazy array.
+                let lazy_array = if name.starts_with('@') && body.needs_touch() {
+                    self.lazy_array_from_seq(&body)?
+                } else {
+                    None
+                };
+                if let Some(lazy_array) = lazy_array {
+                    raw_popped = lazy_array;
+                } else if body.needs_touch() {
                     let body = std::sync::Arc::clone(&body);
                     self.reify_seq_body(&body)?;
                     // `body` is shared by `raw_popped` (both alias the same

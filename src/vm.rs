@@ -251,6 +251,7 @@ mod vm_helpers_lazy_reentrant;
 mod vm_helpers_lazy_reify;
 mod vm_helpers_lazy_scan;
 mod vm_helpers_lazy_seq_is_lazy;
+mod vm_user_iterator_lazy;
 mod vm_helpers_lazy_window;
 mod vm_hoist_capture_cells;
 pub(crate) mod vm_hyper_func;

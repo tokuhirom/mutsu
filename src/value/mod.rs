@@ -3652,6 +3652,12 @@ pub(crate) enum CatPullMode {
     /// `for $c.list { }` run its body as each item arrives (#12727) instead
     /// of only after the channel closes.
     ChannelReceive,
+    /// A user `does Iterator` instance (`cat`) whose `is-lazy` is True, pulled
+    /// one `pull-one` at a time by `my @a = <Seq over it>` / an `Iterable`
+    /// instance assigned to an `@` array, so the array reifies on demand
+    /// instead of draining a never-ending iterator (#15305). `IterationEnd`
+    /// ends the list; unlike the other modes the list may be unbounded.
+    UserIterator,
 }
 
 /// Lazy `IO::CatHandle.lines` / `.handles` generator. Holds the live cat
