@@ -278,7 +278,7 @@ impl Interpreter {
                 .role_candidates
                 .entry(name.to_string())
                 .or_default();
-            // Re-registering the same declaration (a `__hoisted` shell followed
+            // Re-registering the same declaration (a hoisted shell followed
             // by the in-place declaration, a module body re-run, a loop) must
             // REPLACE the same-signature candidate, not append a duplicate:
             // `.HOW.candidates` counts these, and two same-signature candidates
@@ -296,7 +296,7 @@ impl Interpreter {
             sig_match == Some(0)
         };
         // `roles[name]` holds the first candidate's definition. Re-registering
-        // that same candidate (the in-place declaration after a `__hoisted`
+        // that same candidate (the in-place declaration after a hoisted
         // shell, a routine re-entered) replaces it too, so the methods it
         // carries close over the re-registration's lexicals, not the
         // shell's (#10470).

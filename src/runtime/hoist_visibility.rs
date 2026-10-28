@@ -20,7 +20,7 @@
 //! not work — a declaration whose hoisted twin is byte-identical takes the
 //! idempotent `SubRegisterOutcome::Unchanged` path and writes nothing (ADR-0041
 //! §8). The signal used here is the `RegisterDecl` execution itself, which
-//! knows whether it is the hoist copy (`__hoisted`) or the in-sequence one,
+//! knows whether it is the hoist copy (hoisted) or the in-sequence one,
 //! whatever the registration outcome turns out to be.
 
 use crate::ast::FunctionDef;

@@ -388,7 +388,7 @@ impl Interpreter {
             // Memoize the linearization this validation just computed, so a
             // subclass declared next reads it instead of re-walking the whole
             // ancestor chain -- without it a chain of d classes cost O(d^3) to
-            // declare (#9173). A `__hoisted` shell is skipped: the real
+            // declare (#9173). A hoisted shell is skipped: the real
             // declaration re-registers it and computes its own.
             Ok(mro) if !is_hoisted_shell => {
                 let mro: std::sync::Arc<[crate::symbol::Symbol]> = mro
@@ -404,7 +404,7 @@ impl Interpreter {
             Ok(_) => {}
         }
         // Validate that all self!method() calls reference existing private
-        // methods. Skip this for a `__hoisted` forward-reference shell
+        // methods. Skip this for a hoisted forward-reference shell
         // (`hoist_type_decl_shells`): its registration runs before the
         // class's own body statements (including a `BEGIN { ... }` that
         // dynamically composes a role via `.^add_role`) have executed, so a

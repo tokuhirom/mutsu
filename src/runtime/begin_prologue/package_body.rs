@@ -63,14 +63,10 @@ pub(super) fn split_package_decl(stmt: Stmt) -> (Stmt, Option<Stmt>) {
                 Stmt::ClassDecl {
                     name,
                     body,
-                    custom_traits,
                     is_lexical,
                     decl_id,
                     ..
                 } => {
-                    if custom_traits.iter().any(|(t, _)| t == "__hoisted") {
-                        return (stmt, None);
-                    }
                     let decl = PackageRuntimeDecl::Class {
                         is_lexical: *is_lexical,
                         decl_id: *decl_id,

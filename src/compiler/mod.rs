@@ -1370,7 +1370,7 @@ pub(crate) struct Compiler {
     /// therefore back-fills its keys into the matching hoisted plan (same name
     /// and same `sub_registration_fingerprint`, i.e. the same declaration).
     hoisted_sub_plans: Vec<(crate::symbol::Symbol, u64, u32)>,
-    /// `__hoisted` class/role shell registrations emitted by
+    /// hoisted class/role shell registrations emitted by
     /// `hoist_type_decl_shells`, as `(decl_id, decl plan index)`. The shell
     /// carries a subset of the source-order declaration's body, so when that
     /// declaration's env-sync reads are bounded the shell's are too, and the
@@ -1713,6 +1713,10 @@ pub(crate) struct Compiler {
     /// `compile_call_arg` keeps its tag, which the binder reads to make the
     /// alias readonly.
     call_arg_direct: bool,
+    /// The registration pass the next `SubDecl` this compiler lowers is for
+    /// (set by the class-body hoist chunk, consumed by that declaration so a
+    /// nested one is not affected).
+    next_sub_decl_pass: crate::ast::DeclPass,
     /// When true, a scalar root of the source indexed assignment in a nested
     /// indexed bind must be promoted to a shared container before its path is
     /// evaluated. Ordinary bind chains retain their deferred-local fast path.
@@ -2181,6 +2185,7 @@ impl Compiler {
             pending_rw_arg_list_callee: None,
             bind_target_direct: false,
             call_arg_direct: false,
+            next_sub_decl_pass: crate::ast::DeclPass::default(),
             compile_nested_index_bind_source: false,
             suppress_multidim_bind_ref_arg: false,
             mint_named_pair: false,

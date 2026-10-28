@@ -1286,10 +1286,28 @@ pub(crate) const SUBMETHOD_LITERAL_MARKER: &str = "__submethod_literal";
 /// closure built from it is that candidate, so it answers `.multi` True and
 /// `.dispatcher` with the multi it joined.
 pub(crate) const MULTI_CANDIDATE_VALUE_MARKER: &str = "__multi_candidate_value";
-/// Marks a routine declaration the compiler found in a lexical scope nested
-/// in its unit's or routine's own (an `if` body, a bare block): registering it
-/// may shadow an outer `&name` binding instead of redeclaring it (#13855).
-pub(crate) const NESTED_SCOPE_DECL_MARKER: &str = "__nested_scope";
+/// Which registration a declaration plan is built for, as the compiler knows
+/// it when it lowers the declaration: the plan carries the answer, the
+/// declaration's own traits stay what the source wrote.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, bincode::Encode, bincode::Decode)]
+pub(crate) struct DeclPass {
+    /// The hoist-pass copy of a declaration (a stripped early registration;
+    /// the in-sequence one validates and resolves for real). A type shell is
+    /// the declaration-only forward reference of a class or role.
+    pub(crate) hoisted: bool,
+    /// A type shell of a declaration nested in code (`Stmt::NestedTypeShells`),
+    /// the compile-time composition; implies `hoisted`.
+    pub(crate) hoisted_nested: bool,
+    /// A declaration in the body of a routine or closure (the hoist pass and
+    /// the in-sequence registration both say so): it shadows an outer routine
+    /// of the same name instead of redeclaring it.
+    pub(crate) lexical_hoist: bool,
+    /// A routine declaration the compiler found in a lexical scope nested in
+    /// its unit's or routine's own (an `if` body, a bare block): registering
+    /// it may shadow an outer `&name` binding instead of redeclaring it
+    /// (#13855).
+    pub(crate) nested_scope: bool,
+}
 
 /// The source spelling of an [`Expr::Hash`] literal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

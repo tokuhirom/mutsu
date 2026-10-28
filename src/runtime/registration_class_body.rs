@@ -248,7 +248,7 @@ impl Interpreter {
         // `t/nested-trusts-decl-qualifies-sibling-class-names.t`) left the
         // `self.set_current_package(name.to_string())` from the top of this
         // function permanently in effect: `exec_register_decl_op` swallows
-        // the error for a `__hoisted` shell and carries on, but the
+        // the error for a hoisted shell and carries on, but the
         // interpreter's runtime package stayed wrongly set to this class for
         // the rest of the compilation unit, silently mis-qualifying every
         // class registered afterward (`Plain` inside `Outer.new()!Inner::secret()`'s

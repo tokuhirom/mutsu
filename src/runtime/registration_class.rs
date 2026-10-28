@@ -305,7 +305,7 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// synthesis, `augment class`) — those keep the on-the-fly
     /// `run_block_raw` path unconditionally, same as an empty body.
     pub(crate) body_plan: &'a [crate::opcode::ClassBodyOp],
-    /// True for a `__hoisted` forward-reference shell's throwaway
+    /// True for a hoisted forward-reference shell's throwaway
     /// registration (`hoist_type_decl_shells`): the shell composes roles
     /// too (so a forward reference sees role-provided methods), but its
     /// registration is superseded at runtime by the real, source-position
@@ -326,7 +326,7 @@ pub(crate) struct ClassDeclModifiers<'a> {
     pub(crate) is_hoisted_shell: HoistedShell,
 }
 
-/// Which kind of `__hoisted` declaration-only shell a class registration is,
+/// Which kind of hoisted declaration-only shell a class registration is,
 /// if any (see [`ClassDeclModifiers::is_hoisted_shell`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HoistedShell {
