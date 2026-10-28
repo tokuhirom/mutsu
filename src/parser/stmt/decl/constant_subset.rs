@@ -313,6 +313,7 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
     let (mut rest, _) = ws(rest)?;
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
+    let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
     let mut base: Option<String> = None;
     // `of Base` and `is trait` may appear in either order before `where`:
     // `subset S of T is export where …` and `subset S is export of T where …`
@@ -364,6 +365,21 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
                 let (r2, _) = ws(r2)?;
                 rest = r2;
             } else {
+                // Any other trait is a user `trait_mod:<is>` candidate,
+                // optionally with an argument: `is foo`, `is foo(1)`.
+                let mut r = r;
+                let mut argument = None;
+                if r.starts_with('(') {
+                    let (after, parsed) = super::super::class::trait_argument(r);
+                    if let Ok(Some(crate::ast::routine_trait::TraitArgument::Parentheses(expr))) =
+                        parsed
+                        && !matches!(&expr, Expr::ArrayLiteral(items) if items.is_empty())
+                    {
+                        argument = Some(expr);
+                    }
+                    r = after;
+                }
+                custom_traits.push((trait_name, argument));
                 let (r, _) = ws(r)?;
                 rest = r;
             }
@@ -393,6 +409,7 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
             version: super::super::simple::current_language_version(),
             is_export,
             export_tags,
+            custom_traits,
             is_my: false,
             decl_id: crate::ast::next_class_decl_id(),
         },
@@ -459,6 +476,7 @@ pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
         version: super::super::simple::current_language_version(),
         is_export: false,
         export_tags: Vec::new(),
+        custom_traits: Vec::new(),
         is_my: false,
         decl_id: crate::ast::next_class_decl_id(),
     };

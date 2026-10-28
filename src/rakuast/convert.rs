@@ -1177,6 +1177,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             predicate,
             is_export,
             export_tags,
+            custom_traits,
             is_my,
             ..
         } => {
@@ -1198,6 +1199,8 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             )
             .into_iter()
             .collect();
+            // `is foo` / `is foo(ARG)`; after `is export`, before the base.
+            traits.extend(super::decl_traits::convert(custom_traits)?);
             if *base_is_explicit {
                 traits.push(Value::rakuast(Box::new(RakuAstNode {
                     origin: Default::default(),

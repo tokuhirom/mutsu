@@ -1686,6 +1686,9 @@ impl Interpreter {
             version,
             is_export,
             export_tags,
+            // Applied by `ApplyPackageTrait` ops the compiler emits after
+            // this registration.
+            custom_traits: _,
             is_my,
             decl_id,
             // Only the RakuAST converter cares whether the base type was
