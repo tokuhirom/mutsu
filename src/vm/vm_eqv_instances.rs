@@ -75,6 +75,22 @@ impl<'a> RakudoInstanceEqv<'a> {
         self.interp.class_mro(class.as_str()).contains(&exception)
     }
 
+    /// `$value.raku` through ordinary method dispatch (the default rendering
+    /// included); `None` once it threw, the error kept for the caller.
+    // Cost: O(r), r = the cost of one `raku` call.
+    fn render_raku(&mut self, value: &Value) -> Option<String> {
+        match self
+            .interp
+            .call_method_with_values(value.clone(), "raku", vec![])
+        {
+            Ok(rendered) => Some(rendered.to_string_value()),
+            Err(err) => {
+                self.error.get_or_insert(err);
+                None
+            }
+        }
+    }
+
     /// `$value.raku` through the compiled user method; `None` when the
     /// method has no bytecode dispatch (the caller then compares structurally).
     fn user_raku(&mut self, value: &Value) -> Option<String> {
@@ -108,6 +124,34 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
         }
     }
 
+    // Cost: O(r), r = the cost of the two `raku` calls; O(1) for plain scalars.
+    fn attribute_value_eqv(&mut self, a: &Value, b: &Value) -> Option<bool> {
+        let plain = |v: &Value| {
+            matches!(
+                v.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Nil
+                    | ValueView::Rat(..)
+                    | ValueView::Complex(..)
+            )
+        };
+        if self.error.is_some() || (plain(a) && plain(b)) {
+            return None;
+        }
+        if let (ValueView::LazyList(la), _) | (_, ValueView::LazyList(la)) = (a.view(), b.view())
+            && la.eqv_would_hang()
+        {
+            return None;
+        }
+        let ra = self.render_raku(a)?;
+        let rb = self.render_raku(b)?;
+        Some(ra == rb)
+    }
+
     // Cost: O(r), r = the cost of the two user `raku` calls.
     fn mixin_eqv(&mut self, a: &Value, b: &Value) -> Option<bool> {
         if self.error.is_some() {
@@ -118,19 +162,8 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
         {
             return None;
         }
-        let render = |hook: &mut Self, value: &Value| match hook.interp.call_method_with_values(
-            value.clone(),
-            "raku",
-            vec![],
-        ) {
-            Ok(rendered) => Some(rendered.to_string_value()),
-            Err(err) => {
-                hook.error.get_or_insert(err);
-                None
-            }
-        };
-        let ra = render(self, a)?;
-        let rb = render(self, b)?;
+        let ra = self.render_raku(a)?;
+        let rb = self.render_raku(b)?;
         Some(ra == rb)
     }
 
@@ -170,19 +203,8 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
             && cb == class_name
             && self.is_exception_class(class_name)
         {
-            let render = |hook: &mut Self, value: &Value| match hook.interp.call_method_with_values(
-                value.clone(),
-                "raku",
-                vec![],
-            ) {
-                Ok(rendered) => Some(rendered.to_string_value()),
-                Err(err) => {
-                    hook.error.get_or_insert(err);
-                    None
-                }
-            };
-            if let Some(ra) = render(self, a)
-                && let Some(rb) = render(self, b)
+            if let Some(ra) = self.render_raku(a)
+                && let Some(rb) = self.render_raku(b)
             {
                 return InstanceEqv::Rendered(ra == rb);
             }
