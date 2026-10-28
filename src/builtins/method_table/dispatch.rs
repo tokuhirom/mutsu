@@ -447,9 +447,9 @@ fn dispatch(
             // An `is Range`/`is Seq` subclass with its own `iterator` lists
             // through it, which the interpreter does (#15361).
             Some(_)
-                if interp
-                    .as_deref_mut()
-                    .is_some_and(|i| i.payload_instance_lists_own_iterator(target, method.as_str())) =>
+                if interp.as_deref_mut().is_some_and(|i| {
+                    i.payload_instance_lists_own_iterator(target, method.as_str())
+                }) =>
             {
                 return None;
             }
