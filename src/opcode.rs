@@ -124,7 +124,28 @@ pub(crate) fn replay_compile_latches(
     }
 }
 
-/// Set [`DISPATCHER_SEEN`] when `s` mentions a dispatch-frame builtin. Called
+/// Process-global latch: set once any compilation unit anywhere in the program
+/// mentions `samewith` (see [`note_dispatcher_mention`]).
+///
+/// The samewith context a method call pushes carries the routine's name, the
+/// invocant and a copy of the call's arguments. Only `samewith`, the deferral
+/// builtins ([`DISPATCHER_SEEN`]) and the gather-body capture of them read
+/// the invocant and arguments; every other reader (a parameter-binding error
+/// message) wants the name alone. So a program that names none of those never
+/// needs the copies, and [`Interpreter::push_method_samewith_context`] pushes
+/// the name only. Monotonic and global, so an over-set only forces the full
+/// context.
+static SAMEWITH_SEEN: AtomicBool = AtomicBool::new(false);
+
+/// True if any compiled code in this program may read a samewith context's
+/// invocant or arguments. See [`SAMEWITH_SEEN`].
+#[inline]
+pub(crate) fn samewith_context_possible() -> bool {
+    SAMEWITH_SEEN.load(Ordering::Relaxed) || DISPATCHER_SEEN.load(Ordering::Relaxed)
+}
+
+/// Set [`DISPATCHER_SEEN`] when `s` mentions a dispatch-frame builtin, and
+/// [`SAMEWITH_SEEN`] when it mentions `samewith`. Called
 /// on every compilation unit's source text before it is parsed (or served from
 /// the precompilation cache), and on every string entering a constant pool —
 /// every call of one reaches the pool as its name (a call, a bare word, an
@@ -133,6 +154,9 @@ pub(crate) fn replay_compile_latches(
 // Cost: O(n), n = bytes of `s` (only while the latch is still unset).
 #[inline]
 pub(crate) fn note_dispatcher_mention(s: &str) {
+    if !SAMEWITH_SEEN.load(Ordering::Relaxed) && s.contains("samewith") {
+        SAMEWITH_SEEN.store(true, Ordering::Relaxed);
+    }
     if !dispatcher_possible()
         && (s.contains("call") || s.contains("next"))
         && [
