@@ -295,6 +295,12 @@ pub(crate) struct ThreadParamMaskGuard {
     redeclared_cell: *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
     /// Raw pointer into `thread_param_shadow_vars`'s OWN `Box` allocation.
     shadow_cell: *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
+    /// Raw pointer into `frame_declared_aggregates`'s OWN `Box` allocation.
+    decl_log: *const std::cell::RefCell<crate::runtime::thread_sharing::FrameDeclLog>,
+    /// Length of the declaration log when the frame opened: what lies beyond
+    /// it was declared by this frame (or a frame nested in it, already
+    /// drained by that frame's own guard).
+    decl_mark: usize,
     mask: crate::runtime::runtime_shared_vars::ThreadParamMask,
 }
 
@@ -306,7 +312,15 @@ impl ThreadParamMaskGuard {
         param_defs: impl Iterator<Item = &'a crate::ast::ParamDef>,
     ) -> Self {
         let mask = interp.mask_thread_redeclared_params(param_defs);
+        let decl_mark = {
+            let mut log = interp.threads.frame_declared_aggregates.borrow_mut();
+            log.depth += 1;
+            log.names.len()
+        };
         ThreadParamMaskGuard {
+            decl_log: &*interp.threads.frame_declared_aggregates
+                as *const std::cell::RefCell<crate::runtime::thread_sharing::FrameDeclLog>,
+            decl_mark,
             redeclared_cell: &*interp.threads.thread_redeclared_vars
                 as *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
             shadow_cell: &*interp.threads.thread_param_shadow_vars
@@ -326,6 +340,17 @@ impl Drop for ThreadParamMaskGuard {
         // `&mut self` calls made elsewhere while the guard was alive.
         unsafe {
             self.mask.unmask(&*self.redeclared_cell, &*self.shadow_cell);
+            // The `@`/`%` lexicals this frame declared stop being the name's
+            // live binding here: re-mask them so the caller's same-named
+            // binding is not answered with the callee's lane entry (#15020).
+            let mut log = (*self.decl_log).borrow_mut();
+            log.depth -= 1;
+            if log.names.len() > self.decl_mark {
+                let mut redeclared = (*self.redeclared_cell).borrow_mut();
+                for name in log.names.drain(self.decl_mark..) {
+                    redeclared.insert(name);
+                }
+            }
         }
     }
 }

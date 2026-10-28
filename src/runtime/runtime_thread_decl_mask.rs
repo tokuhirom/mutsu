@@ -44,4 +44,20 @@ impl Interpreter {
             masked.insert(name.to_string());
         }
     }
+
+    /// Record a plain `@`/`%` lexical the running routine frame just masked,
+    /// so the frame's [`ThreadParamMaskGuard`](crate::vm::vm_call_state_guard::ThreadParamMaskGuard)
+    /// re-masks it on return (#15020). Outside a guarded frame (the main
+    /// program, a block) nothing is logged: nobody would drain it.
+    ///
+    /// Cost: O(1) amortized.
+    pub(crate) fn note_frame_declared_aggregate(&self, name: &str) {
+        if !name.starts_with(['@', '%']) {
+            return;
+        }
+        let mut log = self.threads.frame_declared_aggregates.borrow_mut();
+        if log.depth > 0 && log.names.last().is_none_or(|last| last != name) {
+            log.names.push(name.to_string());
+        }
+    }
 }

@@ -6,6 +6,14 @@
 
 use super::*;
 
+/// See [`ThreadSharing::frame_declared_aggregates`].
+#[derive(Default)]
+pub(crate) struct FrameDeclLog {
+    /// Open routine frames whose guard will drain the log on return.
+    pub(crate) depth: u32,
+    pub(crate) names: Vec<String>,
+}
+
 pub(crate) struct ThreadSharing {
     /// Lock ids this caller chain has entered through
     /// `Lock::Async.protect-or-queue-on-recursion` (see
@@ -96,6 +104,16 @@ pub(crate) struct ThreadSharing {
     /// [`Self::thread_redeclared_vars`] -- `ThreadParamMaskGuard` needs a
     /// stable, `Interpreter`-disjoint pointer into this field too.
     pub(crate) thread_param_shadow_vars: Box<std::cell::RefCell<rustc_hash::FxHashSet<String>>>,
+    /// Plain `@`/`%` lexicals declared by the routine frames currently on the
+    /// call stack while the cross-thread store is active, innermost last
+    /// (`depth` counts the open [`ThreadParamMaskGuard`] frames; nothing is
+    /// logged outside one). A frame's guard re-masks the names it declared
+    /// when the frame returns: the callee's spawn lifted the mask and
+    /// published its binding under the bare name, but after the return that
+    /// name belongs to the caller's binding again, which the lane would
+    /// otherwise answer with the callee's (#15020). Same `Box<RefCell<..>>`
+    /// wrapping as [`Self::thread_redeclared_vars`], for the guard's pointer.
+    pub(crate) frame_declared_aggregates: Box<std::cell::RefCell<FrameDeclLog>>,
     /// Set while an *incidental* locals -> env mirror is running: the regex
     /// interpolation pre-sync before a `~~`. It exists purely so a name-based
     /// reader in THIS interpreter can observe the frame's live slots through
@@ -196,6 +214,7 @@ impl ThreadSharing {
             )),
             thread_decl_in_flight: std::collections::HashSet::new(),
             transient_lane_containers: std::collections::HashSet::new(),
+            frame_declared_aggregates: Box::default(),
             thread_param_shadow_vars: Box::new(std::cell::RefCell::new(
                 rustc_hash::FxHashSet::default(),
             )),
@@ -257,6 +276,8 @@ impl ThreadSharing {
             // parent's currently-active parameter shadows (see the
             // `thread_redeclared_vars` comment above) — its own subsequent
             // parameter bindings union in as they run.
+            // The child's frames are its own: nothing of the parent's log.
+            frame_declared_aggregates: Box::default(),
             thread_param_shadow_vars: Box::new(std::cell::RefCell::new(
                 self.thread_param_shadow_vars.borrow().clone(),
             )),

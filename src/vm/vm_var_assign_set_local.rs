@@ -3800,6 +3800,7 @@ impl Interpreter {
                 .thread_redeclared_vars
                 .borrow_mut()
                 .insert(name.to_string());
+            self.note_frame_declared_aggregate(name);
             // The initializer has not run yet, so neither this frame's slot
             // nor `env` holds the new binding. Mark the window so a spawn
             // performed BY the initializer cannot unmask the name and let the
