@@ -1783,10 +1783,9 @@ pub(super) fn var_decl_statement(
             export_trait,
         );
     }
-    let is_internal = |n: &str| n == crate::ast::method_assign_decl::METHOD_ASSIGN_DECL_TRAIT;
     let unrendered: Vec<&str> = custom_traits
         .iter()
-        .filter(|(n, arg)| !is_internal(n) && !decl_traits::is_rendered(n, arg))
+        .filter(|(n, arg)| !decl_traits::is_rendered(n, arg))
         .map(|(n, _)| n.as_str())
         .collect();
     if !unrendered.is_empty() {

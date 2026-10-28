@@ -1490,10 +1490,7 @@ impl Compiler {
                 // The static half of a `:D` scalar holds its type object, which
                 // the constraint rejects: register the constraint after the
                 // store, as for an `is default` trait.
-                let defer_type_constraint = has_default_trait
-                    || custom_traits
-                        .iter()
-                        .any(|(n, _)| n == crate::runtime::phasers::BEGIN_STATIC_DEFINITE_TRAIT);
+                let defer_type_constraint = has_default_trait || marks.begin_static_definite;
                 let shadows_by_name = !self.local_map.contains_key(name.as_str())
                     && self.by_name_for_params.iter().any(|p| p == name);
                 let set_var_dynamic_idx = self.code.emit(OpCode::SetVarDynamic {
@@ -1909,9 +1906,7 @@ impl Compiler {
                     // check wrapped in a VarRef, which only the bind check
                     // looks through. A sigilless name in a list declaration
                     // (`my (\b where "x") = ...`) is assigned, not bound.
-                    if sigilless_bind_vardecl
-                        || custom_traits.iter().any(|(t, _)| t == "__sigilless_decl")
-                    {
+                    if sigilless_bind_vardecl || marks.sigilless_decl {
                         self.code
                             .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
                     } else if scalar_bind_decont && !name.starts_with('@') && !name.starts_with('%')

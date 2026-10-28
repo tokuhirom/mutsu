@@ -5,17 +5,12 @@
 //! or `MarkBind` + `MarkSigilless` when the right-hand side can denote a
 //! container). The spelling itself is not part of the expansion, and rakudo
 //! renders the two differently (`Initializer::Assign` / `Initializer::Bind`),
-//! so the declaration carries it as the [`SIGILLESS_DECL`] trait, whose
-//! argument says whether it was written with `=`.
+//! so the declaration carries it as `VarMarks::sigilless_decl`.
 //!
 //! The parser keeps the declaration as written (`ParsedStmt::SigillessDecl`);
 //! its lowering builds the expansion.
 
 use super::{Expr, Stmt};
-
-/// The internal trait marking a declaration built from `my \name = …` /
-/// `my \name := …`; its argument is `True` for the `=` spelling.
-pub(crate) const SIGILLESS_DECL: &str = "__sigilless_decl";
 
 /// What a sigilless declaration says.
 pub(crate) struct SigillessDecl<'a> {

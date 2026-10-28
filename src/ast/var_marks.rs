@@ -36,6 +36,17 @@ pub(crate) struct VarMarks {
     /// The declaration reads the new topic exactly once; after it the block's `$_` is the
     /// enclosing topic again, so the compiler emits the matching `ExitPointyTopic`.
     pub(crate) restore_pointy_given_topic: bool,
+    /// Built from `my \name = ...` / `my \name := ...`: the declaration is the sigilless term,
+    /// which binds its initializer whichever spelling was written.
+    pub(crate) sigilless_decl: bool,
+    /// An expression-position `my Foo $x .= new` whose initializer is the dotty `.=` marker.
+    pub(crate) method_assign_decl: bool,
+    /// A declaration a lifted BEGIN gave a static cell (ADR-0134 slice 2): it is already its
+    /// static half and its initializer reads the static value.
+    pub(crate) begin_static: bool,
+    /// The static half of a `:D` scalar, which holds its nominal type object until the
+    /// run-time assignment.
+    pub(crate) begin_static_definite: bool,
 }
 
 impl VarMarks {
@@ -52,5 +63,9 @@ impl VarMarks {
             && !self.pointy_copy
             && !self.pointy_native_param
             && !self.restore_pointy_given_topic
+            && !self.sigilless_decl
+            && !self.method_assign_decl
+            && !self.begin_static
+            && !self.begin_static_definite
     }
 }
