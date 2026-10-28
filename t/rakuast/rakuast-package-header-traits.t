@@ -6,7 +6,7 @@ use Test;
 # in source order, a parenthesised argument is a `Circumfix::Parentheses` (a
 # list `(1, 2)` its comma application), an angle argument a words quote.
 
-plan 29;
+plan 31;
 
 my $ast = Q:to/END/.AST;
     role R[::T] { }
@@ -89,3 +89,9 @@ multi sub trait_mod:<is>(Mu:U $c, :$builtmark!) { $built++ }
 is EVAL(Q[class Built is builtmark { }; Built.^name].AST), 'Built',
     'a round-tripped class with a user trait evaluates';
 is $built, 1, 'and its trait ran once';
+
+# A parent declared by the scope that calls `.AST` is a type, not a named trait.
+class CallerBase { }
+my $decl = Q[class FromCaller is CallerBase { }].AST.statements[0].expression;
+is $decl.traits[0].type.^name, 'RakuAST::Type::Simple', 'a caller-declared parent is a Type::Simple';
+is $decl.traits[0].type.name.canonicalize, 'CallerBase', 'naming the parent';
