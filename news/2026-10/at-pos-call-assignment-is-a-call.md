@@ -1,6 +1,6 @@
 # Element stores go through the object's own `AT-KEY`/`AT-POS`
 
-Five related fixes for objects that serve their subscripts through an `is rw`
+Four related fixes for objects that serve their subscripts through an `is rw`
 `AT-KEY` / `AT-POS` returning a Proxy (Red's `ColumnMethods`, t/37-json):
 
 - `$o.AT-POS($i) = $v` is a call whose result is assigned to. The parser used
@@ -14,8 +14,6 @@ Five related fixes for objects that serve their subscripts through an `is rw`
 - A role mixed in with `but` whose `AT-KEY`/`AT-POS` is the only part of the
   protocol (`$c = Col.new but Meths; $c<k> = v`) is stored through that accessor
   instead of being dropped.
-- A sub-call receiver (`mk()<k> = v`) is stored through the object's `is rw`
-  accessor when it has no `ASSIGN-KEY`/`ASSIGN-POS`.
 - `X<k>:delete` calls a user `DELETE-KEY` / `DELETE-POS` of the object when `X`
   is a method result (including an `is rw` accessor, which answers a Proxy), a
   sub result or a block topic; the delete used to be dropped silently, so Red

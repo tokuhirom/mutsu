@@ -647,7 +647,7 @@ impl Interpreter {
             .and_then(|slot| self.locals.get(slot as usize).cloned())
             .or_else(|| self.place_env_get(place, &var_name).cloned())
             .map(|t| t.deref_container())
-            && let ValueView::Mixin(..) = target.view()
+            && let ValueView::Mixin(_, mixins) = target.view()
             && !matches!(
                 self.stack.last().map(Value::view),
                 Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
@@ -658,7 +658,10 @@ impl Interpreter {
             } else {
                 ("AT-KEY", "ASSIGN-KEY")
             };
+            // A role that only `handles` the accessor forwards it to an
+            // attribute; the mixin delegation path owns that write.
             if self.mixin_composes_method(&target, at_method)
+                && self.delegated_mixin_attr_key(mixins, at_method).is_none()
                 && !self.mixin_composes_method(&target, assign_method)
             {
                 let idx_arg = match idx.view() {

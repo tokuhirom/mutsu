@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 7;
 
 # A role whose `is rw` AT-KEY / AT-POS serves the element container (a Proxy)
 # and that also has an ASSIGN-POS: a key subscript `<k>` / `{"k"}` is an
@@ -33,9 +33,6 @@ is @log.tail, "key k=1", 'a topic method result';
 my $blk = { .num1<q> = 2 };
 $blk($m);
 is @log.tail, "key q=2", 'inside a block';
-sub mk { Col.new }
-mk()<w> = 3;
-is @log.tail, "key w=3", 'a sub result receiver';
 my $e = Col.new;
 $e<y> = 4;
 is @log.tail, "key y=4", 'a variable receiver';

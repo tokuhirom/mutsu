@@ -1214,10 +1214,11 @@ impl Interpreter {
                     method
                 )));
             }
-            // A builtin value (`Array`, `Hash`, a `Seq`/`LazyList`, ...): the call
-            // answers the element's own container, assigned through exactly as
-            // for a type object above (`$list.AT-POS(0) = v`).
-            _ => {
+            // A builtin value (`Array`, `Hash`, a `Seq`/`LazyList`, ...) asked for
+            // an element (`$list.AT-POS(0) = v`): the call answers the element's
+            // own container, assigned through exactly as for a type object above.
+            // Any other method on a builtin value is not an lvalue.
+            _ if matches!(method, "AT-POS" | "AT-KEY") && method_args.len() == 1 => {
                 let was_lvalue = self.in_lvalue_assignment;
                 self.in_lvalue_assignment = true;
                 let saved_sources = self.take_pending_call_arg_sources();
@@ -1231,6 +1232,12 @@ impl Interpreter {
                 if let Some(stored) = self.store_into_aggregate_lvalue(&result, value) {
                     return Ok(stored);
                 }
+                return Err(RuntimeError::new(format!(
+                    "X::Assignment::RO: cannot assign through .{} on non-instance",
+                    method
+                )));
+            }
+            _ => {
                 return Err(RuntimeError::new(format!(
                     "X::Assignment::RO: cannot assign through .{} on non-instance",
                     method
