@@ -319,7 +319,7 @@ impl ActLoop {
             Some((end, _)) if is_done_marker => interp.invoke_done_callback(end).map(|_| ()),
             Some((end, args)) => interp.call_sub_value(end, args).map(|_| ()),
             None => interp
-                .call_sub_value(cb.clone(), vec![value])
+                .call_sub_value_with_stamped_emitter(cb.clone(), vec![value])
                 .map(|_| ()),
         });
         drop(react_done_handler);
