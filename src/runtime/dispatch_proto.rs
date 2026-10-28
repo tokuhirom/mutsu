@@ -303,6 +303,40 @@ impl Interpreter {
         // arguments straight to the candidates, so a call only a candidate
         // accepts is not rejected by the proto's parameter types (#13250).
         let only_star = super::dispatch_proto_rewrite::is_only_star_block(&proto.body);
+        // Such a proto has no body of its own to run, so, as in rakudo's
+        // onlystar dispatch, `{*}` goes straight to the winning candidate: no
+        // proto frame, proto-body bytecode or proto signature binding. A
+        // scalar `is rw`/`is raw` proto parameter still needs the proto body's
+        // slot to rebuild the redispatch arguments (`proto_rw_redispatch_args`).
+        // Cost: O(1) plus the candidate dispatch.
+        if only_star
+            && !proto
+                .param_defs
+                .iter()
+                .any(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"))
+        {
+            let call_arg_sources = self.take_pending_call_arg_sources();
+            self.push_proto_dispatch_frame(
+                method_name.to_string(),
+                args,
+                Some(ProtoMethodCtx {
+                    invocant,
+                    call_arg_sources,
+                }),
+            );
+            let frame = self
+                .dispatch
+                .proto_dispatch_stack
+                .last()
+                .cloned()
+                .expect("push_proto_dispatch_frame pushed a frame");
+            // `current_code` names the caller's bytecode here, not a proto body.
+            let saved_code = std::mem::replace(&mut self.current_code, 0);
+            let result = self.in_method_call(|interp| interp.dispatch_proto_frame(frame));
+            self.current_code = saved_code;
+            self.pop_proto_dispatch_frame();
+            return result;
+        }
         let mut method_def = MethodDef {
             value_prototype: None,
             syms: Default::default(),
