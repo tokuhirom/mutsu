@@ -151,9 +151,34 @@ fn follows_term_listop(rest: &[char], slash: usize) -> bool {
     let word: String = rest[start..end].iter().collect();
     matches!(
         word.as_str(),
-        "make" | "return" | "say" | "print" | "put" | "note" | "push" | "unshift" | "take" | "die"
-            | "warn" | "if" | "unless" | "and" | "or" | "xor" | "not" | "so" | "given" | "when"
-            | "while" | "until" | "for" | "with" | "without" | "else" | "elsif" | "then"
+        "make"
+            | "return"
+            | "say"
+            | "print"
+            | "put"
+            | "note"
+            | "push"
+            | "unshift"
+            | "take"
+            | "die"
+            | "warn"
+            | "if"
+            | "unless"
+            | "and"
+            | "or"
+            | "xor"
+            | "not"
+            | "so"
+            | "given"
+            | "when"
+            | "while"
+            | "until"
+            | "for"
+            | "with"
+            | "without"
+            | "else"
+            | "elsif"
+            | "then"
     )
 }
 
