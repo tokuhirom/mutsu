@@ -1208,9 +1208,14 @@ impl Compiler {
         // `use fatal` lives, even though `$f` is textually the try's tail).
         let mut tail_is_bare_container_read = false;
         if Self::has_block_enter_leave_phasers(&main_stmts) {
-            self.synthetic_block_body = true;
-            self.compile_stmt(&Stmt::Block(main_stmts.clone()));
-            self.compile_expr(&Expr::Var("_".to_string()));
+            // The body is a real phaser block scope whose trailing value stays
+            // on the stack. Routing it through the statement-position block
+            // discarded the value and read the enclosing `$_` instead, so a
+            // routine with `CATCH` plus `LEAVE`/`KEEP` returned `Any`
+            // (Red's `automatic-transaction`).
+            let saved_scope = self.push_dynamic_scope_lexical();
+            self.compile_phaser_block_scope(&main_stmts, PhaserBlockResult::Push);
+            self.pop_dynamic_scope_lexical(saved_scope);
             main_leaves_value = true;
         } else {
             // A CATCH/CONTROL phaser occupies a slot in the block's statement
