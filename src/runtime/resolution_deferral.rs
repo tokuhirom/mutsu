@@ -48,6 +48,7 @@ impl Interpreter {
     fn own_overloads_at_level(&mut self, owner: &str, method_name: &str) -> Option<Vec<MethodDef>> {
         self.registry()
             .get_method_overloads_with_role_fallback(owner, method_name)
+            .map(|overloads| overloads.to_vec())
     }
 
     /// Nominal (argument-independent) narrowness of `def`'s positional, non-slurpy parameter

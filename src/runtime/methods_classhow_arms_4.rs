@@ -244,6 +244,7 @@ impl Interpreter {
                         src_method.as_ref(),
                     )
                     .filter(|defs| defs.iter().any(|d| d.is_multi))
+                    .map(|defs| defs.to_vec())
             })();
             // A plain block -- or a `sub`, anonymous or DECLARED
             // (`&named-sub`) -- passed to `^add_method` receives the

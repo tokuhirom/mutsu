@@ -730,6 +730,9 @@ pub(crate) mod wk {
         /// env keys a lexical override of them binds under
         /// (`vm_call_dispatcher_builtin`).
         callsame => "callsame";
+        /// The builtin a subscript's value adverbs (`:k`/`:v`/`:kv`/`:p`) lower to
+        /// (`ast::SUBSCRIPT_ADVERB_FN`).
+        subscript_adverb => "__mutsu_subscript_adverb";
         nextsame => "nextsame";
         amp_callsame => "&callsame";
         amp_nextsame => "&nextsame";
