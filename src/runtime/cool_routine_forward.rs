@@ -46,7 +46,13 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !METHOD_FORWARDING_ROUTINES.contains(&name) {
+        // Cost: O(len(name)) -- one hash probe; every builtin call asks.
+        static ROUTINES: std::sync::OnceLock<rustc_hash::FxHashSet<&'static str>> =
+            std::sync::OnceLock::new();
+        if !ROUTINES
+            .get_or_init(|| METHOD_FORWARDING_ROUTINES.iter().copied().collect())
+            .contains(name)
+        {
             return None;
         }
         let first = args.first()?;

@@ -1362,7 +1362,13 @@ impl Interpreter {
     }
 
     pub(crate) fn is_builtin_function(name: &str) -> bool {
-        BUILTIN_FUNCTION_NAMES.contains(&name)
+        // Cost: O(len(name)) -- one hash probe; the slice it indexes is ~150
+        // names, which a linear `contains` compared one by one on every call.
+        static NAMES: std::sync::OnceLock<rustc_hash::FxHashSet<&'static str>> =
+            std::sync::OnceLock::new();
+        NAMES
+            .get_or_init(|| BUILTIN_FUNCTION_NAMES.iter().copied().collect())
+            .contains(name)
     }
 
     /// MOP pseudo-methods (`WHAT`, `HOW`, `VAR`) that Raku also exposes as
