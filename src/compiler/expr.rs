@@ -474,6 +474,21 @@ impl Compiler {
             Expr::Unary { op, expr, .. } => {
                 self.compile_expr_unary(op, expr);
             }
+            // `^$x` / `^$o.m` / `^f()`: the prefix form numifies its bound
+            // (a Seq counts its items), which the infix `0..^$x` refuses.
+            Expr::Binary {
+                right,
+                op: crate::token_kind::TokenKind::DotDotCaret,
+                form: crate::ast::BinaryForm::CaretPrefix,
+                ..
+            } if matches!(
+                right.as_ref(),
+                Expr::Var(_) | Expr::MethodCall { .. } | Expr::Call { .. }
+            ) =>
+            {
+                self.compile_expr(right);
+                self.code.emit(OpCode::UptoRange);
+            }
             Expr::Binary {
                 left, op, right, ..
             } => {
