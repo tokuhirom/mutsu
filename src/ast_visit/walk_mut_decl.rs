@@ -94,6 +94,7 @@ pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut
         }
         Stmt::MethodDecl {
             is_hidden_from_backtrace: _,
+            nested_capture_index: _,
             value_prototype: _,
             name: _,
             name_expr,

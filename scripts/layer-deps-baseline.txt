@@ -7,7 +7,7 @@
 #   scripts/check-layer-deps.py --update
 
 src/gc/stw.rs                                            2
-src/opcode.rs                                           25
+src/opcode.rs                                           24
 src/parser/expr/precedence/custom_infix.rs               1
 src/parser/expr/precedence/list_infix_top.rs             3
 src/parser/expr/precedence/ternary.rs                    3

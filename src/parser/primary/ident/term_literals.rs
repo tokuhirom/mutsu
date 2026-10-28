@@ -274,6 +274,8 @@ pub(crate) fn whatever(input: &str) -> PResult<'_, Expr> {
             && !after.starts_with('\n')
             && !after.starts_with('\t')
             && !after.starts_with('\r')
+            // `**...`: a HyperWhatever endpoint of a sequence
+            && !after.starts_with("...")
             && !starts_superscript_power
         {
             return Err(PError::expected("whatever (not **)"));

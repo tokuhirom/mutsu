@@ -736,17 +736,13 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         }
         _ => target_expr,
     };
-    let mut custom_traits = s.custom_traits.clone();
-    if !matches!(target_expr, Expr::BareWord(_)) {
-        custom_traits.push((
-            crate::parser::outer_redecl::METHOD_ASSIGN_DECL_TRAIT.to_string(),
-            None,
-        ));
-    }
+    let custom_traits = s.custom_traits.clone();
+    let mut marks = s.marks.clone();
+    marks.method_assign_decl = !matches!(target_expr, Expr::BareWord(_));
     // A typed call (`my Foo $u .= new`) is a real initializer, not the
     // declaration's default value: the RakuAST boundary must render it (it
     // rendered a bare `my Foo $u` before). The untyped form already carries
-    // `METHOD_ASSIGN_DECL_TRAIT`; a shaped one (`my @c[2;2] .= new(...)`) keeps
+    // `VarMarks::method_assign_decl`; a shaped one (`my @c[2;2] .= new(...)`) keeps
     // the unmarked shape so the compiler builds the shaped container first.
     let has_initializer = matches!(target_expr, Expr::BareWord(_)) && s.shape_dims.is_none();
     let source_callee = dynamic_name.clone();
@@ -840,7 +836,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             is_export: s.has_export_trait,
             export_tags: s.export_tags.clone(),
             custom_traits,
-            marks: s.marks.clone(),
+            marks,
             has_initializer,
             constant: None,
             bind: None,
@@ -969,6 +965,12 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         && name.resolve() == "hash"
         && args.is_empty()
         && let Expr::Var(var_name) = target.as_ref()
+        // TODO: `my %args := %$args` (the scalar and the hash share a name)
+        // keeps the `.hash` copy: the rewritten `HashVar(args)` is spelled like
+        // the hash being declared, so the declaration scan would take it for
+        // `my %args := %args` ("initialize itself"). The right fix is a
+        // distinct node for the scalar deref, which also lets this bind alias.
+        && bound_name.get(1..) != Some(var_name.as_str())
     {
         expr = Expr::HashVar(var_name.clone());
     }

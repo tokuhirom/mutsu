@@ -1575,7 +1575,7 @@ impl Interpreter {
                         "callmethodmut",
                         "nil-predispatch",
                     );
-                    let resumed = self.raise_resumable_warning(message, resume)?;
+                    let resumed = self.raise_resumable_warning(&message, resume)?;
                     self.stack.push(resumed);
                     return Ok(());
                 }

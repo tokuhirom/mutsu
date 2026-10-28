@@ -1314,6 +1314,7 @@ impl Compiler {
                             version: String::new(),
                             is_export: false,
                             export_tags: Vec::new(),
+                            custom_traits: Vec::new(),
                             // Anonymous where-subsets are internal; never
                             // alias them under the enclosing package.
                             is_my: true,
@@ -1490,10 +1491,7 @@ impl Compiler {
                 // The static half of a `:D` scalar holds its type object, which
                 // the constraint rejects: register the constraint after the
                 // store, as for an `is default` trait.
-                let defer_type_constraint = has_default_trait
-                    || custom_traits
-                        .iter()
-                        .any(|(n, _)| n == crate::runtime::phasers::BEGIN_STATIC_DEFINITE_TRAIT);
+                let defer_type_constraint = has_default_trait || marks.begin_static_definite;
                 let shadows_by_name = !self.local_map.contains_key(name.as_str())
                     && self.by_name_for_params.iter().any(|p| p == name);
                 let set_var_dynamic_idx = self.code.emit(OpCode::SetVarDynamic {
@@ -1909,9 +1907,7 @@ impl Compiler {
                     // check wrapped in a VarRef, which only the bind check
                     // looks through. A sigilless name in a list declaration
                     // (`my (\b where "x") = ...`) is assigned, not bound.
-                    if sigilless_bind_vardecl
-                        || custom_traits.iter().any(|(t, _)| t == "__sigilless_decl")
-                    {
+                    if sigilless_bind_vardecl || marks.sigilless_decl {
                         self.code
                             .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
                     } else if scalar_bind_decont && !name.starts_with('@') && !name.starts_with('%')
@@ -3243,7 +3239,7 @@ impl Compiler {
                 // routine returns (#9060). Taken first so the topic never sees it.
                 let rw_branch = std::mem::take(&mut self.rw_tail_branch);
                 // A pointy `-> $_ is copy` block starts with a parser-generated
-                // lexical declaration carrying the `__pointy_copy` marker: the
+                // lexical declaration carrying `VarMarks::pointy_copy`: the
                 // topic becomes a fresh, writable copy with NO writeback to the
                 // source. Detect that declaration so the topic is not marked
                 // read-only (`given 42 -> $_ is copy` must allow `$_ = ...`) and
@@ -3252,8 +3248,7 @@ impl Compiler {
                 let is_copy_topic = body.first().is_some_and(|stmt| {
                     matches!(
                         stmt,
-                        Stmt::VarDecl { custom_traits, .. }
-                            if custom_traits.iter().any(|(name, _)| name == "__pointy_copy")
+                        Stmt::VarDecl { marks, .. } if marks.pointy_copy
                     )
                 });
                 // An lvalue container *element* topic (`given %h<k>` /
@@ -3353,13 +3348,10 @@ impl Compiler {
                 // back.
                 // A native-typed pointy param (`given $x -> int $v is rw {...}`)
                 // cannot use `:=` (see `pointy_topic_bind`'s native branch), so
-                // it carries `__pointy_native_param` instead of `MarkBind` —
+                // it carries `VarMarks::pointy_native_param` instead of `MarkBind` —
                 // either bare (`is rw`) or wrapped in a `SyntheticBlock` with a
                 // trailing `MarkReadonly` (the default, readonly case).
-                let is_pointy_native_decl = |s: &Stmt| {
-                    matches!(s, Stmt::VarDecl { custom_traits, .. }
-                        if custom_traits.iter().any(|(t, _)| t == "__pointy_native_param"))
-                };
+                let is_pointy_native_decl = |s: &Stmt| matches!(s, Stmt::VarDecl { marks, .. } if marks.pointy_native_param);
                 let pointy_param_name = match body.first() {
                     Some(Stmt::SyntheticBlock(inner))
                         if inner
@@ -3406,8 +3398,7 @@ impl Compiler {
                 }
                 let restore_outer_topic = body.first().is_some_and(|stmt| match stmt {
                     Stmt::SyntheticBlock(stmts) => stmts.iter().any(|stmt| {
-                        matches!(stmt, Stmt::VarDecl { custom_traits, .. }
-                            if custom_traits.iter().any(|(name, _)| name == "__restore_pointy_given_topic"))
+                        matches!(stmt, Stmt::VarDecl { marks, .. } if marks.restore_pointy_given_topic)
                     }),
                     _ => false,
                 });

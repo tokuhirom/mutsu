@@ -126,6 +126,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     super::routine_source::retain(node, &mut body)?;
     Ok(Stmt::ProtoDecl {
         is_hidden_from_backtrace: is_traits.is_hidden_from_backtrace,
+        is_hoisted_copy: false,
         name: Symbol::intern(&name),
         params,
         param_defs,

@@ -5,8 +5,6 @@ use crate::symbol::Symbol;
 
 /// An untyped `.=` initializer reads its own container as the invocant;
 /// the redeclaration check must not treat that as a premature self-read.
-pub(crate) const METHOD_ASSIGN_DECL_TRAIT: &str = "__method_assign_decl";
-
 /// The `op` of the `Expr::CompoundAssign` marker an expression-position `.=`
 /// declaration keeps as its initializer. It is not the dotty `.=` of
 /// `$x .= meth` (a declaration may also be assigned one: `my $r = $x .= meth`).
@@ -138,13 +136,11 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Vec<Stmt> {
 /// The one-statement declaration `my T $x = T.method(...)` a `.=` in
 /// expression position is, with its call as the initializer.
 fn single_declaration(form: &MethodAssignDecl, target: Expr, call: Expr) -> Stmt {
-    let mut custom_traits = form.custom_traits.clone();
-    if !matches!(target, Expr::BareWord(_)) {
-        custom_traits.push((METHOD_ASSIGN_DECL_TRAIT.to_string(), None));
-    }
+    let mut marks = form.marks.clone();
+    marks.method_assign_decl = !matches!(target, Expr::BareWord(_));
     let has_initializer = matches!(target, Expr::BareWord(_)) && form.shape.is_none();
     Stmt::VarDecl {
-        marks: form.marks.clone(),
+        marks,
         anonymous: form.anonymous,
         name: form.name.clone(),
         expr: call,
@@ -154,7 +150,7 @@ fn single_declaration(form: &MethodAssignDecl, target: Expr, call: Expr) -> Stmt
         is_dynamic: form.is_dynamic,
         is_export: form.is_export,
         export_tags: form.export_tags.clone(),
-        custom_traits,
+        custom_traits: form.custom_traits.clone(),
         has_initializer,
         constant: None,
         bind: None,

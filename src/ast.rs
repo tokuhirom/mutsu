@@ -1404,6 +1404,12 @@ pub(crate) enum Expr {
     /// takes bind (not assign) semantics. The source-variable metadata the VM
     /// needs is derived from the right-hand side when it is compiled.
     IndexBindValue(Box<Expr>),
+    /// The `.=` metaop on the topic (`$_ .= meth`, `.=meth`): the method call
+    /// whose result is assigned back to `$_` (`OpCode::TopicDotAssign`), which
+    /// can reassign a read-only whole-container topic (`given @a { .=uc }`,
+    /// writing through to `@a`) while a plain `$_ = ...` keeps throwing
+    /// X::Assignment::RO.
+    TopicDotAssign(Box<Expr>),
     /// The current pointy `given`/`with` topic used by its synthetic binding.
     GivenPointyTopic,
     Literal(Value),
@@ -2349,7 +2355,7 @@ pub(crate) enum Stmt {
     /// A `method` declarator is has-scoped: it installs the method in the
     /// package wherever it lexically sits, while its body closes over the
     /// block's lexicals. The parser therefore hoists the declaration itself to
-    /// the package body (carrying the `__nested_block_method` trait with the
+    /// the package body (carrying `nested_capture_index`, the
     /// same `index`) and leaves this marker in the block. When the block runs,
     /// `closure` -- an anonymous method with the declaration's signature and
     /// body -- is built only for the lexical capture the ordinary closure
@@ -3026,6 +3032,11 @@ pub(crate) enum Stmt {
         /// methods are made available as their sub-form (e.g. operator subs).
         is_export: bool,
         export_tags: Vec<String>,
+        /// For a method hoisted out of a nested block of the package body, the
+        /// per-body index its in-block `Stmt::NestedMethodCapture` files the
+        /// block's lexical capture under.
+        #[serde(default)]
+        nested_capture_index: Option<u32>,
         /// Where the name, signature and block were written (ADR-10723
         /// Stage 2); `None` for a declaration nobody wrote.
         #[serde(default)]
@@ -3116,6 +3127,11 @@ pub(crate) enum Stmt {
         version: String,
         is_export: bool,
         export_tags: Vec<String>,
+        /// Non-builtin `is` traits (`subset S is foo of T`), each handed to a
+        /// user `trait_mod:<is>` with the subset's type object after it is
+        /// registered. `is export` is a field of the declaration instead.
+        #[serde(default)]
+        custom_traits: Vec<(String, Option<Expr>)>,
         /// `my subset F ...` — lexically scoped: NOT reachable (nor
         /// registered) under the enclosing package's qualified name.
         is_my: bool,
@@ -3190,6 +3206,10 @@ pub(crate) enum Stmt {
         trait_args: Vec<(String, Option<Expr>)>,
         /// `is hidden-from-backtrace` on a `proto method`.
         is_hidden_from_backtrace: bool,
+        /// A copy of a nested-block `proto method` appended to the package body
+        /// (`parser::stmt::nested_block_methods`); the written one stays in place.
+        #[serde(default)]
+        is_hoisted_copy: bool,
         /// True when declared as `proto method`/`proto submethod` (inside a
         /// class/role body). Such a proto registers a method-level proto body
         /// whose `{*}` dispatches to the matching multi method candidate,

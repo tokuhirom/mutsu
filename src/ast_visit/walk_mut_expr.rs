@@ -29,6 +29,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
         | Expr::Itemize(inner)
         | Expr::DeitemizeForBind(inner)
         | Expr::IndexBindValue(inner)
+        | Expr::TopicDotAssign(inner)
         | Expr::IndirectTypeLookup(inner)
         | Expr::IndirectTypeLookupTail { head: inner, .. } => v.visit_expr_mut(inner),
         Expr::GivenPointyTopic

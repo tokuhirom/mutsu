@@ -572,8 +572,7 @@ pub(crate) struct CompiledMethodDecl {
     /// For a method the parser hoisted out of a nested block of the package
     /// body (`class C { do { method m { } } }`), the per-body index its
     /// in-block `Stmt::NestedMethodCapture` marker files the block's lexical
-    /// capture under (`OpCode::CaptureNestedMethodEnv`). Read from the
-    /// `__nested_block_method` parser marker trait.
+    /// capture under (`OpCode::CaptureNestedMethodEnv`).
     pub(crate) nested_capture_index: Option<u32>,
 }
 
@@ -604,6 +603,7 @@ impl CompiledMethodDecl {
             is_hidden_from_backtrace,
             is_export,
             export_tags,
+            nested_capture_index,
             ..
         } = stmt
         else {
@@ -633,17 +633,7 @@ impl CompiledMethodDecl {
             is_hidden_from_backtrace: *is_hidden_from_backtrace,
             compiled_routine_key: None,
             uses_bare_positional_args,
-            nested_capture_index: custom_traits.iter().find_map(|(t, arg)| {
-                (t == crate::parser::NESTED_BLOCK_METHOD_TRAIT)
-                    .then(|| match arg {
-                        Some(Expr::Literal(v)) => match v.view() {
-                            crate::value::ValueView::Int(i) => u32::try_from(i).ok(),
-                            _ => None,
-                        },
-                        _ => None,
-                    })
-                    .flatten()
-            }),
+            nested_capture_index: *nested_capture_index,
         }
     }
 }

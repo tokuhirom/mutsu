@@ -57,7 +57,6 @@ pub(crate) fn build_sigilless_bind_stmt(
     type_constraint: Option<String>,
     is_state: bool,
     is_our: bool,
-    assigned: bool,
     is_value_term: fn(&str) -> bool,
 ) -> Stmt {
     // `my \foo = my $x = 3` / `my \foo = my $ = -3`: the RHS declaration
@@ -99,7 +98,6 @@ pub(crate) fn build_sigilless_bind_stmt(
             type_constraint,
             is_state,
             is_our,
-            assigned,
             is_value_term,
         );
         return Stmt::SyntheticBlock(vec![inner_decl, bind]);
@@ -135,7 +133,10 @@ pub(crate) fn build_sigilless_bind_stmt(
         _ => false,
     };
     let decl = Stmt::VarDecl {
-        marks: Default::default(),
+        marks: crate::ast::var_marks::VarMarks {
+            sigilless_decl: true,
+            ..Default::default()
+        },
         anonymous: false,
         name: name.clone(),
         expr,
@@ -148,10 +149,7 @@ pub(crate) fn build_sigilless_bind_stmt(
         // A sigilless term always carries a user-written initializer, so an
         // explicit `Nil` RHS (`my \x = Nil`) must not be mistaken for the
         // synthesized default and re-seeded as `Any`.
-        custom_traits: vec![(
-            crate::ast::sigilless_decl::SIGILLESS_DECL.to_string(),
-            Some(Expr::Literal(Value::truth(assigned))),
-        )],
+        custom_traits: Vec::new(),
         has_initializer: true,
         constant: None,
         bind: None,

@@ -710,26 +710,6 @@ fn postfix_expr_inner(input: &str, allow_ws_dot: bool) -> PResult<'_, (Expr, boo
     let (rest, expr) = primary(input)?;
     let primary_rest = rest.as_ptr();
 
-    // Type smiley: Any:U, Int:D, Str:D etc.
-    // Consume and ignore — runtime doesn't use definedness constraints yet.
-    let rest = if matches!(expr, Expr::Literal(ref lit) if matches!(lit.view(), ValueView::Package(_)))
-        && (rest.starts_with(":U") || rest.starts_with(":D") || rest.starts_with(":_"))
-    {
-        let after = &rest[2..];
-        if after.is_empty()
-            || !after
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_alphanumeric() || c == '_')
-        {
-            after
-        } else {
-            rest
-        }
-    } else {
-        rest
-    };
-
     // Raku's line-ending-block rule: a closing `}` that is the last thing on
     // its line terminates the statement, so a `.method` on the NEXT line is a
     // new (topic) statement, not a chained call. `supply { ... }\n.append(...)`
@@ -2932,42 +2912,6 @@ fn postfix_expr_loop_from<'a>(
                 rest = r_after;
                 continue;
             }
-        }
-
-        // General :delete adverb. Index targets are lowered to dedicated delete
-        // opcodes by the compiler; non-index targets die at runtime.
-        let (r_delete, _) = ws(rest)?;
-        if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_delete) {
-            rest = r_after_delete;
-            match delete_adv {
-                DeleteAdverb::NoDelete => {}
-                DeleteAdverb::Delete(None) => {
-                    expr = Expr::MethodCall {
-                        target: Box::new(expr),
-                        name: Symbol::intern("DELETE-KEY"),
-                        args: vec![],
-                        modifier: None,
-                        quoted: false,
-                        sugar: false,
-                    };
-                }
-                DeleteAdverb::Delete(Some(cond)) => {
-                    let delete_expr = Expr::MethodCall {
-                        target: Box::new(expr.clone()),
-                        name: Symbol::intern("DELETE-KEY"),
-                        args: vec![],
-                        modifier: None,
-                        quoted: false,
-                        sugar: false,
-                    };
-                    expr = Expr::Ternary {
-                        cond: Box::new(cond),
-                        then_expr: Box::new(delete_expr),
-                        else_expr: Box::new(expr),
-                    };
-                }
-            }
-            continue;
         }
 
         // Hyper method call: »/>> followed by .method or method name

@@ -443,7 +443,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         // call before wrapping it, though: `$x .= Numeric.Rat` is one mutating
         // call chain, not `$x .= Numeric` followed by a topic method call.
         let (r, expr) = crate::parser::expr::postfix_expr_continue(r, expr)?;
-        // `$_ .= meth`: route the topic metaop through `__mutsu_topic_dotassign`
+        // `$_ .= meth`: the topic metaop is an `Expr::TopicDotAssign`
         // so it can reassign a read-only whole-container topic while a plain
         // `$_ = ...` still throws X::Assignment::RO.
         let stmt = dot_assign_stmt(name, expr);

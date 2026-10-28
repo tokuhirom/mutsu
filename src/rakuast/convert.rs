@@ -1177,6 +1177,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             predicate,
             is_export,
             export_tags,
+            custom_traits,
             is_my,
             ..
         } => {
@@ -1198,6 +1199,8 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             )
             .into_iter()
             .collect();
+            // `is foo` / `is foo(ARG)`; after `is export`, before the base.
+            traits.extend(super::decl_traits::convert(custom_traits)?);
             if *base_is_explicit {
                 traits.push(Value::rakuast(Box::new(RakuAstNode {
                     origin: Default::default(),
@@ -1783,10 +1786,9 @@ pub(super) fn var_decl_statement(
             export_trait,
         );
     }
-    let is_internal = |n: &str| n == crate::ast::method_assign_decl::METHOD_ASSIGN_DECL_TRAIT;
     let unrendered: Vec<&str> = custom_traits
         .iter()
-        .filter(|(n, arg)| !is_internal(n) && !decl_traits::is_rendered(n, arg))
+        .filter(|(n, arg)| !decl_traits::is_rendered(n, arg))
         .map(|(n, _)| n.as_str())
         .collect();
     if !unrendered.is_empty() {
@@ -5506,6 +5508,7 @@ pub(super) fn is_pseudo_type(t: &str) -> bool {
     let base = t
         .strip_suffix(":D")
         .or_else(|| t.strip_suffix(":U"))
+        .or_else(|| t.strip_suffix(":_"))
         .unwrap_or(t);
     matches!(base, "::?CLASS" | "::?ROLE" | "::?PACKAGE")
 }

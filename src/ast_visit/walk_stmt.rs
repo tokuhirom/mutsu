@@ -390,6 +390,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             version: _,
             is_export: _,
             export_tags,
+            custom_traits,
             is_my: _,
             decl_id: _,
         } => {
@@ -399,6 +400,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
                 v.visit_expr(e);
             }
             names(v, export_tags, NameKind::Module);
+            traits(v, custom_traits);
         }
         Stmt::Phaser {
             spans: _,
@@ -411,6 +413,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
         } => super::walk_stmts(v, body),
         Stmt::ProtoDecl {
             is_hidden_from_backtrace: _,
+            is_hoisted_copy: _,
             name,
             params: flat,
             param_defs,

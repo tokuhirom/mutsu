@@ -319,6 +319,20 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     // same anonymous array the `+@` path mints.
     if let Some(after_plus) = rest.strip_prefix('+') {
         let tail = after_plus.trim_start();
+        // `+ [$a, $b]` / `+ ($a, $b)`: the anonymous one-arg slurpy with a
+        // sub-signature written after a space (annotations' `EXPORT`).
+        if let Some(open) = tail.chars().next().filter(|c| matches!(c, '[' | '(')) {
+            let close = if open == '[' { ']' } else { ')' };
+            let (r, _) = parse_char(tail, open)?;
+            let (r, _) = ws(r)?;
+            let (r, sub_params) = super::super::sub::parse_param_list(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, close)?;
+            let mut p = ParamDef::destructure(sub_params, true);
+            p.slurpy = true;
+            p.onearg = true;
+            return Ok((r, p));
+        }
         if tail.is_empty() || tail.starts_with([')', ',', ';']) || tail.starts_with("-->") {
             let mut p = super::helpers::make_param("@__ANON_ARRAY__".to_string());
             p.onearg = true;

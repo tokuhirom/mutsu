@@ -1931,6 +1931,34 @@ impl Interpreter {
                 };
                 self.metamodel_new_type(&how_class, &args)
             }
+            // `(Metamodel::SubsetHOW but Role).new_type(...)`: the minted type's
+            // `.HOW` is the metaclass with the role mixed in, so the role's
+            // methods answer `.^method` on the type (Red's `^submodel`).
+            "new_type"
+                if matches!(target.view(), ValueView::Mixin(inner, _)
+                    if matches!(inner.view(), ValueView::Package(n)
+                        if n.as_str().starts_with("Metamodel::")
+                            || self.is_metamodel_how_class(&n.resolve()))) =>
+            {
+                let ValueView::Mixin(inner, mixins) = target.view() else {
+                    return Ok(Value::NIL);
+                };
+                let ValueView::Package(sym) = inner.view() else {
+                    return Ok(Value::NIL);
+                };
+                let minted = self.metamodel_new_type(&sym.resolve(), &args)?;
+                if let ValueView::Package(name) = minted.view() {
+                    // The metaclass object the role is mixed into: an instance
+                    // of the builtin metaclass, so its native metamethods
+                    // (`refinee`, `name`, ...) still answer next to the role's.
+                    let how = self.dispatch_how(&minted, &[])?;
+                    let how = Value::mixin_with_state(how, (**mixins).clone());
+                    self.registry_mut()
+                        .class_how_values
+                        .insert(name.resolve().to_string(), how);
+                }
+                Ok(minted)
+            }
             // `Metamodel::ClassHOW.new.new_type(...)`: a builtin HOW instance
             // mints the same type its type object does.
             "new_type"

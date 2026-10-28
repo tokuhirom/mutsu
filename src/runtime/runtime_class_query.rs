@@ -119,7 +119,21 @@ impl Interpreter {
         {
             return None;
         }
-        self.bare_name_packages().into_iter().find_map(|pkg| {
+        // A method/sub body runs with the interpreter's current package still
+        // GLOBAL when it was called from outside its package; the routine's own
+        // package then supplies the chain (`It($x)` in a method of `class
+        // Gauge` names the nested `Gauge::It`).
+        let mut packages = self.bare_name_packages();
+        if let Some(frame_pkg) = self.routine_stack.last().map(|frame| frame.package)
+            && frame_pkg != self.current_package_sym()
+        {
+            for pkg in self.bare_name_packages_for(frame_pkg) {
+                if !packages.contains(&pkg) {
+                    packages.push(pkg);
+                }
+            }
+        }
+        packages.into_iter().find_map(|pkg| {
             if crate::qualified::is_global_name(&pkg) {
                 return None;
             }
@@ -421,7 +435,7 @@ impl Interpreter {
     /// declared element and key type, re-injected with the statics so the
     /// class's methods check their stores against their own declarations.
     // Cost: O(t), t = typed statics of `class_name`.
-    fn class_body_static_meta_lanes(&self, class_name: &str) -> Vec<(String, Value)> {
+    pub(crate) fn class_body_static_meta_lanes(&self, class_name: &str) -> Vec<(String, Value)> {
         self.lexicals
             .class_body_static_types
             .get(class_name)

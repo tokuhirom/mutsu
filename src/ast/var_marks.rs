@@ -26,6 +26,27 @@ pub(crate) struct VarMarks {
     /// The argument of `is dynamic(ARG)`, kept for the RakuAST view; the trait
     /// itself is the declaration's `is_dynamic` flag.
     pub(crate) dynamic_argument: Option<Box<Expr>>,
+    /// The parameter declaration of a pointy `given` / `with` block
+    /// (`given $x -> $v is copy { ... }`) that takes a fresh, writable copy of the topic
+    /// with no write-back to the source.
+    pub(crate) pointy_copy: bool,
+    /// The same declaration for a native-typed parameter, which cannot use `:=`; the
+    /// compiler recognizes it as the pointy parameter so `is rw` writes back.
+    pub(crate) pointy_native_param: bool,
+    /// The declaration reads the new topic exactly once; after it the block's `$_` is the
+    /// enclosing topic again, so the compiler emits the matching `ExitPointyTopic`.
+    pub(crate) restore_pointy_given_topic: bool,
+    /// Built from `my \name = ...` / `my \name := ...`: the declaration is the sigilless term,
+    /// which binds its initializer whichever spelling was written.
+    pub(crate) sigilless_decl: bool,
+    /// An expression-position `my Foo $x .= new` whose initializer is the dotty `.=` marker.
+    pub(crate) method_assign_decl: bool,
+    /// A declaration a lifted BEGIN gave a static cell (ADR-0134 slice 2): it is already its
+    /// static half and its initializer reads the static value.
+    pub(crate) begin_static: bool,
+    /// The static half of a `:D` scalar, which holds its nominal type object until the
+    /// run-time assignment.
+    pub(crate) begin_static_definite: bool,
 }
 
 impl VarMarks {
@@ -39,5 +60,12 @@ impl VarMarks {
             && !self.implicit_value_type
             && self.name_colonpairs.is_none()
             && self.dynamic_argument.is_none()
+            && !self.pointy_copy
+            && !self.pointy_native_param
+            && !self.restore_pointy_given_topic
+            && !self.sigilless_decl
+            && !self.method_assign_decl
+            && !self.begin_static
+            && !self.begin_static_definite
     }
 }

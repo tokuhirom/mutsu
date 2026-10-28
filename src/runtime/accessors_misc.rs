@@ -489,18 +489,24 @@ impl Interpreter {
         }
         if let ValueView::Instance {
             attributes: saved_attrs,
+            id: saved_id,
             ..
         } = restored.view()
         {
             // The current binding for `name` holds the live instance (the same
             // shared cell that was mutated during the dynamic scope). Write the
             // saved snapshot straight back into that cell; the env binding already
-            // aliases it, so no re-insert is needed.
+            // aliases it, so no re-insert is needed. Only when it IS the saved
+            // object: `temp $x = Other.new` rebinds `$x`, and writing the saved
+            // attributes into the other object would rewrite every alias of it
+            // (`$kept = $x` taken inside the scope).
             if let Some(v) = self.env.get(&name)
                 && let ValueView::Instance {
                     attributes: live_attrs,
+                    id: live_id,
                     ..
                 } = v.view()
+                && live_id == saved_id
             {
                 live_attrs.commit_attrs(saved_attrs.to_map());
                 return;
