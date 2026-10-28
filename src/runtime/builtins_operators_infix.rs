@@ -8,6 +8,18 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// Whether `callable` is the captured multi family bound as `&{infix_name}`
+    /// whose candidates `try_user_infix` has just declined: dispatching the
+    /// family again would reach this built-in operator once more, forever
+    /// (the same `multi infix:` imported by an `EXPORT` hook and a direct
+    /// `use`).
+    // Cost: O(1).
+    fn declined_captured_family(&self, infix_name: &str, callable: &Value) -> bool {
+        self.user_infix_override(infix_name)
+            && matches!(callable.view(), ValueView::Sub(data)
+                if data.env.get_sym(crate::symbol::wk::multi_dispatch_candidates()).is_some())
+    }
+
     pub(crate) fn call_infix_routine(
         &mut self,
         op: &str,
@@ -413,6 +425,7 @@ impl Interpreter {
                 continue;
             }
             if let Some(callable) = self.env.get(&format!("&{}", infix_name)).cloned()
+                && !self.declined_captured_family(&infix_name, &callable)
                 && matches!(
                     callable.view(),
                     ValueView::Sub(_)
@@ -558,6 +571,7 @@ impl Interpreter {
                     continue;
                 }
                 if let Some(callable) = self.env.get(&format!("&{}", expr_infix_name)).cloned()
+                    && !self.declined_captured_family(&expr_infix_name, &callable)
                     && matches!(
                         callable.view(),
                         ValueView::Sub(_)
