@@ -25,6 +25,6 @@ for 'plain' => S.new, 'mixin' => (S.new but R) -> $case {
 }
 is (S.new but R).foo, 1, 'the mixed-in role method is still callable';
 is (S.new but R).elems, 6, 'elems';
-is +(S.new but R), 6, 'Numeric is elems';
+is (S.new but R).Numeric, 6, 'Numeric is elems';
 is-deeply (S.new but R).rotor(2).list, ((0, 1), (2, 0), (1, 2)).list, 'rotor';
 is-deeply S.new.rotor(2).list, ((0, 1), (2, 0), (1, 2)).list, 'rotor on the plain class';
