@@ -31,7 +31,7 @@ pub(crate) fn code_block_body_len(rest: &[char]) -> Option<usize> {
                 i = comment_end(rest, i)?;
                 continue;
             }
-            '/' if slash_opens_regex_after(prev_sig) => {
+            '/' if slash_opens_regex_after(prev_sig) || follows_term_listop(rest, i) => {
                 let len = nested_regex_literal_len(&rest[i + 1..])?;
                 prev_sig = '/';
                 i += 1 + len;
@@ -126,6 +126,35 @@ fn enumerated_class_end(source: &[char], start: usize) -> Option<usize> {
         }
     }
     None
+}
+
+/// Is the `/` at `rest[slash]` preceded by whitespace and a word that takes a
+/// term next (`make /x/`, `return /x/`)? `prev_sig` only sees the word's last
+/// letter, which reads as a division (`$x / 2`), so the word itself is checked.
+// Cost: O(w), w = the preceding word and whitespace length.
+fn follows_term_listop(rest: &[char], slash: usize) -> bool {
+    let mut end = slash;
+    while end > 0 && rest[end - 1].is_whitespace() {
+        end -= 1;
+    }
+    if end == slash {
+        return false;
+    }
+    let mut start = end;
+    while start > 0 && (rest[start - 1].is_alphanumeric() || matches!(rest[start - 1], '-' | '_')) {
+        start -= 1;
+    }
+    // `$make / 2`, `@list / 2`, `.make / 2`: a sigil or method dot makes it a value.
+    if start > 0 && matches!(rest[start - 1], '$' | '@' | '%' | '&' | '.' | ':' | '\\') {
+        return false;
+    }
+    let word: String = rest[start..end].iter().collect();
+    matches!(
+        word.as_str(),
+        "make" | "return" | "say" | "print" | "put" | "note" | "push" | "unshift" | "take" | "die"
+            | "warn" | "if" | "unless" | "and" | "or" | "xor" | "not" | "so" | "given" | "when"
+            | "while" | "until" | "for" | "with" | "without" | "else" | "elsif" | "then"
+    )
 }
 
 /// Does a `/` right after code character `prev` open a regex literal rather
