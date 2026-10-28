@@ -39,7 +39,18 @@ impl Interpreter {
         // rather than an env lookup per typed declaration.
         let effective_constraint = {
             let (base, smiley) = crate::runtime::types::strip_type_smiley(&effective_constraint);
-            let resolved = if runtime::is_known_type_constraint(base) || is_core_raku_type(base) {
+            // A class or role registered under this very spelling is a type
+            // in its own right, not an alias to chase (`type_alias_target`
+            // draws the same line): the walk below would only prove it by a
+            // chain of by-name env misses, ~35k instructions per declaration.
+            let declared_type = {
+                let registry = self.registry();
+                registry.classes.contains_key(base) || registry.roles.contains_key(base)
+            };
+            let resolved = if runtime::is_known_type_constraint(base)
+                || is_core_raku_type(base)
+                || declared_type
+            {
                 None
             } else {
                 self.resolve_type_alias_chain(base)
