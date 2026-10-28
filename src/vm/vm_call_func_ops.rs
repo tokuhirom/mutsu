@@ -2211,6 +2211,13 @@ impl Interpreter {
             // of bouncing through interpreter `call_proto_dispatch` + `run_block`.
             return self.vm_call_proto_dispatch(code, compiled_fns);
         }
+        // The value adverbs of a subscript (`%h<a>:p`) lower to this compiler-
+        // internal builtin. No user routine can carry the name, so the
+        // resolution ladder below could only conclude what the name already
+        // says: it ends at the interpreter terminal.
+        if call_me_override.is_none() && name_sym == crate::symbol::wk::subscript_adverb() {
+            return self.dispatch_interpreter_terminal(code, name, args, arg_sources);
+        }
         if let Some(callable) = call_me_override {
             let result = self.try_compiled_method_or_interpret(callable, "CALL-ME", args);
             let result = result?;
@@ -2862,75 +2869,91 @@ impl Interpreter {
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, true))
                 } else {
-                    // Sync Interpreter locals to env before spawning threads so closures capture them
-                    if name == "start" {
-                        self.sync_env_from_locals_needed(code);
-                    }
-                    // `make` reads the CALLER's `$/`, which may live in a local
-                    // slot (a `method foo($/)` parameter) the interpreter
-                    // terminal below cannot see.
-                    if name == "make" {
-                        self.check_make_match_topic(code)?;
-                    }
-                    // EVAL/EVALFILE compile to bytecode and run on a sub-Interpreter, and
-                    // pseudo-package reads are reflective env lookups: the
-                    // interpreter is a carrier here, not a tree-walk fallback.
-                    // CARRIER (is_interpreter_carrier_function) vs TODO: compile to
-                    // bytecode (else branch = true tree-walk function fallback). The
-                    // record_* split already tracks this at runtime. See ledger §2/§C.
-                    if Self::is_interpreter_carrier_function(name) {
-                        crate::vm::vm_stats::record_function_carrier(name);
-                    } else {
-                        crate::vm::vm_stats::record_function_fallback(name);
-                    }
-                    self.set_pending_call_arg_sources(arg_sources);
-                    // Carrier writeback (mirrors `exec_exec_call_op`): an
-                    // interpreter carrier like `EVAL` writes caller lexicals
-                    // into env BY NAME; drain those writes into this frame's
-                    // slots so a subsequent slot read sees them. Previously
-                    // masked by the Nil-slot env fallback: an uninitialized
-                    // caller scalar's slot stayed Nil, so reads fell back to
-                    // env. With the Any seed (PLAN 8.5 step 3) the slot holds
-                    // a real value, so the writeback must be explicit
-                    // (t/require-expression.t `BEGIN try EVAL`).
-                    let reg_gen_before = self.registry_write_generation();
-                    let carrier_saved = self.begin_carrier();
-                    let result = self.vm_call_function(name, args);
-                    let written = self.end_carrier(carrier_saved);
-                    self.writeback_carrier_writes(code, &written);
-                    self.set_pending_call_arg_sources(None);
-                    // Interpreter function calls (e.g. `require`) may register
-                    // new subs — invalidate function resolution caches. Only
-                    // when the call actually acquired a registry write guard,
-                    // though: a blanket bump here cleared the name-keyed caches
-                    // after EVERY interpreter-native builtin call (`make`, in a
-                    // grammar-action walk, is one per action), forcing a full
-                    // registry rescan per call.
-                    if self.registry_write_generation() != reg_gen_before {
-                        self.invalidate_fn_resolution();
-                    }
-                    // substr-rw / subbuf-rw return a Proxy that must be preserved
-                    // (not auto-FETCHed). So does a re-dispatch: it hands back
-                    // what the next candidate returned, and a Proxy subclass's
-                    // `new` doing `callwith(:$FETCH, :$STORE).VAR` wants the
-                    // Proxy itself (AttrX::Mooish's `AttrProxy`).
-                    let auto_fetch = !matches!(
-                        name,
-                        "substr-rw"
-                            | "subbuf-rw"
-                            | "callwith"
-                            | "callsame"
-                            | "nextwith"
-                            | "nextsame"
-                    );
-                    let result = result?;
-                    if name == "make" {
-                        self.attach_made_to_match_topic(code, result.clone());
-                    }
-                    loan_env!(self, maybe_fetch_rw_proxy(result, auto_fetch))
+                    self.dispatch_interpreter_terminal(code, name, args, arg_sources)
                 }
             }
         }
+    }
+
+    /// The last rung of [`Self::dispatch_func_call_inner`]'s ladder: a name no
+    /// compiled routine, user sub or native table claimed runs through the
+    /// interpreter's `call_function`, with the carrier bookkeeping around it.
+    /// Out of line so the compiler-internal builtins that can only ever end
+    /// here (`__mutsu_subscript_adverb`) enter it without asking the ladder.
+    // Cost: O(1) beyond the selected builtin's own cost.
+    fn dispatch_interpreter_terminal(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        args: Vec<Value>,
+        arg_sources: Option<Vec<Option<String>>>,
+    ) -> Result<Value, RuntimeError> {
+        // Sync Interpreter locals to env before spawning threads so closures capture them
+        if name == "start" {
+            self.sync_env_from_locals_needed(code);
+        }
+        // `make` reads the CALLER's `$/`, which may live in a local
+        // slot (a `method foo($/)` parameter) the interpreter
+        // terminal below cannot see.
+        if name == "make" {
+            self.check_make_match_topic(code)?;
+        }
+        // EVAL/EVALFILE compile to bytecode and run on a sub-Interpreter, and
+        // pseudo-package reads are reflective env lookups: the
+        // interpreter is a carrier here, not a tree-walk fallback.
+        // CARRIER (is_interpreter_carrier_function) vs TODO: compile to
+        // bytecode (else branch = true tree-walk function fallback). The
+        // record_* split already tracks this at runtime. See ledger §2/§C.
+        if Self::is_interpreter_carrier_function(name) {
+            crate::vm::vm_stats::record_function_carrier(name);
+        } else {
+            crate::vm::vm_stats::record_function_fallback(name);
+        }
+        self.set_pending_call_arg_sources(arg_sources);
+        // Carrier writeback (mirrors `exec_exec_call_op`): an
+        // interpreter carrier like `EVAL` writes caller lexicals
+        // into env BY NAME; drain those writes into this frame's
+        // slots so a subsequent slot read sees them. Previously
+        // masked by the Nil-slot env fallback: an uninitialized
+        // caller scalar's slot stayed Nil, so reads fell back to
+        // env. With the Any seed (PLAN 8.5 step 3) the slot holds
+        // a real value, so the writeback must be explicit
+        // (t/require-expression.t `BEGIN try EVAL`).
+        let reg_gen_before = self.registry_write_generation();
+        let carrier_saved = self.begin_carrier();
+        let result = self.vm_call_function(name, args);
+        let written = self.end_carrier(carrier_saved);
+        self.writeback_carrier_writes(code, &written);
+        self.set_pending_call_arg_sources(None);
+        // Interpreter function calls (e.g. `require`) may register
+        // new subs — invalidate function resolution caches. Only
+        // when the call actually acquired a registry write guard,
+        // though: a blanket bump here cleared the name-keyed caches
+        // after EVERY interpreter-native builtin call (`make`, in a
+        // grammar-action walk, is one per action), forcing a full
+        // registry rescan per call.
+        if self.registry_write_generation() != reg_gen_before {
+            self.invalidate_fn_resolution();
+        }
+        // substr-rw / subbuf-rw return a Proxy that must be preserved
+        // (not auto-FETCHed). So does a re-dispatch: it hands back
+        // what the next candidate returned, and a Proxy subclass's
+        // `new` doing `callwith(:$FETCH, :$STORE).VAR` wants the
+        // Proxy itself (AttrX::Mooish's `AttrProxy`).
+        let auto_fetch = !matches!(
+            name,
+            "substr-rw"
+                | "subbuf-rw"
+                | "callwith"
+                | "callsame"
+                | "nextwith"
+                | "nextsame"
+        );
+        let result = result?;
+        if name == "make" {
+            self.attach_made_to_match_topic(code, result.clone());
+        }
+        loan_env!(self, maybe_fetch_rw_proxy(result, auto_fetch))
     }
 
     /// Whether a resolved `FunctionDef` is simple enough to compile on-the-fly to
