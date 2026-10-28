@@ -298,6 +298,52 @@ fn entering_a_critical_section_keeps_a_same_named_lexical_over_own_writes() {
     interp.leave_critical_section();
 }
 
+/// A thread's own binding (a name it re-declared, or captured from its spawn)
+/// is not refreshed from a critical-section entry the PARENT lineage committed
+/// under the same bare name: that entry belongs to another binding of the name
+/// (Red's `Guard.start`: the worker's `$guard` became an earlier call's guard
+/// after its first `GuardRecord.^create`, so its `$guard.commit` found a
+/// committed scope). A name it has not made its own is still refreshed.
+#[test]
+fn critical_section_refresh_skips_a_name_the_thread_made_its_own() {
+    let mut interp = Interpreter::new();
+    interp.threads.shared_vars_active = true;
+    let parent_lane = interp.threads.shared_vars.clone();
+    parent_lane.declare("guard", Value::str("seed".to_string()));
+    parent_lane.declare("total", Value::str("seed".to_string()));
+    interp.threads.shared_vars = crate::runtime::shared_store::SharedStore::child_of(&parent_lane);
+
+    // Another lineage commits both names inside a critical section.
+    parent_lane.set("guard", Value::str("stale-binding".to_string()));
+    parent_lane.set("total", Value::str("committed".to_string()));
+    interp.mark_critical_dirty("guard");
+    interp.mark_critical_dirty("total");
+
+    interp.env.insert("guard".to_string(), Value::str("mine".to_string()));
+    interp.env.insert("total".to_string(), Value::str("stale-copy".to_string()));
+    interp
+        .threads
+        .thread_redeclared_vars
+        .borrow_mut()
+        .insert("guard".to_string());
+
+    interp.enter_critical_section();
+
+    let read = |interp: &Interpreter, name: &str| {
+        interp.env.get(name).and_then(|v| match v.view() {
+            ValueView::Str(s) => Some(s.to_string()),
+            _ => None,
+        })
+    };
+    assert_eq!(read(&interp, "guard"), Some("mine".to_string()));
+    assert_eq!(
+        read(&interp, "total"),
+        Some("committed".to_string()),
+        "a shared name another thread committed is still refreshed"
+    );
+    interp.leave_critical_section();
+}
+
 fn seed_dirty_atomic_lane(interp: &mut Interpreter, name: &str, value_key: &str) {
     interp.mark_atomic_var_seen(name);
     let name_key = MetaNs::AtomicName.owned_key_for_str(name);
