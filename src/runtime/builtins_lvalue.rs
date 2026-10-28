@@ -92,7 +92,9 @@ impl Interpreter {
             let fetched = result?;
             let contents = match fetched.view() {
                 ValueView::ContainerRef(cell) | ValueView::ContainerView(cell) => {
-                    Some(cell.load())
+                    // A binding cell holds the container of the rebound
+                    // variable (`$sym := X`): read through the whole chain.
+                    Some(cell.load().deref_container())
                 }
                 _ => None,
             };

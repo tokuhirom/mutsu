@@ -1673,6 +1673,23 @@ impl Interpreter {
 
     /// Wrap the container `container` (a `ContainerRef`) in a fresh binding
     /// cell — see [`Self::binding_cell_of`].
+    /// Turn the plain cell `cell` into a binding cell without changing its
+    /// identity: every closure that captured it keeps sharing it, and its old
+    /// content becomes the container it binds.
+    // Cost: O(1).
+    pub(crate) fn promote_cell_to_binding_cell(cell: Value) -> Value {
+        let ValueView::ContainerRef(arc) = cell.view() else {
+            return Self::wrap_in_binding_cell(cell);
+        };
+        let mut content = arc
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let old = content.clone();
+        *content = Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(old)));
+        drop(content);
+        cell
+    }
+
     pub(crate) fn wrap_in_binding_cell(container: Value) -> Value {
         debug_assert!(container.is_container_ref());
         Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(

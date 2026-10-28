@@ -164,7 +164,8 @@ impl Interpreter {
                 && let Some(slot) = a.var_slot.map(|s| s as usize)
                 && code.locals.get(slot).is_some_and(|n| *n == a.var.resolve())
             {
-                let wrapped = Self::wrap_in_binding_cell(cell);
+                // Promote in place: a sibling declared earlier already holds this cell.
+                let wrapped = Self::promote_cell_to_binding_cell(cell);
                 self.locals[slot] = wrapped.clone();
                 self.env_mut().insert_sym(a.var, wrapped.clone());
                 wrapped

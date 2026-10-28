@@ -1462,6 +1462,8 @@ impl Interpreter {
             Ok(v) => v,
             Err(e) => return Some(Err(e)),
         };
-        Some(self.call_method_with_values(fetched, method, args))
+        // A FETCH may answer the rebound lexical's binding cell; the method is
+        // called on what the cell holds.
+        Some(self.call_method_with_values(fetched.deref_container(), method, args))
     }
 }

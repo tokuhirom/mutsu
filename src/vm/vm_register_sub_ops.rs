@@ -873,7 +873,12 @@ impl Interpreter {
                         || code.rebound_slots.contains(&(slot_idx as u32)))
                         && Self::binding_cell_of(&cell).is_none()
                     {
-                        cell = Self::wrap_in_binding_cell(cell);
+                        // Keep the cell's identity: a sibling registered earlier
+                        // already captured this very cell, so it becomes the
+                        // binding cell in place (its old content moves into a
+                        // fresh inner container) rather than being wrapped in a
+                        // new one the sibling never sees.
+                        cell = Self::promote_cell_to_binding_cell(cell);
                         self.locals[slot_idx] = cell.clone();
                         self.env_mut().insert(name.clone(), cell.clone());
                     }
