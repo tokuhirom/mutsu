@@ -277,8 +277,8 @@ fn iterates_elsewhere(interp: &mut Interpreter, target: &Value, method: &str) ->
             class_name,
             attributes,
             ..
-        } if !attributes.contains_key("__mutsu_array_storage")
-            && !attributes.contains_key("__mutsu_hash_storage") =>
+        } if !attributes.contains_key(crate::symbol::wk::array_storage())
+            && !attributes.contains_key(crate::symbol::wk::hash_storage()) =>
         {
             interp.has_user_method(class_name.as_str(), "iterator")
                 && !interp.has_user_method(class_name.as_str(), method)

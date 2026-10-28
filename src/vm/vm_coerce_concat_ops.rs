@@ -73,8 +73,8 @@ impl Interpreter {
             && let Some(storage) = {
                 let attrs = attributes.as_map();
                 attrs
-                    .get("__mutsu_hash_storage")
-                    .or_else(|| attrs.get("__mutsu_array_storage"))
+                    .get(crate::symbol::wk::hash_storage())
+                    .or_else(|| attrs.get(crate::symbol::wk::array_storage()))
                     .cloned()
             }
         {
@@ -266,11 +266,11 @@ impl Interpreter {
             // when the class overrides `iterator` -- measured: the override
             // does NOT reach `|`, only the Iterable-protocol methods.
             ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_array_storage") =>
+                if attributes.contains_key(crate::symbol::wk::array_storage()) =>
             {
                 let storage = attributes
                     .as_map()
-                    .get("__mutsu_array_storage")
+                    .get(crate::symbol::wk::array_storage())
                     .cloned()
                     .unwrap_or_else(|| Value::real_array(Vec::new()));
                 crate::runtime::utils::value_to_list(&storage)

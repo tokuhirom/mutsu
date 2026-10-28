@@ -1736,7 +1736,7 @@ impl Interpreter {
                     );
                     if is_array_method
                         && !self.has_user_method(&cn, method)
-                        && attributes.contains_key("__mutsu_array_storage")
+                        && attributes.contains_key(crate::symbol::wk::array_storage())
                         && self
                             .mro_readonly(&cn)
                             .iter()
@@ -1764,7 +1764,7 @@ impl Interpreter {
                         }
                         let mut storage = attributes
                             .as_map()
-                            .get("__mutsu_array_storage")
+                            .get(crate::symbol::wk::array_storage())
                             .cloned()
                             .unwrap_or(Value::real_array(Vec::new()));
                         // Interpreter-native fast path: simple mutators on the plain

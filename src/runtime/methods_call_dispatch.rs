@@ -494,7 +494,7 @@ impl Interpreter {
             }
             let storage = attributes
                 .as_map()
-                .get("__mutsu_array_storage")
+                .get(crate::symbol::wk::array_storage())
                 .cloned()
                 .unwrap_or_else(|| Value::real_array(Vec::new()));
             return self.call_method_with_values(storage, method, args);

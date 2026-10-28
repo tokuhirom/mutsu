@@ -763,12 +763,12 @@ impl Interpreter {
         // every getattr O(attributes) (#9134).
         let attrs = attributes.as_map();
         if bare == "storage"
-            && let Some(storage) = attrs.get("__mutsu_hash_storage")
+            && let Some(storage) = attrs.get(crate::symbol::wk::hash_storage())
         {
             return Some(storage.raw_storage_view().unwrap_or_else(|| storage.clone()));
         }
         if bare == "reified"
-            && let Some(storage) = attrs.get("__mutsu_array_storage")
+            && let Some(storage) = attrs.get(crate::symbol::wk::array_storage())
         {
             return Some(storage.raw_storage_view().unwrap_or_else(|| storage.clone()));
         }

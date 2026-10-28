@@ -87,7 +87,7 @@ pub(crate) fn invert_value(target: &Value) -> Option<Value> {
         }
         // Instance types that compose Baggy: delegate to internal bag data
         ValueView::Instance { attributes, .. } => {
-            if let Some(bag_data) = attributes.as_map().get("__baggy_data__") {
+            if let Some(bag_data) = attributes.as_map().get(crate::symbol::wk::baggy_data()) {
                 return invert_value(bag_data);
             }
             return None;

@@ -287,8 +287,8 @@ fn shape_result(
             },
         ) = (left.descalarize().view(), right.descalarize().view())
         && lc == rc
-        && la.contains_key("__baggy_data__")
-        && ra.contains_key("__baggy_data__")
+        && la.contains_key(crate::symbol::wk::baggy_data())
+        && ra.contains_key(crate::symbol::wk::baggy_data())
     {
         let mut attrs = HashMap::new();
         attrs.insert("__baggy_data__".to_string(), result);

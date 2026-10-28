@@ -636,7 +636,7 @@ impl Interpreter {
             return false;
         };
         let cn = class_name.as_str().to_string();
-        if attributes.contains_key("__mutsu_array_storage") || cn == "IO::Path::Parts" {
+        if attributes.contains_key(crate::symbol::wk::array_storage()) || cn == "IO::Path::Parts" {
             return true;
         }
         if self.class_does_role(&cn, "Iterable")
@@ -673,7 +673,7 @@ impl Interpreter {
         let ValueView::Instance { attributes, .. } = raw.view() else {
             return Ok(None);
         };
-        let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned() else {
+        let Some(storage) = attributes.as_map().get(crate::symbol::wk::array_storage()).cloned() else {
             return Ok(None);
         };
         Ok(Some(crate::runtime::coerce_to_array(Value::real_array(
@@ -731,7 +731,7 @@ impl Interpreter {
         // Without such an override the storage is still the answer, so the
         // `has_user_method` gate above is what keeps the ordinary subclass on
         // the `value_to_list` path.
-        if !attributes.contains_key("__mutsu_array_storage")
+        if !attributes.contains_key(crate::symbol::wk::array_storage())
             && !self.class_does_role(&cn, "Iterable")
         {
             return Ok(None);
@@ -767,7 +767,7 @@ impl Interpreter {
         };
         // An `is Array`/`is List` subclass's own iterator override is driven
         // by `positional_subclass_iteration_source` instead.
-        if attributes.contains_key("__mutsu_array_storage") {
+        if attributes.contains_key(crate::symbol::wk::array_storage()) {
             return Ok(None);
         }
         let cn = class_name.as_str().to_string();
@@ -800,7 +800,7 @@ impl Interpreter {
         };
         let storage = attributes
             .as_map()
-            .get("__mutsu_array_storage")?
+            .get(crate::symbol::wk::array_storage())?
             .deref_container();
         Self::array_element_cells(&storage)
     }

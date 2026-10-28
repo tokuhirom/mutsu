@@ -260,7 +260,7 @@ impl Interpreter {
                     .is_none()
             {
                 if matches!(method_name, "AT-POS" | "EXISTS-POS")
-                    && let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned()
+                    && let Some(storage) = attributes.as_map().get(crate::symbol::wk::array_storage()).cloned()
                 {
                     let v = self.call_method_with_values(storage, method_name, args)?;
                     return Ok((v, None));

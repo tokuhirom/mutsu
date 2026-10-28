@@ -1757,7 +1757,7 @@ impl Interpreter {
                     return Err(RuntimeError::new("Cannot convert type object to Int"));
                 }
                 if class_mro.iter().any(|n| *n == "Array" || *n == "List")
-                    && !attrs.contains_key("__mutsu_array_storage")
+                    && !attrs.contains_key(crate::symbol::wk::array_storage())
                     && !positional_ctor_args.is_empty()
                 {
                     let elems =
@@ -2234,7 +2234,7 @@ impl Interpreter {
                     .class_mro(class_key)
                     .iter()
                     .any(|n| *n == "Array" || *n == "List")
-                    && !attrs.contains_key("__mutsu_array_storage")
+                    && !attrs.contains_key(crate::symbol::wk::array_storage())
                 {
                     let storage = self.positional_base_storage(class_key, Vec::new());
                     attrs.insert("__mutsu_array_storage".to_string(), storage);
@@ -2256,7 +2256,7 @@ impl Interpreter {
                     .class_mro(class_key)
                     .iter()
                     .any(|n| *n == "Hash" || *n == "Map")
-                    && !attrs.contains_key("__mutsu_hash_storage")
+                    && !attrs.contains_key(crate::symbol::wk::hash_storage())
                 {
                     let has_positional = args.iter().any(|a| !a.is_string_pair_value());
                     let hash_args: Vec<Value> = args

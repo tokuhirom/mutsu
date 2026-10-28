@@ -163,7 +163,7 @@ impl Interpreter {
         {
             return None;
         }
-        if !attributes.contains_key("__mutsu_hash_storage") {
+        if !attributes.contains_key(crate::symbol::wk::hash_storage()) {
             return None;
         }
         if !self
@@ -176,7 +176,7 @@ impl Interpreter {
         }
         let storage = attributes
             .as_map()
-            .get("__mutsu_hash_storage")
+            .get(crate::symbol::wk::hash_storage())
             .cloned()
             .unwrap_or_else(|| Value::hash(ValueMap::default()));
         // `%h = pairs` / `my %h is Bar = pairs` (the tied-variable declaration
@@ -215,7 +215,7 @@ impl Interpreter {
             // `%h` -- shares that node, so `self.STORE(...)` (or `self = ...`)
             // inside a method is seen by the caller. Rebuilding the instance
             // with a fresh storage node only reached the name written back.
-            if let Some(old_storage) = attributes.as_map().get("__mutsu_hash_storage")
+            if let Some(old_storage) = attributes.as_map().get(crate::symbol::wk::hash_storage())
                 && let ValueView::Hash(old_gc) = old_storage.view()
                 && let ValueView::Hash(new_gc) = new_storage.view()
             {
@@ -361,7 +361,7 @@ impl Interpreter {
         {
             return None;
         }
-        if !attributes.contains_key("__mutsu_hash_storage") {
+        if !attributes.contains_key(crate::symbol::wk::hash_storage()) {
             return None;
         }
         if !self
@@ -392,7 +392,7 @@ impl Interpreter {
         }
         let storage = attributes
             .as_map()
-            .get("__mutsu_hash_storage")
+            .get(crate::symbol::wk::hash_storage())
             .cloned()
             .unwrap_or_else(|| Value::hash(ValueMap::default()));
         let result = self.try_native_method(&storage, method_sym, args);

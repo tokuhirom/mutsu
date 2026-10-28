@@ -57,7 +57,7 @@ impl Interpreter {
             ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) => return false,
             _ => index.clone(),
         };
-        if attributes.contains_key("__mutsu_array_storage") {
+        if attributes.contains_key(crate::symbol::wk::array_storage()) {
             let Ok(i) = single.to_string_value().parse::<usize>() else {
                 return false;
             };
@@ -71,7 +71,7 @@ impl Interpreter {
             });
             return true;
         }
-        if attributes.contains_key("__mutsu_hash_storage") {
+        if attributes.contains_key(crate::symbol::wk::hash_storage()) {
             let key = single.to_string_value();
             let stored = attributes
                 .with_attr_mut("__mutsu_hash_storage", |storage| {

@@ -180,8 +180,8 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
             }
         }
         // Instance types composing Baggy: delegate to internal bag data
-        ValueView::Instance { attributes, .. } if attributes.contains_key("__baggy_data__") => {
-            let bag_data = attributes.as_map().get("__baggy_data__").unwrap().clone();
+        ValueView::Instance { attributes, .. } if attributes.contains_key(crate::symbol::wk::baggy_data()) => {
+            let bag_data = attributes.as_map().get(crate::symbol::wk::baggy_data()).unwrap().clone();
             return to_set(bag_data, what);
         }
         _ if target.is_range() => {

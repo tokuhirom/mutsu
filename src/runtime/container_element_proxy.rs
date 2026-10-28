@@ -87,7 +87,7 @@ impl Interpreter {
         let crate::value::ValueView::Instance { attributes, .. } = invocant.view() else {
             return None;
         };
-        if !attributes.contains_key("__baggy_data__") {
+        if !attributes.contains_key(crate::symbol::wk::baggy_data()) {
             return None;
         }
         self.container_element_proxy_base()

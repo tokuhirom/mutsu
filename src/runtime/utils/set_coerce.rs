@@ -54,7 +54,7 @@ pub(crate) fn quanthash_operand(val: &Value) -> &Value {
     }
     let baggy_subclass = matches!(
         stripped.view(),
-        ValueView::Instance { attributes, .. } if attributes.as_map().contains_key("__baggy_data__")
+        ValueView::Instance { attributes, .. } if attributes.as_map().contains_key(crate::symbol::wk::baggy_data())
     );
     if baggy_subclass || !std::ptr::eq(strip_quanthash_mixin_elem(val), val) {
         stripped

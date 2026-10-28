@@ -327,7 +327,7 @@ impl Interpreter {
                 self.associative_base_storage(class.as_str(), Vec::new()),
             );
         }
-        if shape.positional && !attributes.contains_key("__mutsu_array_storage") {
+        if shape.positional && !attributes.contains_key(crate::symbol::wk::array_storage()) {
             attributes.insert(
                 "__mutsu_array_storage",
                 self.positional_base_storage(class.as_str(), Vec::new()),

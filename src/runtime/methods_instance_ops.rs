@@ -241,10 +241,10 @@ impl Interpreter {
         if let Some(payload) = attributes.as_map().get("__mutsu_pair_value").cloned() {
             return Some(self.call_method_with_values(payload, method, vec![]));
         }
-        if let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned() {
+        if let Some(storage) = attributes.as_map().get(crate::symbol::wk::array_storage()).cloned() {
             return Some(self.call_method_with_values(storage, method, vec![]));
         }
-        if let Some(storage) = attributes.as_map().get("__mutsu_hash_storage").cloned() {
+        if let Some(storage) = attributes.as_map().get(crate::symbol::wk::hash_storage()).cloned() {
             let rendered = self.call_method_with_values(storage.clone(), method, vec![]);
             // An `is Map` subclass names itself in its `.raku`/`.gist`.
             if matches!(method, "raku" | "gist")
@@ -288,7 +288,7 @@ impl Interpreter {
         // A QuantHash (`is BagHash`/`is Set`/...) subclass renders under its own
         // type name: `ABH(a(2) b)` for `.gist`, `("a"=>2).ABH` for `.raku` —
         // see `runtime/quanthash_subclass.rs`.
-        if let Some(storage) = attributes.as_map().get("__baggy_data__").cloned() {
+        if let Some(storage) = attributes.as_map().get(crate::symbol::wk::baggy_data()).cloned() {
             let class_key = class_name.resolve();
             let name = crate::value::user_facing_type_name(&class_key).to_string();
             if method == "gist" {

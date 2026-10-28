@@ -1868,7 +1868,7 @@ impl Interpreter {
         // `method z() is rw { self[2] }` on an `is Array` subclass — assign into
         // the invocant's backing array storage element. The index is a literal
         // or a positional parameter of the method.
-        if attributes.contains_key("__mutsu_array_storage")
+        if attributes.contains_key(crate::symbol::wk::array_storage())
             && let Some((index_expr, is_pos)) = Self::rw_method_self_index_target(&method_def.body)
         {
             let idx_val = match &index_expr {

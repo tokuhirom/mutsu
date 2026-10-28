@@ -1288,7 +1288,7 @@ impl Interpreter {
                 // elements are its backing storage's (`$a[1, 3 ... *]`).
                 ValueView::Instance { attributes, .. } => attributes
                     .as_map()
-                    .get("__mutsu_array_storage")
+                    .get(crate::symbol::wk::array_storage())
                     .and_then(|storage| match storage.view() {
                         ValueView::Array(items, _) => Some(items.len()),
                         _ => None,
@@ -2061,10 +2061,10 @@ impl Interpreter {
                     ..
                 },
                 _,
-            ) if attributes.contains_key("__baggy_data__")
+            ) if attributes.contains_key(crate::symbol::wk::baggy_data())
                 && !self.has_user_method_including_role(&class_name.resolve(), "AT-KEY") =>
             {
-                let inner = attributes.as_map().get("__baggy_data__").unwrap().clone();
+                let inner = attributes.as_map().get(crate::symbol::wk::baggy_data()).unwrap().clone();
                 let idx_clone = index.clone();
                 // Re-enter the index logic with the inner bag/set value
                 self.stack.push(inner);
@@ -2382,7 +2382,7 @@ impl Interpreter {
                 },
                 ValueView::Whatever,
             ) if is_positional
-                && (attributes.contains_key("__mutsu_array_storage")
+                && (attributes.contains_key(crate::symbol::wk::array_storage())
                     || (self.type_matches_value("Positional", &target)
                         && self.has_user_method_including_role(&class_name.resolve(), "keys"))) =>
             {

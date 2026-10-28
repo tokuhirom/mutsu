@@ -315,7 +315,7 @@ impl Value {
                     || matches!(
                         self.view(),
                         ValueView::Instance { attributes, .. }
-                            if attributes.contains_key("__mutsu_hash_storage")
+                            if attributes.contains_key(crate::symbol::wk::hash_storage())
                     )
                     || matches!(
                         self.view(),
@@ -432,7 +432,7 @@ impl Value {
                 ) || matches!(
                     self.view(),
                     ValueView::Instance { attributes, .. }
-                        if attributes.contains_key("__mutsu_array_storage")
+                        if attributes.contains_key(crate::symbol::wk::array_storage())
                 )
             }
             // `Map` is NOT here — it is a real class (nominal, `isa_nominal_hierarchy`
@@ -452,7 +452,7 @@ impl Value {
                 ) || matches!(
                     self.view(),
                     ValueView::Instance { attributes, .. }
-                        if attributes.contains_key("__mutsu_hash_storage")
+                        if attributes.contains_key(crate::symbol::wk::hash_storage())
                 ) || matches!(
                     self.view(),
                     ValueView::Package(name)
