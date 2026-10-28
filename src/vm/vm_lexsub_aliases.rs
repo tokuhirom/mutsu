@@ -112,7 +112,7 @@ impl Interpreter {
         let owner = Self::lexsub_plan_owner(plan, compiled_fns);
         // Only the hoisted registration can run before a free variable's
         // declaration (see `lexsub_alias_cell`).
-        let hoisted_pass = plan.custom_traits.iter().any(|(t, _)| t == "__hoisted");
+        let hoisted_pass = plan.pass.hoisted;
         for a in &plan.lexsub_free_aliases {
             // The hoisted pass runs before a declaration in the sub's own
             // scope has: whatever the slot holds is not that variable yet (a

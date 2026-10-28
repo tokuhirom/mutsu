@@ -4478,7 +4478,7 @@ pub(crate) enum OpCode {
     /// `CompiledDeclPlanRef` that selects the compile-time plan it registers:
     /// `sub_decl_plans`, `class_decl_plans`, `role_decl_plans`,
     /// `proto_decl_plans` or `token_decl_plans` (or a proto token). A class or
-    /// role plan carrying the `__hoisted` trait swallows its registration errors.
+    /// role plan carrying the hoisted trait swallows its registration errors.
     RegisterDecl(u32),
     /// Record the lexical capture of a `method` declared in a nested block of
     /// a package body (`Stmt::NestedMethodCapture`). Stack: `[closure] → []`.
@@ -5207,8 +5207,8 @@ pub(crate) type DeclTraits = [(String, Option<DeclTraitArg>)];
 
 /// Pair a declaration's trait names with the arguments the compiler lowered for
 /// them. `lowered` is index-aligned with `custom_traits`; a lowering site may
-/// append an argument-less marker trait (`__lexical_hoist`) after building the
-/// list, so a shorter list pads with `None` rather than misaligning.
+/// append an argument-less marker trait after building the list, so a shorter
+/// list pads with `None` rather than misaligning.
 fn zip_decl_trait_args(
     custom_traits: &[(String, Option<Expr>)],
     lowered: Vec<Option<DeclTraitArg>>,
@@ -5290,6 +5290,8 @@ pub(crate) struct CompiledSubDeclPlan {
     pub(crate) supersede: bool,
     pub(crate) scope: crate::ast::SubScope,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
+    /// Which registration this plan is for (see [`crate::ast::DeclPass`]).
+    pub(crate) pass: crate::ast::DeclPass,
     pub(crate) fingerprint: Option<u64>,
     /// Registration metadata derived once while lowering the declaration.
     /// Keeping it beside the plan prevents the registry adapter from walking
@@ -5771,6 +5773,8 @@ pub(crate) struct CompiledClassDeclPlan {
     pub(crate) declarator: Option<String>,
     pub(crate) language_version: String,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
+    /// Which registration this plan is for (see [`crate::ast::DeclPass`]).
+    pub(crate) pass: crate::ast::DeclPass,
     pub(crate) decl_id: u64,
     /// Whether the declared body is a yada stub (ADR-0019 D1). Precomputed at
     /// plan lowering so registration never re-walks the raw body to judge
@@ -5868,7 +5872,7 @@ pub(crate) enum ClassBodyOp {
     ClassSub {
         name: Symbol,
         chunk: Option<CompiledDeclExpr>,
-        /// A `__hoisted`-marked copy of `chunk` (mirrors
+        /// A hoisted copy of `chunk` (mirrors
         /// `Compiler::hoist_sub_decls` at the compilation-unit level, ADR-0041
         /// §9), registered by `run_class_body` before any class-body statement
         /// runs. Raku hoists a `sub`'s name to the top of its enclosing scope
@@ -6431,6 +6435,8 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// The `EXPORTHOW` declarator keyword (`ast::PackageMarks::declarator`).
     pub(crate) declarator: Option<String>,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
+    /// Which registration this plan is for (see [`crate::ast::DeclPass`]).
+    pub(crate) pass: crate::ast::DeclPass,
     /// Attribute names this role declares in its own body (ADR-0019 D2a),
     /// precomputed at plan lowering instead of `walk_role_body`'s pre-scan
     /// pass re-deriving it on every registration.
@@ -6532,6 +6538,8 @@ pub(crate) struct CompiledProtoDeclPlan {
     /// Tags on `is export(:TAG1, :TAG2)`; empty means untagged (DEFAULT).
     pub(crate) export_tags: Vec<String>,
     pub(crate) custom_traits: Vec<String>,
+    /// Which registration this plan is for (see [`crate::ast::DeclPass`]).
+    pub(crate) pass: crate::ast::DeclPass,
     pub(crate) trait_args: Vec<Option<DeclTraitArg>>,
     /// True for `proto method`/`proto submethod`: such a proto never
     /// registers at the package level (its `{*}` dispatches over the type's
@@ -12880,6 +12888,7 @@ impl CompiledCode {
         stmt: &Stmt,
         name_chunk: Option<CompiledDeclExpr>,
         trait_args: Vec<Option<DeclTraitArg>>,
+        pass: crate::ast::DeclPass,
     ) -> u32 {
         let Stmt::SubDecl {
             name,
@@ -12973,6 +12982,7 @@ impl CompiledCode {
             supersede: *supersede,
             scope: *scope,
             custom_traits: plan_traits,
+            pass,
             fingerprint,
             routine_metadata,
         });
@@ -13116,6 +13126,7 @@ impl CompiledCode {
         method_compiled_keys: Vec<Option<Symbol>>,
         method_outer_lexical_slots: Vec<(Symbol, u32)>,
         body_plan: Vec<ClassBodyOp>,
+        pass: crate::ast::DeclPass,
     ) -> u32 {
         let Stmt::ClassDecl {
             name,
@@ -13187,6 +13198,7 @@ impl CompiledCode {
             declarator: marks.declarator.clone(),
             language_version: language_version.clone(),
             custom_traits: plan_traits,
+            pass,
             decl_id: *decl_id,
             is_stub,
             trusts,
@@ -13217,6 +13229,7 @@ impl CompiledCode {
         method_compiled_keys: Vec<Option<Symbol>>,
         method_outer_lexical_slots: Vec<(Symbol, u32)>,
         deferred_body_ops: Vec<DeferredBodyOp>,
+        pass: crate::ast::DeclPass,
     ) -> u32 {
         let Stmt::RoleDecl {
             spans: _,
@@ -13280,6 +13293,7 @@ impl CompiledCode {
             language_version: language_version.clone(),
             declarator: marks.declarator.clone(),
             custom_traits: zip_decl_trait_args(custom_traits, trait_args),
+            pass,
             own_attribute_names,
             body_used_modules,
             body_declared_types,
@@ -14152,11 +14166,10 @@ impl CompiledFunction {
     /// in-sequence plan carries the full traits.
     // Cost: O(p), p = sub declaration plans in the body.
     pub(crate) fn has_nested_export_plans(&self) -> bool {
-        self.code.sub_decl_plans.iter().any(|plan| {
-            plan.is_export
-                && plan.name_chunk.is_none()
-                && !plan.custom_traits.iter().any(|(t, _)| t == "__hoisted")
-        })
+        self.code
+            .sub_decl_plans
+            .iter()
+            .any(|plan| plan.is_export && plan.name_chunk.is_none() && !plan.pass.hoisted)
     }
 
     /// Stamp a compiled routine and its nested named-subs with their enclosing

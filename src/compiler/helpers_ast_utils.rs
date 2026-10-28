@@ -435,23 +435,26 @@ impl Compiler {
                     custom_traits.retain(|(t, _)| {
                         t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
                     });
-                    // This IS a hoist-pass registration, so say so — exactly as
-                    // `hoist_sub_decls` does. Without the marker an `our multi`
-                    // lifted out of a nested block registered here, at the
-                    // compunit head, long before the block's own `our proto` had
-                    // run, and the "Cannot declare individual multi candidates in
-                    // 'our' scope" check fired on a perfectly valid
-                    // `{ our proto f(...) {*}; our multi f(...) {...} }`. The
-                    // in-sequence registration inside the block runs after the
-                    // proto and enforces the check for real.
-                    if !custom_traits.iter().any(|(t, _)| t == "__hoisted") {
-                        custom_traits.push(("__hoisted".to_string(), None));
-                    }
                     *name
                 }
                 _ => unreachable!("nested_our_subs() only collects SubDecl statements"),
             };
-            let idx = self.add_sub_decl_plan(&hoisted);
+            // This IS a hoist-pass registration, so say so — exactly as
+            // `hoist_sub_decls` does. Without it an `our multi` lifted out of
+            // a nested block registered here, at the compunit head, long
+            // before the block's own `our proto` had run, and the "Cannot
+            // declare individual multi candidates in 'our' scope" check fired
+            // on a perfectly valid
+            // `{ our proto f(...) {*}; our multi f(...) {...} }`. The
+            // in-sequence registration inside the block runs after the proto
+            // and enforces the check for real.
+            let idx = self.add_sub_decl_plan(
+                &hoisted,
+                crate::ast::DeclPass {
+                    hoisted: true,
+                    ..Default::default()
+                },
+            );
             self.code.emit(OpCode::RegisterDecl(idx));
             // Remember the hoisted plan so the source-order compile of the
             // same declaration hands it the bytecode it compiles, exactly
@@ -619,31 +622,6 @@ impl Compiler {
     pub(super) fn hoist_one_sub_decl(&mut self, stmt: &Stmt, lexical_hoist: bool) {
         let mut hoisted = stmt.clone();
         if let Stmt::SubDecl { custom_traits, .. } = &mut hoisted {
-            if lexical_hoist
-                && !custom_traits
-                    .iter()
-                    .any(|(trait_name, _)| trait_name == "__lexical_hoist")
-            {
-                custom_traits.push(("__lexical_hoist".to_string(), None));
-            }
-            // Mark every hoist-pass registration (including the mainline
-            // hoist, which passes `lexical_hoist == false`) so the
-            // `our multi` scope check can skip this early pass and instead
-            // validate at in-sequence registration, where an `our proto`
-            // declared later in the same scope is already registered.
-            if !custom_traits
-                .iter()
-                .any(|(trait_name, _)| trait_name == "__hoisted")
-            {
-                custom_traits.push(("__hoisted".to_string(), None));
-            }
-            if self.decl_scope_depth > 0
-                && !custom_traits
-                    .iter()
-                    .any(|(t, _)| t == crate::ast::NESTED_SCOPE_DECL_MARKER)
-            {
-                custom_traits.push((crate::ast::NESTED_SCOPE_DECL_MARKER.to_string(), None));
-            }
             // Strip user-defined custom traits during hoisting.
             // Traits like `is description(...)` require types/roles to be
             // registered first; they will be applied during the normal pass.
@@ -652,7 +630,18 @@ impl Compiler {
                 t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
             });
         }
-        let idx = self.add_sub_decl_plan(&hoisted);
+        // Every hoist-pass registration (including the mainline hoist, which
+        // passes `lexical_hoist == false`) is marked so the `our multi` scope
+        // check can skip this early pass and instead validate at in-sequence
+        // registration, where an `our proto` declared later in the same scope
+        // is already registered.
+        let pass = crate::ast::DeclPass {
+            hoisted: true,
+            lexical_hoist,
+            nested_scope: self.decl_scope_depth > 0,
+            ..Default::default()
+        };
+        let idx = self.add_sub_decl_plan(&hoisted, pass);
         self.code.emit(OpCode::RegisterDecl(idx));
         // A hoisted routine is in its scope's pad from the scope's
         // entry, so a `MY::` read before the declaration lists it.
@@ -898,7 +887,7 @@ impl Compiler {
     /// nothing is duplicated). The shell body keeps only side-effect-free
     /// declaration statements (`has`/`method`/`does`/`trusts`), so no user
     /// code runs early. User custom traits are stripped, mirroring
-    /// `hoist_sub_decls`. The `__hoisted` marker makes the VM swallow shell
+    /// `hoist_sub_decls`. The hoisted pass makes the VM swallow shell
     /// registration errors (e.g. a parent type not yet available): a failed
     /// shell just means no pre-registration, and the in-place registration
     /// reports any real error.
@@ -970,17 +959,22 @@ impl Compiler {
         )
     }
 
-    /// Emit the `__hoisted` declaration-only shell registration of one
+    /// Emit the hoisted declaration-only shell registration of one
     /// class/role declaration, qualified against the compiler's current
     /// package (see [`Self::hoist_type_decl_shells`]). A class keeps only the
     /// declaration subset of its body; a role keeps its whole body, whose
     /// statements only run when the role is composed. A `nested` shell (one
     /// of a declaration nested in code, `Stmt::NestedTypeShells`) is also
-    /// marked `__hoisted_nested`: it is the compile-time composition, see
+    /// `hoisted_nested`: it is the compile-time composition, see
     /// `HoistedShell::Nested`.
     pub(super) fn emit_type_decl_shell(&mut self, stmt: &Stmt, nested: bool) {
         let keep_trait =
             |t: &str| t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED");
+        let pass = crate::ast::DeclPass {
+            hoisted: true,
+            hoisted_nested: nested,
+            ..Default::default()
+        };
         let mut shell = self.qualify_decl_name(stmt);
         let (decl_id, idx) = match &mut shell {
             Stmt::ClassDecl {
@@ -996,11 +990,7 @@ impl Compiler {
                 if !nested {
                     custom_traits.retain(|(t, _)| keep_trait(t));
                 }
-                custom_traits.push(("__hoisted".to_string(), None));
-                if nested {
-                    custom_traits.push(("__hoisted_nested".to_string(), None));
-                }
-                (decl_id, self.add_class_decl_plan(&shell))
+                (decl_id, self.add_class_decl_plan(&shell, pass))
             }
             Stmt::RoleDecl {
                 custom_traits,
@@ -1009,8 +999,7 @@ impl Compiler {
             } => {
                 let decl_id = *decl_id;
                 custom_traits.retain(|(t, _)| keep_trait(t));
-                custom_traits.push(("__hoisted".to_string(), None));
-                (decl_id, self.add_role_decl_plan(&shell))
+                (decl_id, self.add_role_decl_plan(&shell, pass))
             }
             _ => return,
         };

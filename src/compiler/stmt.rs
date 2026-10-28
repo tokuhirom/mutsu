@@ -4175,34 +4175,17 @@ impl Compiler {
                     self.code.emit(OpCode::Die { user_throw: false });
                     return;
                 }
-                // The hoist pass marks its copy of a body-local declaration
-                // `__lexical_hoist`; the in-sequence registration is the same
+                // The hoist pass registers its copy of a body-local declaration
+                // as a lexical hoist; the in-sequence registration is the same
                 // declaration and has to say so too, or registering it a second
                 // time reports the *sibling* scope's routine of that name as a
                 // redeclaration.
                 let body_local =
                     self.in_lexical_scope && !self.lexical_dup_routines.contains(&name.resolve());
-                let mark_hoist =
-                    body_local && !custom_traits.iter().any(|(t, _)| t == "__lexical_hoist");
-                let mark_nested = self.decl_scope_depth > 0
-                    && !custom_traits
-                        .iter()
-                        .any(|(t, _)| t == crate::ast::NESTED_SCOPE_DECL_MARKER);
-                let idx = if mark_hoist || mark_nested {
-                    let mut marked = stmt.clone();
-                    if let Stmt::SubDecl { custom_traits, .. } = &mut marked {
-                        if mark_hoist {
-                            custom_traits.push(("__lexical_hoist".to_string(), None));
-                        }
-                        if mark_nested {
-                            custom_traits
-                                .push((crate::ast::NESTED_SCOPE_DECL_MARKER.to_string(), None));
-                        }
-                    }
-                    self.add_sub_decl_plan(&marked)
-                } else {
-                    self.add_sub_decl_plan(stmt)
-                };
+                let mut pass = std::mem::take(&mut self.next_sub_decl_pass);
+                pass.lexical_hoist |= body_local;
+                pass.nested_scope |= self.decl_scope_depth > 0;
+                let idx = self.add_sub_decl_plan(stmt, pass);
                 self.code.emit(OpCode::RegisterDecl(idx));
                 if name_expr.is_none() {
                     self.note_scope_routine(*name);
@@ -4451,7 +4434,7 @@ impl Compiler {
                         traits
                     },
                 };
-                let idx = self.add_sub_decl_plan(&lowered);
+                let idx = self.add_sub_decl_plan(&lowered, Default::default());
                 self.code.emit(OpCode::RegisterDecl(idx));
                 if name_expr.is_none() {
                     let mut method_params: Vec<String> = vec![
@@ -4519,15 +4502,11 @@ impl Compiler {
                 let body_local =
                     self.in_lexical_scope && !self.lexical_dup_routines.contains(&name.resolve());
                 let arguments = self.compile_proto_trait_args(custom_traits, trait_args);
-                let idx = if body_local && !custom_traits.iter().any(|t| t == "__lexical_hoist") {
-                    let mut marked = stmt.clone();
-                    if let Stmt::ProtoDecl { custom_traits, .. } = &mut marked {
-                        custom_traits.push("__lexical_hoist".to_string());
-                    }
-                    self.code.add_proto_decl_plan(&marked, arguments)
-                } else {
-                    self.code.add_proto_decl_plan(stmt, arguments)
+                let pass = crate::ast::DeclPass {
+                    lexical_hoist: body_local,
+                    ..Default::default()
                 };
+                let idx = self.code.add_proto_decl_plan(stmt, arguments, pass);
                 // A trivial proto body (empty, or a bare `{*}`) dispatches
                 // implicitly and has no candidate body of its own to compile
                 // (mirrors `vm_resolve_trivial_proto_candidate`'s gate). A
@@ -4939,7 +4918,7 @@ impl Compiler {
                     self.lexical_types_in_scope.insert(name.resolve());
                 }
                 let stmt = self.qualify_decl_name(stmt);
-                let idx = self.add_class_decl_plan(&stmt);
+                let idx = self.add_class_decl_plan(&stmt, Default::default());
                 self.code.emit(OpCode::RegisterDecl(idx));
                 // #10999: bound this frame's env-sync set by what the class
                 // registration actually reads by name, instead of every local.
@@ -4977,7 +4956,7 @@ impl Compiler {
                 // and `add_role_decl_plan`'s method-body compile pass harvests
                 // the lexicals its methods write.
                 let stmt = self.qualify_decl_name(stmt);
-                let idx = self.add_role_decl_plan(&stmt);
+                let idx = self.add_role_decl_plan(&stmt, Default::default());
                 self.code.emit(OpCode::RegisterDecl(idx));
                 // #11078: the role twin of the class arm's env-sync bound.
                 self.note_role_decl_env_sync(idx);

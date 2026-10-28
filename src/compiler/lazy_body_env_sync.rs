@@ -27,7 +27,7 @@
 //! [`Compiler::note_role_decl_env_sync`]. Expressions still evaluated from
 //! raw AST at registration (a computed method name, a fallback trait
 //! argument) are enumerated from an analysis compile of the same expression,
-//! a static `token`/`rule` body from its pattern text, and a `__hoisted`
+//! a static `token`/`rule` body from its pattern text, and a hoisted
 //! shell is bounded together with its source-order declaration (#11116).
 
 use super::Compiler;
@@ -206,7 +206,7 @@ impl Compiler {
     }
 
     /// Mark the class/role plan `decl_idx` bounded with its reads `names`,
-    /// together with any `__hoisted` shell of the same declaration
+    /// together with any hoisted shell of the same declaration
     /// (`decl_id`) this compiler emitted: the shell registers a subset of the
     /// same body, so it reads no name the full declaration does not. The
     /// shell's own plan is never bounded on its own (its methods are compiled

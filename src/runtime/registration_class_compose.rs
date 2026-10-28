@@ -608,7 +608,7 @@ impl Interpreter {
         // itself (`begin_prologue::composes_roles`, #10667), so the body runs
         // once there. What follows covers the shells that remain.
         //
-        // A `__hoisted` forward-reference shell (see
+        // A hoisted forward-reference shell (see
         // `ClassDeclModifiers::is_hoisted_shell`'s doc comment) is exempt
         // from this memo and always runs the deferred body unconditionally,
         // the same as pre-guard mutsu: the shell's registration is

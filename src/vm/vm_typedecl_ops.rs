@@ -55,14 +55,7 @@ impl Interpreter {
                 let classes_before = self.registry().classes.clone();
                 match self.exec_register_class_op(code, plan_idx, compiled_fns) {
                     Ok(()) => Ok(()),
-                    Err(_)
-                        if code.class_decl_plans[plan_idx as usize]
-                            .custom_traits
-                            .iter()
-                            .any(|(name, _)| name == "__hoisted") =>
-                    {
-                        Ok(())
-                    }
+                    Err(_) if code.class_decl_plans[plan_idx as usize].pass.hoisted => Ok(()),
                     Err(error) => {
                         self.note_failed_eval_class_decl(&classes_before);
                         Err(error)
@@ -73,14 +66,7 @@ impl Interpreter {
                 self.note_type_body_written_lexicals(code);
                 match self.exec_register_role_op(code, plan_idx, compiled_fns) {
                     Ok(()) => Ok(()),
-                    Err(_)
-                        if code.role_decl_plans[plan_idx as usize]
-                            .custom_traits
-                            .iter()
-                            .any(|(name, _)| name == "__hoisted") =>
-                    {
-                        Ok(())
-                    }
+                    Err(_) if code.role_decl_plans[plan_idx as usize].pass.hoisted => Ok(()),
                     Err(error) => Err(error),
                 }
             }
@@ -239,6 +225,7 @@ impl Interpreter {
             declarator,
             language_version,
             custom_traits,
+            pass,
             decl_id,
             is_stub,
             trusts,
@@ -588,10 +575,9 @@ impl Interpreter {
             // distinguishing EVAL re-definitions from normal re-execution
             // (e.g., anonymous classes in loops, augment) requires tracking
             // compilation unit boundaries.
-            let has_trait = |name: &str| custom_traits.iter().any(|(t, _)| t == name);
-            let hoisted_shell = if has_trait("__hoisted_nested") {
+            let hoisted_shell = if pass.hoisted_nested {
                 crate::runtime::HoistedShell::Nested
-            } else if has_trait("__hoisted") {
+            } else if pass.hoisted {
                 crate::runtime::HoistedShell::Forward
             } else {
                 crate::runtime::HoistedShell::No
@@ -710,7 +696,7 @@ impl Interpreter {
             }
             // Compile method bodies to bytecode for the fast path.
             //
-            // A `__hoisted` forward-reference shell (`hoist_type_decl_shells`)
+            // A hoisted forward-reference shell (`hoist_type_decl_shells`)
             // is skipped: its `CompiledMethodDecl`s all carry
             // `compiled_routine_key: None` (`add_class_decl_plan` computes
             // `package_name: None` for a shell), so this pass would compile
@@ -968,7 +954,7 @@ impl Interpreter {
                 let type_obj = Value::package(Symbol::intern(&storage_name));
                 // Dispatch explicitly parsed custom traits (with args)
                 for (trait_name, trait_arg) in custom_traits {
-                    // Internal markers (`__hoisted`, ...)
+                    // Internal markers (hoisted, ...)
                     // are not user traits; never dispatch them to trait_mod:<is>.
                     if trait_name.starts_with("__")
                         || crate::runtime::native_decl::is_native_type_trait(trait_name)
@@ -1349,6 +1335,7 @@ impl Interpreter {
             language_version,
             declarator,
             custom_traits,
+            pass,
             own_attribute_names,
             body_used_modules,
             body_declared_types,
@@ -1405,9 +1392,7 @@ impl Interpreter {
             // the same name, re-enable it before registering the new role.
             self.unsuppress_name(&name_str);
             self.note_amp_param_shadowed_names(type_param_defs);
-            let is_hoisted_shell = custom_traits
-                .iter()
-                .any(|(trait_name, _)| trait_name == "__hoisted");
+            let is_hoisted_shell = pass.hoisted;
             // A body `my $w := $z` aliases the declaring frame's `$z`, but the
             // body is deferred to composition, which runs it as a separate
             // chunk -- possibly in another frame -- that reaches `$z` by name
@@ -1513,7 +1498,7 @@ impl Interpreter {
             }
             // Store language revision metadata from the version captured at parse time
             self.store_language_revision_from_version(&qualified_name, language_version);
-            // Compile role method bodies to bytecode. A `__hoisted`
+            // Compile role method bodies to bytecode. A hoisted
             // forward-reference shell is skipped for the same reason the class
             // side skips it (see `exec_register_class_op`): `add_role_decl_plan`
             // leaves every `compiled_routine_key` `None` for a shell, so this
@@ -1608,7 +1593,7 @@ impl Interpreter {
             if has_trait_mod && (!custom_traits.is_empty() || !role_deferred.is_empty()) {
                 let type_obj = Value::package(Symbol::intern(&qualified_name));
                 for (trait_name, trait_arg) in custom_traits {
-                    // Skip internal markers (e.g. `__hoisted`); they are not real `is` traits.
+                    // Skip internal markers (e.g. hoisted); they are not real `is` traits.
                     if trait_name.starts_with("__")
                         || crate::runtime::array_type_trait::is_array_type_trait(trait_name)
                     {
