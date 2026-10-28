@@ -55,7 +55,7 @@ impl super::Interpreter {
             && !matches!(class_name.as_str(), "Date" | "DateTime")
             && self.has_user_method(&class_name.resolve(), "Str")
         {
-            return Some(self.call_method_with_values(target.clone(), "Str", Vec::new()));
+            return Some(self.try_compiled_method_or_interpret(target.clone(), "Str", Vec::new()));
         }
         crate::builtins::method_table::invoke_owner(self, owners, method, args, || target.clone())
     }
