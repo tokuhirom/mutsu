@@ -205,6 +205,7 @@ fn method_decl_body_with_my(
         rest,
         Stmt::MethodDecl {
             is_hidden_from_backtrace: traits.is_hidden_from_backtrace,
+            nested_capture_index: None,
             spans,
             value_prototype: None,
             name: Symbol::intern(&name),
