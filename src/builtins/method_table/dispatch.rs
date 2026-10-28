@@ -1006,6 +1006,17 @@ pub(crate) fn shapeless_row(
     }
     let (cool, any) = (Symbol::intern("Cool"), Symbol::intern("Any"));
     let mu_owner = Symbol::intern("Mu");
+    // A role mixed into a class with its own `iterator` or `list` keeps the
+    // class listing itself (`own_iteration_view` answers it).
+    if list
+        && let ValueView::Mixin(inner, _) = target.view()
+        && let ValueView::Instance { class_name, .. } = inner.view()
+        && let Some(interp) = interp.as_deref_mut()
+        && !interp.mixin_composes_method(target, method.as_str())
+        && interp.own_iteration_reads(class_name.as_str(), method.as_str())
+    {
+        return None;
+    }
     let owner = match target.view() {
         // `Iterable`'s methods: a list still being produced is a `Seq`, a
         // lazy or shaped array a `List`; nothing else declares them.
