@@ -49,7 +49,10 @@ impl Interpreter {
                 if mark.with_str(|m| m == crate::runtime::lexical_imports::LATE_IMPORT_MARK) =>
             {
                 if self.has_function(name.as_str())
-                    || self.env().get_sym(crate::runtime::dispatch_key::amp_sym(name)).is_some()
+                    || self
+                        .env()
+                        .get_sym(crate::runtime::dispatch_key::amp_sym(name))
+                        .is_some()
                 {
                     return Ok(false);
                 }

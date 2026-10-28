@@ -582,11 +582,21 @@ impl Compiler {
             return None;
         }
         let line = self.last_source_line?;
-        let mut chain = vec![Symbol::intern(crate::runtime::lexical_imports::LATE_IMPORT_MARK)];
+        let mut chain = vec![Symbol::intern(
+            crate::runtime::lexical_imports::LATE_IMPORT_MARK,
+        )];
         for id in self.lexical_import_chain.iter().rev() {
-            if self.unit_set_line.get(id).is_some_and(|&use_line| line < use_line)
+            if self
+                .unit_set_line
+                .get(id)
+                .is_some_and(|&use_line| line < use_line)
                 && self.unit_active_sets.contains(id)
-                && self.lexical_import_chain.iter().filter(|c| *c == id).count() == 1
+                && self
+                    .lexical_import_chain
+                    .iter()
+                    .filter(|c| *c == id)
+                    .count()
+                    == 1
                 && !chain.contains(id)
             {
                 chain.push(*id);
