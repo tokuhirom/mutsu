@@ -653,6 +653,7 @@ impl Interpreter {
         Self::inject_trait_mod_is_export_prelude(&code, &mut stmts);
         Self::inject_enumeration_prelude(&code, &mut stmts);
         Self::inject_iterator_role_prelude(&code, &mut stmts);
+        Self::inject_hash_ordered_prelude(&code, &mut stmts);
         Self::inject_x_wrapper_prelude(&code, &mut stmts);
         Self::inject_precomp_api_prelude(&code, &mut stmts);
         Self::inject_formatter_syntax_prelude(&code, &mut stmts);
