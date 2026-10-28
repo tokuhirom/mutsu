@@ -311,7 +311,7 @@ impl Interpreter {
         matches!(
             data.env.get("__mutsu_multi_dispatch_candidates").map(Value::view),
             Some(ValueView::Array(cands, _))
-                if cands.iter().any(|c| matches!(c.view(), ValueView::Sub(d) if d.returns_container()))
+                if cands.iter().any(|c| matches!(c.view(), ValueView::Sub(d) if d.candidate_returns_container()))
         )
     }
 
