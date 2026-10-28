@@ -194,7 +194,10 @@ impl Interpreter {
         for method in method_order {
             match self.try_compiled_method_or_interpret(instance.clone(), method, vec![idx.clone()])
             {
-                Ok(value) => return Ok(value.truthy()),
+                // `:exists` asks the answer for its `Bool`, so a user
+                // `EXISTS-KEY` returning an object runs that object's own `Bool`
+                // (Red's AST node throws `CX::Red::Bool` from it).
+                Ok(value) => return self.eval_truthy_result(&value),
                 Err(err) if Self::is_method_not_found(&err) => continue,
                 Err(err) => return Err(err),
             }
