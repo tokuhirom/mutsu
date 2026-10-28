@@ -125,7 +125,9 @@ impl Interpreter {
             counter
         );
         let mut installed_provides = ValueMap::default();
-        if let Some(provides) = meta.hash_get_str("provides")
+        // A META built by a program (Pakku's recman metas) holds its sections in
+        // container cells, so look through them.
+        if let Some(provides) = meta.hash_get_str("provides").map(|v| v.deref_container())
             && let ValueView::Hash(map) = provides.view()
         {
             let entries: Vec<(String, String)> = map
@@ -148,7 +150,7 @@ impl Interpreter {
             }
         }
         let mut installed_resources = ValueMap::default();
-        if let Some(resources_val) = meta.hash_get_str("resources")
+        if let Some(resources_val) = meta.hash_get_str("resources").map(|v| v.deref_container())
             && let ValueView::Array(arr, _) = resources_val.view()
         {
             let resources: Vec<String> = arr.iter().map(|r| r.to_string_value()).collect();
@@ -187,6 +189,7 @@ impl Interpreter {
                 let bin_id = format!("{:X}", hash_strings(&[&name, &dist_id]));
                 let dest = bin_dir.join(&bin_id);
                 std::fs::copy(entry.path(), &dest).ok();
+                super::bin_wrappers::write_bin_wrapper(prefix_path, &name);
                 installed_bin.insert(format!("bin/{name}"), Value::str(bin_id));
             }
         }
@@ -208,6 +211,13 @@ impl Interpreter {
             "files".to_string(),
             Value::hash_with_data(Value::hash_arc(all_files)),
         );
+        // Rakudo records `ver` next to `version`: readers of an installed
+        // distribution's meta (Pakku, zef) look it up under `ver`.
+        if !meta_map.contains_key("ver")
+            && let Some(version) = meta_map.get("version").map(|v| v.to_string_value())
+        {
+            meta_map.insert("ver".to_string(), Value::str(version));
+        }
         meta_map.insert("dist-id".to_string(), Value::str(dist_id.clone()));
         let meta_value = Value::hash_with_data(Value::hash_arc(meta_map));
         let json_str = value_to_json_string(&meta_value);
@@ -248,6 +258,9 @@ impl Interpreter {
             for (name, id) in map.iter() {
                 let dir = if name.starts_with("bin/") { "bin" } else { "resources" };
                 owned.push(prefix.join(dir).join(id.to_string_value()));
+                if let Some(script) = name.strip_prefix("bin/") {
+                    super::bin_wrappers::remove_bin_wrapper(prefix, script);
+                }
             }
         }
         for file in owned {
