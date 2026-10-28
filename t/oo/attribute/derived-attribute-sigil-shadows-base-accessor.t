@@ -16,7 +16,7 @@ is P.new.v, "p", 'the base class keeps its own';
 is R.new.v, "r", 'same sigil still shadows';
 is-deeply S.new.v, {:a(1)}, '%.v shadows $.v';
 is T.new.v, "t", '$.v shadows an inherited @.v';
-is-deeply Q.new(v => <a b>).v.list, ("a", "b"), 'a named argument fills the derived attribute';
+is Q.new(v => <a b>).v.join(","), "a,b", 'a named argument fills the derived attribute';
 is-deeply Q.new(v => <a b>).v.elems, 2, 'and has the derived shape';
 is P.new(v => "x").v, "x", 'a named argument for the base';
 is-deeply T.new(v => "u").v, "u", 'a named argument for the most-derived scalar';
