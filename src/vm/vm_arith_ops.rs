@@ -451,8 +451,8 @@ impl Interpreter {
     /// `&{op_name}`, with its candidates; `None` when the unit has none.
     // Cost: as `unit_visible_captured_family`.
     fn exported_captured_family(&self, op_name: &str) -> Option<(Value, Vec<Value>)> {
-        let value = Symbol::lookup(op_name)
-            .and_then(|op_sym| self.unit_visible_captured_family(op_sym))?;
+        let value =
+            Symbol::lookup(op_name).and_then(|op_sym| self.unit_visible_captured_family(op_sym))?;
         let ValueView::Sub(data) = value.view() else {
             return None;
         };
