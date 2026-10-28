@@ -61,6 +61,18 @@ pub(crate) fn retain(body: &mut Vec<Stmt>, traits: Vec<RoutineTrait>) {
     }
 }
 
+/// Whether a routine's return type was written as a `returns` / `of` trait
+/// rather than a `-->` arrow: an undeclared one is `X::InvalidType`, while an
+/// undeclared `-->` type is `X::Undeclared`.
+// Cost: O(n), n = statements in the body.
+pub(crate) fn return_type_is_trait(body: &[Stmt]) -> bool {
+    get(body).is_some_and(|traits| {
+        traits
+            .iter()
+            .any(|item| matches!(item, RoutineTrait::Returns(_) | RoutineTrait::Of(_)))
+    })
+}
+
 // Cost: O(n), n = statements in the body.
 pub(crate) fn get(body: &[Stmt]) -> Option<&[RoutineTrait]> {
     body.iter().find_map(|stmt| match stmt {

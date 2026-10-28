@@ -325,10 +325,8 @@ impl Interpreter {
             );
         }
         // Apply custom trait_mod:<is> for each non-builtin trait on methods.
-        // `__`-prefixed entries are internal parser markers (the
-        // `__return_via_trait` / `__return_via_of` return-type spelling the
-        // RakuAST converter reads), never user traits, so they never reach a
-        // user `trait_mod:<is>` candidate.
+        // `__`-prefixed entries are internal parser markers, never user
+        // traits, so they never reach a user `trait_mod:<is>` candidate.
         self.apply_method_is_traits(
             cx.name,
             &resolved_method_name,
