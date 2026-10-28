@@ -245,6 +245,10 @@ pub(crate) struct TypeState {
     /// next same-named declaration completes it (see
     /// `lexical_class_pending_stub`).
     pub(crate) lexical_class_awaiting: HashSet<String>,
+    /// Depth of the `CORE::`-pinned type checks in flight: while non-zero, a
+    /// bare type name names the registered (outer) type and no `my` type, module
+    /// alias or package-relative type of the same spelling may replace it.
+    pub(crate) core_pin_depth: u32,
     /// Metadata for Seq values produced by `squish` with callbacks, used to
     /// provide callback-aware iterator behavior.
     pub(crate) squish_iterator_meta: HashMap<usize, SquishIteratorMeta>,
@@ -316,6 +320,7 @@ impl TypeState {
             lexical_class_pending: HashMap::new(),
             lexical_class_pending_scopes: Vec::new(),
             lexical_class_awaiting: HashSet::new(),
+            core_pin_depth: 0,
             squish_iterator_meta: HashMap::new(),
             custom_type_data: HashMap::new(),
             rebless_map: HashMap::new(),
@@ -384,6 +389,7 @@ impl TypeState {
             lexical_class_pending: self.lexical_class_pending.clone(),
             lexical_class_pending_scopes: self.lexical_class_pending_scopes.clone(),
             lexical_class_awaiting: self.lexical_class_awaiting.clone(),
+            core_pin_depth: 0,
             squish_iterator_meta: HashMap::new(),
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),
