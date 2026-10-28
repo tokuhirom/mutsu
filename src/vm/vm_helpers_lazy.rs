@@ -1251,7 +1251,11 @@ impl Interpreter {
     // Cost: O(e), e = entries of the pulling frame's env (a flatten and one scan).
     pub(crate) fn inherit_puller_dynamics(&mut self, puller: &crate::env::Env) {
         for (key, value) in puller.flattened().iter() {
-            if key.with_str(|name| name.starts_with('*')) {
+            // `$*x` is keyed `*x`; the other sigils keep theirs (`&*x`).
+            if key.with_str(|name| {
+                name.starts_with('*')
+                    || name.starts_with(['&', '@', '%']) && name[1..].starts_with('*')
+            }) {
                 self.env_mut().insert_sym(*key, value.clone());
             }
         }
