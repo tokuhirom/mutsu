@@ -101,7 +101,12 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
     }
     // The typed assignment node, target as written; its lowering owns the
     // per-target dispatch (`rakuast::assign_lower`).
-    if crate::rakuast::is_expression_assign_target(&lhs)
+    // A parenthesised `(&f = SUB)` is always an assignment to the routine
+    // variable (`lower_expression` writes a `&` target as an `AssignExpr`);
+    // outside parentheses a `&f` before `=` is left to the caller (`my $a
+    // where &even = 6`), so the expression target set does not list it.
+    if matches!(lhs, Expr::CodeVar(_))
+        || crate::rakuast::is_expression_assign_target(&lhs)
         || crate::rakuast::is_callable_lvalue_assign_target(&lhs)
     {
         return Ok((rest, super::written_assignment(lhs, rhs)));
