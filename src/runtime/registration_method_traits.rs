@@ -273,6 +273,11 @@ impl Interpreter {
                 _ => {}
             }
         }
+        // A role with a `CALL-ME` composed onto the method by a handler
+        // decides what a call of the method runs.
+        if !is_proto && cell.get().is_some() {
+            self.bind_method_call_me_body(pkg, method_name, candidate_idx, &sub_val)?;
+        }
         Ok(())
     }
 }
