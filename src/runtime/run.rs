@@ -1390,7 +1390,14 @@ impl Interpreter {
                     self.set_current_package(package.clone());
                 }
                 let saved_unit = std::mem::replace(&mut self.current_unit, phaser.unit);
+                // The body is the declaring compunit's top-level code: it sees
+                // that unit's own `use` imports, not the exit-time main
+                // script's.
+                self.module
+                    .module_loading_unit_stack
+                    .push((phaser.unit, self.routine_stack.len()));
                 let body_result = self.run_block(body);
+                self.module.module_loading_unit_stack.pop();
                 self.current_unit = saved_unit;
                 self.set_current_package(saved_package);
                 if self.control.halted {
