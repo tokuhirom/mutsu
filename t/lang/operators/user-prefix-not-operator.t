@@ -1,7 +1,7 @@
 use Test;
 use lib $*PROGRAM.parent(3).add('lib');
 
-plan 10;
+plan 11;
 
 # `not` is a loose-unary builtin, but a declared or imported `prefix:<not>`
 # multi replaces it for its own argument types: `not $x` is that operator's
@@ -28,4 +28,12 @@ plan 10;
     use UserPrefixNot;
     is (not UserPrefixNot::Thing.new), "imported-not", 'an imported prefix:<not> takes `not $x`';
     is (not 0), True, '... and the builtin remains for other types';
+}
+
+# A candidate added to `not` keeps the builtin's loose-unary precedence: it is
+# not a tight prefix like a brand-new operator (Red's t/19-in-sql greps with
+# `not *.name in <b c>`, which is `not(*.name in <b c>)`).
+{
+    multi prefix:<not>(Str $a) { "S" }
+    is (not "a" eq "b"), True, '`not "a" eq "b"` is `not("a" eq "b")`, not `(not "a") eq "b"`';
 }
