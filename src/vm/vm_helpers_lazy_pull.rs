@@ -251,7 +251,7 @@ impl Interpreter {
         let saved_routine_depth = self
             .async_state
             .lazy_pull_entry_routine_depth
-            .replace(self.routine_stack_len());
+            .replace(self.lazy_pull_routine_depth());
         // An enclosing multi-take op's deferral belongs to the OUTER pull; this
         // pull's own takes suspend normally.
         let saved_take_defer_to_op_end =

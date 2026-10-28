@@ -844,6 +844,17 @@ impl Interpreter {
         self.routine_stack.len()
     }
 
+    /// The routine depth the lazy-pull suspension compares: the frames a pull
+    /// driver cannot snapshot, so an inlined bare block (a `for` body that has
+    /// phasers runs as one, in the driver's own frame) does not count.
+    // Cost: O(d), d = depth of the routine stack.
+    pub(crate) fn lazy_pull_routine_depth(&self) -> usize {
+        self.routine_stack
+            .iter()
+            .filter(|frame| !frame.is_inlined_block)
+            .count()
+    }
+
     /// Drop routine frames down to `len`. Used by block/try executors to remove
     /// the bare-block callframe they pushed (and reclaim any frames a nested
     /// bare block leaked when its body threw past its own cleanup).
@@ -989,7 +1000,7 @@ impl Interpreter {
 
     pub(crate) fn take_value(&mut self, val: Value) -> Result<(), RuntimeError> {
         let call_depth = self.call_frames.len();
-        let routine_depth = self.routine_stack_len();
+        let routine_depth = self.lazy_pull_routine_depth();
         if let Some(items) = self.async_state.gather_items.last_mut() {
             // `take` of a Slip flattens it into the gather (`take Empty` /
             // `take slip(1,2)` add zero / two elements — Rakudo semantics);
@@ -1083,7 +1094,7 @@ impl Interpreter {
         let outside_interpreter_call = self
             .async_state
             .lazy_pull_entry_routine_depth
-            .is_none_or(|entry| self.routine_stack_len() <= entry);
+            .is_none_or(|entry| self.lazy_pull_routine_depth() <= entry);
         outside_vm_call && outside_interpreter_call
     }
 
