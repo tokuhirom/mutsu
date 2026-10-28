@@ -811,7 +811,7 @@ impl Interpreter {
         };
         match inner.view() {
             ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_hash_storage") =>
+                if attributes.contains_key(crate::symbol::wk::hash_storage()) =>
             {
                 Some((**inner).clone())
             }

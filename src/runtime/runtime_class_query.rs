@@ -519,18 +519,34 @@ impl Interpreter {
             .contains(class_name)
     }
 
+    // Cost: O(1) expected for a class that declares subs; otherwise O(k) over the
+    // k classes that do, with no allocation.
     pub(crate) fn has_class_scoped_subs(&self, class_name: &str) -> bool {
         // Single guard for both reads (no user-code re-entry here, so let-binding
         // is safe and avoids a same-thread recursive read lock).
         let registry = self.registry();
+        // A package-qualified spelling of either side (`Outer::Inner` against
+        // `Inner`), tested without building the `::name` strings: this runs on
+        // every method call, over every class that declares a sub.
+        let qualified_by = |long: &str, short: &str| {
+            let mut head = long;
+            while let Some((outer, _)) = crate::str_scan::rsplit_once_double_colon(head) {
+                // `short` is the run of segments after `outer::`.
+                if long[outer.len() + 2..] == *short {
+                    return true;
+                }
+                head = outer;
+            }
+            false
+        };
         registry
             .class_subs
             .get(class_name)
             .is_some_and(|subs| !subs.is_empty())
-            || registry.class_subs.keys().any(|k| {
-                k.ends_with(&format!("::{}", class_name))
-                    || class_name.ends_with(&format!("::{}", k))
-            })
+            || registry
+                .class_subs
+                .keys()
+                .any(|k| qualified_by(k, class_name) || qualified_by(class_name, k))
     }
 
     /// Read access to the shared declaration [`Registry`]. Returns a temporary

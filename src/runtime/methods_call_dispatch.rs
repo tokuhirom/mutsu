@@ -325,6 +325,18 @@ impl Interpreter {
         }
     }
 
+    /// Whether `arg` is an object an `IO::Path` segment method (`add`,
+    /// `child`, `sibling`) must first stringify through its `Str` (an
+    /// `IO::Path` argument stringifies natively).
+    // Cost: O(1).
+    fn io_path_segment_needs_str(arg: &Value) -> bool {
+        let inner = arg.descalarize();
+        matches!(
+            inner.view(),
+            ValueView::Instance { .. } | ValueView::Mixin(..)
+        ) && !Self::is_io_path_value(inner)
+    }
+
     /// `.raku` of a `Scalar` container: the `$` sigil of an itemized aggregate
     /// shows, an element whose repr needs method dispatch (`$[Foo.new]`) is
     /// rendered through it, and an itemized lazy sequence renders the prefix
@@ -441,6 +453,25 @@ impl Interpreter {
             let resolved = self.resolve_proxies_in_value(&target)?;
             return self.call_method_with_values_inner(resolved, method, args, reify_seq);
         }
+        // An `IO::Path` joins a segment object by its `Str`, which is pure in
+        // the rows: resolve an instance argument to the string it answers
+        // first (a `Str` answering an object dies, as in rakudo).
+        if matches!(method, "add" | "child" | "sibling")
+            && Self::is_io_path_value(&target)
+            && args.iter().any(Self::io_path_segment_needs_str)
+        {
+            let mut resolved = Vec::with_capacity(args.len());
+            for arg in &args {
+                let inner = arg.descalarize();
+                if Self::io_path_segment_needs_str(arg) {
+                    let s = self.call_method_with_values_unviewed(inner.clone(), "Str", vec![])?;
+                    resolved.push(Value::str(crate::runtime::unbox_str_answer(&s)?));
+                } else {
+                    resolved.push(arg.clone());
+                }
+            }
+            return self.call_method_with_values_inner(target, method, resolved, reify_seq);
+        }
         // A quant hash renders each element through the element's own
         // `Str`/`gist` (`quanthash_element_stringify.rs`).
         if matches!(method, "Str" | "Stringy" | "gist")
@@ -494,7 +525,7 @@ impl Interpreter {
             }
             let storage = attributes
                 .as_map()
-                .get("__mutsu_array_storage")
+                .get(crate::symbol::wk::array_storage())
                 .cloned()
                 .unwrap_or_else(|| Value::real_array(Vec::new()));
             return self.call_method_with_values(storage, method, args);
@@ -1404,6 +1435,31 @@ impl Interpreter {
             return self.call_method_with_values(how, meta_method, how_args);
         }
 
+        // A metamethod the type declared itself (`method ^kind`) is a method
+        // of its metaclass, so another metamethod reaches it through `self`
+        // (`method ^parameterize(|args) { self.kind: |args }`); the type
+        // object is part of the caller's arguments, as for any HOW method.
+        // Cost: O(1) plus one short `format!`, for a HOW receiver only.
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+            && Self::is_metamodel_how(&class_name)
+            && !method.starts_with('^')
+            && let Some(type_name) = attributes
+                .as_map()
+                .get("__mutsu_how_target")
+                .and_then(|v| v.as_str().map(str::to_string))
+            && let type_sym = crate::symbol::Symbol::intern(&type_name)
+            && let meta_name = format!("^{method}")
+            && self.has_user_method(&type_name, &meta_name)
+            && let Some(result) =
+                self.try_dispatch_compiled_method_direct_as(type_sym, &target, &meta_name, &args)
+        {
+            return result;
+        }
+
         // ClassHOW/SubsetHOW/EnumHOW method dispatch
         if let ValueView::Instance {
             class_name,
@@ -1415,6 +1471,27 @@ impl Interpreter {
         {
             let how_args = self.how_dispatch_args(&attributes, method, &args);
             return self.dispatch_classhow_method(method, how_args);
+        }
+
+        // `Metamodel::Archetypes.new: :nominal, ...`: an archetypes object with
+        // exactly the flags the named arguments set (the others read False).
+        if method == "new"
+            && let ValueView::Package(name) = target.view()
+            && matches!(
+                name.as_str(),
+                "Metamodel::Archetypes" | "Perl6::Metamodel::Archetypes"
+            )
+        {
+            let mut attrs = std::collections::HashMap::new();
+            for arg in &args {
+                if let ValueView::Pair(key, value) = arg.view() {
+                    attrs.insert(key.to_string(), Value::truth(value.truthy()));
+                }
+            }
+            return Ok(Value::make_instance(
+                Symbol::intern("Perl6::Metamodel::Archetypes"),
+                attrs,
+            ));
         }
 
         // Archetypes flag accessors (composable/nominal/nominalizable/coercive/...)
@@ -1443,6 +1520,15 @@ impl Interpreter {
                 .get(method)
                 .cloned()
                 .unwrap_or(Value::FALSE));
+        }
+
+        // `.CREATE` on an `is repr<Uninstantiable>` type object dies like
+        // `.new` and `.bless` do.
+        if method == "CREATE"
+            && let ValueView::Package(name) = target.view()
+            && let Some(err) = self.uninstantiable_error(name.as_str())
+        {
+            return Err(err);
         }
 
         // CREATE method

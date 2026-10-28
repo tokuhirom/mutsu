@@ -935,14 +935,14 @@ impl Interpreter {
             // assignment reads the Iterable protocol, so a subclass that
             // overrides `iterator` decides the order here too -- measured.
             ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_array_storage") =>
+                if attributes.contains_key(crate::symbol::wk::array_storage()) =>
             {
                 match self.positional_subclass_iteration_source(val, "list") {
                     Some(source) => crate::runtime::utils::value_to_list(&source?),
                     None => {
                         let storage = attributes
                             .as_map()
-                            .get("__mutsu_array_storage")
+                            .get(crate::symbol::wk::array_storage())
                             .cloned()
                             .unwrap_or_else(|| Value::real_array(Vec::new()));
                         crate::runtime::utils::value_to_list(&storage)

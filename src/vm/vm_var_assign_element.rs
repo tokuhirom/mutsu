@@ -599,7 +599,7 @@ impl Interpreter {
         };
         attributes
             .as_map()
-            .get("__mutsu_hash_storage")
+            .get(crate::symbol::wk::hash_storage())
             .is_some_and(|storage| {
                 matches!(storage.view(), ValueView::Hash(h) if h.declared_type.as_deref() == Some("Map"))
             })

@@ -356,6 +356,12 @@ impl Interpreter {
         target: &Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // An `is repr<Uninstantiable>` type has no instances.
+        if let ValueView::Package(name) = target.view()
+            && let Some(err) = self.uninstantiable_error(name.as_str())
+        {
+            return Err(err);
+        }
         let mut instance = self.dispatch_bless_unallocated(target, args)?;
         // `self.bless` inside a role's method, called on the role's type
         // object: the pun class already exists (the method call made it), so
@@ -814,7 +820,7 @@ impl Interpreter {
                     }
                 })
                 .collect();
-            if !elems.is_empty() || !attributes.contains_key("__mutsu_array_storage") {
+            if !elems.is_empty() || !attributes.contains_key(crate::symbol::wk::array_storage()) {
                 let storage = self.positional_base_storage(cn_resolved, elems);
                 attributes.insert("__mutsu_array_storage", storage);
             }
@@ -837,7 +843,7 @@ impl Interpreter {
                 .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
                 .cloned()
                 .collect();
-            if !hash_args.is_empty() || !attributes.contains_key("__mutsu_hash_storage") {
+            if !hash_args.is_empty() || !attributes.contains_key(crate::symbol::wk::hash_storage()) {
                 let storage = self.associative_base_storage(cn_resolved, hash_args);
                 attributes.insert("__mutsu_hash_storage", storage);
             }

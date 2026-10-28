@@ -56,6 +56,9 @@ pub(crate) fn with_nqp_backing_array<R>(v: &Value, f: impl FnOnce(&Value) -> R) 
     match v.view() {
         ValueView::Array(..) => Some(f(v)),
         ValueView::Uni(uni) => Some(f(&uni.codes)),
+        // An attribute a lexical was bound to (`my $its := $!its`) reads back
+        // as the shared cell around the buffer; the ops work on the buffer.
+        ValueView::ContainerRef(..) => with_nqp_backing_array(&v.deref_container(), f),
         _ => nqp_backing_array(v).map(|array| f(&array)),
     }
 }

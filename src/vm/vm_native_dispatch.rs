@@ -505,6 +505,43 @@ impl Interpreter {
                     }
                     return Some(Ok(args[0].clone()));
                 }
+                // `flat 1, [\*] @infinite`: a genuinely-lazy list among several
+                // arguments stays lazy. The plain arguments around it are flattened
+                // now; each lazy one is wrapped in a flattening pipe, and the
+                // parts are read one after another.
+                if name.as_str() == "flat"
+                    && args.len() > 1
+                    && args.iter().any(|a| {
+                        matches!(a.view(), ValueView::LazyList(ll)
+                            if ll.is_genuinely_lazy() && !is_finite_gather(a))
+                    })
+                {
+                    let mut parts: Vec<Value> = Vec::new();
+                    let mut plain: Vec<Value> = Vec::new();
+                    let flush = |plain: &mut Vec<Value>, parts: &mut Vec<Value>| {
+                        if !plain.is_empty() {
+                            parts.push(Value::array(std::mem::take(plain)));
+                        }
+                    };
+                    for arg in args {
+                        match arg.view() {
+                            ValueView::LazyList(ll)
+                                if ll.is_genuinely_lazy() && !is_finite_gather(arg) =>
+                            {
+                                flush(&mut plain, &mut parts);
+                                parts.push(Value::lazy_list(crate::gc::Gc::new(
+                                    crate::value::LazyList::new_index_pipe(
+                                        arg.clone(),
+                                        crate::value::IndexTransform::Flat,
+                                    ),
+                                )));
+                            }
+                            _ => crate::builtins::flat_val(arg, &mut plain, true),
+                        }
+                    }
+                    flush(&mut plain, &mut parts);
+                    return Some(Ok(Self::lazy_concat_pipe(parts, false)));
+                }
                 let mut forced_args = Vec::with_capacity(args.len());
                 for arg in args {
                     if let ValueView::LazyList(ll) = arg.view() {

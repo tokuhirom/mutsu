@@ -347,7 +347,11 @@ impl Interpreter {
     /// name (`FlatHolder`; see `run_role_body_for_composition`'s `type_owner`).
     /// Strip the bracket suffix before looking up, exactly like
     /// `compute_bare_name_packages` does for the same reason.
+    // Cost: O(1) when no package received a deferred import (the common case).
     pub(crate) fn package_has_deferred_use_imports(&self, class_name: &str) -> bool {
+        if self.module.packages_with_deferred_use_imports.is_empty() {
+            return false;
+        }
         let base = class_name.split('[').next().unwrap_or(class_name);
         Symbol::lookup(base).is_some_and(|sym| {
             self.module

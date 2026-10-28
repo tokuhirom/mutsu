@@ -177,13 +177,13 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             }
             // An `is Array` subclass instance is Positional: in list context it
             // flattens to its backing storage elements (`for @$vec { ... }`).
-            if let Some(storage) = attributes.as_map().get("__mutsu_array_storage") {
+            if let Some(storage) = attributes.as_map().get(crate::symbol::wk::array_storage()) {
                 return value_to_list(storage);
             }
             // An `is Hash`/`is Map` subclass instance is Associative: in list
             // context it flattens to its backing storage's pairs (`$h.list`,
             // `for $h { ... }`), mirroring the Array/List arm above.
-            if let Some(storage) = attributes.as_map().get("__mutsu_hash_storage") {
+            if let Some(storage) = attributes.as_map().get(crate::symbol::wk::hash_storage()) {
                 return value_to_list(storage);
             }
             vec![val.clone()]

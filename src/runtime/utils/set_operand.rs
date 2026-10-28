@@ -31,7 +31,7 @@ pub(crate) fn set_operand(val: &Value) -> Value {
         return leaves;
     }
     if let ValueView::Instance { attributes, .. } = val.view()
-        && let Some(inner) = attributes.as_map().get("__baggy_data__")
+        && let Some(inner) = attributes.as_map().get(crate::symbol::wk::baggy_data())
     {
         return quanthash_operand(inner).clone();
     }

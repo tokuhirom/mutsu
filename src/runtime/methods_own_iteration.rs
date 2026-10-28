@@ -168,7 +168,7 @@ impl Interpreter {
             } => {
                 // An `is Array`/`is List` subclass iterates its storage
                 // (`positional_subclass_iteration_source`).
-                if attributes.contains_key("__mutsu_array_storage") {
+                if attributes.contains_key(crate::symbol::wk::array_storage()) {
                     return None;
                 }
                 let class = class_name.resolve();

@@ -1229,7 +1229,7 @@ impl Interpreter {
             // the instance inside it is the target all the same (#10356).
             && let Some(inst) = self.place_env_get(place, &var_name).map(Value::deref_container)
             && let ValueView::Instance { attributes, .. } = inst.view()
-            && attributes.contains_key("__mutsu_array_storage")
+            && attributes.contains_key(crate::symbol::wk::array_storage())
         {
             let idx_i = crate::runtime::utils::to_int(&idx);
             if idx_i >= 0 {
@@ -1272,7 +1272,7 @@ impl Interpreter {
                 .place_env_get(place, &var_name)
                 .map(Value::deref_container)
             && matches!(&inst.view(), ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_array_storage"))
+                if attributes.contains_key(crate::symbol::wk::array_storage()))
         {
             let key = crate::runtime::utils::to_int(&idx);
             if key >= 0 {
@@ -6318,7 +6318,7 @@ impl Interpreter {
             // real-world instance of exactly this shape:
             // `$m.logger.routines<Warn> = &die`).
             ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_hash_storage") =>
+                if attributes.contains_key(crate::symbol::wk::hash_storage()) =>
             {
                 let stored = match &bind_cell {
                     Some((_, cell)) => Value::container_ref(cell.clone()),
@@ -6348,7 +6348,7 @@ impl Interpreter {
             // same way for the same reason — same in-place-through-the-
             // shared-cell rationale.
             ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_array_storage") =>
+                if attributes.contains_key(crate::symbol::wk::array_storage()) =>
             {
                 if let Ok(i) = key.parse::<usize>() {
                     attributes.with_attr_mut("__mutsu_array_storage", |storage| {
