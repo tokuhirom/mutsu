@@ -131,35 +131,25 @@ impl Compiler {
                     repr: repr.clone(),
                     body: body.clone(),
                     language_version: language_version.clone(),
-                    custom_traits: {
-                        let mut traits = custom_traits.clone();
-                        if crate::qualified::is_qualified(Symbol::intern(&bare)) {
-                            traits.push((
-                                "__source_compound_name".to_string(),
-                                Some(Expr::Literal(Value::str(bare.clone()))),
-                            ));
-                        }
+                    custom_traits: custom_traits.clone(),
+                    is_unit: *is_unit,
+                    is_native: *is_native,
+                    export_tags: export_tags.clone(),
+                    marks: crate::ast::PackageMarks {
+                        source_compound_name: crate::qualified::is_qualified(Symbol::intern(&bare))
+                            .then(|| bare.clone()),
                         // The qualified parent names above are a guess that the
                         // name is a type of this package. When it is a trait
                         // instead (`is foo`), it is dispatched under the name
                         // as written (#11349).
-                        for (written, qualified) in parents.iter().zip(&new_parents) {
-                            if written != qualified {
-                                traits.push((
-                                    "__parent_spelling".to_string(),
-                                    Some(Expr::Literal(Value::pair(
-                                        qualified.clone(),
-                                        Value::str(written.clone()),
-                                    ))),
-                                ));
-                            }
-                        }
-                        traits
+                        parent_spellings: parents
+                            .iter()
+                            .zip(&new_parents)
+                            .filter(|(written, qualified)| written != qualified)
+                            .map(|(written, qualified)| (qualified.clone(), written.clone()))
+                            .collect(),
+                        ..marks.clone()
                     },
-                    is_unit: *is_unit,
-                    is_native: *is_native,
-                    export_tags: export_tags.clone(),
-                    marks: marks.clone(),
                     implicit_grammar_parent: *implicit_grammar_parent,
                     is_grammar: *is_grammar,
                     decl_id: *decl_id,
@@ -193,18 +183,13 @@ impl Compiler {
                 is_rw: *is_rw,
                 is_lexical: *is_lexical,
                 language_version: language_version.clone(),
-                custom_traits: {
-                    let mut traits = custom_traits.clone();
-                    if crate::qualified::is_qualified(Symbol::intern(&bare)) {
-                        traits.push((
-                            "__source_compound_name".to_string(),
-                            Some(Expr::Literal(Value::str(bare.clone()))),
-                        ));
-                    }
-                    traits
-                },
+                custom_traits: custom_traits.clone(),
                 decl_id: *decl_id,
-                marks: marks.clone(),
+                marks: crate::ast::PackageMarks {
+                    source_compound_name: crate::qualified::is_qualified(Symbol::intern(&bare))
+                        .then(|| bare.clone()),
+                    ..marks.clone()
+                },
             },
             _ => stmt.clone(),
         }
