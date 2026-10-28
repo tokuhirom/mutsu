@@ -881,13 +881,22 @@ impl Interpreter {
                 role_param_values.keys().map(|k| k.to_string()).collect();
             declared.extend(bound.iter().cloned());
             self.persist_role_body_lexicals_except(cx.name, &declared, &bound);
-            if role_lexical_package.is_none() {
+            // A parametric composition re-declares the subs only when it has
+            // value parameters for them to close over; otherwise the
+            // declaration under the role's lexical package serves.
+            let value_params: Vec<(String, Value)> = role_param_values
+                .iter()
+                .filter(|(name, _)| !type_capture_names.contains(*name))
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect();
+            if role_lexical_package.is_none() || !value_params.is_empty() {
                 self.register_role_body_subs_per_composer(
                     cx.name,
                     cx.class_body_plan,
                     base_role_name,
                     role,
                     &declared,
+                    &value_params,
                 )?;
             }
         }

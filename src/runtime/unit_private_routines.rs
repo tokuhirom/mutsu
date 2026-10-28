@@ -94,6 +94,28 @@ impl Interpreter {
         self.invalidate_fn_resolution_for_keys([key]);
     }
 
+    /// Drop the compunit-private copy of a role body's `sub` that a parametric
+    /// composition has re-declared in its own class (#15100): the copy was
+    /// made without the composition's value parameters, and would otherwise be
+    /// found before the class's own.
+    // Cost: O(1) average, plus the function-resolution invalidation.
+    pub(crate) fn unseclude_role_lexical_routine(
+        &mut self,
+        name: &str,
+        class: &str,
+        source_path: Option<&str>,
+    ) {
+        let unit = self.unit_of_source(source_path);
+        let removed = crate::runtime::cow_table_mut(&mut self.module.unit_private_routines)
+            .get_mut(&unit)
+            .and_then(|routines| routines.remove(&Symbol::intern(name)))
+            .is_some();
+        if removed {
+            let key = Symbol::intern(crate::qualified::qualified_text(class, name).as_str());
+            self.invalidate_fn_resolution_for_keys([key]);
+        }
+    }
+
     /// Move the package-less top-level `my`-scoped routines the compunit at
     /// `source_path` just declared out of the shared registry and into that
     /// compunit's private table.
