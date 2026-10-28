@@ -142,11 +142,14 @@ impl Interpreter {
     /// it on first use and caching the result (a `:g` substitution asks for
     /// the same plan once per op execution, and the plan is reused across
     /// every match).
-    pub(super) fn subst_replacement_plan(&mut self, src: &str) -> SubstReplPlan {
+    pub(super) fn subst_replacement_plan(
+        &mut self,
+        src: &str,
+    ) -> Result<SubstReplPlan, RuntimeError> {
         if let Some(plan) = self.caches.subst_repl_plans.get(src) {
-            return plan.clone();
+            return Ok(plan.clone());
         }
-        let expr = crate::parse_dispatch::parse_qq_interpolation(src);
+        let expr = crate::parse_dispatch::parse_qq_interpolation(src)?;
         let plan = match &expr {
             Expr::Literal(v) => match v.view() {
                 ValueView::Str(s) => Some(SubstReplPlan::Static(Arc::from(s.as_str()))),
@@ -164,7 +167,7 @@ impl Interpreter {
         self.caches
             .subst_repl_plans
             .insert(src.to_string(), plan.clone());
-        plan
+        Ok(plan)
     }
 
     /// Evaluate a dynamic replacement body for the current match. `$/` and the

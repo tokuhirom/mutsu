@@ -867,7 +867,10 @@ impl<'ast> crate::ast_visit::Visit<'ast> for HeredocScopeScan<'_> {
         match expr {
             Expr::HeredocInterpolation(content, true) => {
                 super::compile_inputs::mark_uncacheable("compile-time heredoc interpolation");
-                let resolved = crate::parser::interpolate_heredoc_content(content);
+                // A body the `qq` grammar rejects is reported where it compiles.
+                let Ok(resolved) = crate::parser::interpolate_heredoc_content(content) else {
+                    return;
+                };
                 let mut vars = UndeclaredHeredocVar {
                     sub_locals: self.block_locals,
                     outer_map: self.outer_map,

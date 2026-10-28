@@ -32,6 +32,22 @@ impl Compiler {
         }
     }
 
+    /// Compile the raise of `error`, a diagnosis found while compiling a body
+    /// whose source is only read here (a heredoc's interpolation): the program
+    /// dies with it when it reaches the construct, with the exception class
+    /// the diagnosis carries.
+    // Cost: O(1).
+    pub(super) fn emit_deferred_error(&mut self, error: crate::value::RuntimeError) {
+        let user_throw = error.exception.is_none();
+        let thrown = match error.exception {
+            Some(exception) => *exception,
+            None => Value::str(error.message.to_string()),
+        };
+        let idx = self.code.add_constant(thrown);
+        self.code.emit(OpCode::LoadConst(idx));
+        self.code.emit(OpCode::Die { user_throw });
+    }
+
     /// Compile AnonSub expression.
     /// `is_block` = true for bare blocks `{ }`, false for `sub { }`.
     /// Bare blocks are NOT routine boundaries for `return`.

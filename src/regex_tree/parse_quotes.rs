@@ -17,7 +17,7 @@ impl Parser {
                 Some(text) => text,
                 // A body that interpolates keeps what the `qq` parser makes of it.
                 None => {
-                    let expr = crate::parser::interpolate_qq_content(&body);
+                    let expr = crate::parser::interpolate_qq_content(&body).ok()?;
                     if matches!(expr, crate::ast::Expr::Literal(_)) {
                         return None;
                     }

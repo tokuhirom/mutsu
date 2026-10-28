@@ -14,7 +14,7 @@ const SOURCE_CLOSED_BLOCK_HEREDOC: &str = "source-closed-block-heredoc";
 // Cost: O(n), n = heredoc content size.
 pub(super) fn convert_closed_block_heredoc(content: &str) -> Result<RakuAstNode, RuntimeError> {
     let mut quoted =
-        super::convert::convert_expr(&crate::parser::interpolate_heredoc_content(content))?;
+        super::convert::convert_expr(&crate::parser::interpolate_heredoc_content(content)?)?;
     if quoted.class != RakuAstClass::QuotedString {
         return Err(super::convert::unsupported("closed-block heredoc contents"));
     }

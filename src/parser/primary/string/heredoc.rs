@@ -149,14 +149,22 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
         // %h{$k}{$v};`) close nothing.
         let closes_block_same_line = closes_enclosing_block(rest_of_line);
         let expr = if interpolate {
+            // The body is read as a `qq` string when the unit compiles; its
+            // unrecognized escapes are rejected with the unit's parse.
+            if content.contains('\\') {
+                crate::parser::primary::quote_adverbs::process_content_with_flags(
+                    &content,
+                    &crate::parser::primary::quote_adverbs::QuoteFlags::qq_double(),
+                )?;
+            }
             Expr::HeredocInterpolation(content, closes_block_same_line)
         } else if flags.has_interpolation() || flags.words || flags.backslash {
             // Use flags-based processing for heredoc with adverbs
-            process_content_with_flags(&content, flags)
+            process_content_with_flags(&content, flags)?
         } else if flags.q_mode && content.contains("\\qq") {
             // `\qq[...]` re-enables interpolation inside a `q` heredoc. `Q` has
             // no escapes at all, so there the sequence is literal text.
-            parse_single_quote_qq(&content)
+            parse_single_quote_qq(&content)?
         } else if flags.q_mode {
             // q:heredoc processes \\ → \ (same as single-quoted strings)
             let processed = process_q_escapes(&content, '\0');

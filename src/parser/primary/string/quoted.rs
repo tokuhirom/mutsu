@@ -44,7 +44,7 @@ pub(crate) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
                 rest,
                 &mut parts,
                 &mut current,
-            )
+            )?
         {
             rest = after_q;
             continue;
@@ -246,7 +246,7 @@ pub(crate) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
                 rest,
                 &mut parts,
                 &mut current,
-            ) {
+            )? {
                 rest = r;
                 continue;
             }
@@ -428,7 +428,7 @@ pub(crate) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
                 rest,
                 &mut parts,
                 &mut current,
-            ) {
+            )? {
                 rest = r;
                 continue;
             }

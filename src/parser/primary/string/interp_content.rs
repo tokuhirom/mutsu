@@ -24,7 +24,7 @@ pub(crate) fn finalize_interpolation(parts: Vec<Expr>, current: String) -> Expr 
 }
 
 /// Interpolate variables in string content (used by qq// etc.)
-pub(crate) fn interpolate_string_content(content: &str) -> Expr {
+pub(crate) fn interpolate_string_content(content: &str) -> Result<Expr, PError> {
     interpolate_string_content_with_modes(content, true, false)
 }
 
@@ -32,7 +32,7 @@ pub(crate) fn interpolate_string_content_with_modes(
     content: &str,
     interpolate_vars: bool,
     interpolate_closures: bool,
-) -> Expr {
+) -> Result<Expr, PError> {
     let mut parts: Vec<Expr> = Vec::new();
     let mut current = String::new();
     let mut rest = content;
@@ -45,7 +45,7 @@ pub(crate) fn interpolate_string_content_with_modes(
                 rest,
                 &mut parts,
                 &mut current,
-            ) {
+            )? {
                 rest = r;
                 continue;
             }
@@ -86,7 +86,7 @@ pub(crate) fn interpolate_string_content_with_modes(
         rest = &rest[ch.len_utf8()..];
     }
 
-    finalize_interpolation(parts, current)
+    Ok(finalize_interpolation(parts, current))
 }
 
 /// A `{ … }` closure part of a `qq`-interpolated body (a heredoc, `qq{…}`, a
@@ -157,7 +157,7 @@ pub(crate) fn parse_braced_interpolation(input: &str) -> Option<(&str, &str)> {
 /// literal; both then split on whitespace into a word list, which joins with
 /// single spaces in string context (matching raku). Returns the remainder and
 /// the word-list expression, or `None` when the marker does not match.
-pub(crate) fn try_embedded_qw(rest: &str) -> Option<(&str, Expr)> {
+pub(crate) fn try_embedded_qw(rest: &str) -> Result<Option<(&str, Expr)>, PError> {
     for &(marker, interpolate) in &[("\\qqw", true), ("\\qw", false)] {
         let Some(after_marker) = rest.strip_prefix(marker) else {
             continue;
@@ -175,9 +175,11 @@ pub(crate) fn try_embedded_qw(rest: &str) -> Option<(&str, Expr)> {
             body.find(open)
                 .map(|end| (&body[end + open.len_utf8()..], &body[..end]))
         };
-        let (after, inner) = parsed?;
+        let Some((after, inner)) = parsed else {
+            return Ok(None);
+        };
         let base = if interpolate {
-            interpolate_string_content(inner)
+            interpolate_string_content(inner)?
         } else {
             Expr::Literal(literal_str(inner.to_string()))
         };
@@ -189,12 +191,12 @@ pub(crate) fn try_embedded_qw(rest: &str) -> Option<(&str, Expr)> {
             quoted: false,
             sugar: false,
         };
-        return Some((after, words));
+        return Ok(Some((after, words)));
     }
-    None
+    Ok(None)
 }
 
-pub(crate) fn parse_single_quote_qq(content: &str) -> Expr {
+pub(crate) fn parse_single_quote_qq(content: &str) -> Result<Expr, PError> {
     let mut parts: Vec<Expr> = Vec::new();
     let mut current = String::new();
     let mut rest = content;
@@ -204,7 +206,7 @@ pub(crate) fn parse_single_quote_qq(content: &str) -> Expr {
         // implementation (see `quote_adverbs::process_q_escape`); this walk used
         // to carry its own partial copy that knew `\qq` and `\qw` but not `\q`.
         if let Some(r) =
-            crate::parser::primary::quote_adverbs::process_q_escape(rest, &mut parts, &mut current)
+            crate::parser::primary::quote_adverbs::process_q_escape(rest, &mut parts, &mut current)?
         {
             rest = r;
             continue;
@@ -228,5 +230,5 @@ pub(crate) fn parse_single_quote_qq(content: &str) -> Expr {
         rest = &rest[ch.len_utf8()..];
     }
 
-    finalize_interpolation(parts, current)
+    Ok(finalize_interpolation(parts, current))
 }

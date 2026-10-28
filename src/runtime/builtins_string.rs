@@ -9,21 +9,6 @@ impl Interpreter {
     // method, the single source of truth in the `Cool.unival`/`univals` rows).
     // flip / lc / uc / tc / trim / chars removed (Slice 6.3 dedup) — same.
 
-    pub(super) fn builtin_unknown_backslash_escape(
-        &self,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        let escape = args
-            .first()
-            .map(|v| v.to_string_value())
-            .unwrap_or_else(|| "?".to_string());
-        Err(RuntimeError::typed_msg(
-            "X::Backslash::UnrecognizedSequence",
-            format!("Unrecognized backslash sequence: \\{}", escape),
-        ))
-    }
-
-
     /// Handle .split() method with full support for regex splitters, limits, and named params.
     pub(crate) fn handle_split_method(
         &mut self,

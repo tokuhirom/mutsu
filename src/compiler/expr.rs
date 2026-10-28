@@ -1018,8 +1018,10 @@ impl Compiler {
             // Deferred heredoc interpolation
             Expr::HeredocInterpolation(content, _) => {
                 super::compile_inputs::mark_uncacheable("compile-time heredoc interpolation");
-                let resolved = crate::parser::interpolate_heredoc_content(content);
-                self.compile_expr(&resolved);
+                match crate::parser::interpolate_heredoc_content(content) {
+                    Ok(resolved) => self.compile_expr(&resolved),
+                    Err(error) => self.emit_deferred_error(error),
+                }
             }
             // String interpolation
             Expr::StringInterpolation(parts) => {

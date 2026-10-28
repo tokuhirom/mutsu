@@ -293,7 +293,10 @@ fn lower_quote(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
     if source.is_empty() {
         return lower_words(node);
     }
-    let expr = crate::parser::interpolate_qq_content(&source);
+    let expr = match crate::parser::interpolate_qq_content(&source) {
+        Ok(expr) => expr,
+        Err(error) => return Some(Err(error)),
+    };
     Some(Ok(RegexNode::Extension(
         RegexExtension::InterpolatedQuote {
             source,

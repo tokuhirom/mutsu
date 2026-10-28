@@ -2867,17 +2867,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if let Some(words) = super::word_quote::convert_words_atom(name.as_str(), args) {
                 return words;
             }
-            if name.as_str() == "__mutsu_unknown_backslash_escape"
-                && let [Expr::Literal(escape)] = args.as_slice()
-            {
-                return Err(RuntimeError::typed_msg(
-                    "X::Backslash::UnrecognizedSequence",
-                    format!(
-                        "Unrecognized backslash sequence: \\{}",
-                        escape.to_string_value()
-                    ),
-                ));
-            }
             if is_desugar_marker(name.as_str()) {
                 return Err(desugared(name.as_str()));
             }
@@ -4153,7 +4142,7 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // The interpolated code is parsed here, after the unit's own parse
             // ended: it keeps its typed nodes (a statement modifier inside a
             // `{ ... }`) the way the rest of the tree does.
-            convert_expr(&crate::parser::interpolate_heredoc_content(content))
+            convert_expr(&crate::parser::interpolate_heredoc_content(content)?)
         }
         Expr::StringInterpolation(parts) => {
             let mut segments = Vec::with_capacity(parts.len());
