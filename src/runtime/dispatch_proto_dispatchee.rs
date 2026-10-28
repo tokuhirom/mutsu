@@ -174,7 +174,10 @@ impl Interpreter {
             empty_sig: false,
             is_stub: false,
             return_type: None,
-            is_default: false,
+            is_default: data
+                .env
+                .get_sym(crate::symbol::wk::multi_is_default())
+                .is_some_and(Value::truthy),
             deprecated_message: None,
             op_prec: None,
             source_file: None,

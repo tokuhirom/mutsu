@@ -822,6 +822,9 @@ pub(crate) mod wk {
         /// A callable's kind tag (`"WhateverCode"`, ...), probed by the map
         /// loops' routine-callback gate.
         callable_type => "__mutsu_callable_type";
+        /// Set on a captured `multi` candidate declared `is default`, so the
+        /// dispatchee row built from the code object keeps the tie-break.
+        multi_is_default => "__mutsu_multi_is_default";
         /// The rw map loop's `$_`-write mirror (`eval_map_over_items_rw_into`).
         rw_map_topic => "__mutsu_rw_map_topic__";
         /// The grep loop's per-element topic source key.

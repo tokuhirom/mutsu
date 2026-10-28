@@ -416,6 +416,7 @@ impl Interpreter {
         // The caller's callable kind belongs to its frame, not to the routine
         // being resolved. Stamp each candidate from its own declarator below.
         base_env.remove("__mutsu_callable_type");
+        base_env.remove_sym(crate::symbol::wk::multi_is_default());
         let candidate_subs: Vec<Value> = candidates
             .iter()
             .map(|cand| {
@@ -425,6 +426,9 @@ impl Interpreter {
                 let mut env = base_env.clone();
                 if let Some(kind) = cand.declarator.callable_type() {
                     env.insert("__mutsu_callable_type".to_string(), Value::str_from(kind));
+                }
+                if cand.is_default {
+                    env.insert_sym(crate::symbol::wk::multi_is_default(), Value::TRUE);
                 }
                 Value::make_sub_for_routine(
                     cand.package,
