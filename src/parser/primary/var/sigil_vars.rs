@@ -320,6 +320,23 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
+    // `@%h`: list-contextualize the hash variable (`@%h` is `%h.list`).
+    if twigil.is_empty()
+        && rest.starts_with('%')
+        && let Ok((r2, expr @ Expr::HashVar(_))) = hash_var(rest)
+    {
+        return Ok((
+            r2,
+            Expr::MethodCall {
+                target: Box::new(expr),
+                name: crate::symbol::Symbol::intern("list"),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+                sugar: true,
+            },
+        ));
+    }
     // `@{...}` is either Raku's list contextualizer over the `{...}` circumfix
     // (`@{:a, :b}` is the two-pair list) or the Perl 5 array dereference. The
     // guard that tells them apart is rakudo's own — see `is_brace_contextualizer`.
@@ -457,6 +474,24 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
     if twigil.is_empty()
         && rest.starts_with('$')
         && let Ok((r2, expr)) = scalar_var(rest)
+    {
+        return Ok((
+            r2,
+            Expr::MethodCall {
+                target: Box::new(expr),
+                name: crate::symbol::Symbol::intern("hash"),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+                sugar: false,
+            },
+        ));
+    }
+    // `%@a` / `%%h`-style stacked sigils: hash-contextualize the inner variable
+    // (`%@a` is `@a.hash`).
+    if twigil.is_empty()
+        && rest.starts_with('@')
+        && let Ok((r2, expr)) = array_var(rest)
     {
         return Ok((
             r2,
