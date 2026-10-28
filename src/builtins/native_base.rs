@@ -140,11 +140,22 @@ pub(crate) fn seq_payload(target: &Value) -> Option<Value> {
     attributes.as_map().get(SEQ_PAYLOAD).cloned()
 }
 
-/// Whether `target` is an instance of an `is Pair`, `is Seq` or quant-hash subclass:
+/// Whether `target` is an instance of a `Seq` or `Range` subclass: a value
+/// that iterates the sequence or range it carries.
+// Cost: O(1), two attribute-map lookups.
+pub(crate) fn has_iterable_payload(target: &Value) -> bool {
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return false;
+    };
+    let map = attributes.as_map();
+    map.contains_key(SEQ_PAYLOAD) || map.contains_key(RANGE_PAYLOAD)
+}
+
+/// Whether `target` is an instance of an `is Pair`, `is Seq`, `is Range` or quant-hash subclass:
 /// its base's methods (`Pair.Hash`, inherited from `Any`) answer on the
 /// payload, so `Any`'s rows read through the instance's own MRO walk must not
 /// answer for it (`shapeless_row`).
-// Cost: O(1), three attribute-map lookups.
+// Cost: O(1), four attribute-map lookups.
 pub(crate) fn has_collection_payload(target: &Value) -> bool {
     let ValueView::Instance { attributes, .. } = target.view() else {
         return false;
@@ -152,6 +163,7 @@ pub(crate) fn has_collection_payload(target: &Value) -> bool {
     let map = attributes.as_map();
     map.contains_key("__mutsu_pair_value")
         || map.contains_key(SEQ_PAYLOAD)
+        || map.contains_key(RANGE_PAYLOAD)
         || map.contains_key("__baggy_data__")
 }
 

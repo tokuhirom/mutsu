@@ -37,18 +37,28 @@ impl Interpreter {
         target: &Value,
         index_positional: bool,
     ) -> Option<&'static str> {
-        let ValueView::Instance { class_name, .. } = target.view() else {
-            return None;
+        // An instance with a role mixed in (`$obj but Red::ColumnMethods`)
+        // serves its subscripts through the role's `AT-KEY`/`AT-POS` too.
+        let (cn, mixed) = match target.view() {
+            ValueView::Instance { class_name, .. } => (class_name.resolve(), false),
+            ValueView::Mixin(inner, _) => match inner.view() {
+                ValueView::Instance { class_name, .. } => (class_name.resolve(), true),
+                _ => return None,
+            },
+            _ => return None,
         };
-        let cn = class_name.resolve();
         let (primary, secondary) = if index_positional {
             ("AT-POS", "AT-KEY")
         } else {
             ("AT-KEY", "AT-POS")
         };
-        if self.has_user_method(&cn, primary) {
+        let serves = |this: &mut Self, method: &str| {
+            this.has_user_method(&cn, method)
+                || (mixed && this.mixin_composes_method(target, method))
+        };
+        if serves(self, primary) {
             Some(primary)
-        } else if self.has_user_method(&cn, secondary) {
+        } else if serves(self, secondary) {
             Some(secondary)
         } else {
             None
@@ -66,6 +76,22 @@ impl Interpreter {
         next_positional: bool,
     ) -> Result<Option<Value>, RuntimeError> {
         let returned = self.call_method_with_values(target, accessor, vec![index.clone()])?;
+        // An `is rw` accessor hands its location back as a `Proxy`: the next
+        // subscript addresses what it FETCHes to -- a container, or another
+        // object serving its own `AT-KEY`/`AT-POS` (Red's JSON items).
+        if returned.is_proxy_value() {
+            let fetched = self.auto_fetch_proxy(&returned)?;
+            if self
+                .object_subscript_accessor(&fetched, next_positional)
+                .is_some()
+            {
+                return Ok(Some(fetched));
+            }
+            return Ok(Self::lvalue_object_step_container(
+                &fetched,
+                next_positional,
+            ));
+        }
         Ok(Self::lvalue_object_step_container(
             &returned,
             next_positional,
@@ -157,7 +183,15 @@ impl Interpreter {
     /// so a bound alias of a subscriptable object (`my $t := $u.query`) is
     /// recognized as one.
     pub(crate) fn index_assign_root_object(&mut self, var_name: &str) -> Option<Value> {
-        let root = self.env().get(var_name)?.clone();
+        let mut root = self.env().get(var_name)?.clone();
+        // An `is rw` accessor's `Proxy` (Red's `has Json $.data is rw is
+        // column`, the root of `.data<a><b> = v`): the chain stores through the
+        // object the Proxy FETCHes to.
+        if root.is_proxy_value()
+            && let Ok(fetched) = self.auto_fetch_proxy(&root)
+        {
+            root = fetched;
+        }
         Some(
             if matches!(
                 root.view(),
