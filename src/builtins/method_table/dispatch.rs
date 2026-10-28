@@ -441,6 +441,9 @@ fn dispatch(
         // deriving from a built-in scalar type has no shape of its own, and is
         // answered by the rows of its payload's shape, the payload as invocant.
         None => match crate::builtins::native_base::redirect(target, method.as_str()) {
+            // A `Seq` payload is consumed through the interpreter (its
+            // iterator is user code): the instance dispatch redirects it.
+            Some(base) if base.is_seq_value() => return None,
             Some(base) => {
                 payload = base;
                 let receiver = Receiver::of_settled(&payload)?;

@@ -182,6 +182,11 @@ impl Interpreter {
         {
             return Some(target.clone());
         }
+        // An instance of a `Seq` subclass iterates the Seq it carries, which
+        // the interpreter owns.
+        if crate::builtins::native_base::seq_payload(target).is_some() {
+            return None;
+        }
         // Seq: consumed-state + `squish` env mutation are interpreter-owned.
         // HyperSeq/RaceSeq: single-iterator consumed-state is interpreter-owned too.
         if matches!(

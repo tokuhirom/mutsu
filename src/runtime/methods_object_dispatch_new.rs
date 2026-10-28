@@ -1098,6 +1098,20 @@ impl Interpreter {
                 );
                 return Ok(Value::make_instance(*class_name, attrs));
             }
+            // A user subclass of Seq (`unit class Gauge is Seq`) carries the
+            // Seq `Seq.new($iterator)` builds under `__mutsu_seq_value`, as a
+            // Range subclass does; `Seq`'s methods answer on it.
+            let is_seq_subclass = cn_resolved != "Seq"
+                && self.class_mro(class_key).iter().any(|name| name == "Seq");
+            if is_seq_subclass && (skip_user_new || !self.has_user_method(class_key, "new")) {
+                let seq = self.dispatch_new(Value::package(Symbol::intern("Seq")), args)?;
+                let mut attrs = HashMap::new();
+                attrs.insert(
+                    crate::builtins::native_base::SEQ_PAYLOAD.to_string(),
+                    seq,
+                );
+                return Ok(Value::make_instance(*class_name, attrs));
+            }
             // A user subclass of Match (`class M is Match {}`, #14338) is built
             // like a `Match` -- `orig[from..to]` sliced, the captures stored --
             // and marked as a match, so `Match`'s rows read it (the table's
