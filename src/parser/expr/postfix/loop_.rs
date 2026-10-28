@@ -710,26 +710,6 @@ fn postfix_expr_inner(input: &str, allow_ws_dot: bool) -> PResult<'_, (Expr, boo
     let (rest, expr) = primary(input)?;
     let primary_rest = rest.as_ptr();
 
-    // Type smiley: Any:U, Int:D, Str:D etc.
-    // Consume and ignore — runtime doesn't use definedness constraints yet.
-    let rest = if matches!(expr, Expr::Literal(ref lit) if matches!(lit.view(), ValueView::Package(_)))
-        && (rest.starts_with(":U") || rest.starts_with(":D") || rest.starts_with(":_"))
-    {
-        let after = &rest[2..];
-        if after.is_empty()
-            || !after
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_alphanumeric() || c == '_')
-        {
-            after
-        } else {
-            rest
-        }
-    } else {
-        rest
-    };
-
     // Raku's line-ending-block rule: a closing `}` that is the last thing on
     // its line terminates the statement, so a `.method` on the NEXT line is a
     // new (topic) statement, not a chained call. `supply { ... }\n.append(...)`
