@@ -65,6 +65,9 @@ fn splice_row(
         if InstanceBacking::Array.is_in(&attributes)
             || interp.has_user_method(&class, "splice")
             || interp.is_user_class_without_any(&class)
+            // A punned role (`role Ser does DS` with `DS.splice`) keeps the
+            // methods of the roles it composes.
+            || interp.role_or_parent_has_method(&class, "splice")
         {
             return None;
         }

@@ -1114,9 +1114,13 @@ impl Interpreter {
             // A typed array can carry a user-defined postcircumfix overload
             // (`DataSlice @rows, Whatever`) that turns `rows[*]` into a new
             // object.  The Whatever-specific mixin path below must retain its
-            // own handling, but ordinary arrays need overload resolution here.
+            // own handling, but ordinary arrays and instances (`DataFrame:D $df,
+            // Whatever`) need overload resolution here.
             && (!matches!(index.view(), ValueView::Whatever)
-                || matches!(target.view(), ValueView::Array(..)))
+                || matches!(target.view(), ValueView::Array(..) | ValueView::Instance { .. })
+                // A punned role instance is a mixin over an `Instance`.
+                || matches!(target.view(), ValueView::Mixin(inner, _)
+                    if matches!(inner.view(), ValueView::Instance { .. })))
         {
             let op_name = crate::lexical_builtin_op::postcircumfix_of_subscript(is_positional);
             let args = vec![target.clone(), index.clone()];
