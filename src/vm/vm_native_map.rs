@@ -385,11 +385,9 @@ impl<'ast> Visit<'ast> for MapBodyClassifier {
                     _ => self.escapes = true,
                 }
             }
-            // The `.=`-on-topic marker (`$_ .= meth` / `.=meth`) mutates `$_`,
-            // exactly like the `Stmt::Assign { name: "_" }` case.
-            Expr::Call { name, .. } if name.resolve() == "__mutsu_topic_dotassign" => {
-                self.mutates_topic = true
-            }
+            // `$_ .= meth` / `.=meth` mutates `$_`, exactly like the
+            // `Stmt::Assign { name: "_" }` case.
+            Expr::TopicDotAssign(_) => self.mutates_topic = true,
             // An assignment expression (`* += 1` expands to `$_ = $_ + 1`)
             // classifies like the statement form above.
             Expr::AssignExpr {

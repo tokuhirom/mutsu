@@ -625,15 +625,11 @@ impl Compiler {
                 });
                 self.code.emit(OpCode::MakeCapture(items.len() as u32));
             }
-            // Expression-level function call
-            // `.=`-on-topic marker (`$_ .= meth` / `.=meth`): compile the method
-            // result, then `TopicDotAssign` (assigns `$_` bypassing the
-            // whole-container read-only mark and writes through to a container
-            // topic source). See `parser::expr::postfix::dot_assign` / `topic_method_call`.
-            Expr::Call { name, args, .. }
-                if name.resolve() == "__mutsu_topic_dotassign" && args.len() == 1 =>
-            {
-                self.compile_expr(&args[0]);
+            // `$_ .= meth` / `.=meth`: compile the method result, then
+            // `TopicDotAssign` (assigns `$_` bypassing the whole-container
+            // read-only mark and writes through to a container topic source).
+            Expr::TopicDotAssign(call) => {
+                self.compile_expr(call);
                 let name_idx = self.code.add_constant(Value::str("_".to_string()));
                 self.code.emit(OpCode::TopicDotAssign(name_idx));
             }

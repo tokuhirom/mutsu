@@ -16,16 +16,12 @@ use super::predicates::{
     is_literal_expr, is_pseudo_package, starts_with_postfix_ambiguous_term, starts_with_term_token,
 };
 /// The statement `.=` on the topic (`$_ .= meth`, `.= meth`), tagged with its
-/// source-level shape. It routes through the `__mutsu_topic_dotassign` marker
+/// source-level shape. It is an [`Expr::TopicDotAssign`]
 /// (compiled to `TopicDotAssign`) so it can reassign a read-only
 /// whole-container topic (`given @a { .=uc }`, writing through to `@a`) while a
 /// plain `$_ = ...` keeps throwing X::Assignment::RO.
 pub(crate) fn topic_dot_assign(method_call: Expr) -> Expr {
-    let expanded = Expr::Call {
-        name: Symbol::intern("__mutsu_topic_dotassign"),
-        args: vec![method_call.clone()],
-        listop: false,
-    };
+    let expanded = Expr::TopicDotAssign(Box::new(method_call.clone()));
     crate::parser::stmt::assign::dotty_assign_marker(
         Expr::Var("_".to_string()),
         method_call,
@@ -62,7 +58,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 (rest, Vec::new())
             }
         };
-        // The `.=` metaop on the topic. Route through the `__mutsu_topic_dotassign`
+        // The `.=` metaop on the topic. Build an `Expr::TopicDotAssign`
         // marker (compiled to `TopicDotAssign`) so it can reassign a read-only
         // whole-container topic (`given @a { .=uc }`, writing through to `@a`)
         // while a plain `$_ = ...` keeps throwing X::Assignment::RO.

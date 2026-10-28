@@ -1404,6 +1404,12 @@ pub(crate) enum Expr {
     /// takes bind (not assign) semantics. The source-variable metadata the VM
     /// needs is derived from the right-hand side when it is compiled.
     IndexBindValue(Box<Expr>),
+    /// The `.=` metaop on the topic (`$_ .= meth`, `.=meth`): the method call
+    /// whose result is assigned back to `$_` (`OpCode::TopicDotAssign`), which
+    /// can reassign a read-only whole-container topic (`given @a { .=uc }`,
+    /// writing through to `@a`) while a plain `$_ = ...` keeps throwing
+    /// X::Assignment::RO.
+    TopicDotAssign(Box<Expr>),
     /// The current pointy `given`/`with` topic used by its synthetic binding.
     GivenPointyTopic,
     Literal(Value),
