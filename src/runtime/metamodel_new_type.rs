@@ -85,7 +85,9 @@ impl Interpreter {
                     _ => v.to_string_value(),
                 })
                 .unwrap_or_else(|| "Any".to_string());
-            let refinement = named("refinement").filter(|v| matches!(v.view(), ValueView::Sub(_) | ValueView::Routine { .. }));
+            // Any Callable: a block, or an object with its own `CALL-ME` (Kind's
+            // `Refine`), which the subset check invokes like a block.
+            let refinement = named("refinement").filter(|v| !v.is_nil());
             self.register_subset_decl(&name, &base, None, refinement.clone(), refinement, "", false, 0);
         }
         // A role metaclass mints a ROLE: its methods, added with `.^add_method`,

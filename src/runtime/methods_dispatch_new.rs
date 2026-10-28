@@ -356,6 +356,12 @@ impl Interpreter {
         target: &Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // An `is repr<Uninstantiable>` type has no instances.
+        if let ValueView::Package(name) = target.view()
+            && let Some(err) = self.uninstantiable_error(name.as_str())
+        {
+            return Err(err);
+        }
         let mut instance = self.dispatch_bless_unallocated(target, args)?;
         // `self.bless` inside a role's method, called on the role's type
         // object: the pun class already exists (the method call made it), so
