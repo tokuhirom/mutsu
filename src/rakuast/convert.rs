@@ -654,7 +654,6 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 (
                     custom_traits.iter().any(|(t, _)| {
                         t.starts_with("__")
-                            && !is_return_spelling_marker(t)
                             // The operator-precedence record the parser derives
                             // from `is assoc` / `is tighter`; lowering rebuilds it.
                             && t != OP_PREC_TRAIT
@@ -751,9 +750,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     "method with `handles`",
                 ),
                 (
-                    custom_traits
-                        .iter()
-                        .any(|(t, _)| t.starts_with("__") && !is_return_spelling_marker(t)),
+                    custom_traits.iter().any(|(t, _)| t.starts_with("__")),
                     "method with an internal trait",
                 ),
             ];
@@ -1238,8 +1235,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 return_type: return_type.as_deref(),
                 body,
                 is_export: *is_export,
-                has_traits: custom_traits.iter().any(|t| !is_return_spelling_marker(t))
-                    || !trait_args.is_empty(),
+                has_traits: !custom_traits.is_empty() || !trait_args.is_empty(),
                 is_method: *is_method,
                 is_our: *is_our,
             },
@@ -5148,13 +5144,6 @@ fn phaser_class(kind: &crate::ast::PhaserKind) -> Option<RakuAstClass> {
         Close => RakuAstClass::StatementPrefixPhaserClose,
         Pre | Post => return None,
     })
-}
-
-/// The parser markers that record a `returns` / `of` return-type trait. They
-/// are internal (`__`-prefixed) bookkeeping, not user traits, so the converter
-/// reads them for the spelling instead of treating them as a coverage boundary.
-fn is_return_spelling_marker(trait_name: &str) -> bool {
-    matches!(trait_name, "__return_via_trait" | "__return_via_of")
 }
 
 /// `Signature(parameters => (Parameter, ...)[, returns => Type])`. `type_setting`

@@ -1906,8 +1906,8 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 
 /// A routine's return type, from either spelling: `signature.returns` (the
 /// `-->` arrow) or a `traits => (Trait::Returns|Trait::Of(Type),)` entry. The
-/// trait spelling round-trips through the same `__return_via_*` marker the
-/// parser sets, so `EVAL` reproduces the source form the converter read.
+/// trait spelling is recorded by the source traits (`routine_trait`), so `EVAL`
+/// reproduces the source form the converter read.
 /// Declaring both is refused rather than silently collapsed. A
 /// `Trait::Is(name => rw|raw)` sets `is_traits` when the caller takes one
 /// (a method) and is refused otherwise.
@@ -1927,7 +1927,7 @@ pub(super) fn routine_return_type(
         Err(_) => None,
     };
     let mut via_trait = None;
-    // Custom traits and the return marker, in source order.
+    // Custom traits, in source order.
     let mut custom = Vec::new();
     if let Some(f) = node.fields.iter().find(|f| f.name == Some("traits")) {
         let RakuAstFieldValue::List(items) = &f.value else {
@@ -1937,9 +1937,8 @@ pub(super) fn routine_return_type(
             let ValueView::RakuAst(t) = item.view() else {
                 return Err(unsupported(node));
             };
-            let marker = match t.class {
-                RakuAstClass::TraitReturns => "__return_via_trait",
-                RakuAstClass::TraitOf => "__return_via_of",
+            match t.class {
+                RakuAstClass::TraitReturns | RakuAstClass::TraitOf => {}
                 RakuAstClass::TraitIs => {
                     let read = match is_traits.as_deref_mut() {
                         Some(flags) => flags.read(t)?,
@@ -1967,7 +1966,6 @@ pub(super) fn routine_return_type(
                 node,
                 named_child_or_positional(t)?,
             )?);
-            custom.push((marker.to_string(), None));
         }
     }
     match (arrow, via_trait) {

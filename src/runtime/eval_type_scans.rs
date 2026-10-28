@@ -261,7 +261,7 @@ impl SubParamTypes<'_> {
         let Stmt::SubDecl {
             param_defs,
             return_type,
-            custom_traits,
+            body,
             ..
         } = stmt
         else {
@@ -276,9 +276,7 @@ impl SubParamTypes<'_> {
             &d.classes,
             &in_scope,
         )?;
-        let via_trait = custom_traits
-            .iter()
-            .any(|(t, _)| t == "__return_via_trait" || t == "__return_via_of");
+        let via_trait = crate::ast::routine_trait::return_type_is_trait(body);
         self.interp.validate_return_type_constraint(
             return_type.as_deref(),
             param_defs,
