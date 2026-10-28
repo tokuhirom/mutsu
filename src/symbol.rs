@@ -185,13 +185,6 @@ thread_local! {
     /// contend or perturb what it measures.
     static INTERN_CALLS: Cell<u64> = const { Cell::new(0) };
 
-    /// Per-thread `id -> &'static str` memo in front of `GLOBAL_TABLE`, the
-    /// mirror of `INTERN_CACHE` for the resolve direction. Interned strings are
-    /// leaked and ids never remapped, so a cached entry is valid forever.
-    /// Keeps `as_str` (the single hottest symbol operation — every dispatch
-    /// class-name borrow, `==` compare, `starts_with`, `Display`) off the
-    /// globally-shared `RwLock`.
-    static RESOLVE_CACHE: RefCell<Vec<Option<&'static str>>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Pure, string-derived properties of a symbol, computed once per symbol.
@@ -540,6 +533,38 @@ fn store_flags(idx: usize, f: u16) {
     };
     let chunk = cell.get_or_init(|| Box::new([const { AtomicU16::new(0) }; FLAG_CHUNK_LEN]));
     chunk[idx & (FLAG_CHUNK_LEN - 1)].store(f, Ordering::Relaxed);
+}
+
+/// The `id -> &'static str` direction of the symbol table, readable without a
+/// lock, a thread-local or a `RefCell`.
+///
+/// Same shape and the same argument as [`FLAG_TABLE`]: ids are global and
+/// append-only, each slot is written exactly once (by `intern_global`, under
+/// the table's write lock and before the id escapes), and a `OnceLock` publishes
+/// the leaked string with acquire/release ordering, so a reader that sees the
+/// slot filled sees the whole string. It replaces a per-thread
+/// `RefCell<Vec<Option<&'static str>>>` memo that charged a thread-local access,
+/// a borrow-flag write pair and a bounds-checked index on every `as_str` -- the
+/// single hottest symbol operation, ~3.5% of a plain method-call loop.
+/// Ids past the table's reach read the global table under its lock.
+static STR_TABLE: [OnceLock<Box<[OnceLock<&'static str>]>>; FLAG_CHUNKS] =
+    [const { OnceLock::new() }; FLAG_CHUNKS];
+
+/// The string of symbol id `idx` if its slot is filled and in the table's reach.
+#[inline]
+fn str_slot(idx: usize) -> Option<&'static str> {
+    let chunk = STR_TABLE.get(idx >> FLAG_CHUNK_BITS)?.get()?;
+    chunk[idx & (FLAG_CHUNK_LEN - 1)].get().copied()
+}
+
+/// Fill the string slot of symbol id `idx`, allocating its chunk on first use.
+/// Called once per id, from `intern_global`, under the table's write lock.
+fn store_str(idx: usize, s: &'static str) {
+    let Some(cell) = STR_TABLE.get(idx >> FLAG_CHUNK_BITS) else {
+        return;
+    };
+    let chunk = cell.get_or_init(|| (0..FLAG_CHUNK_LEN).map(|_| OnceLock::new()).collect());
+    let _ = chunk[idx & (FLAG_CHUNK_LEN - 1)].set(s);
 }
 
 /// Record that `sym` has been used as an env key.
@@ -957,6 +982,7 @@ impl Symbol {
         let sym = Symbol(id);
         let leaked: &'static str = Box::leak(s.to_owned().into_boxed_str());
         table.id_to_str.push(leaked);
+        store_str(id as usize, leaked);
         if let Some(slash) = leaked.find('/')
             && crate::str_scan::has_double_colon(leaked)
         {
@@ -997,20 +1023,13 @@ impl Symbol {
     /// str` is valid for the whole process (interned strings are never freed),
     /// and no lock is held after this returns — safe to keep across arbitrary
     /// downstream calls, unlike `with_str`'s old lock-scoped borrow.
+    // Cost: O(1), two atomic loads; no thread-local, no lock for any id below the table's reach.
     pub fn as_str(&self) -> &'static str {
         let idx = self.0 as usize;
-        RESOLVE_CACHE.with(|c| {
-            let mut cache = c.borrow_mut();
-            if let Some(Some(s)) = cache.get(idx) {
-                return *s;
-            }
-            let s = global_table().read().unwrap().id_to_str[idx];
-            if cache.len() <= idx {
-                cache.resize(idx + 1, None);
-            }
-            cache[idx] = Some(s);
-            s
-        })
+        if let Some(s) = str_slot(idx) {
+            return s;
+        }
+        global_table().read().unwrap().id_to_str[idx]
     }
 
     /// This symbol's memoized [`flags`] word — see that module for what the
