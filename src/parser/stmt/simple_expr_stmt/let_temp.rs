@@ -269,9 +269,12 @@ fn temp_declaration_stmt(input: &str) -> Option<PResult<'_, Stmt>> {
 
 /// The type a `temp Type.method …` names: a bare name, or one an import spelled.
 fn type_object_invocant_name(invocant: &Expr) -> Option<&str> {
+    let invocant = match invocant {
+        Expr::Spelled(spelled) => &spelled.expr,
+        other => other,
+    };
     match invocant {
         Expr::BareWord(name) => Some(name),
-        Expr::Spelled(spelled) => type_object_invocant_name(&spelled.expr),
         _ => None,
     }
 }
