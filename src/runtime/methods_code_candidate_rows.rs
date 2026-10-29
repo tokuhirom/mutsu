@@ -160,7 +160,7 @@ impl Interpreter {
             if !builtin.is_empty() {
                 let matching: Vec<Value> = builtin
                     .into_iter()
-                    .filter(|cand| self.candidate_matches_call_args(cand, &call_args))
+                    .filter(|cand| self.candidate_matches_capture(cand, &call_args))
                     .collect();
                 return Some(Ok(Value::array(matching)));
             }
@@ -209,14 +209,13 @@ impl Interpreter {
                     .map(Value::to_string_value),
             ) {
                 let call_args = Self::capture_to_call_args(&args[0]);
-                let method_args = call_args.get(1..).unwrap_or(&[]);
                 return Some(Ok(Value::array(
                     self.collect_can_methods(
                         &Value::package(Symbol::intern(&class_name)),
                         &method_name,
                     )
                     .into_iter()
-                    .filter(|candidate| self.candidate_matches_call_args(candidate, method_args))
+                    .filter(|candidate| self.candidate_matches_capture(candidate, &call_args))
                     .collect(),
                 )));
             }
@@ -230,7 +229,7 @@ impl Interpreter {
                     let call_args = Self::capture_to_call_args(&args[0]);
                     let matches: Vec<Value> = name_based
                         .into_iter()
-                        .filter(|c| self.candidate_matches_call_args(c, &call_args))
+                        .filter(|c| self.candidate_matches_capture(c, &call_args))
                         .collect();
                     return Some(Ok(Value::array(matches)));
                 }
@@ -250,29 +249,35 @@ impl Interpreter {
                     if !builtin.is_empty() {
                         let matches: Vec<Value> = builtin
                             .into_iter()
-                            .filter(|c| self.candidate_matches_call_args(c, &call_args))
+                            .filter(|c| self.candidate_matches_capture(c, &call_args))
                             .collect();
                         return Some(Ok(Value::array(matches)));
                     }
                 }
                 let matches: Vec<Value> = cands
                     .iter()
-                    .filter(|c| self.candidate_matches_call_args(c, &call_args))
+                    .filter(|c| self.candidate_matches_capture(c, &call_args))
                     .cloned()
                     .collect();
                 return Some(Ok(Value::array(matches)));
             }
             let call_args = Self::capture_to_call_args(&args[0]);
-            let builtin =
-                self.builtin_routine_candidates(&data.package.resolve(), &data.name.resolve());
+            // A built-in candidate (one `.candidates` of a core multi handed
+            // out) is a single routine: it answers for itself, not for its
+            // whole family.
+            let builtin = if data.env.contains_key("__mutsu_is_multi_candidate") {
+                Vec::new()
+            } else {
+                self.builtin_routine_candidates(&data.package.resolve(), &data.name.resolve())
+            };
             if !builtin.is_empty() {
                 let matches: Vec<Value> = builtin
                     .into_iter()
-                    .filter(|c| self.candidate_matches_call_args(c, &call_args))
+                    .filter(|c| self.candidate_matches_capture(c, &call_args))
                     .collect();
                 return Some(Ok(Value::array(matches)));
             }
-            let matches = if self.candidate_matches_call_args(target, &call_args) {
+            let matches = if self.candidate_matches_capture(target, &call_args) {
                 vec![target.clone()]
             } else {
                 Vec::new()
