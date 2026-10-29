@@ -20,7 +20,7 @@ use bind_arity::{
 
 /// A declaration as written, not yet lowered: the statement the parser hands
 /// to the statement modifiers and loose tails that split or wrap it, which read
-/// the declaration itself. [`settle`] lowers it once nothing else will. The
+/// the declaration itself. `settle` (the parser's finalizer) lowers it once nothing else will. The
 /// size check is the only way the lowering fails, so it runs here.
 // Cost: O(n), n = nodes of the declaration.
 pub(crate) fn pending(decl: SignatureDecl) -> Result<Stmt, crate::value::RuntimeError> {
