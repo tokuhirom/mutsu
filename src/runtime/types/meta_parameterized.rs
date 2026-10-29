@@ -75,7 +75,7 @@ impl Interpreter {
         // B)]`, what a constant bound to a parameterization writes into a
         // signature) denotes that type: re-running `^parameterize` on the
         // text would split `any(A, B)` at its comma and mint a different one.
-        if self.registry().subsets.contains_key(constraint) {
+        if constraint.contains('[') && self.registry().subsets.contains_key(constraint) {
             return Some(Value::package(Symbol::intern(constraint)));
         }
         let ty = self.eval_meta_parameterized(constraint)?;
