@@ -299,6 +299,23 @@ fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResul
         sinks.push(sink_expr);
         r_inner = r2;
     }
+    // `my $b = 2, my $c = 3, say "$b $c"` is ONE comma list in rakudo, with the
+    // declarations as its leading operands: keep the sinks inside the
+    // `CommaDecls` so the RakuAST conversion can put them back.
+    if let [Stmt::Ast(node)] = stmts.as_slice()
+        && matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::CommaDecls(_))
+        && let Some(head) = stmts.pop()
+    {
+        use crate::ast::parsed::ParsedStmt;
+        let mut declarations = ParsedStmt::comma_operands(head);
+        declarations.extend(sinks.into_iter().map(Stmt::Expr));
+        return Ok((
+            r_inner,
+            crate::parser::stmt::control::parsed_block::finish_total(ParsedStmt::CommaDecls(
+                declarations,
+            )),
+        ));
+    }
     match decl_name {
         Some(name) => {
             let mut items = Vec::with_capacity(sinks.len() + 1);
