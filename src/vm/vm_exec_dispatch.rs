@@ -6788,7 +6788,16 @@ impl Interpreter {
                     self.declare_package_ancestors(code.const_sym(*name_idx));
                 }
                 self.release_foreign_provenance(&name);
-                self.registry_mut().package_kinds.insert(name, *kind);
+                // A same-named package of another kind in a sibling block
+                // (`my module Foo {}` then `my package Foo {}`) reports its own
+                // metaclass: drop the `.HOW` the earlier kind cached (#15520).
+                // The earlier declaration may have been a class, role or grammar,
+                // which have no `package_kinds` entry, so `previous` cannot be
+                // the only trigger.
+                let previous = self.registry_mut().package_kinds.insert(name.clone(), *kind);
+                if previous != Some(*kind) {
+                    self.registry_mut().class_how_values.remove(&name);
+                }
                 *ip += 1;
             }
             // Cost: O(a + c), a = trait name bytes, c = trait_mod:<is> candidates; excludes the callback body.
