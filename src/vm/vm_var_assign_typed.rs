@@ -1001,25 +1001,26 @@ impl Interpreter {
         increment: bool,
         post: bool,
     ) -> Result<bool, RuntimeError> {
-        // Read the cell, then release its lock before any lookup that may
-        // dereference the same cell again (`wrap_native_int_arithmetic_result`
-        // walks the env, comparing bindings through their cells): the lock is
-        // not reentrant, and `$pos++` on an `is rw` parameter whose cell the
-        // env also holds deadlocked on itself.
-        let current = {
-            let guard = arc.lock().unwrap();
-            if matches!(
-                guard.view(),
-                ValueView::Instance { .. }
-                    | ValueView::ContainerRef(_)
-                    | ValueView::Array(..)
-                    | ValueView::Hash(_)
-            ) {
-                return Ok(false);
-            }
-            guard.clone()
-        };
-        let old = self.normalize_incdec_source_with_type(name, current);
+        // The variable's declared type is looked up BEFORE the cell lock is
+        // taken, because the lookup walks the env and compares bindings through
+        // their cells, which would lock this same non-reentrant cell again:
+        // `$pos++` on an `is rw` parameter whose cell the env also holds
+        // deadlocked on itself (#15397). The constraint does not depend on the
+        // cell's value, so the read-modify-write below stays one critical
+        // section.
+        let env_constraint = loan_env!(self, var_type_constraint_for(name, None))
+            .or_else(|| self.scalar_attr_type_constraint(name));
+        let mut guard = arc.lock().unwrap();
+        if matches!(
+            guard.view(),
+            ValueView::Instance { .. }
+                | ValueView::ContainerRef(_)
+                | ValueView::Array(..)
+                | ValueView::Hash(_)
+        ) {
+            return Ok(false);
+        }
+        let old = self.normalize_incdec_source_with_type(name, guard.clone());
         let new_val = if increment {
             Self::increment_value(&old)
         } else {
@@ -1027,8 +1028,10 @@ impl Interpreter {
         };
         let new_val = if let Some(constraint) = crate::value::lookup_container_constraint(arc) {
             Self::wrap_native_int_arithmetic_for_constraint(&constraint, new_val)
+        } else if let Some(constraint) = &env_constraint {
+            Self::wrap_native_int_arithmetic_for_constraint(constraint, new_val)
         } else {
-            self.wrap_native_int_arithmetic_result(name, new_val)
+            new_val
         };
         if let Some(constraint) = crate::value::lookup_container_constraint(arc)
             && !matches!(constraint.as_str(), "Any" | "Mu")
@@ -1037,9 +1040,8 @@ impl Interpreter {
         {
             return Err(self.typecheck_assignment_failure(&constraint, &new_val, None));
         }
-        arc.lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone_from(&new_val);
+        *guard = new_val.clone();
+        drop(guard);
         self.stack.push(if post { old } else { new_val });
         Ok(true)
     }
