@@ -72,11 +72,7 @@ impl<'ast> Visit<'ast> for Budget {
 }
 
 // Cost: O(n), n = copied nodes; recursion and accepted copies are bounded.
-pub(crate) fn check(
-    cond: &Expr,
-    params: &[ParamDef],
-    body: &[Stmt],
-) -> Result<(), RuntimeError> {
+pub(crate) fn check(cond: &Expr, params: &[ParamDef], body: &[Stmt]) -> Result<(), RuntimeError> {
     let mut budget = Budget::default();
     budget.visit_expr(cond);
     for param in params {
