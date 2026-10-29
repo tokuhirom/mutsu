@@ -3,7 +3,7 @@
 # fall needs no edit here. Re-cut with scripts/check-slow-path.py --update.
 
 todo src/compiler/expr_ops.rs                      1
-todo src/parser/primary/ident/supply.rs            1
+todo src/rakuast/supply_lower.rs            1
 todo src/parser/stmt/assign/assign_stmt.rs         1
 todo src/runtime/builtins_lvalue.rs                1
 todo src/runtime/class_methods_loader.rs           1
