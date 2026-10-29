@@ -6862,6 +6862,9 @@ impl Interpreter {
                 if !(*kind == crate::ast::PackageKind::Package
                     && self.registry().classes.contains_key(&name))
                 {
+                    // A same-named earlier declaration (a `my enum Foo` in a
+                    // sibling block) left its metaobject cached under the name.
+                    self.registry_mut().class_how_values.remove(&name);
                     self.registry_mut().package_kinds.insert(name, *kind);
                 }
                 *ip += 1;

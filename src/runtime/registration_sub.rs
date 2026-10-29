@@ -2548,6 +2548,13 @@ impl Interpreter {
         roles: &[String],
         is_my: bool,
     ) -> Result<Value, RuntimeError> {
+        // An earlier same-named `package`/`module` (a sibling block's `my
+        // module Foo`) is no longer what the name means: the enum's own
+        // metaobject replaces the one cached for it.
+        if self.registry().package_kinds.contains_key(name) {
+            self.registry_mut().package_kinds.remove(name);
+        }
+        self.registry_mut().class_how_values.remove(name);
         // Handle dynamic enum body: `enum Stuff (@variable)`
         let expanded;
         let variants: &[(String, Option<Expr>)] =
