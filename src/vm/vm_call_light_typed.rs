@@ -397,6 +397,11 @@ impl Interpreter {
                 // the overlay env so the param SHADOWS a same-named caller
                 // lexical (the locals seed below reads through to the caller
                 // otherwise).
+                // A constant default (`:$flag = True`) is bound as is.
+                if let Some(fill) = &npb.fill {
+                    bind_value!(npb.slot, npb.needs_env, fill.clone());
+                    continue;
+                }
                 let seed = Self::missing_optional_param_value(&cf.param_defs[i]);
                 // A `:color(:$colour)` alias chain also declares its inner
                 // variable(s); when the param is unsupplied they must still be
@@ -439,6 +444,22 @@ impl Interpreter {
                     )
                     .with_parameter_object(pd, Some(&*self)),
                 );
+                break 'bind;
+            }
+            // A fast-typed named parameter (`Bool :$flag`) checks what it was given.
+            if npb.typed
+                && let Some(tc) = cf.param_defs[i].type_constraint.as_deref()
+                && !self.light_type_check_by_name(&v, tc)
+            {
+                let pd = &cf.param_defs[i];
+                let err = self.light_param_type_failure(pd, tc, &v);
+                bind_err = Some(self.enhance_binding_error_at_site(
+                    err,
+                    cf.package_sym(),
+                    func_name,
+                    &cf.param_defs,
+                    args,
+                ));
                 break 'bind;
             }
             let v = Self::bind_itemize_param(cf, i, v);
@@ -688,6 +709,7 @@ impl Interpreter {
             let mut result = Ok(());
             let mut explicit_return: Option<Value> = None;
             let mut fail_bypass = false;
+            let mut explicit_from_method = false;
             let polls = crate::vm::vm_poll::DispatchPolls::current();
             let frame_caller_code = self.current_code;
             while ip < cf.code.ops.len() {
@@ -724,6 +746,7 @@ impl Interpreter {
                                 break;
                             }
                         }
+                        explicit_from_method = e.from_method_return();
                         let ret_val = e.return_value.unwrap();
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
@@ -752,9 +775,9 @@ impl Interpreter {
                 }
             }
             self.current_code = frame_caller_code;
-            (result, explicit_return, fail_bypass)
+            (result, explicit_return, fail_bypass, explicit_from_method)
         }));
-        let (result, explicit_return, fail_bypass) = match body_outcome {
+        let (result, explicit_return, fail_bypass, explicit_from_method) = match body_outcome {
             Ok(triple) => triple,
             Err(panic_payload) => {
                 // Restore every piece of caller-side state this function
@@ -878,10 +901,20 @@ impl Interpreter {
         }
 
         self.current_unit = saved_unit;
+        let definite_value = self.light_finish_return(
+            cf,
+            result.is_ok(),
+            &explicit_return,
+            &ret_val,
+            fail_bypass,
+            explicit_from_method,
+        )?;
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
             Ok(()) => {
-                if let Some(v) = explicit_return {
+                if let Some(v) = definite_value {
+                    Ok(v)
+                } else if let Some(v) = explicit_return {
                     Ok(v)
                 } else {
                     Ok(ret_val)
