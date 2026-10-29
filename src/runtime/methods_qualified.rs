@@ -1401,7 +1401,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let ValueView::Proxy {
-            subclass: Some((subclass_name, subclass_attrs)),
+            subclass: Some((_, subclass_attrs)),
             ..
         } = target.view()
         else {
@@ -1426,11 +1426,6 @@ impl Interpreter {
                 }));
             }
         }
-        // Handle .raku on Proxy subclass
-        if method == "raku" || method == "Str" || method == "gist" {
-            return Some(Ok(Value::str(format!("{}()", subclass_name.resolve()))));
-        }
-
         None
     }
 
