@@ -1,6 +1,6 @@
 use Test;
 
-plan 12;
+plan 21;
 
 for <Cool Numeric Real Stringy Callable> -> $name {
     my $type = ::($name);
@@ -11,3 +11,7 @@ for <Cool Numeric Real Stringy Callable> -> $name {
 
 is Cool.new.raku, 'Cool.new', 'Cool.new.raku round-trips';
 ok Cool.new ~~ Cool, 'Cool.new smartmatches Cool';
+
+for <Sub Method Block Routine Code Junction Failure UInt> -> $name {
+    dies-ok { ::($name).new }, "$name.new still dies";
+}
