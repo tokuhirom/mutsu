@@ -105,7 +105,9 @@ scripts/ecosystem-dashboard.py --issues-json tmp/issues.json --comments-json tmp
 ```
 
 The dashboard issue is [#15488](https://github.com/tokuhirom/mutsu/issues/15488) (deliberately without the `ecosystem` label, so the script does not read its own output). Its body is this output, regenerated wholesale (`--update <N>`); nobody edits it
-by hand. Locks are still appended to the board as comments, never kept in the dashboard body: a
+by hand. The nightly sweep's `dashboard` job (`ecosystem-sweep.yml`) regenerates it after the
+ledger is pushed; run `--update 15488` yourself for a fresher view (a lock you just took shows up
+only after a refresh, so the board stays the authority). Locks are still appended to the board as comments, never kept in the dashboard body: a
 body edit is a read-modify-write that two agents can both win.
 
 ## 3. Lock it, then diagnose and route
