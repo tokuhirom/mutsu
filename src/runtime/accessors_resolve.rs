@@ -812,8 +812,11 @@ impl Interpreter {
         // `my method`) is still carried by the closure env under its reserved
         // key, for the routines (methods) that close over that scope; code
         // outside any routine does not see a block's `sub` after it ends.
-        if def.is_none()
-            && !has_packages
+        // It also shadows a same-named routine of an outer or unrelated scope
+        // that is registered globally: `&STORE` inside a class's `method new`
+        // is the class's own `my method STORE`, not a `sub STORE` declared
+        // elsewhere in the program.
+        if !has_packages
             && self.inside_routine()
             && let Some(sub_val) = self
                 .env
