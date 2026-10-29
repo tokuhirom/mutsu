@@ -7395,7 +7395,7 @@ impl Interpreter {
                         }
                         Value::array(items)
                     }
-                    ValueView::Seq(body) => {
+                    ValueView::Seq(body) | ValueView::HyperSeq(body) | ValueView::RaceSeq(body) => {
                         // `.eager` consumes the source (ADR-0034; verified
                         // against raku), unless already reified/cache-requested.
                         let body = std::sync::Arc::clone(&body);
