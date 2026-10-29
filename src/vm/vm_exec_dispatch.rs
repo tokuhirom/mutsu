@@ -6864,7 +6864,9 @@ impl Interpreter {
                 {
                     // A same-named earlier declaration (a `my enum Foo` in a
                     // sibling block) left its metaobject cached under the name.
-                    self.registry_mut().class_how_values.remove(&name);
+                    if self.registry().class_how_values.contains_key(&name) {
+                        self.registry_mut().class_how_values.remove(&name);
+                    }
                     self.registry_mut().package_kinds.insert(name, *kind);
                 }
                 *ip += 1;
