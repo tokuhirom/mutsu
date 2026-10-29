@@ -143,11 +143,26 @@ impl Interpreter {
         {
             return false;
         }
-        // An uppercase key usually hands out a type, which type positions
-        // resolve by name; only a plain value is a term of the set.
+        // An uppercase key usually hands out a type (a class, a role, a mixin
+        // type object), which type positions resolve by name; only a plain
+        // defined value is a term of the set.
         if key.starts_with(|c: char| c.is_uppercase())
-            && matches!(value.view(), ValueView::Package(_) | ValueView::CustomType { .. })
+            && !matches!(
+                value.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Rat(..)
+                    | ValueView::Instance { .. }
+            )
         {
+            return false;
+        }
+        // A CORE term keyword the hook shadows (`True`, `Nil`, ...) is read
+        // through `OpCode::GetShadowableTerm`, which asks the env (#9047).
+        if matches!(key, "True" | "False" | "Nil" | "Empty" | "Any") {
             return false;
         }
         let importer = self.executing_unit_sym_for_module_load();
