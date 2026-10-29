@@ -49,13 +49,26 @@ pub(crate) fn lower(node: Modified) -> Result<Stmt, RuntimeError> {
     Ok(stmt)
 }
 
+/// Whether `stmt` is an attribute declaration, alone or followed by the
+/// assignment of its compound initializer.
+// Cost: O(1).
+fn is_attribute_declaration(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::HasDecl { .. } => true,
+        Stmt::SyntheticBlock(parts) => matches!(parts.first(), Some(Stmt::HasDecl { .. })),
+        _ => false,
+    }
+}
+
 /// `S if C`, `S unless C`, `S when M`, `S with T`, `S without T`.
 // Cost: O(n), n = size of `stmt` and the operand.
 fn condition_modifier(modifier: StatementModifier, stmt: Stmt) -> Result<Stmt, RuntimeError> {
     let StatementModifier { kind, expr, .. } = modifier;
     // An attribute is composed with its class, so a modifier cannot gate it:
     // the declaration stays and the modifier only evaluates its operand.
-    if let Stmt::HasDecl { .. } = stmt
+    // `has $.g //= EXPR if C` is the declaration and its assignment, which
+    // stay in the one flat block.
+    if is_attribute_declaration(&stmt)
         && let Some(kind) = declaration_modifier(kind)
     {
         return Ok(crate::ast::attribute_modifier::expand(stmt, expr, kind));

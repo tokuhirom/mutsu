@@ -1060,6 +1060,8 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws(stripped)?;
         let (r, rhs) = parse_assign_expr_or_comma(r)?;
         compound_assign_after_decl = Some((op, rhs));
+        // As for `=`: a postfix modifier is recognized after the whitespace.
+        let (r, _) = ws(r)?;
         (r, None)
     } else {
         (rest, None)
@@ -1322,50 +1324,35 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // assignment node) for a public one, so a `$.g` target still goes
     // through the real accessor and dies the same way rakudo's does when it
     // isn't `is rw`.
-    // A `.AST` parse keeps a private attribute's `has $!g //= EXPR` as the
-    // declaration compound node RakuAST makes of it.
-    let (kept_compound, compound_assign_after_decl) = match compound_assign_after_decl {
-        Some(compound) if !is_public && modifier_sink.is_none() => (Some(compound), None),
-        other => (None, other),
-    };
-    let assign_stmt = compound_assign_after_decl.map(|(op, rhs)| {
-        super::has_compound_assign::attribute_compound_assign(&name, is_public, is_alias, op, rhs)
-    });
-    // Combine into ONE flat `SyntheticBlock` — never a `SyntheticBlock`
-    // nested inside another — since the class-body attribute-discovery walk
-    // (`class_own_attribute_names`/`compile_class_attr_decls`) only flattens
-    // one level at the top of a class body, and would miss `decl` entirely
-    // if it sat inside a doubly-nested block.
-    let stmt = if let Some((op, rhs)) = kept_compound {
-        crate::parser::stmt::control::parsed_block::finish(
+    // The declaration keeps the written compound node RakuAST makes of
+    // `has $.g //= EXPR` (`rakuast::decl_compound_assign` expands it).
+    let decl = match compound_assign_after_decl {
+        Some((op, rhs)) => crate::parser::stmt::control::parsed_block::finish(
             crate::ast::parsed::ParsedStmt::DeclCompound {
                 decl: Box::new(decl),
                 op: op.symbol().trim_end_matches('=').to_string(),
                 source: rhs,
             },
         )
-        .map_err(PError::from_typed)?
-    } else if let (None, Some(_), Some((_, (condition, kind)))) = (
-        assign_stmt.as_ref(),
-        modifier_sink.as_ref(),
-        modifier_source,
-    ) {
-        crate::parser::stmt::control::parsed_block::finish_total(
-            crate::ast::parsed::ParsedStmt::AttributeModifier {
-                decl: Box::new(decl),
-                condition,
-                kind,
-            },
-        )
-    } else {
-        match (assign_stmt, modifier_sink) {
-            (None, None) => decl,
-            (Some(assign_stmt), None) => {
-                super::has_compound_assign::expand_attribute_compound_assign(decl, assign_stmt)
-            }
-            (None, Some(sink)) => Stmt::SyntheticBlock(vec![decl, sink]),
-            (Some(assign_stmt), Some(sink)) => Stmt::SyntheticBlock(vec![decl, assign_stmt, sink]),
+        .map_err(PError::from_typed)?,
+        None => decl,
+    };
+    // One flat block (`rakuast` lowers the nodes): the class-body
+    // attribute-discovery walk (`class_own_attribute_names` /
+    // `compile_class_attr_decls`) only flattens one level at the top of a
+    // class body.
+    let stmt = match (modifier_sink, modifier_source) {
+        (None, _) => decl,
+        (Some(_), Some((_, (condition, kind)))) => {
+            crate::parser::stmt::control::parsed_block::finish_total(
+                crate::ast::parsed::ParsedStmt::AttributeModifier {
+                    decl: Box::new(decl),
+                    condition,
+                    kind,
+                },
+            )
         }
+        (Some(sink), None) => Stmt::SyntheticBlock(vec![decl, sink]),
     };
     let Some((colon_rest, tail)) = colon_arglist else {
         return Ok((rest, stmt));

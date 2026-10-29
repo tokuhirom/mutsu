@@ -130,9 +130,18 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
             decl,
             condition,
             kind,
-        } => Ok(crate::ast::attribute_modifier::expand(
-            *decl, condition, kind,
-        )),
+        } => {
+            // A compound initializer (`has $.x //= 1 if COND`) is the
+            // declaration compound node, which lowers to the declaration and
+            // its assignment; they stay in the one flat block.
+            let decl = match *decl {
+                Stmt::Ast(node) => lower_parsed(*node)?,
+                other => other,
+            };
+            Ok(crate::ast::attribute_modifier::expand(
+                decl, condition, kind,
+            ))
+        }
         ParsedStmt::AttributeGroup(attributes) | ParsedStmt::AttributeColonArglist(attributes) => {
             Ok(Stmt::SyntheticBlock(attributes))
         }

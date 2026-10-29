@@ -115,7 +115,6 @@ pub(crate) use stmt::control::check_signature;
 pub(crate) use stmt::decl::attribute_type_seed;
 pub(crate) use stmt::decl::build_sigilless_bind_stmt;
 pub(crate) use stmt::decl::wrap_with_will_phasers;
-pub(crate) use stmt::decl::{attribute_compound_assign, expand_attribute_compound_assign};
 pub(crate) use stmt::simple::{is_user_declared_sub, is_user_declared_value_term};
 pub(crate) use stmt::simple_expr_stmt::decl_target_var_name;
 pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutable;
