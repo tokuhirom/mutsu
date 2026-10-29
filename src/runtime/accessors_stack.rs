@@ -1647,7 +1647,21 @@ impl Interpreter {
         let cur = cur_sym.as_str();
         if cur_sym == global {
             return match lexical_sym {
-                Some(sym) if sym != global => vec![sym, cur_sym].into(),
+                // A role method composed into a GLOBAL class runs with
+                // `cur` = GLOBAL; its lexical package still sits inside the
+                // module that declared the role, whose subs stay reachable.
+                Some(sym) if sym != global => {
+                    let base = sym.as_str();
+                    let base = Symbol::intern(base.split('[').next().unwrap_or(base));
+                    let mut out = vec![sym];
+                    for anc in crate::qualified::package_ancestors(base).skip(1) {
+                        if !crate::qualified::is_global_package(anc) && !out.contains(&anc) {
+                            out.push(anc);
+                        }
+                    }
+                    out.push(cur_sym);
+                    out.into()
+                }
                 _ => vec![cur_sym].into(),
             };
         }
