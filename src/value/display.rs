@@ -72,7 +72,7 @@ fn anon_type_display_name(name: &str) -> Option<String> {
 /// The names under `Metamodel::` that Rakudo defines as `Perl6::Metamodel::X`
 /// (every one but `Primitives`, which is a `Metamodel::Primitives` proper).
 // Cost: O(log n), n = the number of names (binary search over a sorted table).
-fn is_core_metamodel_name(name: &str) -> bool {
+pub(crate) fn is_core_metamodel_name(name: &str) -> bool {
     static NAMES: &[&str] = &[
         "Archetypes",
         "ArrayType",

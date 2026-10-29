@@ -47,3 +47,16 @@ pub(crate) fn how_does_metarole(how: &str, role: &str) -> bool {
     };
     does(how) || (how == "GrammarHOW" && does("ClassHOW"))
 }
+
+/// The bare name (`Naming`) of a Rakudo metarole or `Archetypes` named by
+/// `name` (`Metamodel::Naming`, `Perl6::Metamodel::Naming`): an NQP-level
+/// object that is not a `Mu`, unlike the HOW classes and `Primitives`.
+// Cost: O(log n), n = the core metamodel names.
+pub(crate) fn metarole_bare_name(name: &str) -> Option<&str> {
+    let bare = name
+        .strip_prefix("Perl6::")
+        .unwrap_or(name)
+        .strip_prefix("Metamodel::")?;
+    (crate::value::is_core_metamodel_name(bare) && !bare.ends_with("HOW"))
+        .then_some(bare)
+}
