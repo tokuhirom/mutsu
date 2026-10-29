@@ -2,7 +2,7 @@
 //! (`my ($a, $b?, *@r) := RHS`): the arity guard and the defaults of
 //! optional elements the RHS does not reach.
 
-use super::{DestructureVar, native_type_default};
+use crate::ast::SignatureVar as DestructureVar;
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
@@ -22,9 +22,9 @@ pub(super) fn staged_elems(array_bare: &str) -> Expr {
 
 /// `@<staged>.EXISTS-POS(i)` -- whether the RHS reaches position `i`, without
 /// forcing a lazy RHS any further than that (`my ($a, *@r) := 1..*`).
-pub(super) fn staged_exists(array_bare: &str, i: usize) -> Expr {
+pub(super) fn staged_exists(target: Expr, i: usize) -> Expr {
     Expr::MethodCall {
-        target: Box::new(Expr::ArrayVar(array_bare.to_string())),
+        target: Box::new(target),
         name: Symbol::intern("EXISTS-POS"),
         args: vec![Expr::Literal(Value::int(i as i64))],
         modifier: None,
@@ -90,7 +90,7 @@ pub(super) fn push_bind_arity_check(
     // must not be reified just to check its lower bound. The count is only
     // taken for the message, once the bind is already failing.
     let mut guard = |too_few: bool, probe: usize, msg: String| {
-        let exists = staged_exists(array_bare, probe);
+        let exists = staged_exists(Expr::ArrayVar(array_bare.to_string()), probe);
         stmts.push(Stmt::If {
             // Too few: position `required - 1` is missing; too many:
             // position `total` is present.
@@ -133,5 +133,15 @@ pub(super) fn push_bind_arity_check(
             total,
             format!("Too many positionals passed; {expected}"),
         );
+    }
+}
+
+/// Return the default expression for a native type, or Nil for non-native types.
+pub(super) fn native_type_default(tc: &Option<String>) -> Expr {
+    match tc.as_deref() {
+        Some(t) if crate::native_types::is_native_int_type(t) => Expr::Literal(Value::int(0)),
+        Some("num" | "num32" | "num64") => Expr::Literal(Value::num(0.0)),
+        Some("str") => Expr::Literal(Value::str(String::new())),
+        _ => Expr::Literal(Value::NIL),
     }
 }

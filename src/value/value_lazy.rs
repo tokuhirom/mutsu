@@ -14,6 +14,7 @@ impl std::fmt::Debug for LazyList {
 impl Clone for LazyList {
     fn clone(&self) -> Self {
         Self {
+            fixtures: None,
             body: self.body.clone(),
             env: self.env.clone(),
             cache: Mutex::new(self.cache.lock().unwrap().clone()),
@@ -53,6 +54,7 @@ impl Clone for LazyList {
             cached_no_sink: self.cached_no_sink,
             deleted_indices: Default::default(),
             descriptor: self.descriptor.clone(),
+            generator_origin: self.generator_origin.clone(),
             itemized: self.itemized,
         }
     }

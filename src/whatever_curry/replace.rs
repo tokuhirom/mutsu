@@ -18,7 +18,8 @@
 
 use crate::ast::Expr;
 use crate::ast_visit::{VisitMut, walk_expr_mut};
-use crate::parser::{expand_compound_assign_expr, is_whatever};
+use crate::parser::is_whatever;
+use crate::rakuast::compound::expand_compound_assign_expr;
 use crate::token_kind::TokenKind;
 
 /// Replace Whatever expressions with numbered parameter variables.
@@ -181,6 +182,7 @@ impl VisitMut for Replacer<'_> {
             | Expr::HyperMethodCall { target, .. }
             | Expr::HyperMethodCallDynamic { target, .. }
             | Expr::CallOn { target, .. }
+            | Expr::Exists { target, .. }
             | Expr::Index { target, .. } => self.visit_expr_mut(target),
             // A user-declared prefix/postfix operator application: its operand
             // curries like a built-in unary's.

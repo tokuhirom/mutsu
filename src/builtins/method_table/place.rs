@@ -208,6 +208,8 @@ impl<'a> ReceiverPlace<'a> {
     // cell descent.
     pub(crate) fn slot<'s>(&'s mut self, interp: &'s mut Interpreter) -> Option<&'s mut Value> {
         match self {
+            // `self` lives in the frame's record, not in the env (ADR-14843).
+            ReceiverPlace::Var { name, .. } if *name == "self" => interp.frame_invocant_mut(),
             ReceiverPlace::Var { name, .. } if !name.is_empty() => {
                 interp.env_root_descended_mut(name)
             }
@@ -259,7 +261,13 @@ impl<'a> ReceiverPlace<'a> {
             // A receiver with no name has nowhere to be written.
             ReceiverPlace::Var { name: "", .. } => {}
             ReceiverPlace::Var { name, code, .. } => {
-                interp.env_mut().insert((*name).to_string(), new.clone());
+                if *name == "self" {
+                    if let Some(slot) = interp.frame_invocant_mut() {
+                        *slot = new.clone();
+                    }
+                } else {
+                    interp.env_mut().insert((*name).to_string(), new.clone());
+                }
                 if let Some(code) = code {
                     interp.locals_set_by_name(code, name, new);
                 }
@@ -291,9 +299,15 @@ impl<'a> ReceiverPlace<'a> {
         if name.is_empty() {
             return;
         }
-        interp
-            .env_mut()
-            .insert((*name).to_string(), (*value).clone());
+        if *name == "self" {
+            if let Some(slot) = interp.frame_invocant_mut() {
+                *slot = (*value).clone();
+            }
+        } else {
+            interp
+                .env_mut()
+                .insert((*name).to_string(), (*value).clone());
+        }
         interp.update_local_if_exists(code, name, value);
     }
 }

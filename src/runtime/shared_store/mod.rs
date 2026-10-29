@@ -261,6 +261,12 @@ impl SharedStore {
         self.own.read().unwrap().contains_key(key)
     }
 
+    /// [`Self::owns`] for callers outside the store.
+    // Cost: O(1).
+    pub(crate) fn owns_key(&self, key: &str) -> bool {
+        self.owns(key)
+    }
+
     /// Write to the nearest lineage that already has the name, so a child's
     /// mutation of a lexical the parent shared with it reaches the parent.
     /// Falls back to this lineage when the name is new (a first write with no

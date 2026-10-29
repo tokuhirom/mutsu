@@ -351,6 +351,34 @@ impl<'ast> Visit<'ast> for DeclScan {
                 if self.spine || *is_export {
                     self.collect_enum_values(variants, *is_export, export_tags);
                 }
+                // An exported enum's values are terms the importer's block
+                // declares itself (ADR-8751), like an exported constant.
+                if *is_export && self.spine {
+                    let package = if self.prefix.is_empty() {
+                        "GLOBAL".to_string()
+                    } else {
+                        self.prefix.clone()
+                    };
+                    let tags = if export_tags.is_empty() {
+                        vec!["DEFAULT".to_string()]
+                    } else {
+                        export_tags.clone()
+                    };
+                    for value in crate::parser::enum_value_names(variants)
+                        .into_iter()
+                        .filter(|value| !value.is_empty())
+                    {
+                        self.out
+                            .exported_vars
+                            .push(super::exported_vars::ExportedVar {
+                                name: value,
+                                package: package.clone(),
+                                tags: tags.clone(),
+                                term: true,
+                                hook: false,
+                            });
+                    }
+                }
                 // An `our` enum's values are also installed in the enclosing
                 // package, so `Pkg::Value` resolves globally, export or not
                 // (`package WS::Msg { enum Opcode is export (:Ping(9)) }` makes

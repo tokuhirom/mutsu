@@ -33,6 +33,7 @@
 //! BEGINs nested inside a top-level statement, and value-form BEGINs, are
 //! lifted into the prologue by [`nested`] ahead of that statement.
 
+mod expr_type_decls;
 mod nested;
 mod nested_exports;
 mod package_body;
@@ -51,6 +52,8 @@ use use_if::{if_condition_check, next_if_condition_slot};
 /// BEGIN-time effect, the prologue is empty and `stmts` is
 /// untouched.
 pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<Stmt> {
+    // A class declared in term position is a BEGIN-time declaration too.
+    expr_type_decls::lift_expr_type_decls(stmts);
     // Lift the BEGINs nested in each top-level statement first (slice 2):
     // each lifted effect joins the prologue just ahead of its statement.
     if is_eval {

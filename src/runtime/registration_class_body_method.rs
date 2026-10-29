@@ -476,6 +476,10 @@ impl Interpreter {
             // a sibling method (Proxy's `callwith :&FETCH, :&STORE`).
             let lexical_sub = self.sub_value_from_function_def(func_def.clone());
             self.env.insert(
+                format!("{}{resolved_method_name}", crate::env::CLASS_LEXICAL_METHOD_PREFIX),
+                lexical_sub.clone(),
+            );
+            self.env.insert(
                 format!("{}{resolved_method_name}", crate::env::BLOCK_LEXICAL_SUB_PREFIX),
                 lexical_sub,
             );

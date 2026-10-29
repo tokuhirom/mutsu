@@ -660,6 +660,16 @@ impl Interpreter {
                 {
                     let mut args = args;
                     let invocant = args.remove(0);
+                    // A role mixed into a native value (`my %h does R`, whose
+                    // `R` overrides `AT-KEY`): the method object names the
+                    // core type's own method, so it runs on the native base,
+                    // not through the override that called it (WriteOnceHash's
+                    // `my &AT-KEY := ::?CLASS.^find_method('AT-KEY')`).
+                    if matches!(invocant.view(), ValueView::Mixin(..))
+                        && let Some(result) = self.mixin_base_native_entry(&invocant, &method, &args)
+                    {
+                        return result;
+                    }
                     return match invocant.view() {
                         ValueView::Package(_) if method == "new" => {
                             self.dispatch_native_new(invocant, args)
@@ -1120,20 +1130,6 @@ impl Interpreter {
                     new_env.insert_sym(*k, v.clone());
                     continue;
                 }
-                // `self` is LEXICAL in Raku: a block has no invocant of its own,
-                // so `self`/`$.attr` inside it resolves to the enclosing method's
-                // invocant — the one this closure captured. The merge_all
-                // don't-overwrite below made it *dynamic* instead: a natively
-                // invoked callback (a `whenever` body dispatched from a supplier
-                // tap or the in-process connect path) ran against whatever `self`
-                // the caller env last leaked — e.g. Cro::TCP::Listener.incoming's
-                // whenever body read `$.nodelay` off a Cro::TCP::Replier. Mirrors
-                // the VM closure dispatch's force-install; a method's own invocant
-                // is bound from its args after this merge, so it still wins.
-                if k.with_str(|s| s == "self") {
-                    new_env.insert_sym(*k, v.clone());
-                    continue;
-                }
                 // Caller-priority: a `Proxy` FETCH body (and the other
                 // native-invoked callbacks that pass `merge_all`) must see the
                 // CURRENT value of a captured lexical its STORE twin mutates
@@ -1167,17 +1163,6 @@ impl Interpreter {
                     continue;
                 }
                 new_env.insert_sym(*k, v.clone());
-            }
-            // `self` may live in a PARENT tier of the captured env: the loop
-            // above iterates the own tier only (`Env::iter` does not walk the
-            // chain, unlike `get`), so the lexical-self install in the loop
-            // never fires for a closure captured under a scoped overlay — a
-            // supply block created in `Sink.sinker` and driven from another
-            // object's method read `$!attr` off that other object. Resolve
-            // through the tier-walking get and force-install (self is lexical;
-            // a method's own invocant is bound from its args after this).
-            if let Some(captured_self) = data.env.get("self").cloned() {
-                new_env.insert("self".to_string(), captured_self);
             }
             self.env = new_env.clone();
             // Check for empty signature: a pointy block `-> { }` or sub with no
@@ -1252,6 +1237,7 @@ impl Interpreter {
             }
             // &?BLOCK: weak self-reference to break reference cycles
             let block_arc = crate::gc::Gc::new(crate::value::SubData {
+                fixtures: None,
                 package: data.package,
                 name: data.name,
                 params: data.params.clone(),
@@ -1338,6 +1324,8 @@ impl Interpreter {
             };
             self.record_profile_routine_frame(&frame);
             self.routine_stack.push(frame);
+            self.attach_closure_fixtures(&data);
+            self.adopt_function_invocant(&data.param_defs, &data.params, &call_args);
             self.block_stack
                 .push(crate::runtime::CodeFrame::Ready(block_sub));
             let return_spec = data

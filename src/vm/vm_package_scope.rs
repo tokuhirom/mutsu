@@ -42,9 +42,8 @@ impl Interpreter {
         self.set_current_package(name.clone());
         let lexicals = (lexicals_idx != crate::opcode::NO_PACKAGE_LEXICALS)
             .then(|| Self::const_str(code, lexicals_idx));
-        if let Some(lexicals) = lexicals {
-            self.bind_package_body_lexicals(&name, lexicals);
-        }
+        let class_scope =
+            lexicals.and_then(|lexicals| self.bind_package_body_lexicals(&name, lexicals));
         // The names the body's own scope declares are its bindings, never a
         // write to a same-named enclosing lexical (#13428).
         let declared: Vec<Symbol> = (decls_idx != u32::MAX)
@@ -132,6 +131,9 @@ impl Interpreter {
                 BlockEnvSave::Whole(env) => env,
             };
             self.unbind_package_body_lexicals(&name, lexicals, saved_env);
+        }
+        if let Some(mark) = class_scope {
+            self.end_scoped_fixtures(mark);
         }
         let ClosedBlockEnv {
             base: mut env,

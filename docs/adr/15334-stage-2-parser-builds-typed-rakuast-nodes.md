@@ -1,6 +1,6 @@
 # ADR-15334: Stage 2 — the parser builds typed RakuAST nodes for every family, and the executing round trip and `convert` reverse paths are deleted
 
-- **Status**: Proposed
+- **Status**: Accepted (maintainer decision, 2026-10-28)
 - **Date**: 2026-10-28
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#15334](https://github.com/tokuhirom/mutsu/issues/15334). Roadmap:

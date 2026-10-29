@@ -1484,6 +1484,11 @@ pub(crate) struct Compiler {
     /// Expression declarations inside a synthesized WhateverCode belong to the
     /// surrounding source block and therefore store through its captured slot.
     promoted_expr_decl_names: HashSet<String>,
+    /// `@`/`%` names whose `my @a = <initializer>` / `our @a = ...` is being
+    /// compiled right now (here or in an enclosing frame). A closure created by
+    /// that initializer reads the declared container after the store, so
+    /// `compute_upvalues` must not freeze it into a snapshot (#15387).
+    decl_initializer_aggregates: Vec<String>,
     /// Inline scalar declarations currently compiled as call arguments need
     /// a lexical slot so their VarRef can identify a writable container.
     call_arg_decl_slots: HashSet<String>,
@@ -2138,6 +2143,7 @@ impl Compiler {
             in_real_loop_body: false,
             next_scope_decl_transparent: false,
             promoted_expr_decl_names: HashSet::new(),
+            decl_initializer_aggregates: Vec::new(),
             call_arg_decl_slots: HashSet::new(),
             current_package_kind: None,
             enclosing_package: None,

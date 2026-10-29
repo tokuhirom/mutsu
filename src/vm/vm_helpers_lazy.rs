@@ -1293,7 +1293,7 @@ impl Interpreter {
         // `current_package` at run time — restore it to the package the
         // gather was WRITTEN in, not the consuming caller's (see
         // `exec_make_gather_op`'s capture).
-        let saved_package = self.enter_gather_package(&list.env);
+        let gather_scope = self.enter_gather_scope(list);
         // A lazy gather body runs in its own captured env, not the forcing
         // frame's, so it blocks the inline CATCH chain (ADR-0072).
         // The body runs inside the list's iteration, which is a method call
@@ -1301,9 +1301,7 @@ impl Interpreter {
         let mut r = self.with_catch_marker(|this| {
             this.in_method_call(|this| this.force_lazy_list_vm_inner(list))
         });
-        if let Some(pkg) = saved_package {
-            self.set_current_package(pkg);
-        }
+        self.leave_gather_scope(gather_scope);
         if let Some(unit) = saved_unit {
             self.current_unit = unit;
         }

@@ -340,7 +340,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             rhs: lower_expr(named_child_or_positional(init)?)?,
         }),
     };
-    crate::parser::pending_declaration(SignatureDecl {
+    super::signature_expand::pending(SignatureDecl {
         vars,
         group_shape: has_nested_group.then_some(shape),
         is_state,

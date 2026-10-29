@@ -740,6 +740,11 @@ impl Interpreter {
         if self.exec_set_local_scalar_fast(code, idx) {
             return Ok(());
         }
+        // The same for an inert scalar stored to a private scalar attribute
+        // (`$!x = <scalar>`), see `vm_attr_store_lane`.
+        if self.exec_set_local_attr_fast(code, idx) {
+            return Ok(());
+        }
         // The same for a plain `my $x = <scalar>` declaration whose slot is its
         // variable's only home (see `exec_set_local_decl_fast`).
         if self.exec_set_local_decl_fast(code, idx) {

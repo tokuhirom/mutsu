@@ -76,10 +76,11 @@ impl Interpreter {
         let Some(elems) = elems else {
             return Ok(val);
         };
+        let mut memo = crate::runtime::elem_type_memo::ElemTypeMemo::default();
         for item in &elems {
             if !matches!(value_type, "Mu" | "Any")
                 && !item.is_nil()
-                && !self.type_matches_value(value_type, item)
+                && !self.type_matches_value_memo(value_type, item, &mut memo)
             {
                 return Err(self.type_check_element_failure(name, value_type, item));
             }
@@ -209,7 +210,7 @@ impl Interpreter {
             // Array/Hash value shares its backing node with every holder, so
             // it is reassigned in place either way; a container object is
             // assigned through its `STORE`, as `=` on any container is.
-            let self_value = self.env_self_value();
+            let self_value = self.frame_invocant();
             let (cell, current) = match self_value.as_ref().map(Value::view) {
                 Some(ValueView::ContainerRef(cell)) => {
                     let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();

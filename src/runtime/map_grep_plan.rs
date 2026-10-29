@@ -81,7 +81,7 @@ pub(crate) struct InlineLoopPlan {
 
 /// The consuming frame's bindings an inline loop displaced, put back by
 /// [`Interpreter::leave_inline_loop_env`].
-pub(crate) struct SavedLoopBindings(Vec<(Symbol, Option<Value>)>);
+pub(crate) struct SavedLoopBindings(Vec<(Symbol, Option<Value>)>, Option<usize>);
 
 /// Where a deferred `.map`/`.grep` keeps what it computed about its callback
 /// across pulls (`SeqSource::MapGrep::plan`). Empty until the first pull; a
@@ -310,14 +310,12 @@ impl Interpreter {
             .compiled_code
             .as_ref()
             .map(|cc| cc.capture_free_var_set());
-        let self_sym = crate::symbol::wk::self_();
         let captures = data
             .env
             .iter()
             .map(|(k, v)| CaptureKey {
                 name: *k,
-                overwrites: *k == self_sym
-                    || super::resolution_map_grep::capture_wins_over_caller(free_vars, k, v),
+                overwrites: super::resolution_map_grep::capture_wins_over_caller(free_vars, k, v),
                 is_temporary: temporaries.contains(k),
             })
             .collect();
@@ -423,12 +421,21 @@ impl Interpreter {
             }
             self.env.insert_sym(c.name, v.clone());
         }
-        SavedLoopBindings(saved)
+        // The callback's `self` and `?CLASS` are its creator's (ADR-14843).
+        let fixtures_mark = data.fixtures.clone().map(|f| {
+            let mark = self.routine_stack.fixtures_len();
+            self.routine_stack.push_scoped_fixtures(f);
+            mark
+        });
+        SavedLoopBindings(saved, fixtures_mark)
     }
 
     /// Put back what [`Self::enter_inline_loop_env`] displaced.
     // Cost: O(s), s = saved bindings.
     pub(crate) fn leave_inline_loop_env(&mut self, saved: SavedLoopBindings) {
+        if let Some(mark) = saved.1 {
+            self.routine_stack.truncate_fixtures(mark);
+        }
         for (k, orig) in saved.0 {
             match orig {
                 Some(v) => {

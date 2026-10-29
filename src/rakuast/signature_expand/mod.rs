@@ -4,38 +4,32 @@
 //! parser keeps the declaration as `ParsedStmt::SignatureDecl`, which lowers
 //! through [`signature_decl`], and `.AST` renders the node.
 
-use super::bind_arity::{optional_param_default, push_bind_arity_check, staged_exists};
-use super::native_type_default;
+mod bind_arity;
+mod binding_result;
+mod named;
+mod staged_paths;
+
 use crate::ast::parsed::ParsedStmt;
 use crate::ast::var_marks::TermMark;
 use crate::ast::{Expr, ParamTrait, SignatureDecl, SignatureInit, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
+use bind_arity::{
+    native_type_default, optional_param_default, push_bind_arity_check, staged_exists,
+};
+use staged_paths::{staged_container, staged_element, target_paths};
 
 /// A declaration as written, not yet lowered: the statement the parser hands
 /// to the statement modifiers and loose tails that split or wrap it, which read
-/// the declaration itself. [`settle`] lowers it once nothing else will. The
+/// the declaration itself. `settle` (the parser's finalizer) lowers it once nothing else will. The
 /// size check is the only way the lowering fails, so it runs here.
 // Cost: O(n), n = nodes of the declaration.
 pub(crate) fn pending(decl: SignatureDecl) -> Result<Stmt, crate::value::RuntimeError> {
-    crate::parser::stmt::control::source_body::check_signature(&decl)?;
+    crate::parser::check_signature(&decl)?;
     Ok(Stmt::Ast(Box::new(ParsedStmt::SignatureDecl(Box::new(
         decl,
     )))))
-}
-
-/// A statement from [`pending`] becomes what the parse produces for it: the
-/// lowered expansion, or, for a parse that keeps the written nodes, the node
-/// once its lowering has been checked. Any other statement is returned as is.
-// Cost: O(n), n = size of the declaration.
-pub(crate) fn settle(stmt: Stmt) -> Result<Stmt, crate::value::RuntimeError> {
-    match stmt {
-        Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::SignatureDecl(_)) => {
-            crate::parser::stmt::control::parsed_block::finish(*node)
-        }
-        other => Ok(other),
-    }
 }
 
 /// A statement from [`pending`] lowered to its expansion, whatever the parse
@@ -55,7 +49,7 @@ pub(crate) fn lower_pending(stmt: Stmt) -> Result<Stmt, crate::value::RuntimeErr
 
 /// The whole expansion of `decl`.
 pub(crate) fn signature_decl(decl: SignatureDecl) -> Result<Stmt, crate::value::RuntimeError> {
-    crate::parser::stmt::control::source_body::check_signature(&decl)?;
+    crate::parser::check_signature(&decl)?;
     let stmts = match &decl.init {
         None => expand_bare(&decl),
         Some(_) => {
@@ -73,14 +67,14 @@ pub(crate) fn signature_decl(decl: SignatureDecl) -> Result<Stmt, crate::value::
 pub(crate) fn expand_with_rhs(
     decl: &SignatureDecl,
 ) -> Result<(Vec<Stmt>, Expr), crate::value::RuntimeError> {
-    crate::parser::stmt::control::source_body::check_signature(decl)?;
+    crate::parser::check_signature(decl)?;
     if decl.vars.iter().any(|var| var.is_named)
         && let Some(init) = &decl.init
         && init.is_binding
     {
         return Ok((
-            super::named::expand(decl, init.rhs.clone()),
-            super::binding_result::binding_result(decl),
+            named::expand(decl, init.rhs.clone()),
+            binding_result::binding_result(decl),
         ));
     }
     Ok(match &decl.init {
@@ -274,20 +268,22 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
     // trailing `@x` is NOT slurpy: `my (@a, @b) := (@x, @y)` binds `@b` to `@y`,
     // not to `(@y,)`. (Rakudo type-checks each element as Positional, so the
     // shapes where the distinction is invisible are the ones it rejects outright.)
-    let mut seen_slurpy = false;
+    let paths = target_paths(decl);
+    let mut slurped_parents: Vec<Vec<usize>> = Vec::new();
     for (i, dvar) in vars.iter().enumerate() {
+        let path = &paths[i];
+        let Some((position, parent)) = path.split_last() else {
+            continue;
+        };
+        let position = *position;
+        let seen_slurpy = slurped_parents.iter().any(|p| p == parent);
         if let Some(lit) = &dvar.literal_value {
             // A bare literal element (`my ("foo") = ...`) is a postconstraint: the
             // i-th assigned value must smartmatch the literal, else
             // X::TypeCheck::Assignment. Emit a throwaway declaration whose
             // where-constraint IS the literal (identical to `$ where "foo"`, which
             // already enforces this), reading the i-th temp element. (subtypes.t 90)
-            let read = Expr::Index {
-                target: Box::new(Expr::ArrayVar(array_bare.clone())),
-                index: Box::new(Expr::Literal(Value::int(i as i64))),
-                is_positional: true,
-                spelling: Default::default(),
-            };
+            let read = staged_element(&array_bare, path);
             stmts.push(Stmt::VarDecl {
                 marks: Default::default(),
                 anonymous: false,
@@ -330,11 +326,11 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 Expr::Literal(Value::NIL)
             }
         } else if dvar.is_slurpy || is_implicit_slurpy {
-            seen_slurpy = true;
+            slurped_parents.push(parent.to_vec());
             Expr::Index {
-                target: Box::new(Expr::ArrayVar(array_bare.clone())),
+                target: Box::new(staged_container(&array_bare, parent)),
                 index: Box::new(Expr::Binary {
-                    left: Box::new(Expr::Literal(Value::int(i as i64))),
+                    left: Box::new(Expr::Literal(Value::int(position as i64))),
                     op: TokenKind::DotDot,
                     right: Box::new(Expr::Whatever),
                     form: Default::default(),
@@ -343,12 +339,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 spelling: Default::default(),
             }
         } else {
-            let read = Expr::Index {
-                target: Box::new(Expr::ArrayVar(array_bare.clone())),
-                index: Box::new(Expr::Literal(Value::int(i as i64))),
-                is_positional: true,
-                spelling: Default::default(),
-            };
+            let read = staged_element(&array_bare, path);
             // A *typed* element whose RHS ran out of values gets the type's
             // DEFAULT, not the `Any` an out-of-range Array read now yields
             // (`my Str ($a) = ()` → `$a` is `Str`, not the un-assignable `Any`).
@@ -375,7 +366,10 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                     .clone()
                     .unwrap_or_else(|| optional_param_default(&effective_tc));
                 Expr::Ternary {
-                    cond: Box::new(staged_exists(&array_bare, i)),
+                    cond: Box::new(staged_exists(
+                        staged_container(&array_bare, parent),
+                        position,
+                    )),
                     then_expr: Box::new(read),
                     else_expr: Box::new(fallback),
                 }
@@ -383,7 +377,10 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 // An element the RHS did not reach is `Nil` to the assignment,
                 // which resets the container to its `is default` value.
                 Expr::Ternary {
-                    cond: Box::new(staged_exists(&array_bare, i)),
+                    cond: Box::new(staged_exists(
+                        staged_container(&array_bare, parent),
+                        position,
+                    )),
                     then_expr: Box::new(read),
                     else_expr: Box::new(def_expr.clone()),
                 }
@@ -508,19 +505,14 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
     // it (#9342). A literal postconstraint element yields its staged value.
     // Binding a declaring signature yields the signature itself.
     let result = if is_binding {
-        super::binding_result::binding_result(decl)
+        binding_result::binding_result(decl)
     } else {
         Expr::ArrayLiteral(
             vars.iter()
                 .enumerate()
                 .map(|(i, dvar)| {
                     if dvar.literal_value.is_some() {
-                        Expr::Index {
-                            target: Box::new(Expr::ArrayVar(array_bare.clone())),
-                            index: Box::new(Expr::Literal(Value::int(i as i64))),
-                            is_positional: true,
-                            spelling: Default::default(),
-                        }
+                        staged_element(&array_bare, &paths[i])
                     } else if dvar.sigilless {
                         Expr::BareWord(dvar.name.clone())
                     } else if let Some(n) = dvar.name.strip_prefix('@') {

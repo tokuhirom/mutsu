@@ -346,6 +346,13 @@ jobs:
         # its parser first.
         run: make check-interp-fields
 
+      - name: Frontend debt does not grow
+        # ADR-15334 section 3.3: SyntheticBlock references and `"__..."`
+        # literals in src/parser, and the lines of src/rakuast/convert.rs, stay
+        # at or below the ceilings in scripts/frontend-debt.d/. Self-tests its
+        # comparison first.
+        run: make check-frontend-debt
+
       - name: Value API wall holds
         # A ratchet (docs/nanbox-3b0-api-wall.md): no direct `Value::<Variant>`
         # outside src/value/. At 0; this keeps it there.

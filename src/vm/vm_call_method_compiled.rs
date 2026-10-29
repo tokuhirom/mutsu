@@ -199,11 +199,15 @@ impl Interpreter {
             .and_then(|s| saved_locals.get(*s))
             .filter(|v| !matches!(v.view(), ValueView::Nil))
             .cloned()
-            .or_else(|| captured_env.and_then(|e| e.get("self").cloned()));
-        let saved_self = self.env().get_sym(crate::symbol::wk::self_()).cloned();
-        if let Some(ref s) = enclosing_self {
-            self.set_env_with_main_alias("self", s.clone());
-        }
+            .or_else(|| {
+                sub_data
+                    .as_ref()
+                    .and_then(|data| data.fixtures.as_ref())
+                    .and_then(|f| f.invocant.clone())
+            });
+        let fixtures_mark = enclosing_self
+            .as_ref()
+            .map(|s| self.begin_scoped_invocant(s.clone()));
 
         // Execute the block's opcodes inline. Install the BLOCK's own captured
         // upvalue array for the duration: this inline path bypasses closure
@@ -278,11 +282,8 @@ impl Interpreter {
         }
 
         // Restore the caller's `self` binding (see the enclosing-self setup above).
-        match saved_self {
-            Some(s) => self.set_env_with_main_alias("self", s),
-            None => {
-                self.env_mut().remove("self");
-            }
+        if let Some(mark) = fixtures_mark {
+            self.end_scoped_fixtures(mark);
         }
 
         // Get return value before restoring state

@@ -1,13 +1,9 @@
 use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{MISSING_BLOCK, PError, PResult, opt_char, parse_char};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::ast::var_marks::TermMark;
-use crate::ast::{
-    AssignOp, Expr, GivenWithKind, ParamDef, ReadonlyKind, Stmt, WithBlockKind,
-    collect_placeholders_shallow,
-};
+use crate::ast::{AssignOp, Expr, ParamDef, ReadonlyKind, Stmt, collect_placeholders_shallow};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
@@ -151,7 +147,7 @@ fn p5_foreach_error() -> PError {
 /// aliases `@a`, matching Raku. `is copy` uses `=` (a fresh copy) so nothing is
 /// written back. The declaration reads its value through `Expr::GivenPointyTopic`,
 /// independently of dynamic `$_`.
-fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
+pub(crate) fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
     let mut binding = pointy_topic_bind_inner(pd);
     // A pointy `given`/`with` parameter reads the new topic exactly once, when
     // its synthetic declaration initializes. After that binding, the block's
@@ -454,7 +450,7 @@ fn method_call(target: Expr, name: &str) -> Expr {
 }
 
 /// Build a `$_ = <expr>` assignment statement for topicalization.
-fn topicalize(expr: &Expr) -> Stmt {
+pub(crate) fn topicalize(expr: &Expr) -> Stmt {
     Stmt::Assign {
         name: "_".to_string(),
         op: AssignOp::Assign,
@@ -477,11 +473,10 @@ mod pointy_param;
 mod react;
 pub(in crate::parser::stmt) mod source_body;
 mod while_until;
+pub(crate) use source_body::check_signature;
 mod with_stmt;
 
 // Re-exports preserving each function's original visibility (all `pub(super)`).
-pub(crate) use conditional_binding::if_pointy_clause;
-pub(crate) use conditionals::unless_clause;
 pub(super) use conditionals::{if_stmt, unless_stmt};
 pub(crate) use for_loops::placeholder_loop_params;
 pub(super) use for_loops::{
@@ -500,11 +495,9 @@ pub(crate) use react::whenever_stmt;
 pub(crate) use while_until::loop_pointy_clause;
 pub(super) use while_until::{until_stmt, while_stmt};
 pub(super) use with_stmt::with_stmt;
-pub(crate) use with_stmt::with_then_branch;
 
 // Cross-submodule helpers: originally private `fn`s in the if/unless block that
 // are also called from `with_stmt` (for `orwith` elsif-chain lowering). Bumped
 // to `pub(crate)` in `conditionals` and re-exported here so `with_stmt` reaches
 // them via `use super::*`.
 pub(in crate::parser) use conditionals::parse_elsif_chain;
-pub(crate) use conditionals::{ElseClause, IfChainClause, lower_if_chain};

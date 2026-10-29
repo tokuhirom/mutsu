@@ -3,7 +3,7 @@
 pub(super) type PResult<'a, T> = Result<(&'a str, T), PError>;
 
 #[derive(Debug, Clone)]
-pub(super) struct PError {
+pub(crate) struct PError {
     /// Expected-alternative descriptions (without "expected " prefix).
     /// Display joins them as "expected A or B or C".
     ///

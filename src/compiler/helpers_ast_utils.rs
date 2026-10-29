@@ -263,6 +263,13 @@ impl Compiler {
     /// a sigil-less `constant`): `Hash<z>:delete` subscripts a type object.
     // Cost: O(w + |name|), w = wrappers peeled.
     pub(super) fn postfix_index_name(&self, target: &Expr) -> Option<String> {
+        self.postfix_index_name_any(target)
+            // `self` is the frame record's, not a named variable (ADR-14843):
+            // the subscript works on the invocant expression.
+            .filter(|name| name != "self")
+    }
+
+    fn postfix_index_name_any(&self, target: &Expr) -> Option<String> {
         let peel = LvaluePeel::ASSIGN | LvaluePeel::DECL | LvaluePeel::SIGILLESS;
         match target.lvalue_root(peel)? {
             crate::ast::LvalueRoot::Key(key) => Some(key),
@@ -786,7 +793,7 @@ impl Compiler {
     }
 
     /// Check if a class body is a stub (contains only `...`, `!!!`, or `???`).
-    pub(super) fn is_stub_class_body(body: &[Stmt]) -> bool {
+    pub(crate) fn is_stub_class_body(body: &[Stmt]) -> bool {
         let filtered: Vec<_> = body.iter().filter(|s| !s.is_marker()).collect();
         filtered.len() == 1
             && matches!(filtered[0], Stmt::Expr(Expr::Call { name, .. })

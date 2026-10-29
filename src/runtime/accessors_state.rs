@@ -1268,7 +1268,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Resolved {
         debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
-        let Some(arg_keys) = self.multi_arg_type_keys(args) else {
+        let Some(arg_keys) = self.multi_arg_type_keys_with_named(args) else {
             return self.resolve_function_with_types(name, args);
         };
         // A compunit-scoped family's winner depends on the executing unit,

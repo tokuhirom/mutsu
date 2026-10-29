@@ -132,7 +132,7 @@ impl Interpreter {
     /// is pulled later, outside the method; Trie).
     // Cost: O(1).
     fn lexical_self_class(&self) -> Option<Symbol> {
-        let self_value = self.env_self_value();
+        let self_value = self.frame_invocant();
         match self_value.as_ref().map(Value::view) {
             Some(ValueView::Instance { class_name, .. }) => Some(class_name),
             Some(ValueView::Package(name)) => Some(name),
@@ -528,7 +528,7 @@ impl Interpreter {
         }
         if matches!(attr.sigil, '@' | '%')
             && !value.is_nil()
-            && self.container_type_metadata(&value).is_none()
+            && !self.has_container_type_metadata(&value)
             && let Some(type_constraint) = self.get_attr_type_constraint(&class_name, method)
         {
             let (value_type, key_type) =
@@ -1338,7 +1338,7 @@ impl Interpreter {
                             // returned value so push/insert type enforcement works.
                             if (attr.sigil == '@' || attr.sigil == '%')
                                 && !val.is_nil()
-                                && self.container_type_metadata(&val).is_none()
+                                && !self.has_container_type_metadata(&val)
                                 && let Some(tc) =
                                     self.get_attr_type_constraint(&cn, method.as_ref())
                             {

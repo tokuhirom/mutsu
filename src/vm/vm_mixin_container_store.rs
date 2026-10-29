@@ -50,7 +50,14 @@ impl Interpreter {
         };
         let rhs = self.stack.pop().unwrap_or(Value::NIL);
         let values = Value::array(crate::runtime::utils::value_to_list(&rhs));
-        self.try_compiled_method_or_interpret(container.clone(), "STORE", vec![values])?;
+        // The declaration's own initializer (`my %h does R = ...`) is marked by
+        // the compiler; it is the container's initialization, not a re-store.
+        let mut args = vec![values];
+        if self.explicit_initializer_context().get() {
+            self.explicit_initializer_context().set(false);
+            args.push(Value::pair("INITIALIZE".to_string(), Value::TRUE));
+        }
+        self.try_compiled_method_or_interpret(container.clone(), "STORE", args)?;
         self.stack.push(container);
         Ok(Some(()))
     }

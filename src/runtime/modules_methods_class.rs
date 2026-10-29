@@ -32,6 +32,7 @@ mod methods_mu_rakuseen;
 mod methods_list_from_iterator;
 mod methods_match_make;
 mod methods_code_rows;
+mod methods_block_phaser_rows;
 mod methods_code_candidate_rows;
 mod methods_code_wrap_rows;
 mod methods_method_object_rows;

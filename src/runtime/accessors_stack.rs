@@ -623,6 +623,257 @@ impl Interpreter {
         self.routine_stack.top_fixtures()
     }
 
+    /// Continue a closure's creator record in the frame just pushed for the
+    /// closure's call (ADR-14843).
+    // Cost: O(1) amortized.
+    #[inline]
+    pub(crate) fn attach_closure_fixtures(&mut self, data: &crate::value::SubData) {
+        if let Some(fixtures) = &data.fixtures {
+            self.routine_stack.attach_fixtures_to_top(fixtures.clone());
+        }
+    }
+
+    /// Open a scope whose `self` is `invocant`, keeping the innermost record's
+    /// `?CLASS` and `?ROLE`; [`Self::end_scoped_fixtures`] closes it.
+    // Cost: O(1) amortized.
+    pub(crate) fn begin_scoped_invocant(&mut self, invocant: Value) -> usize {
+        let mark = self.routine_stack.fixtures_len();
+        let (class, role) = self
+            .frame_fixtures()
+            .map_or((None, None), |f| (f.class.clone(), f.role));
+        self.routine_stack
+            .push_scoped_fixtures(crate::value::frame_fixtures::FrameFixtures {
+                invocant: Some(invocant),
+                class,
+                role,
+            });
+        mark
+    }
+
+    /// Open a scope whose `?CLASS` is `class` and which has no invocant: a
+    /// class body. [`Self::end_scoped_fixtures`] closes it.
+    // Cost: O(1) amortized.
+    pub(crate) fn begin_class_scope(&mut self, class: Symbol) -> usize {
+        let mark = self.routine_stack.fixtures_len();
+        self.routine_stack
+            .push_scoped_fixtures(crate::value::frame_fixtures::FrameFixtures {
+                invocant: None,
+                class: Some(Value::package(class)),
+                role: None,
+            });
+        mark
+    }
+
+    /// Push a copy of `fixtures` as a scope; [`Self::end_scoped_fixtures`]
+    /// closes it.
+    // Cost: O(1) amortized.
+    pub(crate) fn push_scoped_fixtures(
+        &mut self,
+        fixtures: crate::value::frame_fixtures::FrameFixtures,
+    ) -> usize {
+        let mark = self.routine_stack.fixtures_len();
+        self.routine_stack.push_scoped_fixtures(fixtures);
+        mark
+    }
+
+    /// Close the scope [`Self::begin_scoped_invocant`] opened.
+    // Cost: O(1).
+    pub(crate) fn end_scoped_fixtures(&mut self, mark: usize) {
+        self.routine_stack.truncate_fixtures(mark);
+    }
+
+    /// Replace the invocant of the innermost record, which a
+    /// [`Self::begin_scoped_invocant`] scope owns.
+    // Cost: O(1).
+    pub(crate) fn set_scoped_invocant(&mut self, invocant: Value) {
+        if let Some(f) = self.routine_stack.top_fixtures_mut() {
+            f.invocant = Some(invocant);
+        }
+    }
+
+    /// The invocant of the running method frame's own record, by reference.
+    // Cost: O(1).
+    pub(crate) fn frame_invocant_ref(&self) -> Option<&Value> {
+        if !self.routine_stack.last().is_some_and(|f| f.fixtures != 0) {
+            return None;
+        }
+        self.routine_stack.top_fixtures()?.invocant.as_ref()
+    }
+
+    /// The invocant of the running method frame's own record, to write through:
+    /// the place a mutating call on `self` (`self.push(...)`) changes. `None`
+    /// when the running frame owns no record.
+    // Cost: O(1).
+    pub(crate) fn frame_invocant_mut(&mut self) -> Option<&mut Value> {
+        if !self.routine_stack.last().is_some_and(|f| f.fixtures != 0) {
+            return None;
+        }
+        self.routine_stack.top_fixtures_mut()?.invocant.as_mut()
+    }
+
+    /// The invocant a method run as a function (a method literal, a `my
+    /// method` handed to a Proxy) is called with: its leading implicit `self`
+    /// parameter takes the first positional argument. `None` for any other
+    /// callable.
+    // Cost: O(a) in the leading named arguments.
+    pub(crate) fn function_invocant_arg(
+        param_defs: &[crate::ast::ParamDef],
+        params: &[String],
+        args: &[Value],
+    ) -> Option<Value> {
+        let implicit = match param_defs.first() {
+            Some(pd) => pd.name == "self" && pd.is_implicit_invocant(),
+            None => {
+                params.first().is_some_and(|p| p == "self")
+                    && !crate::ast::param_names_declare_self_lexical(params)
+            }
+        };
+        let mut positional = args
+            .iter()
+            .filter(|v| !matches!(v.view(), ValueView::Pair(_, _)));
+        if implicit {
+            return positional.next().cloned();
+        }
+        // A plain routine's own `$self` parameter (`sub ($self) { ... }`) is
+        // the `self` its body names (ADR-0061): it takes the argument bound to
+        // it, so the creator's record never answers for it.
+        if param_defs.is_empty() && crate::ast::param_names_declare_self_lexical(params) {
+            let index = params.iter().position(|p| p == "self")?;
+            return positional.nth(index).cloned();
+        }
+        let mut index = 0usize;
+        for pd in param_defs {
+            if pd.named || pd.slurpy || pd.double_slurpy {
+                continue;
+            }
+            if pd.declares_self_lexical() {
+                return positional.nth(index).cloned();
+            }
+            index += 1;
+        }
+        None
+    }
+
+    /// The invocant of the frame just pushed for a call of a method run as a
+    /// function, once its parameters are bound: [`Self::function_invocant_arg`],
+    /// or the default of a defaulted implicit invocant (`method ($c = 42:)`),
+    /// which the binder alone could evaluate and left under the `self` key for
+    /// this to take. Installed in the frame's record.
+    // Cost: O(1) amortized.
+    pub(crate) fn adopt_function_invocant(
+        &mut self,
+        param_defs: &[crate::ast::ParamDef],
+        params: &[String],
+        args: &[Value],
+    ) -> Option<Value> {
+        let invocant = Self::function_invocant_arg(param_defs, params, args).or_else(|| {
+            let defaulted = param_defs
+                .first()
+                .is_some_and(|pd| pd.name == "self" && pd.is_implicit_invocant() && pd.default.is_some());
+            if defaulted {
+                self.env.remove_sym(crate::symbol::wk::self_())
+            } else {
+                None
+            }
+        })?;
+        self.install_function_invocant(invocant.clone());
+        Some(invocant)
+    }
+
+    /// Make `invocant` the `self` of the frame just pushed for a call of a
+    /// method run as a function ([`Self::function_invocant_arg`]): the frame's
+    /// record, continued from the creator when the callee is a closure, takes
+    /// it. The binder wrote no env key for it (ADR-14843).
+    // Cost: O(1) amortized.
+    pub(crate) fn install_function_invocant(&mut self, invocant: Value) {
+        if self.routine_stack.last().is_some_and(|f| f.fixtures != 0) {
+            if let Some(f) = self.routine_stack.top_fixtures_mut() {
+                f.invocant = Some(invocant);
+            }
+            return;
+        }
+        let (class, role) = self
+            .frame_fixtures()
+            .map_or((None, None), |f| (f.class.clone(), f.role));
+        self.routine_stack
+            .attach_fixtures_to_top(crate::value::frame_fixtures::FrameFixtures {
+                invocant: Some(invocant),
+                class,
+                role,
+            });
+    }
+
+    /// A by-name store to a variable that may be `self`: when `name` is the
+    /// invocant and the running frame owns a record, the record takes `value`
+    /// and this answers `true`; otherwise the caller writes its env as before.
+    // Cost: O(1).
+    pub(crate) fn store_invocant_by_name(&mut self, name: &str, value: &Value) -> bool {
+        if name != "self" {
+            return false;
+        }
+        if let Some(slot) = self.frame_invocant_mut() {
+            *slot = value.clone();
+            return true;
+        }
+        // A method run as a function through a light call has no record: its
+        // `self` parameter is a slot of the running code.
+        if let Some(code) = self.running_code()
+            && let Some(&slot) = code.local_slots_of(crate::symbol::wk::self_()).first()
+            && let Some(local) = self.locals.get_mut(slot as usize)
+        {
+            *local = value.clone();
+            return true;
+        }
+        false
+    }
+
+    /// The record a closure, gather or routine value created now captures:
+    /// the running frame's own, else (a method body run as a function) one
+    /// made of its `self` parameter, else the innermost one (ADR-14843).
+    // Cost: O(1).
+    pub(crate) fn capture_fixtures(&self) -> Option<crate::value::frame_fixtures::FrameFixtures> {
+        let top = self.frame_fixtures();
+        if self.routine_stack.last().is_some_and(|f| f.fixtures != 0) {
+            return top.cloned();
+        }
+        match self.frame_invocant() {
+            Some(invocant) => Some(crate::value::frame_fixtures::FrameFixtures {
+                invocant: Some(invocant),
+                class: top.and_then(|f| f.class.clone()),
+                role: top.and_then(|f| f.role),
+            }),
+            None => top.cloned(),
+        }
+    }
+
+    /// The invocant (`self`, `__ANON_STATE#`) of the innermost frame record.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn frame_invocant(&self) -> Option<Value> {
+        if self.routine_stack.last().is_some_and(|f| f.fixtures != 0)
+            && let Some(invocant) = self.frame_fixtures().and_then(|f| f.invocant.clone())
+        {
+            return Some(invocant);
+        }
+        // A method body run as a function (a `my method` code object called as
+        // a sub, a Proxy's `FETCH`) has no record of its own: its invocant is
+        // its `self` parameter, a local of the running code.
+        let self_sym = crate::symbol::wk::self_();
+        if let Some(code) = self.running_code()
+            && let Some(&slot) = code.local_slots_of(self_sym).first()
+            && let Some(value) = self.locals.get(slot as usize)
+            && !value.is_nil()
+        {
+            return Some(value.clone());
+        }
+        if let Some(invocant) = self.frame_fixtures().and_then(|f| f.invocant.clone()) {
+            return Some(invocant);
+        }
+        None
+    }
+
+
+
     /// What the innermost method frame's record says a fixed name (`self`,
     /// `__ANON_STATE#`, `?CLASS`, `?ROLE`) holds, `None` when no record
     /// answers or the name is not a fixed one. An absent role is `None`, as
@@ -630,36 +881,15 @@ impl Interpreter {
     // Cost: O(1).
     pub(crate) fn frame_fixture_value(&self, sym: Symbol) -> Option<Value> {
         let fixtures = self.frame_fixtures()?;
-        if sym == crate::symbol::wk::self_() || sym == crate::symbol::wk::anon_state() {
-            Some(fixtures.invocant.clone())
+        if sym == crate::symbol::wk::self_() {
+            fixtures.invocant.clone()
         } else if sym == crate::symbol::wk::class_decl() {
-            Some(Value::package(fixtures.class))
+            fixtures.class.clone()
         } else if sym == crate::symbol::wk::role_decl() {
             fixtures.role.map(Value::package)
         } else {
             None
         }
-    }
-
-    /// The value of a fixed name as the running code sees it: an env key
-    /// first (a closure's lexical `self`, a helper's temporary rebind, a
-    /// frame that still writes its keys), else the innermost method frame's
-    /// record. A method frame that wrote no keys (ADR-14633 slice 2) is only
-    /// answered by the record, which is correct because such a frame is only
-    /// entered when no env key of a fixed name is visible from it.
-    // Cost: O(c) env chain probe, c = env chain depth, then O(1).
-    pub(crate) fn env_or_fixture_sym(&self, sym: Symbol) -> Option<Value> {
-        match self.env.get_sym(sym) {
-            Some(v) => Some(v.clone()),
-            None => self.frame_fixture_value(sym),
-        }
-    }
-
-    /// [`Self::env_or_fixture_sym`] for the invocant, `self`.
-    // Cost: as `env_or_fixture_sym`.
-    #[inline]
-    pub(crate) fn env_self_value(&self) -> Option<Value> {
-        self.env_or_fixture_sym(crate::symbol::wk::self_())
     }
 
     pub(crate) fn pop_routine(&mut self) {
@@ -1187,6 +1417,34 @@ impl Interpreter {
         Some(saved)
     }
 
+    /// [`Self::enter_gather_package`] plus the gather's frame record: the
+    /// body runs with the `self` and `?CLASS` of the method it was written in.
+    // Cost: O(1) amortized.
+    pub(crate) fn enter_gather_scope(&mut self, list: &crate::value::LazyList) -> GatherScope {
+        GatherScope {
+            package: self.enter_gather_package(&list.env),
+            fixtures_mark: list
+                .fixtures
+                .clone()
+                .map(|f| {
+                    let mark = self.routine_stack.fixtures_len();
+                    self.routine_stack.push_scoped_fixtures(f);
+                    mark
+                }),
+        }
+    }
+
+    /// Undo [`Self::enter_gather_scope`].
+    // Cost: O(1).
+    pub(crate) fn leave_gather_scope(&mut self, scope: GatherScope) {
+        if let Some(pkg) = scope.package {
+            self.set_current_package(pkg);
+        }
+        if let Some(mark) = scope.fixtures_mark {
+            self.routine_stack.truncate_fixtures(mark);
+        }
+    }
+
     /// The current package as an interned `Symbol`, read from the atomic mirror
     /// of `current_package`. Cheap enough (one relaxed load) for per-call use on
     /// the hot dispatch path, where `current_package()`'s `String` clone is not.
@@ -1487,6 +1745,13 @@ impl Drop for CurrentPackageGuard {
         self.pkg_sym
             .store(self.saved_sym_id, std::sync::atomic::Ordering::Relaxed);
     }
+}
+
+/// What [`Interpreter::enter_gather_scope`] changed, for
+/// [`Interpreter::leave_gather_scope`] to put back.
+pub(crate) struct GatherScope {
+    package: Option<String>,
+    fixtures_mark: Option<usize>,
 }
 
 #[cfg(test)]

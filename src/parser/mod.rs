@@ -101,25 +101,24 @@ mod stmt;
 pub(crate) fn is_raku_identifier(input: &str) -> bool {
     stmt::parse_raku_ident(input).is_ok_and(|(rest, _)| rest.is_empty())
 }
+pub(crate) use expr::precedence::build_compound_assign_target_expr;
+pub(crate) use expr::wrap_dot_assign_with_terms;
 pub(crate) use expr::{atomic_elem_update, retarget_dotty_call};
 pub(crate) use outer_redecl::{find_scope_diagnostic, scope_diagnostic_error};
-pub(crate) use stmt::assign::{
-    DOTTY_ASSIGN_OP, autoviv_routine_compound_lhs, compound_assign_op_from_name,
-    compound_assigned_value_expr, zip_assign_call,
-};
+pub(crate) use parse_result::PError;
+pub(crate) use stmt::assign::DOTTY_ASSIGN_OP;
 pub(crate) use stmt::class::token_body::finalize_anon_declarator_pattern;
 pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws, role_type_param_names};
+pub(crate) use stmt::control::check_signature;
 /// The default the parser plants for a typed scalar attribute with no
 /// initializer; the RakuAST lowering re-plants the same one.
 pub(crate) use stmt::decl::attribute_type_seed;
 pub(crate) use stmt::decl::build_sigilless_bind_stmt;
-pub(crate) use stmt::decl::destructure::desugar::lower_pending as lower_pending_declaration;
-pub(crate) use stmt::decl::destructure::desugar::pending as pending_declaration;
-pub(crate) use stmt::decl::destructure::desugar::signature_decl as signature_decl_expansion;
 pub(crate) use stmt::decl::wrap_with_will_phasers;
 pub(crate) use stmt::decl::{attribute_compound_assign, expand_attribute_compound_assign};
-pub(crate) use stmt::simple::is_user_declared_value_term;
+pub(crate) use stmt::simple::{is_user_declared_sub, is_user_declared_value_term};
 pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutable;
+pub(crate) use stmt::simple_expr_stmt::{decl_target_var_name, topic_dot_assign};
 pub(crate) use stmt::{conditional_declaration, topical_declaration};
 
 /// Parse a regex callable's argument list without exposing the parser's
@@ -128,81 +127,6 @@ pub(crate) fn parse_regex_call_arg_list(input: &str) -> Option<(&str, Vec<crate:
     primary::parse_call_arg_list(input).ok()
 }
 
-/// Lower a compound assignment in expression position: the one lowering of
-/// the compound-assignment family (`stmt::assign::compound_lower`), for
-/// consumers that cannot name the parser's parse-error type.
-// Cost: O(n), n = size of the target and source.
-pub(crate) fn lower_compound_expression(
-    node: crate::ast::parsed::CompoundAssign,
-) -> Result<crate::ast::Expr, String> {
-    stmt::assign::lower_compound_expression(node).map_err(|error| error.to_string())
-}
-
-/// Lower `TARGET .= meth(args)` (`stmt::assign::compound_lower`): the one
-/// lowering of the `.=` assignment, for a hand-built tree. `is_term` names
-/// the barewords the tree declares as sigilless terms.
-// Cost: O(n), n = size of the target and the call.
-pub(crate) fn lower_dotty_assignment(
-    node: crate::ast::parsed::CompoundAssign,
-    as_statement: bool,
-    is_term: fn(&str) -> bool,
-) -> crate::ast::Expr {
-    stmt::assign::lower_dotty(node, as_statement, is_term)
-}
-
-/// [`lower_dotty_assignment`] written as a statement.
-// Cost: O(n), n = size of the target and the call.
-pub(crate) fn lower_dotty_statement(
-    node: crate::ast::parsed::CompoundAssign,
-    is_term: fn(&str) -> bool,
-) -> crate::ast::Stmt {
-    stmt::assign::lower_dotty_statement(node, is_term)
-}
-
-/// Whether `op` is the base infix of a compound assignment the compound
-/// lowering takes (`+` of `+=`).
-// Cost: O(k), k = number of compound operators.
-pub(crate) fn is_compound_assign_op(op: &str) -> bool {
-    stmt::assign::compound_assign_op_from_name(op).is_some()
-}
-
-/// Whether `op` is a set operator a compound assignment applies (`(|)` of
-/// `(|)=`, `∪` of `∪=`).
-// Cost: O(k), k = number of set operator spellings.
-pub(crate) fn is_set_compound_op(op: &str) -> bool {
-    stmt::assign::set_op_from_spelling(op).is_some()
-}
-
-/// [`lower_compound_expression`] for a compound assignment written as a
-/// statement.
-// Cost: O(n), n = size of the target and source.
-pub(crate) fn lower_compound_statement(
-    node: crate::ast::parsed::CompoundAssign,
-) -> Result<crate::ast::Stmt, String> {
-    stmt::assign::lower_compound_statement(node).map_err(|error| error.to_string())
-}
-
-/// Reuse the parser's proven compound-assignment expansion from consumers that
-/// cannot name the parser's private parse-error type (such as RakuAST lowering).
-pub(crate) fn expand_compound_assign_expr(
-    lhs: crate::ast::Expr,
-    op: &str,
-    rhs: crate::ast::Expr,
-) -> Result<crate::ast::Expr, String> {
-    let Some(op) = compound_assign_op_from_name(op) else {
-        // `%h<a> ∪= $set`: a set operator has no `CompoundAssignOp`.
-        return stmt::assign::set_op_from_spelling(op)
-            .map(|tok| stmt::assign::build_set_compound_assign_expr(lhs, tok, rhs))
-            .ok_or_else(|| format!("unknown compound operator: {op}"));
-    };
-    if let crate::ast::Expr::Var(name) = &lhs
-        && let Some(short) =
-            stmt::assign::short_circuit_compound_assign_expr(name, lhs.clone(), op, rhs.clone())
-    {
-        return Ok(short);
-    }
-    stmt::assign::build_compound_assign_expr(lhs, op, rhs).map_err(|error| error.to_string())
-}
 pub(crate) mod stmt_ending_brace;
 pub(crate) mod term_boundary;
 pub(crate) mod term_origins;
@@ -253,10 +177,7 @@ impl Drop for NestingGuard {
 /// and for `CompiledCode::is_supply_block_body`.
 pub(crate) const SUPPLY_EMITTER_PREFIX: &str = "__mutsu_supply_emitter_";
 
-pub(crate) use stmt::nested_block_methods::{
-    hoist as hoist_nested_methods, unhoist as unhoist_nested_methods,
-};
-
+pub(crate) use primary::ident::anon_sub::invocant_param_def;
 pub(crate) use primary::var::is_known_word_infix;
 
 pub(crate) fn is_imported_function(name: &str) -> bool {
@@ -429,9 +350,10 @@ pub use stmt::simple::{
 };
 
 pub(crate) use expr::precedence::{
-    assign_to_target_expr, single_target_list_lvalue_expr, unwrap_grouped_lvalue,
+    assign_to_target_expr, assignment_ro_expr, single_target_list_lvalue_expr,
 };
-pub(crate) use stmt::assign::named_sub_lvalue_assign_expr;
+pub(crate) use expr::wrap_finished_expr;
+pub(crate) use stmt::simple_expr_stmt::lvalue::method_lvalue_target_name;
 
 /// `expr`, with an assignment a `.AST` parse kept in its RakuAST shape
 /// lowered to the executable shape the parser builds otherwise. For a parser
@@ -460,8 +382,7 @@ pub(crate) use stmt::assign::written_assignment;
 pub(crate) use stmt::control::loop_pointy_clause;
 pub(crate) use stmt::control::repeat_param_clause;
 pub(crate) use stmt::control::{
-    ElseClause, IfChainClause, given_pointy_body, if_pointy_clause, lower_if_chain, unless_clause,
-    with_then_branch,
+    given_pointy_body, pointy_param_bind_decl, pointy_topic_bind, simple_pointy_bind, topicalize,
 };
 pub(crate) use stmt::simple::{fold_use_lib_path, use_lib_args};
 pub(crate) use stmt::simple_expr_stmt::lvalue::{bind_source_metadata_expr, index_bind_expr};
@@ -492,7 +413,6 @@ pub(crate) fn set_current_language_version(version: &str) {
 use std::cell::RefCell;
 
 use crate::ast::Stmt;
-use crate::parser::parse_result::PError;
 use crate::value::RuntimeErrorCode;
 use crate::value::{RuntimeError, Value};
 

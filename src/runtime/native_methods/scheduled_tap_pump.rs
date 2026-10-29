@@ -114,6 +114,7 @@ impl Interpreter {
             quoted: false, sugar: false,
         })];
         Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
+            fixtures: None,
             package: Symbol::intern("GLOBAL"),
             name: Symbol::intern(""),
             params: crate::value::empty_params(),

@@ -424,7 +424,7 @@ impl Interpreter {
         if matches!(left.view(), ValueView::Hash(_))
             && let Some((hash_base, _)) = Self::parse_generic_constraint(&type_name_resolved)
             && (hash_base == "Hash" || hash_base == "Associative")
-            && self.container_type_metadata(left).is_none()
+            && !self.has_container_type_metadata(left)
         {
             return false;
         }

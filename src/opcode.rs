@@ -510,6 +510,11 @@ pub(crate) struct ForLoopSpec {
     /// cannot tell the two apart -- the AST stores `\v` as plain `"v"` -- so
     /// the compiler records the distinction here.
     pub(crate) param_sigilless: bool,
+    /// Whether the single named loop parameter is `is raw`: an alias of the
+    /// element's own container (a Proxy element runs its STORE on assignment),
+    /// writable like `is rw` but neither a copy (`is copy`) nor written back,
+    /// and not refused a value element (`for @values -> $p is raw`).
+    pub(crate) param_raw: bool,
     /// The body provably cannot tell the implicit topic bound to an element's
     /// own container from a copy of its value (`compiler::for_topic_alias`), so
     /// a `for @a` over a real array skips promoting every element to a

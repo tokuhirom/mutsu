@@ -568,6 +568,7 @@ impl Value {
         env: Env,
     ) -> SubData {
         SubData {
+            fixtures: None,
             package,
             name,
             // Like `body`, both halves of the signature are shared behind an

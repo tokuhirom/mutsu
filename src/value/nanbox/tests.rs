@@ -247,6 +247,7 @@ fn container_ref_itemized_roundtrips_as_the_same_value_repr_variant() {
 
 fn sample_sub() -> Gc<SubData> {
     Gc::new(SubData {
+        fixtures: None,
         package: Symbol::intern("Main"),
         name: Symbol::intern("nanbox-test-sub"),
         params: crate::value::empty_params(),
@@ -616,6 +617,7 @@ fn lazy_list_roundtrips_by_identity() {
     // `LazyList` has interior Mutex state and no meaningful Debug shape, so
     // check node identity instead of Debug equality.
     let node = Gc::new(LazyList {
+        fixtures: None,
         body: vec![],
         env: Env::new(),
         cache: Mutex::new(Some(vec![Value::int(1)])),
@@ -637,6 +639,7 @@ fn lazy_list_roundtrips_by_identity() {
         cached_no_sink: false,
         deleted_indices: Default::default(),
         descriptor: None,
+        generator_origin: None,
         itemized: false,
     });
     match roundtrip(ValueRepr::LazyList(node.clone())) {

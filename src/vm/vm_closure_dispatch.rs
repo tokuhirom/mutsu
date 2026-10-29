@@ -600,29 +600,6 @@ impl Interpreter {
                 }
             }
         }
-        // `self` is LEXICAL in Raku: a block has no invocant of its own, so
-        // a `self` inside it resolves outwards to the enclosing method's
-        // invocant — the one this closure captured. The don't-overwrite
-        // default made it *dynamic* instead, so a block that escapes into
-        // another object's method saw that object:
-        //
-        //     method execute() { $!parent.protect: { $!stmt } }
-        //
-        // ran the block inside `Conn.protect`, where the live env `self`
-        // is the Conn, and the `$!stmt` read blew up with "no such
-        // attribute on type Conn" (DBDish::mysql::StatementHandle).
-        // A method's own invocant is bound from its args further below,
-        // after this merge, so it still wins over the captured value.
-        //
-        // A single well-known key, so this is a direct lookup rather than a
-        // per-entry check folded into the scan above (#7565): `self` is never
-        // dynamic-scoped, so it always overwrites unconditionally. (If `self`
-        // also happens to be `ContainerRef`-boxed, the loop above already
-        // installed the same value — a harmless repeat, not a second answer.)
-        if let Some(v) = capture_tier.get(&crate::symbol::wk::self_()) {
-            self.env_mut()
-                .insert_sym(crate::symbol::wk::self_(), v.clone());
-        }
         // `$_` (the topic) and `$!` (the last error) are LEXICAL in a
         // block: a block lexically captures them from its creation
         // scope and must see those values when called from another
@@ -654,16 +631,6 @@ impl Interpreter {
                     self.env_mut().insert_sym(k, v.clone());
                 }
             }
-        }
-        // `self` may live in a PARENT tier of the captured env: the loop above
-        // iterates the own tier only (`Env::iter` does not walk the chain,
-        // unlike `get`), so the lexical-self install in the loop never fires
-        // for a closure captured under a scoped overlay. Resolve through the
-        // tier-walking get and force-install (interpreter-path twin in
-        // `call_sub_value`).
-        if let Some(captured_self) = data.env.get_sym(crate::symbol::wk::self_()).cloned() {
-            self.env_mut()
-                .insert_sym(crate::symbol::wk::self_(), captured_self);
         }
         // A closure's free variables are lexically bound in its captured env, so an
         // *authoritative* capture must OVERWRITE whatever the caller env happens to
@@ -841,6 +808,7 @@ impl Interpreter {
                 def_file,
             );
         }
+        self.attach_closure_fixtures(data);
         if !cc.is_routine {
             crate::runtime::return_target::record_block_return_target(
                 self.env_mut(),
@@ -938,6 +906,7 @@ impl Interpreter {
         // frame is active; putting a MarkReadonly in the body would leak from
         // native map/grep/first loops that execute the body without a call
         // frame.
+        self.adopt_function_invocant(&data.param_defs, &data.params, &args);
         self.mark_placeholder_params_readonly(&data.params);
 
         // A plain `$`-sigiled single pointy-block parameter (`-> $v { }`,
@@ -1216,6 +1185,14 @@ impl Interpreter {
             // Pre-interned seed probe (#8302): `cc.local_sym(i)` is the name's
             // Symbol from the chunk's own table, so this costs a `u32` hash per
             // local instead of re-interning the name string on every call.
+            // The fixed names are the frame record's, which has no env key
+            // (ADR-14843).
+            if let Some(sym) = cc.local_sym(i)
+                && let Some(val) = self.frame_fixture_value(sym)
+            {
+                self.locals[i] = val;
+                continue;
+            }
             if let Some(val) = self.env().get_for(local_name, cc.local_sym(i)) {
                 self.locals[i] = val.clone();
             }

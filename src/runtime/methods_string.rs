@@ -209,32 +209,9 @@ impl Interpreter {
         // built from its source so the regex-pattern branch below drives the
         // substitution (mirrors `.match`); otherwise it fell through to the
         // literal-string branch and matched its stringified `sub ...` form.
-        let pattern_owned: Value = match pattern.view() {
-            ValueView::Routine {
-                is_regex: true,
-                name,
-                package,
-                captured_regex,
-            } => {
-                // Prefer the reference's own captured identity (#8680) over a
-                // fresh by-name lookup -- see the identical comment in
-                // `methods_match_dispatch.rs`'s `.match` handling.
-                let resolved = captured_regex
-                    .and_then(|v| Self::regex_pattern_of_value(v))
-                    .or_else(|| {
-                        let qualified =
-                            crate::qualified::qualified_text(package.resolve(), name.resolve())
-                                .as_str()
-                                .to_string();
-                        self.extract_token_regex_pattern(&qualified)
-                            .or_else(|| self.extract_token_regex_pattern(&name.resolve()))
-                    });
-                match resolved {
-                    Some(p) => Value::regex(p),
-                    None => pattern.clone(),
-                }
-            }
-            _ => pattern.clone(),
+        let pattern_owned: Value = match self.named_regex_routine_pattern(pattern) {
+            Some(p) => Value::regex(p),
+            None => pattern.clone(),
         };
         let pattern = &pattern_owned;
         let replacement_val = positional.get(1).cloned();

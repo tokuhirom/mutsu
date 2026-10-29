@@ -1,4 +1,13 @@
-use super::*;
+//! The writeback constructors of an assignment (ADR-15334 slice 1): the
+//! rw-accessor writeback for a method-call target, the named-routine and
+//! callable writebacks, and the subscript-adverb target. The spelling the
+//! compiler dispatches on (`__mutsu_assign_*_lvalue`) exists here only.
+
+use super::assign_target::assign_to_target_expr;
+use crate::ast::Expr;
+use crate::parser::wrap_finished_expr;
+use crate::symbol::Symbol;
+use crate::value::Value;
 
 pub(crate) fn method_lvalue_assign_expr(
     target: Expr,
@@ -47,14 +56,14 @@ fn method_lvalue_assign_expr_with_intent(
     // the accessor call. Preserve that language-level value here so
     // `$obj.rw-accessor = * + 1` stores a WhateverCode rather than evaluating
     // `Whatever + 1` immediately.
-    let value = force_positional_pairs(crate::parser::expr::wrap_finished_expr(value));
+    let value = force_positional_pairs(wrap_finished_expr(value));
     // `$(EXPR) = value` lowers `$(EXPR)` to `EXPR.item`, but the item
     // contextualizer is transparent as an lvalue: it names the same container as
     // `EXPR`. Assign straight through to `EXPR` (`$(@a[0]) = ...` writes `@a[0]`)
     // instead of dispatching a `.item` method-lvalue, which has no writable slot
     // and threw X::Assignment::RO.
     if method_name == "item" && method_args.is_empty() {
-        return crate::parser::expr::precedence::assign_to_target_expr(target, value);
+        return assign_to_target_expr(target, value);
     }
     // A Slip RHS is the value assigned to the accessor, not an interpolation
     // into this generated helper call. Group it so the call compiler preserves
@@ -67,6 +76,27 @@ fn method_lvalue_assign_expr_with_intent(
         } => Expr::Grouped(Box::new(value)),
         other => other,
     };
+    method_lvalue_call(
+        target,
+        target_var_name,
+        method_name,
+        method_args,
+        value,
+        preserve_hash_entries,
+    )
+}
+
+/// The writeback call itself, for a caller that has already prepared `value`
+/// (`$x .= foo` over a set operator builds its combined value first).
+// Cost: O(n), n = size of the target, arguments and value.
+pub(crate) fn method_lvalue_call(
+    target: Expr,
+    target_var_name: Option<String>,
+    method_name: String,
+    method_args: Vec<Expr>,
+    value: Expr,
+    preserve_hash_entries: bool,
+) -> Expr {
     let mut args = vec![
         target,
         Expr::Literal(Value::str(method_name)),
@@ -85,6 +115,39 @@ fn method_lvalue_assign_expr_with_intent(
         args,
         listop: false,
     }
+}
+
+/// The pieces of a method-lvalue writeback call [`method_lvalue_call`] built,
+/// or `None` for any other expression. `temp $obj.method = value` saves and
+/// restores through the same accessor, so it reads the call back apart.
+// Cost: O(1).
+pub(crate) fn method_lvalue_call_parts(expr: &Expr) -> Option<MethodLvalueParts<'_>> {
+    let Expr::Call { name, args, .. } = expr else {
+        return None;
+    };
+    if name != "__mutsu_assign_method_lvalue" || args.len() < 4 {
+        return None;
+    }
+    let Expr::Literal(method_name) = &args[1] else {
+        return None;
+    };
+    let Expr::ArrayLiteral(method_args) = &args[2] else {
+        return None;
+    };
+    Some(MethodLvalueParts {
+        invocant: &args[0],
+        method_name: method_name.as_str()?,
+        method_args,
+        value: &args[3],
+    })
+}
+
+/// See [`method_lvalue_call_parts`].
+pub(crate) struct MethodLvalueParts<'a> {
+    pub(crate) invocant: &'a Expr,
+    pub(crate) method_name: &'a str,
+    pub(crate) method_args: &'a [Expr],
+    pub(crate) value: &'a Expr,
 }
 
 /// A method-lvalue writeback is an internal positional call, not a user call

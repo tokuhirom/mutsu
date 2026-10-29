@@ -930,6 +930,14 @@ impl Symbol {
         Symbol(id)
     }
 
+    /// Whether this is one of the three names a method frame's record owns
+    /// (`self`, `?CLASS`, `?ROLE`): no `Env` key stores them (ADR-14843).
+    // Cost: O(1).
+    #[inline]
+    pub fn is_frame_fixture(self) -> bool {
+        self == wk::self_() || self == wk::class_decl() || self == wk::role_decl()
+    }
+
     /// Intern a string and return its `Symbol`.  If the string has already been
     /// interned, the existing symbol is returned (idempotent).
     pub fn intern(s: &str) -> Symbol {

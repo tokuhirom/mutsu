@@ -1572,7 +1572,7 @@ impl Interpreter {
                     // preserves destination metadata, so tagging only the incoming
                     // value would lose the declaration when the destination is
                     // still plain (`has CSV::Field @.fields` is one example).
-                    let existing = if self.container_type_metadata(&existing).is_none()
+                    let existing = if !self.has_container_type_metadata(&existing)
                         && let Some(tc) =
                             self.get_attr_type_constraint(&class_name.resolve(), method)
                         && !matches!(tc.as_str(), "Mu" | "Any")
@@ -1609,10 +1609,10 @@ impl Interpreter {
                 // instance is reachable through other aliases.
                 attributes.commit_attrs(updated);
                 if let Some(var_name) = target_var {
-                    self.env.insert_through(
-                        var_name.to_string(),
-                        Value::instance_sharing_cell(&attributes, class_name, target_id),
-                    );
+                    let shared = Value::instance_sharing_cell(&attributes, class_name, target_id);
+                    if !self.store_invocant_by_name(var_name, &shared) {
+                        self.env.insert_through(var_name.to_string(), shared);
+                    }
                     // Also update attribute env variables so compiled method
                     // writeback picks up the change (e.g. $.cnt += 4 inside a method)
                     self.env
@@ -2056,7 +2056,7 @@ impl Interpreter {
             saved.push((key.clone(), this.env.get(&key).cloned()));
             this.env.insert(key, val);
         };
-        bind(self, "self".to_string(), target.clone());
+        let fixtures_mark = self.begin_scoped_invocant(target.clone());
         let mut ai = 0;
         for pd in method_def.param_defs.iter() {
             if pd.is_invocant || pd.named || pd.slurpy {
@@ -2107,6 +2107,7 @@ impl Interpreter {
             )
         })();
         restore(self, saved);
+        self.end_scoped_fixtures(fixtures_mark);
         Ok(Some(recur?))
     }
 }

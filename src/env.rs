@@ -102,6 +102,13 @@ pub(crate) fn global_base_contains(name: &str) -> bool {
 /// registry misses. See `exec_register_sub_op`.
 pub(crate) const BLOCK_LEXICAL_SUB_PREFIX: &str = "__mutsu_block_lexical_sub::";
 
+/// Env-key prefix under which a class body's `my method` stores its `Sub`
+/// value. Unlike a block `sub` (whose registry entry stays authoritative while
+/// the block is live), the methods of the class are closures over the body and
+/// the lexical method shadows a same-named routine registered globally: `&STORE`
+/// in a sibling method is the class's own `my method STORE`.
+pub(crate) const CLASS_LEXICAL_METHOD_PREFIX: &str = "__mutsu_class_lexical_method::";
+
 /// The env key / local-slot name of a **user lexical** spelled `$self`.
 ///
 /// `self` is a *term* in Raku, not a `$`-sigiled variable, and mutsu binds a
@@ -793,6 +800,18 @@ fn file_sym_of(v: &Value) -> Option<Symbol> {
     match v.view() {
         crate::value::ValueView::Str(s) => Some(Symbol::intern(s.as_str())),
         _ => None,
+    }
+}
+
+/// A pinned overlay tier: the values an [`Env`] overlay held when
+/// [`Env::pin_overlay`] was called, immutable for as long as the pin lives.
+pub(crate) struct OverlayPin(Arc<Tier>);
+
+impl OverlayPin {
+    /// The pinned overlay's own binding for `key`.
+    // Cost: O(1).
+    pub(crate) fn get(&self, key: Symbol) -> Option<&Value> {
+        self.0.get(&key)
     }
 }
 
@@ -2304,6 +2323,29 @@ impl Env {
     /// `exec_get_local_op`'s lazy-sync check).
     pub(crate) fn overlay_get_sym(&self, key: Symbol) -> Option<&Value> {
         self.inner.get(&key)
+    }
+
+    /// Pin this env's own overlay tier so a later [`Self::overlay_unchanged_since`]
+    /// can prove that nothing wrote to it, and so the pre-call values stay
+    /// readable through [`OverlayPin::get`] without having been copied.
+    ///
+    /// The pin holds a second strong reference, so every write to the overlay
+    /// while it is held goes through the copy-on-write path and leaves the
+    /// pinned tier untouched: pointer equality of the two tiers is then an
+    /// exact "no entry was added, removed or changed". `None` for a flat env
+    /// over a capture fallback, whose iteration is a merged view the overlay
+    /// alone does not describe.
+    // Cost: O(1), one Arc bump.
+    pub(crate) fn pin_overlay(&self) -> Option<OverlayPin> {
+        self.fallback
+            .is_none()
+            .then(|| OverlayPin(Arc::clone(&self.inner)))
+    }
+
+    /// Whether the overlay still is the tier `pin` was taken from.
+    // Cost: O(1).
+    pub(crate) fn overlay_unchanged_since(&self, pin: &OverlayPin) -> bool {
+        self.fallback.is_none() && Arc::ptr_eq(&self.inner, &pin.0)
     }
 
     /// Check whether two `Env` values point to the same underlying overlay map.

@@ -749,6 +749,11 @@ impl Interpreter {
             if crate::value::attr_twigil_base(source_name).is_some() {
                 continue;
             }
+            // The caller's `self`, `?CLASS` and `?ROLE` are its frame record's
+            // (ADR-14843), not variables to write back into.
+            if matches!(source_name.as_str(), "self" | "?CLASS" | "?ROLE") {
+                continue;
+            }
             if let Some(updated) = self.env.get(param_name).cloned() {
                 // When the caller's variable already holds a shared `ContainerRef`
                 // cell (e.g. an inner `$a := $arg` re-bound the rw param into the
@@ -869,6 +874,8 @@ impl Interpreter {
         debug_assert_eq!(name_sym.as_str(), name);
         // `insert_sym_noting`, not `insert_sym`: a placeholder parameter is
         // stored under its `^`-twigil name, which arms `PLACEHOLDER_KEY_SEEN`.
+        // `self` of a method run as a function is the compiled body's `self`
+        // slot, answered by the frame accessors; it has no env key (ADR-14843).
         self.env.insert_sym_noting(name_sym, value.clone());
         // A dynamic scalar parameter (`sub f($*OUT)`) binds both env spellings
         // of the name, as `my $*OUT` does through `set_env_with_main_alias`:
@@ -896,7 +903,7 @@ impl Interpreter {
             // with `.new(:x(Nil))` leaves `$!x` as `Any`).
             let attr_value = if name.starts_with('!')
                 && value.is_nil()
-                && let Some(self_val) = self.env_self_value()
+                && let Some(self_val) = self.frame_invocant()
                 && let ValueView::Instance { class_name, .. } = self_val.view()
             {
                 let class_name = class_name.resolve();
@@ -909,7 +916,7 @@ impl Interpreter {
                 .insert(format!("!{}", attr_name), attr_value.clone());
             self.env
                 .insert(format!(".{}", attr_name), attr_value.clone());
-            if let Some(self_val) = self.env_self_value()
+            if let Some(self_val) = self.frame_invocant()
                 && let ValueView::Instance { attributes, .. } = self_val.view()
             {
                 // Write the one attribute in place through `self`'s shared cell
@@ -1067,7 +1074,10 @@ impl Interpreter {
     pub(crate) fn bind_type_capture(&mut self, name: &str, value: &Value) {
         TYPE_CAPTURE_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
         let captured = self.captured_type_object_of(value);
-        self.env.insert(name.to_string(), captured.clone());
+        // `?CLASS` / `?ROLE` are the frame record's, not env keys (ADR-14843).
+        if !matches!(name, "?CLASS" | "?ROLE") {
+            self.env.insert(name.to_string(), captured.clone());
+        }
         let pkg = self.current_package_sym();
         if pkg != crate::symbol::wk::global_package()
             && !name.starts_with(['$', '@', '%', '&', '!', '.', '?', '*', '/'])

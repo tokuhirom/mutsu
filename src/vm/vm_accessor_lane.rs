@@ -24,15 +24,24 @@
 //!   layout ever built;
 //! * **per-instance state** a probe could read is ruled out on every hit: the
 //!   instance must have no undeclared attribute (an exception's thrown
-//!   message, a builtin base's attribute), the slot must be present, and its
-//!   value must be a scalar (an `@.x` / `%.x` read attaches container
-//!   metadata); and on the install side the class families the plain-method
+//!   message, a builtin base's attribute), the slot must be present, and an
+//!   Array/Hash value must already carry the element type its attribute
+//!   declares (an `@.x` / `%.x` read otherwise attaches it, on the full path); and on the install side the class families the plain-method
 //!   lane refuses (not declared by the program, CStruct, `IO::Handle` /
 //!   `IO::Path`) and a deprecated attribute (whose read warns) never enter.
 //!
 //! Anything else falls through to the full path unchanged.
 
 use super::*;
+
+/// `accessor_lane` entry layout: the low bits are the layout slot, the top
+/// two are what the full path would decide for an Array/Hash value.
+const LANE_SLOT_MASK: u32 = (1 << 29) - 1;
+/// The accessor is `is rw`: an aggregate is returned as stored.
+const LANE_RW: u32 = 1 << 30;
+/// The attribute declares an element type, so an aggregate that does not carry
+/// it yet takes the full path (which tags it).
+const LANE_NEEDS_META: u32 = 1 << 29;
 
 impl Interpreter {
     /// The attribute value a lane hit answers for the receiver on top of the
@@ -52,10 +61,24 @@ impl Interpreter {
             return None;
         }
         let layout_id = map.layout()?.id();
-        let slot = *self.caches.accessor_lane.get(&(layout_id, method_sym))?;
-        let value = map.slot_vivify(slot as usize)?.deref_container();
+        let entry = *self.caches.accessor_lane.get(&(layout_id, method_sym))?;
+        let value = map
+            .slot_vivify((entry & LANE_SLOT_MASK) as usize)?
+            .deref_container();
         if matches!(value.view(), ValueView::Array(..) | ValueView::Hash(_)) {
-            return None;
+            // An aggregate read is the full path's: decontainerize unless the
+            // accessor is `is rw`, and hand back a container that already
+            // carries its declared element type. One that does not (a bare
+            // container stored before the type was known) still goes the full
+            // path, which tags it.
+            if entry & LANE_NEEDS_META != 0 && !self.has_container_type_metadata(&value) {
+                return None;
+            }
+            return Some(if entry & LANE_RW != 0 {
+                value
+            } else {
+                Self::accessor_read_value('$', value)
+            });
         }
         Some(value)
     }
@@ -96,9 +119,8 @@ impl Interpreter {
                 return;
             }
             layout.slot_of(key).and_then(|slot| {
-                let value = map.slot(slot)?.deref_container();
-                let scalar = !matches!(value.view(), ValueView::Array(..) | ValueView::Hash(_));
-                (scalar && slot <= u32::MAX as usize).then_some((layout.id(), slot as u32))
+                map.slot(slot)?;
+                (slot <= LANE_SLOT_MASK as usize).then_some((layout.id(), slot as u32))
             })
         };
         let Some((layout_id, slot)) = resolved else {
@@ -113,9 +135,26 @@ impl Interpreter {
         {
             return;
         }
+        // What the full path decides for an Array/Hash value, settled once for
+        // the declaration: `is rw` hands the container back as stored; a `@`/`%`
+        // attribute with an element type tags a container that lacks one.
+        let cn = class_name.resolve();
+        let shape = self.find_public_class_attribute(&cn, method);
+        let is_rw = shape.as_ref().is_some_and(|a| a.is_rw);
+        let needs_meta = shape.as_ref().is_some_and(|a| matches!(a.sigil, '@' | '%'))
+            && self
+                .get_attr_type_constraint(&cn, method)
+                .is_some_and(|tc| !matches!(tc.as_str(), "Mu" | "Any"));
+        let mut entry = slot;
+        if is_rw {
+            entry |= LANE_RW;
+        }
+        if needs_meta {
+            entry |= LANE_NEEDS_META;
+        }
         self.refresh_method_caches_for_generation();
         self.caches
             .accessor_lane
-            .insert((layout_id, method_sym), slot);
+            .insert((layout_id, method_sym), entry);
     }
 }

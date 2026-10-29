@@ -92,7 +92,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
     }
 
     let (rest, mut body) = parse_block_body_no_self(rest)?;
-    crate::parser::stmt::nested_block_methods::hoist(&mut body);
+    crate::rakuast::nested_methods::hoist(&mut body);
     let AnonClassClauses {
         mut parents,
         does_roles,
@@ -275,7 +275,7 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("'{' for anonymous grammar"));
     }
     let (rest, mut body) = parse_block_body_no_self(rest)?;
-    crate::parser::stmt::nested_block_methods::hoist(&mut body);
+    crate::rakuast::nested_methods::hoist(&mut body);
     // Same `also is Base` extraction the statement path does: this is the route a
     // named `grammar G { also is Base }.parse(...)` takes.
     let mut parents = vec!["Grammar".to_string()];

@@ -1,5 +1,3 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use super::super::expr::{
     QuotedMethodName, expression, expression_no_sequence, expression_no_word_logical,
     parse_quoted_method_name,
@@ -12,12 +10,10 @@ use super::super::primary::parse_call_arg_list;
 
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::symbol::Symbol;
-use crate::token_kind::{MetaAssignIdentity, TokenKind};
+use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::{ident, parse_statement_modifier};
-
-static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 /// Strip a leading atomic compound-assignment operator, returning the rest of
 /// the input and whether the delta must be negated.
@@ -95,50 +91,7 @@ pub(crate) fn atomic_compound_call(target: Expr, rhs: Expr, negate: bool) -> Exp
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CompoundAssignOp {
-    Comma,
-    DefinedOr,
-    LogicalOr,
-    LogicalAnd,
-    Add,
-    Sub,
-    Concat,
-    Mul,
-    Div,
-    Mod,
-    Power,
-    Repeat,
-    ListRepeat,
-    BitOr,
-    BitAnd,
-    BitXor,
-    BitShiftLeft,
-    BitShiftRight,
-    Min,
-    Max,
-    KeywordOr,
-    KeywordAnd,
-    KeywordXor,
-    Orelse,
-    Andthen,
-    Notandthen,
-    IntDiv,
-    Lcm,
-    Gcd,
-    StrBitAnd,
-    StrBitOr,
-    StrBitXor,
-    StrShiftLeft,
-    StrShiftRight,
-    BoolBitAnd,
-    BoolBitOr,
-    BoolBitXor,
-    XorXor,
-    JuncAny,
-    JuncAll,
-    JuncOne,
-}
+pub(crate) use crate::rakuast::compound::op::CompoundAssignOp;
 
 mod assign_stmt;
 
@@ -160,9 +113,6 @@ pub(crate) fn written_assignment_stmt(target: Expr, source: Expr) -> Stmt {
 }
 mod bracket;
 mod comma;
-mod compound_expr;
-mod compound_lower;
-mod lvalue;
 mod op;
 mod paren;
 mod set_compound;
@@ -170,41 +120,34 @@ mod sink;
 mod try_assign;
 
 // ---- Re-exports preserving each public function's original visibility ----
+pub(crate) use crate::rakuast::compound::lower::{
+    lower_compound_expression, written_bracketed_meta_assignment, written_compound_assignment,
+    written_compound_assignment_stmt, written_dotty_assignment, written_meta_assignment,
+    written_meta_assignment_stmt, written_reverse_assignment, written_routine_compound_assignment,
+    written_set_assignment, written_topic_dotty_assignment,
+};
 pub(in crate::parser) use assign_stmt::assign_stmt;
 pub(in crate::parser) use comma::{
     comma_list_ends_here, normalize_comma_list_items, parse_comma_or_expr,
     parse_comma_or_expr_item_no_word_logical, parse_comma_or_expr_no_word_logical,
 };
-pub(crate) use compound_lower::{
-    lower_compound_expression, lower_compound_statement, lower_dotty, lower_dotty_statement,
-    written_bracketed_meta_assignment, written_compound_assignment,
-    written_compound_assignment_stmt, written_dotty_assignment, written_meta_assignment,
-    written_meta_assignment_stmt, written_reverse_assignment, written_routine_compound_assignment,
-    written_set_assignment, written_topic_dotty_assignment,
-};
 pub(in crate::parser) use try_assign::{paren_assign_rhs_is_complete, try_parse_assign_expr};
 
+pub(crate) use crate::rakuast::compound::expansion::{
+    DOTTY_ASSIGN_OP, dotty_assign_marker, is_dotty_assign,
+};
+pub(crate) use crate::rakuast::compound::op::{
+    compound_assign_op_from_name, compound_assigned_value_expr, short_circuit_compound_assign_expr,
+};
+pub(crate) use crate::rakuast::compound::set::set_op_from_spelling;
+pub(crate) use crate::rakuast::{
+    callable_lvalue_assign_expr, method_lvalue_assign_expr, subscript_adverb_lvalue_assign_expr,
+};
 pub(crate) use bracket::parse_bracket_meta_assign_op;
-pub(crate) use compound_expr::{
-    DOTTY_ASSIGN_OP, build_compound_assign_expr, build_custom_compound_assign_expr,
-    build_meta_assign_expr, compound_assign_marker, dotty_assign_marker, is_dotty_assign,
-    preserve_compound_assign, reverse_assign_marker, zip_assign_call,
-};
-pub(crate) use lvalue::{
-    callable_lvalue_assign_expr, dynamic_method_lvalue_assign_expr, method_lvalue_assign_expr,
-    method_lvalue_roundtrip_assign_expr, named_sub_lvalue_assign_expr,
-    subscript_adverb_lvalue_assign_expr,
-};
-pub(crate) use op::{ShortCircuitKeep, short_circuit_keep, short_circuit_test};
 pub(crate) use op::{
-    autoviv_routine_compound_lhs, autoviv_set_compound_lhs, compound_assign_op_from_name,
-    compound_assigned_value_expr, parse_compound_assign_op, parse_custom_compound_assign_op,
-    parse_meta_compound_assign_op, short_circuit_compound_assign_expr,
+    parse_compound_assign_op, parse_custom_compound_assign_op, parse_meta_compound_assign_op,
 };
 pub(crate) use paren::{looks_like_parenthesized_assignment, parenthesized_assign_expr};
-pub(crate) use set_compound::{
-    build_set_compound_assign_expr, parse_set_compound_assign_op, preserve_set_compound_assign,
-    set_op_from_spelling,
-};
+pub(crate) use set_compound::parse_set_compound_assign_op;
 pub(crate) use sink::{parse_assign_expr_or_comma, parse_assign_expr_or_comma_no_word_logical};
 pub(crate) use try_assign::{parse_colon_args, parse_colon_args_with};

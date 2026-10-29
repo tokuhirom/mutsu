@@ -1395,6 +1395,7 @@ impl Compiler {
         let mut sub_compiler = Compiler::new();
         sub_compiler.rw_tail = rw_tail;
         sub_compiler.promoted_expr_decl_names = promoted_decls.iter().cloned().collect();
+        sub_compiler.decl_initializer_aggregates = self.decl_initializer_aggregates.clone();
         self.inherit_fold_ctx(&mut sub_compiler);
         self.inherit_outer_code_var_names(&mut sub_compiler);
         self.inherit_enclosing_scopes(&mut sub_compiler);
@@ -1976,7 +1977,27 @@ impl Compiler {
                 name.trim_start_matches(['$', '@', '%', '&']),
             ));
         }
+        // An aggregate whose declaration's initializer is being compiled is
+        // stored AFTER this closure is created: an upvalue snapshot would keep
+        // the pre-store container (#15387).
+        for name in &sub_compiler.decl_initializer_aggregates {
+            runtime_bound.insert(crate::symbol::Symbol::intern(name));
+        }
         sub_compiler.code.compute_upvalues(&runtime_bound);
+        // ... nor captured by value at all: the closure reads the declared
+        // container by name, which is what a name `compute_free_vars` does not
+        // consider capturable (`@H`) already does (#15387).
+        if !sub_compiler.decl_initializer_aggregates.is_empty() {
+            let skipped: Vec<crate::symbol::Symbol> = sub_compiler
+                .decl_initializer_aggregates
+                .iter()
+                .map(|n| crate::symbol::Symbol::intern(n))
+                .collect();
+            sub_compiler
+                .code
+                .free_var_syms
+                .retain(|sym| !skipped.contains(sym));
+        }
         // See the twin call in `compile_sub_body` (#10827).
         self.absorb_outer_captures(&sub_compiler.code);
         sub_compiler.code

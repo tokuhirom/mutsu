@@ -468,14 +468,7 @@ fn autoincrement_expr(
                 let r = &rest[marker_len..];
                 let (r, _) = ws(r)?;
                 let (r, arg) = prefix_expr(r)?;
-                return Ok((
-                    r,
-                    Expr::Call {
-                        name: Symbol::intern("__mutsu_hyper_prefix"),
-                        args: vec![Expr::Literal(Value::str(symbol.to_string())), arg],
-                        listop: false,
-                    },
-                ));
+                return Ok((r, crate::rakuast::hyper_prefix_expr(symbol, arg)));
             }
         }
         // Recurse to allow nested ++/-- (e.g. ++++$x)

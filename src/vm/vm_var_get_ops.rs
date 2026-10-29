@@ -235,7 +235,7 @@ impl Interpreter {
         if name == "self"
             && let Some(v) = self
                 .exported_sub_latest_self()
-                .or_else(|| self.env_self_value())
+                .or_else(|| self.frame_invocant())
         {
             self.stack.push(v);
             return Ok(());
@@ -598,7 +598,12 @@ impl Interpreter {
                 .cloned();
             preferred_module_bareword =
                 active_package_term.or_else(|| self.running_module_bareword(name));
+            // A term the caller bound is no meaning for a module's own type
+            // of the name (`own_package_type_over_foreign_term`, below).
             preferred_module_bareword.is_none()
+                && self
+                    .own_package_type_over_foreign_term(name, name_sym)
+                    .is_none()
         }) {
             // A sigil-less constant live in this scope's `env` — declared here
             // or imported by a block-scoped `use` — shadows a same-named type

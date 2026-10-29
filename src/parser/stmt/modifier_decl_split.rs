@@ -87,7 +87,7 @@ pub(crate) fn topical_declaration(
 }
 
 /// The declaration of a signature declaration the parser holds as written
-/// (`desugar::pending`).
+/// (`rakuast::signature_expand::pending`).
 // Cost: O(1).
 fn written_signature_declaration(stmt: &Stmt) -> Option<&SignatureDecl> {
     match stmt {
@@ -299,7 +299,7 @@ fn split_signature_decl(
             with_kind: None,
         };
         return Ok(Some(Stmt::SyntheticBlock(vec![
-            super::decl::destructure::desugar::signature_decl(bare)?,
+            crate::rakuast::signature_expand::signature_decl(bare)?,
             gated,
         ])));
     }
@@ -317,15 +317,11 @@ fn split_signature_decl(
         args: vec![init.rhs.clone()],
         listop: false,
     };
-    let assign = Stmt::Expr(Expr::Call {
-        name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-        args: vec![
-            Expr::ArrayLiteral(targets),
-            Expr::ArrayLiteral(Vec::new()),
-            rhs,
-        ],
-        listop: false,
-    });
+    let assign = Stmt::Expr(crate::rakuast::callable_lvalue_assign_expr(
+        Expr::ArrayLiteral(targets),
+        Vec::new(),
+        rhs,
+    ));
     let gated = Stmt::If {
         cond: effective_cond.clone(),
         then_branch: vec![assign],
@@ -336,7 +332,7 @@ fn split_signature_decl(
         with_kind: None,
     };
     Ok(Some(Stmt::SyntheticBlock(vec![
-        super::decl::destructure::desugar::signature_decl(bare)?,
+        crate::rakuast::signature_expand::signature_decl(bare)?,
         gated,
     ])))
 }
@@ -349,7 +345,7 @@ fn split_signature_decl(
 /// `is rw` binds), which keeps the generic modifier wrapping.
 fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, RuntimeError> {
     let Stmt::SyntheticBlock(stmts) =
-        super::decl::destructure::desugar::signature_decl(decl.clone())?
+        crate::rakuast::signature_expand::signature_decl(decl.clone())?
     else {
         return Ok(None);
     };

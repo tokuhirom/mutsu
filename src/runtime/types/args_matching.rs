@@ -253,7 +253,10 @@ impl Interpreter {
         };
         let saved = self.env.clone();
         self.env.insert_sym(crate::symbol::wk::topic(), inv.clone());
-        if !pd.name.is_empty() {
+        // The invocant's `where` reads it as `self`: a scoped record, not an
+        // env key (ADR-14843).
+        let scope = (pd.name == "self").then(|| self.begin_scoped_invocant(inv.clone()));
+        if !pd.name.is_empty() && pd.name != "self" {
             self.env.insert(pd.storage_name().into_owned(), inv.clone());
         }
         let ev = self.eval_param_where_in_candidate_package(pd, package);
@@ -266,6 +269,9 @@ impl Interpreter {
             }
             _ => self.where_smartmatch(inv, ev),
         };
+        if let Some(mark) = scope {
+            self.end_scoped_fixtures(mark);
+        }
         self.restore_env_preserving_dynamics(saved);
         ok
     }

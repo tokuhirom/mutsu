@@ -331,6 +331,12 @@ pub(crate) fn walk_parsed_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &
             v.visit_expr(&a.value);
         }
         ParsedExpr::InlineSubset(declaration) => v.visit_stmt(declaration),
+        ParsedExpr::HyperPrefix(p) => v.visit_expr(&p.operand),
+        ParsedExpr::AtomicVar(a) => {
+            if let crate::ast::parsed::AtomicVar::Store { value, .. } = a {
+                v.visit_expr(value);
+            }
+        }
     }
 }
 
@@ -352,6 +358,12 @@ pub(crate) fn walk_parsed_expr_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut P
             v.visit_expr_mut(&mut a.value);
         }
         ParsedExpr::InlineSubset(declaration) => v.visit_stmt_mut(declaration),
+        ParsedExpr::HyperPrefix(p) => v.visit_expr_mut(&mut p.operand),
+        ParsedExpr::AtomicVar(a) => {
+            if let crate::ast::parsed::AtomicVar::Store { value, .. } = a {
+                v.visit_expr_mut(value);
+            }
+        }
     }
 }
 

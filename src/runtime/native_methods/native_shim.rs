@@ -76,6 +76,7 @@ pub(in crate::runtime) fn native_method_shim(
     let mut env = Env::new();
     env.insert(SHIM_INSTANCE.to_string(), instance);
     Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
+        fixtures: None,
         package: Symbol::intern("GLOBAL"),
         name: Symbol::intern(""),
         params: std::sync::Arc::new(params),

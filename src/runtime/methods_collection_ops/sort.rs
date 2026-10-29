@@ -702,6 +702,31 @@ impl Interpreter {
 /// other arg is taken as the callable. Shaped multi-dim arrays sort over leaves;
 /// non-collection targets pass through unchanged. The VM gates which target shapes
 /// it accepts before calling here (Shaped / Instance / Supply still fall back).
+/// The `X::Multi::NoMatch` of `target.sort(*)`: `Any.sort` and the list
+/// type's own `sort` have no candidate for a `Whatever` comparator.
+// Cost: O(1).
+pub(crate) fn sort_whatever_no_match(target: &Value) -> RuntimeError {
+    let type_name = crate::runtime::utils::value_type_name(target);
+    let mut msg = format!(
+        "Cannot resolve caller sort({type_name}:D: Whatever:D); none of these signatures matches:\n    (Any:U $:: |c)\n    (Any:D $:: *%_)\n    (Any:D $:: &by, *%_)"
+    );
+    if matches!(
+        target.view(),
+        ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..)
+    ) {
+        msg.push_str(
+            "\n    (List:D $:: *%_ --> Seq:D)\n    (List:D $:: &by?, :$k!, *%_)\n    (List:D $:: &by, *%_ --> Seq:D)",
+        );
+    }
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("name".to_string(), Value::str("sort".to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
 pub(crate) fn sort_value_generic(
     caller: &mut dyn SortCaller,
     target: Value,
@@ -728,6 +753,13 @@ pub(crate) fn sort_value_generic(
         }
     }
 
+    // A bare Whatever is not a comparator: no `sort` candidate takes it.
+    if callable
+        .as_ref()
+        .is_some_and(|c| matches!(c.view(), ValueView::Whatever))
+    {
+        return Err(sort_whatever_no_match(&target));
+    }
     let arity = caller.callable_arity(callable.as_ref())?;
     let callable_ref = callable.as_ref();
 
