@@ -369,7 +369,6 @@ impl Interpreter {
             | OpCode::DoGivenExpr { .. }
             | OpCode::Eager
             | OpCode::EndBeginPrologue
-            | OpCode::RunCheckCode
             | OpCode::GetHookExport { .. }
             | OpCode::GetImportedVar { .. }
             | OpCode::ImportModule { .. }
@@ -390,6 +389,7 @@ impl Interpreter {
             | OpCode::RegisterEnum(..)
             | OpCode::ResetStateLocals { .. }
             | OpCode::RoutineScope { .. }
+            | OpCode::RunCheckCode
             | OpCode::StateVarInitGuard(..)
             | OpCode::SucceedBarrier { .. }
             | OpCode::ThrowUndeclaredRoutine(..)
