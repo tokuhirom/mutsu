@@ -728,30 +728,14 @@ impl Interpreter {
                     && !crate::ast::param_names_declare_self_lexical(params)
             }
         };
-        let mut positional = args
-            .iter()
-            .filter(|v| !matches!(v.view(), ValueView::Pair(_, _)));
-        if implicit {
-            return positional.next().cloned();
+        if !implicit {
+            // A `$self` parameter is a user lexical (ADR-0061): the frame's
+            // `self` is never the argument bound to it.
+            return None;
         }
-        // A plain routine's own `$self` parameter (`sub ($self) { ... }`) is
-        // the `self` its body names (ADR-0061): it takes the argument bound to
-        // it, so the creator's record never answers for it.
-        if param_defs.is_empty() && crate::ast::param_names_declare_self_lexical(params) {
-            let index = params.iter().position(|p| p == "self")?;
-            return positional.nth(index).cloned();
-        }
-        let mut index = 0usize;
-        for pd in param_defs {
-            if pd.named || pd.slurpy || pd.double_slurpy {
-                continue;
-            }
-            if pd.declares_self_lexical() {
-                return positional.nth(index).cloned();
-            }
-            index += 1;
-        }
-        None
+        args.iter()
+            .find(|v| !matches!(v.view(), ValueView::Pair(_, _)))
+            .cloned()
     }
 
     /// The invocant of the frame just pushed for a call of a method run as a

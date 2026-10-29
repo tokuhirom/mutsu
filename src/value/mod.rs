@@ -1919,7 +1919,10 @@ impl SubData {
     /// parameter is spelled bare there but binds its term key (ADR-12441).
     // Cost: O(d), d = param_defs.
     pub(crate) fn param_storage_sym(&self, p: &str) -> Symbol {
-        if self
+        // A block's `-> $self` is the user lexical, not the `self` term.
+        if p == "self" {
+            crate::symbol::wk::lex_self()
+        } else if self
             .param_defs
             .iter()
             .any(|pd| pd.sigilless && pd.name == p)

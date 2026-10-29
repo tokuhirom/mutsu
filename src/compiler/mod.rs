@@ -1613,20 +1613,6 @@ pub(crate) struct Compiler {
     /// placeholder. This is set only while compiling that closure and is
     /// resolved through the lexical `OUTERS::<%_>` path.
     pub(crate) capture_enclosing_method_named_args: bool,
-    /// True when the enclosing routine's own signature declares a parameter
-    /// spelled `$self` — an explicit invocant (`method m($self: $n)`,
-    /// `method symbol(::?CLASS $self: ...)`) or an ordinary parameter
-    /// (`sub ($self)`, `-> $self, $x`). A parser-synthesized *anonymous*
-    /// invocant (`method () {}`, `method (Foo:D:)`, `method (::?CLASS:)`) is
-    /// excluded: it is named `self` only because that is the invocant's env key,
-    /// and it declares no lexical.
-    ///
-    /// Such a parameter is named `self` in `ParamDef`. Plain routines bind it
-    /// under the ordinary `"self"` key, while methods keep the parser's
-    /// reserved [`crate::env::LEX_SELF`] key separate from their implicit
-    /// invocant. Inherited by nested blocks and closures, exactly like the
-    /// lexical scope it describes.
-    pub(crate) self_is_signature_param: bool,
     /// True while compiling a terminal subscript whose consumer settles its own
     /// writability from the element it receives — the RHS of a `:=`
     /// DECLARATION (`my \a := ...`, `my $x := ...`) and a `return-rw` operand —
@@ -2164,7 +2150,6 @@ impl Compiler {
             lexically_in_block: false,
             lexically_in_method: false,
             capture_enclosing_method_named_args: false,
-            self_is_signature_param: false,
             raw_list_elem_terminal: false,
             do_stmt_yields_value: false,
             scalar_bind_autovivify: false,
@@ -3056,6 +3041,7 @@ impl Compiler {
             }
         } else {
             for param in params {
+                let param = Self::param_slot_name(param, params);
                 if let Some(&slot) = self.local_map.get(param) {
                     slots.push(slot);
                 }
@@ -3201,6 +3187,17 @@ impl Compiler {
             .filter(move |p| !param_defs.iter().any(|pd| pd.sigilless && pd.name == **p))
     }
 
+    /// The local-slot name of the bare parameter name `param` in `params`: a
+    /// `-> $self` parameter is the user lexical [`crate::env::LEX_SELF`], not the
+    /// `self` term.
+    fn param_slot_name<'a>(param: &'a str, params: &[String]) -> &'a str {
+        if param == "self" && crate::ast::param_names_declare_self_lexical(params) {
+            crate::env::LEX_SELF
+        } else {
+            param
+        }
+    }
+
     fn declare_param(&mut self, name: &str) -> u32 {
         let slot = self.alloc_local(name);
         if let Some(frame) = self.local_scopes.last_mut() {
@@ -3211,41 +3208,6 @@ impl Compiler {
         // reach the name-keyed cross-thread lane. See `CompiledCode::param_locals`.
         self.code.param_locals.insert(Symbol::intern(name));
         slot
-    }
-
-    /// True when a signature declares a parameter the *source* spelled `$self` —
-    /// an explicit invocant or an ordinary positional, but not a synthesized
-    /// anonymous invocant. Such a `ParamDef` is named `self`; plain routines
-    /// bind it under the ordinary env key `"self"`, while method binding keeps
-    /// it under [`crate::env::LEX_SELF`] so it cannot collide with the implicit
-    /// invocant. See [`Compiler::self_is_signature_param`],
-    /// [`crate::ast::ParamDef::declares_self_lexical`] and ADR-0061.
-    pub(crate) fn signature_declares_self(
-        params: &[String],
-        param_defs: &[crate::ast::ParamDef],
-    ) -> bool {
-        crate::ast::signature_declares_self_lexical(param_defs)
-            // The legacy binding path only: a single pointy-block parameter
-            // (`-> $self { }`) arrives as a bare name with no `ParamDef` at all.
-            // Whenever `param_defs` IS populated it is authoritative — a method
-            // literal (`method () { ... }`) carries `params = ["self"]` for its
-            // synthesized invocant, which declares no lexical.
-            || (param_defs.is_empty() && crate::ast::param_names_declare_self_lexical(params))
-    }
-
-    /// Resolve the reserved `$self` lexical key ([`crate::env::LEX_SELF`]).
-    /// Methods have two distinct values when their signature contains an
-    /// ordinary `$self` parameter: the bare `self` term is the method's
-    /// invocant, while `$self` is that explicit parameter. Keep the reserved
-    /// key in method bytecode so those values cannot collide. Plain routines
-    /// retain the historical mapping to the ordinary `self` binding.
-    pub(crate) fn resolve_self_lexical<'a>(&self, name: &'a str) -> &'a str {
-        if self.self_is_signature_param && !self.lexically_in_method && name == crate::env::LEX_SELF
-        {
-            "self"
-        } else {
-            name
-        }
     }
 
     /// Emit a read of `bare` from the scope `depth` levels out (`$OUTER::x`,
@@ -3432,7 +3394,6 @@ impl Compiler {
             Some(attr) if attr.starts_with('!') => attr,
             _ => name,
         };
-        let name = self.resolve_self_lexical(name);
         if let Some(&slot) = self.local_map.get(name) {
             self.code.emit(OpCode::SetLocal(slot));
         } else if name.starts_with('!') && name.len() > 1 {
