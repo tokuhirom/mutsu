@@ -36,12 +36,15 @@
 //!
 //! * **the method name**, **the receiver's class** and **the arguments' type
 //!   keys** ([`Interpreter::multi_arg_type_keys`]: runtime type plus
-//!   definedness per argument) are the key. A call with arguments is admitted
-//!   only when every argument has a type key, so a `Junction`, a named `Pair`,
-//!   a container or a mixin -- the shapes the probes that read arguments
-//!   (autothreading, the named-argument intercepts) decide on -- never enters
-//!   the lane. Every other probe in the skipped stretch reads at most the
-//!   argument *count* for a user-class receiver, which the key fixes (#10111);
+//!   definedness per argument) are the key. A named argument is keyed by its
+//!   name and its value's type key
+//!   ([`Interpreter::multi_arg_type_keys_into_with_named`]). A call with
+//!   arguments is admitted only when every argument has a type key, so a
+//!   `Junction`, a pair-valued named argument, a container or a mixin -- the
+//!   shapes the probes that read arguments (autothreading, the
+//!   named-argument intercepts) decide on -- never enters the lane. Every
+//!   other probe in the skipped stretch reads at most the argument *count*
+//!   for a user-class receiver, which the key fixes (#10111);
 //! * **no `.^`/`.!`/`."…"` modifier**, **not quoted** and **no accessor-ref
 //!   marker** are required by the gate on both the install and the replay, so
 //!   no probe's call-shaped early-out can differ between them;
@@ -94,7 +97,7 @@ impl Interpreter {
             return None;
         };
         let mut arg_keys = std::mem::take(&mut self.caches.plain_method_lane_scratch);
-        if !args.is_empty() && !self.multi_arg_type_keys_into(args, &mut arg_keys) {
+        if !args.is_empty() && !self.multi_arg_type_keys_into_with_named(args, &mut arg_keys) {
             arg_keys.clear();
             self.caches.plain_method_lane_scratch = arg_keys;
             return None;

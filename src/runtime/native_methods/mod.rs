@@ -3,6 +3,7 @@ mod act_loop;
 pub(in crate::runtime) mod attr_publish;
 mod channel_supply;
 mod compiler_config;
+pub(crate) mod emit_scope;
 mod concurrency;
 mod encoding;
 pub(crate) mod interval_timer;

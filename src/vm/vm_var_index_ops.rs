@@ -1047,8 +1047,33 @@ impl Interpreter {
         if !is_positional && !target_is_object_hash {
             index = self.hash_key_through_user_str(&target, index)?;
         }
+        // `Type[A | B]` on a type with its own `^parameterize` hands the
+        // Junction to the metaclass whole: type arguments are not a dispatch
+        // position, and `Kind[A | B]` is a refinement over the junction
+        // (it reaches the `|args` capture of the metamethod unthreaded).
+        let parameterized_by_user_metamethod = is_positional
+            && index.is_junction_value()
+            && match target.view() {
+                ValueView::Package(name)
+                    if !self.is_role(&name.resolve())
+                        && self.has_user_method(name.as_str(), "^parameterize") =>
+                {
+                    // The metamethod takes (type, args...): thread only when
+                    // the parameter the Junction binds to would.
+                    let how_args = [target.clone(), index.clone()];
+                    match self.resolve_method_with_owner(name.as_str(), "^parameterize", &how_args)
+                    {
+                        Some((_, def)) => self
+                            .autothread_indices_for_params(&how_args, &[1], &def.param_defs)
+                            .is_empty(),
+                        None => false,
+                    }
+                }
+                _ => false,
+            };
         if let ValueView::Junction { kind, values } = index.view()
             && !target_is_object_hash
+            && !parameterized_by_user_metamethod
         {
             let mut results = Vec::with_capacity(values.len());
             for value in values.iter() {

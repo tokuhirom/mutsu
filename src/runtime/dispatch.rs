@@ -101,6 +101,39 @@ impl Interpreter {
         })
     }
 
+    /// Whether two tied candidates' shapes differ only in declared types that are
+    /// user-defined and incomparable (neither conforms to the other), such as a
+    /// parent class and a role the argument's class composes. Rakudo orders
+    /// candidates by the narrowness of their declared types alone, so such a pair
+    /// is a tie and the call is ambiguous (#14846), not a win for the nearer one.
+    // Cost: O(p * h), p = parameters, h = one `nominal_type_conforms` walk.
+    pub(super) fn shapes_tie_on_incomparable_types(
+        &self,
+        a: &[DispatchShape],
+        b: &[DispatchShape],
+    ) -> bool {
+        a.len() == b.len()
+            && a.iter().zip(b).all(|(x, y)| {
+                if x == y {
+                    return true;
+                }
+                let (Some(tx), Some(ty)) = (&x.0, &y.0) else {
+                    return false;
+                };
+                let user_defined = |t: &str| self.has_class(t) || self.has_role(t);
+                x.1 == y.1
+                    && x.2 == y.2
+                    && x.3 == y.3
+                    && x.4 == y.4
+                    && x.5 == y.5
+                    && x.6 == y.6
+                    && user_defined(tx)
+                    && user_defined(ty)
+                    && !self.nominal_type_conforms(Symbol::intern(tx), Symbol::intern(ty))
+                    && !self.nominal_type_conforms(Symbol::intern(ty), Symbol::intern(tx))
+            })
+    }
+
     /// The shape `def` dispatches a call with `positional_args` positional
     /// arguments by. An optional positional the call does not reach is left
     /// out: the ranking already compared it by its declared type

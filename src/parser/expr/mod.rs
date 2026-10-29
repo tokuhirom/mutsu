@@ -27,6 +27,7 @@ use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::helpers::ws;
+pub(crate) use postfix::atomic_elem_update;
 pub(in crate::parser) use postfix::consumed_span;
 pub(in crate::parser) use postfix::is_angle_subscript_key_char;
 pub(in crate::parser) use postfix::is_atomic_elem_target;
@@ -38,8 +39,6 @@ pub(in crate::parser) use postfix::postfix_expr_continue;
 pub(in crate::parser) use postfix::without_pending_prefix;
 pub(in crate::parser) use postfix::{ParsedBracketIndex, parse_bracket_indices_inner};
 pub(in crate::parser) use postfix::{QuotedMethodName, parse_quoted_method_name};
-pub(crate) use postfix::{atomic_elem_update, wrap_dot_assign_with_terms};
-pub(crate) use postfix::{dot_assign_target, retarget_dotty_call};
 use precedence::ternary;
 
 // Re-exports for WhateverCode priming-scope detection (`whatever.rs`). These

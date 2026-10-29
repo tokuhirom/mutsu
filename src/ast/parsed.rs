@@ -62,9 +62,11 @@ pub(crate) enum ParsedStmt {
     /// `my $x will begin { ... }`: the declaration (a `Stmt::VarDecl`) and the
     /// `will PHASE BLOCK` traits as written (kind and body). `rakuast::lower`
     /// expands each into a phaser after the declaration
-    /// (`parser::wrap_with_will_phasers`).
+    /// (`rakuast::will_decl`).
     WillDecl {
         decl: Box<Stmt>,
+        /// The declared variable the phasers' `$_` is bound to.
+        name: String,
         phasers: Vec<(super::PhaserKind, Vec<Stmt>)>,
     },
     /// A declaration or assignment with a loose tail, `my $x = 1 and 2`: the
@@ -288,7 +290,7 @@ pub(crate) enum ParsedExpr {
     StartBody(Vec<Stmt>),
     /// `(LVALUES) »=» VALUE` over a literal list of lvalues (`ApplyInfix`
     /// over `Assignment` under a hyper meta-infix). It lowers to the
-    /// element-wise expansion (`parser::hyper_assignment_expr`).
+    /// element-wise expansion (`rakuast::hyper_assign::lower_hyper_assignment`).
     HyperAssign(HyperAssign),
     /// An inline `subset` used as a term, `subset :: of Int where * > 0`: the
     /// declaration as written. It lowers to the declaration followed by a

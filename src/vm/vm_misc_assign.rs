@@ -13,7 +13,7 @@ impl Interpreter {
     pub(super) fn apply_attr_container_element_type(
         &mut self,
         name: &str,
-        mut val: Value,
+        val: Value,
         is_bind: bool,
     ) -> Result<Value, RuntimeError> {
         if !(name.starts_with('@') || name.starts_with('%')) {
@@ -44,7 +44,21 @@ impl Interpreter {
         // `Array`. Only the SetGlobal call site (attribute assignment reached
         // by name) can even see a bind here; the others are gated to plain
         // `=`/AssignExpr forms already.
-        let Some(tc) = self.self_attr_type_constraint(name) else {
+        let tc = self.self_attr_type_constraint(name);
+        self.apply_attr_container_element_type_with(name, val, is_bind, tc)
+    }
+
+    /// [`Self::apply_attr_container_element_type`] for a caller that already
+    /// holds the attribute's declared type constraint `tc`.
+    // Cost: O(e) as the caller, e = elements checked against a typed constraint.
+    pub(super) fn apply_attr_container_element_type_with(
+        &mut self,
+        name: &str,
+        mut val: Value,
+        is_bind: bool,
+        tc: Option<String>,
+    ) -> Result<Value, RuntimeError> {
+        let Some(tc) = tc else {
             return Ok(if is_bind {
                 val
             } else {
@@ -328,7 +342,7 @@ impl Interpreter {
         // captured lexical reached through this env-named path rather than a
         // local slot) must route through the class's STORE, exactly like the
         // local-slot `maybe_tied_store_reassign` does.
-        if self.maybe_tied_store_reassign_named(&name)?.is_some() {
+        if self.maybe_tied_store_reassign_named(&name, None)?.is_some() {
             return Ok(());
         }
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);

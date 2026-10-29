@@ -79,6 +79,25 @@ impl Interpreter {
                 return Ok(result);
             }
         }
+        // A scalar value held in a container cell (an `is rw` routine's tail
+        // call on its own parameter reaches here with the parameter's cell, not
+        // its value): a method call deconts its invocant, and a plain scalar
+        // has no aggregate to fold back into the cell.
+        if let ValueView::ContainerRef(cell) = target.view() {
+            let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            if matches!(
+                inner.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Rat(..)
+                    | ValueView::FatRat(..)
+            ) {
+                return self.call_method_with_values(inner, method, args);
+            }
+        }
         let readonly_key = crate::runtime::sigilless_readonly_key(target_var);
         let alias_key = crate::runtime::sigilless_alias_key(target_var);
         let has_sigilless_meta =

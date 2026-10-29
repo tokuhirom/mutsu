@@ -9,9 +9,11 @@ pub(crate) use type_qualify::qualify_program as qualify_type_names;
 // `expr` module (and its many `pub(in crate::parser)`-typed internals) public.
 pub(crate) use expr::lower_composition;
 pub(crate) use expr::{
-    contains_whatever, is_frozen_whatever, is_whatever, operator_call_operands,
-    should_wrap_whatevercode,
+    contains_whatever, contains_xx_with_bare_whatever, is_frozen_whatever, is_whatever,
+    operator_call_operands, should_wrap_whatevercode,
 };
+pub(crate) use stmt::assign::normalize_comma_list_items;
+pub(crate) use stmt::simple::{PREC_SEQUENCE, lookup_custom_infix_precedence};
 // `but`-mixing a plain value composes an anonymous role at RUNTIME, and it must
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
@@ -91,7 +93,6 @@ pub(crate) mod p6_frame_state;
 pub(crate) use stmt::decl::typed_default_expr;
 mod parse_result;
 mod primary;
-pub(crate) use primary::container::{lower_array_sections, lower_paren_sections};
 mod quote_shadow;
 pub(crate) mod sink_warn;
 mod stmt;
@@ -101,25 +102,23 @@ mod stmt;
 pub(crate) fn is_raku_identifier(input: &str) -> bool {
     stmt::parse_raku_ident(input).is_ok_and(|(rest, _)| rest.is_empty())
 }
+pub(crate) use expr::atomic_elem_update;
 pub(crate) use expr::precedence::build_compound_assign_target_expr;
-pub(crate) use expr::wrap_dot_assign_with_terms;
-pub(crate) use expr::{atomic_elem_update, retarget_dotty_call};
 pub(crate) use outer_redecl::{find_scope_diagnostic, scope_diagnostic_error};
 pub(crate) use parse_result::PError;
 pub(crate) use stmt::assign::DOTTY_ASSIGN_OP;
 pub(crate) use stmt::class::token_body::finalize_anon_declarator_pattern;
 pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws, role_type_param_names};
 pub(crate) use stmt::control::check_signature;
+pub(crate) use stmt::control::source_body::check as check_source_body;
 /// The default the parser plants for a typed scalar attribute with no
 /// initializer; the RakuAST lowering re-plants the same one.
 pub(crate) use stmt::decl::attribute_type_seed;
 pub(crate) use stmt::decl::build_sigilless_bind_stmt;
-pub(crate) use stmt::decl::wrap_with_will_phasers;
-pub(crate) use stmt::decl::{attribute_compound_assign, expand_attribute_compound_assign};
+pub(crate) use stmt::decl::default_decl_expr;
 pub(crate) use stmt::simple::{is_user_declared_sub, is_user_declared_value_term};
+pub(crate) use stmt::simple_expr_stmt::decl_target_var_name;
 pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutable;
-pub(crate) use stmt::simple_expr_stmt::{decl_target_var_name, topic_dot_assign};
-pub(crate) use stmt::{conditional_declaration, topical_declaration};
 
 /// Parse a regex callable's argument list without exposing the parser's
 /// private diagnostic type to the source-level regex tree.
@@ -376,7 +375,6 @@ pub(crate) fn lowered_assignment(expr: crate::ast::Expr) -> crate::ast::Expr {
     }
 }
 pub(crate) use expr::precedence::{literal_assign_ro_expr, literal_assign_ro_parts};
-pub(crate) use expr::precedence_meta_ops::lower_hyper_assignment as hyper_assignment_expr;
 pub(crate) use expr::precedence_meta_ops::negated_glyph_relation;
 pub(crate) use stmt::assign::written_assignment;
 pub(crate) use stmt::simple::{fold_use_lib_path, use_lib_args};

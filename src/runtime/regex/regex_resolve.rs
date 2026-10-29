@@ -618,6 +618,24 @@ impl Interpreter {
             })
     }
 
+    /// The code-block spelling of a `<name=$(EXPR)>` / `<name=@(EXPR)>`
+    /// alias target: the contextualizer's expression, run at match time like
+    /// `<name={ EXPR }>`.
+    // Cost: O(n), n = target length.
+    pub(crate) fn contextualizer_alias_code(rhs: &str) -> Option<String> {
+        let inner = rhs
+            .strip_prefix(['$', '@'])?
+            .strip_prefix('(')?
+            .strip_suffix(')')?;
+        // The `@` form reads the value as a list, so a lazy `.grep` / `.map`
+        // result is an alternation of its elements, not an unreified Seq.
+        Some(if rhs.starts_with('@') {
+            format!("{{(do {{ {inner} }}).list}}")
+        } else {
+            format!("{{{inner}}}")
+        })
+    }
+
     /// Whether `text` is a proto candidate's long name, `ident:sym<…>` (or
     /// `ident:sym«…»`), as written in a `<value:sym<number>>` subrule call.
     // Cost: O(n), n = text length.
@@ -662,18 +680,21 @@ impl Interpreter {
                     token_lookup = true;
                     silent = false;
                     alias_replaces_original = true;
-                } else if Self::is_interpolated_alias_target(rhs)
+                } else if let Some(lookup_name) = Some(rhs)
+                    .filter(|r| Self::is_interpolated_alias_target(r))
+                    .map(str::to_string)
+                    .or_else(|| Self::contextualizer_alias_code(rhs))
                     && lhs
                         .chars()
                         .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'')
                 {
-                    // <name=$var> / <name={ code }> — match the Regex the
-                    // variable holds (or the code returns) as an anonymous
-                    // subrule and file it under `name` only: there is no rule
-                    // name for a second slot. The target is kept whole (a
-                    // code block may contain `(`/`:`), so it bypasses
+                    // <name=$var> / <name={ code }> / <name=$(code)> /
+                    // <name=@(code)> — match the Regex the variable holds (or
+                    // the code returns) as an anonymous subrule and file it
+                    // under `name` only: there is no rule name for a second
+                    // slot. The target is kept whole (a code block may
+                    // contain `(`/`:`), so it bypasses
                     // `parse_regex_lookup_target` below.
-                    let lookup_name = rhs.to_string();
                     let lookup_sym = crate::symbol::Symbol::intern(&lookup_name);
                     return NamedRegexLookupSpec {
                         silent: false,

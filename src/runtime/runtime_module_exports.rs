@@ -672,7 +672,7 @@ impl Interpreter {
         // package is still GLOBAL. Mirror variable exports under the declared
         // module name, just as exported subs are mirrored above, so a tagged
         // `our &alias is export(:tag)` is visible to a later `use Module :tag`.
-        if let Some(unit_mod) = self.module.unit_module_loading_stack.last().cloned() {
+        if let Some(unit_mod) = self.declared_unit_module_here().cloned() {
             let mirror = crate::runtime::cow_table_mut(&mut self.module.exported_vars)
                 .entry(unit_mod)
                 .or_default()
@@ -686,7 +686,7 @@ impl Interpreter {
         // declared `unit module` name differs from that path. This mirrors
         // the variable's export metadata to the namespace import_module
         // actually receives.
-        if self.module.unit_module_loading_stack.last().is_some()
+        if self.declared_unit_module_here().is_some()
             && let Some(module) = self.module.module_load_stack.last().cloned()
         {
             let mirror = crate::runtime::cow_table_mut(&mut self.module.exported_vars)
@@ -1501,6 +1501,7 @@ impl Interpreter {
                     let routine_value = value.deref_container();
                     if self.bind_hook_routine_lexically(routine, &routine_value) {
                         self.note_lexical_import_routine(&current_pkg, routine);
+                        continue;
                     }
                     self.note_unit_hook_routine(routine, &routine_value);
                 }

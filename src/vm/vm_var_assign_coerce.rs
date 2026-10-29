@@ -259,11 +259,26 @@ impl Interpreter {
     /// attribute (`%!v`, `%.v`) the value in `self`'s attribute cell, which is
     /// where a method body's `%!v = ...` finds its `is BagHash` container.
     // Cost: O(1).
-    fn hash_var_current_value(&self, name: &str) -> Option<Value> {
+    fn hash_var_current_value(
+        &self,
+        name: &str,
+        attr_site: Option<&GlobalAttrSite<'_>>,
+    ) -> Option<Value> {
+        // A store whose attribute cell was read up front (`attr_site`) takes the
+        // cell as the container: it is the store of record, and no by-name
+        // mirror in the frame can be newer than it at a statement boundary.
+        if let Some(at) = attr_site
+            && let Some(cell) = self.global_attr_site_prefetched_cell(at)
+        {
+            return Some(cell.deref_container());
+        }
         self.env()
             .get(name)
             .cloned()
-            .or_else(|| self.read_self_attr_cell(name))
+            .or_else(|| match attr_site {
+                Some(at) => self.global_attr_site_cell(at, name),
+                None => self.read_self_attr_cell(name),
+            })
             .map(|v| v.deref_container())
     }
 
@@ -277,11 +292,16 @@ impl Interpreter {
     /// leaving the env mirror stale (a later name-based subscript assign then
     /// mutates the stale empty container and clobbers the slot on writeback).
     /// Falls through when the variable has no existing same-kind container.
-    fn quanthash_store_preserving_identity(&mut self, name: &str, coerced: Value) -> Value {
+    fn quanthash_store_preserving_identity(
+        &mut self,
+        name: &str,
+        coerced: Value,
+        attr_site: Option<&GlobalAttrSite<'_>>,
+    ) -> Value {
         // Through the capture cell, like the caller: the existing QuantHash
         // whose backing node the new contents are written into may be held
         // inside a shared `ContainerCell`.
-        let existing = self.hash_var_current_value(name);
+        let existing = self.hash_var_current_value(name, attr_site);
         existing
             .and_then(|old| old.store_quanthash_in_place(&coerced))
             .unwrap_or(coerced)
@@ -333,11 +353,57 @@ impl Interpreter {
         }
     }
 
+    /// Whether `value` is a plain Hash stored into an untyped `%!attr` (see the
+    /// call in [`Self::coerce_hash_var_value`]); `current` is the attribute's
+    /// container now.
+    // Cost: O(e), e = entries of `value` (the container-cell scan).
+    fn plain_hash_into_plain_attr(
+        &self,
+        decl: StoreDecl<'_>,
+        name: &str,
+        value: &Value,
+        current: Option<&Value>,
+        attr_site: Option<&GlobalAttrSite<'_>>,
+    ) -> bool {
+        let Some(at) = attr_site else {
+            return false;
+        };
+        if decl.is_some()
+            || !at.has_prefetched_type()
+            || at.type_constraint.is_some()
+            || !self.topic_state.quanthash_bind_params.is_empty()
+        {
+            return false;
+        }
+        let plain = |h: &crate::value::HashData| {
+            h.value_type.is_none()
+                && h.key_type.is_none()
+                && h.declared_type.is_none()
+                && h.default.is_none()
+                && !h.has_typed_keys()
+        };
+        let ValueView::Hash(h) = value.view() else {
+            return false;
+        };
+        if !plain(&h) || h.values().any(Value::is_container_ref) {
+            return false;
+        }
+        let current_plain = match current.map(Value::view) {
+            None => true,
+            Some(ValueView::Hash(c)) => plain(&c),
+            Some(_) => false,
+        };
+        current_plain
+            && self.var_default(name).is_none()
+            && self.decl_type_constraint(decl, name).is_none()
+    }
+
     pub(super) fn coerce_hash_var_value(
         &mut self,
         decl: StoreDecl<'_>,
         name: &str,
         value: Value,
+        attr_site: Option<&GlobalAttrSite<'_>>,
     ) -> Result<Value, RuntimeError> {
         // A method returning an element's container (`%!m = @res.tail`, where
         // `.tail` hands back the Array element's cell) assigns the value the
@@ -364,7 +430,14 @@ impl Interpreter {
         // below can see a `ContainerRef`. Without this a whole-container
         // re-assignment (`%h = <e e e f g>`) fell through to the plain-hash
         // initializer and died on the odd element count.
-        let current = self.hash_var_current_value(name);
+        let current = self.hash_var_current_value(name, attr_site);
+        // A plain Hash stored into an untyped, unconstrained `%!attr` whose
+        // current container is a plain Hash (or not yet set) is the value
+        // itself: every probe below answers "no" for that shape and the
+        // coercion at the end hands a Hash back unchanged.
+        if self.plain_hash_into_plain_attr(decl, name, &value, current.as_ref(), attr_site) {
+            return Ok(value);
+        }
         // `declared_type` is where an `is BagHash`/`is SetHash`/`is MixHash`
         // trait records the container's own type (`element_constraint_for`
         // reports the ELEMENT type, and answers `None` for a QuantHash whose
@@ -391,7 +464,7 @@ impl Interpreter {
             );
             if is_quanthash_container {
                 let coerced = self.try_compiled_method_or_interpret(value, trait_name, vec![])?;
-                return Ok(self.quanthash_store_preserving_identity(name, coerced));
+                return Ok(self.quanthash_store_preserving_identity(name, coerced, attr_site));
             }
         }
         if self.check_readonly_for_modify(name).is_err()
@@ -440,7 +513,7 @@ impl Interpreter {
             _ => None,
         } {
             let coerced = self.try_compiled_method_or_interpret(value, coercer, vec![])?;
-            return Ok(self.quanthash_store_preserving_identity(name, coerced));
+            return Ok(self.quanthash_store_preserving_identity(name, coerced, attr_site));
         }
         if let Some(constraint) = self.decl_type_constraint(decl, name)
             && constraint.starts_with("SetHash")
@@ -449,7 +522,7 @@ impl Interpreter {
             // SetHash should be mutable
             if let ValueView::Set(..) = result.view() {
                 let coerced = result.quanthash_with_mutability(true);
-                return Ok(self.quanthash_store_preserving_identity(name, coerced));
+                return Ok(self.quanthash_store_preserving_identity(name, coerced, attr_site));
             }
             return Ok(result);
         }

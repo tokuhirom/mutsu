@@ -706,7 +706,6 @@ impl Compiler {
         }
         // ADR-0061: the reserved `$self` lexical key names the enclosing
         // routine's `$self` parameter when its signature declares one.
-        let name = self.resolve_self_lexical(name);
         // A later bare `$x` in a block that declares `$^x` names that same
         // placeholder parameter, not a same-named lexical of the caller. When
         // an interpreter-path carrier (`.map`/`.grep`/`...` callback, `where`

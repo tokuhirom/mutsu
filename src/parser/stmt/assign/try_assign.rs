@@ -418,7 +418,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             return Ok((
                 rest,
                 super::written_dotty_assignment(
-                    crate::parser::expr::dot_assign_target(&name),
+                    crate::rakuast::dotty_assign::dot_assign_target(&name),
                     method_expr,
                 ),
             ));
@@ -497,7 +497,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         return Ok((
             r,
             super::written_dotty_assignment(
-                crate::parser::expr::dot_assign_target(&name),
+                crate::rakuast::dotty_assign::dot_assign_target(&name),
                 method_expr,
             ),
         ));

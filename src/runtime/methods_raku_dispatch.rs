@@ -253,6 +253,12 @@ impl Interpreter {
                 self.expand_raku_leaves(&inner, active, depth + 1)
             }
             ValueView::Seq(_) | ValueView::HyperSeq(_) | ValueView::RaceSeq(_) => {
+                // A `List`-typed view of a Seq body (what `.cache` returns)
+                // is a List to Raku: expand it as one so it keeps rendering
+                // as `(..)` / `$(..)` rather than `(..).Seq`.
+                if let Some(as_list) = Value::seq_list_view_as_list(value) {
+                    return self.expand_raku_leaves(&as_list, active, depth);
+                }
                 let items = self.expand_list_items(value, active, depth);
                 match value.view() {
                     ValueView::HyperSeq(_) => Value::hyper_seq(items),

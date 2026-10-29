@@ -30,8 +30,16 @@ impl Interpreter {
         // `$.attr` -- is a scoped frame record for the window, not an env key
         // (ADR-14843).
         let fixtures_mark = invocant.map(|inv| self.begin_scoped_invocant(inv.clone()));
-        let verdict =
-            self.method_args_match_in_window(class_name, def, arg_values, role_bindings, invocant);
+        // The candidate's `where` clauses and defaults were compiled in the unit
+        // that declared it (a role method composed into a class of another
+        // file keeps the role's module), whoever is calling.
+        let verdict = match def.source_file.as_deref() {
+            Some(file) => self.with_candidate_unit(file, |this| {
+                this.method_args_match_in_window(class_name, def, arg_values, role_bindings, invocant)
+            }),
+            None => self
+                .method_args_match_in_window(class_name, def, arg_values, role_bindings, invocant),
+        };
         if let Some(mark) = fixtures_mark {
             self.end_scoped_fixtures(mark);
         }

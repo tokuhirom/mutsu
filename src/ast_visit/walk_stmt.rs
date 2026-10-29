@@ -51,6 +51,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
         | Stmt::SupplyBodyDone
         | Stmt::SetLine(..)
         | Stmt::BeginPrologueEnd
+        | Stmt::RunCheckCode
         | Stmt::Trace { .. } => {}
         // A copy of declarations that stay in the tree, where they are walked.
         Stmt::NestedTypeShells(_) | Stmt::UndeclaredRoutine(_) => {}
@@ -454,6 +455,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             method_args,
             value,
             is_attribute: _,
+            type_invocant: _,
         } => {
             v.visit_name(var_name, NameKind::TempTarget);
             v.visit_name(method_name, NameKind::Method);

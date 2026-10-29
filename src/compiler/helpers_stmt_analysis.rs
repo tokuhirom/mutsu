@@ -139,7 +139,7 @@ impl Compiler {
     /// directly, sorted. Operators are left out: an operator family keeps
     /// its registry alias anyway.
     // Cost: O(s log s), s = statements of the block.
-    fn block_multi_names(stmts: &[Stmt]) -> Vec<String> {
+    pub(crate) fn block_multi_names(stmts: &[Stmt]) -> Vec<String> {
         let mut names: Vec<String> = stmts
             .iter()
             .filter_map(|stmt| match stmt {
@@ -162,7 +162,7 @@ impl Compiler {
     /// {...} }` dispatches over M's and the block's candidates of `f`), so
     /// such a family keeps the registry path (ADR-8751 stage 2).
     // Cost: O(n), n = length of the names.
-    fn with_block_multis(id: Symbol, local: &[String]) -> Symbol {
+    pub(crate) fn with_block_multis(id: Symbol, local: &[String]) -> Symbol {
         if local.is_empty() {
             return id;
         }
@@ -273,7 +273,7 @@ impl Compiler {
     /// statement, so a recompile of the block finds the same set and every
     /// `use` importing the same list shares it.
     // Cost: O(n), n = size of the `use`'s argument expression.
-    pub(super) fn lexical_use_set_id(stmt: &Stmt) -> Option<Symbol> {
+    pub(crate) fn lexical_use_set_id(stmt: &Stmt) -> Option<Symbol> {
         let Stmt::Use {
             module,
             tags,

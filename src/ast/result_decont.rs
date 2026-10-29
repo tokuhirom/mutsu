@@ -108,3 +108,23 @@ fn tail_is_readonly_param(param_defs: &[ParamDef], stmts: &[Stmt]) -> bool {
     }
     false
 }
+
+/// Whether a block (not a routine) evaluates to the container of its last
+/// statement: a scalar assignment (`{ $z = f() }`), a scalar declaration with
+/// an initializer, or a bare scalar variable (`{ $z }`). Rakudo hands that
+/// container back to the caller, so a sunk call of the block does not sink
+/// the value inside it (a stored `Failure` is not thrown); a routine
+/// decontainerizes its implicit result and does.
+// Cost: O(k), k = trailing marker statements skipped.
+pub(crate) fn block_result_is_container(stmts: &[Stmt]) -> bool {
+    match super::last_value_stmt(stmts, super::TailSkip::Markers) {
+        Some(Stmt::Assign {
+            name,
+            target_is_sigilless: false,
+            ..
+        }) => !name.starts_with(['@', '%']),
+        Some(Stmt::VarDecl { name, .. }) => !name.starts_with(['@', '%', '&']),
+        Some(Stmt::Expr(Expr::Var(name))) => !name.starts_with(['@', '%', '&']),
+        _ => false,
+    }
+}

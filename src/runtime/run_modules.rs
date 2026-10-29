@@ -657,6 +657,7 @@ impl Interpreter {
         Self::inject_x_wrapper_prelude(&code, &mut stmts);
         Self::inject_precomp_api_prelude(&code, &mut stmts);
         Self::inject_formatter_syntax_prelude(&code, &mut stmts);
+        Self::inject_deparse_prelude(&code, &mut stmts);
         Self::inject_container_descriptor_prelude(&code, &mut stmts);
 
         // Save to precompilation cache when the module is eligible.
@@ -1001,6 +1002,8 @@ impl Interpreter {
                 RuntimeError::new(format!("Failed to read module {}: {}", module, err))
             })?,
         };
+        // `$*CU` while this module compiles (`unit_source_text`).
+        let _unit_text = crate::unit_source_text::UnitSourceTextGuard::enter(&source_text);
         let path_text = source_path.to_string_lossy().into_owned();
         let (mut module_ast, facts, effects, precompiled) = match &entry {
             Some(entry) => {
@@ -1808,6 +1811,8 @@ impl Interpreter {
             // load must not leave it hidden.
             let export_result = match result {
                 Ok(()) => {
+                    // `$*CU` in the module's `sub EXPORT` is the importing unit.
+                    let _export_phase = crate::unit_source_text::ExportPhaseGuard::enter();
                     self.apply_module_export(export_args.unwrap_or_default(), module_body_env)
                 }
                 Err(err) => Err(err),
@@ -2446,7 +2451,7 @@ impl Interpreter {
             {
                 continue;
             }
-            let bare = name.strip_prefix(['@', '%']).unwrap_or(name);
+            let bare = name.strip_prefix(['@', '%', '&']).unwrap_or(name);
             if bare
                 .chars()
                 .next()

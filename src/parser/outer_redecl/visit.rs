@@ -197,7 +197,7 @@ impl VisitMut for Ctx {
                     | ParsedStmt::AttributeModifier { .. } => {
                         crate::ast_visit::walk_parsed_mut(self, node)
                     }
-                    ParsedStmt::WillDecl { decl, phasers } => {
+                    ParsedStmt::WillDecl { decl, phasers, .. } => {
                         // The declaration runs in the enclosing scope.
                         let mut one = vec![std::mem::replace(decl.as_mut(), Stmt::SyntheticBlock(Vec::new()))];
                         self.visit_stmts_mut(&mut one);

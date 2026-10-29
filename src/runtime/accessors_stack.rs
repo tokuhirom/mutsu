@@ -1615,10 +1615,14 @@ impl Interpreter {
     /// the names to something wanting owned strings.
     pub(crate) fn bare_name_packages_syms(&self) -> crate::runtime::BareNamePackages {
         let cur_sym = self.current_package_sym();
-        let lexical_sym = self
-            .routine_stack
-            .last()
-            .and_then(|frame| frame.lexical_package);
+        // While a candidate is being matched there is no frame of it yet: its
+        // `where` clause and defaults name the routines of the compunit it was
+        // declared in, not those of the frame that is calling.
+        let lexical_sym = self.candidate_scope_lexical_package().or_else(|| {
+            self.routine_stack
+                .last()
+                .and_then(|frame| frame.lexical_package)
+        });
         if let Some(hit) = self
             .caches
             .bare_name_packages_memo
@@ -1647,7 +1651,21 @@ impl Interpreter {
         let cur = cur_sym.as_str();
         if cur_sym == global {
             return match lexical_sym {
-                Some(sym) if sym != global => vec![sym, cur_sym].into(),
+                // A role method composed into a GLOBAL class runs with
+                // `cur` = GLOBAL; its lexical package still sits inside the
+                // module that declared the role, whose subs stay reachable.
+                Some(sym) if sym != global => {
+                    let base = sym.as_str();
+                    let base = Symbol::intern(base.split('[').next().unwrap_or(base));
+                    let mut out = vec![sym];
+                    for anc in crate::qualified::package_ancestors(base).skip(1) {
+                        if !crate::qualified::is_global_package(anc) && !out.contains(&anc) {
+                            out.push(anc);
+                        }
+                    }
+                    out.push(cur_sym);
+                    out.into()
+                }
                 _ => vec![cur_sym].into(),
             };
         }

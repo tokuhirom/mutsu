@@ -8,7 +8,7 @@ use Test;
 # the closure was next called with, and the `Proxy` form of that recursed into
 # `FETCH` until the process died. ADR-0061 gives the lexical its own key.
 
-plan 32;
+plan 33;
 
 class Outer { method tag { 'OUTER' } }
 class Inner { method tag { 'INNER' } }
@@ -233,6 +233,17 @@ class Inner { method tag { 'INNER' } }
     for 1, 2 -> $self { $acc ~= $self }
     is $acc ~ '/' ~ $self, '12/OUT',
         'a `for ... -> $self` parameter shadows an outer $self only inside the loop';
+}
+
+# --- #15482: a `sub ($self)` nested in a `for ... -> $self` body binds its own
+#     `$self`; the loop parameter's mapping must not leak into it.
+{
+    my $got;
+    for 1 -> $self {
+        my $f = sub ($self) { $self ~ '!' };
+        $got = $f('x');
+    }
+    is $got, 'x!', 'a nested `sub ($self)` inside a `for -> $self` body binds its own $self';
 }
 
 done-testing;

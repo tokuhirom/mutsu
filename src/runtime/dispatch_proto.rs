@@ -462,6 +462,12 @@ impl Interpreter {
             // it here would risk double-running that constructor's proto
             // body instead of leaving it to the dedicated leg.
             ValueView::Package(name) if method != "new" => name.resolve(),
+            // A mixed-in type object (`Class.^mixin(R)`, a deparser
+            // specialised by a role) keeps its class's `proto method` body.
+            ValueView::Mixin(inner, _) if method != "new" => match inner.view() {
+                ValueView::Package(name) => name.resolve(),
+                _ => return None,
+            },
             _ => return None,
         };
         let (owner, proto) = self.lookup_proto_method(&cn, method)?;

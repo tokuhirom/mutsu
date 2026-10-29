@@ -13,6 +13,7 @@
 
 use crate::ast::{Expr, Stmt};
 use crate::ast_visit::VisitMut;
+use crate::symbol::Symbol;
 
 /// Collects a copy of every nested `use` whose arguments are literals, in
 /// source order; the statement stays in its block.
@@ -23,7 +24,7 @@ use crate::ast_visit::VisitMut;
 /// validation was equally lenient about such a unit before (it did not judge
 /// the names of a hook module at all).
 // Cost: O(n), n = size of the unit's AST.
-pub(super) fn take_nested_hook_uses(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
+pub(super) fn take_nested_hook_uses(stmts: &mut Vec<Stmt>) -> Vec<(Stmt, Option<Symbol>)> {
     let mut lifter = Lifter {
         lifted: Vec::new(),
         depth: 0,
@@ -33,7 +34,8 @@ pub(super) fn take_nested_hook_uses(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
 }
 
 struct Lifter {
-    lifted: Vec<Stmt>,
+    /// Each lifted copy with the import set id its block's own `use` fills.
+    lifted: Vec<(Stmt, Option<Symbol>)>,
     /// Nesting of statement lists: the unit's own top level is depth 1 and is
     /// left to the pre-run.
     depth: usize,
@@ -41,7 +43,7 @@ struct Lifter {
 
 /// Whether a `use` argument can be evaluated ahead of its block: a literal or
 /// a flat list of literals (`use M <A B>`, `use M "a", 3`).
-fn is_literal_arg(expr: &Expr) -> bool {
+pub(super) fn is_literal_arg(expr: &Expr) -> bool {
     match expr {
         Expr::ArrayLiteral(items) => items.iter().all(|i| matches!(i, Expr::Literal(_))),
         other => matches!(other, Expr::Literal(_)),
@@ -53,6 +55,7 @@ impl VisitMut for Lifter {
         self.depth += 1;
         if self.depth > 1 {
             let mut kept = Vec::with_capacity(body.len());
+            let local_multis = crate::compiler::Compiler::block_multi_names(body);
             for stmt in std::mem::take(body) {
                 let preruns = matches!(
                     &stmt,
@@ -63,7 +66,11 @@ impl VisitMut for Lifter {
                                 .is_some_and(|m| m == module)
                 );
                 if preruns {
-                    self.lifted.push(stmt.clone());
+                    // The id the block's in-position `use` gets, so the pre-run
+                    // fills the set the block reads (ADR-8751).
+                    let id = crate::compiler::Compiler::lexical_use_set_id(&stmt)
+                        .map(|id| crate::compiler::Compiler::with_block_multis(id, &local_multis));
+                    self.lifted.push((stmt.clone(), id));
                 }
                 kept.push(stmt);
             }

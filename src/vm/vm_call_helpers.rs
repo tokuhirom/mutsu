@@ -298,8 +298,18 @@ impl Interpreter {
                     .map(|p| p.binds_caller_container() && !p.is_variadic())
                     .collect();
                 // A positional arg past the declared ones never binds a
-                // container parameter.
+                // container parameter -- except to a variadic `is raw` slurpy
+                // (`*@a is raw`, `+@a is raw`), which keeps each element's
+                // container (a `Proxy` stays a Proxy in the List).
+                let raw_slurpy_at = positional.clone().position(|p| {
+                    p.is_variadic() && !p.sigilless && p.traits.iter().any(|t| t == "raw")
+                });
                 flags.resize(args.len(), false);
+                if let Some(at) = raw_slurpy_at {
+                    for f in flags.iter_mut().skip(at) {
+                        *f = true;
+                    }
+                }
                 flags
             }
             _ => Vec::new(),

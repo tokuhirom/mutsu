@@ -7,9 +7,10 @@
 //! compound assignment over a declaration term instead re-ran the declaration
 //! with every iteration of a postfix `for`.
 
+use super::compound::op::{CompoundAssignOp, compound_assigned_value_expr};
 use super::lower::{lower_expr, lower_stmt, named_child, named_child_or_positional, unsupported};
 use super::{RakuAstClass, RakuAstNode};
-use crate::ast::{Expr, Stmt};
+use crate::ast::{AssignOp, Expr, Stmt};
 use crate::value::{RuntimeError, ValueView};
 
 /// Whether `node` is a compound assignment whose left side is a variable
@@ -76,35 +77,63 @@ pub(crate) fn lower_parsed(decl: Stmt, op: String, source: Expr) -> Result<Stmt,
         };
         return Ok(crate::ast::decl_compound_assign::expand(decl, name, value));
     };
-    // `has $!g //= 5`: the attribute's own expansion. A public `$.g` keeps no
-    // node in the parser, so this never sees one.
+    // `has $!g //= 5`: the attribute's own expansion.
     if let Stmt::HasDecl {
         name,
-        is_public: false,
+        is_public,
         is_alias,
-        default: None,
         ..
     } = &decl
     {
-        let assign = crate::parser::attribute_compound_assign(
-            &name.resolve(),
-            false,
-            *is_alias,
-            compound,
-            source,
-        );
-        return Ok(crate::parser::expand_attribute_compound_assign(
-            decl, assign,
-        ));
+        let assign =
+            attribute_compound_assign(&name.resolve(), *is_public, *is_alias, compound, source);
+        // One flat block: the class-body attribute discovery flattens only
+        // one level.
+        return Ok(Stmt::SyntheticBlock(vec![decl, assign]));
     }
     let Stmt::VarDecl { name, .. } = &decl else {
         return Err(RuntimeError::new("a compound declaration of this target"));
     };
     let name = name.clone();
-    let value = super::compound::op::compound_assigned_value_expr(
-        Expr::Var(name.clone()),
-        compound,
-        source,
-    );
+    let value = compound_assigned_value_expr(Expr::Var(name.clone()), compound, source);
     Ok(crate::ast::decl_compound_assign::expand(decl, name, value))
+}
+
+/// `has $!g OP= EXPR` (#8441 gap 2): rakudo's `has` initializers are `=`,
+/// `:=`, `::=` and `.=`; any other compound operator leaves the declaration
+/// without an initializer and applies to the declared variable as an ordinary
+/// compound assignment written right after it. This is the assignment of
+/// `name OP rhs` back to the attribute: through the accessor
+/// (`Expr::AssignExpr`) for a public `$.g`, so a non-`rw` one dies as
+/// rakudo's does; as a `Stmt::Assign` of `$!g` (or of the alias `$g`)
+/// otherwise.
+// Cost: O(n), n = size of `rhs`.
+fn attribute_compound_assign(
+    name: &str,
+    is_public: bool,
+    is_alias: bool,
+    op: CompoundAssignOp,
+    rhs: Expr,
+) -> Stmt {
+    if is_public {
+        let var_name = format!(".{name}");
+        let read = Expr::Var(var_name.clone());
+        return Stmt::Expr(Expr::AssignExpr {
+            name: var_name,
+            expr: Box::new(compound_assigned_value_expr(read, op, rhs)),
+            is_bind: false,
+        });
+    }
+    let var_name = if is_alias {
+        name.to_string()
+    } else {
+        format!("!{name}")
+    };
+    let read = Expr::Var(var_name.clone());
+    Stmt::Assign {
+        name: var_name,
+        expr: compound_assigned_value_expr(read, op, rhs),
+        op: AssignOp::Assign,
+        target_is_sigilless: false,
+    }
 }

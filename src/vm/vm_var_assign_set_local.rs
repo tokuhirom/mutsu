@@ -1716,7 +1716,7 @@ impl Interpreter {
                 self.coerce_constant_hash_value(name, raw_popped)?
             } else {
                 let decl = self.local_store_decl(code, idx);
-                self.coerce_hash_var_value(decl, name, raw_popped)?
+                self.coerce_hash_var_value(decl, name, raw_popped, None)?
             }
         } else if name.starts_with('@') {
             if is_bind {
@@ -3188,9 +3188,18 @@ impl Interpreter {
         {
             self.locals[idx] = container;
         }
+        // A declaration never writes through a READONLY cell the slot still
+        // holds from an outer binding (`my $*H := Str` after the same frame
+        // read the outer, bound `$*H`): it makes a fresh binding instead.
+        let declares_over_readonly_cell = is_vardecl
+            && matches!(
+                self.locals[idx].view(),
+                ValueView::ContainerRef(ref arc) if arc.is_readonly()
+            );
         // Write through ContainerRef in slow path: update inner value
         if !is_bind
             && !is_rebind
+            && !declares_over_readonly_cell
             && let ValueView::ContainerRef(arc) = self.locals[idx].view()
         {
             // Slice 2a: a `=`-array-shared scalar reassigned as a whole REPLACES

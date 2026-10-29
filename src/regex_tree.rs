@@ -2254,6 +2254,23 @@ impl Parser {
                     assertion: Box::new(call),
                 }));
             }
+            // `<thing=@(EXPR)>` / `<x=$(EXPR)>`: an alias over an interpolated
+            // expression (Raku: `Assertion::Alias` over an `InterpolatedVar`).
+            if is_simple_subrule_name(alias)
+                && capturing
+                && matches!(target.as_bytes(), [b'$' | b'@' | b'%', b'(', ..])
+                && let Some(tree) =
+                    RegexTree::parse_lookaround_body(&format!("<{target}>"), self.in_unit_parse)
+                && matches!(
+                    tree.body,
+                    RegexNode::Extension(RegexExtension::ContextualizedInterpolation { .. })
+                )
+            {
+                return Some(RegexNode::Extension(RegexExtension::Alias {
+                    alias: alias.to_string(),
+                    assertion: Box::new(tree.body),
+                }));
+            }
             // `<rx=$r>` / `<foo=[bao]>` / `<wc=&wc>`: an alias over an
             // assertion that is no named subrule call.
             if is_simple_subrule_name(alias)
@@ -2267,6 +2284,7 @@ impl Parser {
                         | RegexNode::Callable { .. }
                         | RegexNode::CharClassAssertion(_)
                         | RegexNode::InterpolatedBlock { .. }
+                        | RegexNode::ArrayInterpolation { .. }
                 )
             {
                 return Some(RegexNode::Extension(RegexExtension::Alias {
@@ -2408,6 +2426,7 @@ impl Parser {
             RegexExtension::ContextualizedInterpolation {
                 sigil,
                 sequential,
+                assertion: false,
                 code: Box::new(RegexCode { code, body }),
             },
         ))

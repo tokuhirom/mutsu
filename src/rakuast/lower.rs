@@ -1210,7 +1210,7 @@ fn dotty_parts(node: &RakuAstNode) -> Result<Dotty, RuntimeError> {
         // gets its own copy.
         lower_method_postfix(Expr::Literal(Value::NIL), call)?
     };
-    let call = crate::parser::retarget_dotty_call(&template, target.clone());
+    let call = super::dotty_assign::retarget_dotty_call(&template, target.clone());
     Ok(Dotty::Assign(crate::ast::parsed::CompoundAssign {
         target,
         op: ".".to_string(),
@@ -3134,9 +3134,9 @@ pub(super) fn lower_var_decl_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeErr
             return Err(unsupported(node));
         };
         let name = name.clone();
-        let _ = name;
         return super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::WillDecl {
             decl: Box::new(declaration),
+            name,
             phasers,
         });
     }
@@ -4520,7 +4520,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     });
                 }
                 return Ok(Expr::Grouped(Box::new(
-                    crate::parser::lower_paren_sections(sections, Vec::new(), true),
+                    super::sections::lower_paren_sections(sections, Vec::new(), true),
                 )));
             }
             let inner = named_child_or_positional(semilist)?;
@@ -4597,7 +4597,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         other => vec![other],
                     });
                 }
-                return Ok(crate::parser::lower_array_sections(
+                return Ok(super::sections::lower_array_sections(
                     sections,
                     Vec::new(),
                     true,
@@ -5121,7 +5121,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             // `Assignment` node; the parser's own expansion handles a literal
             // list of lvalues.
             if infix.class == RakuAstClass::Assignment {
-                return Ok(crate::parser::hyper_assignment_expr(
+                return Ok(super::hyper_assign::lower_hyper_assignment(
                     *left, *right, dwim_left, dwim_right,
                 ));
             }

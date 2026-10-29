@@ -30,9 +30,8 @@ file's number where a reviewer sees it.
 The parser, AST, compiler and RakuAST layers are out
 of scope: they spell the names as source-level syntax, not as `Env` keys.
 
-The one `Env` key that remains is the `self` of a plain routine's own `$self`
-parameter (`sub f($self) { ... }`, ADR-0061), a user lexical that shares the
-spelling; it is bound by `bind_param_value_sym` in `src/runtime/types/mod.rs`.
+No `Env` key spells the names: a plain routine's own `$self` parameter (ADR-0061)
+is the reserved `LEX_SELF` (`$self`) lexical, not the `self` term (#15464).
 """
 from __future__ import annotations
 

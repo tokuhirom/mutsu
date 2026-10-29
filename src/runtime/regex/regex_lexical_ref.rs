@@ -117,7 +117,27 @@ impl Interpreter {
                 ..
             } => Some((**regex).clone()),
             ValueView::Str(s) => Some(Value::regex(s.to_string())),
+            // `<x=@(@w)>` / `<x={ @w }>`: an array is an alternation of its
+            // elements, each a pattern; an empty one never matches.
+            ValueView::Array(items, _) => Some(Value::regex(Self::alternation_pattern(
+                items.iter().map(|elt| match elt.view() {
+                    ValueView::Regex(pat) => pat.to_string(),
+                    ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
+                    _ => elt.to_string_value(),
+                }),
+            ))),
             _ => None,
+        }
+    }
+
+    /// `[a|b|…]` over already-rendered patterns; `<!>` for none.
+    // Cost: O(total pattern length).
+    fn alternation_pattern(patterns: impl Iterator<Item = String>) -> String {
+        let patterns = patterns.collect::<Vec<_>>();
+        if patterns.is_empty() {
+            "<!>".to_string()
+        } else {
+            format!("[{}]", patterns.join("|"))
         }
     }
 

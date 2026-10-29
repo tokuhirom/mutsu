@@ -17,7 +17,7 @@ pub(crate) fn conditional_declaration(
     if !is_declaration(stmt) {
         return Ok(None);
     }
-    super::control::source_body::check(condition, &[], std::slice::from_ref(stmt))?;
+    crate::parser::check_source_body(condition, &[], std::slice::from_ref(stmt))?;
     let effective = if is_unless {
         Expr::Unary {
             op: crate::token_kind::TokenKind::Bang,
@@ -41,7 +41,7 @@ pub(crate) fn topical_declaration(
     if !is_declaration(stmt) {
         return Ok(None);
     }
-    super::control::source_body::check(topic, &[], std::slice::from_ref(stmt))?;
+    crate::parser::check_source_body(topic, &[], std::slice::from_ref(stmt))?;
     let Some((decl, assignment)) = split_decl_for_topic_modifier(stmt)? else {
         return Ok(None);
     };
@@ -180,7 +180,7 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
         marks: marks.clone(),
         anonymous: *anonymous,
         name: name.clone(),
-        expr: super::decl::default_decl_expr(is_array, is_hash, None, type_constraint.as_deref()),
+        expr: crate::parser::default_decl_expr(is_array, is_hash, None, type_constraint.as_deref()),
         type_constraint: type_constraint.clone(),
         is_state: false,
         is_our: *is_our,

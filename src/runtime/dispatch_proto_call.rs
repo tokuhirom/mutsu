@@ -52,6 +52,13 @@ impl Interpreter {
             // `proto method contains-spec` — failed to resolve against any
             // concrete-typed multi candidate. Restored explicitly here,
             // mirroring `methods_call_dispatch.rs`'s own target/arg checks.
+            let proto_params: Option<Vec<crate::ast::ParamDef>> = match ctx.invocant.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                ValueView::Package(name) => Some(name.resolve()),
+                _ => None,
+            }
+            .and_then(|cn| self.lookup_proto_method(&cn, &proto_name))
+            .map(|(_, proto)| proto.param_defs.clone());
             if Self::should_autothread_method(&proto_name) {
                 if let ValueView::Junction { kind, values } = ctx.invocant.view() {
                     let mut results = Vec::with_capacity(values.len());
@@ -64,8 +71,27 @@ impl Interpreter {
                     }
                     return Ok(Value::junction(kind, results));
                 }
+                // The proto's own parameters decide: `proto method CALL-ME(Mu)
+                // {*}` binds a Junction whole (`Kind`'s `Refine(any(..))`), so
+                // `{*}` hands it on to the candidates unthreaded.
+                let junction_indices: Vec<usize> = args
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, a)| a.is_junction_value())
+                    .map(|(i, _)| i)
+                    .collect();
+                // A slurpy proto (`proto method f(|) {*}`) leaves the choice to
+                // the candidates, as before: a Junction threads when none of
+                // them takes it whole.
+                let proto_threads: Vec<usize> = match &proto_params {
+                    Some(pds) => junction_indices
+                        .into_iter()
+                        .filter(|idx| !Self::proto_param_takes_junction_whole(pds, *idx))
+                        .collect(),
+                    None => junction_indices,
+                };
                 if let Some((idx, kind, values)) = args.iter().enumerate().find_map(|(idx, arg)| {
-                    if !arg.is_junction_value() {
+                    if !proto_threads.contains(&idx) || !arg.is_junction_value() {
                         return None;
                     }
                     match arg.view() {
@@ -106,6 +132,11 @@ impl Interpreter {
             let invocant_class = match ctx.invocant.view() {
                 ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
                 ValueView::Package(name) => Some(name.resolve()),
+                // A mixed-in type object (`Class.^mixin(R)`) dispatches in its class.
+                ValueView::Mixin(inner, _) => match inner.view() {
+                    ValueView::Package(name) => Some(name.resolve()),
+                    _ => None,
+                },
                 _ => None,
             };
             let proto_body_code: Option<&CompiledCode> = if self.current_code != 0 {

@@ -552,6 +552,7 @@ impl Interpreter {
                 let mut shape = self.candidate_dispatch_shape(def, positional_args);
                 shape.sort();
                 shape == best_shape_sorted
+                    || self.shapes_tie_on_incomparable_types(&shape, &best_shape_sorted)
             })
         {
             // `is default` trait tie-breaking: if exactly one tied candidate

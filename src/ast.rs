@@ -427,12 +427,8 @@ pub(crate) const BRACKETS_PARAM: &str = "@";
 /// True when a *signature* declares a parameter the source spelled `$self`,
 /// including one nested in a destructuring sub-signature (`sub f([$self, $x])`).
 ///
-/// The single oracle both halves of ADR-0061 consult: the compiler's
-/// `self_is_signature_param` flag and the runtime's binding-time mirror. Keeping
-/// them on one function is what stops the two from disagreeing — a compiler that
-/// thinks `$self` means the parameter while the binder thinks it means the
-/// reserved lexical key is exactly the silent mis-binding the ADR set out to
-/// avoid.
+/// Such a parameter is stored under the reserved
+/// [`crate::env::LEX_SELF`] key ([`ParamDef::storage_name`], ADR-0061).
 pub(crate) fn signature_declares_self_lexical(param_defs: &[ParamDef]) -> bool {
     param_defs.iter().any(|pd| {
         pd.declares_self_lexical()
@@ -665,6 +661,9 @@ impl ParamDef {
     pub(crate) fn storage_name(&self) -> std::borrow::Cow<'_, str> {
         if self.sigilless && !self.name.is_empty() {
             std::borrow::Cow::Owned(crate::term_names::term_key(&self.name))
+        } else if self.declares_self_lexical() {
+            // `$self` is a user lexical, never the `self` term (ADR-0061).
+            std::borrow::Cow::Borrowed(crate::env::LEX_SELF)
         } else {
             std::borrow::Cow::Borrowed(&self.name)
         }
@@ -2398,6 +2397,9 @@ pub(crate) enum Stmt {
     /// undeclared-routine guards (ADR-0134). An error raised before this
     /// point is a compile-time failure, which skips the END phasers (#10977).
     BeginPrologueEnd,
+    /// Runs the closures `$*CU.add-check-code` queued on the main unit, after
+    /// its CHECK phasers and before INIT.
+    RunCheckCode,
     Assign {
         name: String,
         expr: Expr,
@@ -3237,6 +3239,11 @@ pub(crate) enum Stmt {
         /// call (`self.x`). Both save the same `self` slot at runtime.
         #[serde(default)]
         is_attribute: bool,
+        /// The invocant is a type object (`temp Type.^meta = v`), not a
+        /// variable: `var_name` is then the type's name and the old value is
+        /// restored by a write-back rather than by a variable snapshot.
+        #[serde(default)]
+        type_invocant: bool,
     },
     /// A construct the parser built in its RakuAST shape, kept only by a parse
     /// whose tree the RakuAST conversion reads (ADR-10723 Stage 2,

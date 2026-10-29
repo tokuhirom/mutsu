@@ -15,20 +15,6 @@ use super::predicates::{
     is_literal_expr, is_pseudo_package, starts_with_postfix_ambiguous_term, starts_with_term_token,
 };
 use crate::rakuast::callable_lvalue_assign_expr;
-/// The statement `.=` on the topic (`$_ .= meth`, `.= meth`), tagged with its
-/// source-level shape. It is an [`Expr::TopicDotAssign`]
-/// (compiled to `TopicDotAssign`) so it can reassign a read-only
-/// whole-container topic (`given @a { .=uc }`, writing through to `@a`) while a
-/// plain `$_ = ...` keeps throwing X::Assignment::RO.
-pub(crate) fn topic_dot_assign(method_call: Expr) -> Expr {
-    let expanded = Expr::TopicDotAssign(Box::new(method_call.clone()));
-    crate::parser::stmt::assign::dotty_assign_marker(
-        Expr::Var("_".to_string()),
-        method_call,
-        expanded,
-    )
-}
-
 /// Parse an expression statement (fallback).
 pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // Topic mutating method call: .=method(args)

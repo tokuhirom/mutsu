@@ -46,6 +46,18 @@ macro_rules! node_row {
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
+    // `.DEPARSE(*@roles)`: rakudo's own `RakuAST::Deparse`, run as Raku code
+    // (ADR-14845); `run_prelude_deparse.rs` declares the routine called here.
+    MethodRow {
+        owner: "RakuAST::Node",
+        name: "DEPARSE",
+        arity: 0,
+        handler: Handler::Interp(deparse),
+        flags: RowFlags::OWNER_ONLY
+            .or(RowFlags::ANY_ARGS)
+            .or(RowFlags::SLURPY),
+        named: &[],
+    },
     MethodRow {
         owner: "RakuAST::Node",
         name: "visit-children",
@@ -65,6 +77,13 @@ pub(super) static ROWS: &[MethodRow] = &[
         .rakuast_add_child("push", a[0].clone())),
     node_row!("RakuAST::CompUnit", "replace-statement-list", |t, a| t
         .rakuast_set_field("replace-statement-list", a[0].clone())),
+    // `$*CU.add-check-code({ ... })`: an undocumented rakudo method that
+    // `static::CLI` calls (maintainer-approved, #15513); queues the closure
+    // for the unit's CHECK phase.
+    node_row!("RakuAST::CompUnit", "add-check-code", |t, a| {
+        crate::unit_source_text::add_check_code(t.clone(), a[0].clone());
+        Some(Ok(Value::NIL))
+    }),
     node_row!(
         "RakuAST::Statement::Expression",
         "set-expression",
@@ -391,4 +410,18 @@ fn visit_children(
         }
     }
     Some(Ok(Value::NIL))
+}
+
+/// `DEPARSE(*@roles)`: hand the node and the roles to the deparser routine.
+// Cost: O(1) plus the deparser's own cost, linear in the tree it prints.
+fn deparse(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let mut call_args = Vec::with_capacity(args.len() + 1);
+    call_args.push(target.clone());
+    call_args.extend(args.iter().cloned());
+    Some(interp.call_function("MUTSU_DEPARSE::run", call_args))
 }

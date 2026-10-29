@@ -30,15 +30,19 @@ mod constructor_positional;
 mod contextualizer;
 mod control_signature;
 mod decl_origins;
+pub(crate) mod dotty_assign;
 pub(crate) mod empty_fields;
 mod expr_origins;
+pub(crate) mod hyper_assign;
 mod if_branch;
+pub(crate) mod list_infix;
 mod loop_bind;
 pub(crate) mod nested_methods;
 mod package_trait_origins;
 mod parsed_view;
 pub(crate) mod pointy_bind;
 mod regex_origins;
+pub(crate) mod sections;
 pub(crate) mod signature_expand;
 mod trait_is_constructor;
 mod with_branch;
@@ -47,6 +51,8 @@ mod convert;
 mod core_term_names;
 use crate::core_type_names;
 mod decl_compound_assign;
+mod decl_modifier_split;
+mod will_decl;
 pub(crate) use decl_compound_assign::ZIP_ASSIGN;
 mod decl_tail;
 mod decl_traits;
@@ -3455,6 +3461,7 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     names.extend(accessor_names(class));
     names.extend(derived_methods::names(class));
     if class == RakuAstClass::CompUnit {
+        names.push("add-check-code");
         names.push("replace-statement-list");
     }
     if class == RakuAstClass::StatementExpression {

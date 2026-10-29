@@ -888,25 +888,17 @@ impl Interpreter {
         Ok(value)
     }
 
-    /// Bind a call's arguments to a signature, then mirror a `$self` parameter
-    /// onto the reserved lexical key (ADR-0061).
-    ///
-    /// A parameter the source spelled `$self` keeps the sigil-less
-    /// `ParamDef.name` — signature introspection re-adds the sigil, and a *named*
-    /// parameter matches its argument `Pair` by that name — so it binds the plain
-    /// `"self"` key. A body compiled with `Compiler::self_is_signature_param`
-    /// reads it there and needs nothing more, but the AST **carrier** path
-    /// (`eval_block_value`, which recompiles `SubData::body` with a bare
-    /// `Compiler::new()`) has no such flag to consult and reads the reserved key
-    /// instead. Binding both makes the parameter visible to every execution
-    /// path — compiled, carrier, or slow — instead of only the ones that happen
-    /// to carry the compiler's view of the signature.
+    /// Bind a call's arguments to a signature. A parameter the source spelled
+    /// `$self` keeps the sigil-less `ParamDef.name` — signature introspection
+    /// re-adds the sigil, and a *named* parameter matches its argument `Pair` by
+    /// that name — but binds the reserved [`crate::env::LEX_SELF`] key
+    /// ([`ParamDef::storage_name`], ADR-0061), never the `self` term, which only
+    /// the frame record answers.
     ///
     /// Gated on [`ParamDef::declares_self_lexical`], NOT on the bare name: a
     /// parser-synthesized anonymous invocant (`method () { ... }`,
-    /// `method (Foo:D:)`) is also recorded under the name `self`, and mirroring
-    /// *that* onto the reserved key would put the invocant back on top of a
-    /// captured outer `my $self` — the very collision ADR-0061 removes.
+    /// `method (Foo:D:)`) is also recorded under the name `self` and declares no
+    /// lexical.
     pub(crate) fn bind_function_args_values(
         &mut self,
         param_defs: &[ParamDef],
@@ -1871,7 +1863,8 @@ impl Interpreter {
                 } else if pd.traits.iter().any(|t| t == "raw" || t == "rw") {
                     // `+@a is raw` / `is rw` deliberately alias the caller's
                     // element containers, so their cells pass straight through.
-                    Value::real_array(items)
+                    // Rakudo binds a `List`, not an `Array`, for these.
+                    Value::array(items)
                 } else {
                     // A sigiled `+@a` binds an `Array`, and — exactly like `*@a`
                     // — each element is a fresh binding rather than an alias of
@@ -2283,7 +2276,11 @@ impl Interpreter {
                                     encode_slurpy_rw_param(&slurpy_key, items.len(), source_index),
                                     source_name,
                                 ));
-                                items.push(if source_value.is_container_ref() {
+                                // A `Proxy` mediates its own FETCH/STORE; a cell
+                                // around it would take a plain write instead.
+                                items.push(if source_value.is_container_ref()
+                                    || matches!(source_value.view(), ValueView::Proxy { .. })
+                                {
                                     source_value
                                 } else {
                                     Value::container_ref(crate::gc::Gc::new(
@@ -2402,7 +2399,8 @@ impl Interpreter {
                     // `*@a is raw` / `is rw` deliberately DO alias, and record
                     // that through `rw_bindings` — leave those items alone.
                     let slurpy_value = if is_alias_slurpy {
-                        Value::real_array(items)
+                        // Rakudo binds a `List` (not an `Array`) for `*@a is raw`.
+                        Value::array(items)
                     } else if !lazy_slots.is_empty() {
                         Self::lazy_literal_with_slipped_tail(
                             items.into_iter().map(Value::into_deref).collect(),
