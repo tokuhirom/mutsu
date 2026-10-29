@@ -2483,6 +2483,16 @@ impl Interpreter {
                                 self.no_such_qualified_symbol(pkg_prefix.as_str(), short.as_str())
                             );
                         }
+                        // An abstract built-in (`Cool`, `Numeric`, `Real`,
+                        // `Stringy`, `Callable`, ...) with no native
+                        // constructor: `Mu.new` builds a defined, attribute-less
+                        // instance of it, as it does for `Any` (rakudo:
+                        // `Cool.new.defined` is True, `.raku` is `Cool.new`).
+                        if crate::builtin_types::catalog::builtin_type_mro_syms(&resolved)
+                            .is_some()
+                        {
+                            return Ok(Value::make_instance(name, HashMap::new()));
+                        }
                         Err(crate::runtime::did_you_mean::method_not_found(
                             "new", &resolved,
                         ))
