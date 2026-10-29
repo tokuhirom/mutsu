@@ -7463,6 +7463,13 @@ impl Interpreter {
                 crate::unit_source_text::end_compile_phase();
                 *ip += 1;
             }
+            // Cost: O(c) calls plus the closures' own cost, c = closures `add-check-code` queued; O(1) when none.
+            OpCode::RunCheckCode => {
+                for (closure, _cu) in crate::unit_source_text::take_check_code() {
+                    self.vm_call_on_value(closure, Vec::new(), None)?;
+                }
+                *ip += 1;
+            }
             // Cost: O(size of the declaration) per execution (routine/class/role registration).
             OpCode::RegisterDecl(idx) => {
                 self.sync_source_line(code, *ip);

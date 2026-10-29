@@ -4531,6 +4531,9 @@ pub(crate) enum OpCode {
     /// an error raised from here on is a run-time one, which runs the END
     /// phasers. Stack: `[] → []`.
     EndBeginPrologue,
+    /// Run the check code queued on the main unit (`Stmt::RunCheckCode`).
+    /// Stack: `[] → []`.
+    RunCheckCode,
     /// Register an `enum` declaration. Stack: `[] → []`.
     ///
     /// The operand indexes `CompiledCode::stmt_pool` (a `Stmt::EnumDecl`), which
