@@ -315,6 +315,10 @@ impl Interpreter {
             }
         }
 
+        if let Some(origin) = &list.generator_origin {
+            return self.fill_from_generator_origin(list, origin, needed);
+        }
+
         // Snapshot the PRISTINE trailing history from `generation_state`, not
         // `cache`, without holding either lock across user-code execution:
         // the generator closure may read several trailing elements (e.g. a
@@ -328,12 +332,19 @@ impl Interpreter {
         // moved back below (on every exit path): cloning it in and back out
         // cost O(history) per pull, which made a one-element-per-iteration
         // consumer quadratic (#10780).
-        let mut history = list
+        //
+        // `generation_state` is `None` while a generator call is in flight, so a
+        // generator that reads past the elements it has so far (`{ @h[5] }`
+        // for `my @h = 0, {...} ... *`) finds the list as short as it is and
+        // does not start a second, empty-history generation.
+        let Some(mut history) = list
             .generation_state
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
-            .unwrap_or_default();
+        else {
+            return Ok(());
+        };
         // `cache` and the history end at the same generator frontier, but
         // need not have the same length: a front mutation of a lazy
         // `@`-array (`shift`, `unshift`, `splice`) rewrites the cache's
@@ -345,21 +356,60 @@ impl Interpreter {
         let cached_len = list.cache.lock().unwrap().as_ref().map(Vec::len);
         let generated =
             self.generate_closure_sequence(list, &mut history, needed, generated_from, cached_len);
-        if generated.is_ok() {
-            // Append only the NEWLY generated tail to `cache` -- positions it
-            // already had may hold a user override and must not be clobbered
-            // (see `fill_sequence_cache`'s matching comment).
-            let mut cache = list.cache.lock().unwrap();
-            match cache.as_mut() {
-                Some(cached) => cached.extend_from_slice(&history[generated_from..]),
-                None => *cache = Some(history.clone()),
-            }
-        } else {
-            history.truncate(generated_from);
-        }
         // Publish the extended PRISTINE history back to `generation_state`.
         *list.generation_state.lock().unwrap() = Some(history);
         generated
+    }
+
+    /// A cloned lazy array pulls the elements past its own history from the
+    /// array it was cloned from, so both see the generator's one output.
+    // Cost: O(1) amortized per new element, plus the origin's generator call.
+    fn fill_from_generator_origin(
+        &mut self,
+        list: &LazyList,
+        origin: &LazyList,
+        needed: usize,
+    ) -> Result<(), RuntimeError> {
+        let (own_len, cached_len) = (
+            list.generation_state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .as_ref()
+                .map_or(0, Vec::len),
+            list.cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .as_ref()
+                .map_or(0, Vec::len),
+        );
+        // The history runs ahead of the cache by what a front mutation removed.
+        let target = needed + own_len.saturating_sub(cached_len);
+        self.fill_closure_sequence(origin, target)?;
+        let fresh: Vec<Value> = match origin
+            .generation_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
+            Some(history) if history.len() > own_len => {
+                history[own_len..history.len().min(target)].to_vec()
+            }
+            _ => Vec::new(),
+        };
+        if fresh.is_empty() {
+            return Ok(());
+        }
+        list.generation_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get_or_insert_with(Vec::new)
+            .extend_from_slice(&fresh);
+        list.cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get_or_insert_with(Vec::new)
+            .extend_from_slice(&fresh);
+        Ok(())
     }
 
     /// Run a closure sequence's generator until the cache would hold
@@ -374,10 +424,41 @@ impl Interpreter {
         generated_from: usize,
         cached_len: Option<usize>,
     ) -> Result<(), RuntimeError> {
+        // The state is copied out for the run: a generator that reads its own
+        // list (`my @h = 0, { @h[0] + 1 } ... *`) asks the list's laziness,
+        // which locks the state, so the lock cannot be held across the call.
         let state_mutex = list.closure_seq.as_ref().unwrap();
-        let mut guard = state_mutex.lock().unwrap();
-        let state = &mut *guard;
+        let mut state = state_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let result = self.run_closure_sequence(
+            &mut state,
+            &list.cache,
+            history,
+            needed,
+            generated_from,
+            cached_len,
+        );
+        state_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .finished = state.finished;
+        result
+    }
+
+    // Cost: O(1) amortized per new element, plus the generator call.
+    fn run_closure_sequence(
+        &mut self,
+        state: &mut crate::value::ClosureSeqState,
+        cache: &std::sync::Mutex<Option<Vec<Value>>>,
+        history: &mut Vec<Value>,
+        needed: usize,
+        generated_from: usize,
+        cached_len: Option<usize>,
+    ) -> Result<(), RuntimeError> {
         let generator = state.generator.clone();
+        let mut published = generated_from;
 
         // Elements the cache will hold once this call's output is appended.
         let have = |history: &Vec<Value>| match cached_len {
@@ -419,7 +500,9 @@ impl Interpreter {
                     break;
                 }
             }
+            publish_generated(cache, history, &mut published);
         }
+        publish_generated(cache, history, &mut published);
 
         Ok(())
     }
@@ -515,4 +598,27 @@ impl Interpreter {
             cached.extend(tail);
         }
     }
+}
+
+/// Append the elements generated so far (`history[*published..]`) to the
+/// list's cache, so the generator's next step -- and a generator that reads
+/// its own list -- sees them. Positions the cache already had may hold a user
+/// override and are not touched (see `fill_sequence_cache`).
+// Cost: O(k), k = the newly generated elements.
+fn publish_generated(
+    cache: &std::sync::Mutex<Option<Vec<Value>>>,
+    history: &[Value],
+    published: &mut usize,
+) {
+    if *published >= history.len() {
+        return;
+    }
+    let mut cache = cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match cache.as_mut() {
+        Some(cached) => cached.extend_from_slice(&history[*published..]),
+        None => *cache = Some(history.to_vec()),
+    }
+    *published = history.len();
 }

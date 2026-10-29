@@ -525,6 +525,7 @@ pub(crate) fn permutations(target: &Value, args: &[Value]) -> Option<Result<Valu
             cached_no_sink: false,
             deleted_indices: Default::default(),
             descriptor: None,
+            generator_origin: None,
             itemized: false,
         };
         return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));
