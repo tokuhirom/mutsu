@@ -9,9 +9,11 @@ pub(crate) use type_qualify::qualify_program as qualify_type_names;
 // `expr` module (and its many `pub(in crate::parser)`-typed internals) public.
 pub(crate) use expr::lower_composition;
 pub(crate) use expr::{
-    contains_whatever, is_frozen_whatever, is_whatever, operator_call_operands,
-    should_wrap_whatevercode,
+    contains_whatever, contains_xx_with_bare_whatever, is_frozen_whatever, is_whatever,
+    operator_call_operands, should_wrap_whatevercode,
 };
+pub(crate) use stmt::assign::normalize_comma_list_items;
+pub(crate) use stmt::simple::{PREC_SEQUENCE, lookup_custom_infix_precedence};
 // `but`-mixing a plain value composes an anonymous role at RUNTIME, and it must
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
@@ -91,7 +93,6 @@ pub(crate) mod p6_frame_state;
 pub(crate) use stmt::decl::typed_default_expr;
 mod parse_result;
 mod primary;
-pub(crate) use primary::container::{lower_array_sections, lower_paren_sections};
 mod quote_shadow;
 pub(crate) mod sink_warn;
 mod stmt;

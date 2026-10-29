@@ -127,9 +127,10 @@ pub(crate) use crate::rakuast::compound::lower::{
     written_set_assignment, written_topic_dotty_assignment,
 };
 pub(in crate::parser) use assign_stmt::assign_stmt;
+pub(crate) use comma::normalize_comma_list_items;
 pub(in crate::parser) use comma::{
-    comma_list_ends_here, normalize_comma_list_items, parse_comma_or_expr,
-    parse_comma_or_expr_item_no_word_logical, parse_comma_or_expr_no_word_logical,
+    comma_list_ends_here, parse_comma_or_expr, parse_comma_or_expr_item_no_word_logical,
+    parse_comma_or_expr_no_word_logical,
 };
 pub(in crate::parser) use try_assign::{paren_assign_rhs_is_complete, try_parse_assign_expr};
 

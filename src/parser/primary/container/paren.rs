@@ -19,11 +19,12 @@ fn adverb_not_allowed_error(spelled: &str) -> PError {
     PError::fatal_with_exception(message, Box::new(exception))
 }
 
-use super::meta_ops::{
+use super::meta_ops::{starts_with_sequence_op, try_inline_modifier, try_parse_sequence_in_paren};
+use crate::rakuast::list_infix::{
     finalize_paren_list, maybe_curry_xz_metaop, normalize_chained_zip_meta,
-    normalize_sequence_waypoints, starts_with_sequence_op, try_inline_modifier,
-    try_parse_sequence_in_paren,
+    normalize_sequence_waypoints,
 };
+use crate::rakuast::sections::lower_paren_sections;
 
 /// Parse a parenthesized expression or list.
 pub(crate) fn paren_expr(input: &str) -> PResult<'_, Expr> {
@@ -390,7 +391,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
 /// trailing `;`: `(1,2,3;)`) is NOT wrapped, matching Raku.
 ///
 /// The parse keeps the sections as written (`Spelling::ParenSections`);
-/// [`lower_paren_sections`] is the executable shape alone.
+/// [`crate::rakuast::sections::lower_paren_sections`] is the executable shape alone.
 // Cost: O(n), n = size of the sections.
 pub(crate) fn finalize_paren_sections(
     mut sections: Vec<Vec<Expr>>,
@@ -407,36 +408,6 @@ pub(crate) fn finalize_paren_sections(
     Expr::spelled(lower_paren_sections(sections, Vec::new(), true), || {
         crate::ast::spelled::Spelling::ParenSections(source)
     })
-}
-
-/// [`finalize_paren_sections`] without the written sections.
-// Cost: O(n), n = size of the sections.
-pub(crate) fn lower_paren_sections(
-    mut sections: Vec<Vec<Expr>>,
-    current: Vec<Expr>,
-    saw_semicolon: bool,
-) -> Expr {
-    if !saw_semicolon {
-        return finalize_paren_list(current);
-    }
-    if !current.is_empty() {
-        sections.push(current);
-    }
-    match sections.len() {
-        0 => Expr::ArrayLiteral(Vec::new()),
-        1 => build_paren_section(sections.into_iter().next().unwrap()),
-        _ => Expr::ArrayLiteral(sections.into_iter().map(build_paren_section).collect()),
-    }
-}
-
-/// Render one semicolon-section: a single item stays bare; multiple items form
-/// a sub-list (via `finalize_paren_list`, so meta-ops etc. still lift).
-fn build_paren_section(items: Vec<Expr>) -> Expr {
-    if items.len() == 1 {
-        items.into_iter().next().unwrap()
-    } else {
-        finalize_paren_list(items)
-    }
 }
 
 /// Check if an expression is a colonpair (represented as a FatArrow binary expression).
