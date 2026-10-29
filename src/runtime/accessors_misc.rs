@@ -26,11 +26,12 @@ impl Interpreter {
                 .is_some_and(|name| self.module.need_hidden_classes.contains(name))
             || crate::qualified::split_qualified(Symbol::intern(key))
                 .is_some_and(|(_, short)| self.module.need_hidden_classes.contains(short.as_str()))
-            || self
-                .module
-                .need_hidden_classes
-                .iter()
-                .any(|name| key.ends_with(&format!("::{name}")))
+            || self.key_ends_with_need_hidden_class(key)
+    }
+
+    /// [`key_ends_with_any_as_qualified_tail`] over the hidden `need` classes.
+    fn key_ends_with_need_hidden_class(&self, key: &str) -> bool {
+        key_ends_with_any_as_qualified_tail(key, &self.module.need_hidden_classes)
     }
 
     /// Check if a name is a known pseudo-package (MY, OUTER, CORE, etc.)
@@ -605,5 +606,49 @@ impl Interpreter {
     /// Discard let_saves from `mark` without restoring (block succeeded).
     pub(crate) fn discard_let_saves(&mut self, mark: usize) {
         self.control.let_saves.truncate(mark);
+    }
+}
+
+/// Whether `key` ends in `::<name>` for some `name` in `names`: equal to asking
+/// whether a suffix that starts right after one of the key's `::` separators is
+/// one of the names, which is one set probe per separator instead of one
+/// `format!` + `ends_with` per name (a program that `need`s a hundred classes
+/// built a hundred strings for every env key a stash read looked at).
+// Cost: O(m + s * m), m = bytes of the key, s = `::` positions in it (one probe each).
+fn key_ends_with_any_as_qualified_tail(key: &str, names: &std::collections::HashSet<String>) -> bool {
+    let bytes = key.as_bytes();
+    // Every position, so `A:::B` offers `B` as the `ends_with` form does.
+    // `i + 2` follows two ASCII colons, so it is a char boundary.
+    (0..bytes.len().saturating_sub(1))
+        .any(|i| bytes[i] == b':' && bytes[i + 1] == b':' && names.contains(&key[i + 2..]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::key_ends_with_any_as_qualified_tail;
+    use std::collections::HashSet;
+
+    /// The per-name `format!` + `ends_with` form this replaced.
+    fn reference(key: &str, names: &HashSet<String>) -> bool {
+        names.iter().any(|name| key.ends_with(&format!("::{name}")))
+    }
+
+    #[test]
+    fn matches_the_format_and_ends_with_form() {
+        let names: HashSet<String> = ["Foo", "Bar::Baz", "B", "x"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        for key in [
+            "", ":", "::", "Foo", "A::Foo", "A::B::Foo", "Foo::A", "A::Bar::Baz", "Bar::Baz",
+            "Q::Bar::Baz", "A:::B", "A::::B", "A::b", "::Foo", "X::Y::x", "naïve::Foo",
+            "A::Foo::", "A::\u{1F600}", "$A::Foo", "GLOBAL::Foo",
+        ] {
+            assert_eq!(
+                key_ends_with_any_as_qualified_tail(key, &names),
+                reference(key, &names),
+                "key {key:?}"
+            );
+        }
     }
 }
