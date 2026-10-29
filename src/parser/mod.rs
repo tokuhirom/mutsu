@@ -113,7 +113,6 @@ pub(crate) use stmt::control::source_body::check as check_source_body;
 /// The default the parser plants for a typed scalar attribute with no
 /// initializer; the RakuAST lowering re-plants the same one.
 pub(crate) use stmt::decl::attribute_type_seed;
-pub(crate) use stmt::decl::build_sigilless_bind_stmt;
 pub(crate) use stmt::decl::default_decl_expr;
 pub(crate) use stmt::simple::{is_user_declared_sub, is_user_declared_value_term};
 pub(crate) use stmt::simple_expr_stmt::decl_target_var_name;

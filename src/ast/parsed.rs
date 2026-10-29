@@ -88,7 +88,7 @@ pub(crate) enum ParsedStmt {
     },
     /// A sigilless declaration, `my \x = 5` / `my Int \x := $s` /
     /// `my \x .= new`, as written. `rakuast::lower` adds the bookkeeping the
-    /// compiler needs (`parser::build_sigilless_bind_stmt`).
+    /// compiler needs (`rakuast::sigilless_lower::build_sigilless_bind_stmt`).
     SigillessDecl(Box<SigillessSource>),
     /// `temp my $x`: the declaration (a `Stmt::VarDecl`) under a `temp` prefix.
     /// `rakuast::lower` follows it with the save of the fresh variable
