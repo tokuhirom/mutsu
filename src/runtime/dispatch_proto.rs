@@ -484,32 +484,23 @@ impl Interpreter {
         // This is ungated: it is a precise subset of the blanket reconcile (so it
         // never changes a correct result) and it fixes the latent default-build
         // bug rather than merely the double-OFF measurement surface.
-        let proto_pre_env: std::collections::HashMap<Symbol, Value> = self
-            .env
-            .iter()
-            .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
-            .map(|(k, v)| (*k, v.clone()))
-            .collect();
+        let pre_env = ProtoPreEnv::capture(&self.env);
         let result =
             self.run_proto_method(target.clone(), &cn, &owner, method, args.to_vec(), proto);
-        let changed: Vec<String> = self
-            .env
-            .iter()
-            .filter(|(k, v)| {
-                let kn = k.resolve();
-                // `self`/`$_` are the callee's invocant and topic, never a caller
-                // lexical to write back. The nested proto dispatch can leave the
-                // enclosing method's `self` slot holding a type object (a
-                // writeback-safe `Package`); recording it here would clobber the
-                // enclosing invocant on return — a plain method that merely
-                // delegates to an attribute's cross-module `proto method` would
-                // turn its own `self` into `Any` (HTTP::Message.field ->
-                // HTTP::Header.field). Exclude the invocant explicitly.
-                kn != "_"
-                    && kn != "$_"
-                    && kn != "self"
-                    && !kn.starts_with("__mutsu_")
-                    && Self::is_writeback_safe_scalar(v)
+        let changed: Vec<String> = if pre_env.unchanged(&self.env) {
+            Vec::new()
+        } else {
+            self.env
+                .iter()
+                .filter(|(k, v)| {
+                    // `self`/`$_` are the callee's invocant and topic, never a caller
+                    // lexical to write back. The nested proto dispatch can leave the
+                    // enclosing method's `self` slot holding a type object (a
+                    // writeback-safe `Package`); recording it here would clobber the
+                    // enclosing invocant on return — a plain method that merely
+                    // delegates to an attribute's cross-module `proto method` would
+                    // turn its own `self` into `Any` (HTTP::Message.field ->
+                    // HTTP::Header.field). Exclude the invocant explicitly.
                     // Only a name that ALREADY existed as a writeback-safe scalar
                     // before the proto dispatch and whose value the dispatch
                     // changed is a genuine caller-lexical mutation to propagate.
@@ -519,13 +510,68 @@ impl Interpreter {
                     // even the caller's own instance var reset to a type object.
                     // Recording those clobbers the caller (`unwrap_or(true)` turned
                     // `$o` into `Any`). Require a real pre-existing scalar.
-                    && proto_pre_env.get(*k).map(|p| p != *v).unwrap_or(false)
-            })
-            .map(|(k, _)| k.resolve())
-            .collect();
+                    pre_env.get(**k).is_some_and(|p| p != *v) && {
+                        let kn = k.resolve();
+                        kn != "_"
+                            && kn != "$_"
+                            && kn != "self"
+                            && !kn.starts_with("__mutsu_")
+                            && Self::is_writeback_safe_scalar(v)
+                    }
+                })
+                .map(|(k, _)| k.resolve())
+                .collect()
+        };
         for n in changed {
             self.record_caller_var_writeback(&n);
         }
         Some(result)
+    }
+}
+
+/// The writeback-safe caller scalars as they were before a proto dispatch, so
+/// the dispatch's changes to them can be told from internal leakage.
+///
+/// Capturing is O(1) when the overlay can be pinned ([`Env::pin_overlay`]):
+/// the dispatch then either leaves the overlay untouched, proven by pointer
+/// equality, so nothing is compared at all, or copies it on its first write
+/// and the pinned tier is the "before" picture. Only an env that cannot be
+/// pinned (a flat env over a capture fallback) pays for a snapshot.
+enum ProtoPreEnv {
+    Pinned(crate::env::OverlayPin),
+    Snapshot(std::collections::HashMap<Symbol, Value>),
+}
+
+impl ProtoPreEnv {
+    // Cost: O(1) pinned; O(e) for the snapshot fallback, e = env entries.
+    fn capture(env: &crate::env::Env) -> Self {
+        match env.pin_overlay() {
+            Some(pin) => Self::Pinned(pin),
+            None => Self::Snapshot(
+                env.iter()
+                    .filter(|(_, v)| Interpreter::is_writeback_safe_scalar(v))
+                    .map(|(k, v)| (*k, v.clone()))
+                    .collect(),
+            ),
+        }
+    }
+
+    // Cost: O(1).
+    fn unchanged(&self, env: &crate::env::Env) -> bool {
+        match self {
+            Self::Pinned(pin) => env.overlay_unchanged_since(pin),
+            Self::Snapshot(_) => false,
+        }
+    }
+
+    /// The pre-dispatch value of `key`, only when it was a writeback-safe scalar.
+    // Cost: O(1).
+    fn get(&self, key: Symbol) -> Option<&Value> {
+        match self {
+            Self::Pinned(pin) => pin
+                .get(key)
+                .filter(|v| Interpreter::is_writeback_safe_scalar(v)),
+            Self::Snapshot(map) => map.get(&key),
+        }
     }
 }

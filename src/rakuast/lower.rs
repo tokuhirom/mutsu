@@ -444,7 +444,8 @@ pub(super) fn lower_stmt_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> 
         RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_statement(node),
         RakuAstClass::ApplyDottyInfix => lower_dotty_statement(node),
         RakuAstClass::TermTopicCall if let Some(compound) = topic_dotty_node(node)? => {
-            crate::parser::lower_compound_statement(compound).map_err(RuntimeError::new)
+            super::compound::lower::lower_compound_statement(compound)
+                .map_err(super::compound::runtime_error)
         }
         // The conditional family reads the node into the parser's own
         // `Conditional` and lowers that (ADR-10723 Stage 2).
@@ -559,7 +560,8 @@ pub(super) fn lower_stmt_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeError> 
         // expansion.
         RakuAstClass::ApplyInfix if infix_is_compound_assignment(node) => {
             let compound = compound_assign_node(node)?.ok_or_else(|| unsupported(node))?;
-            crate::parser::lower_compound_statement(compound).map_err(RuntimeError::new)
+            super::compound::lower::lower_compound_statement(compound)
+                .map_err(super::compound::runtime_error)
         }
         // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
         // a `Stmt::Assign`, not a general binary expression.
@@ -1134,7 +1136,7 @@ pub(super) fn lower_dotty_assign(
 ) -> Result<Expr, RuntimeError> {
     Ok(match dotty_parts(node)? {
         Dotty::Call(call) => call,
-        Dotty::Assign(compound) => crate::parser::lower_dotty_assignment(
+        Dotty::Assign(compound) => super::compound::lower::lower_dotty(
             compound,
             as_statement,
             super::shadowed_terms::is_declared_term,
@@ -1148,9 +1150,10 @@ pub(super) fn lower_dotty_assign(
 fn lower_dotty_statement(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     Ok(match dotty_parts(node)? {
         Dotty::Call(call) => Stmt::Expr(call),
-        Dotty::Assign(compound) => {
-            crate::parser::lower_dotty_statement(compound, super::shadowed_terms::is_declared_term)
-        }
+        Dotty::Assign(compound) => super::compound::lower::lower_dotty_statement(
+            compound,
+            super::shadowed_terms::is_declared_term,
+        ),
     })
 }
 
@@ -2742,14 +2745,17 @@ fn compound_assign_node(
                 return Ok(None);
             };
             let meta = match depth {
-                0 if crate::parser::is_set_compound_op(&op)
-                    && !crate::parser::is_compound_assign_op(&op) =>
+                0 if super::compound::set::set_op_from_spelling(&op).is_some()
+                    && super::compound::op::compound_assign_op_from_name(&op).is_none() =>
                 {
                     crate::ast::parsed::CompoundMeta::Set
                 }
                 // `$x [foo]= 1`: a bracketed infix that is no compound
                 // operator applies as a reduction.
-                depth if depth > 0 && !crate::parser::is_compound_assign_op(&op) => {
+                depth
+                    if depth > 0
+                        && super::compound::op::compound_assign_op_from_name(&op).is_none() =>
+                {
                     crate::ast::parsed::CompoundMeta::BracketedMeta(
                         crate::ast::parsed::BracketedMeta::Reduce,
                         u8::try_from(depth).map_err(|_| unsupported(node))?,
@@ -2785,7 +2791,8 @@ fn compound_assign_node(
 /// compound-assignment lowering.
 pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let compound = compound_assign_node(node)?.ok_or_else(|| unsupported(node))?;
-    crate::parser::lower_compound_expression(compound).map_err(RuntimeError::new)
+    super::compound::lower::lower_compound_expression(compound)
+        .map_err(super::compound::runtime_error)
 }
 
 /// The `(name, right)` of an `ApplyInfix(Assignment)`: the target variable name
@@ -4641,7 +4648,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // `.method(...)` on the topic: the same method call `$_.method(...)`
         // compiles to.
         RakuAstClass::TermTopicCall if let Some(compound) = topic_dotty_node(node)? => {
-            crate::parser::lower_compound_expression(compound).map_err(RuntimeError::new)
+            super::compound::lower::lower_compound_expression(compound)
+                .map_err(super::compound::runtime_error)
         }
         RakuAstClass::TermTopicCall => {
             let call = named_child_or_positional(node)?;

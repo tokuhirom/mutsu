@@ -516,4 +516,35 @@ impl Interpreter {
             _ => None,
         }
     }
+
+    /// The regex source behind a named regex/token passed as a VALUE
+    /// (`&Named`, or a hash/array slot holding it): a `Routine` with
+    /// `is_regex`. Prefers the reference's own captured identity (#8680) over
+    /// a by-name lookup, which would resolve to whatever declaration is
+    /// CURRENTLY registered under the short name. `None` for any other value
+    /// (or an unresolvable name), so a caller keeps the value it was given.
+    // Cost: O(1) lookups plus the O(p) clone of the pattern, p = pattern length.
+    pub(in crate::runtime) fn named_regex_routine_pattern(
+        &mut self,
+        value: &Value,
+    ) -> Option<String> {
+        let ValueView::Routine {
+            is_regex: true,
+            name,
+            package,
+            captured_regex,
+        } = value.view()
+        else {
+            return None;
+        };
+        captured_regex
+            .and_then(|v| Self::regex_pattern_of_value(v))
+            .or_else(|| {
+                let qualified = crate::qualified::qualified_text(package.resolve(), name.resolve())
+                    .as_str()
+                    .to_string();
+                self.extract_token_regex_pattern(&qualified)
+                    .or_else(|| self.extract_token_regex_pattern(&name.resolve()))
+            })
+    }
 }

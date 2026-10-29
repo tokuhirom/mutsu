@@ -2,36 +2,52 @@
 //!
 //! Rakudo has no node of their own: `⚛$x` is `ApplyPrefix(Prefix "⚛")`,
 //! `$x ⚛= 5` an `ApplyInfix(Infix "⚛=")`, `$x⚛++` an `ApplyPostfix(Postfix
-//! "⚛++")`. The parser spells the fetch and the plain store as the reserved
-//! calls below, which name the variable by a string, and the others as calls
+//! "⚛++")`. The parser builds the fetch and the plain store as the typed
+//! [`AtomicVar`] node (ADR-15334 slice 1), which [`lower_var`] lowers to the
+//! reserved calls below, naming the variable by a string; the others are calls
 //! named for the operator (`postfix:<⚛++>`, `prefix:<++⚛>`, `infix:<⚛+=>`)
-//! over the variable itself. The builders are the parser's and the RakuAST
-//! lowering's; [`recognize`] is the converter's.
+//! over the variable itself, the routine Rakudo calls. [`recognize`] reads
+//! those back for the converter.
 
 use super::Expr;
+use super::parsed::{AtomicVar, ParsedExpr};
 use crate::symbol::Symbol;
 use crate::value::Value;
 
 const FETCH_VAR: &str = "__mutsu_atomic_fetch_var";
 const STORE_VAR: &str = "__mutsu_atomic_store_var";
 
-/// `⚛$x`: the atomic fetch of the variable named `name`.
+/// `⚛$x`: the atomic fetch of the variable named `name`, as the node the
+/// parser builds.
 // Cost: O(|name|).
 pub(crate) fn fetch_var(name: String) -> Expr {
-    Expr::Call {
-        name: Symbol::intern(FETCH_VAR),
-        args: vec![Expr::Literal(Value::str(name))],
-        listop: false,
-    }
+    Expr::Ast(Box::new(ParsedExpr::AtomicVar(AtomicVar::Fetch { name })))
 }
 
-/// `$x ⚛= VALUE`: the atomic store into the variable named `name`.
+/// `$x ⚛= VALUE`: the atomic store into the variable named `name`, as the node
+/// the parser builds.
 // Cost: O(|name|).
 pub(crate) fn store_var(name: String, value: Expr) -> Expr {
-    Expr::Call {
-        name: Symbol::intern(STORE_VAR),
-        args: vec![Expr::Literal(Value::str(name)), value],
-        listop: false,
+    Expr::Ast(Box::new(ParsedExpr::AtomicVar(AtomicVar::Store {
+        name,
+        value,
+    })))
+}
+
+/// The one lowering of an [`AtomicVar`]: the reserved call the runtime runs.
+// Cost: O(|name|).
+pub(crate) fn lower_var(node: AtomicVar) -> Expr {
+    match node {
+        AtomicVar::Fetch { name } => Expr::Call {
+            name: Symbol::intern(FETCH_VAR),
+            args: vec![Expr::Literal(Value::str(name))],
+            listop: false,
+        },
+        AtomicVar::Store { name, value } => Expr::Call {
+            name: Symbol::intern(STORE_VAR),
+            args: vec![Expr::Literal(Value::str(name)), value],
+            listop: false,
+        },
     }
 }
 
@@ -66,10 +82,6 @@ impl Category {
 
 /// An atomic operator application, read back from the parser's call.
 pub(crate) enum Atomic<'a> {
-    /// `⚛$x`.
-    Fetch(&'a str),
-    /// `$x ⚛= VALUE`.
-    Store(&'a str, &'a Expr),
     /// `⚛OP` forms over one operand: `$x⚛++`, `++⚛$x`, `⚛@a[0]`.
     Unary {
         category: Category,
@@ -87,35 +99,29 @@ pub(crate) enum Atomic<'a> {
 /// The atomic operator the call `name(args)` is, if it is one.
 // Cost: O(|name|).
 pub(crate) fn recognize<'a>(name: &'a str, args: &'a [Expr]) -> Option<Atomic<'a>> {
-    match (name, args) {
-        (FETCH_VAR, [Expr::Literal(v)]) => Some(Atomic::Fetch(v.as_str()?)),
-        (STORE_VAR, [Expr::Literal(v), value]) => Some(Atomic::Store(v.as_str()?, value)),
-        _ => {
-            let (category, rest) = [Category::Prefix, Category::Postfix, Category::Infix]
-                .into_iter()
-                .find_map(|c| {
-                    name.strip_prefix(c.word())
-                        .and_then(|r| r.strip_prefix(":<"))
-                        .and_then(|r| r.strip_suffix('>'))
-                        .map(|r| (c, r))
-                })?;
-            if !rest.contains('⚛') {
-                return None;
-            }
-            match (category, args) {
-                (Category::Infix, [left, right]) => Some(Atomic::Binary {
-                    operator: rest,
-                    left,
-                    right,
-                }),
-                (Category::Infix, _) => None,
-                (category, [operand]) => Some(Atomic::Unary {
-                    category,
-                    operator: rest,
-                    operand,
-                }),
-                _ => None,
-            }
-        }
+    let (category, rest) = [Category::Prefix, Category::Postfix, Category::Infix]
+        .into_iter()
+        .find_map(|c| {
+            name.strip_prefix(c.word())
+                .and_then(|r| r.strip_prefix(":<"))
+                .and_then(|r| r.strip_suffix('>'))
+                .map(|r| (c, r))
+        })?;
+    if !rest.contains('⚛') {
+        return None;
+    }
+    match (category, args) {
+        (Category::Infix, [left, right]) => Some(Atomic::Binary {
+            operator: rest,
+            left,
+            right,
+        }),
+        (Category::Infix, _) => None,
+        (category, [operand]) => Some(Atomic::Unary {
+            category,
+            operator: rest,
+            operand,
+        }),
+        _ => None,
     }
 }

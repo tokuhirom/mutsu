@@ -23,6 +23,8 @@ pub(crate) fn is_assignment_expr(expr: &Expr) -> bool {
             crate::ast::parsed::ParsedExpr::Supply(_)
             | crate::ast::parsed::ParsedExpr::StartBody(_)
             | crate::ast::parsed::ParsedExpr::HyperAssign(_)
+            | crate::ast::parsed::ParsedExpr::HyperPrefix(_)
+            | crate::ast::parsed::ParsedExpr::AtomicVar(_)
             | crate::ast::parsed::ParsedExpr::InlineSubset(_) => false,
         },
         _ => false,

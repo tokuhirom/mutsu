@@ -811,6 +811,20 @@ impl Interpreter {
                     None
                 }
             });
+        // A class body's `my method` shadows a same-named routine registered
+        // globally: `&STORE` inside the class's `method new` is the class's own
+        // `my method STORE`, not a `sub STORE` declared elsewhere. Only a
+        // method sees it: the key sits in the
+        // body's env, which the unit's plain subs share.
+        if !has_packages
+            && self.inside_routine()
+            && self.routine_stack.last().is_some_and(|f| f.is_method)
+            && let Some(sub_val) = self
+                .env
+                .get(&format!("{}{lookup_name}", crate::env::CLASS_LEXICAL_METHOD_PREFIX))
+        {
+            return sub_val.clone();
+        }
         // A routine lexical to a scope that has since exited (a class body's
         // `my method`) is still carried by the closure env under its reserved
         // key, for the routines (methods) that close over that scope; code

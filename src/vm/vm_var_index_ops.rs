@@ -2271,7 +2271,7 @@ impl Interpreter {
                 let has_typed_positional_default = is_positional_type
                     && !has_user_at_pos
                     && !has_user_at_key
-                    && self.container_type_metadata(&target).is_some();
+                    && self.has_container_type_metadata(&target);
                 let result = if !is_positional && has_user_at_key {
                     // Curly subscripts use AT-KEY regardless of the key's type.
                     self.try_compiled_method_or_interpret(
@@ -2343,7 +2343,7 @@ impl Interpreter {
                 let has_typed_positional_default = is_positional_type
                     && !has_user_at_pos
                     && !has_user_at_key
-                    && self.container_type_metadata(&target).is_some();
+                    && self.has_container_type_metadata(&target);
                 let result = if is_positional && !has_user_at_pos && has_user_at_key {
                     self.try_compiled_method_or_interpret(
                         target.clone(),

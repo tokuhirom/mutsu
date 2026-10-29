@@ -232,6 +232,12 @@ fn mark_expr_after_plant(expr: &mut Expr) {
             crate::ast::parsed::ParsedExpr::InlineSubset(declaration) => {
                 super::stmt::mark_stmt(declaration)
             }
+            crate::ast::parsed::ParsedExpr::HyperPrefix(p) => mark_expr(&mut p.operand),
+            crate::ast::parsed::ParsedExpr::AtomicVar(a) => {
+                if let crate::ast::parsed::AtomicVar::Store { value, .. } = a {
+                    mark_expr(value);
+                }
+            }
         },
         // A source-preserving compound assignment has three views of its
         // children: the source target/RHS used by RakuAST and the expanded

@@ -103,7 +103,17 @@ pub(crate) fn build_iterator_instance(target: &Value) -> Value {
     attrs.insert("items".to_string(), Value::array(items));
     attrs.insert("index".to_string(), Value::int(0));
     if lazy {
-        attrs.insert("is_lazy".to_string(), Value::TRUE);
+        // The iterator's own `is-lazy` (which a `Seq` built from it reports)
+        // asks its source: a gather is pulled on demand here but is not
+        // `is-lazy` in Rakudo (Grammar::Extractor's `gather`-backed
+        // `iterator`).
+        let genuinely_lazy = match target.view() {
+            ValueView::LazyList(ll) => ll.is_genuinely_lazy(),
+            _ => true,
+        };
+        if genuinely_lazy {
+            attrs.insert("is_lazy".to_string(), Value::TRUE);
+        }
         if let Some(source) = pull_source {
             attrs.insert("lazy_source".to_string(), source);
         }

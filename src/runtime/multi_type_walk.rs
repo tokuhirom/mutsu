@@ -270,7 +270,8 @@ impl Interpreter {
             };
             if let Some(constraint) = &pd.type_constraint {
                 let effective = self.effective_dispatch_constraint(constraint, Some(&arg));
-                let nominal = self.dispatch_nominal_base(Self::constraint_base_name(effective));
+                let nominal =
+                    self.dispatch_nominal_base(Self::constraint_base_name(effective), Some(&arg));
                 let base = self.resolve_signature_type_name(nominal.as_ref(), owner.package);
                 if slot <= PROFILE_LEN {
                     slot_nominal = Some(Symbol::intern(&base));
@@ -361,7 +362,7 @@ impl Interpreter {
     fn declared_positional_nominal(&self, pd: &ParamDef, package: Symbol) -> Symbol {
         if let Some(constraint) = &pd.type_constraint {
             let effective = self.effective_dispatch_constraint(constraint, None);
-            let nominal = self.dispatch_nominal_base(Self::constraint_base_name(effective));
+            let nominal = self.dispatch_nominal_base(Self::constraint_base_name(effective), None);
             return Symbol::intern(&self.resolve_signature_type_name(nominal.as_ref(), package));
         }
         Symbol::intern(match pd.name.as_bytes().first() {

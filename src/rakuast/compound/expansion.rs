@@ -425,8 +425,7 @@ pub(crate) fn build_compound_assign_expr(
         Expr::MethodCall {
             target, name, args, ..
         } => {
-            let target_var_name =
-                crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(&target);
+            let target_var_name = crate::parser::method_lvalue_target_name(&target);
             let current_value = Expr::MethodCall {
                 target: Box::new((*target).clone()),
                 name,
@@ -460,7 +459,7 @@ pub(crate) fn build_compound_assign_expr(
                     | CompoundAssignOp::DefinedOr
                     | CompoundAssignOp::LogicalOr
                     | CompoundAssignOp::LogicalAnd
-            ) && !crate::parser::stmt::simple::is_user_declared_value_term(&name) =>
+            ) && !crate::parser::is_user_declared_value_term(&name) =>
         {
             compound_assigned_value_expr(Expr::BareWord(name), op, rhs)
         }
@@ -486,14 +485,8 @@ pub(crate) fn build_compound_assign_expr(
                 args: args.clone(),
                 listop: false,
             };
-            let assign_through = |value: Expr| Expr::Call {
-                name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
-                args: vec![
-                    Expr::Literal(Value::str(name.resolve())),
-                    Expr::ArrayLiteral(args.clone()),
-                    value,
-                ],
-                listop: false,
+            let assign_through = |value: Expr| {
+                crate::rakuast::named_sub_lvalue_assign_expr(name.resolve(), args.clone(), value)
             };
             // A short-circuit `op=` must not assign at all when it short-circuits
             // (`$a //= $b` is `$a // ($a = $b)`), so keep the assignment inside
@@ -654,36 +647,28 @@ pub(crate) fn build_compound_assign_expr(
         // callable-lvalue helper the parenthesized `=` form uses: the declaration is
         // evaluated first (declaring the variable and yielding its container), the value
         // then reads it, and the helper assigns back into that container.
-        Expr::DoStmt(stmt)
-            if crate::parser::stmt::simple_expr_stmt::decl_target_var_name(&stmt).is_some() =>
-        {
-            let name = crate::parser::stmt::simple_expr_stmt::decl_target_var_name(&stmt)
-                .expect("guarded by the match arm");
+        Expr::DoStmt(stmt) if crate::parser::decl_target_var_name(&stmt).is_some() => {
+            let name =
+                crate::parser::decl_target_var_name(&stmt).expect("guarded by the match arm");
             let read_back = match name.as_bytes().first() {
                 Some(b'@') => Expr::ArrayVar(name[1..].to_string()),
                 Some(b'%') => Expr::HashVar(name[1..].to_string()),
                 _ => Expr::Var(name),
             };
             let assigned_value = compound_assigned_value_expr(read_back, op, rhs);
-            Expr::Call {
-                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-                args: vec![
-                    Expr::DoStmt(stmt),
-                    Expr::ArrayLiteral(Vec::new()),
-                    assigned_value,
-                ],
-                listop: false,
-            }
+            crate::rakuast::callable_lvalue_assign_expr(
+                Expr::DoStmt(stmt),
+                Vec::new(),
+                assigned_value,
+            )
         }
         // `@a[i]:v += x`, `%h<k>:v ~= x`: an internal `__mutsu_*` call lowers a
         // subscript adverb, and its value is what Rakudo refuses to modify
         // (`Cannot modify an immutable Int (10)`). Assign to that value so the
         // error names it. The call is pure, so reading it twice is safe.
         Expr::Call { ref name, .. } if name.with_str(|n| n.starts_with("__mutsu_")) => {
-            let assign_through = |value: Expr| Expr::Call {
-                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-                args: vec![lhs.clone(), Expr::ArrayLiteral(Vec::new()), value],
-                listop: false,
+            let assign_through = |value: Expr| {
+                crate::rakuast::callable_lvalue_assign_expr(lhs.clone(), Vec::new(), value)
             };
             if matches!(
                 op,
@@ -810,7 +795,7 @@ pub(crate) fn dotty_assign_marker(lhs: Expr, method_call: Expr, expanded: Expr) 
 /// its RIGHT operand (`RHS -= LHS`). `op` is the base operator (`-`, or `=` for
 /// `R=`); the marker's `op` is spelled `R-=` the way the source writes it.
 /// The compound lowering (`compound_lower`) builds the execution shape with
-/// [`crate::parser::expr::precedence::build_compound_assign_target_expr`].
+/// [`crate::parser::build_compound_assign_target_expr`].
 pub(crate) fn reverse_assign_marker(lhs: Expr, op: &str, rhs: Expr, expanded: Expr) -> Expr {
     Expr::CompoundAssign {
         target: Box::new(lhs),
@@ -931,8 +916,7 @@ pub(crate) fn build_custom_compound_assign_expr(
             modifier: None,
             ..
         } if name != "AT-POS" => {
-            let target_var_name =
-                crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(&target);
+            let target_var_name = crate::parser::method_lvalue_target_name(&target);
             let current_value = Expr::MethodCall {
                 target: target.clone(),
                 name,

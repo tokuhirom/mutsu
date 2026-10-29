@@ -180,10 +180,19 @@ impl Compiler {
         // alias is assigned).
         let has_copy = param_def
             .as_ref()
-            .is_some_and(|def| def.traits.iter().any(|t| t == "copy" || t == "raw"))
+            .is_some_and(|def| def.traits.iter().any(|t| t == "copy"))
             || params_def
                 .iter()
-                .any(|def| def.traits.iter().any(|t| t == "copy" || t == "raw"));
+                .any(|def| def.traits.iter().any(|t| t == "copy"));
+        // `is raw` aliases the element's own container: writable like `is rw`
+        // (a Proxy element runs its STORE) but it neither copies the element nor
+        // writes back, and a value element is not refused.
+        let has_raw = param_def
+            .as_ref()
+            .is_some_and(|def| def.traits.iter().any(|t| t == "raw"))
+            || params_def
+                .iter()
+                .any(|def| def.traits.iter().any(|t| t == "raw"));
 
         // Statements that bind the loop parameters (`-> \a, @b, %c`) and mark
         // them read-only. They must run — and the params must be bound —
@@ -480,7 +489,7 @@ impl Compiler {
                 collect,
                 threaded: matches!(mode, crate::ast::ForMode::Race | crate::ast::ForMode::Hyper),
                 // is_rw: param is writable (don't mark readonly)
-                is_rw: has_rw || has_copy,
+                is_rw: has_rw || has_copy || has_raw,
                 // do_writeback: actually write back modifications to the source
                 do_writeback: has_rw && !has_copy,
                 rw_param_names,
@@ -535,6 +544,7 @@ impl Compiler {
                 body_declares_routines: Self::stmts_declare_routines(&loop_body),
                 source_items_are_bare: self.receiver_provably_yields_bare_items(iterable),
                 param_sigilless: param_def.as_ref().is_some_and(|d| d.sigilless),
+                param_raw: has_raw && !has_rw && !has_copy,
                 topic_alias_unobservable: super::for_topic_alias::topic_alias_unobservable(
                     &loop_body,
                 ),

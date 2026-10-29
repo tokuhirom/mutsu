@@ -1151,7 +1151,21 @@ impl Compiler {
                 arg,
                 adverb,
             } => {
-                self.compile_expr_exists(target, *negated, *delete, arg, adverb);
+                // `*.<a><b>:exists` is a WhateverCode over the whole subscript
+                // and its adverb; the priming scope the term planted sits
+                // around the subscript only, so move it out around the adverb.
+                if let Expr::WhateverCurry(inner) = target.as_ref() {
+                    let primed = Expr::WhateverCurry(Box::new(Expr::Exists {
+                        target: inner.clone(),
+                        negated: *negated,
+                        delete: *delete,
+                        arg: arg.clone(),
+                        adverb: *adverb,
+                    }));
+                    self.compile_expr(&primed);
+                } else {
+                    self.compile_expr_exists(target, *negated, *delete, arg, adverb);
+                }
             }
             Expr::ZenSlice(inner) => {
                 // Outside of :exists, a zen slice decontainerizes: `$a[]` on an

@@ -3577,6 +3577,18 @@ impl Interpreter {
                     if pd.name.starts_with('%') && !pd.slurpy && !pd.double_slurpy {
                         value = value.deitemize_for_sigil_bind();
                     }
+                    // A role mixin over an itemized Array (`$x = [1,2,3] but R`)
+                    // binds to an `@` parameter as the Array, so `for @p` and
+                    // `@p.elems` iterate its elements (plain itemized Arrays
+                    // are decontainerized on read; the mixin wrapper hides
+                    // the itemization from that read).
+                    if pd.name.starts_with('@')
+                        && !pd.slurpy
+                        && !pd.double_slurpy
+                        && matches!(value.view(), ValueView::Mixin(..))
+                    {
+                        value = value.deitemize_for_sigil_bind();
+                    }
                     // Check the argument before `is copy` removes its container type.
                     value = self.check_and_coerce_param_type(
                         pd,
