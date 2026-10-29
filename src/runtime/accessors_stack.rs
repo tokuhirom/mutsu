@@ -734,19 +734,16 @@ impl Interpreter {
         if implicit {
             return positional.next().cloned();
         }
-        // A plain routine's own `$self` parameter (`sub ($self) { ... }`) is
-        // the `self` its body names (ADR-0061): it takes the argument bound to
-        // it, so the creator's record never answers for it.
-        if param_defs.is_empty() && crate::ast::param_names_declare_self_lexical(params) {
-            let index = params.iter().position(|p| p == "self")?;
-            return positional.nth(index).cloned();
-        }
+        // An explicit invocant spelled `$self:` takes the leading positional.
+        // A plain routine's ordinary `$self` parameter is a lexical of its
+        // own (`LEX_SELF`), never the invocant: a creator's record answers
+        // the `self` term.
         let mut index = 0usize;
         for pd in param_defs {
             if pd.named || pd.slurpy || pd.double_slurpy {
                 continue;
             }
-            if pd.declares_self_lexical() {
+            if pd.is_invocant && pd.declares_self_lexical() {
                 return positional.nth(index).cloned();
             }
             index += 1;
