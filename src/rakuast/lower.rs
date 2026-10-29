@@ -706,7 +706,10 @@ fn lower_comma_declarations(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeE
     };
     // The declarations lead the list; any operands after them are the loose
     // tail (`my $b = 2, my $c = 3, say "$b $c"`).
-    let leading = operands.iter().take_while(|value| is_declaration(value)).count();
+    let leading = operands
+        .iter()
+        .take_while(|value| is_declaration(value))
+        .count();
     if leading < 2 {
         return Ok(None);
     }
