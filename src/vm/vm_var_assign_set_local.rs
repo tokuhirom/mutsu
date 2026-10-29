@@ -1980,7 +1980,7 @@ impl Interpreter {
                     {
                         match items[0].view() {
                             ValueView::LazyList(list) => self.lazy_array_value(&list, name),
-                            _ => unreachable!("guarded by the match arm"),
+                            _ => runtime::coerce_to_array(raw_popped.clone()),
                         }
                     }
                     _ => {

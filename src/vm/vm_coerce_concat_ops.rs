@@ -53,18 +53,20 @@ impl Interpreter {
                 && !self.has_user_method(&cn, "list")
                 && !self.has_user_method(&cn, "Slip")
             {
-                let iterator = self.try_compiled_method_or_interpret(
-                    val.clone(),
-                    "iterator",
-                    Vec::new(),
-                )?;
+                let iterator =
+                    self.try_compiled_method_or_interpret(val.clone(), "iterator", Vec::new())?;
                 if self.is_lazy_user_iterator(&iterator)? {
                     self.stack
-                        .push(Value::slip(vec![Self::lazy_list_over_user_iterator(iterator)]));
+                        .push(Value::slip(vec![Self::lazy_list_over_user_iterator(
+                            iterator,
+                        )]));
                 } else {
                     let (items, _) = self.drive_iterator_value_items(iterator)?;
                     self.stack.push(Value::slip(
-                        items.into_iter().map(Self::containerize_pair_item).collect(),
+                        items
+                            .into_iter()
+                            .map(Self::containerize_pair_item)
+                            .collect(),
                     ));
                 }
                 return Ok(());
