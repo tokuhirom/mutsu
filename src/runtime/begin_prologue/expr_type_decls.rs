@@ -9,6 +9,8 @@
 //! its own, ahead of the statement that used it, and leaves a read of the type
 //! name where the declaration stood (a declaration's value is its type object).
 //! The statement-form declaration then takes the usual BEGIN-prologue route.
+//! Only a declaration that completes a forward declaration of the unit is
+//! lifted: its name then certainly means that type.
 //!
 //! Only the unit's own statements are searched, and not inside a closure or a
 //! nested declaration: those run their own scope.
@@ -16,8 +18,13 @@
 use crate::ast::{Expr, Stmt};
 use crate::ast_visit::{VisitMut, walk_expr_mut, walk_stmt_mut};
 
-#[derive(Default)]
 struct Lift {
+    /// The names of the unit's forward declarations (`class M { ... }`): only
+    /// a declaration completing one of them is lifted. Elsewhere a
+    /// term-position declaration must stay where it is, so that its value is
+    /// the type it just declared and never a lookup of a same-named type from
+    /// another scope.
+    stubs: Vec<String>,
     lifted: Vec<Stmt>,
 }
 
@@ -29,13 +36,16 @@ impl VisitMut for Lift {
                 if matches!(
                     inner.as_ref(),
                     Stmt::ClassDecl {
+                        name,
                         is_lexical: false,
                         is_unit: false,
                         name_expr: None,
                         body,
                         marks,
                         ..
-                    } if !marks.anon && !crate::compiler::Compiler::is_stub_class_body(body)
+                    } if !marks.anon
+                        && !crate::compiler::Compiler::is_stub_class_body(body)
+                        && self.stubs.iter().any(|stub| *stub == name.resolve())
                 ) =>
             {
                 let Stmt::ClassDecl { name, .. } = inner.as_ref() else {
@@ -69,9 +79,29 @@ impl VisitMut for Lift {
 /// statements out to a statement ahead of the one that held it.
 // Cost: O(n), n = size of the unit's top-level statements outside closures.
 pub(super) fn lift_expr_type_decls(stmts: &mut Vec<Stmt>) {
+    let stubs: Vec<String> = stmts
+        .iter()
+        .filter_map(|stmt| match stmt {
+            Stmt::ClassDecl {
+                name,
+                is_lexical: false,
+                is_unit: false,
+                name_expr: None,
+                body,
+                ..
+            } if crate::compiler::Compiler::is_stub_class_body(body) => Some(name.resolve()),
+            _ => None,
+        })
+        .collect();
+    if stubs.is_empty() {
+        return;
+    }
     let mut out = Vec::with_capacity(stmts.len());
     for mut stmt in std::mem::take(stmts) {
-        let mut lift = Lift::default();
+        let mut lift = Lift {
+            stubs: stubs.clone(),
+            lifted: Vec::new(),
+        };
         if !matches!(
             stmt,
             Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::SubDecl { .. }
