@@ -715,6 +715,25 @@ impl Interpreter {
         }
     }
 
+    /// A module's top-level enum key once its load has finished
+    /// (`ModuleToplevel::enum_keys`): the module's own table, its declared
+    /// unit package's, or the `GLOBAL` one.
+    // Cost: O(1): three hashed lookups.
+    fn module_toplevel_enum_key(&self, module: &str, name: &str) -> Option<Value> {
+        let table = &self.module.module_toplevel.enum_keys;
+        let declared = self
+            .module
+            .module_declared_unit_packages
+            .get(&crate::symbol::Symbol::intern(module))
+            .map(|pkg| pkg.as_str().to_string());
+        [Some(module.to_string()), declared, Some("GLOBAL".to_string())]
+            .into_iter()
+            .flatten()
+            .find_map(|owner| table.get(owner.as_str()).and_then(|keys| keys.get(name)))
+            .cloned()
+    }
+
+
     /// Resolve the value behind a statically exported variable. Most exports
     /// live in the qualified environment, but a `my constant` in a unit class
     /// is persisted in that class's package-lexical store when its body exits.
@@ -743,6 +762,10 @@ impl Interpreter {
             let qualified_binding = self.env.get_sym(qualified);
             let is_type_self_binding =
                 |v: &&Value| matches!(v.view(), ValueView::Package(p) if p == qualified);
+            // A module's top-level enum key, once its load has finished.
+            if let Some(key) = self.module_toplevel_enum_key(module, spelled) {
+                return Some(key);
+            }
             return qualified_binding
                 .filter(|v| !is_type_self_binding(v))
                 .or_else(|| {
@@ -812,6 +835,7 @@ impl Interpreter {
                     })
             })
             .or_else(|| self.enum_bare_value(name).cloned())
+            .or_else(|| self.module_toplevel_enum_key(module, name))
             // A qualified package exported as itself (`unit module A::B::C is
             // export`) is registered under its full name, not under `module::`.
             .or_else(|| {
