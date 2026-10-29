@@ -295,7 +295,7 @@ impl Compiler {
         if matches!(target, Expr::ArrayVar(n) | Expr::HashVar(n) if n.starts_with("OUTER::")) {
             return None;
         }
-        self.lvalue_root_key(
+        self.assign_root_key(
             target,
             LvaluePeel::ASSIGN
                 | LvaluePeel::DECL
