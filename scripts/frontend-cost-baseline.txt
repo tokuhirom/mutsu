@@ -1,0 +1,7 @@
+sha	1340492ae5d55a36de806268ad47cf3b686d603e
+# case	frontend_ir	whole_process_ir  (callgrind, profiling build, warm, mutsu -c)
+zef-cli	218603062	463404065
+s32-exceptions-misc	119114264	238407850
+s12-class-attributes	33829672	87719611
+s15-nfg-emoji-test	4402079486	4665691408
+grammar-cursor-attributes	25640877	81434586

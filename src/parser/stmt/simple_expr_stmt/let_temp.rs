@@ -336,22 +336,19 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         // expression parser has already lowered `$obj.method = value` to the
         // `__mutsu_assign_method_lvalue` writeback call (an rw-accessor assignment
         // is a full expression). Recover the pieces to save/restore the target.
-        if let Expr::Call { name, args, .. } = &expr
-            && name == "__mutsu_assign_method_lvalue"
+        if let Some(parts) = crate::rakuast::method_lvalue_call_parts(&expr)
+            && let Expr::Call { args, .. } = &expr
             && args.len() == 5
-            && let Some(var_name) = temp_method_invocant_name(&args[0])
-            && let Expr::Literal(mlit) = &args[1]
-            && let Some(method_name) = mlit.as_str()
-            && let Expr::ArrayLiteral(method_args) = &args[2]
+            && let Some(var_name) = temp_method_invocant_name(parts.invocant)
         {
             return parse_statement_modifier(
                 expr_rest,
                 Stmt::TempMethodAssign {
                     var_name,
-                    method_name: method_name.to_string(),
-                    method_args: method_args.clone(),
-                    value: args[3].clone(),
-                    is_attribute: matches!(&args[0], Expr::Var(name) if name == "__ANON_STATE#"),
+                    method_name: parts.method_name.to_string(),
+                    method_args: parts.method_args.to_vec(),
+                    value: parts.value.clone(),
+                    is_attribute: matches!(parts.invocant, Expr::Var(name) if name == "__ANON_STATE#"),
                 },
             );
         }
@@ -370,9 +367,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 ..
             } = target.as_ref()
             && let Some(var_name) = temp_method_invocant_name(invocant)
-            && let Expr::Call { name, args, .. } = expanded.as_ref()
-            && name == "__mutsu_assign_method_lvalue"
-            && args.len() >= 4
+            && let Some(parts) = crate::rakuast::method_lvalue_call_parts(expanded)
         {
             return parse_statement_modifier(
                 expr_rest,
@@ -380,7 +375,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     var_name,
                     method_name: method_name.resolve(),
                     method_args: method_args.clone(),
-                    value: args[3].clone(),
+                    value: parts.value.clone(),
                     is_attribute: matches!(invocant.as_ref(), Expr::Var(name) if name == "__ANON_STATE#"),
                 },
             );

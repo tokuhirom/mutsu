@@ -344,6 +344,14 @@ impl Interpreter {
         container_type_metadata_with(value, &self.types.instance_type_metadata)
     }
 
+    /// Whether [`Self::container_type_metadata`] would answer `Some`, without
+    /// cloning the type names it carries: the presence check a hot accessor or
+    /// element-store path makes before deciding to tag a container.
+    // Cost: O(1), no allocation.
+    pub(crate) fn has_container_type_metadata(&self, value: &Value) -> bool {
+        has_container_type_metadata_with(value, &self.types.instance_type_metadata)
+    }
+
     // Object-hash original keys are embedded in `HashData.original_keys`
     // (see `runtime::utils::set_hash_original_keys` / `hash_original_keys_snapshot`),
     // so the `hash_object_keys` side table and its pointer-migration helpers are
@@ -616,9 +624,10 @@ impl Interpreter {
                 ValueView::Hash(map) => elems.extend(map.values().cloned()),
                 _ => {}
             }
+            let mut memo = crate::runtime::elem_type_memo::ElemTypeMemo::default();
             for it in &elems {
                 if !it.is_nil()
-                    && !self.type_matches_value(elem_type, it)
+                    && !self.type_matches_value_memo(elem_type, it, &mut memo)
                     // The freshly re-seeded element type object is type-legal.
                     && !(matches!(it.view(), ValueView::Package(p) if p.resolve() == elem_type))
                 {

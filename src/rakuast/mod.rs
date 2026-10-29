@@ -8,6 +8,8 @@
 mod adverb_origins;
 mod anon_state;
 mod assign_lower;
+mod assign_target;
+mod assign_writeback;
 mod atomic_op;
 mod attribute;
 mod attribute_decl;
@@ -21,6 +23,7 @@ mod chain;
 mod class_constructor;
 mod compiler_var;
 mod composition_source;
+pub(crate) mod compound;
 mod compound_stmt;
 mod conditional_lower;
 mod constructor_positional;
@@ -3699,3 +3702,11 @@ fn field_to_value(fv: &RakuAstFieldValue) -> Value {
         RakuAstFieldValue::Adverb(_) => Value::truth(true),
     }
 }
+
+pub(crate) use assign_target::{assign_to_target_expr, unwrap_grouped_lvalue};
+pub(crate) use assign_writeback::{
+    callable_lvalue_assign_expr, method_lvalue_assign_expr, method_lvalue_call,
+    method_lvalue_call_parts, method_lvalue_roundtrip_assign_expr, named_sub_lvalue_assign_expr,
+    subscript_adverb_lvalue_assign_expr,
+};
+pub(crate) use hyper_prefix::hyper_prefix_expr;

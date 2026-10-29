@@ -11,10 +11,10 @@ use crate::parser::stmt::simple::add_xor_sink_warnings;
 use crate::parser::term_boundary::{is_pure_value_expr, starts_with_unambiguous_term};
 use crate::symbol::Symbol;
 
-use super::lvalue::callable_lvalue_assign_expr;
 use super::predicates::{
     is_literal_expr, is_pseudo_package, starts_with_postfix_ambiguous_term, starts_with_term_token,
 };
+use crate::rakuast::callable_lvalue_assign_expr;
 /// The statement `.=` on the topic (`$_ .= meth`, `.= meth`), tagged with its
 /// source-level shape. It is an [`Expr::TopicDotAssign`]
 /// (compiled to `TopicDotAssign`) so it can reassign a read-only

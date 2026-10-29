@@ -18,7 +18,8 @@
 
 use crate::ast::Expr;
 use crate::ast_visit::{VisitMut, walk_expr_mut};
-use crate::parser::{expand_compound_assign_expr, is_whatever};
+use crate::parser::is_whatever;
+use crate::rakuast::compound::expand_compound_assign_expr;
 use crate::token_kind::TokenKind;
 
 /// Replace Whatever expressions with numbered parameter variables.

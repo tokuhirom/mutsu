@@ -261,7 +261,7 @@ pub(crate) fn general_entry_owns(
         && argc == 0
         && !target.is_lazy_match_value()
         && matches!(target.view(), ValueView::Hash(_))
-        && interp.container_type_metadata(target).is_some()
+        && interp.has_container_type_metadata(target)
 }
 
 /// Whether `target`'s elements are pulled through an iterator the rows cannot

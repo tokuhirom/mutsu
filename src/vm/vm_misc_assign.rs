@@ -76,10 +76,11 @@ impl Interpreter {
         let Some(elems) = elems else {
             return Ok(val);
         };
+        let mut memo = crate::runtime::elem_type_memo::ElemTypeMemo::default();
         for item in &elems {
             if !matches!(value_type, "Mu" | "Any")
                 && !item.is_nil()
-                && !self.type_matches_value(value_type, item)
+                && !self.type_matches_value_memo(value_type, item, &mut memo)
             {
                 return Err(self.type_check_element_failure(name, value_type, item));
             }

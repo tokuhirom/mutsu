@@ -66,7 +66,7 @@ impl Interpreter {
             && !name.contains('.')
             && !name.contains('!')
             && loan_env!(self, var_type_constraint_for(name, name_sym)).is_none()
-            && self.container_type_metadata(&val).is_some()
+            && self.has_container_type_metadata(&val)
         {
             return crate::runtime::Interpreter::clear_hash_type_metadata(val);
         }

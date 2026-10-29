@@ -1572,7 +1572,7 @@ impl Interpreter {
                     // preserves destination metadata, so tagging only the incoming
                     // value would lose the declaration when the destination is
                     // still plain (`has CSV::Field @.fields` is one example).
-                    let existing = if self.container_type_metadata(&existing).is_none()
+                    let existing = if !self.has_container_type_metadata(&existing)
                         && let Some(tc) =
                             self.get_attr_type_constraint(&class_name.resolve(), method)
                         && !matches!(tc.as_str(), "Mu" | "Any")

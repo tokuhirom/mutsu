@@ -904,7 +904,15 @@ impl Interpreter {
                                 ValueView::Str(s) => s.len() as u64 > SEQ_EAGER_PREFIX_MAX_SIZE,
                                 _ => false,
                             };
-                            if expensive {
+                            // Only a sequence that hands back a lazy continuation may
+                            // stop early; one with a closure or regex endpoint ends as
+                            // a plain array of this prefix (Math::Root's `newton`).
+                            if expensive
+                                && matches!(
+                                    endpoint_kind,
+                                    None | Some(EndpointKind::Value(_))
+                                )
+                            {
                                 result.push(v);
                                 break 'seq_gen;
                             }
