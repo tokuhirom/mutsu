@@ -3050,13 +3050,26 @@ impl Compiler {
                 if pd.named {
                     continue;
                 }
-                if let Some(&slot) = self.local_map.get(pd.storage_name().as_ref()) {
+                // A `$self` parameter lives under the reserved lexical key.
+                let storage = pd.storage_name();
+                let key = if pd.declares_self_lexical() {
+                    crate::env::LEX_SELF
+                } else {
+                    storage.as_ref()
+                };
+                if let Some(&slot) = self.local_map.get(key) {
                     slots.push(slot);
                 }
             }
         } else {
+            let declares_self = crate::ast::param_names_declare_self_lexical(params);
             for param in params {
-                if let Some(&slot) = self.local_map.get(param) {
+                let key = if declares_self && param == "self" {
+                    crate::env::LEX_SELF
+                } else {
+                    param
+                };
+                if let Some(&slot) = self.local_map.get(key) {
                     slots.push(slot);
                 }
             }
@@ -3240,12 +3253,7 @@ impl Compiler {
     /// key in method bytecode so those values cannot collide. Plain routines
     /// retain the historical mapping to the ordinary `self` binding.
     pub(crate) fn resolve_self_lexical<'a>(&self, name: &'a str) -> &'a str {
-        if self.self_is_signature_param && !self.lexically_in_method && name == crate::env::LEX_SELF
-        {
-            "self"
-        } else {
-            name
-        }
+        name
     }
 
     /// Emit a read of `bare` from the scope `depth` levels out (`$OUTER::x`,

@@ -389,7 +389,7 @@ impl Compiler {
         // to its implicit invocant. The source parser keeps the signature name
         // sigil-less for introspection, while expression parsing preserves the
         // `$self` spelling as `LEX_SELF`; give that lexical its own slot.
-        if sub_compiler.lexically_in_method && Self::signature_declares_self(params, param_defs) {
+        if Self::signature_declares_self(params, param_defs) {
             sub_compiler.declare_param(crate::env::LEX_SELF);
         }
         // Bake the positional-param → slot map now, while `local_map` still holds
@@ -1502,7 +1502,7 @@ impl Compiler {
                 Self::alloc_sub_signature_locals(&mut sub_compiler, sub_params);
             }
         }
-        if sub_compiler.lexically_in_method && Self::signature_declares_self(params, param_defs) {
+        if Self::signature_declares_self(params, param_defs) {
             sub_compiler.declare_param(crate::env::LEX_SELF);
         }
         // Bake the positional-param → slot map now, while `local_map` still holds
