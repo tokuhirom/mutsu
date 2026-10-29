@@ -601,7 +601,9 @@ impl Interpreter {
             // A term the caller bound is no meaning for a module's own type
             // of the name (`own_package_type_over_foreign_term`, below).
             preferred_module_bareword.is_none()
-                && self.own_package_type_over_foreign_term(name, name_sym).is_none()
+                && self
+                    .own_package_type_over_foreign_term(name, name_sym)
+                    .is_none()
         }) {
             // A sigil-less constant live in this scope's `env` — declared here
             // or imported by a block-scoped `use` — shadows a same-named type
