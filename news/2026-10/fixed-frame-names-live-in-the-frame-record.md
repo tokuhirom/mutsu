@@ -22,3 +22,13 @@ stores them any more (#14843, ADR-14843):
 
 The one remaining `self` env key is a plain routine's own `sub f($self)` parameter, a user lexical
 that shares the spelling (ADR-0061).
+
+Same-build callgrind instruction counts against `main` (`ec4c9764`, both `--release`, second run of
+each; lower is better):
+
+| benchmark | main | this change |
+| --- | ---: | ---: |
+| `benchmarks/bench-class.raku` | 769,131,319 | 762,809,191 (-0.8%) |
+| `benchmarks/bench-ctor.raku` | 1,435,909,118 | 1,363,414,380 (-5.0%) |
+| `benchmarks/bench-multi-dispatch.raku` | 2,525,306,081 | 2,517,445,358 (-0.3%) |
+| method calls + closures/`map` inside a method | 573,106,834 | 561,299,552 (-2.1%) |
