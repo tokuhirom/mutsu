@@ -959,7 +959,21 @@ impl Compiler {
         // below (see `Compiler::expr_depth`).
         let saved = std::mem::replace(&mut self.expr_depth, 1);
         let term = self.begin_term_decl_of(stmt);
+        let init_aggregate = match stmt {
+            Stmt::VarDecl {
+                name,
+                has_initializer: true,
+                ..
+            } if name.starts_with(['@', '%']) => {
+                self.decl_initializer_aggregates.push(name.clone());
+                true
+            }
+            _ => false,
+        };
         self.compile_stmt_inner(stmt);
+        if init_aggregate {
+            self.decl_initializer_aggregates.pop();
+        }
         if let Some((name, kind)) = term {
             self.end_term_decl(name, kind);
         }
