@@ -467,6 +467,21 @@ impl Interpreter {
                 entries.entry(format!("&{name}")).or_insert(value);
             }
         }
+        // A code object a `use` bound only in the scope's import sets (an
+        // exported `&name` variable, a `sub EXPORT` hook's routine) has no
+        // routine alias to list it by: the sets are the record.
+        for set in self.import_scopes()[scope].lexical_sets.iter().rev() {
+            let Some(bindings) = self.module_lexical_import_set(*set) else {
+                continue;
+            };
+            for (name, binding) in bindings {
+                if let crate::runtime::lexical_imports::LexicalImport::Code(value) = binding {
+                    entries
+                        .entry(format!("&{}", name.resolve()))
+                        .or_insert_with(|| value.clone());
+                }
+            }
+        }
     }
 
     /// Add the routines imported into the current package (`M::chr` for a

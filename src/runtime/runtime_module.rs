@@ -65,6 +65,15 @@ impl Interpreter {
         &self.module.import_scope_stack
     }
 
+    /// What the lexical import set `id` binds, by routine name.
+    // Cost: O(1).
+    pub(crate) fn module_lexical_import_set(
+        &self,
+        id: Symbol,
+    ) -> Option<&HashMap<Symbol, crate::runtime::lexical_imports::LexicalImport>> {
+        self.module.lexical_import_sets.get(&id).map(|set| &**set)
+    }
+
     /// Save current function/class/proto keys for lexical import scoping.
     pub(crate) fn push_import_scope(&mut self) {
         self.push_import_scope_scoping_classes(true);
