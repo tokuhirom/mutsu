@@ -695,6 +695,17 @@ impl Interpreter {
     }
 
 
+    /// The invocant of the running method frame's own record, to write through:
+    /// the place a mutating call on `self` (`self.push(...)`) changes. `None`
+    /// when the running frame owns no record.
+    // Cost: O(1).
+    pub(crate) fn frame_invocant_mut(&mut self) -> Option<&mut Value> {
+        if !self.routine_stack.last().is_some_and(|f| f.fixtures != 0) {
+            return None;
+        }
+        self.routine_stack.top_fixtures_mut()?.invocant.as_mut()
+    }
+
     /// The record a closure, gather or routine value created now captures:
     /// the running frame's own, else (a method body run as a function) one
     /// made of its `self` parameter, else the innermost one (ADR-14843).

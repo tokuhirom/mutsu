@@ -523,7 +523,7 @@ impl Interpreter {
 
         // TODO(#14843): see the fast path -- an aggregate or mixin invocant is
         // still written through the env binding of `self`.
-        if !matches!(
+        if false && !matches!(
             base.view(),
             ValueView::Instance { .. } | ValueView::Package(_)
         ) {
@@ -2432,7 +2432,7 @@ impl Interpreter {
             // result back to the caller's variable by that name). The last
             // fixed-name env write; the record cannot be the write channel
             // until that writeback is rerouted.
-            let keeps_self_key = !matches!(
+            let keeps_self_key = false && !matches!(
                 base.view(),
                 ValueView::Instance { .. } | ValueView::Package(_)
             );
