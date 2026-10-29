@@ -3097,6 +3097,7 @@ impl Interpreter {
                 } else {
                     self.set_env_with_main_alias(&name, val.clone());
                 }
+                let had_binding_cell = binding_cell.is_some();
                 if let Some(cell) = binding_cell {
                     // A value rebound from a readonly binding (`$m := $p`,
                     // `$p` a parameter) keps that binding's kind.
@@ -3163,7 +3164,18 @@ impl Interpreter {
                     || raw_mode && name.starts_with('@')
                     || is_attr_twigil)
                 {
+                    // The mirror writes the bare value over the env entry; a
+                    // binding cell the rebind just seated there is what the
+                    // NEXT rebind must find (`$s := 7; $s := 17` in a closure).
+                    let seated = if had_binding_cell {
+                        self.env().get_sym(name_sym).cloned()
+                    } else {
+                        None
+                    };
                     loan_env!(self, set_shared_var(&name, val.clone()));
+                    if let Some(seated) = seated {
+                        self.env_mut().insert_sym(name_sym, seated);
+                    }
                 }
                 // A fresh declaration is no other binding's alias (#13007).
                 let mut alias_name = self
