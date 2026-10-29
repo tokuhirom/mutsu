@@ -1863,7 +1863,8 @@ impl Interpreter {
                 } else if pd.traits.iter().any(|t| t == "raw" || t == "rw") {
                     // `+@a is raw` / `is rw` deliberately alias the caller's
                     // element containers, so their cells pass straight through.
-                    Value::real_array(items)
+                    // Rakudo binds a `List`, not an `Array`, for these.
+                    Value::array(items)
                 } else {
                     // A sigiled `+@a` binds an `Array`, and — exactly like `*@a`
                     // — each element is a fresh binding rather than an alias of
@@ -2275,7 +2276,11 @@ impl Interpreter {
                                     encode_slurpy_rw_param(&slurpy_key, items.len(), source_index),
                                     source_name,
                                 ));
-                                items.push(if source_value.is_container_ref() {
+                                // A `Proxy` mediates its own FETCH/STORE; a cell
+                                // around it would take a plain write instead.
+                                items.push(if source_value.is_container_ref()
+                                    || matches!(source_value.view(), ValueView::Proxy { .. })
+                                {
                                     source_value
                                 } else {
                                     Value::container_ref(crate::gc::Gc::new(
@@ -2394,7 +2399,8 @@ impl Interpreter {
                     // `*@a is raw` / `is rw` deliberately DO alias, and record
                     // that through `rw_bindings` — leave those items alone.
                     let slurpy_value = if is_alias_slurpy {
-                        Value::real_array(items)
+                        // Rakudo binds a `List` (not an `Array`) for `*@a is raw`.
+                        Value::array(items)
                     } else if !lazy_slots.is_empty() {
                         Self::lazy_literal_with_slipped_tail(
                             items.into_iter().map(Value::into_deref).collect(),
