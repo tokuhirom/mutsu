@@ -6794,7 +6794,10 @@ impl Interpreter {
                 // The earlier declaration may have been a class, role or grammar,
                 // which have no `package_kinds` entry, so `previous` cannot be
                 // the only trigger.
-                let previous = self.registry_mut().package_kinds.insert(name.clone(), *kind);
+                let previous = self
+                    .registry_mut()
+                    .package_kinds
+                    .insert(name.clone(), *kind);
                 if previous != Some(*kind) {
                     self.registry_mut().class_how_values.remove(&name);
                 }
