@@ -62,7 +62,9 @@ impl Interpreter {
         }
         let layout_id = map.layout()?.id();
         let entry = *self.caches.accessor_lane.get(&(layout_id, method_sym))?;
-        let value = map.slot_vivify((entry & LANE_SLOT_MASK) as usize)?.deref_container();
+        let value = map
+            .slot_vivify((entry & LANE_SLOT_MASK) as usize)?
+            .deref_container();
         if matches!(value.view(), ValueView::Array(..) | ValueView::Hash(_)) {
             // An aggregate read is the full path's: decontainerize unless the
             // accessor is `is rw`, and hand back a container that already
