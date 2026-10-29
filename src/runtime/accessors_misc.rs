@@ -271,7 +271,6 @@ impl Interpreter {
         // type maps, so the lexical type-name index survives the restore.
         let registry = guard.routine_tables_mut();
         registry.functions = functions;
-        registry.function_writes += 1;
         registry.proto_functions = proto_functions;
         registry.token_defs = token_defs;
         registry.proto_subs_restore(proto_subs);
