@@ -346,6 +346,13 @@ jobs:
         # its parser first.
         run: make check-interp-fields
 
+      - name: No new reference to the fixed frame names
+        # A ratchet (ADR-14843): `self`, `?CLASS` and `?ROLE` live in the frame
+        # record, never in an `Env` key. Per-file reference counts live in
+        # scripts/frame-fixtures-baseline.txt and may go down, never up.
+        # Self-tests its counter first.
+        run: make check-frame-fixtures
+
       - name: Frontend debt does not grow
         # ADR-15334 section 3.3: SyntheticBlock references and `"__..."`
         # literals in src/parser, and the lines of src/rakuast/convert.rs, stay

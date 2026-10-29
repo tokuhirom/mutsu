@@ -1,4 +1,4 @@
-.PHONY: test lint roast checks check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims check-exec-route check-dev check-next-issue check-interp-construction check-slow-path check-ast-walkers check-layer-deps check-interp-fields check-name-scans check-adr check-runner-pins check-integration-tests check-frontend-debt adr-index
+.PHONY: test lint roast checks check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims check-exec-route check-dev check-next-issue check-interp-construction check-slow-path check-ast-walkers check-layer-deps check-interp-fields check-frame-fixtures check-name-scans check-adr check-runner-pins check-integration-tests check-frontend-debt adr-index
 
 # Recipes run under bash with `pipefail`, because the two suite recipes pipe
 # into `tee` and POSIX sh reports only the *last* command's status -- `tee`'s,
@@ -61,7 +61,7 @@ test: checks
 # and `scripts/dev gate` runs them as its first stage (`checks`), ahead of
 # lint, so a misplaced `t/` file or a ratchet overshoot fails the gate in
 # seconds instead of after `make lint` and the release build.
-checks: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-slow-path check-ast-walkers check-layer-deps check-interp-fields check-bench-det check-prims check-exec-route check-dev check-next-issue check-adr check-runner-pins check-integration-tests check-frontend-debt
+checks: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-slow-path check-ast-walkers check-layer-deps check-interp-fields check-frame-fixtures check-bench-det check-prims check-exec-route check-dev check-next-issue check-adr check-runner-pins check-integration-tests check-frontend-debt
 
 # Every configuration mutsu ships, linted the way CI lints it. A warning only
 # exists in the configuration you actually compile, so the default host build
@@ -120,6 +120,15 @@ check-panic-surface:
 check-name-scans:
 	scripts/check-name-scans.sh --self-test
 	scripts/check-name-scans.sh
+
+# Ratchet on the fixed frame names (ADR-14843, #14843): `self`, `?CLASS` and
+# `?ROLE` live in the frame record, never in an `Env` key. Per-file reference
+# counts live in scripts/frame-fixtures-baseline.txt and may go down, never
+# up. Re-cut after removing a reference:
+#   scripts/check-frame-fixtures.py --update
+check-frame-fixtures:
+	python3 scripts/check-frame-fixtures.py --self-test
+	python3 scripts/check-frame-fixtures.py
 
 # Ratchet on constructing an `Interpreter` (#10118, #10151): only process entry
 # points, thread spawns, the parse-time module probes and a thread_local may
