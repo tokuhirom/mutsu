@@ -253,7 +253,9 @@ pub(crate) fn mixin_role_keys_applied_last_first(
     let mut entries: Vec<(i64, String)> = mixins
         .keys()
         .filter_map(|k| k.strip_prefix("__mutsu_role__"))
-        .filter(|n| *n != base)
+        // A lexical role (`my role R`) is keyed by its mangled name; `base` is
+        // the display name.
+        .filter(|n| *n != base && &*crate::value::user_facing_type_name(n) != base)
         .map(|n| {
             let seq = mixins
                 .get(MetaNs::RoleSeq.str_key_for_str(n))
@@ -287,7 +289,9 @@ pub(crate) fn mixin_roles_applied_last_first(mixins: &MixinOverrides, base: &str
     let mut entries: Vec<(i64, String)> = mixins
         .keys()
         .filter_map(|k| k.strip_prefix("__mutsu_role__"))
-        .filter(|n| *n != base)
+        // A lexical role (`my role R`) is keyed by its mangled name; `base` is
+        // the display name.
+        .filter(|n| *n != base && &*crate::value::user_facing_type_name(n) != base)
         .map(|n| {
             let seq = mixins
                 .get(MetaNs::RoleSeq.str_key_for_str(n))
@@ -325,7 +329,9 @@ pub(crate) fn role_mixin_suffix_excluding(mixins: &MixinOverrides, base: &str) -
     let mut entries: Vec<(i64, i64, String)> = mixins
         .keys()
         .filter_map(|k| k.strip_prefix("__mutsu_role__"))
-        .filter(|n| *n != base)
+        // A lexical role (`my role R`) is keyed by its mangled name; `base` is
+        // the display name.
+        .filter(|n| *n != base && &*crate::value::user_facing_type_name(n) != base)
         .map(|n| {
             let seq = role_application_seq(mixins, n);
             (

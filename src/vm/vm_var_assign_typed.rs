@@ -1001,6 +1001,15 @@ impl Interpreter {
         increment: bool,
         post: bool,
     ) -> Result<bool, RuntimeError> {
+        // The variable's declared type is looked up BEFORE the cell lock is
+        // taken, because the lookup walks the env and compares bindings through
+        // their cells, which would lock this same non-reentrant cell again:
+        // `$pos++` on an `is rw` parameter whose cell the env also holds
+        // deadlocked on itself (#15397). The constraint does not depend on the
+        // cell's value, so the read-modify-write below stays one critical
+        // section.
+        let env_constraint = loan_env!(self, var_type_constraint_for(name, None))
+            .or_else(|| self.scalar_attr_type_constraint(name));
         let mut guard = arc.lock().unwrap();
         if matches!(
             guard.view(),
@@ -1019,8 +1028,10 @@ impl Interpreter {
         };
         let new_val = if let Some(constraint) = crate::value::lookup_container_constraint(arc) {
             Self::wrap_native_int_arithmetic_for_constraint(&constraint, new_val)
+        } else if let Some(constraint) = &env_constraint {
+            Self::wrap_native_int_arithmetic_for_constraint(constraint, new_val)
         } else {
-            self.wrap_native_int_arithmetic_result(name, new_val)
+            new_val
         };
         if let Some(constraint) = crate::value::lookup_container_constraint(arc)
             && !matches!(constraint.as_str(), "Any" | "Mu")

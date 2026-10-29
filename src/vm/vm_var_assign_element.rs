@@ -67,7 +67,7 @@ impl Interpreter {
         // external-binding guard).
         {
             let current = self.env().get(var_name).cloned().unwrap_or(Value::NIL);
-            if self.container_type_metadata(&current).is_some()
+            if self.has_container_type_metadata(&current)
                 || self.var_default(var_name).is_some()
                 || self.is_readonly(var_name)
             {

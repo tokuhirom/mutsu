@@ -1,6 +1,25 @@
 use super::*;
 
 pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
+    let (r, mut param) = parse_pointy_param_inner(input)?;
+    // A capture parameter takes a sub-signature that unpacks the captured
+    // arguments: `-> |c ($a, $b)`, `-> | ($, $v)`.
+    if input.starts_with('|') {
+        let (after, _) = ws(r)?;
+        if after.starts_with('(') {
+            let (after, _) = parse_char(after, '(')?;
+            let (after, _) = ws(after)?;
+            let (after, sub_params) = super::sub::parse_param_list(after)?;
+            let (after, _) = ws(after)?;
+            let (after, _) = parse_char(after, ')')?;
+            param.sub_signature = Some(sub_params);
+            return Ok((after, param));
+        }
+    }
+    Ok((r, param))
+}
+
+fn parse_pointy_param_inner(input: &str) -> PResult<'_, ParamDef> {
     // Positional destructuring sub-signature: `-> [$a, $b] { ... }`.
     // A bare `[...]` binds a single Positional argument and unpacks it — an
     // anonymous `@` param carrying the sub-signature (mirrors `sub f([$a,$b])`).

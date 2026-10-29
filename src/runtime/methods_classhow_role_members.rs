@@ -159,9 +159,38 @@ impl Interpreter {
                     .partition(|attr| role_def.own_attribute_names.contains(&attr.name));
                 own.extend(inherited);
                 own.into_iter()
-                    .map(|attr| self.make_attribute_object(attr, role))
+                    .map(|attr| {
+                        self.with_mixin_attribute_package(
+                            self.make_attribute_object(attr, role),
+                            receiver,
+                            base,
+                        )
+                    })
                     .collect::<Vec<_>>()
             })
             .collect()
+    }
+
+    /// `attribute` with `.package` answering the mixin's anonymous class
+    /// (`Int+{R}`, the type name the mixed value reports), as rakudo's does for
+    /// an attribute a role contributes to a run-time mixin.
+    // Cost: O(r), r = roles composed into the value (the name build).
+    fn with_mixin_attribute_package(&self, attribute: Value, receiver: &Value, base: &str) -> Value {
+        let name = crate::value::types::what_type_name(receiver);
+        if name == base {
+            return attribute;
+        }
+        match attribute.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } => {
+                let mut map = attributes.as_map().clone();
+                map.insert("__mutsu_attr_package".to_string(), Value::str(name));
+                Value::make_instance(class_name, map)
+            }
+            _ => attribute,
+        }
     }
 }

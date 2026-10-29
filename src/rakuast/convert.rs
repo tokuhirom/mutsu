@@ -6588,7 +6588,7 @@ fn colonpair_spelling(expr: &Expr, form: crate::ast::BinaryForm) -> Option<RakuA
         BinaryForm::ColonPairValue => colonpair_value_expr(expr),
         BinaryForm::ColonPairBracketed => colonpair_bracketed_expr(expr),
         BinaryForm::ColonPairNumber => colonpair_number_expr(expr),
-        BinaryForm::Infix | BinaryForm::CaretPrefix => return None,
+        BinaryForm::Infix | BinaryForm::CaretPrefix | BinaryForm::DoesDeclInit => return None,
     }
     .ok()
 }

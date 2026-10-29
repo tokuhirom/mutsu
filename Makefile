@@ -235,6 +235,7 @@ check-integration-tests:
 # ADR-15334 section 3.3: SyntheticBlock sites and `__...` literals in src/parser and the lines of
 # src/rakuast/convert.rs may not rise above the ceilings in scripts/frontend-debt.d/.
 check-frontend-debt:
+	scripts/frontend-cost.sh self-test
 	scripts/check-frontend-debt.sh --self-test
 	scripts/check-frontend-debt.sh
 

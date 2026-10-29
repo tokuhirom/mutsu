@@ -101,11 +101,36 @@ impl Interpreter {
     /// Insert a key-value pair into a hash with push/append semantics.
     /// push: if key exists, stack the new value (existing becomes [existing, new])
     /// append: if key exists, flatten arrays when appending
+    // Cost: O(1) amortized when the key holds an unshared Array (in-place extend); O(m) copying a shared one, m = its length.
     pub(crate) fn hash_push_insert(hash: &mut ValueMap, key: String, value: Value, is_push: bool) {
         // ADR-0040 slice 1: itemize the value at the store, same as a plain
         // `%h<k> = v` element assign (`%h.push('a' => [1,2]); %h<a>.raku` is
         // `$[1, 2]` in raku, not `[1, 2]`).
         let value = value.itemize_for_hash_element();
+        // An Array that only this slot owns is the stack of earlier pushes:
+        // extend it in place. Copying it per push made N pushes onto one key
+        // O(N^2) (#15367). A shared Array (a pushed `@a`, a `my $r = %h<k>`
+        // alias) keeps the copying path below, so no other holder sees the push.
+        if let Some(slot) = hash.get_mut(&key) {
+            let appended = slot
+                .with_array_mut(|gc, kind| {
+                    if !kind.is_real_array() || crate::gc::Gc::strong_count_of(gc) != 1 {
+                        return false;
+                    }
+                    let items = crate::gc::Gc::make_mut(gc);
+                    match value.view() {
+                        ValueView::Array(new_items, ..) if !is_push => {
+                            items.extend(new_items.iter().cloned());
+                        }
+                        _ => items.push(value.clone()),
+                    }
+                    true
+                })
+                .unwrap_or(false);
+            if appended {
+                return;
+            }
+        }
         if let Some(existing) = hash.get(&key) {
             let new_val = match existing.view() {
                 // For `push` only a real Array is a stack of earlier pushes; an

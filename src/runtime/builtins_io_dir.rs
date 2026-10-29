@@ -103,6 +103,10 @@ impl Interpreter {
         let cwd_val = self.make_io_path_instance(&Self::stringify_path(&canonical));
         self.env.insert("$*CWD".to_string(), cwd_val.clone());
         self.env.insert("*CWD".to_string(), cwd_val.clone());
+        // Carry the write across the return of every enclosing routine, as
+        // an assignment to `$*CWD` does (`record_foreign_dynamic_write`).
+        self.record_runtime_name_write("$*CWD");
+        self.record_runtime_name_write("*CWD");
         Ok(cwd_val)
     }
 

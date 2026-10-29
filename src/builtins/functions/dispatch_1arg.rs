@@ -168,6 +168,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                             cached_no_sink: false,
                             deleted_indices: Default::default(),
                             descriptor: None,
+                            generator_origin: None,
                             itemized: false,
                         };
                         return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));
@@ -204,6 +205,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     cached_no_sink: false,
                     deleted_indices: Default::default(),
                     descriptor: None,
+                    generator_origin: None,
                     itemized: false,
                 };
                 return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));

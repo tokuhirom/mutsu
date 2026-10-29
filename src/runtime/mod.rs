@@ -1168,6 +1168,14 @@ pub(crate) struct NativeCtorPlan {
     /// dropped on (`native_ctor_plan_cache` is cleared at every class-shape
     /// mutation and generation bump), so the memo cannot outlive it.
     pub(crate) noarg_user_new_declines: std::sync::OnceLock<bool>,
+    /// Whether the `new` candidates of this class are decided by the argument
+    /// type keys alone (no `where`/literal/subset/coercion/`is rw`/
+    /// sub-signature parameter), which is what makes the next memo sound.
+    pub(crate) new_candidates_type_keyed: std::sync::OnceLock<bool>,
+    /// Memo of `user_new_declines` for an all-named call, keyed by
+    /// [`Interpreter::multi_arg_type_keys_with_named`]. Like the no-argument
+    /// memo above it lives exactly as long as the class shape does.
+    pub(crate) named_user_new_declines: std::sync::Mutex<rustc_hash::FxHashMap<Vec<Symbol>, bool>>,
     /// The `:D`/`:U` smileys and `is required` attribute names across the
     /// MRO that `enforce_attribute_smiley_constraints` checks, collected once
     /// per class shape instead of per construction (#12917).
@@ -2597,6 +2605,33 @@ pub(crate) fn embedded_container_type_info(value: &Value) -> Option<ContainerTyp
             })
         }
         _ => None,
+    }
+}
+
+/// [`container_type_metadata_with`] reduced to "is there any", with no clone of
+/// the type names. Must stay in step with it, arm for arm.
+// Cost: O(1), no allocation.
+pub(crate) fn has_container_type_metadata_with(
+    value: &Value,
+    instance_meta: &Arc<RwLock<Arc<HashMap<u64, ContainerTypeInfo>>>>,
+) -> bool {
+    match value.view() {
+        ValueView::Array(items, ..) => items.has_type_meta(),
+        ValueView::Mix(items, _) => items.has_type_meta(),
+        ValueView::Set(items, _) => items.has_type_meta(),
+        ValueView::Bag(items, _) => items.has_type_meta(),
+        ValueView::Hash(items) => items.has_type_meta(),
+        ValueView::LazyList(list) => list
+            .descriptor
+            .as_deref()
+            .is_some_and(|d| d.value_type.is_some()),
+        ValueView::Instance { id, .. } => instance_meta.read().unwrap().contains_key(&id),
+        ValueView::Mixin(inner, _) => has_container_type_metadata_with(inner, instance_meta),
+        ValueView::ContainerRef(cell) => {
+            let inner = cell.load();
+            has_container_type_metadata_with(&inner, instance_meta)
+        }
+        _ => false,
     }
 }
 

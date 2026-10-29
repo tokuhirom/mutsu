@@ -521,7 +521,9 @@ impl Interpreter {
             // topic. Postfix `when` must match the current loop element (for
             // example `$_ = lookup($_) when Str`), so prefer the compiled
             // topic slot when one is present.
-            let topic = topic_snapshot;
+            // A `Proxy` topic (a block parameter bound to an `is rw` result) is
+            // read by value, as the plain `~~` operator reads it.
+            let topic = self.fetch_proxy_operand(topic_snapshot)?;
             match cond_val.view() {
                 ValueView::Sub(_) | ValueView::Routine { .. } => {
                     let (_params, param_defs) = self.callable_signature(&cond_val);
