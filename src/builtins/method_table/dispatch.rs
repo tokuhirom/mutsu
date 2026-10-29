@@ -279,7 +279,18 @@ pub(crate) fn invoke_mut(
     }
     // `Any` ends every owner chain: the proto a kind with no mutator of its
     // own falls back to (`Any.splice`).
-    let owners = mutating::owners_of(place.value()).unwrap_or(&[]);
+    // `BIND-KEY` on a native hash a role was mixed into is the `Hash` row's:
+    // `hash_bind_key` looks through the mixin and binds on the shared node.
+    // (The other `Hash` mutators reach a mixin through their own paths.)
+    let mixed_hash_bind = method == "BIND-KEY"
+        && matches!(place.value().descalarize().view(),
+            crate::value::ValueView::Mixin(inner, _)
+                if matches!(inner.view(), crate::value::ValueView::Hash(_)));
+    let owners = if mixed_hash_bind {
+        &["Hash"][..]
+    } else {
+        mutating::owners_of(place.value()).unwrap_or(&[])
+    };
     let id = owners
         .iter()
         .chain(&["Any"])
