@@ -47,6 +47,8 @@ pub(crate) struct OpScanIndex {
     /// The ip of each `BlockScope` / `BlockLocalScope` op -> the facts of the
     /// range it scopes.
     block_facts: FxHashMap<usize, BlockRangeFacts>,
+    /// `slot` -> the ip of its FIRST declaring op (`SetLocalDecl`).
+    first_decl_ip: FxHashMap<usize, usize>,
 }
 
 /// What a scope's exit cleanup needs to know about the ops of the scoped range:
@@ -117,8 +119,21 @@ impl OpScanIndex {
         }
         let mut state_init_ips: Vec<Vec<usize>> = vec![Vec::new(); code.state_locals.len()];
         let mut block_facts: FxHashMap<usize, BlockRangeFacts> = FxHashMap::default();
+        let mut first_decl_ip: FxHashMap<usize, usize> = FxHashMap::default();
         for (ip, op) in code.ops.iter().enumerate() {
             match op {
+                OpCode::SetLocalDecl { slot, .. } => {
+                    first_decl_ip.entry(*slot as usize).or_insert(ip);
+                }
+                // A `my $x := ...` declaration has no `SetLocalDecl`: the bind
+                // stores through `SetLocal`, after this marker.
+                OpCode::SetVarDynamic {
+                    local_slot: Some(slot),
+                    bind_declaration: true,
+                    ..
+                } => {
+                    first_decl_ip.entry(*slot as usize).or_insert(ip);
+                }
                 OpCode::BlockScope { end, .. } => {
                     block_facts.insert(ip, BlockRangeFacts::scan(code, ip + 1, *end as usize));
                 }
@@ -172,6 +187,7 @@ impl OpScanIndex {
                 .map(Vec::into_boxed_slice)
                 .collect(),
             block_facts,
+            first_decl_ip,
         }
     }
 }
@@ -202,6 +218,25 @@ impl CompiledCode {
         match self.op_scan_index() {
             Some(idx) => idx.duplicate_label.clone(),
             None => OpScanIndex::build(self).duplicate_label,
+        }
+    }
+
+    /// The ip of the first declaring op (`SetLocalDecl`, or the `SetVarDynamic`
+    /// of a `my $x := ...` bind) of `slot`, if the chunk declares it.
+    // Cost: O(1) amortized (one O(p) index build per chunk); a stale index
+    // scans the ops, O(p).
+    pub(crate) fn first_decl_ip(&self, slot: usize) -> Option<usize> {
+        match self.op_scan_index() {
+            Some(idx) => idx.first_decl_ip.get(&slot).copied(),
+            None => self.ops.iter().position(|op| match op {
+                OpCode::SetLocalDecl { slot: s, .. } => *s as usize == slot,
+                OpCode::SetVarDynamic {
+                    local_slot: Some(s),
+                    bind_declaration: true,
+                    ..
+                } => *s as usize == slot,
+                _ => false,
+            }),
         }
     }
 

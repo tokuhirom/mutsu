@@ -572,6 +572,7 @@ mod array_holes;
 /// The instance-attribute map (`Symbol -> Value`); see [`AttrMap`].
 mod attr_map;
 mod attr_site;
+mod attr_store_kind;
 mod bareword_site;
 pub(crate) mod buf_class_names;
 pub(crate) mod capture_text;
@@ -725,6 +726,7 @@ pub(crate) use attr_map::{
     AttrBits, AttrKey, AttrMap, ClassLayout, OBJAT_STR_PAYLOAD, attr_twigil_base, attr_twigil_sigil,
 };
 pub(crate) use attr_site::AttrSiteCaches;
+pub(crate) use attr_store_kind::AttrStoreKind;
 pub(crate) use bareword_site::BarewordSiteCaches;
 pub(crate) use entry_path::EntryRoot;
 pub use entry_path::EntryStep;

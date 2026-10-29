@@ -8,6 +8,7 @@
 
 use super::bareword::simple_type_node;
 use super::method_assign_decl::call_method;
+use super::nested_methods::unhoist;
 use super::origin;
 use super::placeholder::{is_placeholder_name, placeholder_node};
 use super::regex_declaration::{
@@ -892,7 +893,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                         value: RakuAstFieldValue::List(traits),
                     });
                 }
-                let grammar_body = block_node(&crate::parser::unhoist_nested_methods(body))?;
+                let grammar_body = block_node(&unhoist(body))?;
                 fields.push(node_field(
                     Some("body"),
                     super::role::with_leading_statements(grammar_body, also_statements),
@@ -983,9 +984,8 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     value: RakuAstFieldValue::List(traits),
                 });
             }
-            let class_body = block_node(&crate::parser::unhoist_nested_methods(
-                without_composed_header(body, does_parents),
-            ))?;
+            let unhoisted = unhoist(without_composed_header(body, does_parents));
+            let class_body = block_node(&unhoisted)?;
             fields.push(node_field(
                 Some("body"),
                 super::role::with_leading_statements(class_body, also_statements),
@@ -1045,10 +1045,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     value: RakuAstFieldValue::List(traits),
                 });
             }
-            fields.push(node_field(
-                Some("body"),
-                block_node(&crate::parser::unhoist_nested_methods(body))?,
-            ));
+            fields.push(node_field(Some("body"), block_node(&unhoist(body))?));
             Ok(Some(statement_expression(RakuAstNode {
                 origin: Default::default(),
                 class: if *is_role {
@@ -1150,10 +1147,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 Some("name"),
                 name_from_identifier(&name.resolve()),
             ));
-            fields.push(node_field(
-                Some("body"),
-                block_node(&crate::parser::unhoist_nested_methods(body))?,
-            ));
+            fields.push(node_field(Some("body"), block_node(&unhoist(body))?));
             let mut node = RakuAstNode {
                 origin: Default::default(),
                 class,

@@ -697,23 +697,32 @@ fn lower_comma_declarations(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeE
         return Ok(None);
     }
     let operands = list_field(node, "operands")?;
-    if operands.len() < 2
-        || !operands.iter().all(|value| {
-            matches!(value.view(), ValueView::RakuAst(child) if matches!(child.class,
-                RakuAstClass::VarDeclarationSimple
-                    | RakuAstClass::VarDeclarationSignature
-                    | RakuAstClass::VarDeclarationTerm
-                    | RakuAstClass::VarDeclarationConstant))
-        })
-    {
+    let is_declaration = |value: &Value| {
+        matches!(value.view(), ValueView::RakuAst(child) if matches!(child.class,
+            RakuAstClass::VarDeclarationSimple
+                | RakuAstClass::VarDeclarationSignature
+                | RakuAstClass::VarDeclarationTerm
+                | RakuAstClass::VarDeclarationConstant))
+    };
+    // The declarations lead the list; any operands after them are the loose
+    // tail (`my $b = 2, my $c = 3, say "$b $c"`).
+    let leading = operands
+        .iter()
+        .take_while(|value| is_declaration(value))
+        .count();
+    if leading < 2 {
         return Ok(None);
     }
     let mut declarations = Vec::with_capacity(operands.len());
-    for value in operands {
+    for (at, value) in operands.iter().enumerate() {
         let ValueView::RakuAst(child) = value.view() else {
             return Err(unsupported(node));
         };
-        declarations.push(lower_stmt_inner(child)?);
+        if at < leading {
+            declarations.push(lower_stmt_inner(child)?);
+        } else {
+            declarations.push(Stmt::Expr(lower_expr(child)?));
+        }
     }
     super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::CommaDecls(declarations))
         .map(Some)
@@ -1340,9 +1349,9 @@ fn phaser_kind(node: &RakuAstNode) -> Result<crate::ast::PhaserKind, RuntimeErro
 
 /// A package body as the parser leaves it: the `method`s declared in its
 /// nested blocks and routine bodies hoisted into it (the converter rendered
-/// them where they were written, `parser::unhoist_nested_methods`).
+/// them where they were written, `nested_methods::unhoist`).
 pub(super) fn lower_package_body(mut body: Vec<Stmt>) -> Vec<Stmt> {
-    crate::parser::hoist_nested_methods(&mut body);
+    super::nested_methods::hoist(&mut body);
     body
 }
 

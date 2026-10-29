@@ -2366,7 +2366,7 @@ pub(crate) enum Stmt {
     /// `proto`s the enclosing blocks declare: they live in the routine
     /// registry, not in the closure env, and the registry forgets them when
     /// the block exits, so they are resolved into the capture as `&name`
-    /// while it is live. See `parser::stmt::nested_block_methods`.
+    /// while it is live. See `rakuast::nested_methods`.
     NestedMethodCapture {
         index: u32,
         /// The `index` of the first method hoisted from the same statement
@@ -3200,7 +3200,7 @@ pub(crate) enum Stmt {
         /// `is hidden-from-backtrace` on a `proto method`.
         is_hidden_from_backtrace: bool,
         /// A copy of a nested-block `proto method` appended to the package body
-        /// (`parser::stmt::nested_block_methods`); the written one stays in place.
+        /// (`rakuast::nested_methods`); the written one stays in place.
         #[serde(default)]
         is_hoisted_copy: bool,
         /// True when declared as `proto method`/`proto submethod` (inside a

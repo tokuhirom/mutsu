@@ -164,9 +164,34 @@ pub(crate) struct ClassLayout {
     /// sigil-colliding declaration). The sigil key outranks the bare key, so
     /// a site cache must not remember either for these names.
     sigil_keyed_bares: rustc_hash::FxHashSet<Symbol>,
+    /// What a scalar store into each declared slot has to check, by slot (see
+    /// [`super::AttrStoreKind`]). Empty until [`Self::with_store_kinds`] sets
+    /// it, which reads as "decline" for every slot.
+    store_kinds: Box<[super::AttrStoreKind]>,
 }
 
 impl ClassLayout {
+    /// This layout with the per-slot [`super::AttrStoreKind`]s of its
+    /// declared attributes, in key order. A kind list that does not cover
+    /// every slot is ignored (every slot then declines).
+    // Cost: O(n), n = slots.
+    pub(crate) fn with_store_kinds(mut self, kinds: Vec<super::AttrStoreKind>) -> Self {
+        if kinds.len() == self.keys.len() {
+            self.store_kinds = kinds.into_boxed_slice();
+        }
+        self
+    }
+
+    /// The store kind of declared slot `slot`; `Decline` when none was set.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn store_kind(&self, slot: usize) -> super::AttrStoreKind {
+        self.store_kinds
+            .get(slot)
+            .copied()
+            .unwrap_or(super::AttrStoreKind::Decline)
+    }
+
     /// A layout over `keys`, in order. A key listed twice keeps its first
     /// slot.
     pub(crate) fn new(keys: impl IntoIterator<Item = Symbol>) -> Self {
@@ -193,6 +218,7 @@ impl ClassLayout {
             index,
             qualified_bares,
             sigil_keyed_bares,
+            store_kinds: Box::default(),
         }
     }
 
