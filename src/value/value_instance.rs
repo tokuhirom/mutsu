@@ -492,6 +492,41 @@ impl InstanceAttrs {
         }
     }
 
+    /// [`Self::store_slot_through`] for the `$!x = <inert scalar>` lane: the
+    /// store happens only when the layout's declaration of the slot settles
+    /// every check the general store would run ([`super::AttrStoreKind`]) and
+    /// the slot holds no container to write through. Anything else hands
+    /// `value` back untouched for the general path. A typed declaration is
+    /// honoured only when `allow_typed` (no user `subset` can have redirected
+    /// the constraint's name).
+    // Cost: O(1).
+    pub(crate) fn store_slot_checked(
+        &self,
+        layout_id: u32,
+        slot: usize,
+        value: Value,
+        allow_typed: bool,
+    ) -> Result<Symbol, Value> {
+        let mut guard = write_attrs(self.cell());
+        let Some((key, kind)) = guard
+            .layout()
+            .filter(|l| l.id() == layout_id)
+            .map(|l| (l.key_at(slot), l.store_kind(slot)))
+        else {
+            return Err(value);
+        };
+        if (kind.is_typed() && !allow_typed) || !kind.accepts(&value) || guard.has_undeclared() {
+            return Err(value);
+        }
+        match guard.slot_mut(slot) {
+            Some(held) if held.is_plain_scalar_store_slot() => {
+                *held = value;
+                Ok(key)
+            }
+            _ => Err(value),
+        }
+    }
+
     /// Store `value` at `key`, writing *through* a promoted `ContainerRef` cell
     /// when the slot holds one instead of replacing it.
     ///
