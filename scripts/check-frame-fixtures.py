@@ -17,10 +17,17 @@ fixed name, so a new reference, or a new file, fails until a reviewer has
 looked at it and the baseline names it:
 
     scripts/check-frame-fixtures.py              # check
-    scripts/check-frame-fixtures.py --update     # re-cut after removing a reference
+    scripts/check-frame-fixtures.py --update     # prune the baseline after removing references
     scripts/check-frame-fixtures.py --self-test
 
-Counts may only go down. The parser, AST, compiler and RakuAST layers are out
+Counts may only go down, and a drop never has to be recorded: the baseline is
+one file per source file under `scripts/frame-fixtures.d/` (the
+`scripts/frontend-debt.d/` pattern), and the check fails only when a count rises
+above its file. So a PR that removes a reference touches no baseline, two PRs
+never edit the same line, and a PR that adds one has to add or raise that
+file's number where a reviewer sees it.
+
+The parser, AST, compiler and RakuAST layers are out
 of scope: they spell the names as source-level syntax, not as `Env` keys.
 
 The one `Env` key that remains is the `self` of a plain routine's own `$self`
@@ -36,7 +43,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
-BASELINE = ROOT / "scripts" / "frame-fixtures-baseline.txt"
+BASELINE_DIR = ROOT / "scripts" / "frame-fixtures.d"
 LAYERS = ("runtime", "vm", "builtins", "value", "gc", "jit")
 ROOT_FILES = ("env.rs", "symbol.rs", "interpreter.rs")
 
@@ -108,34 +115,34 @@ def current_counts() -> dict[str, int]:
     return counts
 
 
+def baseline_name(path: str) -> str:
+    """The baseline file of source file `path`: its repository path, `/` -> `__`."""
+    return path.replace("/", "__") + ".txt"
+
+
 def read_baseline() -> dict[str, int]:
     counts: dict[str, int] = {}
-    for line in BASELINE.read_text(encoding="utf-8").splitlines():
-        body = line.split("#", 1)[0].strip()
-        if not body:
-            continue
-        path, n = body.split()[:2]
-        counts[path] = int(n)
+    if not BASELINE_DIR.is_dir():
+        return counts
+    for entry in sorted(BASELINE_DIR.glob("*.txt")):
+        path = entry.stem.replace("__", "/")
+        counts[path] = int(entry.read_text(encoding="utf-8").split()[0])
     return counts
 
 
-HEADER = """\
-# References to the fixed frame names (`self`, `?CLASS`, `?ROLE`) in the runtime
-# layers, per file (see scripts/check-frame-fixtures.py, ADR-14843). Format:
-# <path> <count>. Counts may only go down. Re-cut with
-#   scripts/check-frame-fixtures.py --update
-# after removing a reference. A new reference or file means editing this list by
-# hand, which a reviewer sees: say why the name is not read from the frame
-# record (`frame_invocant`, `frame_fixture_value`).
-"""
-
-
 def write_baseline(counts: dict[str, int]) -> None:
-    width = max((len(p) for p in counts), default=0)
-    lines = [HEADER]
-    for path in sorted(counts):
-        lines.append(f"{path.ljust(width)} {counts[path]:>3}")
-    BASELINE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    """Cut the baseline down to `counts`: a count that fell is lowered, a file
+    that reached zero is removed. A count that rose is only ever raised by
+    hand."""
+    BASELINE_DIR.mkdir(exist_ok=True)
+    base = read_baseline()
+    for path in base:
+        if path not in counts:
+            (BASELINE_DIR / baseline_name(path)).unlink()
+    for path, n in counts.items():
+        if path in base:
+            n = min(n, base[path])
+        (BASELINE_DIR / baseline_name(path)).write_text(f"{n}\n", encoding="utf-8")
 
 
 def check() -> int:
@@ -152,15 +159,10 @@ def check() -> int:
         print(
             "Read `self`/`?CLASS`/`?ROLE` from the frame record (frame_invocant,\n"
             "frame_fixture_value) and store through store_invocant_by_name; an Env\n"
-            "key for them is what ADR-14843 retired."
+            "key for them is what ADR-14843 retired. If the reference is a name test\n"
+            "a reviewer should accept, raise that file's number under\n"
+            "scripts/frame-fixtures.d/ and say why in the PR."
         )
-        return 1
-    stale = [p for p, n in sorted(now.items()) if n < base.get(p, 0)]
-    stale += [p for p in sorted(base) if p not in now]
-    if stale:
-        print("check-frame-fixtures: the baseline is above the current counts;")
-        print("re-cut it with scripts/check-frame-fixtures.py --update:")
-        print("\n".join(f"  {p}" for p in stale))
         return 1
     print(f"check-frame-fixtures: ok ({sum(now.values())} references in {len(now)} files)")
     return 0
@@ -193,7 +195,7 @@ def main(argv: list[str]) -> int:
         return self_test()
     if "--update" in argv:
         write_baseline(current_counts())
-        print(f"wrote {BASELINE.relative_to(ROOT)}")
+        print(f"pruned {BASELINE_DIR.relative_to(ROOT)}")
         return 0
     return check()
 

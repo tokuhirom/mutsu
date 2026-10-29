@@ -123,8 +123,9 @@ check-name-scans:
 
 # Ratchet on the fixed frame names (ADR-14843, #14843): `self`, `?CLASS` and
 # `?ROLE` live in the frame record, never in an `Env` key. Per-file reference
-# counts live in scripts/frame-fixtures-baseline.txt and may go down, never
-# up. Re-cut after removing a reference:
+# counts live in scripts/frame-fixtures.d/ (one file per source file) and may go
+# down, never up; a drop needs no edit there. Prune the files after removing
+# references:
 #   scripts/check-frame-fixtures.py --update
 check-frame-fixtures:
 	python3 scripts/check-frame-fixtures.py --self-test
