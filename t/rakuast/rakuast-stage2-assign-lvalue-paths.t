@@ -29,7 +29,6 @@ my @outside =
     'method compound', '$outer.x = 1; $outer.x += 4; $outer.x',                                '5',
     'list lvalue',     '($p, $q) = 3, 4; $p ~ $q',                                             '34',
     'atomic store',    '$at ⚛= 7; ⚛$at',                                                       '7';
-# TODO: `sigless<a> = 3` on a caller's sigilless term is lost inside EVAL (#15388).
 
 sub as-file(Str $code) {
     my $proc = run $*EXECUTABLE, '-e', "say do \{ $code }", :out, :err;

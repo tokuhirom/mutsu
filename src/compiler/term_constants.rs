@@ -103,7 +103,13 @@ impl Compiler {
     /// sigil-less constant, its spelling otherwise.
     // Cost: O(|name|).
     pub(super) fn sigilless_storage_key(&self, name: &str) -> String {
-        if self.names_sigilless_binding(name) || self.names_term_constant(name) {
+        // A name this unit cannot see at all (an `EVAL`'d `b<a> = 3` over the
+        // caller's `my \b`) is written against its term key, as a `b = 3`
+        // statement is (`sigilless_assign_target_key`).
+        if self.names_sigilless_binding(name)
+            || self.names_term_constant(name)
+            || self.sigilless_target_is_unknown(name)
+        {
             crate::runtime::term_names::term_key(name)
         } else {
             name.to_string()
