@@ -618,6 +618,22 @@ impl Interpreter {
         }
     }
 
+    /// Whether the class behind `target` (an instance, or the instance a mixin
+    /// wraps) declares its own `AT-POS`.
+    // Cost: O(1) amortized, memoized class probes.
+    fn sequence_declares_at_pos(&mut self, target: &Value) -> bool {
+        let inner = match target.view() {
+            ValueView::Mixin(inner, _) => (**inner).clone(),
+            _ => target.clone(),
+        };
+        match inner.view() {
+            ValueView::Instance { class_name, .. } => {
+                self.has_user_method_including_role(&class_name.resolve(), "AT-POS")
+            }
+            _ => false,
+        }
+    }
+
     /// `.elems` of a subscripted instance or mixin, for resolving a WhateverCode
     /// index: a `does Sequence` class's is its iterator's (the delegate), any
     /// other is its own `elems` method.
@@ -943,6 +959,22 @@ impl Interpreter {
         // pays one relaxed check.
         if target.is_proxy_value() {
             target = loan_env!(self, auto_fetch_proxy(&target))?;
+        }
+        // A `does Sequence` class with its own `iterator` and no `AT-POS` is
+        // subscripted through its elements, as `Any.AT-POS` reads `self.list`
+        // (also when it composes `Positional`, which would otherwise make the
+        // object its own one-element list). The List is the delegate's.
+        if is_positional
+            && matches!(
+                target.view(),
+                ValueView::Instance { .. } | ValueView::Mixin(..)
+            )
+            && self.is_iterator_sequence_instance(&target)
+            && !self.sequence_declares_at_pos(&target)
+            && let Some(Ok(list)) =
+                self.try_sequence_role_delegate(&target, crate::symbol::Symbol::intern("List"), &[])
+        {
+            target = list;
         }
         // A scalar-held Range is a Range receiver for its own positional
         // indexing; only an itemized Range *index* above remains a single index.
