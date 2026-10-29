@@ -299,6 +299,9 @@ impl Interpreter {
             "$*STACK-ID" | "*STACK-ID" => {
                 Value::int(crate::runtime::stack_id::current_stack_id() as i64)
             }
+            // `$*CU`: the unit being compiled, for BEGIN-time code and what
+            // `use` runs while it compiles (`unit_source_text`).
+            "$*CU" | "*CU" => return crate::unit_source_text::compile_time_cu(),
             "*USER" => Self::cached_user_instance(),
             "*GROUP" => Self::cached_group_instance(),
             _ => return None,

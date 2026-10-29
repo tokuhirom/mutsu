@@ -7460,6 +7460,7 @@ impl Interpreter {
             // Cost: O(1).
             OpCode::EndBeginPrologue => {
                 self.control.begin_prologue_pending = false;
+                crate::unit_source_text::end_compile_phase();
                 *ip += 1;
             }
             // Cost: O(size of the declaration) per execution (routine/class/role registration).

@@ -1001,6 +1001,8 @@ impl Interpreter {
                 RuntimeError::new(format!("Failed to read module {}: {}", module, err))
             })?,
         };
+        // `$*CU` while this module compiles (`unit_source_text`).
+        let _unit_text = crate::unit_source_text::UnitSourceTextGuard::enter(&source_text);
         let path_text = source_path.to_string_lossy().into_owned();
         let (mut module_ast, facts, effects, precompiled) = match &entry {
             Some(entry) => {
