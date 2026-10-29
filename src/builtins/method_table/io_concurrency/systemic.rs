@@ -104,6 +104,16 @@ pub(super) static ROWS: &[MethodRow] = &[
         Handler::Narrow(cpu_cores),
         RowFlags::TYPE_OBJECT_OK
     ),
+    // An undocumented rakudo `is-implementation-detail` method, added for the
+    // ParaSeq distribution on the maintainer's per-issue approval (#15315); this
+    // is not a precedent for adding such methods.
+    row!(
+        "Kernel",
+        "cpu-cores-but-one",
+        0,
+        Handler::Narrow(cpu_cores_but_one),
+        RowFlags::TYPE_OBJECT_OK
+    ),
     row!(
         "Kernel",
         "free-memory",
@@ -317,6 +327,13 @@ fn kernel_endian(target: &Value, _: &[Value]) -> Answer {
 fn cpu_cores(_: &Value, _: &[Value]) -> Answer {
     Some(Ok(Value::int(
         crate::runtime::sys_resources::cpu_core_count(),
+    )))
+}
+
+// Cost: O(1) plus one syscall.
+fn cpu_cores_but_one(_: &Value, _: &[Value]) -> Answer {
+    Some(Ok(Value::int(
+        (crate::runtime::sys_resources::cpu_core_count() - 1).max(1),
     )))
 }
 

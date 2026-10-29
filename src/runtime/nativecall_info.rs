@@ -105,8 +105,13 @@ fn carray_elem_of(typeobj: Option<&Value>) -> Option<CType> {
 /// One parameter's marshalling, from its `param_hash_for` hash.
 // Cost: O(c), c = parameters of a callback's signature; O(1) otherwise.
 fn param_spec_from_info(info: &Value) -> Result<ParamSpec, RuntimeError> {
-    let ct = ctype_for_code(&info_type_code(info)?)?;
-    let is_rw = info_get(info, "rw").is_some_and(|v| v.truthy());
+    let code = info_type_code(info)?;
+    let ct = ctype_for_code(&code)?;
+    // `is rw` only makes an out-slot (`void**`) of a `Pointer`; a CStruct /
+    // CPPStruct / CUnion argument is already passed as the address of its
+    // storage, `is rw` or not (TCP::LowLevel's `bind(int32, SockAddr-any is rw, ...)`).
+    let is_rw = info_get(info, "rw").is_some_and(|v| v.truthy())
+        && !matches!(code.as_str(), "cstruct" | "cppstruct" | "cunion");
     Ok(match ct {
         CType::CArray => {
             ParamSpec::carray(carray_elem_of(info_get(info, "typeobj").as_ref()), is_rw)
