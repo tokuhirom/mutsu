@@ -794,7 +794,18 @@ impl Interpreter {
             }
             other => other,
         };
-        let queue_result = if Self::should_run_success_queue_vm(&body_result, self.env.get("_")) {
+        // Rakudo calls `sub MAIN` from the end of the mainline, so the file's
+        // own LEAVE/KEEP/UNDO phasers of a program that declares one run after
+        // `MAIN` returns (#15407); `defer_exit_phasers` holds them until then.
+        let defer_exit_phasers = body_result.is_ok()
+            && !self.explicit_run_main
+            && body_main.iter().any(|s| {
+                matches!(s, Stmt::SubDecl { name, multi: false, .. } if name.as_str() == "MAIN")
+            });
+        let success_queue = Self::should_run_success_queue_vm(&body_result, self.env.get("_"));
+        let queue_result = if defer_exit_phasers {
+            Ok(())
+        } else if success_queue {
             self.run_block_raw(&success_ph)
         } else {
             self.run_block_raw(&failure_ph)
@@ -884,8 +895,26 @@ impl Interpreter {
         // `Usage:` and exited 2 where raku exits 0 silently — which also made
         // `use <dist>; exit 0` an unusable probe for the dist-compatibility sweep,
         // since every dist exporting a MAIN dispatched it.
-        if !self.explicit_run_main && !self.is_halted() {
-            self.dispatch_main(&compiled_fns)?;
+        let main_result = if !self.explicit_run_main && !self.is_halted() {
+            self.dispatch_main(&compiled_fns)
+        } else {
+            Ok(())
+        };
+        if defer_exit_phasers && !self.is_halted() {
+            // An `exit` leaves no scope, so it skips them.
+            let queue = if success_queue && main_result.is_ok() {
+                &success_ph
+            } else {
+                &failure_ph
+            };
+            let queue_result = self.run_block_raw(queue);
+            if main_result.is_ok() {
+                queue_result?;
+            }
+        }
+        if let Err(e) = main_result {
+            let _ = self.finish();
+            return Err(e);
         }
         self.finish()?;
         // GC program-end collect: deliver DESTROY for leaked cycles. Skipped
