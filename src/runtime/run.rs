@@ -690,6 +690,30 @@ impl Interpreter {
                 if end > 0 {
                     body_main.insert(end, Stmt::BeginPrologueEnd);
                 }
+                // The closures `$*CU.add-check-code` queued run after the
+                // unit's CHECK phasers (which follow the marker), before INIT.
+                let checks = body_main[end.min(body_main.len())..]
+                    .iter()
+                    .skip(usize::from(end > 0))
+                    .take_while(|stmt| {
+                        matches!(
+                            stmt,
+                            Stmt::Phaser {
+                                kind: crate::ast::PhaserKind::Check,
+                                ..
+                            }
+                        )
+                    })
+                    .count();
+                let run_at = end + usize::from(end > 0) + checks;
+                body_main.insert(
+                    run_at.min(body_main.len()),
+                    Stmt::Expr(Expr::Call {
+                        name: Symbol::intern("__mutsu_run_check_code"),
+                        args: Vec::new(),
+                        listop: false,
+                    }),
+                );
                 (end > 0, if end > 0 { end + 1 } else { 0 })
             }
             Err(err) => {

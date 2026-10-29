@@ -648,6 +648,7 @@ impl Interpreter {
             "succeed" => self.builtin_succeed(&args),
             "leave" => self.builtin_leave(&args),
             "return-rw" => self.builtin_return_rw(&args),
+            "__mutsu_run_check_code" => self.builtin_run_check_code(),
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
             "__mutsu_push_through_accessor" => self.builtin_push_through_accessor(&args),
             "__mutsu_index_assign_method_lvalue" => self.builtin_index_assign_method_lvalue(&args),

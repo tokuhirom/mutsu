@@ -1810,6 +1810,8 @@ impl Interpreter {
             // load must not leave it hidden.
             let export_result = match result {
                 Ok(()) => {
+                    // `$*CU` in the module's `sub EXPORT` is the importing unit.
+                    let _export_phase = crate::unit_source_text::ExportPhaseGuard::enter();
                     self.apply_module_export(export_args.unwrap_or_default(), module_body_env)
                 }
                 Err(err) => Err(err),
