@@ -2992,6 +2992,8 @@ impl Interpreter {
                                         Some('r') => literal.push('\r'),
                                         Some('f') => literal.push('\u{000C}'),
                                         Some('b') => literal.push('\u{0008}'), // backspace
+                                        Some('a') => literal.push('\u{0007}'), // bell
+                                        Some('e') => literal.push('\u{001B}'), // escape (ESC)
                                         Some('0') => literal.push('\0'),
                                         Some('c') | Some('C') => {
                                             // \c[NAME] or \c[NAME1, NAME2] inside double-quoted regex string
