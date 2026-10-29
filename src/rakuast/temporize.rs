@@ -338,7 +338,13 @@ fn lower_method_assign(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
         let Some(method) = spelling.strip_prefix("$.") else {
             return Err(unsupported(node));
         };
-        ("self".to_string(), method.to_string(), Vec::new(), true, false)
+        (
+            "self".to_string(),
+            method.to_string(),
+            Vec::new(),
+            true,
+            false,
+        )
     } else {
         let Expr::MethodCall {
             target,

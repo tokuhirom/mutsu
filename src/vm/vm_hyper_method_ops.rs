@@ -1007,8 +1007,10 @@ impl Interpreter {
                     let iterable_instance = if !is_iterable_item
                         && !is_list_native_method
                         && !item.is_lazy_match_value()
-                        && matches!(item.view(), ValueView::Instance { .. } | ValueView::Mixin(..))
-                    {
+                        && matches!(
+                            item.view(),
+                            ValueView::Instance { .. } | ValueView::Mixin(..)
+                        ) {
                         self.try_iterable_instance_items(item)?
                     } else {
                         None
@@ -1394,8 +1396,13 @@ impl Interpreter {
                 // `iterator`, like any nested list (`$adam.kids>>.kids>>.value`
                 // over Red's `ResultSeq`). The instance itself is not mutated.
                 let list = Self::iterable_instance_list(elems);
-                let (result, _) =
-                    self.hyper_method_apply_recursive(&list, method, method_sym, args, skip_native)?;
+                let (result, _) = self.hyper_method_apply_recursive(
+                    &list,
+                    method,
+                    method_sym,
+                    args,
+                    skip_native,
+                )?;
                 Ok((result, item.clone()))
             }
             _ => {

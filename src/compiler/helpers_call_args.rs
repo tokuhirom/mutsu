@@ -86,8 +86,7 @@ impl Compiler {
             // `method table is rw { $!table //= compute() }`: the assignment
             // evaluates to the attribute's container, so run it for its effect
             // and hand back `$!table` itself.
-            Expr::CompoundAssign { target, .. }
-                if matches!(target.as_ref(), Expr::Var(name) if Self::rw_tail_attribute_name(name).is_some()) =>
+            Expr::CompoundAssign { target, .. } if matches!(target.as_ref(), Expr::Var(name) if Self::rw_tail_attribute_name(name).is_some()) =>
             {
                 self.compile_expr(arg);
                 self.code.emit(OpCode::Pop);
