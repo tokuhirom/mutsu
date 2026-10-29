@@ -433,7 +433,7 @@ impl Interpreter {
                 if cand.is_default {
                     env.insert_sym(crate::symbol::wk::multi_is_default(), Value::TRUE);
                 }
-                Value::make_sub_for_routine(
+                self.with_captured_fixtures(Value::make_sub_for_routine(
                     cand.package,
                     cand.name,
                     cand.params.clone(),
@@ -442,7 +442,7 @@ impl Interpreter {
                     cand.is_rw,
                     env,
                     cand.compiled_fn().cloned(),
-                )
+                ))
             })
             .collect();
         let mut dispatcher_env = base_env;
@@ -490,7 +490,30 @@ impl Interpreter {
         // `multi pretty-json(Cool:D)` calling the imported `to-json` it also
         // exports over): `callable_declared_in_unit_of` needs a `source_file`.
         let unit_file = candidates.first().and_then(|c| c.source_file.as_deref());
-        Self::sub_with_source_file(dispatcher, unit_file)
+        self.with_captured_fixtures(Self::sub_with_source_file(dispatcher, unit_file))
+    }
+
+    /// `value` (a code object built here from a declaration) closes over the
+    /// running frame's `self`, `?CLASS` and `?ROLE` (ADR-14843), as
+    /// [`Self::sub_value_from_function_def`] does for a single routine: a
+    /// `multi sub` declared in a method keeps the method's invocant when its
+    /// `&name` outlives the call.
+    // Cost: O(1) (one record clone); O(d) for a shared `SubData`, d = its size.
+    fn with_captured_fixtures(&self, value: Value) -> Value {
+        let ValueView::Sub(data) = value.view() else {
+            return value;
+        };
+        if data.fixtures.is_some() {
+            return value;
+        }
+        let fixtures = self.capture_fixtures();
+        if fixtures.is_none() {
+            return value;
+        }
+        let mut data = data.clone();
+        drop(value);
+        data.make_mut().fixtures = fixtures;
+        Value::sub_value(data)
     }
 
     /// The registration clone id for a named routine `package::name`, i.e. the
