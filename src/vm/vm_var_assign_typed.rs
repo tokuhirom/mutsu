@@ -1001,17 +1001,25 @@ impl Interpreter {
         increment: bool,
         post: bool,
     ) -> Result<bool, RuntimeError> {
-        let mut guard = arc.lock().unwrap();
-        if matches!(
-            guard.view(),
-            ValueView::Instance { .. }
-                | ValueView::ContainerRef(_)
-                | ValueView::Array(..)
-                | ValueView::Hash(_)
-        ) {
-            return Ok(false);
-        }
-        let old = self.normalize_incdec_source_with_type(name, guard.clone());
+        // Read the cell, then release its lock before any lookup that may
+        // dereference the same cell again (`wrap_native_int_arithmetic_result`
+        // walks the env, comparing bindings through their cells): the lock is
+        // not reentrant, and `$pos++` on an `is rw` parameter whose cell the
+        // env also holds deadlocked on itself.
+        let current = {
+            let guard = arc.lock().unwrap();
+            if matches!(
+                guard.view(),
+                ValueView::Instance { .. }
+                    | ValueView::ContainerRef(_)
+                    | ValueView::Array(..)
+                    | ValueView::Hash(_)
+            ) {
+                return Ok(false);
+            }
+            guard.clone()
+        };
+        let old = self.normalize_incdec_source_with_type(name, current);
         let new_val = if increment {
             Self::increment_value(&old)
         } else {
@@ -1029,8 +1037,7 @@ impl Interpreter {
         {
             return Err(self.typecheck_assignment_failure(&constraint, &new_val, None));
         }
-        *guard = new_val.clone();
-        drop(guard);
+        arc.lock().unwrap().clone_from(&new_val);
         self.stack.push(if post { old } else { new_val });
         Ok(true)
     }
