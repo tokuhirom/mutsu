@@ -387,8 +387,7 @@ pub(crate) use stmt::assign::written_assignment;
 pub(crate) use stmt::control::loop_pointy_clause;
 pub(crate) use stmt::control::repeat_param_clause;
 pub(crate) use stmt::control::{
-    ElseClause, IfChainClause, given_pointy_body, if_pointy_clause, lower_if_chain, unless_clause,
-    with_then_branch,
+    given_pointy_body, pointy_param_bind_decl, pointy_topic_bind, simple_pointy_bind, topicalize,
 };
 pub(crate) use stmt::simple::{fold_use_lib_path, use_lib_args};
 pub(crate) use stmt::simple_expr_stmt::lvalue::{bind_source_metadata_expr, index_bind_expr};

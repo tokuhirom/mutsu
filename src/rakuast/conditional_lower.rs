@@ -8,11 +8,14 @@
 //! with a topicalized body, each `elsif` / `orwith` nested in the `else` of the
 //! clause before it, and a pointy block's parameters bound to the tested value.
 
+use super::if_branch::{
+    ElseClause, IfChainClause, if_pointy_clause, lower_if_chain, unless_clause,
+};
+use super::with_branch::with_then_branch;
 use crate::ast::parsed::{
     BlockParams, ClauseKind, Conditional, ConditionalKind, ParsedBlock, ParsedStmt,
 };
 use crate::ast::{Expr, ParamDef, Stmt, WithBlockKind};
-use crate::parser::{ElseClause, IfChainClause};
 use crate::value::RuntimeError;
 
 /// Lower a construct of a migrated statement family to the statement the
@@ -176,7 +179,7 @@ pub(crate) fn lower(node: Conditional) -> Result<Stmt, RuntimeError> {
         ConditionalKind::If => lower_if(node),
         ConditionalKind::Unless => {
             let (params, body) = block_parts(node.then)?;
-            crate::parser::unless_clause(node.condition, params, body)
+            unless_clause(node.condition, params, body)
         }
         ConditionalKind::With | ConditionalKind::Without => lower_with(node),
     }
@@ -186,7 +189,7 @@ pub(crate) fn lower(node: Conditional) -> Result<Stmt, RuntimeError> {
 fn lower_if(node: Conditional) -> Result<Stmt, RuntimeError> {
     let (params, body) = block_parts(node.then)?;
     let (binding_var, then_branch) = match params {
-        Some(defs) => crate::parser::if_pointy_clause(defs, body)?,
+        Some(defs) => if_pointy_clause(defs, body)?,
         None => (None, body),
     };
     let mut clauses = vec![IfChainClause {
@@ -197,7 +200,7 @@ fn lower_if(node: Conditional) -> Result<Stmt, RuntimeError> {
     }];
     let (mut chain, else_clause) = lower_chain(node.clauses, node.else_block)?;
     clauses.append(&mut chain);
-    crate::parser::lower_if_chain(clauses, else_clause)
+    lower_if_chain(clauses, else_clause)
 }
 
 /// `with` / `without`: the condition is evaluated once into a hidden temp,
@@ -208,15 +211,14 @@ fn lower_with(node: Conditional) -> Result<Stmt, RuntimeError> {
     let tmp_name = crate::with_desugar::next_tmp_name();
     let tmp_var = Expr::Var(tmp_name.clone());
     let (name, def) = topic_param(&node.then.params)?;
-    let with_body =
-        crate::parser::with_then_branch(&node.condition, &tmp_var, &name, &def, node.then.body)?;
+    let with_body = with_then_branch(&node.condition, &tmp_var, &name, &def, node.then.body)?;
     let cond = crate::with_desugar::defined_condition(is_without, &tmp_name, node.condition);
     let else_branch = if !node.clauses.is_empty() {
         let (clauses, else_clause) = lower_chain(node.clauses, node.else_block)?;
-        vec![crate::parser::lower_if_chain(clauses, else_clause)?]
+        vec![lower_if_chain(clauses, else_clause)?]
     } else if let Some(block) = node.else_block {
         let (name, def) = topic_param(&block.params)?;
-        crate::parser::with_then_branch(&tmp_var, &tmp_var, &name, &def, block.body)?
+        with_then_branch(&tmp_var, &tmp_var, &name, &def, block.body)?
     } else {
         Vec::new()
     };
@@ -250,7 +252,7 @@ fn lower_chain(
             ClauseKind::Elsif => {
                 let (params, body) = block_parts(clause.then)?;
                 let (binding_var, then_branch) = match params {
-                    Some(defs) => crate::parser::if_pointy_clause(defs, body)?,
+                    Some(defs) => if_pointy_clause(defs, body)?,
                     None => (None, body),
                 };
                 lowered.push(IfChainClause {
@@ -265,13 +267,8 @@ fn lower_chain(
                 let tmp = crate::with_desugar::next_tmp_name();
                 let tmp_var = Expr::Var(tmp.clone());
                 let (name, def) = topic_param(&clause.then.params)?;
-                let then_branch = crate::parser::with_then_branch(
-                    &clause.condition,
-                    &tmp_var,
-                    &name,
-                    &def,
-                    clause.then.body,
-                )?;
+                let then_branch =
+                    with_then_branch(&clause.condition, &tmp_var, &name, &def, clause.then.body)?;
                 last_orwith = Some(tmp_var);
                 lowered.push(IfChainClause {
                     cond: crate::with_desugar::defined_condition(false, &tmp, clause.condition),
@@ -298,7 +295,7 @@ fn lower_chain(
             }
             let def = defs.pop();
             let name = def.as_ref().map(|def| def.name.clone());
-            body = crate::parser::with_then_branch(&topic, &topic, &name, &def, body)?;
+            body = with_then_branch(&topic, &topic, &name, &def, body)?;
             None
         }
         None => binding_params,
