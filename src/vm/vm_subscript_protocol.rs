@@ -39,7 +39,8 @@ impl Interpreter {
         if !dispatches {
             return None;
         }
-        if is_positional && let Some(result) = self.assign_slice_through_assign_pos(object, idx, val)
+        if is_positional
+            && let Some(result) = self.assign_slice_through_assign_pos(object, idx, val)
         {
             return Some(result);
         }

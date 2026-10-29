@@ -830,8 +830,7 @@ impl Interpreter {
                 let (val, _bind_source) = Self::unwrap_bind_index_value(raw_val);
                 if is_positional
                     && method == assign_method
-                    && let Some(result) =
-                        self.assign_slice_through_assign_pos(&target, &idx, &val)
+                    && let Some(result) = self.assign_slice_through_assign_pos(&target, &idx, &val)
                 {
                     let result = result?;
                     self.apply_pending_rw_writeback(code);
