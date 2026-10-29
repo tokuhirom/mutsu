@@ -194,11 +194,12 @@ impl Interpreter {
     ) -> Option<String> {
         let target: String = chars.iter().collect();
         let env = self.regex_code_interp_env(code, caps, &target);
-        // The list form is the `@( code )` contextualizer: it reads a lazy
-        // result (`.grep(...)`, `.map(...)`) whole, which a bare element walk
-        // of the value would see as the empty seed.
+        // The list form reads the code's value as a list: a lazy result
+        // (`.grep(...)`, `.map(...)`) whole, which a bare element walk of the
+        // value would see as the empty seed. `do { }` keeps a multi-statement
+        // `code` one value (`@( a; b )` would be the list of both).
         let (stmts, id) = if list {
-            self.parse_regex_code_cached_with_id(&format!("@({code})"))?
+            self.parse_regex_code_cached_with_id(&format!("(do {{ {code} }}).list"))?
         } else {
             self.parse_regex_code_cached_with_id(code)?
         };
