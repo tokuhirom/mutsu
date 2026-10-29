@@ -30,6 +30,7 @@ mod constructor_positional;
 mod contextualizer;
 mod control_signature;
 mod decl_origins;
+pub(crate) mod dotty_assign;
 pub(crate) mod empty_fields;
 mod expr_origins;
 mod if_branch;

@@ -133,16 +133,12 @@ pub(in crate::parser) use comma::{
 };
 pub(in crate::parser) use try_assign::{paren_assign_rhs_is_complete, try_parse_assign_expr};
 
-pub(crate) use crate::rakuast::compound::expansion::{
-    DOTTY_ASSIGN_OP, dotty_assign_marker, is_dotty_assign,
-};
+pub(crate) use crate::rakuast::compound::expansion::{DOTTY_ASSIGN_OP, is_dotty_assign};
 pub(crate) use crate::rakuast::compound::op::{
     compound_assign_op_from_name, compound_assigned_value_expr, short_circuit_compound_assign_expr,
 };
 pub(crate) use crate::rakuast::compound::set::set_op_from_spelling;
-pub(crate) use crate::rakuast::{
-    callable_lvalue_assign_expr, method_lvalue_assign_expr, subscript_adverb_lvalue_assign_expr,
-};
+pub(crate) use crate::rakuast::{callable_lvalue_assign_expr, subscript_adverb_lvalue_assign_expr};
 pub(crate) use bracket::parse_bracket_meta_assign_op;
 pub(crate) use op::{
     parse_compound_assign_op, parse_custom_compound_assign_op, parse_meta_compound_assign_op,

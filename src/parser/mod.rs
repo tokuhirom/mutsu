@@ -101,9 +101,8 @@ mod stmt;
 pub(crate) fn is_raku_identifier(input: &str) -> bool {
     stmt::parse_raku_ident(input).is_ok_and(|(rest, _)| rest.is_empty())
 }
+pub(crate) use expr::atomic_elem_update;
 pub(crate) use expr::precedence::build_compound_assign_target_expr;
-pub(crate) use expr::wrap_dot_assign_with_terms;
-pub(crate) use expr::{atomic_elem_update, retarget_dotty_call};
 pub(crate) use outer_redecl::{find_scope_diagnostic, scope_diagnostic_error};
 pub(crate) use parse_result::PError;
 pub(crate) use stmt::assign::DOTTY_ASSIGN_OP;
@@ -117,8 +116,8 @@ pub(crate) use stmt::decl::build_sigilless_bind_stmt;
 pub(crate) use stmt::decl::wrap_with_will_phasers;
 pub(crate) use stmt::decl::{attribute_compound_assign, expand_attribute_compound_assign};
 pub(crate) use stmt::simple::{is_user_declared_sub, is_user_declared_value_term};
+pub(crate) use stmt::simple_expr_stmt::decl_target_var_name;
 pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutable;
-pub(crate) use stmt::simple_expr_stmt::{decl_target_var_name, topic_dot_assign};
 pub(crate) use stmt::{conditional_declaration, topical_declaration};
 
 /// Parse a regex callable's argument list without exposing the parser's

@@ -1210,7 +1210,7 @@ fn dotty_parts(node: &RakuAstNode) -> Result<Dotty, RuntimeError> {
         // gets its own copy.
         lower_method_postfix(Expr::Literal(Value::NIL), call)?
     };
-    let call = crate::parser::retarget_dotty_call(&template, target.clone());
+    let call = super::dotty_assign::retarget_dotty_call(&template, target.clone());
     Ok(Dotty::Assign(crate::ast::parsed::CompoundAssign {
         target,
         op: ".".to_string(),
