@@ -154,7 +154,12 @@ pub(crate) fn expand(operands: &[Expr], ops: &[(TokenKind, bool)]) -> Expr {
     // keeps container identity for `=:=`.
     let first = &operands[0];
     let identity_op = matches!(&ops[0].0, TokenKind::Ident(n) if n == "=:=" || n == "!=:=");
-    if identity_op || matches!(first, Expr::Var(_) | Expr::Literal(_) | Expr::LiteralSrc(..)) {
+    if identity_op
+        || matches!(
+            first,
+            Expr::Var(_) | Expr::Literal(_) | Expr::LiteralSrc(..)
+        )
+    {
         return build_chain_cmp_expr(operands, ops, 0, first.clone());
     }
     let tmp_idx = crate::compiler::compile_session::mint();
