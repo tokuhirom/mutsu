@@ -3251,9 +3251,16 @@ impl Compiler {
     /// ordinary `$self` parameter: the bare `self` term is the method's
     /// invocant, while `$self` is that explicit parameter. Keep the reserved
     /// key in method bytecode so those values cannot collide. Plain routines
-    /// retain the historical mapping to the ordinary `self` binding.
+    /// bind their `$self` parameter under that key too; only a `for` loop
+    /// parameter spelled `$self` (compiled inline, bound under the plain `self`
+    /// key by the loop) keeps the mapping to the ordinary `self` binding.
     pub(crate) fn resolve_self_lexical<'a>(&self, name: &'a str) -> &'a str {
-        name
+        if self.self_is_signature_param && !self.lexically_in_method && name == crate::env::LEX_SELF
+        {
+            "self"
+        } else {
+            name
+        }
     }
 
     /// Emit a read of `bare` from the scope `depth` levels out (`$OUTER::x`,
