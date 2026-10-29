@@ -4,7 +4,7 @@ use Test;
 # STORE called with :INITIALIZE; a later plain assignment passes nothing.
 # Found with WriteOnceHash (t/01-basic.rakutest).
 
-plan 8;
+plan 11;
 
 my @seen;
 role R {
@@ -37,3 +37,20 @@ my %d does R;
 %d = 5 => "z";
 is-deeply @seen, ['Any'], 'a declaration without initializer, then assignment, passes none';
 is %d<5>, 'z', 'and stores the value';
+
+# A role's STORE binds through `self.BIND-KEY` (WriteOnceHash's
+# STORE-FROM-ITERABLE); `self` is the mixed-in hash, not a named variable.
+role B {
+    method STORE(\it, :$INITIALIZE) {
+        my $iterator := it.iterator;
+        my $pulled;
+        until ($pulled := $iterator.pull-one) =:= IterationEnd {
+            self.BIND-KEY($pulled.key, $pulled.value<>);
+        }
+        self
+    }
+}
+my %e does B = x => 1, y => 2;
+is %e<x>, 1, 'self.BIND-KEY inside a role STORE binds the first key';
+is %e<y>, 2, 'and the second';
+ok %e ~~ B, 'the role stays mixed in';
