@@ -1002,7 +1002,28 @@ impl Interpreter {
                     if is_list_native_method {
                         method_is_nodal = true;
                     }
-                    if is_iterable_item && !is_list_native_method {
+                    // A user class composing `Iterable` descends through its
+                    // `iterator`, as a nested List would.
+                    let iterable_instance = if !is_iterable_item
+                        && !is_list_native_method
+                        && !item.is_lazy_match_value()
+                        && matches!(item.view(), ValueView::Instance { .. } | ValueView::Mixin(..))
+                    {
+                        self.try_iterable_instance_items(item)?
+                    } else {
+                        None
+                    };
+                    if let Some(elems) = iterable_instance {
+                        let list = Self::iterable_instance_list(elems);
+                        let (sub_result, _) = self.hyper_method_apply_recursive(
+                            &list,
+                            &method,
+                            method_sym,
+                            &item_args,
+                            skip_native,
+                        )?;
+                        results.push(itemize_if_descended(&list, sub_result));
+                    } else if is_iterable_item && !is_list_native_method {
                         crate::vm::vm_stats::record_dispatch_entry_intercept(
                             "hypermethodcall",
                             "descend-recursive",
@@ -1242,6 +1263,15 @@ impl Interpreter {
         Ok(())
     }
 
+    /// The elements an `Iterable` instance's `iterator` produced, as a List.
+    // Cost: O(n), n = elements.
+    fn iterable_instance_list(elems: Vec<Value>) -> Value {
+        Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(elems)),
+            crate::value::ArrayKind::List,
+        )
+    }
+
     /// Recursively apply a (non-nodal) hyper method to a value, descending into
     /// nested Iterables and Hash values down to the leaves. Returns
     /// `(result, mutated)`: `result` mirrors the structure with the method
@@ -1355,6 +1385,18 @@ impl Interpreter {
                     return Err(RuntimeError::new("Hash hyper source disappeared"));
                 };
                 Ok((result_hash, mutated_hash))
+            }
+            ValueView::Instance { .. } | ValueView::Mixin(..)
+                if !is_nodal_list_method(crate::qualified::last_segment(method_sym).as_str())
+                    && let Some(elems) = self.try_iterable_instance_items(item)? =>
+            {
+                // A user class that composes `Iterable` is walked through its
+                // `iterator`, like any nested list (`$adam.kids>>.kids>>.value`
+                // over Red's `ResultSeq`). The instance itself is not mutated.
+                let list = Self::iterable_instance_list(elems);
+                let (result, _) =
+                    self.hyper_method_apply_recursive(&list, method, method_sym, args, skip_native)?;
+                Ok((result, item.clone()))
             }
             _ => {
                 // Leaf: apply the method, mirroring the non-recursive leaf path.
