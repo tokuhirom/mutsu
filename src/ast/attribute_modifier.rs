@@ -2,8 +2,8 @@
 //!
 //! Attributes are installed while the class is composed. The modifier still
 //! evaluates its condition, but cannot gate the declaration. The parser keeps
-//! the written form (`ParsedStmt::AttributeModifier`); [`expand`] is its one
-//! lowering, which `rakuast::lower` calls.
+//! the written form (`ParsedStmt::Modified` over the declaration); [`expand`] is
+//! its one lowering, which `rakuast::modifier_lower` calls.
 
 use super::decl_modifier::DeclarationModifier;
 use super::{Expr, Stmt};

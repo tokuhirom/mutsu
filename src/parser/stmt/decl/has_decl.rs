@@ -18,7 +18,7 @@ use super::super::sub::parse_type_constraint_expr;
 
 /// Parse parenthesized list form of `has`: `has ($a, $.b, $!c)` or
 /// `has Int ($a, $.b, $!c)`.
-/// Desugars into a SyntheticBlock containing multiple HasDecl statements.
+/// Builds the typed `ParsedStmt::AttributeGroup` over the listed `HasDecl` statements.
 fn has_decl_list(
     input: &str,
     type_constraint: Option<String>,
@@ -1256,32 +1256,12 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // statement modifier cannot gate the declaration: rakudo keeps the attribute,
     // its traits and its default whatever the condition says (`has $.x = 5 if 0`
     // still reads back 5, and Test::Declare's `has $.class is required when
-    // !*.DEFINITE` is still required). What the modifier does still do is
-    // evaluate its own condition, once, as the class body runs. So the
-    // declaration stays unconditional and the modifier is re-attached to an
-    // empty statement, which preserves those side effects without gating
-    // anything. (`try_split_decl_modifier` makes the same compile-time-versus-
-    // runtime split for a `my $x = INIT if COND` declaration.)
-    let modifier_source = super::super::modifier::attribute_modifier_source(rest)
-        .ok()
-        .filter(|(source_rest, _)| {
-            let (source_rest, _) = ws(source_rest).unwrap_or((source_rest, ()));
-            !super::super::modifier::is_stmt_modifier_keyword(source_rest)
-                && (source_rest.is_empty()
-                    || source_rest.starts_with(';')
-                    || source_rest.starts_with('}'))
-        });
-    let (rest, modifier_sink) = if super::super::modifier::is_stmt_modifier_keyword(rest) {
-        let (r, sink) = super::super::modifier::parse_statement_modifier(
-            rest,
-            Stmt::SyntheticBlock(Vec::new()),
-        )?;
-        (r, Some(sink))
-    } else {
-        (rest, None)
-    };
-
-    let (rest, _) = opt_char(rest, ';');
+    // !*.DEFINITE` is still required). The modifier is kept as written
+    // (`rakuast::modifier_lower` lowers it): the declaration stays
+    // unconditional and the modifier only evaluates its operand, once, as the
+    // class body runs. (`try_split_decl_modifier` makes the same compile-time-
+    // versus-runtime split for a `my $x = INIT if COND` declaration.)
+    let has_modifier = super::super::modifier::is_stmt_modifier_keyword(rest);
     let handles_terms = handles_terms.unwrap_or_default();
     let decl = Stmt::HasDecl {
         name: Symbol::intern(&name),
@@ -1337,23 +1317,12 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         .map_err(PError::from_typed)?,
         None => decl,
     };
-    // One flat block (`rakuast` lowers the nodes): the class-body
-    // attribute-discovery walk (`class_own_attribute_names` /
-    // `compile_class_attr_decls`) only flattens one level at the top of a
-    // class body.
-    let stmt = match (modifier_sink, modifier_source) {
-        (None, _) => decl,
-        (Some(_), Some((_, (condition, kind)))) => {
-            crate::parser::stmt::control::parsed_block::finish_total(
-                crate::ast::parsed::ParsedStmt::AttributeModifier {
-                    decl: Box::new(decl),
-                    condition,
-                    kind,
-                },
-            )
-        }
-        (Some(sink), None) => Stmt::SyntheticBlock(vec![decl, sink]),
+    let (rest, stmt) = if has_modifier {
+        super::super::modifier::parse_statement_modifier(rest, decl)?
+    } else {
+        (rest, decl)
     };
+    let (rest, _) = opt_char(rest, ';');
     let Some((colon_rest, tail)) = colon_arglist else {
         return Ok((rest, stmt));
     };
@@ -1361,7 +1330,6 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // nested declaration comes first: rakudo finishes it while still parsing
     // this one's arglist, so it is the earlier attribute in `.^attributes`.
     let mut stmts = match tail {
-        Some(Stmt::SyntheticBlock(v)) => v,
         // A parse that keeps the written nodes holds the nested group as one.
         Some(Stmt::Ast(node)) => match *node {
             crate::ast::parsed::ParsedStmt::AttributeGroup(attributes)
@@ -1371,10 +1339,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         Some(s) => vec![s],
         None => Vec::new(),
     };
-    match stmt {
-        Stmt::SyntheticBlock(v) => stmts.extend(v),
-        s => stmts.push(s),
-    }
+    stmts.push(stmt);
     Ok((
         colon_rest,
         crate::parser::stmt::control::parsed_block::finish_total(
