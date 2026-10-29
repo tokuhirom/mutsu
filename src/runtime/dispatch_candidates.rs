@@ -667,7 +667,24 @@ impl Interpreter {
     ///
     /// A subset of a subset (`subset Top of Mid of Int`) resolves through the
     /// chain; the iteration bound keeps a cyclic declaration from spinning.
-    pub(super) fn dispatch_nominal_base<'a>(&self, base: &'a str) -> std::borrow::Cow<'a, str> {
+    pub(super) fn dispatch_nominal_base<'a>(
+        &self,
+        base: &'a str,
+        arg: Option<&Value>,
+    ) -> std::borrow::Cow<'a, str> {
+        use std::borrow::Cow;
+        let resolved = self.dispatch_subset_chain_base(base);
+        // A subset of a coercion type (`subset CC of Str() where ...`) is as
+        // narrow as that coercion parameter would be (see
+        // [`Self::effective_dispatch_constraint`]); left as `Str()` the
+        // hierarchy walk finds it nowhere and ranks it unrelated.
+        if is_coercion_constraint(&resolved) {
+            return Cow::Owned(self.effective_dispatch_constraint(&resolved, arg).to_string());
+        }
+        resolved
+    }
+
+    fn dispatch_subset_chain_base<'a>(&self, base: &'a str) -> std::borrow::Cow<'a, str> {
         use std::borrow::Cow;
         // `UInt` is `subset UInt of Int where * >= 0` in rakudo, but mutsu
         // implements it as a type-matching special case rather than a registry
