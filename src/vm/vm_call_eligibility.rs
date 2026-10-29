@@ -1,5 +1,4 @@
 use super::*;
-use crate::runtime::types::unwrap_varref_value;
 use crate::value::ValueMap;
 
 impl Interpreter {
@@ -754,8 +753,7 @@ impl Interpreter {
             return false;
         };
         args.iter().enumerate().any(|(i, arg)| {
-            let unwrapped = unwrap_varref_value(arg.clone());
-            let ValueView::Pair(key, val) = unwrapped.view() else {
+            let ValueView::Pair(key, val) = arg.unwrap_varref().view() else {
                 return false;
             };
             if !matches!(val.view(), ValueView::Array(..) | ValueView::Hash(..)) {
@@ -820,8 +818,7 @@ impl Interpreter {
             return false;
         };
         args.iter().enumerate().any(|(i, arg)| {
-            let unwrapped = unwrap_varref_value(arg.clone());
-            let ValueView::Pair(key, val) = unwrapped.view() else {
+            let ValueView::Pair(key, val) = arg.unwrap_varref().view() else {
                 return false;
             };
             if !matches!(val.view(), ValueView::Array(..) | ValueView::Hash(..)) {

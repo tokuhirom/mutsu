@@ -466,12 +466,11 @@ impl Interpreter {
             self.reify_closure_seq_endpoint(arg)?;
             match arg.view() {
                 ValueView::Pair(_, v) | ValueView::ValuePair(_, v) => {
-                    let v = v.clone();
-                    self.reify_map_grep_seq(&v)?;
+                    self.reify_map_grep_seq(v)?;
                     // A named argument's gather fills what it is bound to
                     // (`C.new(c => gather {...})`, ADR-11678).
-                    self.reify_gather_seq(&v)?;
-                    self.reify_closure_seq_endpoint(&v)?;
+                    self.reify_gather_seq(v)?;
+                    self.reify_closure_seq_endpoint(v)?;
                 }
                 _ => {}
             }
