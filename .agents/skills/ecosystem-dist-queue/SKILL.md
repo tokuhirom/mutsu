@@ -85,15 +85,28 @@ of every live lock; you will need it in step 4.
 Then walk the queue from rank 1 and **take the first entry that**
 
 - has no live lock on the board, and
-- has no open issue already tracking it — search open issues labelled `ecosystem` for the
-  distribution name (`gh issue list --repo tokuhirom/mutsu --label ecosystem --search '"<Dist::Name>"'`;
-  remote: `search_issues` with `repo:tokuhirom/mutsu is:issue is:open label:ecosystem "<Dist::Name>"`),
-  and no open PR working it.
+- has no open issue already tracking it, and no open PR working it. The tracking issues are the
+  open `ecosystem` issues whose body carries an `eco-dist: <Dist::Name>` marker line (or an
+  `eco-cluster: <id>` line for a cluster containing it). `scripts/ecosystem-dashboard.py` lists
+  them for you: its "Waiting on an issue" part is exactly the entries to pass, "Locked" is the
+  board's live set, and "Free queue" is what is left, in work order. It is a view of the board and
+  the issues, not a lock: still post `Locking:` (step 4). Its "Needs attention" part names open
+  issues that mention a queued distribution without a marker; read those before taking that
+  distribution, and add the marker line to the issue if it does track it.
 
 Those are the only reasons to pass an entry. **Skipping one because it looks hard is
 cherry-picking** and is exactly what the order exists to rule out. An entry waiting on an issue is
 passed because someone owns its cause already, not because it is hard; it comes back into play when
 that issue closes and the next sweep re-measures it.
+
+```sh
+scripts/ecosystem-dashboard.py                  # needs `gh api`; prints the body
+scripts/ecosystem-dashboard.py --issues-json tmp/issues.json --comments-json tmp/board.json
+```
+
+The dashboard issue's body is this output, regenerated wholesale (`--update <N>`); nobody edits it
+by hand. Locks are still appended to the board as comments, never kept in the dashboard body: a
+body edit is a read-modify-write that two agents can both win.
 
 ## 3. Lock it, then diagnose and route
 
@@ -112,7 +125,8 @@ Then decide by **where the root cause lives** — not by how big the fix looks:
   ([ADR-11276](../../../docs/adr/11276-built-in-methods-are-handler-rows.md), #11276) and RakuAST as
   the frontend ([ADR-10723](../../../docs/adr/10723-rakuast-is-the-frontend-ir.md), #7564). Do
   **not** fix it on the path the campaign is retiring. File an issue with its `lane:*` label and the
-  `ecosystem` label (plus `todo:ticket`/`todo:deep`), make it a sub-issue of the campaign's carrier
+  `ecosystem` label (plus `todo:ticket`/`todo:deep`) and an `eco-dist: <Dist::Name>` line in the
+  body, make it a sub-issue of the campaign's carrier
   when the campaign's ADR covers it, unlock with `filed #N`, and take the next entry.
 - **(c) The same signature fails 3 or more distributions** (the queue row shows a cluster id): file
   one issue for the cause with the
