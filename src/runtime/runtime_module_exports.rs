@@ -533,12 +533,17 @@ impl Interpreter {
         if self.import_target_declares_family(target_single) {
             return;
         }
-        if let Some(scope) = self.module.import_scope_stack.last_mut()
-            && !scope.shadowed_proto_names.insert(target_single.to_string())
+        let importer = self.executing_unit_sym_for_module_load();
+        let in_scope = if let Some(scope) =
+            Self::importing_scope_mut(&mut self.module.import_scope_stack, importer)
         {
-            return;
-        }
-        let in_scope = !self.module.import_scope_stack.is_empty();
+            if !scope.shadowed_proto_names.insert(target_single.to_string()) {
+                return;
+            }
+            true
+        } else {
+            false
+        };
         let target_sym = Symbol::intern(target_single);
         let mut keys = self.registry().functions.family_keys(target_single);
         if self.registry().functions.contains_key(&target_sym) {

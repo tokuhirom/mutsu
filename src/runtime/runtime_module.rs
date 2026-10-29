@@ -188,7 +188,7 @@ impl Interpreter {
     /// the block's pad and let the block shadow the module's private copy of
     /// a routine (`Cro::Iri`'s `decode-percents`).
     // Cost: O(1).
-    fn importing_scope_mut(
+    pub(super) fn importing_scope_mut(
         stack: &mut [crate::runtime::ImportScopeSnapshot],
         importer: Symbol,
     ) -> Option<&mut crate::runtime::ImportScopeSnapshot> {
@@ -408,11 +408,15 @@ impl Interpreter {
     }
 
     /// Record a routine-registry write an import is about to make, with the
-    /// value it replaces, on the innermost open import scope (none at the top
-    /// level: those imports persist).
+    /// value it replaces, on the innermost open import scope when it is the
+    /// importing unit's own. A top-level import persists, and so does one a
+    /// module makes for itself while it loads inside the block: the module
+    /// stays loaded (`importing_scope_mut`).
     // Cost: O(1) amortized.
     pub(crate) fn log_import_write(&mut self, write: crate::runtime::ImportWrite) {
-        if let Some(scope) = self.module.import_scope_stack.last_mut() {
+        let importer = self.executing_unit_sym_for_module_load();
+        if let Some(scope) = Self::importing_scope_mut(&mut self.module.import_scope_stack, importer)
+        {
             scope.import_writes.push(write);
         }
     }
