@@ -1251,11 +1251,11 @@ impl Interpreter {
             // (A plain routine bound just above is the whole import: the
             // `GLOBAL::name` proto a bare-file module's family left behind is
             // another file's, not this export's.)
-            let family_bound_lexically = !bound_plain_routine
-                && ((!is_operator && !name.contains(":<"))
-                || crate::lexical_builtin_op::binds_lexically(&name))
-                && !exported_method_candidates
-                && self.bind_family_lexically(&name, &function_entries, proto_def.as_deref());
+            let family_bound_lexically = bound_plain_routine
+                || (((!is_operator && !name.contains(":<"))
+                    || crate::lexical_builtin_op::binds_lexically(&name))
+                    && !exported_method_candidates
+                    && self.bind_family_lexically(&name, &function_entries, proto_def.as_deref()));
             if family_bound_lexically {
                 function_entries.clear();
             }
