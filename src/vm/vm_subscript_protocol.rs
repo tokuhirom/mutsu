@@ -71,9 +71,11 @@ impl Interpreter {
         let mut results = Vec::with_capacity(indices.len());
         for i in indices {
             let v = values.next().unwrap_or(Value::NIL);
-            match self.call_method_with_values(object.clone(), "ASSIGN-POS", vec![i, v]) {
-                Ok(r) => results.push(r),
-                Err(e) => return Some(Err(e)),
+            // One index through the single-index protocol call above.
+            match self.assign_through_subscript_protocol(object, &i, &v, true) {
+                Some(Ok(r)) => results.push(r),
+                Some(Err(e)) => return Some(Err(e)),
+                None => return None,
             }
         }
         Some(Ok(Value::array(results)))
