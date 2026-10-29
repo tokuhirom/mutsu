@@ -158,7 +158,7 @@ impl Interpreter {
                     word: false,
                 });
             } else if !p.named && !p.slurpy {
-                forward_args.push(crate::ast::Expr::Var(p.name.clone()));
+                forward_args.push(crate::ast::scalar_var_expr(p.name.clone()));
             }
         }
         if let Some(mut tpl) = named_template
@@ -191,7 +191,12 @@ impl Interpreter {
             }
         }
         let body = vec![Stmt::Expr(crate::ast::Expr::MethodCall {
-            target: Box::new(crate::ast::Expr::Var(invocant_name)),
+            target: Box::new(if sub_param_defs[0].declares_self_lexical() {
+                crate::ast::scalar_var_expr(invocant_name)
+            } else {
+                // An implicit invocant is the `self` term, answered by the frame.
+                crate::ast::Expr::Var(invocant_name)
+            }),
             name: Symbol::intern(op_name),
             args: forward_args,
             modifier: None,

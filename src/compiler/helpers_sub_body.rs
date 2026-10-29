@@ -359,7 +359,7 @@ impl Compiler {
         sub_compiler.seed_param_decl_types(param_defs);
         // Pre-allocate locals for parameters
         for param in Self::non_term_param_names(params, param_defs) {
-            sub_compiler.declare_param(Self::param_slot_name(param, params));
+            sub_compiler.declare_param(Self::param_slot_name(param, params, param_defs));
         }
         // Also allocate from param_defs in case param names differ
         for pd in param_defs {
@@ -1466,7 +1466,7 @@ impl Compiler {
         sub_compiler.seed_param_decl_types(param_defs);
         // Pre-allocate locals for parameters
         for param in Self::non_term_param_names(params, param_defs) {
-            sub_compiler.declare_param(Self::param_slot_name(param, params));
+            sub_compiler.declare_param(Self::param_slot_name(param, params, param_defs));
         }
         // A WhateverCode is a compiler-generated callable, not a source lexical
         // scope. Its `my` declarations therefore use captured slots belonging to

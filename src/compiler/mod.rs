@@ -3041,7 +3041,7 @@ impl Compiler {
             }
         } else {
             for param in params {
-                let param = Self::param_slot_name(param, params);
+                let param = Self::param_slot_name(param, params, param_defs);
                 if let Some(&slot) = self.local_map.get(param) {
                     slots.push(slot);
                 }
@@ -3190,8 +3190,17 @@ impl Compiler {
     /// The local-slot name of the bare parameter name `param` in `params`: a
     /// `-> $self` parameter is the user lexical [`crate::env::LEX_SELF`], not the
     /// `self` term.
-    fn param_slot_name<'a>(param: &'a str, params: &[String]) -> &'a str {
-        if param == "self" && crate::ast::param_names_declare_self_lexical(params) {
+    fn param_slot_name<'a>(
+        param: &'a str,
+        params: &[String],
+        param_defs: &[crate::ast::ParamDef],
+    ) -> &'a str {
+        // `param_defs`, when populated, is authoritative (a method literal's
+        // synthesized invocant is named `self` but declares no lexical).
+        if param == "self"
+            && param_defs.is_empty()
+            && crate::ast::param_names_declare_self_lexical(params)
+        {
             crate::env::LEX_SELF
         } else {
             param

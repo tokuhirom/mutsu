@@ -283,10 +283,15 @@ impl Interpreter {
                 if defs.is_empty()
                     && let Some(name) = sub_data.params.first()
                 {
-                    defs.push(super::methods_format::positional_param(&format!(
-                        "${}",
-                        name.trim_start_matches('$')
-                    )));
+                    let bare = name.trim_start_matches('$');
+                    // `-> $self` is a `ParamDef` named `self` (the user lexical,
+                    // `ParamDef::declares_self_lexical`), unsigiled like the
+                    // parser's own.
+                    defs.push(super::methods_format::positional_param(&if bare == "self" {
+                        bare.to_string()
+                    } else {
+                        format!("${bare}")
+                    }));
                 }
                 if let Some(first) = defs.first_mut()
                     && !first.named
