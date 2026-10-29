@@ -407,13 +407,15 @@ pub(crate) fn lower_sigilless(
             d.is_state,
             d.is_our,
         ),
-        SigillessForm::Assign | SigillessForm::Bind => super::sigilless_lower::build_sigilless_bind_stmt(
-            d.name,
-            d.expr,
-            d.type_constraint,
-            d.is_state,
-            d.is_our,
-            is_value_term,
-        ),
+        SigillessForm::Assign | SigillessForm::Bind => {
+            super::sigilless_lower::build_sigilless_bind_stmt(
+                d.name,
+                d.expr,
+                d.type_constraint,
+                d.is_state,
+                d.is_our,
+                is_value_term,
+            )
+        }
     })
 }
