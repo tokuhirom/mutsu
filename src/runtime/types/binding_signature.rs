@@ -1871,7 +1871,8 @@ impl Interpreter {
                 } else if pd.traits.iter().any(|t| t == "raw" || t == "rw") {
                     // `+@a is raw` / `is rw` deliberately alias the caller's
                     // element containers, so their cells pass straight through.
-                    Value::real_array(items)
+                    // Rakudo binds a `List`, not an `Array`, for these.
+                    Value::array(items)
                 } else {
                     // A sigiled `+@a` binds an `Array`, and — exactly like `*@a`
                     // — each element is a fresh binding rather than an alias of
@@ -2402,7 +2403,8 @@ impl Interpreter {
                     // `*@a is raw` / `is rw` deliberately DO alias, and record
                     // that through `rw_bindings` — leave those items alone.
                     let slurpy_value = if is_alias_slurpy {
-                        Value::real_array(items)
+                        // Rakudo binds a `List` (not an `Array`) for `*@a is raw`.
+                        Value::array(items)
                     } else if !lazy_slots.is_empty() {
                         Self::lazy_literal_with_slipped_tail(
                             items.into_iter().map(Value::into_deref).collect(),
