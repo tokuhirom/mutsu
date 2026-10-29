@@ -8,6 +8,13 @@ marker, its name and its value's own type key (definedness included); a
 candidate set with a `where`, literal, subset, coercion, `is rw` or
 sub-signature parameter was already excluded from these caches.
 
+`Class.new(key => ..., value => ...)` on a class with a user `new` asked
+`user_new_declines` on every construction, which ran the whole `new` candidate
+resolution to learn that none accepts the named arguments. The native
+constructor plan (dropped on every class-shape change) now memoizes that answer
+per named-argument names and value types when no `new` candidate is
+value-dependent.
+
 Also, a `proto method` call no longer snapshots and diffs the caller's whole
 env overlay: it pins the overlay tier (one `Arc` bump) and compares tier
 identity afterwards, so the cost no longer scales with the number of names in
@@ -20,7 +27,7 @@ Measured on a `profiling` build (callgrind, warm, Ir per call, slope of
 | --- | ---: | ---: |
 | `proto` + 2 multi, named arg + return type, called from a method | 81.5k | 59.9k |
 | same, called from top-level code | 110.4k | 78.4k (pin only) |
-| `ML::TriesWithFrequencies` `trie-create`, 400 words (whole run) | 1,375.9M | 1,343.5M |
+| `ML::TriesWithFrequencies` `trie-create`, 400 words (whole run) | 1,378.7M | 1,319.6M |
 
-The whole-run gain is small (-2.4%): `merge` is ~3 of ~110 method-call opcodes
+The whole-run gain is small (-4.3%): `merge` is ~3 of ~110 method-call opcodes
 per word. See #15235 for the per-mechanism breakdown.
