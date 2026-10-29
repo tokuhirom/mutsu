@@ -3581,7 +3581,14 @@ impl Interpreter {
                                                 || rhs.starts_with(':')
                                                 || rhs.starts_with("-:")
                                                 || rhs.starts_with(":!")
-                                                || rhs.starts_with("!:");
+                                                || rhs.starts_with("!:")
+                                                // `<x=@w>`: an array-variable
+                                                // alternation under an alias
+                                                // (`@(…)` is code: it runs at
+                                                // match time, see
+                                                // `contextualizer_alias_code`).
+                                                || (rhs.starts_with('@')
+                                                    && !rhs.starts_with("@("));
                                             if lhs_is_ident && rhs_is_class_or_prop {
                                                 pending_named_capture = Some(lhs.to_string());
                                                 pending_named_capture_is_angle_alias = true;
