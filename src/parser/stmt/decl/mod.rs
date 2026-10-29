@@ -218,7 +218,7 @@ fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResul
     let mut r_inner = after_ws;
     if r_inner.starts_with(';') || r_inner.is_empty() || r_inner.starts_with('}') {
         // Trailing comma only, no expressions
-        return Ok((r_inner, Stmt::SyntheticBlock(stmts)));
+        return Ok((r_inner, comma_list(stmts)));
     }
     let (r2, sink_expr) = expression(r_inner)?;
     check_sink_expr_two_terms_boundary(&sink_expr, r2)?;
@@ -272,7 +272,16 @@ fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResul
         }
         None => stmts.extend(sinks.into_iter().map(Stmt::Expr)),
     }
-    Ok((r_inner, Stmt::SyntheticBlock(stmts)))
+    Ok((r_inner, comma_list(stmts)))
+}
+
+/// A declaration followed by sunk list items, as one comma application
+/// (`ParsedStmt::CommaDecls`; its lowering is the one place that expands it).
+// Cost: O(n), n = size of the statements.
+fn comma_list(stmts: Vec<Stmt>) -> Stmt {
+    crate::parser::stmt::control::parsed_block::finish_total(
+        crate::ast::parsed::ParsedStmt::CommaDecls(stmts),
+    )
 }
 
 fn is_decl_trailing_or_chain_op(op: &TokenKind) -> bool {

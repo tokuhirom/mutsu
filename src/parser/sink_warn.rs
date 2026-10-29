@@ -209,6 +209,8 @@ fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
                     _ => warn_expr_sink(tail, nil_hint, line.get()),
                 }
             }
+            // A declaration with sunk list items: each statement is sunk.
+            ParsedStmt::CommaDecls(stmts) => walk_stmts(stmts, false, line),
             // The same for a `.=` declaration with a list (`my Int $c .= new(), 5`).
             ParsedStmt::CallAssignList { head, items } => {
                 walk_stmt(head, false, line);
