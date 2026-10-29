@@ -168,7 +168,7 @@ impl Interpreter {
                     method_params.push("%_".to_string());
                 }
                 let mut method_param_defs = vec![crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
-                    implicit_invocant: Default::default(),
+                    implicit_invocant: true,
                     does_target: Default::default(),
                     target: Default::default(),
                     type_capture: None,

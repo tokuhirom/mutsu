@@ -809,6 +809,11 @@ impl Interpreter {
             );
         }
         self.attach_closure_fixtures(&data);
+        if let Some(invocant) =
+            Self::function_invocant_arg(&data.param_defs, &data.params, &args)
+        {
+            self.install_function_invocant(invocant);
+        }
         if !cc.is_routine {
             crate::runtime::return_target::record_block_return_target(
                 self.env_mut(),
@@ -1184,6 +1189,14 @@ impl Interpreter {
             // Pre-interned seed probe (#8302): `cc.local_sym(i)` is the name's
             // Symbol from the chunk's own table, so this costs a `u32` hash per
             // local instead of re-interning the name string on every call.
+            // The fixed names are the frame record's, which has no env key
+            // (ADR-14843).
+            if let Some(sym) = cc.local_sym(i)
+                && let Some(val) = self.frame_fixture_value(sym)
+            {
+                self.locals[i] = val;
+                continue;
+            }
             if let Some(val) = self.env().get_for(local_name, cc.local_sym(i)) {
                 self.locals[i] = val.clone();
             }

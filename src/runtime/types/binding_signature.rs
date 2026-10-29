@@ -1069,6 +1069,22 @@ impl Interpreter {
         result
     }
 
+    /// [`Self::bind_param_value_sym`] for the parameter `pd`. A method's
+    /// implicit invocant has no env key: the frame record holds it
+    /// ([`Self::install_function_invocant`], ADR-14843).
+    fn bind_pd_value_sym(
+        &mut self,
+        pd: &ParamDef,
+        binding_name: &str,
+        name_sym: Symbol,
+        value: Value,
+    ) {
+        if pd.is_implicit_invocant() && binding_name == "self" {
+            return;
+        }
+        self.bind_param_value_sym(binding_name, name_sym, value);
+    }
+
     /// Bind a method's explicit parameters while keeping its implicit
     /// invocant under the plain `self` binding. An ordinary parameter spelled
     /// `$self` is a separate lexical in a method and therefore uses the
@@ -1520,6 +1536,10 @@ impl Interpreter {
                         value
                     };
                     match param_sym {
+                        // A method's injected invocant is the frame record's.
+                        Some(_) | None
+                            if param == "self"
+                                && !crate::ast::param_names_declare_self_lexical(params) => {}
                         Some(sym) => self.bind_param_value_sym(param, sym, value),
                         None => self.bind_param_value(param, value),
                     }
@@ -2123,7 +2143,7 @@ impl Interpreter {
                         break;
                     }
                     if !pd.name.is_empty() {
-                        self.bind_param_value_sym(binding_name, pd_name_sym(), value.clone());
+                        self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), value.clone());
                         self.bind_param_type_constraint_sym(
                             binding_name,
                             pd_name_sym(),
@@ -2852,7 +2872,7 @@ impl Interpreter {
                             // `f(v => [1,2])` binds `$v` as `$[1, 2]`); rw
                             // cells pass through untouched.
                             let bound_value = Self::itemize_plain_scalar_param(pd, bound_value.clone());
-                            self.bind_param_value_sym(binding_name, pd_name_sym(), bound_value);
+                            self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), bound_value);
                             self.bind_param_type_constraint_sym(
                                 binding_name,
                                 pd_name_sym(),
@@ -2954,7 +2974,7 @@ impl Interpreter {
                     if let Some(captured_name) = pd.captured_type_name() {
                         self.bind_type_capture(captured_name, &value);
                         if !pd.name.is_empty() && !is_rename {
-                            self.bind_param_value_sym(binding_name, pd_name_sym(), value.clone());
+                            self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), value.clone());
                             self.bind_param_type_constraint_sym(
                                 binding_name,
                                 pd_name_sym(),
@@ -2962,7 +2982,7 @@ impl Interpreter {
                             );
                         }
                     } else if !pd.name.is_empty() && !is_rename {
-                        self.bind_param_value_sym(binding_name, pd_name_sym(), value.clone());
+                        self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), value.clone());
                         self.bind_param_type_constraint_sym(
                             binding_name,
                             pd_name_sym(),
@@ -3011,7 +3031,7 @@ impl Interpreter {
                     // A named alias binds only its leaf variable (below); skip
                     // binding the parameter's own name in that form.
                     if !pd.named_alias {
-                        self.bind_param_value_sym(binding_name, pd_name_sym(), value.clone());
+                        self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), value.clone());
                         self.bind_param_type_constraint_sym(
                             binding_name,
                             pd_name_sym(),
@@ -4057,7 +4077,7 @@ impl Interpreter {
                             }
                             _ => value,
                         };
-                        self.bind_param_value_sym(binding_name, pd_name_sym(), value);
+                        self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), value);
                         self.bind_param_type_constraint_sym(
                             binding_name,
                             pd_name_sym(),
@@ -4095,7 +4115,7 @@ impl Interpreter {
                         // supplied argument: `sub f($a = [])` binds `$[]`, a
                         // single subscript key rather than a slice.
                         let value = Self::itemize_plain_scalar_param(pd, value);
-                        self.bind_param_value_sym(binding_name, pd_name_sym(), value);
+                        self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), value);
                         self.bind_param_type_constraint_sym(
                             binding_name,
                             pd_name_sym(),
@@ -4154,7 +4174,7 @@ impl Interpreter {
                         true,
                     )?;
                     if !pd.name.is_empty() {
-                        self.bind_param_value_sym(binding_name, pd_name_sym(), value);
+                        self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), value);
                         self.bind_param_type_constraint_sym(
                             binding_name,
                             pd_name_sym(),

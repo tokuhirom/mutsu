@@ -521,16 +521,6 @@ impl Interpreter {
             self.set_current_package_sym(package);
         }
 
-        // TODO(#14843): see the fast path -- an aggregate or mixin invocant is
-        // still written through the env binding of `self`.
-        if false && !matches!(
-            base.view(),
-            ValueView::Instance { .. } | ValueView::Package(_)
-        ) {
-            self.env_mut()
-                .insert_sym(crate::symbol::wk::self_(), base.clone());
-        }
-
         // In Raku, methods do NOT set $_ to the invocant by default.
         // $_ in a method body is Any unless the invocant is explicitly named $_
         // (e.g. `method foo ($_: ) { ... }`). The invocant binding loop below
@@ -757,7 +747,9 @@ impl Interpreter {
                     .get(idx)
                     .filter(|pd| pd.name == *param_name)
                     .map_or_else(|| param_name.clone(), |pd| pd.storage_name().into_owned());
-                self.env_mut().insert(storage_name.clone(), invocant_value);
+                if !is_fixed_frame_name(&storage_name) {
+                    self.env_mut().insert(storage_name.clone(), invocant_value);
+                }
                 if method_def
                     .param_defs
                     .get(idx)
@@ -1237,7 +1229,8 @@ impl Interpreter {
         } else {
             // Sync locals back to env
             for (i, local_name) in cc.locals.iter().enumerate() {
-                if !local_name.is_empty() {
+                // The frame's record answers the fixed names (ADR-14843).
+                if !local_name.is_empty() && !is_fixed_frame_name(local_name) {
                     {
                         let __v = self.locals[i].clone();
                         self.env_mut().insert(local_name.clone(), __v);
@@ -2427,20 +2420,8 @@ impl Interpreter {
             env.reserve(param_values.len());
             Self::insert_fast_param_values(env, &param_values);
         } else {
-            // TODO(#14843): an aggregate or mixin invocant is written through
-            // the env binding of `self` (a mutating call on it writes its
-            // result back to the caller's variable by that name). The last
-            // fixed-name env write; the record cannot be the write channel
-            // until that writeback is rerouted.
-            let keeps_self_key = false && !matches!(
-                base.view(),
-                ValueView::Instance { .. } | ValueView::Package(_)
-            );
             let env = self.env_mut();
             env.reserve(3 + param_values.len());
-            if keeps_self_key {
-                env.insert_sym(crate::symbol::wk::self_(), base.clone());
-            }
             // The rooted frame answers `$_` and `$!` (`env::routine_owned`).
             env.set_callable_id(method_callable_id as i64);
             // Array/hash attribute env copies are no longer materialized here:
@@ -3502,4 +3483,10 @@ mod cheaply_unchanged_tests {
         )));
         assert!(!cheaply_unchanged(&a, &b));
     }
+}
+
+/// The names a frame's record owns (`self`, `?CLASS`, `?ROLE`): no env key
+/// stores them (ADR-14843).
+fn is_fixed_frame_name(name: &str) -> bool {
+    matches!(name, "self" | "?CLASS" | "?ROLE")
 }

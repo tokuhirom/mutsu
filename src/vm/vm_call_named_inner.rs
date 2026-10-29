@@ -346,6 +346,14 @@ impl Interpreter {
                 }
             }
         }
+        // A method run as a function (`my method`/`sub` with a leading implicit
+        // `self`) has its invocant in the frame's record, not in an env key.
+        if let Some(invocant) = Self::function_invocant_arg(&cf.param_defs, &cf.params, &args) {
+            if let Some(&slot) = cf.code.local_slots_of(crate::symbol::wk::self_()).first() {
+                self.locals[slot as usize] = invocant.clone();
+            }
+            self.install_function_invocant(invocant);
+        }
         // #8452: a plain `sub` nested directly in a method body may bind an
         // attributive parameter (`sub s($!t) { ... }`) — Raku's rule is
         // lexical, so it closes over the same `self` the enclosing method's

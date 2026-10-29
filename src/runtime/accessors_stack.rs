@@ -706,6 +706,54 @@ impl Interpreter {
         self.routine_stack.top_fixtures_mut()?.invocant.as_mut()
     }
 
+    /// The invocant a method run as a function (a method literal, a `my
+    /// method` handed to a Proxy) is called with: its leading implicit `self`
+    /// parameter takes the first positional argument. `None` for any other
+    /// callable.
+    // Cost: O(a) in the leading named arguments.
+    pub(crate) fn function_invocant_arg(
+        param_defs: &[crate::ast::ParamDef],
+        params: &[String],
+        args: &[Value],
+    ) -> Option<Value> {
+        let implicit = match param_defs.first() {
+            Some(pd) => pd.name == "self" && pd.is_implicit_invocant(),
+            None => {
+                params.first().is_some_and(|p| p == "self")
+                    && !crate::ast::param_names_declare_self_lexical(params)
+            }
+        };
+        if !implicit {
+            return None;
+        }
+        args.iter()
+            .find(|v| !matches!(v.view(), ValueView::Pair(_, _)))
+            .cloned()
+    }
+
+    /// Make `invocant` the `self` of the frame just pushed for a call of a
+    /// method run as a function ([`Self::function_invocant_arg`]): the frame's
+    /// record, continued from the creator when the callee is a closure, takes
+    /// it. The binder wrote no env key for it (ADR-14843).
+    // Cost: O(1) amortized.
+    pub(crate) fn install_function_invocant(&mut self, invocant: Value) {
+        if self.routine_stack.last().is_some_and(|f| f.fixtures != 0) {
+            if let Some(f) = self.routine_stack.top_fixtures_mut() {
+                f.invocant = Some(invocant);
+            }
+            return;
+        }
+        let (class, role) = self
+            .frame_fixtures()
+            .map_or((None, None), |f| (f.class.clone(), f.role));
+        self.routine_stack
+            .attach_fixtures_to_top(crate::value::frame_fixtures::FrameFixtures {
+                invocant: Some(invocant),
+                class,
+                role,
+            });
+    }
+
     /// The record a closure, gather or routine value created now captures:
     /// the running frame's own, else (a method body run as a function) one
     /// made of its `self` parameter, else the innermost one (ADR-14843).

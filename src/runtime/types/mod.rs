@@ -869,6 +869,8 @@ impl Interpreter {
         debug_assert_eq!(name_sym.as_str(), name);
         // `insert_sym_noting`, not `insert_sym`: a placeholder parameter is
         // stored under its `^`-twigil name, which arms `PLACEHOLDER_KEY_SEEN`.
+        // `self` of a method run as a function is the compiled body's `self`
+        // slot, answered by the frame accessors; it has no env key (ADR-14843).
         self.env.insert_sym_noting(name_sym, value.clone());
         // A dynamic scalar parameter (`sub f($*OUT)`) binds both env spellings
         // of the name, as `my $*OUT` does through `set_env_with_main_alias`:
