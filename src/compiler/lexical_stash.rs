@@ -51,6 +51,11 @@ impl Compiler {
         for frame_index in (outermost..=target_index).rev() {
             let frame_depth = depth + (target_index - frame_index);
             for var_name in scopes[frame_index].keys() {
+                // The `self` term is no lexical; `$self` is `LEX_SELF`
+                // (ADR-0061), which displays as `$self`.
+                if var_name == "self" {
+                    continue;
+                }
                 if !seen.insert(var_name.as_str()) {
                     continue;
                 }

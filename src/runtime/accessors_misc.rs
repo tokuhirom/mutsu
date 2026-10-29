@@ -8,6 +8,11 @@ use crate::value::ValueView;
 
 impl Interpreter {
     pub(crate) fn should_hide_from_my_global_stash(&self, key: &str) -> bool {
+        // The `self` key is the term's, never a lexical a stash lists: `$self`
+        // is the reserved `LEX_SELF` key (ADR-0061).
+        if key == "self" {
+            return true;
+        }
         if key.starts_with('$')
             || key.starts_with('@')
             || key.starts_with('%')

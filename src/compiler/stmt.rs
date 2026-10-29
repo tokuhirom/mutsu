@@ -1205,7 +1205,7 @@ impl Compiler {
                 // ADR-0061: `my $self` declares the reserved lexical key, unless
                 // this routine's signature already declares a `$self` parameter
                 // (a redeclaration, which then shares that parameter's binding).
-                let name = &self.resolve_self_lexical(name).to_string();
+                let name = &name.to_string();
                 // A sigil-less `constant b` is a TERM, a different symbol from
                 // a same-named `$b`; it is stored under its term-namespace key
                 // (`runtime::term_names`, #9962) so the two never share a local
@@ -2353,7 +2353,7 @@ impl Compiler {
                 // ADR-0061: inside a routine whose signature declares a `$self`
                 // parameter, the reserved `$self` lexical key names that
                 // parameter (which binds `"self"`).
-                let name = &self.resolve_self_lexical(name).to_string();
+                let name = &name.to_string();
                 // `$OUTER::x := $y` / `$OUTER::x = v` stores to the binding
                 // `OUTER::` names (#10676, #10827): the plain `$x` when no
                 // scope in between shadows it, else the key that binding's
@@ -2654,7 +2654,7 @@ impl Compiler {
                 // Array/Hash `v` is bound to (`Array.STORE`), so every other
                 // holder of it sees the new contents.
                 if matches!(op, AssignOp::Assign) && *target_is_sigilless {
-                    let name = self.resolve_self_lexical(effective_name);
+                    let name = effective_name;
                     let slot = self.local_map.get(name).copied().unwrap_or(u32::MAX);
                     let name_idx = self
                         .code
@@ -3729,7 +3729,6 @@ impl Compiler {
                         // flags above could promote it.  Ask the VM to retain
                         // (or install) its scalar cell instead of compiling a
                         // normal, decontainerizing variable read.
-                        let name = self.resolve_self_lexical(name);
                         let local_idx = self.local_map.get(name).copied();
                         let resolved_name = if local_idx.is_some() {
                             name.to_string()
@@ -3759,7 +3758,7 @@ impl Compiler {
                         // bare-`Expr::Var` arm above (#8521).
                         let decl_name = decl_name.clone();
                         self.compile_stmt(decl_stmt);
-                        let name = self.resolve_self_lexical(&decl_name);
+                        let name = &decl_name;
                         let local_idx = self.local_map.get(name).copied();
                         let resolved_name = if local_idx.is_some() {
                             name.to_string()
