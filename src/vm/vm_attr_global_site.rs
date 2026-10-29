@@ -66,6 +66,15 @@ impl Interpreter {
         }
     }
 
+    /// The prefetched cell value, if the site prefetched one that exists.
+    // Cost: O(1).
+    pub(super) fn global_attr_site_prefetched_cell(
+        &self,
+        at: &GlobalAttrSite<'_>,
+    ) -> Option<Value> {
+        if at.prefetched { at.cell.clone() } else { None }
+    }
+
     /// The attribute cell's value: the prefetched one, else a fresh read.
     // Cost: O(1) when prefetched, as `read_self_attr_cell_at` otherwise.
     pub(super) fn global_attr_site_cell(

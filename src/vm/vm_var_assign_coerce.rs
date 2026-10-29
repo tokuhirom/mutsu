@@ -264,6 +264,14 @@ impl Interpreter {
         name: &str,
         attr_site: Option<&GlobalAttrSite<'_>>,
     ) -> Option<Value> {
+        // A store whose attribute cell was read up front (`attr_site`) takes the
+        // cell as the container: it is the store of record, and no by-name
+        // mirror in the frame can be newer than it at a statement boundary.
+        if let Some(at) = attr_site
+            && let Some(cell) = self.global_attr_site_prefetched_cell(at)
+        {
+            return Some(cell.deref_container());
+        }
         self.env()
             .get(name)
             .cloned()

@@ -1662,7 +1662,9 @@ impl Interpreter {
                         && !is_bind_ctx
                         && !is_rebind
                         && (name.starts_with('%') || name.starts_with('@'))))
-                    && self.maybe_tied_store_reassign_named(&name, attr_site.as_ref())?.is_some()
+                    && self
+                        .maybe_tied_store_reassign_named(&name, attr_site.as_ref())?
+                        .is_some()
                 {
                     self.stack.pop();
                     *ip += 1;
@@ -2077,13 +2079,12 @@ impl Interpreter {
                     && (loan_env!(self, var_type_constraint_sym(name_sym)).is_some()
                         || match &attr_site {
                             // The attribute's declared type was read once above.
-                            Some(at) if at.has_prefetched_type() => {
-                                self.var_hash_key_constraint_with_attr(
+                            Some(at) if at.has_prefetched_type() => self
+                                .var_hash_key_constraint_with_attr(
                                     name_sym,
                                     at.type_constraint.as_deref(),
                                 )
-                                .is_some()
-                            }
+                                .is_some(),
                             _ => loan_env!(self, var_hash_key_constraint(&name)).is_some(),
                         })
                 {
@@ -2192,7 +2193,12 @@ impl Interpreter {
                     // a topic-owned ContainerRef by any later generic store
                     // path.
                     if !is_bind_ctx && !is_rebind && bind_source.is_none() {
-                        self.env_mut().insert_sym_noting(name_sym, val);
+                        // The cell is the store of record: a frame that holds
+                        // no by-name mirror of the attribute does not grow one
+                        // (its merge back into the caller would only drop it).
+                        if self.env().get_sym(name_sym).is_some() {
+                            self.env_mut().insert_sym_noting(name_sym, val);
+                        }
                         *ip += 1;
                         return Ok(());
                     }
