@@ -314,3 +314,36 @@ thing it counts.
 - **Modules before slice 9.** Modules are round-tripped today (§6.127). If a module's precompilation
   shows a cost slice 9 does not recover, a per-module decision follows the measurement; this ADR does
   not pre-decide it.
+
+## 7. Amendment 1 — the cost bound is not met at the start (2026-10-29)
+
+Slice 0 froze the §3.2 baseline (`1340492a`, the parent of the §6.122 flip) and measured `main` against it
+with `scripts/frontend-cost.sh` (callgrind frontend Ir, profiling build, warm):
+
+| Case | Frontend Ir, `main` | Baseline | Ratio |
+| --- | ---: | ---: | ---: |
+| `Zef/CLI.rakumod` | 258,750,190 | 218,603,062 | 118.4% |
+| `S32-exceptions/misc.t` | 125,254,087 | 119,114,264 | 105.2% |
+| `S12-class/attributes.t` | 39,830,509 | 33,829,672 | 117.7% |
+| `S15-nfg/emoji-test.t` | 4,492,847,664 | 4,402,079,486 | 102.1% |
+| `t/grammar/grammar-cursor-attributes.t` | 31,608,298 | 25,640,877 | 123.3% |
+
+Three of five cases are already above the 110% bound of §3.2 before any slice has landed, so "after every
+slice, every case is at most 110% of the baseline" cannot be satisfied by slices 1–8, whose own cost is
+not what the figures show (the excess is the round trip plus two days of parser growth between the
+baseline and `main`; the §6.109 figures of 1.04–1.06 were against the pre-flip frontend *at that time*).
+
+**Decision requested.** Replace the per-slice bound by two rules, keeping the 110% contract where it
+can bind:
+
+1. **Slices 1–8: no regression against the previous slice.** After a slice, no case's frontend Ir
+   exceeds the figure measured on its `main` base by more than 2%, and the cumulative drift since slice 0's
+   freeze is reported in the PR body. The bound on the *baseline* ratio is reported, not gated.
+2. **Slice 9 (and any slice that may land after it): every case at most 110% of the baseline**, as §3.2
+   says, with the baseline-or-below target unchanged. The cut-over removes the round trip and is the
+   first change that can plausibly bring the three cases under the bound.
+
+Re-baselining to `main` instead of the pre-flip frontend was considered and rejected: it would make the
+budget ADR-10723 §2.4 promised (the new frontend within 10% of the old) unmeasurable.
+
+The figures above are the slice-0 freeze; `scripts/frontend-cost-baseline.txt` holds the baseline.
