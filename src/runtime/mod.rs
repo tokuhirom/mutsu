@@ -1175,8 +1175,7 @@ pub(crate) struct NativeCtorPlan {
     /// Memo of `user_new_declines` for an all-named call, keyed by
     /// [`Interpreter::multi_arg_type_keys_with_named`]. Like the no-argument
     /// memo above it lives exactly as long as the class shape does.
-    pub(crate) named_user_new_declines:
-        std::sync::Mutex<rustc_hash::FxHashMap<Vec<Symbol>, bool>>,
+    pub(crate) named_user_new_declines: std::sync::Mutex<rustc_hash::FxHashMap<Vec<Symbol>, bool>>,
     /// The `:D`/`:U` smileys and `is required` attribute names across the
     /// MRO that `enforce_attribute_smiley_constraints` checks, collected once
     /// per class shape instead of per construction (#12917).
