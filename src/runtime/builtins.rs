@@ -1318,6 +1318,18 @@ impl Interpreter {
             "__mutsu_native_lexref_fetch" | "__mutsu_native_lexref_store" => self
                 .try_native_lex_ref_routine(name, &args)
                 .unwrap_or_else(|| Err(RuntimeError::new(format!("Unknown function: {name}")))),
+            // `my %h does R = INIT`: mark / unmark the declaration's own
+            // initializer for the composed role's `STORE(..., :INITIALIZE)`.
+            // Cost: O(1).
+            "__mutsu_decl_init" => {
+                let init = args.first().cloned().unwrap_or(Value::NIL);
+                self.vardecl_init_raw = Some(init.clone());
+                Ok(init)
+            }
+            "__mutsu_decl_init_done" => {
+                self.vardecl_init_raw = None;
+                Ok(Value::NIL)
+            }
             "__mutsu_atomic_fetch_var" => self.builtin_atomic_fetch_var(&args),
             "__mutsu_atomic_store_var" => self.builtin_atomic_store_var(&args),
             "__mutsu_atomic_int_target" => self.builtin_atomic_int_target(&args),

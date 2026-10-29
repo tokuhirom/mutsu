@@ -1117,6 +1117,17 @@ impl Interpreter {
             || self.readonly_kind(name) == Some(crate::ast::ReadonlyKind::ImmutableValue)
     }
 
+    /// The `:INITIALIZE` argument a `STORE` receives for the initializer of
+    /// `my %h does R = ...` (marked by `__mutsu_decl_init`, see
+    /// `ast::var_does`): the declaration's own initializer, unlike a later
+    /// `%h = ...`. Consumes the mark.
+    // Cost: O(1).
+    pub(super) fn take_decl_initialize_arg(&mut self) -> Option<Value> {
+        self.vardecl_init_raw
+            .take()
+            .map(|_| Value::pair("INITIALIZE".to_string(), Value::TRUE))
+    }
+
     /// Pop the RHS and route it through the tied instance's `STORE`, returning
     /// the bound instance (the STORE result if it is itself an instance, else the
     /// original instance).
@@ -1127,8 +1138,9 @@ impl Interpreter {
         // it; separate args would bind Pairs as *named*), while a plain scalar
         // stays a scalar so a typed single-positional `STORE(Str $x)` binds it.
         let list_arg = Self::associative_store_arg(&rhs);
-        let stored =
-            self.try_compiled_method_or_interpret(instance.clone(), "STORE", vec![list_arg])?;
+        let mut store_args = vec![list_arg];
+        store_args.extend(self.take_decl_initialize_arg());
+        let stored = self.try_compiled_method_or_interpret(instance.clone(), "STORE", store_args)?;
         Ok(if Self::is_tie_bindable(&stored) {
             stored
         } else {

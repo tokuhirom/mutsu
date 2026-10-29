@@ -50,7 +50,9 @@ impl Interpreter {
         };
         let rhs = self.stack.pop().unwrap_or(Value::NIL);
         let values = Value::array(crate::runtime::utils::value_to_list(&rhs));
-        self.try_compiled_method_or_interpret(container.clone(), "STORE", vec![values])?;
+        let mut args = vec![values];
+        args.extend(self.take_decl_initialize_arg());
+        self.try_compiled_method_or_interpret(container.clone(), "STORE", args)?;
         self.stack.push(container);
         Ok(Some(()))
     }
