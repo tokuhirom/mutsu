@@ -1501,6 +1501,7 @@ impl Interpreter {
                     let routine_value = value.deref_container();
                     if self.bind_hook_routine_lexically(routine, &routine_value) {
                         self.note_lexical_import_routine(&current_pkg, routine);
+                        continue;
                     }
                     self.note_unit_hook_routine(routine, &routine_value);
                 }
