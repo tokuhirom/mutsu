@@ -264,7 +264,18 @@ impl Interpreter {
         // forwarding binding (parent-param -> `::T`) via the
         // role_type_params branch below and defer real composition to
         // class-application time.
-        let forwards_type_param = crate::qualified::is_qualified_str(&role_name_str);
+        // Only a `::T` capture forwards a type parameter (one whose `::` does
+        // not continue an identifier): `does R[Array, Foo::Bar]` merely names
+        // a qualified type.
+        let forwards_type_param = role_name_str.find('[').is_some_and(|start| {
+            let args = &role_name_str[start..];
+            args.match_indices("::").any(|(i, _)| {
+                !args[..i]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_')
+            })
+        });
         // Evaluate this parent's precompiled bracket-argument chunks
         // (ADR-0019 D7-3), if any, instead of leaving candidate resolution
         // to re-parse the concatenated parent string — same bail-out as the
