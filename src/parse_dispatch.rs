@@ -54,6 +54,10 @@ pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>),
 ///
 /// The parsed unit runs as its RakuAST round trip (ADR-10723 Stage 3; see
 /// `rakuast::frontend`).
+///
+/// `#[inline(never)]` keeps this a symbol: `scripts/frontend-cost.sh` toggles callgrind
+/// collection on it to measure the frontend's instruction count (ADR-15334 §3.2).
+#[inline(never)]
 pub(crate) fn parse_compilation_unit_of(
     input: &str,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
