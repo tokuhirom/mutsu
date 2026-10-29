@@ -7,6 +7,11 @@ use crate::vm::vm_method_call_attrs::CallAttrs;
 /// absent" in distinct cache buckets.
 const CALLSITE_LINE_MARKER_KEY: &str = "__mutsu_test_callsite_line";
 
+/// Reserved key marking a named argument in a multi cache key. It is followed
+/// by the argument's name and then by the key of its value, so a named
+/// argument can never be read as a positional one.
+const NAMED_ARG_KEY: &str = "__mutsu_named_arg__";
+
 /// Cache-key marker appended after an argument's type key when that argument is
 /// not concrete (`value_is_concrete` is false -- the bit a smiley tests). A `:D`/`:U` smiley candidate set
 /// dispatches on exactly that bit on top of the type, so a key that carries it
@@ -64,6 +69,7 @@ mod key_syms {
 
     key_sym! {
         callsite_line_marker => super::CALLSITE_LINE_MARKER_KEY;
+        named_arg => super::NAMED_ARG_KEY;
         undefined_arg => super::UNDEFINED_ARG_KEY;
         declared_type => super::DECLARED_TYPE_KEY;
         literal_native => super::LITERAL_NATIVE_KEY;
@@ -73,6 +79,20 @@ mod key_syms {
         native_num => "num";
         native_str => "str";
     }
+}
+
+/// Whether a named (`Pair`) argument may be keyed by
+/// [`Interpreter::multi_arg_type_keys_impl`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NamedArgs {
+    /// Refuse the whole call: no key (the function-side caches).
+    Refuse,
+    /// Key a top-level named argument by name and value key.
+    Key,
+    /// Keying the value of a named argument: positional rules, no call-site
+    /// literal mask (that mask indexes the call's own positionals), and no
+    /// nested named argument.
+    KeyedValue,
 }
 
 impl Interpreter {
@@ -139,6 +159,28 @@ impl Interpreter {
         args: &[Value],
         keys: &mut Vec<crate::symbol::Symbol>,
     ) -> bool {
+        self.multi_arg_type_keys_impl(args, keys, NamedArgs::Refuse)
+    }
+
+    /// [`Self::multi_arg_type_keys`] for a METHOD candidate set, which keys a
+    /// named argument by its name and its value's type key instead of
+    /// refusing the whole call (see [`NamedArgs::Key`]).
+    // Cost: O(a), a = arguments (one type-key intern each).
+    pub(crate) fn multi_arg_type_keys_with_named(
+        &mut self,
+        args: &[Value],
+    ) -> Option<Vec<crate::symbol::Symbol>> {
+        let mut keys = Vec::with_capacity(args.len() + 2);
+        self.multi_arg_type_keys_impl(args, &mut keys, NamedArgs::Key)
+            .then_some(keys)
+    }
+
+    fn multi_arg_type_keys_impl(
+        &mut self,
+        args: &[Value],
+        keys: &mut Vec<crate::symbol::Symbol>,
+        named: NamedArgs,
+    ) -> bool {
         for (pos_idx, raw) in args.iter().enumerate() {
             // A `VarRef` (a variable passed as an argument) dispatches on the
             // *source variable's declared type* as well as on the value's own
@@ -193,6 +235,7 @@ impl Interpreter {
             // from an untyped VarRef's key, or either can reuse the other's
             // winner (#13776). Key the mask after unwrapping every argument.
             if pos_idx < 32
+                && named != NamedArgs::KeyedValue
                 && self.literal_native_args & (1 << pos_idx) != 0
                 && let Some(native) = match a.view() {
                     ValueView::Int(_) => Some(key_syms::native_int()),
@@ -259,6 +302,31 @@ impl Interpreter {
                 // `func_multi_dispatch_type_cacheable` before this key is used.
                 _ if Self::is_callsite_line_marker(a) => {
                     key_syms::callsite_line_marker()
+                }
+                // A named argument (`:$merge-clones`, `key => $c` in call
+                // position) selects candidates by its NAME (which named
+                // parameter or slurpy takes it) and by its value's type and
+                // definedness against that parameter's constraint. Both are in
+                // the key: the marker, the name, then the value's own key. Any
+                // other thing a named parameter could look at (`where`, a
+                // literal, a subset, a coercion, `is rw`, a sub-signature) makes
+                // the candidate set value-dependent, which
+                // `method_candidate_shape` already refuses wholesale. A value
+                // that is itself a pair is not keyed.
+                ValueView::Pair(name, value) if named == NamedArgs::Key => {
+                    if matches!(value.view(), ValueView::Pair(..) | ValueView::ValuePair(..)) {
+                        return false;
+                    }
+                    keys.push(key_syms::named_arg());
+                    keys.push(crate::symbol::Symbol::intern(name.as_str()));
+                    if !self.multi_arg_type_keys_impl(
+                        std::slice::from_ref(value),
+                        keys,
+                        NamedArgs::KeyedValue,
+                    ) {
+                        return false;
+                    }
+                    continue;
                 }
                 ValueView::Junction { .. }
                 | ValueView::Mixin(..)
@@ -651,7 +719,7 @@ impl Interpreter {
             return hit;
         }
         // 3. Sound multi-method resolution cache (type+arity deterministic).
-        if let Some(mut arg_keys) = self.multi_arg_type_keys(args)
+        if let Some(mut arg_keys) = self.multi_arg_type_keys_with_named(args)
             && self.multi_dispatch_type_cacheable(class_sym, method_sym, cn, method)
         {
             // The INVOCANT's definedness is part of the dispatch too: an
@@ -720,7 +788,7 @@ impl Interpreter {
         self.refresh_method_caches_for_generation();
         let class_sym = crate::symbol::Symbol::intern(class_name);
         let method_sym = crate::symbol::Symbol::intern(method);
-        if let Some(mut arg_keys) = self.multi_arg_type_keys(args)
+        if let Some(mut arg_keys) = self.multi_arg_type_keys_with_named(args)
             && self.multi_dispatch_type_cacheable(class_sym, method_sym, class_name, method)
         {
             arg_keys.insert(0, boundary_owner);
