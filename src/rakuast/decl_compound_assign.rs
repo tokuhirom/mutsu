@@ -57,16 +57,16 @@ pub(crate) fn lower_parsed(decl: Stmt, op: String, source: Expr) -> Result<Stmt,
             return Err(RuntimeError::new("a zip assignment of this declaration"));
         };
         let name = name.clone();
-        let value = crate::parser::zip_assign_call(Expr::Var(name.clone()), source);
+        let value = super::compound::expansion::zip_assign_call(Expr::Var(name.clone()), source);
         return Ok(crate::ast::decl_compound_assign::expand(decl, name, value));
     }
-    let Some(compound) = crate::parser::compound_assign_op_from_name(&op) else {
+    let Some(compound) = super::compound::op::compound_assign_op_from_name(&op) else {
         let Stmt::VarDecl { name, .. } = &decl else {
             return Err(RuntimeError::new("a compound declaration of this target"));
         };
         let name = name.clone();
         let value = Expr::InfixFunc {
-            left: Box::new(crate::parser::autoviv_routine_compound_lhs(
+            left: Box::new(super::compound::op::autoviv_routine_compound_lhs(
                 Expr::Var(name.clone()),
                 &op,
             )),
@@ -101,7 +101,10 @@ pub(crate) fn lower_parsed(decl: Stmt, op: String, source: Expr) -> Result<Stmt,
         return Err(RuntimeError::new("a compound declaration of this target"));
     };
     let name = name.clone();
-    let value =
-        crate::parser::compound_assigned_value_expr(Expr::Var(name.clone()), compound, source);
+    let value = super::compound::op::compound_assigned_value_expr(
+        Expr::Var(name.clone()),
+        compound,
+        source,
+    );
     Ok(crate::ast::decl_compound_assign::expand(decl, name, value))
 }

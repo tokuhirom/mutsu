@@ -23,6 +23,7 @@ mod chain;
 mod class_constructor;
 mod compiler_var;
 mod composition_source;
+pub(crate) mod compound;
 mod compound_stmt;
 mod conditional_lower;
 mod constructor_positional;

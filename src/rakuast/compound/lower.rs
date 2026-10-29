@@ -28,7 +28,7 @@ pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PE
             return Ok(lower_dotty(
                 node,
                 false,
-                crate::parser::stmt::simple::is_user_declared_value_term,
+                crate::parser::is_user_declared_value_term,
             ));
         }
         CompoundMeta::BracketedMeta(..) => return bracketed_meta_expression(node),
@@ -57,7 +57,7 @@ pub(crate) fn lower_compound_statement(node: CompoundAssign) -> Result<Stmt, PEr
     if matches!(node.meta, CompoundMeta::Dotty | CompoundMeta::TopicDotty) {
         return Ok(lower_dotty_statement(
             node,
-            crate::parser::stmt::simple::is_user_declared_value_term,
+            crate::parser::is_user_declared_value_term,
         ));
     }
     if let CompoundMeta::BracketedMeta(..) = node.meta {
@@ -300,11 +300,8 @@ fn lower_reverse(node: CompoundAssign) -> Expr {
     let CompoundAssign {
         target, op, source, ..
     } = node;
-    let expanded = crate::parser::expr::precedence::build_compound_assign_target_expr(
-        source.clone(),
-        &op,
-        target.clone(),
-    );
+    let expanded =
+        crate::parser::build_compound_assign_target_expr(source.clone(), &op, target.clone());
     reverse_assign_marker(target, &op, source, expanded)
 }
 
@@ -326,7 +323,7 @@ pub(crate) fn lower_dotty(
         ..
     } = node;
     if as_statement && matches!(&target, Expr::Var(topic) if topic == "_") {
-        return crate::parser::stmt::simple_expr_stmt::topic_dot_assign(call);
+        return crate::parser::topic_dot_assign(call);
     }
     // A bareword that names no sigilless term is a type object: the
     // assignment to it dies ("Cannot modify an immutable 'C' type object").
@@ -339,9 +336,9 @@ pub(crate) fn lower_dotty(
             is_bind: false,
         };
     }
-    crate::parser::expr::wrap_dot_assign_with_terms(
+    crate::parser::wrap_dot_assign_with_terms(
         target,
-        |invocant| crate::parser::expr::retarget_dotty_call(&call, invocant),
+        |invocant| crate::parser::retarget_dotty_call(&call, invocant),
         is_term,
     )
 }

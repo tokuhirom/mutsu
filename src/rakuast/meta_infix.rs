@@ -350,13 +350,13 @@ fn lower_eq_meta_assignment(
     }
     let target = rakuast_node_of(&operands[0]).ok_or_else(|| unsupported(node))?;
     let source = rakuast_node_of(&operands[1]).ok_or_else(|| unsupported(node))?;
-    crate::parser::lower_compound_expression(crate::ast::parsed::CompoundAssign {
+    super::compound::lower::lower_compound_expression(crate::ast::parsed::CompoundAssign {
         target: lower_expr(target)?,
         op: "=".to_string(),
         meta: crate::ast::parsed::CompoundMeta::BracketedMeta(kind, depth),
         source: lower_expr(source)?,
     })
-    .map_err(RuntimeError::new)
+    .map_err(super::compound::runtime_error)
 }
 
 /// A metaoperator application node as the parser's [`Expr::MetaOp`] chain, or

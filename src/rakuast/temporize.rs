@@ -360,10 +360,10 @@ fn lower_method_assign(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
                 ValueView::Str(operator) => operator.to_string(),
                 _ => return Err(unsupported(node)),
             };
-            let compound = crate::parser::compound_assign_op_from_name(&base)
+            let compound = super::compound::op::compound_assign_op_from_name(&base)
                 .ok_or_else(|| unsupported(node))?;
             let right = lower_expr(named_child(wrapper, "right")?)?;
-            crate::parser::compound_assigned_value_expr(left, compound, right)
+            super::compound::op::compound_assigned_value_expr(left, compound, right)
         }
         Some(_) => return Ok(None),
     };
