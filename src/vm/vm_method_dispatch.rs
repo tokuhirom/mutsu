@@ -1904,6 +1904,10 @@ impl Interpreter {
         param_values: &super::vm_param_values::ParamValues<'_>,
     ) {
         for (param_name, param_sym, param_val) in param_values.iter() {
+            // The invocant parameter is the frame record's (ADR-14843).
+            if param_sym.is_frame_fixture() {
+                continue;
+            }
             crate::env::note_env_key(param_name);
             env.insert_sym(*param_sym, param_val.clone());
         }

@@ -1253,6 +1253,11 @@ impl Interpreter {
         // local value. Authoritative even after the closure-driven env flush is
         // gone (a slot-only local is no longer mirrored into `env`).
         for (i, sym) in cc.free_var_syms.iter().enumerate() {
+            // `self`, `?CLASS` and `?ROLE` travel in the closure's record
+            // (`SubData::fixtures`), not in its captured env (ADR-14843).
+            if sym.is_frame_fixture() {
+                continue;
+            }
             if let Some(slot) = Self::resolve_capture_slot(code, &cc.free_var_parent_slots, i, *sym)
                 && let Some(val) = self.locals.get(slot)
             {

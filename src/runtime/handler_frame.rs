@@ -92,7 +92,10 @@ impl Interpreter {
             for (name, v) in code.locals_sym.iter().zip(&handler_locals) {
                 // A dynamic resolves in the dynamic scope of the throw, which
                 // the handler env already carries.
-                if !v.is_nil() && !name.with_str(str::is_empty) && !name.is_dynamic_var_env_key()
+                if !v.is_nil()
+                    && !name.with_str(str::is_empty)
+                    && !name.is_dynamic_var_env_key()
+                    && !name.is_frame_fixture()
                 {
                     self.env_mut().insert_sym(*name, v.clone());
                 }
@@ -284,7 +287,7 @@ impl Interpreter {
         let topic = crate::symbol::Symbol::intern("_");
         let bang = crate::symbol::Symbol::intern("!");
         for (k, v) in handler_env.overlay_iter() {
-            if *k == topic || *k == bang {
+            if *k == topic || *k == bang || k.is_frame_fixture() {
                 continue;
             }
             // On a private overlay, a write to one of the installing

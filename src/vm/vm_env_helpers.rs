@@ -1995,6 +1995,20 @@ impl Interpreter {
         value: Value,
         fresh_binding: bool,
     ) {
+        // The frame record owns `self`, `?CLASS` and `?ROLE`: a by-name store
+        // of one reaches the record, never an env key (ADR-14843). A `self`
+        // with no record to take it is a non-method routine's own `$self`
+        // parameter, which keeps its env binding.
+        match name {
+            "self" => {
+                if let Some(slot) = self.frame_invocant_mut() {
+                    *slot = value;
+                    return;
+                }
+            }
+            "?CLASS" | "?ROLE" => return,
+            _ => {}
+        }
         // Write companion of the redirect in `get_env_with_main_alias`: the
         // compunit's own cell is this name's only home while one of its routines
         // is running, so the write must not land on the loading scope's env key.

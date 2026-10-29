@@ -688,10 +688,11 @@ impl Interpreter {
                     // Write the updated delegate back into the frontend's live cell.
                     let mut updated = attributes.to_map();
                     updated.insert(attr_key.to_string(), updated_delegate);
-                    self.env.insert(
-                        target_var.to_string(),
-                        Value::write_back_sharing(&attributes, class_name, updated, target_id),
-                    );
+                    let written =
+                        Value::write_back_sharing(&attributes, class_name, updated, target_id);
+                    if !self.store_invocant_by_name(target_var, &written) {
+                        self.env.insert(target_var.to_string(), written);
+                    }
                 }
                 // Restore skip_pseudo for the outer caller.
                 self.dispatch.skip_pseudo_method_native = saved_skip_pseudo;
@@ -842,10 +843,10 @@ impl Interpreter {
                         // The delta commit already landed in the shared cell, so
                         // rebinding the name is all that is left (no second write
                         // of a whole map, which is what lost concurrent updates).
-                        self.env.insert(
-                            target_var.to_string(),
-                            Value::instance_sharing_cell(&attributes, class_name, target_id),
-                        );
+                        let shared = Value::instance_sharing_cell(&attributes, class_name, target_id);
+                        if !self.store_invocant_by_name(target_var, &shared) {
+                            self.env.insert(target_var.to_string(), shared);
+                        }
                         return Ok(result);
                     }
                     Err(err) => {
@@ -947,10 +948,10 @@ impl Interpreter {
                 )?;
                 let updated_clone = updated.clone();
                 attributes.commit_attrs(updated);
-                self.env.insert(
-                    target_var.to_string(),
-                    Value::instance_sharing_cell(&attributes, class_name, target_id),
-                );
+                let shared = Value::instance_sharing_cell(&attributes, class_name, target_id);
+                if !self.store_invocant_by_name(target_var, &shared) {
+                    self.env.insert(target_var.to_string(), shared);
+                }
                 // Auto-FETCH if the method returned a Proxy
                 if result.is_proxy_value()
                     && self.should_fetch_returned_proxy(&class_name.resolve(), method)

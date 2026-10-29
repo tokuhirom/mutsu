@@ -754,6 +754,23 @@ impl Interpreter {
             });
     }
 
+    /// A by-name store to a variable that may be `self`: when `name` is the
+    /// invocant and the running frame owns a record, the record takes `value`
+    /// and this answers `true`; otherwise the caller writes its env as before.
+    // Cost: O(1).
+    pub(crate) fn store_invocant_by_name(&mut self, name: &str, value: &Value) -> bool {
+        if name != "self" {
+            return false;
+        }
+        match self.frame_invocant_mut() {
+            Some(slot) => {
+                *slot = value.clone();
+                true
+            }
+            None => false,
+        }
+    }
+
     /// The record a closure, gather or routine value created now captures:
     /// the running frame's own, else (a method body run as a function) one
     /// made of its `self` parameter, else the innermost one (ADR-14843).

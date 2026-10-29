@@ -1609,10 +1609,10 @@ impl Interpreter {
                 // instance is reachable through other aliases.
                 attributes.commit_attrs(updated);
                 if let Some(var_name) = target_var {
-                    self.env.insert_through(
-                        var_name.to_string(),
-                        Value::instance_sharing_cell(&attributes, class_name, target_id),
-                    );
+                    let shared = Value::instance_sharing_cell(&attributes, class_name, target_id);
+                    if !self.store_invocant_by_name(var_name, &shared) {
+                        self.env.insert_through(var_name.to_string(), shared);
+                    }
                     // Also update attribute env variables so compiled method
                     // writeback picks up the change (e.g. $.cnt += 4 inside a method)
                     self.env

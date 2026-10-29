@@ -749,6 +749,11 @@ impl Interpreter {
             if crate::value::attr_twigil_base(source_name).is_some() {
                 continue;
             }
+            // The caller's `self`, `?CLASS` and `?ROLE` are its frame record's
+            // (ADR-14843), not variables to write back into.
+            if matches!(source_name.as_str(), "self" | "?CLASS" | "?ROLE") {
+                continue;
+            }
             if let Some(updated) = self.env.get(param_name).cloned() {
                 // When the caller's variable already holds a shared `ContainerRef`
                 // cell (e.g. an inner `$a := $arg` re-bound the rw param into the
