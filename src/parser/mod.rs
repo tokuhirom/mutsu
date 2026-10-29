@@ -379,11 +379,6 @@ pub(crate) use expr::precedence::{literal_assign_ro_expr, literal_assign_ro_part
 pub(crate) use expr::precedence_meta_ops::lower_hyper_assignment as hyper_assignment_expr;
 pub(crate) use expr::precedence_meta_ops::negated_glyph_relation;
 pub(crate) use stmt::assign::written_assignment;
-pub(crate) use stmt::control::loop_pointy_clause;
-pub(crate) use stmt::control::repeat_param_clause;
-pub(crate) use stmt::control::{
-    given_pointy_body, pointy_param_bind_decl, pointy_topic_bind, simple_pointy_bind, topicalize,
-};
 pub(crate) use stmt::simple::{fold_use_lib_path, use_lib_args};
 pub(crate) use stmt::simple_expr_stmt::lvalue::{bind_source_metadata_expr, index_bind_expr};
 /// Lower a deferred `Expr::Feed` node into its executable (sink-call) form.
