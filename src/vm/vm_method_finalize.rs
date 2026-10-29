@@ -33,4 +33,32 @@ impl Interpreter {
             },
         }
     }
+
+    /// [`Self::finalize_method_result`] for a call whose `--> T` names a plain
+    /// core type that resolves to itself ([`Self::method_return_fast`]): an `Ok`
+    /// value that is neither a container nor a Proxy and satisfies `T` is the
+    /// result as is. Anything else -- an error outcome, a container, a value
+    /// the type refuses -- takes the general path with `return_type` as the
+    /// resolved spec (it names itself, so resolution is the identity).
+    // Cost: O(1) for a fast return type, else as `finalize_method_result`.
+    pub(super) fn finalize_method_result_fast(
+        &mut self,
+        cc: &CompiledCode,
+        outcome: Result<Value, RuntimeError>,
+        return_type: Option<&str>,
+        effective_spec: Option<&str>,
+        fast: Option<(crate::opcode::FastParamType, crate::symbol::Symbol)>,
+    ) -> Result<Value, RuntimeError> {
+        let Some((kind, name_sym)) = fast else {
+            return self.finalize_method_result(cc, outcome, effective_spec);
+        };
+        if let Ok(v) = &outcome
+            && !v.is_container_ref()
+            && !v.is_proxy_value()
+            && self.light_return_check(v, kind, name_sym)
+        {
+            return outcome;
+        }
+        self.finalize_method_result(cc, outcome, return_type)
+    }
 }
