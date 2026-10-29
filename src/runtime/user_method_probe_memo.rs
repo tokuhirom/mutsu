@@ -36,6 +36,7 @@ pub(crate) struct UserMethodProbeMemo {
     method_or_accessor: FxHashMap<(Symbol, Symbol), Option<UserMethodOrAccessor>>,
     public_accessor_owner: FxHashMap<(Symbol, Symbol), Option<Symbol>>,
     method_candidate_levels: FxHashMap<(Symbol, Symbol), Arc<[u32]>>,
+    all_outranked_by_builtin: FxHashMap<(Symbol, Symbol), bool>,
 }
 
 /// Selects one of the memo's answer tables.
@@ -86,6 +87,14 @@ impl ProbeTable for MethodCandidateLevels {
     }
 }
 
+struct AllOutrankedByBuiltin;
+impl ProbeTable for AllOutrankedByBuiltin {
+    type Answer = bool;
+    fn table(memo: &mut UserMethodProbeMemo) -> &mut FxHashMap<(Symbol, Symbol), bool> {
+        &mut memo.all_outranked_by_builtin
+    }
+}
+
 struct PublicAccessorOwner;
 impl ProbeTable for PublicAccessorOwner {
     type Answer = Option<Symbol>;
@@ -125,6 +134,7 @@ impl Interpreter {
             memo.method_or_accessor.clear();
             memo.public_accessor_owner.clear();
             memo.method_candidate_levels.clear();
+            memo.all_outranked_by_builtin.clear();
         } else if let Some(answer) = T::table(memo).get(&(class, method)) {
             return answer.clone();
         }
@@ -174,6 +184,27 @@ impl Interpreter {
     ) -> Option<UserMethodOrAccessor> {
         self.probe_memo::<MethodOrAccessor>(class, method, |this| {
             this.resolve_user_method_or_accessor_uncached(class.as_str(), method)
+        })
+    }
+
+    /// [`Self::user_candidates_all_outranked_by_builtin_uncached`], memoized per
+    /// `(class, method)`: the answer reads only the class's MRO, its candidate
+    /// lists and the static built-in row table.
+    // Cost: O(1) on a hit; a miss costs O(m * c), m = MRO depth, c = candidates
+    // per level.
+    pub(crate) fn user_candidates_all_outranked_by_builtin(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> bool {
+        let (Some(class), Some(method)) = (probe_key(class_name), probe_key(method_name)) else {
+            return self.user_candidates_all_outranked_by_builtin_uncached(class_name, method_name);
+        };
+        self.probe_memo::<AllOutrankedByBuiltin>(class, method, |this| {
+            this.user_candidates_all_outranked_by_builtin_uncached(
+                class.as_str(),
+                method.as_str(),
+            )
         })
     }
 
