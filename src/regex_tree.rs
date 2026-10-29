@@ -2259,8 +2259,13 @@ impl Parser {
             if is_simple_subrule_name(alias)
                 && capturing
                 && matches!(target.as_bytes(), [b'$' | b'@' | b'%', b'(', ..])
-                && let Some(tree) =
-                    RegexTree::parse_static_with_options(target, false, true, None, self.in_unit_parse)
+                && let Some(tree) = RegexTree::parse_static_with_options(
+                    target,
+                    false,
+                    true,
+                    None,
+                    self.in_unit_parse,
+                )
                 && matches!(
                     tree.body,
                     RegexNode::Extension(RegexExtension::ContextualizedInterpolation { .. })
