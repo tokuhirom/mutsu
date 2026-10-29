@@ -263,6 +263,18 @@ impl Interpreter {
                 if is_multi_key {
                     env.insert("__mutsu_is_multi_candidate".to_string(), Value::TRUE);
                 }
+                // The candidate's return spec is its own, never the running
+                // frame's: a definite one (`--> True`, `--> 5`) is what the
+                // call answers, and a type is enforced, when the candidate
+                // runs through its code object (an imported multi's
+                // dispatcher captures these).
+                env.remove_sym(crate::symbol::well_known::return_type());
+                if let Some(return_type) = &def.return_type {
+                    env.insert(
+                        "__mutsu_return_type".to_string(),
+                        Value::str(return_type.clone()),
+                    );
+                }
                 Value::make_sub_for_routine(
                     def.package,
                     def.name,
