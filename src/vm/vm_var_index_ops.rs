@@ -2729,7 +2729,11 @@ impl Interpreter {
             {
                 let default = self.typed_container_default(&target);
                 let result = self
-                    .try_compiled_method_or_interpret(target.clone(), "AT-KEY", vec![index.clone()])?
+                    .try_compiled_method_or_interpret(
+                        target.clone(),
+                        "AT-KEY",
+                        vec![index.clone()],
+                    )?
                     .deref_container();
                 if result.is_nil() { default } else { result }
             }
