@@ -2,7 +2,7 @@ use Test;
 
 # A plain routine's `$self` parameter is its own lexical, separate from the
 # `self` term (#15464, found while working #14843).
-plan 9;
+plan 10;
 
 class D {
     method both { my $f = sub ($self) { $self ~ self.^name }; $f("x") }
@@ -33,3 +33,7 @@ class F {
     method run { my $f = -> $self { $self ~ self.^name }; $f("p") }
 }
 is F.new.run, 'pF', 'pointy block in a method';
+
+class G { has $.x is rw; method infix:<conv>($self: G $to) is export { my $o = $to.new; $o.x = $self.^name; $o } }
+import G;
+is (G.new conv G.new).x, 'G', 'an exported operator method with an explicit $self: invocant';

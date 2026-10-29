@@ -734,8 +734,20 @@ impl Interpreter {
         if implicit {
             return positional.next().cloned();
         }
-        // An ordinary `$self` parameter is a lexical of its own (`LEX_SELF`),
-        // never the invocant: a creator's record answers the `self` term.
+        // An explicit invocant spelled `$self:` takes the leading positional.
+        // A plain routine's ordinary `$self` parameter is a lexical of its
+        // own (`LEX_SELF`), never the invocant: a creator's record answers
+        // the `self` term.
+        let mut index = 0usize;
+        for pd in param_defs {
+            if pd.named || pd.slurpy || pd.double_slurpy {
+                continue;
+            }
+            if pd.is_invocant && pd.declares_self_lexical() {
+                return positional.nth(index).cloned();
+            }
+            index += 1;
+        }
         None
     }
 

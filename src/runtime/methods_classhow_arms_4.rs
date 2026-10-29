@@ -283,10 +283,11 @@ impl Interpreter {
                 if defs.is_empty()
                     && let Some(name) = sub_data.params.first()
                 {
-                    defs.push(super::methods_format::positional_param(&format!(
-                        "${}",
-                        name.trim_start_matches('$')
-                    )));
+                    // A parameter literally named `$self` stays `self`, the
+                    // spelling the binder recognises as the `$self` lexical.
+                    let bare = name.trim_start_matches('$');
+                    let spelled = if bare == "self" { bare.to_string() } else { format!("${bare}") };
+                    defs.push(super::methods_format::positional_param(&spelled));
                 }
                 if let Some(first) = defs.first_mut()
                     && !first.named
