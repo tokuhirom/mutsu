@@ -510,7 +510,7 @@ impl Interpreter {
             // The `env` half: drop the aliases this scope imported (see
             // `restore_import_env_keys`). A PRELOAD scope (`scope_classes ==
             // false`, see `push_preload_scope`) keeps them.
-            if scope_classes && std::env::var_os("MUTSU_EXP_NOENV").is_none() {
+            if scope_classes {
                 self.restore_import_env_keys(imported_env_keys, &mut shadowed_env_values);
             }
             self.io.newline_mode = newline_mode;
