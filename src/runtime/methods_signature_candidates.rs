@@ -126,13 +126,25 @@ impl Interpreter {
     // Cost: O(c * p), c = candidates, p = parameters per candidate.
     pub(super) fn method_object_cando(&mut self, method_obj: &Value, capture: &Value) -> Value {
         let all_args = Self::capture_to_call_args(capture);
-        let call_args = all_args.get(1..).unwrap_or(&[]);
         let candidates: Vec<Value> = match method_obj.view() {
             ValueView::Instance { attributes, .. } => {
                 let map = attributes.as_map();
                 match map.get("candidates").cloned().and_then(Value::into_array) {
                     Some((items, _)) if !items.is_empty() => items.to_vec(),
-                    _ => vec![method_obj.clone()],
+                    _ => {
+                        drop(map);
+                        // A built-in method's object has no candidates
+                        // attribute; its `.candidates` is answered from the
+                        // core table.
+                        match self
+                            .call_method_with_values(method_obj.clone(), "candidates", Vec::new())
+                            .ok()
+                            .and_then(Value::into_array)
+                        {
+                            Some((items, _)) if !items.is_empty() => items.to_vec(),
+                            _ => vec![method_obj.clone()],
+                        }
+                    }
                 }
             }
             _ => vec![method_obj.clone()],
@@ -140,14 +152,75 @@ impl Interpreter {
         let matching = candidates
             .into_iter()
             .filter(|candidate| {
-                let ValueView::Instance { attributes, .. } = candidate.view() else {
-                    return false;
+                // A built-in method's candidates are plain code objects; a
+                // user method's carry theirs as the `__mutsu_method_callable`
+                // payload of a Method instance.
+                let callable = match candidate.view() {
+                    ValueView::Instance { attributes, .. } => {
+                        attributes.as_map().get("__mutsu_method_callable").cloned()
+                    }
+                    ValueView::Sub(_) => Some(candidate.clone()),
+                    _ => None,
                 };
-                let callable = attributes.as_map().get("__mutsu_method_callable").cloned();
-                callable.is_some_and(|c| self.candidate_matches_call_args(&c, call_args))
+                callable.is_some_and(|c| self.candidate_matches_capture(&c, &all_args))
             })
             .collect();
         Value::array(matching)
+    }
+
+    /// [`Self::candidate_matches_call_args`] for a whole call `capture`
+    /// (`\(Str, $arg)`), where a method candidate's invocant is the capture's
+    /// first positional: `Str.^can('Numeric')[0].candidates[0].cando(\(Str))`.
+    /// The invocant is checked against the candidate's invocant parameter and
+    /// the rest against its other parameters; a capture without any positional
+    /// cannot supply an invocant, so it matches no method candidate.
+    // Cost: O(p), p = parameters of the candidate.
+    pub(super) fn candidate_matches_capture(
+        &mut self,
+        candidate: &Value,
+        call_args: &[Value],
+    ) -> bool {
+        let ValueView::Sub(data) = candidate.view() else {
+            return self.candidate_matches_call_args(candidate, call_args);
+        };
+        // `cando` asks what a signature accepts, not whether a coercion would
+        // succeed: `Int(Cool) $base` accepts any `Cool`, `"beer"` included.
+        let accepted = if data.param_defs.iter().any(|p| {
+            p.type_constraint
+                .as_deref()
+                .is_some_and(crate::runtime::types::is_coercion_constraint)
+        }) {
+            let mut widened = (**data).clone();
+            let defs: Vec<crate::ast::ParamDef> = data
+                .param_defs
+                .iter()
+                .map(|p| {
+                    let mut p = p.clone();
+                    if let Some(c) = p.type_constraint.as_deref()
+                        && let Some((_, source)) = crate::runtime::types::parse_coercion_type(c)
+                    {
+                        p.type_constraint = Some(source.unwrap_or("Any").to_string());
+                    }
+                    p
+                })
+                .collect();
+            widened.param_defs = std::sync::Arc::new(defs);
+            Some(Value::sub_value(crate::gc::Gc::new(widened)))
+        } else {
+            None
+        };
+        let candidate = accepted.as_ref().unwrap_or(candidate);
+        let ValueView::Sub(data) = candidate.view() else {
+            return self.candidate_matches_call_args(candidate, call_args);
+        };
+        let Some(invocant) = data.param_defs.iter().find(|p| p.is_invocant) else {
+            return self.candidate_matches_call_args(candidate, call_args);
+        };
+        let Some((first, rest)) = call_args.split_first() else {
+            return false;
+        };
+        self.args_match_param_types(std::slice::from_ref(first), std::slice::from_ref(invocant))
+            && self.candidate_matches_call_args(candidate, rest)
     }
 
     pub(super) fn candidate_matches_call_args(
