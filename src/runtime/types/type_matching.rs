@@ -765,7 +765,7 @@ impl Interpreter {
         // matching a multi candidate's signature during dispatch, before
         // any method body has been entered (#8003).
         let _package_guard = self.enter_package_guarded_sym(subset.decl_package_sym);
-        let ok = if let Some(closure) = &subset.predicate_closure {
+        if let Some(closure) = &subset.predicate_closure {
             // Built at the declaration site over its lexicals (#10868).
             self.call_subset_predicate(closure.clone(), predicate_value, why)
         } else if let Some(pred) = &subset.predicate {
@@ -871,8 +871,7 @@ impl Interpreter {
             }
         } else {
             true
-        };
-        ok
+        }
     }
 
     /// [`Self::type_matches_value_unviewed`], reporting why as
