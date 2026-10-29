@@ -10,6 +10,7 @@ use super::convert::{convert_expr, leaf_field, node_field, plain_infix, postfix_
 use super::lower::{leaf_str, lower_expr, named_child, positional_leaf};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::atomic_op::{self, Atomic, Category};
+use crate::ast::parsed::AtomicVar;
 use crate::ast::{Expr, temporize};
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -32,32 +33,39 @@ fn postfix_op(operator: &str) -> RakuAstNode {
     }
 }
 
-/// The node of the atomic operator the call `name(args)` is, or `None` when it
-/// is not one.
-// Cost: O(n), n = size of the operands.
-pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, RuntimeError>> {
-    let atomic = atomic_op::recognize(name, args)?;
-    Some((|| match atomic {
-        Atomic::Fetch(var) => Ok(RakuAstNode {
+/// The node of `⚛$x` / `$x ⚛= VALUE`, the parser's [`AtomicVar`].
+// Cost: O(n), n = size of the stored value.
+pub(super) fn var_node(var: &AtomicVar) -> Result<RakuAstNode, RuntimeError> {
+    match var {
+        AtomicVar::Fetch { name } => Ok(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::ApplyPrefix,
             fields: vec![
                 node_field(Some("prefix"), prefix_op("⚛")),
                 node_field(
                     Some("operand"),
-                    convert_expr(&temporize::variable_expr(var))?,
+                    convert_expr(&temporize::variable_expr(name))?,
                 ),
             ],
         }),
-        Atomic::Store(var, value) => Ok(RakuAstNode {
+        AtomicVar::Store { name, value } => Ok(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::ApplyInfix,
             fields: vec![
-                node_field(Some("left"), convert_expr(&temporize::variable_expr(var))?),
+                node_field(Some("left"), convert_expr(&temporize::variable_expr(name))?),
                 node_field(Some("infix"), plain_infix("⚛=")),
                 node_field(Some("right"), convert_expr(value)?),
             ],
         }),
+    }
+}
+
+/// The node of the atomic operator the call `name(args)` is, or `None` when it
+/// is not one.
+// Cost: O(n), n = size of the operands.
+pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, RuntimeError>> {
+    let atomic = atomic_op::recognize(name, args)?;
+    Some((|| match atomic {
         Atomic::Unary {
             category: Category::Prefix,
             operator,
@@ -145,7 +153,10 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
                 if operator == "⚛="
                     && let Some(name) = first.container_var_key()
                 {
-                    return Ok(atomic_op::store_var(name, right));
+                    return Ok(atomic_op::lower_var(AtomicVar::Store {
+                        name,
+                        value: right,
+                    }));
                 }
                 Ok(atomic_op::operator_call(
                     category,
@@ -156,7 +167,9 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
             // `⚛$x` reads the variable by name; an element goes through the
             // parser's element form.
             Category::Prefix if operator == "⚛" => match &first {
-                Expr::Var(name) => Ok(atomic_op::fetch_var(name.clone())),
+                Expr::Var(name) => Ok(atomic_op::lower_var(AtomicVar::Fetch {
+                    name: name.clone(),
+                })),
                 other => crate::parser::atomic_elem_update("atomic-fetch", other)
                     .ok_or_else(|| super::convert::unsupported("atomic fetch of this operand")),
             },

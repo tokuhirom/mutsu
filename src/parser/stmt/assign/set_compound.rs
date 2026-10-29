@@ -126,18 +126,14 @@ pub(crate) fn build_set_compound_assign_expr(expr: Expr, set_tok: TokenKind, rhs
         } else {
             name.resolve()
         };
-        return Expr::Call {
-            name: Symbol::intern("__mutsu_assign_method_lvalue"),
-            args: vec![
-                (**target).clone(),
-                Expr::Literal(crate::value::Value::str(method_name)),
-                Expr::ArrayLiteral(args.clone()),
-                assigned_value,
-                Expr::Literal(crate::value::Value::str(topic_name)),
-                Expr::Literal(crate::value::Value::truth(true)),
-            ],
-            listop: false,
-        };
+        return crate::rakuast::method_lvalue_call(
+            (**target).clone(),
+            Some(topic_name),
+            method_name,
+            args.clone(),
+            assigned_value,
+            true,
+        );
     }
     // A plain variable stores the combined value back.
     let variable = match &expr {

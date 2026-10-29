@@ -486,14 +486,8 @@ pub(crate) fn build_compound_assign_expr(
                 args: args.clone(),
                 listop: false,
             };
-            let assign_through = |value: Expr| Expr::Call {
-                name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
-                args: vec![
-                    Expr::Literal(Value::str(name.resolve())),
-                    Expr::ArrayLiteral(args.clone()),
-                    value,
-                ],
-                listop: false,
+            let assign_through = |value: Expr| {
+                crate::rakuast::named_sub_lvalue_assign_expr(name.resolve(), args.clone(), value)
             };
             // A short-circuit `op=` must not assign at all when it short-circuits
             // (`$a //= $b` is `$a // ($a = $b)`), so keep the assignment inside
@@ -665,25 +659,19 @@ pub(crate) fn build_compound_assign_expr(
                 _ => Expr::Var(name),
             };
             let assigned_value = compound_assigned_value_expr(read_back, op, rhs);
-            Expr::Call {
-                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-                args: vec![
-                    Expr::DoStmt(stmt),
-                    Expr::ArrayLiteral(Vec::new()),
-                    assigned_value,
-                ],
-                listop: false,
-            }
+            crate::rakuast::callable_lvalue_assign_expr(
+                Expr::DoStmt(stmt),
+                Vec::new(),
+                assigned_value,
+            )
         }
         // `@a[i]:v += x`, `%h<k>:v ~= x`: an internal `__mutsu_*` call lowers a
         // subscript adverb, and its value is what Rakudo refuses to modify
         // (`Cannot modify an immutable Int (10)`). Assign to that value so the
         // error names it. The call is pure, so reading it twice is safe.
         Expr::Call { ref name, .. } if name.with_str(|n| n.starts_with("__mutsu_")) => {
-            let assign_through = |value: Expr| Expr::Call {
-                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-                args: vec![lhs.clone(), Expr::ArrayLiteral(Vec::new()), value],
-                listop: false,
+            let assign_through = |value: Expr| {
+                crate::rakuast::callable_lvalue_assign_expr(lhs.clone(), Vec::new(), value)
             };
             if matches!(
                 op,

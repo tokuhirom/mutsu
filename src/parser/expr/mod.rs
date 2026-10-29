@@ -407,7 +407,7 @@ pub(in crate::parser) fn item_level_expr(input: &str) -> PResult<'_, Expr> {
     precedence::item_expr(input, operators::ExprMode::Full)
 }
 
-pub(in crate::parser) fn wrap_finished_expr(expr: Expr) -> Expr {
+pub(crate) fn wrap_finished_expr(expr: Expr) -> Expr {
     let expr = wrap_composition_operands(expr);
     if !should_wrap_whatevercode(&expr) {
         return expr;

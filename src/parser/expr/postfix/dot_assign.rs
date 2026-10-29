@@ -335,11 +335,7 @@ fn expand_dot_assign(
         Expr::ArrayLiteral(_) => {
             let lhs = target.clone();
             let value = method_call_fn(target);
-            Expr::Call {
-                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-                args: vec![lhs, Expr::ArrayLiteral(Vec::new()), value],
-                listop: false,
-            }
+            crate::rakuast::callable_lvalue_assign_expr(lhs, Vec::new(), value)
         }
         // A method-call lvalue (`$obj.attr .= meth`). In Raku `$obj.attr .= meth`
         // is `$obj.attr = $obj.attr.meth`, so when `.attr` is an `is rw` accessor

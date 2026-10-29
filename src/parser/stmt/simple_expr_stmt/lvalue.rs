@@ -1,5 +1,4 @@
 use crate::ast::{Expr, LvaluePeel, LvalueRoot, Stmt};
-use crate::symbol::Symbol;
 use crate::value::Value;
 
 /// Extract the writeback variable name from a declaration used in expression
@@ -30,14 +29,6 @@ pub(crate) fn method_lvalue_target_name(target: &Expr) -> Option<String> {
     target
         .lvalue_root(LvaluePeel::GROUPED | LvaluePeel::DECL | LvaluePeel::SIGILLESS)
         .map(LvalueRoot::into_spelled_key)
-}
-
-pub(super) fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, value: Expr) -> Expr {
-    Expr::Call {
-        name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-        args: vec![target, Expr::ArrayLiteral(call_args), value],
-        listop: false,
-    }
 }
 
 pub(super) fn bind_source_name(expr: &Expr) -> Option<String> {

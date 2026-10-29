@@ -317,15 +317,11 @@ fn split_signature_decl(
         args: vec![init.rhs.clone()],
         listop: false,
     };
-    let assign = Stmt::Expr(Expr::Call {
-        name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-        args: vec![
-            Expr::ArrayLiteral(targets),
-            Expr::ArrayLiteral(Vec::new()),
-            rhs,
-        ],
-        listop: false,
-    });
+    let assign = Stmt::Expr(crate::rakuast::callable_lvalue_assign_expr(
+        Expr::ArrayLiteral(targets),
+        Vec::new(),
+        rhs,
+    ));
     let gated = Stmt::If {
         cond: effective_cond.clone(),
         then_branch: vec![assign],
