@@ -245,7 +245,10 @@ impl Interpreter {
     /// `find_method`. `Kind`'s naming relies on that to fall back to the type
     /// name (`Kind[Junction]`).
     // Cost: O(v), v = values of a junction target; O(1) otherwise.
-    pub(super) fn metarole_render_failure(method: &str, target: &Value) -> Result<(), RuntimeError> {
+    pub(super) fn metarole_render_failure(
+        method: &str,
+        target: &Value,
+    ) -> Result<(), RuntimeError> {
         if !matches!(method, "raku" | "gist") {
             return Ok(());
         }
