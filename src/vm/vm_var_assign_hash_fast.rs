@@ -240,7 +240,7 @@ impl Interpreter {
         // itemization (`t/hash-key-single-itemize.t`).
         {
             let current = self.env().get_sym(var_sym).cloned().unwrap_or(Value::NIL);
-            if self.container_type_metadata(&current).is_some()
+            if self.has_container_type_metadata(&current)
                 || self.var_default(var_name).is_some()
                 || self.is_readonly_sym(var_sym)
             {

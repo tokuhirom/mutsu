@@ -796,6 +796,18 @@ fn file_sym_of(v: &Value) -> Option<Symbol> {
     }
 }
 
+/// A pinned overlay tier: the values an [`Env`] overlay held when
+/// [`Env::pin_overlay`] was called, immutable for as long as the pin lives.
+pub(crate) struct OverlayPin(Arc<Tier>);
+
+impl OverlayPin {
+    /// The pinned overlay's own binding for `key`.
+    // Cost: O(1).
+    pub(crate) fn get(&self, key: Symbol) -> Option<&Value> {
+        self.0.get(&key)
+    }
+}
+
 impl Env {
     pub(crate) fn new() -> Self {
         Self {
@@ -2304,6 +2316,29 @@ impl Env {
     /// `exec_get_local_op`'s lazy-sync check).
     pub(crate) fn overlay_get_sym(&self, key: Symbol) -> Option<&Value> {
         self.inner.get(&key)
+    }
+
+    /// Pin this env's own overlay tier so a later [`Self::overlay_unchanged_since`]
+    /// can prove that nothing wrote to it, and so the pre-call values stay
+    /// readable through [`OverlayPin::get`] without having been copied.
+    ///
+    /// The pin holds a second strong reference, so every write to the overlay
+    /// while it is held goes through the copy-on-write path and leaves the
+    /// pinned tier untouched: pointer equality of the two tiers is then an
+    /// exact "no entry was added, removed or changed". `None` for a flat env
+    /// over a capture fallback, whose iteration is a merged view the overlay
+    /// alone does not describe.
+    // Cost: O(1), one Arc bump.
+    pub(crate) fn pin_overlay(&self) -> Option<OverlayPin> {
+        self.fallback
+            .is_none()
+            .then(|| OverlayPin(Arc::clone(&self.inner)))
+    }
+
+    /// Whether the overlay still is the tier `pin` was taken from.
+    // Cost: O(1).
+    pub(crate) fn overlay_unchanged_since(&self, pin: &OverlayPin) -> bool {
+        self.fallback.is_none() && Arc::ptr_eq(&self.inner, &pin.0)
     }
 
     /// Check whether two `Env` values point to the same underlying overlay map.
