@@ -13,6 +13,20 @@ impl Interpreter {
         }
     }
 
+    /// The key of a Pair built from `key`: `infix:<=>` takes a decontainerized
+    /// `Mu $key`, so a `Proxy` key (bare, or reached through an alias cell such
+    /// as a `BIND-POS`-bound array slot) is FETCHed once. Any other key is kept
+    /// as given.
+    // Cost: O(1) unless a Proxy's FETCH runs.
+    pub(crate) fn pair_key_fetching_proxy(&mut self, key: Value) -> Result<Value, RuntimeError> {
+        let inner = key.deref_container();
+        if matches!(inner.view(), ValueView::Proxy { .. }) {
+            self.maybe_fetch_rw_proxy(inner, true)
+        } else {
+            Ok(key)
+        }
+    }
+
     pub(crate) fn maybe_fetch_rw_proxy(
         &mut self,
         result: Value,

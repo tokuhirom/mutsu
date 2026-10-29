@@ -213,7 +213,8 @@ impl Interpreter {
             // ADR-0021 I2: data-minted pairs default positional, and the key
             // keeps its own value/type.
             RowCombine::Pair => match <[Value; 2]>::try_from(row) {
-                Ok([k, v]) => Ok(Value::value_pair(k, v)),
+                // A Proxy key is FETCHed, as `MakePair` does.
+                Ok([k, v]) => Ok(Value::value_pair(self.pair_key_fetching_proxy(k)?, v)),
                 Err(row) => Ok(Value::array(row)),
             },
             RowCombine::SmartMatch => {
