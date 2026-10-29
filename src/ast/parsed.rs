@@ -281,7 +281,7 @@ pub(crate) enum ParsedExpr {
     /// `supply { BODY }`: the body as written, before the expansion rewrites
     /// its `emit` / `done` onto the on-demand emitter
     /// (`StatementPrefix::Supply`). It lowers to that expansion
-    /// (`parser::supply_method_call`).
+    /// (`rakuast::supply_lower::supply_method_call`).
     Supply(Vec<Stmt>),
     /// The body of a `start { BODY }` whose placeholder Raku rejects, as
     /// written. It lowers to a do-block, so the compiler reports the
