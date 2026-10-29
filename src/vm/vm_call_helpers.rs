@@ -302,9 +302,7 @@ impl Interpreter {
                 // (`*@a is raw`, `+@a is raw`), which keeps each element's
                 // container (a `Proxy` stays a Proxy in the List).
                 let raw_slurpy_at = positional.clone().position(|p| {
-                    p.is_variadic()
-                        && !p.sigilless
-                        && p.traits.iter().any(|t| t == "raw")
+                    p.is_variadic() && !p.sigilless && p.traits.iter().any(|t| t == "raw")
                 });
                 flags.resize(args.len(), false);
                 if let Some(at) = raw_slurpy_at {
