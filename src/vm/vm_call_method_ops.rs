@@ -240,6 +240,31 @@ pub(crate) fn nil_predispatch_verdict(
 }
 
 impl Interpreter {
+    /// Rendering (`.raku`, `.gist`) a Rakudo metarole (`Metamodel::Naming`), or
+    /// a junction of them, dies: it is an NQP-level object whose `HOW` has no
+    /// `find_method`. `Kind`'s naming relies on that to fall back to the type
+    /// name (`Kind[Junction]`).
+    // Cost: O(v), v = values of a junction target; O(1) otherwise.
+    pub(super) fn metarole_render_failure(method: &str, target: &Value) -> Result<(), RuntimeError> {
+        if !matches!(method, "raku" | "gist") {
+            return Ok(());
+        }
+        let is_metarole = |v: &Value| {
+            matches!(v.view(), ValueView::Package(name)
+                if crate::runtime::types::metamodel_how_roles::metarole_bare_name(&name.resolve()).is_some())
+        };
+        let hit = match target.view() {
+            ValueView::Junction { values, .. } => values.iter().any(is_metarole),
+            _ => is_metarole(target),
+        };
+        if hit {
+            return Err(RuntimeError::new(
+                "Cannot find method 'find_method' on object of type NQPParametricRoleHOW",
+            ));
+        }
+        Ok(())
+    }
+
     /// Build an X::Multi::NoMatch error for a `print`/`say`/`put`/`note` call
     /// made with a positional argument on an invocant whose only candidate is
     /// the default `(Mu: *%_)` one. The `capture` attribute carries the full
@@ -926,6 +951,7 @@ impl Interpreter {
             self.stack.push(msg.clone());
             return Ok(());
         }
+        Self::metarole_render_failure(method, &target)?;
         if method == "raku"
             && crate::builtins::methods_0arg::raku_repr::raku_scalar_itemized(&target)
             && let Some(rendered) = self.raku_repr_with_dispatch(&target)

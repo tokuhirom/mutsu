@@ -609,6 +609,7 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        Self::metarole_render_failure(method, &target)?;
         if method == "raku"
             && crate::builtins::methods_0arg::raku_repr::raku_scalar_itemized(&target)
         {
