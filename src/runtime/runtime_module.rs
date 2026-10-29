@@ -91,22 +91,10 @@ impl Interpreter {
         self.push_import_scope_scoping_classes(false);
     }
 
-    // Cost: O(1): each registry table is copy-on-write, so the snapshot holds
-    // the table itself (#9170). The table's first write in the scope then
-    // copies it, once.
+    // Cost: O(1) plus the clone of the routine-alias set.
     fn push_import_scope_scoping_classes(&mut self, scope_classes: bool) {
         let snapshot = {
-            let reg = self.registry();
             crate::runtime::ImportScopeSnapshot {
-                functions: std::sync::Arc::clone(&reg.functions),
-                proto_subs: reg.proto_subs_snapshot(),
-                proto_functions: std::sync::Arc::clone(&reg.proto_functions),
-                shadowed_functions: HashMap::new(),
-                function_writes_at_open: reg.function_writes,
-                logged_function_writes: 0,
-                installed_function_keys: Vec::new(),
-                shadowed_proto_functions: HashMap::new(),
-                shadowed_proto_names: HashSet::new(),
                 imported_env_keys: Default::default(),
                 block_bound_keys: Default::default(),
                 shadowed_env_values: HashMap::new(),
@@ -377,14 +365,6 @@ impl Interpreter {
         })
     }
 
-    /// Whether `key` is a `GLOBAL::MAIN` candidate key (`GLOBAL::MAIN` or
-    /// `GLOBAL::MAIN/<signature>`), the program's own MAIN slot.
-    // Cost: O(k), k = key length.
-    fn is_global_main_key(key: &str) -> bool {
-        key.strip_prefix("GLOBAL::MAIN")
-            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
-    }
-
     /// Remove the `GLOBAL::MAIN` candidates a module (not the program)
     /// declared: lexical to the import scope that loaded the module, even when
     /// they were registered before it opened (see `pop_import_scope`).
@@ -425,89 +405,15 @@ impl Interpreter {
         foreign
     }
 
-    /// Log one functions-map write an import made while `import_scope_stack`'s
-    /// innermost scope is open, with the key it installed (`None` for a
-    /// removal, which that scope's `shadowed_functions` restores). See
-    /// `ImportScopeSnapshot::logged_function_writes`.
-    // Cost: O(1) amortized.
-    pub(crate) fn log_import_scope_function_write(&mut self, installed: Option<Symbol>) {
-        if let Some(scope) = self.module.import_scope_stack.last_mut() {
-            scope.logged_function_writes += 1;
-            if let Some(key) = installed {
-                scope.installed_function_keys.push(key);
-            }
-        }
-    }
-
-    /// Whether an import scope's rollback keeps the registry function `key`
-    /// (see `pop_import_scope`).
-    // Cost: O(|key|).
-    fn import_scope_keeps_function(
-        key: &Symbol,
-        def: &Arc<FunctionDef>,
-        func_snapshot: &crate::runtime::function_table::FunctionTable,
-        program_path: Option<Symbol>,
-        module_keys: &HashSet<Symbol>,
-        scope_aliases: &HashSet<Symbol>,
-    ) -> bool {
-        // A `GLOBAL::MAIN` candidate a module declared is lexical to the
-        // block that imported it even when a parse-time `use` already
-        // registered it before the block opened (and so into
-        // `func_snapshot`): only the program's own `MAIN` stays.
-        // The key test first: it is a byte comparison, the source file test an
-        // intern, and this runs for every registered routine.
-        let is_main = Self::is_global_main_key(key.as_str());
-        if is_main
-            && let Some(file) = def.source_file.as_deref().map(Symbol::intern)
-            && Some(file) != program_path
-        {
-            return false;
-        }
-        if func_snapshot.contains_key(key) {
-            return true;
-        }
-        let ks = key.as_str();
-        // A `MAIN` the block imported (`{ use CLI::Ecosystem; }` -- the
-        // idiom for loading a MAIN-exporting module without running
-        // it) is lexical to the block, so the program's own MAIN
-        // dispatch must not find it once the block is gone. The
-        // module's load keeps it in `module_keys`, which protects
-        // other routines but is not an owner of the importing scope's
-        // MAIN.
-        if is_main {
-            return false;
-        }
-        if module_keys.contains(key) {
-            return true;
-        }
-        if !scope_aliases.is_empty() {
-            let base = ks.split_once('/').map_or(ks, |(base, _)| base);
-            if Symbol::lookup(base).is_some_and(|sym| scope_aliases.contains(&sym)) {
-                return false;
-            }
-        }
-        crate::qualified::is_qualified_str(ks) && !ks.starts_with("GLOBAL::")
-    }
-
-    // Cost: O(1) per registry table the scope did not write (the snapshot is the
-    // table itself). A written routine table is O(x + k), x = keys the scope's
-    // imports installed, k = interned `GLOBAL::MAIN/…` names, when the scope's
-    // logged imports were its only writes, else O(F), F = registered routines
-    // (the rollback filter). The class table is never rolled back: a class
-    // an import registered is the module's own, and a name it exports binds
-    // lexically (ADR-8751). Rakudo: O(1) -- see #9170.
+    // Cost: O(1) when no module declared a `MAIN` since the last pop, else O(k),
+    // k = interned `GLOBAL::MAIN/...` names. The routine tables are not rolled
+    // back: what a block imports binds lexically in its import sets (ADR-8751),
+    // and a block's own `sub` is scoped by `BlockScope` / `RoutineScope`. The
+    // class table is never rolled back either: a class an import registered is
+    // the module's own. Rakudo: O(1) -- see #9170.
     pub(crate) fn pop_import_scope(&mut self) {
         if let Some(snapshot) = self.module.import_scope_stack.pop() {
             let crate::runtime::ImportScopeSnapshot {
-                functions: func_snapshot,
-                proto_subs: proto_sub_snapshot,
-                proto_functions: proto_fn_snapshot,
-                shadowed_functions,
-                function_writes_at_open,
-                logged_function_writes,
-                installed_function_keys,
-                shadowed_proto_functions,
-                shadowed_proto_names: _,
                 imported_env_keys,
                 block_bound_keys: _,
                 mut shadowed_env_values,
@@ -528,177 +434,13 @@ impl Interpreter {
                 importer_type_aliases,
             } = snapshot;
             self.restore_importer_type_aliases(importer_type_aliases);
-            // Whether the scope left every routine table as it found it (a
-            // `use` that bound only lexical routines, or a replayed one,
-            // #13906): then no name-keyed resolution cache can hold a routine
-            // this pop removes, and none needs invalidating.
-            let tables_untouched =
-                std::sync::Arc::ptr_eq(&func_snapshot, &self.registry().functions)
-                    && std::sync::Arc::ptr_eq(
-                        &proto_sub_snapshot,
-                        &self.registry().proto_subs_snapshot(),
-                    )
-                    && std::sync::Arc::ptr_eq(&proto_fn_snapshot, &self.registry().proto_functions)
-                    && shadowed_functions.is_empty()
-                    && shadowed_proto_functions.is_empty();
-            // Remove functions added since the push, EXCEPT a module's own
-            // fully-qualified source definitions (`Fancy::Utilities::lolgreet`,
-            // `Fancy::Utilities::EXPORT::ALL::lolgreet`). Those persist as long
-            // as the module is loaded — a later block-scoped `use Fancy...` in a
-            // sibling block re-imports from them (`import_module`), and dropping
-            // them left the re-import with nothing to alias ("Unknown function").
-            // The IMPORTED aliases (bare names and `GLOBAL::name`) are still
-            // removed, so a bare call after the block exits still dies (roast
-            // S11-modules/lexical.t: `{ use Foo } EVAL('foo()')`).
-            // `GLOBAL::`-prefixed entries the block itself imported still go,
-            // but one a LOADED MODULE's own body installed stays: a `unit
-            // module`'s body runs at `current_package() == GLOBAL`, so its own
-            // `use NativeCall` registers `GLOBAL::nativecast`, and dropping that
-            // when an enclosing block's import scope popped left the module
-            // half-loaded -- `loaded_modules` still claimed it was loaded, so
-            // the later top-level `use` short-circuited and could not put it
-            // back. `module_registered_functions` is exactly that set: its delta
-            // is taken BEFORE `import_module`, so an alias installed for the
-            // IMPORTING scope is never in it and `{ use Foo } foo()` still dies
-            // (`roast/S11-modules/lexical.t`). This is the block twin of the
-            // carve-out `reinstate_module_functions` gives the EVAL rollback.
-            //
-            // A package-qualified key is not always the module's own
-            // definition, though: an operator `use`d inside a routine body is
-            // aliased under the routine's unit package (`ModT::infix:<**>`, see
-            // `import_module`'s `target_pkg`), which has exactly the shape of a
-            // definition. Such an alias was recorded as an imported routine
-            // alias during this scope (it is absent from the snapshot's alias
-            // set), so it goes with the scope too -- otherwise
-            // `sub f { use FiniteField; ... }` inside a module leaked its
-            // `infix:<**>` into every later call in that package.
+            // A `MAIN` a block imported (`{ use CLI::Ecosystem; }` -- the idiom
+            // for loading a MAIN-exporting module without running it) is
+            // lexical to the block, so the program's own `MAIN` dispatch must
+            // not find it once the block is gone: only the program's own `MAIN`
+            // stays.
             let program_path = self.io.program_path_sym;
-            // A table the scope never wrote added nothing to roll back; only a
-            // module-declared `GLOBAL::MAIN` candidate registered before the
-            // scope opened still goes (the first rule below).
-            let functions_unchanged =
-                std::sync::Arc::ptr_eq(&func_snapshot, &self.registry().functions);
-            // Every key whose presence the rollback changes, so the
-            // invalidation below can evict just those base names from the
-            // key index instead of dropping all of it (#9170).
-            let mut changed_keys: Vec<Symbol> = Vec::new();
-            if functions_unchanged {
-                changed_keys = self.drop_foreign_global_main_candidates(program_path);
-            } else {
-                let scope_aliases: HashSet<Symbol> = self
-                    .module
-                    .imported_routine_aliases
-                    .difference(&imported_routine_aliases)
-                    .copied()
-                    .collect();
-                let module_keys = std::sync::Arc::clone(&self.module.module_registered_functions);
-                let all_writes_logged = self.registry().function_writes
-                    == function_writes_at_open + logged_function_writes;
-                if all_writes_logged {
-                    // Every write since the push was one of the logged
-                    // installs: a key not in the snapshot is one of
-                    // `installed_function_keys`, so only those are judged,
-                    // and the snapshot's own keys answer to the MAIN rule
-                    // alone (#9170).
-                    let mut seen = rustc_hash::FxHashSet::default();
-                    let dropped: Vec<Symbol> = {
-                        let registry = self.registry();
-                        installed_function_keys
-                            .iter()
-                            .filter(|key| seen.insert(**key))
-                            .filter(|key| {
-                                registry.functions.get(*key).is_some_and(|def| {
-                                    !Self::import_scope_keeps_function(
-                                        key,
-                                        def,
-                                        &func_snapshot,
-                                        program_path,
-                                        &module_keys,
-                                        &scope_aliases,
-                                    )
-                                })
-                            })
-                            .copied()
-                            .collect()
-                    };
-                    if !dropped.is_empty() {
-                        let mut registry = self.registry_mut();
-                        let functions = registry.functions_mut();
-                        for key in &dropped {
-                            functions.remove(key);
-                        }
-                    }
-                    changed_keys = dropped;
-                    changed_keys.extend(self.drop_foreign_global_main_candidates(program_path));
-                } else {
-                let removed = &mut changed_keys;
-                self.registry_mut().functions_mut().retain(|key, def| {
-                    let keep = Self::import_scope_keeps_function(
-                        key,
-                        def,
-                        &func_snapshot,
-                        program_path,
-                        &module_keys,
-                        &scope_aliases,
-                    );
-                    if !keep {
-                        removed.push(*key);
-                    }
-                    keep
-                });
-                }
-            }
-            // An imported proto/multi family has lexical shadowing semantics,
-            // but its candidates share the importing package's flat registry
-            // keys. Restore any enclosing definitions that the first import in
-            // this scope hid before leaving the scope.
-            // Only when the import hid something: `functions_mut` copies the
-            // table while the snapshot still shares it.
-            if !shadowed_functions.is_empty() {
-                changed_keys.extend(shadowed_functions.keys().copied());
-                self.registry_mut()
-                    .functions_mut()
-                    .extend(shadowed_functions.into_iter().filter(|(key, def)| {
-                        // ...and what the import hid is not the program's `MAIN`
-                        // either when a module declared it.
-                        !(Self::is_global_main_key(key.as_str())
-                            && def
-                                .source_file
-                                .as_deref()
-                                .map(Symbol::intern)
-                                .is_some_and(|file| Some(file) != program_path))
-                    }));
-            }
-            // `proto sub name(|) is export` imports under the importing package
-            // (`GLOBAL::skip`) into BOTH proto tables, and `has_proto` reads the
-            // name set. Left behind, an imported proto kept a bare call on the
-            // user-routine dispatch path after the block exited — which is what
-            // made `roast/S32-list/skip.t`'s selective `do { use Test; ... }`
-            // import still hand `skip(5, @a)` a VarRef-wrapped array instead of
-            // the flattened list the core routine expects. Same keep-rule as
-            // functions: the module's own `Test::skip` stays for a later
-            // re-import, only the `GLOBAL::` alias goes.
-            if !std::sync::Arc::ptr_eq(&proto_sub_snapshot, &self.registry().proto_subs_snapshot())
-            {
-                self.registry_mut().proto_subs_retain(|key| {
-                    proto_sub_snapshot.contains(key)
-                        || (crate::qualified::is_qualified_str(key) && !key.starts_with("GLOBAL::"))
-                });
-            }
-            if !std::sync::Arc::ptr_eq(&proto_fn_snapshot, &self.registry().proto_functions) {
-                self.registry_mut().proto_functions_mut().retain(|key, _| {
-                    if proto_fn_snapshot.contains_key(key) {
-                        return true;
-                    }
-                    let ks = key.resolve();
-                    crate::qualified::is_qualified_str(&ks) && !ks.starts_with("GLOBAL::")
-                });
-            }
-            if !shadowed_proto_functions.is_empty() {
-                self.registry_mut()
-                    .proto_functions_mut()
-                    .extend(shadowed_proto_functions);
-            }
+            let changed_keys = self.drop_foreign_global_main_candidates(program_path);
             // The `env` half: drop the aliases this scope imported (see
             // `restore_import_env_keys`). A PRELOAD scope (`scope_classes ==
             // false`, see `push_preload_scope`) keeps them.
@@ -713,16 +455,10 @@ impl Interpreter {
             self.module.imported_routine_aliases = imported_routine_aliases;
             self.module.imported_exported_proto_tags = imported_exported_proto_tags;
             self.module.unit_env_imports = unit_env_imports;
-            // Removing imported functions when a lexical import scope pops must
-            // invalidate the name-keyed function-resolution caches: a sub that
-            // was OTF-compiled and cached under its bare name while in scope
-            // (otf_call_cache) would otherwise still be reachable after the
-            // scope exits — e.g. `{ use Foo } EVAL('foo()')` must die, not hit
-            // the stale cache (roast/S11-modules/lexical.t). Registration bumps
-            // fn_resolve_gen; the matching un-registration here must too.
-            // Only the base names of the keys the rollback removed or put back
-            // leave the key index; the rest of it still describes the map.
-            if !tables_untouched {
+            // A dropped `MAIN` candidate leaves the name-keyed function
+            // resolution caches stale (registration bumps `fn_resolve_gen`; the
+            // matching un-registration must too).
+            if !changed_keys.is_empty() {
                 self.invalidate_fn_resolution_changing_keys(changed_keys);
             }
         }

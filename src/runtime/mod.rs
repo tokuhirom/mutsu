@@ -2753,32 +2753,6 @@ pub(crate) type RoutineRegistrySnapshot = (
 /// stayed visible to `has_proto` after the block and kept `skip(5, @a)` on the
 /// user-routine argument path (VarRef-wrapped) instead of the list builtin's.
 pub(crate) struct ImportScopeSnapshot {
-    /// The registry tables as the scope opened: each is copy-on-write, so the
-    /// snapshot is a reference to the very table (O(1), #9170), and a table
-    /// still identical to it at the pop was not written in the scope.
-    pub(crate) functions: Arc<function_table::FunctionTable>,
-    pub(crate) proto_subs: Arc<registry::ProtoSubSet>,
-    pub(crate) proto_functions: Arc<registry::ProtoFunctionMap>,
-    /// Function definitions hidden by an imported proto/multi family in this
-    /// scope. Imports merge multi candidates into one package key, so the
-    /// ordinary key snapshot cannot restore an enclosing candidate that the
-    /// import intentionally shadowed.
-    pub(crate) shadowed_functions: HashMap<Symbol, Arc<FunctionDef>>,
-    /// `Registry::function_writes` as the scope opened.
-    pub(crate) function_writes_at_open: u64,
-    /// The functions-map writes this scope's imports made and logged while it
-    /// was the innermost scope, and the keys they installed. When the
-    /// registry counted no other write since the scope opened, these keys are
-    /// every key the pop may have to take away, so it need not filter the
-    /// whole map (#9170).
-    pub(crate) logged_function_writes: u64,
-    pub(crate) installed_function_keys: Vec<Symbol>,
-    /// Proto definitions hidden by an imported proto in this scope.
-    pub(crate) shadowed_proto_functions: HashMap<Symbol, Arc<FunctionDef>>,
-    /// Fully-qualified imported proto names already given shadowing semantics
-    /// in this scope. Multiple imports in one scope still merge candidates;
-    /// only the first import hides the enclosing family.
-    pub(crate) shadowed_proto_names: HashSet<String>,
     /// Exact `env` keys `import_module` wrote as an imported alias while
     /// this scope was on top of `import_scope_stack` (e.g. `&ok`, `$CONST`,
     /// or the importing-package-qualified `&GLOBAL::ok` the trait-value

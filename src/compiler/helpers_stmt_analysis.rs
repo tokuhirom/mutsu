@@ -284,7 +284,7 @@ impl Compiler {
         else {
             return None;
         };
-        super::begin_use::preloadable_module_name(module, tags, None, None)?;
+        super::begin_use::lexically_importable_module_name(module, tags)?;
         if tags.iter().any(|t| t == "from") {
             return None;
         }
