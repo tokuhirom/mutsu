@@ -123,4 +123,25 @@ impl Compiler {
             crate::ast::LvalueRoot::Sigilless(name) => self.sigilless_storage_key(name),
         })
     }
+
+    /// [`Self::lvalue_root_key`] for the root of a subscript ASSIGNMENT
+    /// (`b<a> = 3`): a sigil-less root this unit cannot see at all (an
+    /// `EVAL`'d assignment over the caller's `my \b`) is written against its
+    /// term key, as a `b = 3` statement is
+    /// ([`Self::sigilless_assign_target_key`]) and the VM resolves it. Reads and
+    /// method-call roots (`Pair.new`) keep the plain key.
+    // Cost: O(w + |name|), w = wrappers peeled.
+    pub(super) fn assign_root_key(
+        &self,
+        target: &crate::ast::Expr,
+        peel: crate::ast::LvaluePeel,
+    ) -> Option<String> {
+        Some(match target.lvalue_root(peel)? {
+            crate::ast::LvalueRoot::Key(key) => key,
+            crate::ast::LvalueRoot::Sigilless(name) if self.sigilless_target_is_unknown(name) => {
+                crate::runtime::term_names::term_key(name)
+            }
+            crate::ast::LvalueRoot::Sigilless(name) => self.sigilless_storage_key(name),
+        })
+    }
 }

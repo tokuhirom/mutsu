@@ -102,9 +102,29 @@ impl super::MethodDef {
     }
 }
 
+/// [`NamedFast::of_param`] reduced to what the light named-call plan stores:
+/// `None` when the fast path cannot serve `pd`, else its constant default.
+// Cost: O(1).
+pub(crate) fn named_fast_fill(pd: &crate::ast::ParamDef) -> Option<Option<crate::value::Value>> {
+    let plan = NamedFast::of_param(pd)?;
+    // `UInt` is a subset of `Int`: an omitted `UInt :$n` binds its refinee
+    // `Int`, which only the general binder knows (the light bind would seed
+    // the `UInt` type object).
+    if matches!(
+        plan.check,
+        crate::opcode::FastParamCheck::Fast {
+            kind: crate::opcode::FastParamType::UInt,
+            ..
+        }
+    ) {
+        return None;
+    }
+    Some(plan.fill)
+}
+
 impl NamedFast {
     // Cost: O(1).
-    fn of_param(pd: &crate::ast::ParamDef) -> Option<Self> {
+    pub(crate) fn of_param(pd: &crate::ast::ParamDef) -> Option<Self> {
         use crate::opcode::{CompiledFunction, FastParamCheck};
         if !pd.named
             || pd.has_traits()

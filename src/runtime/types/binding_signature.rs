@@ -1043,7 +1043,7 @@ impl Interpreter {
             reads: args_usage,
             is_block,
         } = usage;
-        let result = self.bind_function_args_values_inner(
+        self.bind_function_args_values_inner(
             param_defs,
             params,
             args,
@@ -1055,18 +1055,7 @@ impl Interpreter {
                 bind_self_lexical: false,
                 is_block,
             },
-        );
-        let declares_self = crate::ast::signature_declares_self_lexical(param_defs)
-            // The legacy binding path: a single pointy-block parameter
-            // (`-> $self { }`) arrives as a bare name with no `ParamDef`.
-            || (param_defs.is_empty() && crate::ast::param_names_declare_self_lexical(params));
-        // The explicit `$self` parameter's own binding (a parameter named
-        // `self`, not the frame record's invocant), mirrored onto the reserved
-        // key.
-        if declares_self && let Some(bound) = self.env.get_sym(crate::symbol::wk::self_()).cloned() {
-            self.env.insert(crate::env::LEX_SELF.to_string(), bound);
-        }
-        result
+        )
     }
 
     /// [`Self::bind_param_value_sym`] for the parameter `pd`. A method's
@@ -1540,6 +1529,10 @@ impl Interpreter {
                         Some(_) | None
                             if param == "self"
                                 && !crate::ast::param_names_declare_self_lexical(params) => {}
+                        // An ordinary `$self` parameter is the reserved lexical.
+                        Some(_) | None if param == "self" => {
+                            self.bind_param_value(crate::env::LEX_SELF, value)
+                        }
                         Some(sym) => self.bind_param_value_sym(param, sym, value),
                         None => self.bind_param_value(param, value),
                     }
@@ -1696,7 +1689,7 @@ impl Interpreter {
         let mut positional_idx = 0usize;
         for (param_idx, pd) in param_defs.iter().enumerate() {
             let storage_name = pd.storage_name();
-            let binding_name = if bind_self_lexical && pd.declares_self_lexical() {
+            let binding_name = if pd.declares_self_lexical() {
                 crate::env::LEX_SELF
             } else {
                 storage_name.as_ref()
@@ -4288,7 +4281,7 @@ impl Interpreter {
             // attribute binds, already skipped above.)
             let is_container_param = pd.name.starts_with('@') || pd.name.starts_with('%');
             if !is_container_param {
-                let binding_name = if bind_self_lexical && pd.declares_self_lexical() {
+                let binding_name = if pd.declares_self_lexical() {
                     crate::env::LEX_SELF
                 } else {
                     pd.name.as_str()

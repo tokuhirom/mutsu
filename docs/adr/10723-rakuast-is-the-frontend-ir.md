@@ -2628,3 +2628,35 @@ the converter refused them, which the passthrough guard hid until modules were r
 `convert` level. They now build the typed header around the declaration, `stmt_list` takes the header off,
 absorbs the rest of the unit into the declaration and puts the header back. Deleted:
 `package_unit_meta::{decl_adverb_meta_stmts, with_meta_stmts}` and `class_decl::meta_setter_stmt`.
+
+### 6.129 Class and role pseudo-traits are fields; frontend cost after the flip (2026-10-28, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+`Stmt::ClassDecl` and `Stmt::RoleDecl` no longer carry the parser's markers in `custom_traits`:
+`__mutsu_export_type` is `ClassDecl.export_tags` (#15131), and `__anon_decl` / `__anon_colons` /
+`__leading_colons` (#15136) and `__mutsu_declare_how` (#15143) are `marks: PackageMarks { anon, colons,
+leading_colons, declarator }`. Deleted with them: the four constants and their builders, the
+`supersede_marker` trait tuple (now `superseded_declarator`), `PackageHead::custom_traits`,
+`convert::{is_anon_package, has_leading_colons, is_colons_package}`, and eleven `custom_traits`
+scans/filters in the compiler, VM, runtime scans and `convert`/`role`.
+
+Measured on 2026-10-28 after these three PRs, as §2.4 asks (callgrind Ir of `-c`, `profiling` build,
+warm, 4 cores): the ordinary frontend is the binary of `7f17b198^` (the commit before the flip, run
+with `MUTSU_RAKUAST=0`), the round trip is `main` at `1dcff3b8`.
+
+| file | ordinary | round trip (default) | ratio |
+| --- | ---: | ---: | ---: |
+| `vendor/zef/lib/Zef/CLI.rakumod` | 459.9M | 499.4M | 1.086 |
+| `vendor/zef/lib/Zef/Client.rakumod` | 53.2M | 52.9M | 0.993 |
+| `roast/S32-exceptions/misc.t` | 671.7M | 738.0M | 1.099 |
+| `roast/S12-class/attributes.t` | 291.8M | 332.4M | 1.139 |
+| `t/rakuast/rakuast-source-forms.t` | 268.8M | 307.3M | 1.143 |
+| `use Test; plan 1; ok 1;` | 244.3M | 279.4M | 1.144 |
+
+The budget (<= 1.10) holds for the large single-file cases and misses by 1-4 points on every file that
+`use`s `Test`: §6.127 sends `Test.rakumod` through the round trip too, and loading it is the 35M-Ir
+difference in the last row. That cost is paid once per test process, so the next frontend-cost slice is
+the module load (caching the lowered tree or bytecode of a bundled module), not the per-statement path.
+
+Stage 0 and roast did not regress: `scripts/dev gate --full` on `5a30c23e` passes (lint, `make test`
+on every `t/` file under the default frontend, roast whitelist with only the 4 known environment-only
+failures).

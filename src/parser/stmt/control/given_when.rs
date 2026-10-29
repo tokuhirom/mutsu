@@ -26,59 +26,6 @@ pub(crate) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, stmt))
 }
 
-/// The body of `given EXPR -> PARAM { BODY }` after the parser's expansion: the
-/// parameter bind (or the autothreading call) around the written body.
-/// `rakuast::lower` calls it too, so a hand-built `Statement::Given`
-/// over a `PointyBlock` expands the same way.
-// Cost: O(n), n = size of the body.
-pub(crate) fn given_pointy_body(pd: crate::ast::ParamDef, body: Vec<Stmt>) -> Vec<Stmt> {
-    let mut body = body;
-    if pointy_param_autothreads(&pd) {
-        // `given %r.all.value -> Any $_ { ... }`: the block is CALLED with
-        // the topic, so a Junction autothreads over a parameter whose type
-        // rejects it (Benchmark's statistics test) instead of failing the
-        // bind. Same lowering as `if COND -> sig { ... }`.
-        body = vec![Stmt::Expr(Expr::CallOn {
-            target: Box::new(Expr::AnonSubParams {
-                params: vec![pd.name.clone()],
-                param_defs: vec![pd],
-                return_type: None,
-                body,
-                is_rw: false,
-                is_raw: false,
-                custom_traits: Default::default(),
-                is_whatever_code: false,
-                declarator: crate::ast::RoutineDeclarator::PointyBlock,
-            }),
-            args: vec![Expr::Var("_".to_string())],
-        })];
-    } else {
-        body.insert(0, pointy_topic_bind(&pd));
-    }
-    body
-}
-
-/// Whether a `given ... -> PARAM` binds by calling the block: a plain scalar
-/// parameter whose declared type does not itself accept a Junction, so the call
-/// autothreads. Every other shape (untyped, `Mu`/`Junction`, sub-signatures,
-/// `is rw`/`is copy`/`is raw`, `@`/`%`/`&` sigils) keeps the inline bind.
-fn pointy_param_autothreads(pd: &crate::ast::ParamDef) -> bool {
-    let Some(ty) = pd.type_constraint.as_deref() else {
-        return false;
-    };
-    let base = ty
-        .trim_end_matches(":D")
-        .trim_end_matches(":U")
-        .trim_end_matches(":_");
-    !matches!(base, "Mu" | "Junction")
-        && pd.sub_signature.is_none()
-        && pd.traits.is_empty()
-        && !pd.name.starts_with(['@', '%', '&'])
-        && !pd.sigilless
-        && !pd.named
-        && !pd.is_variadic()
-}
-
 pub(crate) fn when_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("when", input).ok_or_else(|| PError::expected("when statement"))?;
     let (rest, _) = ws1(rest)?;

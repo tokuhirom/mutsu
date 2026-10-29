@@ -189,7 +189,14 @@ impl Interpreter {
     /// never coexist with a non-empty `param_defs`, so they stay excluded.
     pub(super) fn is_light_call_eligible(cf: &CompiledFunction, fn_name: &str) -> bool {
         !fn_name.is_empty()
-            && cf.return_type.is_none()
+            // The return spec is finished by `light_finish_return`, which only
+            // knows a fast type or a definite constant (as the positional-light
+            // gate below).
+            && (cf
+                .return_type
+                .as_deref()
+                .is_none_or(Self::is_fast_type_name)
+                || cf.return_definite_const.is_some())
             && !cf.is_cached
             && cf.code.state_locals.is_empty()
             && !cf.is_rw
@@ -212,11 +219,24 @@ impl Interpreter {
             && !cf.has_inner_subs
             && !cf.param_defs.is_empty()
             && cf.param_defs.iter().any(|pd| pd.named)
+            // A `$self` parameter binds the reserved `LEX_SELF` lexical, which
+            // the light named bind (keyed by the parameter's own name) cannot
+            // reach; the general binder does.
+            && !cf.param_defs.iter().any(|pd| pd.declares_self_lexical())
             && cf.param_defs.iter().all(|pd| {
+                // A named parameter may carry a fast type and a constant
+                // default: `NamedFast` is the plan the method fast path uses
+                // for exactly that shape, and the light bind below applies it.
+                let named_fast = if pd.named {
+                    crate::runtime::named_fast_fill(pd)
+                } else {
+                    None
+                };
                 let common = pd.where_constraint.is_none()
                     && !pd.slurpy
                     && !pd.double_slurpy
-                    && pd.default.is_none()
+                    && (pd.default.is_none()
+                        || named_fast.as_ref().is_some_and(|fill| fill.is_some()))
                     && pd.code_signature.is_none()
                     && !pd.sigilless
                     && !pd.is_invocant
@@ -250,7 +270,7 @@ impl Interpreter {
                     // A dynamic named parameter (`:$*x`) must be published
                     // where a callee's `$*x` lookup finds it, which only the
                     // general binder does -- as for a positional `$*x` below.
-                    pd.type_constraint.is_none()
+                    (pd.type_constraint.is_none() || named_fast.is_some())
                         && pd.sub_signature.is_none()
                         && !pd.name.starts_with(['@', '%', '&', '*'])
                 } else {

@@ -13,7 +13,7 @@ impl Interpreter {
     /// `is-lazy` answers True. mutsu's built-in iterators carry their
     /// laziness as data and are handled by the Seq itself.
     // Cost: O(1) plus one user `is-lazy` call.
-    fn is_lazy_user_iterator(&mut self, iterator: &Value) -> Result<bool, RuntimeError> {
+    pub(super) fn is_lazy_user_iterator(&mut self, iterator: &Value) -> Result<bool, RuntimeError> {
         let class_name = match iterator.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => return Ok(false),
@@ -30,7 +30,7 @@ impl Interpreter {
 
     /// The lazy array value over `iterator`, pulled on demand.
     // Cost: O(1).
-    fn lazy_list_over_user_iterator(iterator: Value) -> Value {
+    pub(super) fn lazy_list_over_user_iterator(iterator: Value) -> Value {
         let mut list =
             crate::value::LazyList::new_cat_pull(iterator, crate::value::CatPullMode::UserIterator);
         list.mark_lazy();
