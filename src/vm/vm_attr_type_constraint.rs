@@ -25,7 +25,12 @@ pub(crate) struct AttrTypeConstraintCache {
 impl Interpreter {
     /// The class of the current `self` (the instance under a mixin).
     fn self_instance_class(&self) -> Option<Symbol> {
-        let self_val = self.get_env_self()?;
+        Self::instance_class_of(&self.get_env_self()?)
+    }
+
+    /// The class of an invocant value (the instance under a mixin).
+    // Cost: O(1).
+    fn instance_class_of(self_val: &Value) -> Option<Symbol> {
         self_val.with_deref(|v| match v.view() {
             ValueView::Instance { class_name, .. } => Some(class_name),
             ValueView::Mixin(inner, _) => match inner.view() {
@@ -53,6 +58,28 @@ impl Interpreter {
         attr_sym: Symbol,
     ) -> Option<String> {
         let class = self.self_instance_class()?;
+        self.attr_type_constraint_of_class(class, attr_name, attr_sym)
+    }
+
+    /// [`Self::self_attr_type_constraint_sym`] for a caller that already holds
+    /// the invocant `self_val`.
+    // Cost: as `self_attr_type_constraint_sym`, without the invocant lookup.
+    pub(crate) fn self_attr_type_constraint_of(
+        &self,
+        self_val: &Value,
+        attr_name: &str,
+        attr_sym: Symbol,
+    ) -> Option<String> {
+        let class = Self::instance_class_of(self_val)?;
+        self.attr_type_constraint_of_class(class, attr_name, attr_sym)
+    }
+
+    fn attr_type_constraint_of_class(
+        &self,
+        class: Symbol,
+        attr_name: &str,
+        attr_sym: Symbol,
+    ) -> Option<String> {
         let generation = self.registry_write_generation();
         let key = (class, attr_sym);
         {

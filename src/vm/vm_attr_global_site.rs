@@ -24,6 +24,8 @@ pub(super) struct GlobalAttrSite<'a> {
     /// The attribute's declared type constraint, when `prefetched`.
     pub(super) type_constraint: Option<String>,
     prefetched: bool,
+    /// Whether the frame has a `self` (a prefetched site only).
+    has_self: bool,
 }
 
 impl<'a> GlobalAttrSite<'a> {
@@ -31,6 +33,13 @@ impl<'a> GlobalAttrSite<'a> {
     // Cost: O(1).
     pub(super) fn has_prefetched_type(&self) -> bool {
         self.prefetched
+    }
+
+    /// Whether the frame lacks a `self`, when the site was prefetched (`None`
+    /// for a site that did not look).
+    // Cost: O(1).
+    pub(super) fn lacks_self(&self) -> Option<bool> {
+        self.prefetched.then_some(!self.has_self)
     }
 
     /// The site of a store that only needs the cache word (a bind).
@@ -42,6 +51,7 @@ impl<'a> GlobalAttrSite<'a> {
             cell: None,
             type_constraint: None,
             prefetched: false,
+            has_self: false,
         }
     }
 }
@@ -57,12 +67,24 @@ impl Interpreter {
         name: &str,
         name_sym: crate::symbol::Symbol,
     ) -> GlobalAttrSite<'a> {
+        let self_val = self.attr_access_self(code);
+        let cell = match &self_val {
+            Some(sv) => self
+                .read_attr_site_cached(code, site, sv)
+                .or_else(|| self.read_self_attr_cell_at(code, site, name)),
+            None => self.read_self_attr_cell_at(code, site, name),
+        };
+        let type_constraint = match &self_val {
+            Some(sv) => self.self_attr_type_constraint_of(sv, name, name_sym),
+            None => None,
+        };
         GlobalAttrSite {
             code,
             site,
-            cell: self.read_self_attr_cell_at(code, site, name),
-            type_constraint: self.self_attr_type_constraint_sym(name, name_sym),
+            cell,
+            type_constraint,
             prefetched: true,
+            has_self: self_val.is_some(),
         }
     }
 

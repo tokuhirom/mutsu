@@ -353,6 +353,51 @@ impl Interpreter {
         }
     }
 
+    /// Whether `value` is a plain Hash stored into an untyped `%!attr` (see the
+    /// call in [`Self::coerce_hash_var_value`]); `current` is the attribute's
+    /// container now.
+    // Cost: O(e), e = entries of `value` (the container-cell scan).
+    fn plain_hash_into_plain_attr(
+        &self,
+        decl: StoreDecl<'_>,
+        name: &str,
+        value: &Value,
+        current: Option<&Value>,
+        attr_site: Option<&GlobalAttrSite<'_>>,
+    ) -> bool {
+        let Some(at) = attr_site else {
+            return false;
+        };
+        if decl.is_some()
+            || !at.has_prefetched_type()
+            || at.type_constraint.is_some()
+            || !self.topic_state.quanthash_bind_params.is_empty()
+        {
+            return false;
+        }
+        let plain = |h: &crate::value::HashData| {
+            h.value_type.is_none()
+                && h.key_type.is_none()
+                && h.declared_type.is_none()
+                && h.default.is_none()
+                && !h.has_typed_keys()
+        };
+        let ValueView::Hash(h) = value.view() else {
+            return false;
+        };
+        if !plain(&h) || h.values().any(Value::is_container_ref) {
+            return false;
+        }
+        let current_plain = match current.map(Value::view) {
+            None => true,
+            Some(ValueView::Hash(c)) => plain(&c),
+            Some(_) => false,
+        };
+        current_plain
+            && self.var_default(name).is_none()
+            && self.decl_type_constraint(decl, name).is_none()
+    }
+
     pub(super) fn coerce_hash_var_value(
         &mut self,
         decl: StoreDecl<'_>,
@@ -386,6 +431,13 @@ impl Interpreter {
         // re-assignment (`%h = <e e e f g>`) fell through to the plain-hash
         // initializer and died on the odd element count.
         let current = self.hash_var_current_value(name, attr_site);
+        // A plain Hash stored into an untyped, unconstrained `%!attr` whose
+        // current container is a plain Hash (or not yet set) is the value
+        // itself: every probe below answers "no" for that shape and the
+        // coercion at the end hands a Hash back unchanged.
+        if self.plain_hash_into_plain_attr(decl, name, &value, current.as_ref(), attr_site) {
+            return Ok(value);
+        }
         // `declared_type` is where an `is BagHash`/`is SetHash`/`is MixHash`
         // trait records the container's own type (`element_constraint_for`
         // reports the ELEMENT type, and answers `None` for a QuantHash whose
