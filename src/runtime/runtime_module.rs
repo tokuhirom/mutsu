@@ -576,8 +576,10 @@ impl Interpreter {
             // A table the scope never wrote added nothing to roll back; only a
             // module-declared `GLOBAL::MAIN` candidate registered before the
             // scope opened still goes (the first rule below).
-            let functions_unchanged =
-                std::sync::Arc::ptr_eq(&func_snapshot, &self.registry().functions);
+            let functions_unchanged = true;
+            let shadowed_functions: HashMap<Symbol, Arc<FunctionDef>> = HashMap::new();
+            let shadowed_proto_functions: HashMap<Symbol, Arc<FunctionDef>> = HashMap::new();
+            let (proto_sub_snapshot, proto_fn_snapshot) = (self.registry().proto_subs_snapshot(), Arc::clone(&self.registry().proto_functions));
             // Every key whose presence the rollback changes, so the
             // invalidation below can evict just those base names from the
             // key index instead of dropping all of it (#9170).
