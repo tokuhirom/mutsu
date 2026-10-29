@@ -347,3 +347,26 @@ Re-baselining to `main` instead of the pre-flip frontend was considered and reje
 budget ADR-10723 §2.4 promised (the new frontend within 10% of the old) unmeasurable.
 
 The figures above are the slice-0 freeze; `scripts/frontend-cost-baseline.txt` holds the baseline.
+
+## 8. Amendment 2 — findings from slice 1 (2026-10-29)
+
+Slice 1 (the expression call spellings) was implemented against the ADR and found four places where the
+text of §2.2 does not match the tree or contradicts itself.
+
+1. **The slice-1 inventory was stale.** `convert` no longer recognizes the `__mutsu_assign_*_lvalue`
+   spellings by name (#14948 removed those arms), and the atomic *operator* forms (`postfix:<⚛++>`,
+   `prefix:<++⚛>`, `infix:<⚛+=>`) are ordinary routine calls Rakudo makes too, not desugarings; only `⚛$x`
+   and `$x ⚛= v` (the `__mutsu_atomic_{fetch,store}_var` calls) were. The live work in the family was the
+   parser's hand-built calls and a second copy of the assignment-target dispatch, which slice 1 removed.
+2. **"The compiler's by-name dispatch of the same spellings" contradicts §2.1.** §2.1 says this ADR does not
+   change the compiler or the VM; deleting that dispatch means a new `Expr` variant or opcode per spelling.
+   The by-name call is the lowered form the compiler consumes. Slice 1 leaves it; if it is wanted gone, it
+   is a compiler decision with its own ADR, not a Stage 2 deletion.
+3. **Subscript adverbs are their own slice.** `ast::subscript_adverb::{expand,adverbs}` is a verified
+   recognizer over a retained colonpair, and the typed `Postcircumfix` node it needs touches every subscript
+   the parser builds. It moves out of row 1 to a sub-issue (#15401), as §2.2 allows for work not in the
+   table.
+4. **Test name.** `make check-t-layout` requires `rakuast` in a `t/rakuast/` file name, so the three-path
+   test of §3.1 item 7 is `t/rakuast/rakuast-stage2-<family>-paths.t`.
+
+Nothing here changes the end state of §2.1 or the order of slices 2–9.
