@@ -228,7 +228,7 @@ impl Interpreter {
                 // default: `NamedFast` is the plan the method fast path uses
                 // for exactly that shape, and the light bind below applies it.
                 let named_fast = if pd.named {
-                    crate::runtime::NamedFast::of_param(pd)
+                    crate::runtime::named_fast_fill(pd)
                 } else {
                     None
                 };
@@ -236,7 +236,7 @@ impl Interpreter {
                     && !pd.slurpy
                     && !pd.double_slurpy
                     && (pd.default.is_none()
-                        || named_fast.as_ref().is_some_and(|f| f.fill.is_some()))
+                        || named_fast.as_ref().is_some_and(|fill| fill.is_some()))
                     && pd.code_signature.is_none()
                     && !pd.sigilless
                     && !pd.is_invocant

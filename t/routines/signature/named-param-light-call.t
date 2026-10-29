@@ -1,6 +1,6 @@
 use Test;
 
-plan 28;
+plan 29;
 
 # A routine with a typed and/or constant-defaulted named parameter, and/or a
 # fast return type, takes the light call path. Every case below must behave as
@@ -60,3 +60,7 @@ sub req(Int $x, Int :$must!) { $must }
 my $one = 1;
 dies-ok { req($one) }, 'a required named parameter missing dies';
 is req(1, :must(7)), 7, 'and passes when supplied';
+
+# An omitted UInt (a subset of Int) named parameter binds its refinee type object.
+sub uint-named(UInt :$n) { $n.^name }
+is uint-named(), 'Int', 'omitted UInt named parameter binds Int';
