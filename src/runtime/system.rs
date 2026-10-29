@@ -111,6 +111,7 @@ impl Interpreter {
         // A `use` nested in a block runs here too, ahead of the unit (its
         // import is then not confined to the block).
         let mut lifted = 0;
+        let mut lifted_set_ids: Vec<Option<Symbol>> = Vec::new();
         let positional = stmts.iter().any(|stmt| {
             matches!(stmt, Stmt::Use { module, .. } if module == "lib")
                 || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
@@ -119,7 +120,9 @@ impl Interpreter {
             let nested = super::eval_nested_hook_uses::take_nested_hook_uses(&mut stmts);
             lifted = nested.len();
             if !nested.is_empty() {
-                stmts.splice(0..0, nested);
+                let (copies, ids): (Vec<Stmt>, Vec<Option<Symbol>>) = nested.into_iter().unzip();
+                lifted_set_ids = ids;
+                stmts.splice(0..0, copies);
             }
         }
         let limit = stmts
@@ -136,6 +139,11 @@ impl Interpreter {
             Keep,
             /// Runs here and is dropped from the unit (a `sub EXPORT` hook).
             Drop,
+            /// A hook module's `use` with literal arguments: runs here into its
+            /// lexical import set, records the map the hook returned, and stays
+            /// in the unit, whose in-position run replays that map into the
+            /// same set (ADR-8751).
+            Replay,
         }
         // An `import` is pre-run only for a module an earlier pre-run `use`
         // loaded: one the unit declares itself does not exist yet.
@@ -155,7 +163,11 @@ impl Interpreter {
                 Stmt::Use { arg, .. } => match crate::compiler::begin_use::loads_module_in_position(stmt) {
                     Some(module) if self.module_imports_through_export_hook(module) => {
                         loaded.insert(module);
-                        Prerun::Drop
+                        if arg.as_ref().is_none_or(super::eval_nested_hook_uses::is_literal_arg) {
+                            Prerun::Replay
+                        } else {
+                            Prerun::Drop
+                        }
                     }
                     // Its arguments would be evaluated twice.
                     Some(module) if arg.is_none() => {
@@ -173,7 +185,12 @@ impl Interpreter {
         // The set each top-level `use` fills when the unit runs: the pre-run
         // imports into it too, so what the unit declares as its own lexicals
         // (`Compiler::bind_block_imported_vars`) writes no env alias here.
-        let set_ids = crate::compiler::Compiler::eval_unit_use_set_ids(&stmts);
+        let mut set_ids = crate::compiler::Compiler::eval_unit_use_set_ids(&stmts);
+        // A lifted copy fills the set of the block it came from.
+        for (slot, id) in set_ids.iter_mut().zip(&lifted_set_ids) {
+            *slot = *id;
+        }
+        self.module.eval_prerun_sets = lifted_set_ids.iter().flatten().copied().collect();
         let mut rest = Vec::with_capacity(stmts.len());
         let mut preran: HashSet<String> = HashSet::new();
         for (idx, ((stmt, how), set_id)) in stmts.into_iter().zip(plan).zip(set_ids).enumerate() {
@@ -201,8 +218,8 @@ impl Interpreter {
                     // In position, like the compiled `use`: a LEAVE phaser the
                     // hook attaches (`$*R.find-attach-target`) belongs to this
                     // compunit.
-                    self.module.eval_hook_recording = idx < lifted;
-                    let set_id = set_id.filter(|_| how == Prerun::Keep);
+                    self.module.eval_hook_recording = idx < lifted || how == Prerun::Replay;
+                    let set_id = set_id.filter(|_| idx < lifted || matches!(how, Prerun::Keep | Prerun::Replay));
                     let outer = set_id.map(|id| self.begin_lexical_import_capture(id));
                     let loaded = self
                         .with_use_attach_depth(|this| this.use_module_with_tags(module, tags));
@@ -218,7 +235,7 @@ impl Interpreter {
                 }
                 _ => {}
             }
-            if how != Prerun::Drop {
+            if !matches!(how, Prerun::Drop) {
                 rest.push(stmt);
             }
         }
@@ -290,6 +307,7 @@ impl Interpreter {
                 let ran = self.run_eval_hook_uses(stmts).and_then(|stmts| {
                     let validated = self.validate_eval_source(&stmts);
                     self.module.eval_prerun_modules.clear();
+                    self.module.eval_prerun_sets.clear();
                     validated?;
                     self.run_eval_unit_stmts(stmts)
                 });
