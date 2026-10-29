@@ -35,12 +35,14 @@ pub(crate) mod empty_fields;
 mod expr_origins;
 pub(crate) mod hyper_assign;
 mod if_branch;
+pub(crate) mod list_infix;
 mod loop_bind;
 pub(crate) mod nested_methods;
 mod package_trait_origins;
 mod parsed_view;
 pub(crate) mod pointy_bind;
 mod regex_origins;
+pub(crate) mod sections;
 pub(crate) mod signature_expand;
 mod trait_is_constructor;
 mod with_branch;
@@ -3457,6 +3459,7 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     names.extend(accessor_names(class));
     names.extend(derived_methods::names(class));
     if class == RakuAstClass::CompUnit {
+        names.push("add-check-code");
         names.push("replace-statement-list");
     }
     if class == RakuAstClass::StatementExpression {

@@ -818,7 +818,22 @@ impl Interpreter {
             }
             return Ok(Value::junction(kind, results));
         }
+        // A metamethod the type declared (`method ^kind(Mu \\K)`) binds a
+        // Junction by its own parameters, which `maybe_autothread_method_args`
+        // already applied: threading it here again would split `Kind[A | B]`.
+        let junction_indices: Vec<usize> = args
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.is_junction_value())
+            .map(|(i, _)| i)
+            .collect();
+        let metamethod_takes_junction = !junction_indices.is_empty()
+            && self
+                .how_metamethod_autothread_indices(&target, method, &args, &junction_indices)
+                .is_some_and(|threaded| threaded.is_empty());
         if Self::should_autothread_method(method)
+            && !metamethod_takes_junction
+            && !Self::is_metamodel_primitives(&target)
             && let Some((idx, kind, values)) = args.iter().enumerate().find_map(|(idx, arg)| {
                 // Tag probe first: a `view()` on a lazy Match would
                 // materialize it just to see it is not a Junction.

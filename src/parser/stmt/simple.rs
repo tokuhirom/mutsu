@@ -115,12 +115,12 @@ pub(in crate::parser) use pragma_preseed::{
 /// sub-hoisting order (#8657).
 pub(crate) use pragma_preseed::{is_user_declared_enum_value, is_user_declared_type};
 pub(crate) use pragma_preseed::{is_user_declared_sub, term_keywords_shadowable};
+pub(crate) use registry::lookup_custom_infix_precedence;
 pub(in crate::parser) use registry::{
-    declare_keywords_snapshot, declared_loop_label_value, is_declared_loop_label,
-    lookup_custom_infix_precedence, lookup_op_prec, lookup_postfix_precedence,
-    lookup_prefix_precedence, lookup_user_infix_assoc, register_loop_label, register_op_prec,
-    register_op_precedence, register_user_infix_assoc, register_user_sub,
-    register_user_test_assertion_sub, reset_user_subs, resolve_op_precedence,
+    declare_keywords_snapshot, declared_loop_label_value, is_declared_loop_label, lookup_op_prec,
+    lookup_postfix_precedence, lookup_prefix_precedence, lookup_user_infix_assoc,
+    register_loop_label, register_op_prec, register_op_precedence, register_user_infix_assoc,
+    register_user_sub, register_user_test_assertion_sub, reset_user_subs, resolve_op_precedence,
     restore_declare_keywords, set_eval_language_version_preseed,
 };
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
@@ -373,7 +373,7 @@ pub(crate) fn eval_preseed_active() -> bool {
 
 /// Numeric precedence levels for built-in operator categories.
 /// Higher values mean tighter binding.
-pub(in crate::parser) const PREC_SEQUENCE: i32 = 10;
+pub(crate) const PREC_SEQUENCE: i32 = 10;
 /// `||` `^^` `//` and `&&`: looser than structural/comparison, tighter than the
 /// list-infix level. A user operator declared `is equiv(&infix:<||>)` lands here.
 pub(in crate::parser) const PREC_OR_OR: i32 = 12;

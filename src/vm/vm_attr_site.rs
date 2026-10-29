@@ -34,7 +34,7 @@ impl Interpreter {
         idx: usize,
         self_val: &Value,
     ) -> Option<Value> {
-        let (layout_id, slot) = code.attr_sites.cached(code.locals.len(), idx)?;
+        let (layout_id, slot) = code.attr_sites.cached(code.attr_site_words(), idx)?;
         if self.method_class_top_is_role() {
             return None;
         }
@@ -57,7 +57,7 @@ impl Interpreter {
         self_val: &Value,
         val: Value,
     ) -> Result<(), Value> {
-        let Some((layout_id, slot)) = code.attr_sites.cached(code.locals.len(), idx) else {
+        let Some((layout_id, slot)) = code.attr_sites.cached(code.attr_site_words(), idx) else {
             return Err(val);
         };
         if self.method_class_top_is_role() {
@@ -91,7 +91,7 @@ impl Interpreter {
         };
         if let Some(slot) = layout.site_cacheable_slot(key, bare, is_private) {
             code.attr_sites
-                .fill(code.locals.len(), idx, layout.id(), slot);
+                .fill(code.attr_site_words(), idx, layout.id(), slot);
         }
     }
 }

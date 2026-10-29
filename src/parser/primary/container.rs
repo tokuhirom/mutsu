@@ -15,7 +15,6 @@
 mod allomorph;
 mod angle_words;
 mod array;
-pub(crate) use array::lower_array_sections;
 mod meta_ops;
 mod paren;
 mod sigil_context;
@@ -40,8 +39,8 @@ pub(in crate::parser) use array::array_literal;
 // parses its `(...)` body with the very same parenthesized-term rule rakudo
 // uses (`parser::stmt::decl::enum_decl`), which is what makes `;` a variant
 // separator there.
+pub(crate) use paren::paren_expr;
 pub(in crate::parser) use paren::{colonpair_run_item, looks_like_colonpair_start};
-pub(crate) use paren::{lower_paren_sections, paren_expr};
 pub(super) use sigil_context::{
     hash_context_paren_expr, itemized_brace_expr, itemized_bracket_expr,
     itemized_context_paren_expr, itemized_paren_expr, list_context_paren_expr,
@@ -49,8 +48,9 @@ pub(super) use sigil_context::{
 pub(crate) use sigil_context::{item_statements_expr, item_statements_parts};
 
 // pub(crate) re-exports — visible throughout the crate
+pub(crate) use crate::rakuast::list_infix::lift_list_infix_in_arg_list;
 pub(crate) use allomorph::{angle_word_is_numeric_literal, angle_word_value};
-pub(crate) use meta_ops::{lift_list_infix_in_arg_list, try_parse_sequence_arg_list};
+pub(crate) use meta_ops::try_parse_sequence_arg_list;
 // A colonpair's parenthesized value takes a statement modifier just as a plain
 // parenthesized group does (`:t( $x.uc given $x )`), so the colonpair parser in
 // `parser::primary::misc` needs the same helper `paren` uses.

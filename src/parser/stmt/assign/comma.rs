@@ -138,7 +138,7 @@ fn finalize_list(items: Vec<Expr>) -> Expr {
 /// up binding tighter than the comma: the sequence `...` would take only its adjacent
 /// element as a seed (`0, 1, *+* ... *`), and a list infix meta-op only its adjacent
 /// element as an operand (`[0, |@p Z+ |@p, 0]`).
-pub(in crate::parser) fn normalize_comma_list_items(items: Vec<Expr>) -> Vec<Expr> {
+pub(crate) fn normalize_comma_list_items(items: Vec<Expr>) -> Vec<Expr> {
     // `lift_list_infix_in_arg_list` is the CHAIN-AWARE lift the parenthesised
     // spelling already used. This site used to carry its own one-level copy
     // (`lift_meta_ops_in_list`), which merged the preceding items with the

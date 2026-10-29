@@ -21,6 +21,7 @@
 
 use super::Interpreter;
 use crate::runtime::UserMethodOrAccessor;
+use crate::opcode::FastParamType;
 use crate::symbol::Symbol;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
@@ -36,6 +37,8 @@ pub(crate) struct UserMethodProbeMemo {
     method_or_accessor: FxHashMap<(Symbol, Symbol), Option<UserMethodOrAccessor>>,
     public_accessor_owner: FxHashMap<(Symbol, Symbol), Option<Symbol>>,
     method_candidate_levels: FxHashMap<(Symbol, Symbol), Arc<[u32]>>,
+    all_outranked_by_builtin: FxHashMap<(Symbol, Symbol), bool>,
+    method_return_fast: FxHashMap<(Symbol, Symbol), Option<(FastParamType, Symbol)>>,
 }
 
 /// Selects one of the memo's answer tables.
@@ -86,6 +89,24 @@ impl ProbeTable for MethodCandidateLevels {
     }
 }
 
+struct AllOutrankedByBuiltin;
+impl ProbeTable for AllOutrankedByBuiltin {
+    type Answer = bool;
+    fn table(memo: &mut UserMethodProbeMemo) -> &mut FxHashMap<(Symbol, Symbol), bool> {
+        &mut memo.all_outranked_by_builtin
+    }
+}
+
+struct MethodReturnFast;
+impl ProbeTable for MethodReturnFast {
+    type Answer = Option<(FastParamType, Symbol)>;
+    fn table(
+        memo: &mut UserMethodProbeMemo,
+    ) -> &mut FxHashMap<(Symbol, Symbol), Option<(FastParamType, Symbol)>> {
+        &mut memo.method_return_fast
+    }
+}
+
 struct PublicAccessorOwner;
 impl ProbeTable for PublicAccessorOwner {
     type Answer = Option<Symbol>;
@@ -125,6 +146,8 @@ impl Interpreter {
             memo.method_or_accessor.clear();
             memo.public_accessor_owner.clear();
             memo.method_candidate_levels.clear();
+            memo.all_outranked_by_builtin.clear();
+            memo.method_return_fast.clear();
         } else if let Some(answer) = T::table(memo).get(&(class, method)) {
             return answer.clone();
         }
@@ -174,6 +197,62 @@ impl Interpreter {
     ) -> Option<UserMethodOrAccessor> {
         self.probe_memo::<MethodOrAccessor>(class, method, |this| {
             this.resolve_user_method_or_accessor_uncached(class.as_str(), method)
+        })
+    }
+
+    /// The core type a method's `--> T` return spec checks against when `T` is
+    /// a plain core type (`Int`, `Str`, `Bool`, ...) that names itself for
+    /// `owner`: not a definite value, no nested type of that name in `owner`'s
+    /// scopes, no `::T` capture in play. `None` means the general
+    /// return-spec path decides. Pure in the registry and the spec, so it is
+    /// memoized per `(owner, spec)`; a `::T` capture anywhere in the process
+    /// turns the answer off (the capture could be what `T` names).
+    // Cost: O(1) on a hit (two interned-name lookups and one probe); a miss
+    // costs the spec classification and one `resolve_method_type_name`.
+    pub(crate) fn method_return_fast(
+        &mut self,
+        owner: &str,
+        spec: &str,
+    ) -> Option<(FastParamType, Symbol)> {
+        if Self::any_type_capture_seen() {
+            return None;
+        }
+        let (owner_sym, spec_sym) = (probe_key(owner)?, probe_key(spec)?);
+        self.probe_memo::<MethodReturnFast>(owner_sym, spec_sym, |this| {
+            if this.is_definite_return_spec(spec)
+                || this.resolve_method_type_name(owner, spec) != spec
+            {
+                return None;
+            }
+            match crate::opcode::FastParamCheck::of(Some(&spec.to_string())) {
+                Some(crate::opcode::FastParamCheck::Fast { kind, name_sym })
+                    if kind != FastParamType::UInt =>
+                {
+                    Some((kind, name_sym))
+                }
+                _ => None,
+            }
+        })
+    }
+
+    /// [`Self::user_candidates_all_outranked_by_builtin_uncached`], memoized per
+    /// `(class, method)`: the answer reads only the class's MRO, its candidate
+    /// lists and the static built-in row table.
+    // Cost: O(1) on a hit; a miss costs O(m * c), m = MRO depth, c = candidates
+    // per level.
+    pub(crate) fn user_candidates_all_outranked_by_builtin(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> bool {
+        let (Some(class), Some(method)) = (probe_key(class_name), probe_key(method_name)) else {
+            return self.user_candidates_all_outranked_by_builtin_uncached(class_name, method_name);
+        };
+        self.probe_memo::<AllOutrankedByBuiltin>(class, method, |this| {
+            this.user_candidates_all_outranked_by_builtin_uncached(
+                class.as_str(),
+                method.as_str(),
+            )
         })
     }
 

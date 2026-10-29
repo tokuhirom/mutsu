@@ -4531,6 +4531,9 @@ pub(crate) enum OpCode {
     /// an error raised from here on is a run-time one, which runs the END
     /// phasers. Stack: `[] → []`.
     EndBeginPrologue,
+    /// Run the check code queued on the main unit (`Stmt::RunCheckCode`).
+    /// Stack: `[] → []`.
+    RunCheckCode,
     /// Register an `enum` declaration. Stack: `[] → []`.
     ///
     /// The operand indexes `CompiledCode::stmt_pool` (a `Stmt::EnumDecl`), which
@@ -8536,6 +8539,23 @@ impl CompiledCode {
             #[cfg(feature = "jit")]
             jit: JitCodeState::default(),
         }
+    }
+
+    /// Number of attribute inline-cache words of this chunk: one per local
+    /// slot (a `$!x` access by slot), then one per constant (an `@!x` / `%!x`
+    /// store by name, whose `SetGlobal` operand is that constant).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn attr_site_words(&self) -> usize {
+        self.locals.len() + self.constants.len()
+    }
+
+    /// The attribute inline-cache word of the `SetGlobal` whose name is
+    /// constant `name_idx` (see [`Self::attr_site_words`]).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn global_attr_site(&self, name_idx: u32) -> usize {
+        self.locals.len() + name_idx as usize
     }
 
     /// The attribute-cell key of local slot `idx`, or `None` when that slot is

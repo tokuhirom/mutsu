@@ -759,6 +759,16 @@ pub(in crate::runtime) fn supplier_emit(supplier_id: u64, value: Value) {
     }
 }
 
+/// Whether an emission on `supplier_id` could be consumed synchronously by a
+/// listening `react` right now (see [`super::emit_scope`]).
+// Cost: O(1).
+pub(in crate::runtime) fn supplier_has_listeners(supplier_id: u64) -> bool {
+    supplier_state_map().lock().is_ok_and(|map| {
+        map.get(&supplier_id)
+            .is_some_and(|s| !s.sinks.is_empty() || !s.setup_holds.is_empty())
+    })
+}
+
 /// Sinks an emission was pushed to, still to be waited on.
 pub(in crate::runtime) struct PendingSinkDelivery {
     wakers: Vec<crate::value::waker::ReactWaker>,
@@ -770,6 +780,7 @@ impl PendingSinkDelivery {
     // Cost: O(s) wakeups awaited, s = the sinks the emission was pushed to.
     pub(in crate::runtime) fn await_delivery(self) {
         await_sink_delivery(self.wakers, self.seq);
+        super::emit_scope::discard(self.seq);
     }
 }
 
@@ -780,13 +791,22 @@ pub(in crate::runtime) fn supplier_emit_push(
     supplier_id: u64,
     value: Value,
 ) -> Option<PendingSinkDelivery> {
-    let mut map = supplier_state_map().lock().ok()?;
+    let Ok(mut map) = supplier_state_map().lock() else {
+        super::emit_scope::unstage();
+        return None;
+    };
     let state = map.entry(supplier_id).or_default();
     if state.done || state.quit_reason.is_some() {
+        super::emit_scope::unstage();
         return None;
     }
     let seq = next_emit_seq();
+    // Before the push: a consumer may drain the event the moment it is queued.
+    super::emit_scope::publish(seq);
     let wakers = state.push_to_sinks(seq, || crate::value::waker::SinkEvent::Emit(value.clone()));
+    if wakers.is_empty() {
+        super::emit_scope::discard(seq);
+    }
     state.emitted.push(value);
     state.emitted_seq.push(seq);
     Some(PendingSinkDelivery { wakers, seq })

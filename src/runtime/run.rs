@@ -690,6 +690,24 @@ impl Interpreter {
                 if end > 0 {
                     body_main.insert(end, Stmt::BeginPrologueEnd);
                 }
+                // The closures `$*CU.add-check-code` queued run after the
+                // unit's CHECK phasers (which follow the marker), before INIT.
+                // Only a unit with BEGIN-time effects can have queued any.
+                if end > 0 {
+                    let checks = body_main[end + 1..]
+                        .iter()
+                        .take_while(|stmt| {
+                            matches!(
+                                stmt,
+                                Stmt::Phaser {
+                                    kind: crate::ast::PhaserKind::Check,
+                                    ..
+                                }
+                            )
+                        })
+                        .count();
+                    body_main.insert(end + 1 + checks, Stmt::RunCheckCode);
+                }
                 (end > 0, if end > 0 { end + 1 } else { 0 })
             }
             Err(err) => {

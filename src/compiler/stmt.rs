@@ -1023,6 +1023,9 @@ impl Compiler {
             Stmt::BeginPrologueEnd => {
                 self.code.emit(OpCode::EndBeginPrologue);
             }
+            Stmt::RunCheckCode => {
+                self.code.emit(OpCode::RunCheckCode);
+            }
             Stmt::NestedMethodCapture {
                 index,
                 group,

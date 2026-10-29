@@ -448,6 +448,10 @@ pub(crate) enum RegexAtom {
     CodeInterp {
         code: Box<str>,
         list: bool,
+        /// The assertion form `<$( code )>` / `<@( code )>`: a non-`Regex`
+        /// result is parsed as regex source, as `<$x>` / `<@x>` do, instead of
+        /// matched literally.
+        as_regex: bool,
     },
     /// A double-quoted atom (`"x @a[0]"`) the compiler lowered to a qq
     /// thunk (`crate::regex_qq_atoms`) whose result was not installed when

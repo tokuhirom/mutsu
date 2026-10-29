@@ -580,7 +580,7 @@ impl Interpreter {
 
     /// The shared tail of both read paths: resolve `(bare, is_private)` against
     /// `self`'s live cell under a single read guard and clone the value out.
-    fn read_attr_cell_by_key(
+    pub(super) fn read_attr_cell_by_key(
         &self,
         self_val: Option<Value>,
         site: Option<(&CompiledCode, usize)>,
@@ -793,7 +793,7 @@ impl Interpreter {
     /// write persists (the cell is an `Arc<RwLock>` shared with the caller's
     /// Mixin). No-op when `self` is not a concrete instance or the attribute does
     /// not exist on it.
-    fn write_attr_cell_by_key(
+    pub(super) fn write_attr_cell_by_key(
         &self,
         self_val: Option<Value>,
         site: Option<(&CompiledCode, usize)>,

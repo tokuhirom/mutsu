@@ -95,13 +95,55 @@ pub(crate) fn dq_atom_close(chars: &[char], open: usize) -> Option<usize> {
 }
 
 /// Whether the `(` at `chars[at]` opens the argument list of a `.method(`
-/// call (the only place a qq string's text reads an expression list).
+/// call (the only place a qq string's text reads an expression list). A `.name(`
+/// of plain text (`"d.add("`) is not one: the call needs an interpolated
+/// variable (or a postcircumfix chain) to hang off.
+// Cost: O(n), n = the length of the `.method` chain before `at`.
 fn is_method_call_paren(chars: &[char], open: usize, at: usize) -> bool {
     let mut j = at;
     while j > open + 1 && (chars[j - 1].is_alphanumeric() || matches!(chars[j - 1], '_' | '-')) {
         j -= 1;
     }
-    j < at && j > open + 1 && chars[j - 1] == '.'
+    j < at && j > open + 1 && chars[j - 1] == '.' && dot_continues_interpolation(chars, open, j - 1)
+}
+
+/// Whether the `.` at `chars[dot]` continues an interpolated expression:
+/// the text before it is a sigiled variable (`$x`, `@a`, `$*x`, ...), a
+/// postcircumfix (`$x[0]`, `$h<k>`, `$x.a()`), or another such `.method` hop.
+// Cost: O(n), n = the length of the chain before `dot`.
+fn dot_continues_interpolation(chars: &[char], open: usize, dot: usize) -> bool {
+    let mut k = dot;
+    loop {
+        if k <= open + 1 {
+            return false;
+        }
+        match chars[k - 1] {
+            ')' | ']' | '}' | '>' => return true,
+            _ => {}
+        }
+        let mut j = k;
+        while j > open + 1 && (chars[j - 1].is_alphanumeric() || matches!(chars[j - 1], '_' | '-'))
+        {
+            j -= 1;
+        }
+        if j == k {
+            return false;
+        }
+        // An optional twigil, then the sigil.
+        let mut before = j;
+        if before > open + 1 && matches!(chars[before - 1], '*' | '!' | '?' | '^' | '.' | ':') {
+            before -= 1;
+        }
+        if before > open + 1 && matches!(chars[before - 1], '$' | '@' | '%' | '&') {
+            return true;
+        }
+        // Another `.name` hop: keep walking back along the chain.
+        if j > open + 1 && chars[j - 1] == '.' {
+            k = j - 1;
+            continue;
+        }
+        return false;
+    }
 }
 
 /// Whether a double-quoted atom's body can interpolate anything a compiled
