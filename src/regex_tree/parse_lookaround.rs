@@ -154,7 +154,8 @@ impl Parser {
 
         // `<$(EXPR)>`, `<@(EXPR)>` and `<%(EXPR)>`: the same interpolation over a
         // contextualized expression.
-        if !explicit && let Some(node) = self.parse_assertion_contextualizer(sequential_interpolation)
+        if !explicit
+            && let Some(node) = self.parse_assertion_contextualizer(sequential_interpolation)
         {
             return Some(node);
         }

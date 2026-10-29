@@ -465,10 +465,7 @@ fn lower_contextualized(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeE
                 sigil,
                 sequential,
                 assertion,
-                code: Box::new(RegexCode {
-                    code,
-                    body,
-                }),
+                code: Box::new(RegexCode { code, body }),
             },
         ))
     })())
