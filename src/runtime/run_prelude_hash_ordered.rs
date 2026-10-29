@@ -75,10 +75,16 @@ class GLOBAL::Hash::Ordered is Hash {
 impl Interpreter {
     /// Prepend [`HASH_ORDERED_PRELUDE`] to a program (or module) that names
     /// `Hash::Ordered`. Skipped when the compunit declares its own package of
-    /// that name. Parsed once and cached.
+    /// that name, or `use`s/`need`s the zef distribution of that name (rakudo
+    /// has the core type and the module side by side; the module's
+    /// `role Hash::Ordered` is what such a compunit means, and a class injected
+    /// over it, or again over the role an earlier compunit loaded, is a
+    /// redeclaration -- BSON::Simple). Parsed once and cached.
     // Cost: O(n) in the source scan, n = source bytes; the parse is once per process.
     pub(super) fn inject_hash_ordered_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
         if !source.contains_name("Hash::Ordered")
+            || source.contains_name("use Hash::Ordered")
+            || source.contains_name("need Hash::Ordered")
             || source.contains_name("class Hash::Ordered")
             || source.contains_name("role Hash::Ordered")
             || source.contains_name("module Hash::Ordered")
