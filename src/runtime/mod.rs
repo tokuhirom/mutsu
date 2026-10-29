@@ -1168,6 +1168,15 @@ pub(crate) struct NativeCtorPlan {
     /// dropped on (`native_ctor_plan_cache` is cleared at every class-shape
     /// mutation and generation bump), so the memo cannot outlive it.
     pub(crate) noarg_user_new_declines: std::sync::OnceLock<bool>,
+    /// Whether the `new` candidates of this class are decided by the argument
+    /// type keys alone (no `where`/literal/subset/coercion/`is rw`/
+    /// sub-signature parameter), which is what makes the next memo sound.
+    pub(crate) new_candidates_type_keyed: std::sync::OnceLock<bool>,
+    /// Memo of `user_new_declines` for an all-named call, keyed by
+    /// [`Interpreter::multi_arg_type_keys_with_named`]. Like the no-argument
+    /// memo above it lives exactly as long as the class shape does.
+    pub(crate) named_user_new_declines:
+        std::sync::Mutex<rustc_hash::FxHashMap<Vec<Symbol>, bool>>,
     /// The `:D`/`:U` smileys and `is required` attribute names across the
     /// MRO that `enforce_attribute_smiley_constraints` checks, collected once
     /// per class shape instead of per construction (#12917).
