@@ -159,6 +159,21 @@ impl<'ast> Visit<'ast> for HasBareWord {
     }
 }
 
+/// The module a `use` below the unit's top level binds in a lexical import
+/// set: every module a `use` loads, `Test` included (a block's `use Test`
+/// binds its routines in the block, not in the registry), but no pragma and
+/// no foreign-language `:from` import.
+// Cost: O(t), t = tags.
+pub(crate) fn lexically_importable_module_name<'a>(
+    module: &'a str,
+    tags: &[String],
+) -> Option<&'a str> {
+    if tags.iter().any(|t| t == "from") || is_pragma_like(module) {
+        return None;
+    }
+    Some(module)
+}
+
 pub(crate) fn preloadable_module_name<'a>(
     module: &'a str,
     tags: &[String],

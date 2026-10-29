@@ -119,7 +119,7 @@ impl Compiler {
         let mark = self.lexical_import_chain.len();
         let mut local_multis: Option<Vec<String>> = None;
         for stmt in stmts {
-            if let Some(id) = Self::lexical_use_set_id(stmt) {
+            if let Some(id) = Self::block_lexical_use_set_id(stmt) {
                 let local = local_multis.get_or_insert_with(|| Self::block_multi_names(stmts));
                 let id = Self::with_block_multis(id, local);
                 // A block's `use` of the import list the unit's own `use`
@@ -178,7 +178,7 @@ impl Compiler {
     /// [`Self::enter_lexical_use_block`] opened it for the innermost block.
     // Cost: O(c + n), c = open import sets, n = length of an id.
     pub(super) fn open_lexical_use_set(&mut self, stmt: &Stmt) -> Option<Symbol> {
-        let full = Self::lexical_use_set_id(stmt)?;
+        let full = Self::block_lexical_use_set_id(stmt)?;
         // The unit's own top-level `use` opens its set where it stands
         // (`defer_unit_lexical_use_sets`).
         let base_text = full.resolve();
@@ -274,6 +274,19 @@ impl Compiler {
     /// `use` importing the same list shares it.
     // Cost: O(n), n = size of the `use`'s argument expression.
     pub(crate) fn lexical_use_set_id(stmt: &Stmt) -> Option<Symbol> {
+        Self::use_set_id(stmt, false)
+    }
+
+    /// [`Self::lexical_use_set_id`] for a `use` below the unit's top level:
+    /// `Test` and `Test::*` bind in the block too, while the unit's own
+    /// top-level `use Test` stays the whole unit's, on the registry.
+    // Cost: O(n), n = size of the `use`'s argument expression.
+    pub(crate) fn block_lexical_use_set_id(stmt: &Stmt) -> Option<Symbol> {
+        Self::use_set_id(stmt, true)
+    }
+
+    // Cost: O(n), n = size of the `use`'s argument expression.
+    fn use_set_id(stmt: &Stmt, in_block: bool) -> Option<Symbol> {
         let Stmt::Use {
             module,
             tags,
@@ -284,7 +297,11 @@ impl Compiler {
         else {
             return None;
         };
-        super::begin_use::preloadable_module_name(module, tags, None, None)?;
+        if in_block {
+            super::begin_use::lexically_importable_module_name(module, tags)?;
+        } else {
+            super::begin_use::preloadable_module_name(module, tags, None, None)?;
+        }
         if tags.iter().any(|t| t == "from") {
             return None;
         }

@@ -4598,6 +4598,11 @@ impl Compiler {
             Stmt::Use {
                 module, tags, arg, ..
             } if module == "Test" || module.starts_with("Test::") => {
+                // Below the unit's top level its routines bind in the enclosing
+                // block, like any module's (ADR-8751).
+                let lexical_set_idx = self
+                    .open_lexical_use_set(stmt)
+                    .map(|id| self.code.add_constant(Value::str(id.resolve())));
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
                 if tags.is_empty() && arg.as_ref().is_some_and(Expr::is_empty_import_list) {
                     self.code.emit(OpCode::NeedModule(name_idx));
@@ -4616,7 +4621,7 @@ impl Compiler {
                         name_idx,
                         tags_idx,
                         arg_count,
-                        lexical_set_idx: None,
+                        lexical_set_idx,
                     });
                 }
             }
