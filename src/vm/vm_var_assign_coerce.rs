@@ -262,13 +262,13 @@ impl Interpreter {
     fn hash_var_current_value(
         &self,
         name: &str,
-        attr_site: Option<(&CompiledCode, usize)>,
+        attr_site: Option<&GlobalAttrSite<'_>>,
     ) -> Option<Value> {
         self.env()
             .get(name)
             .cloned()
             .or_else(|| match attr_site {
-                Some((code, site)) => self.read_self_attr_cell_at(code, site, name),
+                Some(at) => self.global_attr_site_cell(at, name),
                 None => self.read_self_attr_cell(name),
             })
             .map(|v| v.deref_container())
@@ -288,7 +288,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         coerced: Value,
-        attr_site: Option<(&CompiledCode, usize)>,
+        attr_site: Option<&GlobalAttrSite<'_>>,
     ) -> Value {
         // Through the capture cell, like the caller: the existing QuantHash
         // whose backing node the new contents are written into may be held
@@ -350,7 +350,7 @@ impl Interpreter {
         decl: StoreDecl<'_>,
         name: &str,
         value: Value,
-        attr_site: Option<(&CompiledCode, usize)>,
+        attr_site: Option<&GlobalAttrSite<'_>>,
     ) -> Result<Value, RuntimeError> {
         // A method returning an element's container (`%!m = @res.tail`, where
         // `.tail` hands back the Array element's cell) assigns the value the

@@ -168,6 +168,7 @@ mod vm_call_method_compiled_interpret;
 mod vm_call_method_compiled_io;
 pub(crate) use vm_call_method_compiled_io::note_io_handle_user_method_declared;
 mod vm_attr_global_site;
+use vm_attr_global_site::GlobalAttrSite;
 mod vm_attr_site;
 mod vm_attr_store_lane;
 mod vm_attr_type_constraint;

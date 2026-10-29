@@ -944,7 +944,7 @@ impl Interpreter {
     pub(super) fn maybe_tied_store_reassign_named(
         &mut self,
         name: &str,
-        attr_site: Option<(&CompiledCode, usize)>,
+        attr_site: Option<&GlobalAttrSite<'_>>,
     ) -> Result<Option<()>, RuntimeError> {
         let checked_sigilless = self.pending_sigilless_store.as_deref() == Some(name);
         if !(name.starts_with('%') || name.starts_with('@') || self.take_pending_sigilless(name)) {
@@ -957,7 +957,7 @@ impl Interpreter {
         if !checked_sigilless
             && Self::is_array_hash_attr_twigil(name)
             && match attr_site {
-                Some((code, site)) => self.read_self_attr_cell_at(code, site, name),
+                Some(at) => self.global_attr_site_cell(at, name),
                 None => self.read_self_attr_cell(name),
             }
             .is_some_and(|v| Self::is_plain_aggregate(&v))

@@ -909,6 +909,22 @@ impl Interpreter {
         self.attr_hash_key_constraint(name)
     }
 
+    /// [`Self::var_hash_key_constraint_sym`] for an attribute `%!x` whose
+    /// declared type constraint `attr_tc` the caller already holds.
+    // Cost: O(1) expected.
+    pub(crate) fn var_hash_key_constraint_with_attr(
+        &self,
+        name_sym: Symbol,
+        attr_tc: Option<&str>,
+    ) -> Option<String> {
+        let meta_key = Self::hash_key_meta_key_for_sym(name_sym);
+        if let Some(ValueView::Str(tc)) = self.declared_meta_lane(meta_key).map(Value::view) {
+            return Some(tc.as_str().to_owned());
+        }
+        let (_, key_type) = crate::runtime::types::split_object_hash_constraint(attr_tc?);
+        key_type.map(str::to_string)
+    }
+
     /// [`Self::var_hash_key_constraint_sym`] for a variable the running code
     /// declares: its record was written in the running frame (or is the
     /// unit's own lane), so the lookup does not continue into the frames that

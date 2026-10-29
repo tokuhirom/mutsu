@@ -11,7 +11,75 @@
 
 use super::*;
 
+/// What one `@!x = ...` / `%!x = ...` store knows about its target attribute,
+/// resolved once so the helpers the store runs (the tied-container probe, the
+/// current-container read of the coercion, the key and element type checks)
+/// do not each resolve the attribute again.
+pub(super) struct GlobalAttrSite<'a> {
+    pub(super) code: &'a CompiledCode,
+    /// The chunk's cache word of this store ([`CompiledCode::global_attr_site`]).
+    pub(super) site: usize,
+    /// The attribute cell's value before the store, when `prefetched`.
+    cell: Option<Value>,
+    /// The attribute's declared type constraint, when `prefetched`.
+    pub(super) type_constraint: Option<String>,
+    prefetched: bool,
+}
+
+impl<'a> GlobalAttrSite<'a> {
+    /// Whether `type_constraint` was read (a plain `=` store).
+    // Cost: O(1).
+    pub(super) fn has_prefetched_type(&self) -> bool {
+        self.prefetched
+    }
+
+    /// The site of a store that only needs the cache word (a bind).
+    // Cost: O(1).
+    pub(super) fn bare(code: &'a CompiledCode, site: usize) -> Self {
+        GlobalAttrSite {
+            code,
+            site,
+            cell: None,
+            type_constraint: None,
+            prefetched: false,
+        }
+    }
+}
+
 impl Interpreter {
+    /// The site of a plain `=` store to the attribute `name`: the cell's
+    /// current value and the declared type, read once.
+    // Cost: O(1) on a cache hit, plus the memoized constraint lookup.
+    pub(super) fn prefetch_global_attr_site<'a>(
+        &self,
+        code: &'a CompiledCode,
+        site: usize,
+        name: &str,
+        name_sym: crate::symbol::Symbol,
+    ) -> GlobalAttrSite<'a> {
+        GlobalAttrSite {
+            code,
+            site,
+            cell: self.read_self_attr_cell_at(code, site, name),
+            type_constraint: self.self_attr_type_constraint_sym(name, name_sym),
+            prefetched: true,
+        }
+    }
+
+    /// The attribute cell's value: the prefetched one, else a fresh read.
+    // Cost: O(1) when prefetched, as `read_self_attr_cell_at` otherwise.
+    pub(super) fn global_attr_site_cell(
+        &self,
+        at: &GlobalAttrSite<'_>,
+        name: &str,
+    ) -> Option<Value> {
+        if at.prefetched {
+            at.cell.clone()
+        } else {
+            self.read_self_attr_cell_at(at.code, at.site, name)
+        }
+    }
+
     /// The value of `self`'s `@`/`%` attribute `name`, read through the cache
     /// word `site` of `code`; the general read (which fills the word) on a miss.
     // Cost: O(1) on a hit (one atomic load, one slot read); the general read's
