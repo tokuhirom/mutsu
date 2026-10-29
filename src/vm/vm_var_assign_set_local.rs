@@ -740,6 +740,11 @@ impl Interpreter {
         if self.exec_set_local_scalar_fast(code, idx) {
             return Ok(());
         }
+        // The same for an inert scalar stored to a private scalar attribute
+        // (`$!x = <scalar>`), see `vm_attr_store_lane`.
+        if self.exec_set_local_attr_fast(code, idx) {
+            return Ok(());
+        }
         // The same for a plain `my $x = <scalar>` declaration whose slot is its
         // variable's only home (see `exec_set_local_decl_fast`).
         if self.exec_set_local_decl_fast(code, idx) {
@@ -1967,6 +1972,21 @@ impl Interpreter {
                     // instead of being capped to a 100k `ArrayKind::Lazy` Array. (L2)
                     _ if runtime::utils::infinite_range_to_lazy_array(&raw_popped).is_some() => {
                         runtime::utils::infinite_range_to_lazy_array(&raw_popped).unwrap()
+                    }
+                    // `my @a = |(1..*)`: `|` rides an unreifiable lazy list in a
+                    // one-item Slip (see `exec_make_slip_op`), which the array
+                    // keeps lazy exactly as it does the bare list.
+                    ValueView::Slip(items)
+                        if items.len() == 1
+                            && matches!(
+                                items[0].view(),
+                                ValueView::LazyList(ref l) if l.preserve_lazy_on_array_assign()
+                            ) =>
+                    {
+                        match items[0].view() {
+                            ValueView::LazyList(list) => self.lazy_array_value(&list, name),
+                            _ => runtime::coerce_to_array(raw_popped.clone()),
+                        }
                     }
                     _ => {
                         // Resolve bound-element sentinels before coercing to

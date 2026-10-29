@@ -74,18 +74,6 @@ impl Compiler {
             collect,
         } = parts;
 
-        // A loop parameter spelled `$self` is the user lexical (ADR-0061).
-        let self_lexical = |p: &String| {
-            if p == "self" {
-                crate::env::LEX_SELF.to_string()
-            } else {
-                p.clone()
-            }
-        };
-        let lex_param = param.as_ref().map(self_lexical);
-        let lex_params: Vec<String> = params.iter().map(self_lexical).collect();
-        let (param, params) = (&lex_param, lex_params.as_slice());
-
         // `&?BLOCK` / `.leave` in the body need the loop's own block as a
         // callable value. Build it up-front and stash it in a fresh local;
         // `ForLoopSpec::block_callable_local` hands it to the VM.
@@ -156,6 +144,17 @@ impl Compiler {
             .map(|p| self.code.add_constant(Value::str(p.clone())));
         let bind_stmts =
             Self::build_for_bind_stmts(param, param_def, param_idx, params, params_def, rw_block);
+
+        // ADR-0061: a loop parameter spelled `$self` is a `ParamDef` named
+        // `self` and binds the plain key, exactly like a routine's `$self`
+        // parameter — so `$self` in the body must resolve to it, not to the
+        // reserved lexical key. The loop body compiles inline in THIS compiler,
+        // so the flag is scoped by hand (restored at the end) instead of being
+        // seeded on a child compiler.
+        let saved_self_is_signature_param = self.self_is_signature_param;
+        if param.as_deref() == Some("self") || params.iter().any(|p| p == "self") {
+            self.self_is_signature_param = true;
+        }
 
         // A sigilless raw binding (`-> \v`) aliases the source element directly;
         // in Raku it is writable and modifications propagate back to the source
@@ -721,5 +720,6 @@ impl Compiler {
         if param.is_some() {
             self.code.emit(OpCode::RestoreForParam);
         }
+        self.self_is_signature_param = saved_self_is_signature_param;
     }
 }

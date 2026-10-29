@@ -728,14 +728,27 @@ impl Interpreter {
                     && !crate::ast::param_names_declare_self_lexical(params)
             }
         };
-        if !implicit {
-            // A `$self` parameter is a user lexical (ADR-0061): the frame's
-            // `self` is never the argument bound to it.
-            return None;
+        let mut positional = args
+            .iter()
+            .filter(|v| !matches!(v.view(), ValueView::Pair(_, _)));
+        if implicit {
+            return positional.next().cloned();
         }
-        args.iter()
-            .find(|v| !matches!(v.view(), ValueView::Pair(_, _)))
-            .cloned()
+        // An explicit invocant spelled `$self:` takes the leading positional.
+        // A plain routine's ordinary `$self` parameter is a lexical of its
+        // own (`LEX_SELF`), never the invocant: a creator's record answers
+        // the `self` term.
+        let mut index = 0usize;
+        for pd in param_defs {
+            if pd.named || pd.slurpy || pd.double_slurpy {
+                continue;
+            }
+            if pd.is_invocant && pd.declares_self_lexical() {
+                return positional.nth(index).cloned();
+            }
+            index += 1;
+        }
+        None
     }
 
     /// The invocant of the frame just pushed for a call of a method run as a

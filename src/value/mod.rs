@@ -572,6 +572,7 @@ mod array_holes;
 /// The instance-attribute map (`Symbol -> Value`); see [`AttrMap`].
 mod attr_map;
 mod attr_site;
+mod attr_store_kind;
 mod bareword_site;
 pub(crate) mod buf_class_names;
 pub(crate) mod capture_text;
@@ -725,6 +726,7 @@ pub(crate) use attr_map::{
     AttrBits, AttrKey, AttrMap, ClassLayout, OBJAT_STR_PAYLOAD, attr_twigil_base, attr_twigil_sigil,
 };
 pub(crate) use attr_site::AttrSiteCaches;
+pub(crate) use attr_store_kind::AttrStoreKind;
 pub(crate) use bareword_site::BarewordSiteCaches;
 pub(crate) use entry_path::EntryRoot;
 pub use entry_path::EntryStep;
@@ -1919,10 +1921,7 @@ impl SubData {
     /// parameter is spelled bare there but binds its term key (ADR-12441).
     // Cost: O(d), d = param_defs.
     pub(crate) fn param_storage_sym(&self, p: &str) -> Symbol {
-        // A block's `-> $self` is the user lexical, not the `self` term.
-        if p == "self" {
-            crate::symbol::wk::lex_self()
-        } else if self
+        if self
             .param_defs
             .iter()
             .any(|pd| pd.sigilless && pd.name == p)

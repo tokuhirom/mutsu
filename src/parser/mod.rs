@@ -177,10 +177,7 @@ impl Drop for NestingGuard {
 /// and for `CompiledCode::is_supply_block_body`.
 pub(crate) const SUPPLY_EMITTER_PREFIX: &str = "__mutsu_supply_emitter_";
 
-pub(crate) use stmt::nested_block_methods::{
-    hoist as hoist_nested_methods, unhoist as unhoist_nested_methods,
-};
-
+pub(crate) use primary::ident::anon_sub::invocant_param_def;
 pub(crate) use primary::var::is_known_word_infix;
 
 pub(crate) fn is_imported_function(name: &str) -> bool {
@@ -382,11 +379,6 @@ pub(crate) use expr::precedence::{literal_assign_ro_expr, literal_assign_ro_part
 pub(crate) use expr::precedence_meta_ops::lower_hyper_assignment as hyper_assignment_expr;
 pub(crate) use expr::precedence_meta_ops::negated_glyph_relation;
 pub(crate) use stmt::assign::written_assignment;
-pub(crate) use stmt::control::loop_pointy_clause;
-pub(crate) use stmt::control::repeat_param_clause;
-pub(crate) use stmt::control::{
-    given_pointy_body, pointy_param_bind_decl, pointy_topic_bind, simple_pointy_bind, topicalize,
-};
 pub(crate) use stmt::simple::{fold_use_lib_path, use_lib_args};
 pub(crate) use stmt::simple_expr_stmt::lvalue::{bind_source_metadata_expr, index_bind_expr};
 /// Lower a deferred `Expr::Feed` node into its executable (sink-call) form.

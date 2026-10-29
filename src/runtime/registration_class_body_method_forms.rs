@@ -129,7 +129,13 @@ impl Interpreter {
             });
             method_param_defs
         };
-        let invocant_name = sub_param_defs[0].name.clone();
+        // An explicit `$self:` invocant is the sub's `$self` lexical; a
+        // synthesized one is bound under the plain `self` key.
+        let invocant_name = if sub_param_defs[0].declares_self_lexical() {
+            crate::env::LEX_SELF.to_string()
+        } else {
+            sub_param_defs[0].name.clone()
+        };
         // The method's named parameters become one slurpy hash on the exported
         // sub, forwarded as `|%hash`: the method rebinds and checks them, and an
         // omitted optional one stays omitted (no explicit `Any` is passed).
@@ -158,7 +164,7 @@ impl Interpreter {
                     word: false,
                 });
             } else if !p.named && !p.slurpy {
-                forward_args.push(crate::ast::scalar_var_expr(p.name.clone()));
+                forward_args.push(crate::ast::Expr::Var(p.name.clone()));
             }
         }
         if let Some(mut tpl) = named_template
@@ -191,12 +197,7 @@ impl Interpreter {
             }
         }
         let body = vec![Stmt::Expr(crate::ast::Expr::MethodCall {
-            target: Box::new(if sub_param_defs[0].declares_self_lexical() {
-                crate::ast::scalar_var_expr(invocant_name)
-            } else {
-                // An implicit invocant is the `self` term, answered by the frame.
-                crate::ast::Expr::Var(invocant_name)
-            }),
+            target: Box::new(crate::ast::Expr::Var(invocant_name)),
             name: Symbol::intern(op_name),
             args: forward_args,
             modifier: None,

@@ -1,6 +1,6 @@
 # ADR-15334: Stage 2 — the parser builds typed RakuAST nodes for every family, and the executing round trip and `convert` reverse paths are deleted
 
-- **Status**: Proposed
+- **Status**: Accepted (maintainer decision, 2026-10-28); amended by §7–§10 (2026-10-29)
 - **Date**: 2026-10-28
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#15334](https://github.com/tokuhirom/mutsu/issues/15334). Roadmap:
@@ -141,13 +141,13 @@ reconstruction first; the dependency notes are why the order is not by size alon
 | 6 | Declarations that expand to several statements | `my ($a, @b) = …` destructuring, `has`/`state`/`our` splits, modifier splits, `let`/`temp` | the remaining `SyntheticBlock` producers of the declaration kind |
 | 7 | Concurrency and phasers | `react`/`whenever`/`supply`/`start`, `Phaser`, `DocPhaser`, `Catch`/`Control`, `Label`, `Goto` | the supply/react marker statements (`ReactDone`, `SupplyBodyDone`) |
 | 8 | Regex declarations and literals | already a non-lossy tree (ADR-0088): move `regex_node` (341) / `lower_regex_node` (375) and the `regex_*` satellites under the view/lowering naming, delete only the reconstructions | regex placeholder and alias reconstructions that a typed node makes unnecessary |
-| 9 | Cut-over | executing parse becomes unspelled with inline lowering (§2.1.2); `Stmt::SyntheticBlock` is removed (every producer is gone by slices 1–8) | `frontend::round_trip*`, `passthrough` and `ParsedLeaf`, `expr_origins::strip`, the `unspell` path, the spelled-parse switch for execution; the `convert`-level coverage mode folds into the `.AST` mode |
+| 9 | Cut-over | executing parse becomes unspelled with inline lowering (§2.1.2); no `SyntheticBlock` producer is left in `src/parser` (the `Stmt::SyntheticBlock` variant stays as lowering output until a compiler ADR removes it, §10) | `frontend::round_trip*`, `passthrough` and `ParsedLeaf`, `expr_origins::strip`, the `unspell` path, the spelled-parse switch for execution; the `convert`-level coverage mode folds into the `.AST` mode |
 
 Slices 1–8 are independent of each other except where a table row says otherwise (3 before 4:
 routines own signatures; 6 after 4 and 5: its splits sit inside their bodies). While slices 1–8 are
 open the executing path is today's round trip; each slice only shrinks what goes through `convert`
 and `lower`. **Only slice 9 changes how an executing parse runs**, and it can land only when no
-`SyntheticBlock` producer is left, because the round trip is the only thing that currently reads
+`SyntheticBlock` producer is left in the parser, because the round trip is the only thing that currently reads
 the parser's desugared shapes for T3.
 
 Slices not in the table are filed as sub-issues of #15334 when found, never as a new table row
@@ -237,17 +237,14 @@ speaks of.
 `emoji-test.t`) plus one declaration-heavy `t/` class/role/grammar test, so a T3-dominated program
 is measured.
 
-**Bound.** *Cumulative*, not per slice: after every slice, the frontend Ir of each case must be at
-most **110% of the baseline** (§2.4's contract). A per-slice rise above 2% is not a failure by
-itself, but the PR must explain it; because the bound is absolute against the baseline, many small
-rises cannot add up past it.
+**Bound.** None, at this stage (Amendment 1, §7). Every slice reports the frontend Ir of each case,
+the ratio to the baseline and the change against its `main` base in the PR body, and explains a rise,
+but no ratio fails a slice. The 110% of ADR-10723 §2.4 stays as the **target** the cost is tuned
+toward once the round trip is gone.
 
 **Slice 9.** The cut-over removes the pass the budget exists to bound, so it is expected to land
-**at or below the baseline**. That is a stricter outcome than the +10% contract, and it is a
-*target*, not the gate: slice 9 passes at ≤ 110%, and a result between 100% and 110% requires a
-short written reason in its PR. The gate stays at the contract the maintainer accepted in
-ADR-10723 because a stricter hard gate would block the deletion of the round trip on a measurement
-noise band, while the target makes the expected saving visible and keeps it from being forgotten.
+**at or below the baseline**. Its PR reports the ratios; if any case is above 110% of the baseline, a
+`todo:perf` issue is filed with "every case at most 110% of the baseline" as its close condition.
 
 ### 3.3 The ratchet
 
@@ -274,7 +271,7 @@ thing it counts.
   defined and has been shipping since §6.109: typed nodes and unmigrated subtrees both reach `lower`.
   Each slice is behaviour-neutral by its gate; the default frontend is never switched off.
 - **Risk — slice 9 is the one that touches every program.** It lands only with the ratchet counts at
-  zero, the frontend Ir within the §3.2 bound (and, as the target, at or below baseline), and the full gate (`--full`) green. It is a revert-safe change
+  zero, the frontend Ir measured and reported (§3.2: the target is at or below baseline, with a `todo:perf` issue if not), and the full gate (`--full`) green. It is a revert-safe change
   to `frontend.rs` and the parse entry points, because the typed nodes are the same ones the earlier
   slices ran through the round trip.
 - **Risk — `.AST` regressions in the corpus.** Mitigated by the parity check per slice; a slice that
@@ -314,3 +311,126 @@ thing it counts.
 - **Modules before slice 9.** Modules are round-tripped today (§6.127). If a module's precompilation
   shows a cost slice 9 does not recover, a per-module decision follows the measurement; this ADR does
   not pre-decide it.
+
+## 7. Amendment 1 — frontend cost is reported, not gated (2026-10-29)
+
+Slice 0 froze the §3.2 baseline (`1340492a`, the parent of the §6.122 flip) and measured `main` against
+it with `scripts/frontend-cost.sh` (callgrind frontend Ir, profiling build, warm):
+
+| Case | Frontend Ir, `main` | Baseline | Ratio |
+| --- | ---: | ---: | ---: |
+| `Zef/CLI.rakumod` | 258,750,190 | 218,603,062 | 118.4% |
+| `S32-exceptions/misc.t` | 125,254,087 | 119,114,264 | 105.2% |
+| `S12-class/attributes.t` | 39,830,509 | 33,829,672 | 117.7% |
+| `S15-nfg/emoji-test.t` | 4,492,847,664 | 4,402,079,486 | 102.1% |
+| `t/grammar/grammar-cursor-attributes.t` | 31,608,298 | 25,640,877 | 123.3% |
+
+Three of five cases were above the 110% bound of §3.2 before any slice had landed, so the bound could not
+hold at slice 1 whatever slice 1 did. The figures do not say how the excess splits between the round trip and
+the parser work that landed since the baseline; slice 0 does not attribute it.
+
+**Decision (maintainer, 2026-10-29).** Frontend cost is not a gate at this stage. A slice may cost more than
+its base; the cost is tuned later, after the cut-over, and the migration is not slowed by tuning now.
+
+1. **Slices 1–8:** no cost condition. The PR body reports the five ratios to the baseline and the change
+   against the slice's `main` base, and mentions a rise; it is not a reason to hold the slice.
+2. **Slice 9:** no cost condition either. The ≤ 110% of the baseline of ADR-10723 §2.4 is the target to tune
+   toward afterwards. If any case is above it at slice 9, the PR files a `todo:perf` issue whose close
+   condition is "every case at most 110% of the baseline".
+
+Re-baselining to `main` instead of the pre-flip frontend was considered and rejected: it would make the
+budget ADR-10723 §2.4 promised (the new frontend within 10% of the old) unmeasurable.
+
+`scripts/frontend-cost-baseline.txt` holds the frozen baseline and is not rebuilt.
+
+## 8. Amendment 2 — findings from slice 1 (2026-10-29)
+
+Slice 1 (the expression call spellings) was implemented against the ADR and found four places where the
+text of §2.2 does not match the tree or contradicts itself.
+
+1. **The slice-1 inventory was stale.** `convert` no longer recognizes the `__mutsu_assign_*_lvalue`
+   spellings by name (#14948 removed those arms), and the atomic *operator* forms (`postfix:<⚛++>`,
+   `prefix:<++⚛>`, `infix:<⚛+=>`) are ordinary routine calls Rakudo makes too, not desugarings; only `⚛$x`
+   and `$x ⚛= v` (the `__mutsu_atomic_{fetch,store}_var` calls) were. The live work in the family was the
+   parser's hand-built calls and a second copy of the assignment-target dispatch, which slice 1 removed.
+2. **"The compiler's by-name dispatch of the same spellings" contradicts §2.1.** §2.1 says this ADR does not
+   change the compiler or the VM; deleting that dispatch means a new `Expr` variant or opcode per spelling.
+   The by-name call is the lowered form the compiler consumes. Slice 1 leaves it; if it is wanted gone, it
+   is a compiler decision with its own ADR, not a Stage 2 deletion (§10).
+3. **Subscript adverbs are their own slice.** `ast::subscript_adverb::{expand,adverbs}` is a verified
+   recognizer over a retained colonpair, and the typed `Postcircumfix` node it needs touches every subscript
+   the parser builds. It moves out of row 1 to a sub-issue (#15401), as §2.2 allows for work not in the
+   table.
+4. **Test name.** `make check-t-layout` requires `rakuast` in a `t/rakuast/` file name, so the three-path
+   test of §3.1 item 7 is `t/rakuast/rakuast-stage2-<family>-paths.t`.
+
+Nothing here changes the end state of §2.1.
+
+## 9. Amendment 3 — slices are numbered by landing order; the `use` family is T1 (2026-10-29)
+
+**The `use` family has no slice.** `Stmt::Use`, `Stmt::No`, `Stmt::Need` and `Stmt::Import` are lossless: the
+parser builds them from the written statement with no `SyntheticBlock` and no `__…` spelling
+(`src/parser/stmt/decl/use_decl.rs` has neither), and `convert_use` / `convert_need` / `convert_import` /
+`convert_no` translate fields one to one (tags to `ColonPair::True`, the pragma list to `RakuAST::Pragma`).
+By §2.1.4 they are T1, their own typed node. `use_origins.rs` and `unit_source.rs` place source ranges for the
+view; they reconstruct nothing. The one desugared spelling in the family is `use v6.X`, which the parser stores
+as the pseudo-module `"v6"` with the version text as its argument; seven compiler and runtime sites read that
+spelling (`compiler/stmt.rs`, `compiler/begin_use.rs`, `runtime/eval_name_scans.rs`,
+`runtime/begin_prologue/nested/pragmas.rs`, `runtime/run_prelude.rs`,
+`runtime/undeclared_routines/conditional.rs`). Making it a typed
+`LanguageVersion` statement changes what the compiler consumes, which §2.1 excludes; it is a compiler-side
+decision with its own issue (§10). The family's `convert` functions are renamed to the view's names by slice 9,
+as for every T1 arm.
+
+**Numbering.** The rows of the §2.2 table are an inventory of families, not a fixed numbering. Slices are
+numbered in the order they land, and each moves one family (or part of one) under reading (B) of §10:
+
+| Slice | Family | PR |
+| --- | --- | --- |
+| 0 | Gates: `scripts/frontend-cost.sh`, `make check-frontend-debt` | #15383 |
+| 1 | Expression call spellings: assignment writebacks, hyper prefix, atomic variable access | #15400 |
+| 2 | Compound assignment lowering (`rakuast::compound`) | #15416 |
+| 3 | `if` / `unless` / `with` branch lowering | #15447 |
+| 4 | Signature-declaration expansion (`my ($a, @b) = …`, `:=`, bare) | #15462 |
+| 5… | The remaining shared parser lowerings `src/rakuast` calls, one family per PR | — |
+| last | Cut-over (the old row 9) | — |
+
+Rows 3–8 of the §2.2 table (signatures, routines, packages and members, multi-statement declarations,
+concurrency and phasers, regex) remain the inventory the slices after 4 draw from; a slice that is not in the
+table is filed as a sub-issue of #15334 when found (§2.2).
+
+## 10. Amendment 4 — the internal names are executable IR; Stage 2 means reading (B) (2026-10-29)
+
+Slices 0–4 and a read of the rest against the tree show one pattern that §1.1 and §2.2 do not state.
+
+**The finding.** Many of the `__…` spellings and the `SyntheticBlock` wrappers are not a private channel
+between the parser and `convert`; they are the *executable* form the compiler and the runtime consume by name.
+Examples: `ParamDef.name` placeholders `__subsig__` / `__literal__` (a dozen compiler, runtime and `value`
+sites), the `"v6"` pseudo-module of `use v6.X` (6 compiler and runtime files), the `__mutsu_assign_*_lvalue` calls (19 compiler
+sites), `Stmt::SyntheticBlock` itself (263 references in 90 files). Deleting such a spelling means changing
+what the compiler consumes, which §2.1 ("What this ADR does not change: the compiler, the VM") excludes. Where
+the spelling was only a reconstruction marker (the `convert` side), it is already gone or a refusal guard
+(`is_desugar_marker`, `is_parameter_trait_name`) that disappears with the last marker.
+
+Distribution of the `"__…` literals in `src/parser` (measured on `main` 2026-10-29, before slice 1):
+`expr/postfix` 35 (subscript adverbs, hyper, atomic), `stmt/assign` 28, `stmt/sub_param` 16, `stmt/sub` 13,
+`stmt/decl` 12, everything else under 8 per directory. `SyntheticBlock` producers: `modifier_decl_split` 8,
+`has_decl` 7, `control` 7, `sink_warn` 5, `my_decl_assign` 4, `decl/mod` 4, the rest 3 or fewer.
+
+**Decision (maintainer, 2026-10-29): Stage 2 means reading (B), parser-side typing.** A slice is complete when
+the parser builds a typed node, the spelling exists in one `rakuast` lowering, and `convert` has no recognizer
+for it. The compiler keeps consuming the spelled form.
+
+- **What slice 9 deletes:** the executing round trip (`frontend::round_trip*`, `passthrough`, `ParsedLeaf`,
+  `expr_origins::strip`, the `unspell` path) and `convert`'s reverse paths. After it, no `SyntheticBlock`
+  *producer* is left in `src/parser`: the lowering in `rakuast` emits the statements, and the
+  `Stmt::SyntheticBlock` variant remains as lowering output.
+- **What stays:** the executable IR the compiler consumes (`Stmt::SyntheticBlock`, the `__mutsu_*` call
+  spellings, the `__subsig__` / `__literal__` placeholders, the `"v6"` pseudo-module). Removing any of it
+  changes the compiler and VM, so each family needs its own ADR and compiler slice, after Stage 2.
+- **Reading (A) is not Stage 2.** Replacing a spelling by a typed `Expr` / `Stmt` / `ParamDef` shape the
+  compiler consumes is a separate per-family ADR, with the compiler and VM change and a precompilation-cache
+  version bump; slices 0–4 satisfy (B) and (A) can build on them.
+
+§2.1.1 ("The parser stops desugaring that family: its `SyntheticBlock` producers and `__mutsu_*` call spellings
+go") is read the same way: they go from the parser, not from the lowered tree.

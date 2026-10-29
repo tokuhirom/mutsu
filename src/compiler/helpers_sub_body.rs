@@ -308,6 +308,7 @@ impl Compiler {
         // MethodDecl lowering. Methods always provide an implicit `*%_` / `*@_`
         // slurpy, so `%_` / `@_` are valid lexicals anywhere in the body.
         sub_compiler.lexically_in_method = params.iter().any(|p| p == "?CLASS");
+        sub_compiler.self_is_signature_param = self.self_is_signature_param;
         // Propagate last_source_line so the sub body knows which line
         // the sub was defined at (for backtraces).
         sub_compiler.last_source_line = self.last_source_line;
@@ -359,7 +360,7 @@ impl Compiler {
         sub_compiler.seed_param_decl_types(param_defs);
         // Pre-allocate locals for parameters
         for param in Self::non_term_param_names(params, param_defs) {
-            sub_compiler.declare_param(Self::param_slot_name(param, params, param_defs));
+            sub_compiler.declare_param(param);
         }
         // Also allocate from param_defs in case param names differ
         for pd in param_defs {
@@ -382,6 +383,13 @@ impl Compiler {
             if let Some(outer_params) = &pd.outer_sub_signature {
                 Self::alloc_sub_signature_locals(&mut sub_compiler, outer_params);
             }
+        }
+        // A method may have an ordinary parameter spelled `$self` in addition
+        // to its implicit invocant. The source parser keeps the signature name
+        // sigil-less for introspection, while expression parsing preserves the
+        // `$self` spelling as `LEX_SELF`; give that lexical its own slot.
+        if Self::signature_declares_self(params, param_defs) {
+            sub_compiler.declare_param(crate::env::LEX_SELF);
         }
         // Bake the positional-param → slot map now, while `local_map` still holds
         // exactly the parameter slots (before the body can shadow them). §1.5.
@@ -1426,6 +1434,9 @@ impl Compiler {
         // and gets a fresh compiler via compile_sub_body, so it correctly resets.
         sub_compiler.lexically_in_method = self.lexically_in_method;
         sub_compiler.capture_enclosing_method_named_args = self.capture_enclosing_method_named_args;
+        // A `$self` parameter of an enclosing routine stays visible in a nested
+        // block/closure, exactly like any other lexical (ADR-0061).
+        sub_compiler.self_is_signature_param = self.self_is_signature_param;
         // Propagate the distribution context so `$?DISTRIBUTION` resolves to the
         // owning module's distribution inside a routine/method body (which is
         // compiled through this closure-body path), not Nil.
@@ -1466,7 +1477,7 @@ impl Compiler {
         sub_compiler.seed_param_decl_types(param_defs);
         // Pre-allocate locals for parameters
         for param in Self::non_term_param_names(params, param_defs) {
-            sub_compiler.declare_param(Self::param_slot_name(param, params, param_defs));
+            sub_compiler.declare_param(param);
         }
         // A WhateverCode is a compiler-generated callable, not a source lexical
         // scope. Its `my` declarations therefore use captured slots belonging to
@@ -1488,6 +1499,9 @@ impl Compiler {
             if let Some(sub_params) = &pd.sub_signature {
                 Self::alloc_sub_signature_locals(&mut sub_compiler, sub_params);
             }
+        }
+        if Self::signature_declares_self(params, param_defs) {
+            sub_compiler.declare_param(crate::env::LEX_SELF);
         }
         // Bake the positional-param → slot map now, while `local_map` still holds
         // exactly the parameter slots (before the body can shadow them). §1.5.

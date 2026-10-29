@@ -71,7 +71,11 @@ pub(crate) fn light_def_params(param_defs: &[ParamDef]) -> Option<Box<[LightDefP
 
 // Cost: O(t + n), t = the parameter's trait count, n = its name length.
 fn light_def_param(pd: &ParamDef) -> Option<LightDefParam> {
-    if !def_is_plain_positional(pd) || !is_plain_scalar_param_name(&pd.name) {
+    // A `$self` parameter binds the reserved lexical, not its own name.
+    if !def_is_plain_positional(pd)
+        || !is_plain_scalar_param_name(&pd.name)
+        || pd.declares_self_lexical()
+    {
         return None;
     }
     let is_raw = pd.has_traits();

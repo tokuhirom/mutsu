@@ -1,10 +1,9 @@
-# A plain routine's `$self` parameter is a user lexical
+# A plain routine's `$self` parameter is its own lexical
 
-A parameter spelled `$self` in a plain routine, pointy block, `for` or `map`
-block now binds the reserved `$self` lexical key (`ParamDef::storage_name`),
-exactly as methods already did, instead of the `self` key the `self` term used
-to share. The compiler's `resolve_self_lexical` mapping, the
-`self_is_signature_param` flag, the binder's mirror and the explicit-`$self`
-branch of `function_invocant_arg` are gone, so
-`method m { sub ($self) { $self ~ self.^name }("x") }` prints `xD` as in raku
-(#15464, ADR-14843).
+`sub ($self) { $self ~ self.^name }` inside a method read the parameter for both the
+`$self` variable and the `self` term, because plain routines bound the parameter under
+the `self` env key. Plain routines now bind and read it under the reserved `$self`
+lexical key exactly as methods do: the compiler no longer maps `$self` to `self`, the
+binder (general, legacy and positional slot map) targets the reserved key, the light
+named-call path leaves such signatures to the general binder, and the frame no longer
+installs the argument as the invocant (#15464).

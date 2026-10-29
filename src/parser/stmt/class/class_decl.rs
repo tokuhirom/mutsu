@@ -486,7 +486,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         r = r2;
     }
     let (rest, mut body) = package_body_block(r)?;
-    crate::parser::stmt::nested_block_methods::hoist(&mut body);
+    crate::rakuast::nested_methods::hoist(&mut body);
     reject_no_self_in_subs(&body)?;
     reject_no_self_in_attr_where(&body)?;
     reject_no_twigil_attr_at_body_level(&body)?;
@@ -783,7 +783,7 @@ pub(crate) fn class_decl_body_opt(
         package_body_block(r)?
     };
     let spans = crate::parser::stmt::sub::package_spans(name_span, r, rest, &body);
-    crate::parser::stmt::nested_block_methods::hoist(&mut body);
+    crate::rakuast::nested_methods::hoist(&mut body);
     reject_no_self_in_subs(&body)?;
     reject_no_self_in_attr_where(&body)?;
     reject_no_twigil_attr_at_body_level(&body)?;

@@ -261,7 +261,7 @@ pub(crate) fn bind_invocant_aliases(expr: Expr, aliases: &[(String, bool)]) -> E
         .iter()
         .map(|(name, sigilless)| {
             if *sigilless {
-                return crate::parser::stmt::control::simple_pointy_bind(
+                return crate::rakuast::pointy_bind::simple_pointy_bind(
                     name,
                     &Expr::BareWord("self".to_string()),
                     true,

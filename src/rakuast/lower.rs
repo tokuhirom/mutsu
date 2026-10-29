@@ -1349,9 +1349,9 @@ fn phaser_kind(node: &RakuAstNode) -> Result<crate::ast::PhaserKind, RuntimeErro
 
 /// A package body as the parser leaves it: the `method`s declared in its
 /// nested blocks and routine bodies hoisted into it (the converter rendered
-/// them where they were written, `parser::unhoist_nested_methods`).
+/// them where they were written, `nested_methods::unhoist`).
 pub(super) fn lower_package_body(mut body: Vec<Stmt>) -> Vec<Stmt> {
-    crate::parser::hoist_nested_methods(&mut body);
+    super::nested_methods::hoist(&mut body);
     body
 }
 

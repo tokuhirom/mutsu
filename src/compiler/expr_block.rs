@@ -18,7 +18,7 @@ impl Compiler {
             // `proto method NAME(...) {*}` as a term (`my constant
             // &proto-handler = proto method handler(|) {*}`,
             // Object::Trampoline). The parser hoisted a copy into the package
-            // body (`nested_block_methods`), which installed it as the
+            // body (`rakuast::nested_methods`), which installed it as the
             // dispatcher of the package's `NAME` candidates; the term's value
             // is that proto, read back as `::?CLASS.^lookup('NAME')` (which,
             // unlike `.^find_method`, a user `method ^find_method` does not

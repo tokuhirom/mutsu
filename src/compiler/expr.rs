@@ -192,6 +192,7 @@ impl Compiler {
                 );
             }
             Expr::Var(name) => {
+                let name = self.resolve_self_lexical(name);
                 self.compile_expr_var(name);
             }
             Expr::ArrayVar(name) => {
@@ -1075,6 +1076,7 @@ impl Compiler {
                 expr,
                 is_bind,
             } => {
+                let name = self.resolve_self_lexical(name);
                 // `($OUTER::x := $y)` stores to the binding `OUTER::` names
                 // (#10676, #10827; see `Stmt::Assign`).
                 let outer_target = self.outer_write_target(name, *is_bind);

@@ -424,6 +424,25 @@ pub(crate) const PARENS_PARAM: &str = "__subsig__";
 /// The execution name of an anonymous `[…]` destructuring parameter.
 pub(crate) const BRACKETS_PARAM: &str = "@";
 
+/// True when a *signature* declares a parameter the source spelled `$self`,
+/// including one nested in a destructuring sub-signature (`sub f([$self, $x])`).
+///
+/// The single oracle both halves of ADR-0061 consult: the compiler's
+/// `self_is_signature_param` flag and the runtime's binding-time mirror. Keeping
+/// them on one function is what stops the two from disagreeing — a compiler that
+/// thinks `$self` means the parameter while the binder thinks it means the
+/// reserved lexical key is exactly the silent mis-binding the ADR set out to
+/// avoid.
+pub(crate) fn signature_declares_self_lexical(param_defs: &[ParamDef]) -> bool {
+    param_defs.iter().any(|pd| {
+        pd.declares_self_lexical()
+            || pd
+                .sub_signature
+                .as_deref()
+                .is_some_and(signature_declares_self_lexical)
+    })
+}
+
 /// True when `param_defs` declares a parameter whose *lexical* name is `name`.
 ///
 /// A routine's flat `params` list (the `ParamDef::name`s) is NOT the set of
@@ -646,9 +665,6 @@ impl ParamDef {
     pub(crate) fn storage_name(&self) -> std::borrow::Cow<'_, str> {
         if self.sigilless && !self.name.is_empty() {
             std::borrow::Cow::Owned(crate::term_names::term_key(&self.name))
-        } else if self.declares_self_lexical() {
-            // `$self` is a user lexical, never the `self` term (ADR-0061).
-            std::borrow::Cow::Borrowed(crate::env::LEX_SELF)
         } else {
             std::borrow::Cow::Borrowed(&self.name)
         }
@@ -2350,7 +2366,7 @@ pub(crate) enum Stmt {
     /// `proto`s the enclosing blocks declare: they live in the routine
     /// registry, not in the closure env, and the registry forgets them when
     /// the block exits, so they are resolved into the capture as `&name`
-    /// while it is live. See `parser::stmt::nested_block_methods`.
+    /// while it is live. See `rakuast::nested_methods`.
     NestedMethodCapture {
         index: u32,
         /// The `index` of the first method hoisted from the same statement
@@ -3184,7 +3200,7 @@ pub(crate) enum Stmt {
         /// `is hidden-from-backtrace` on a `proto method`.
         is_hidden_from_backtrace: bool,
         /// A copy of a nested-block `proto method` appended to the package body
-        /// (`parser::stmt::nested_block_methods`); the written one stays in place.
+        /// (`rakuast::nested_methods`); the written one stays in place.
         #[serde(default)]
         is_hoisted_copy: bool,
         /// True when declared as `proto method`/`proto submethod` (inside a

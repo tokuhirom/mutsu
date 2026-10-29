@@ -153,7 +153,7 @@ impl Compiler {
                 // HTTP::Tiny header-continuation parser is one example).
                 if matches!(op, AssignOp::Bind) {
                     self.compile_stmt(stmt);
-                    let effective_name = name;
+                    let effective_name = self.resolve_self_lexical(name);
                     if let Some(&slot) = self.local_map.get(effective_name) {
                         self.code.emit(OpCode::GetLocal(slot));
                     } else {
@@ -625,7 +625,7 @@ impl Compiler {
                         // inlining or the alias becomes a detached snapshot.
                         if matches!(op, AssignOp::Bind) {
                             self.compile_stmt(stmt);
-                            let effective_name = name;
+                            let effective_name = self.resolve_self_lexical(name);
                             if let Some(&slot) = self.local_map.get(effective_name) {
                                 self.code.emit(OpCode::GetLocal(slot));
                             } else {

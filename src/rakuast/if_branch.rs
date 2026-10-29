@@ -3,8 +3,8 @@
 //! nested `Stmt::If`s, and `unless` as an `if` over a negated condition.
 //! `conditional_lower` is the one caller.
 
+use super::pointy_bind::simple_pointy_bind;
 use crate::ast::{Expr, ParamDef, Stmt, WithBlockKind};
-use crate::parser::simple_pointy_bind;
 use crate::token_kind::TokenKind;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
