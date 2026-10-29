@@ -20,6 +20,6 @@ my @n = (mk("x"), mk("y"));
 for @n -> Mu $b is raw { $b = 7 }
 is-deeply @stores, [], 'list literal: no STORE reached';
 
-my $p = mk("z");
+my $p := mk("z");
 $p = 3;
 is-deeply @stores, ["z=3"], 'a Proxy variable still stores';
