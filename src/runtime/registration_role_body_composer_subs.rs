@@ -163,7 +163,12 @@ impl Interpreter {
         // sub knows nothing of the composition's parameters (#15100).
         if result.is_ok() && !params.is_empty() {
             for name in &redeclared {
-                self.unseclude_role_lexical_routine(name, class, role.decl_file.as_deref());
+                self.unseclude_role_lexical_routine(
+                    name,
+                    class,
+                    role_name,
+                    role.decl_file.as_deref(),
+                );
             }
         }
         result
