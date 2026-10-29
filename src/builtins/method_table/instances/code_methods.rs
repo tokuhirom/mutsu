@@ -137,6 +137,22 @@ pub(super) static ROWS: &[MethodRow] = &[
         sub_prec
     ),
     MethodRow {
+        owner: "Block",
+        name: "phasers",
+        arity: 1,
+        handler: Handler::Interp(block_phasers),
+        flags: ARGS,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Block",
+        name: "callable_for_phaser",
+        arity: 1,
+        handler: Handler::Interp(block_callable_for_phaser),
+        flags: ARGS,
+        named: &[],
+    },
+    MethodRow {
         owner: "Routine",
         name: "yada",
         arity: 0,
@@ -145,6 +161,32 @@ pub(super) static ROWS: &[MethodRow] = &[
         named: &[],
     },
 ];
+
+/// `Block.phasers`: the `Block`s of the phasers of the given name, as a `List`.
+// Cost: as `Interpreter::block_phasers`.
+fn block_phasers(_: &mut Interpreter, target: &Value, args: &[Value], _: Named<'_>) -> Answer {
+    let ValueView::Sub(data) = target.view() else {
+        return None;
+    };
+    let name = args.first()?.to_string_value();
+    Some(Ok(Value::array(Interpreter::block_phasers(&data, &name))))
+}
+
+/// `Block.callable_for_phaser`: the `Block` that runs the named phasers, or
+/// `Nil`.
+// Cost: as `Interpreter::block_callable_for_phaser`.
+fn block_callable_for_phaser(
+    _: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    _: Named<'_>,
+) -> Answer {
+    let ValueView::Sub(data) = target.view() else {
+        return None;
+    };
+    let name = args.first()?.to_string_value();
+    Some(Ok(Interpreter::block_callable_for_phaser(&data, &name)))
+}
 
 /// `Routine.yada`.
 // Cost: as `Interpreter::code_yada`.
