@@ -148,5 +148,36 @@ fn build_chain_cmp_expr(
 /// AST-level walker, exactly like `whatever_curry::build_closure`.
 pub(crate) fn expand(operands: &[Expr], ops: &[(TokenKind, bool)]) -> Expr {
     debug_assert_eq!(operands.len(), ops.len() + 1);
-    build_chain_cmp_expr(operands, ops, 0, operands[0].clone())
+    // Operands evaluate left to right, so a first operand that can have side
+    // effects (`(@a[0] = 0) == @a[0] == 0`) runs before the middle one is
+    // read. A plain variable or literal has none and stays inline, which
+    // keeps container identity for `=:=`.
+    let first = &operands[0];
+    let identity_op = matches!(&ops[0].0, TokenKind::Ident(n) if n == "=:=" || n == "!=:=");
+    if identity_op || matches!(first, Expr::Var(_) | Expr::Literal(_) | Expr::LiteralSrc(..)) {
+        return build_chain_cmp_expr(operands, ops, 0, first.clone());
+    }
+    let tmp_idx = crate::compiler::compile_session::mint();
+    let tmp_name = format!("__mutsu_chain_cmp_{tmp_idx}");
+    let rest = build_chain_cmp_expr(operands, ops, 0, Expr::Var(tmp_name.clone()));
+    Expr::desugar_block(vec![
+        Stmt::VarDecl {
+            marks: Default::default(),
+            anonymous: false,
+            name: tmp_name,
+            expr: first.clone(),
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
+            where_constraint: None,
+        },
+        Stmt::Expr(rest),
+    ])
 }
