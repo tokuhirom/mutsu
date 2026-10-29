@@ -118,7 +118,8 @@ pub(crate) use stmt::decl::wrap_with_will_phasers;
 pub(crate) use stmt::simple::{is_user_declared_sub, is_user_declared_value_term};
 pub(crate) use stmt::simple_expr_stmt::decl_target_var_name;
 pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutable;
-pub(crate) use stmt::{conditional_declaration, topical_declaration};
+pub(crate) use stmt::control::source_body::check as check_source_body;
+pub(crate) use stmt::decl::default_decl_expr;
 
 /// Parse a regex callable's argument list without exposing the parser's
 /// private diagnostic type to the source-level regex tree.

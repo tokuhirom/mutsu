@@ -72,7 +72,7 @@ impl<'ast> Visit<'ast> for Budget {
 }
 
 // Cost: O(n), n = copied nodes; recursion and accepted copies are bounded.
-pub(in crate::parser::stmt) fn check(
+pub(crate) fn check(
     cond: &Expr,
     params: &[ParamDef],
     body: &[Stmt],
