@@ -959,17 +959,7 @@ impl Compiler {
         // below (see `Compiler::expr_depth`).
         let saved = std::mem::replace(&mut self.expr_depth, 1);
         let term = self.begin_term_decl_of(stmt);
-        let init_aggregate = match stmt {
-            Stmt::VarDecl {
-                name,
-                has_initializer: true,
-                ..
-            } if name.starts_with(['@', '%']) => {
-                self.decl_initializer_aggregates.push(name.clone());
-                true
-            }
-            _ => false,
-        };
+        let init_aggregate = self.begin_decl_initializer_aggregate(stmt);
         self.compile_stmt_inner(stmt);
         if init_aggregate {
             self.decl_initializer_aggregates.pop();
@@ -979,6 +969,23 @@ impl Compiler {
         }
         self.expr_depth = saved;
         self.share_outer_written_decl(stmt);
+    }
+
+    /// Record the `@`/`%` name of `my @a = <initializer>` while its initializer
+    /// compiles (see `Compiler::decl_initializer_aggregates`). Returns whether a
+    /// name was pushed. Kept out of the recursive `compile_stmt`.
+    fn begin_decl_initializer_aggregate(&mut self, stmt: &Stmt) -> bool {
+        if let Stmt::VarDecl {
+            name,
+            has_initializer: true,
+            ..
+        } = stmt
+            && name.starts_with(['@', '%'])
+        {
+            self.decl_initializer_aggregates.push(name.clone());
+            return true;
+        }
+        false
     }
 
     fn compile_stmt_inner(&mut self, stmt: &Stmt) {
