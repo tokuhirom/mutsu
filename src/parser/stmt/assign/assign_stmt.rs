@@ -637,7 +637,7 @@ fn assignment_statement(rest: &str, target: Expr, source: Expr) -> PResult<'_, S
 /// sees one shape whichever way the parser reached it.
 fn dot_assign_stmt(name: String, method_call: Expr) -> Stmt {
     Stmt::Expr(super::written_dotty_assignment(
-        crate::parser::expr::dot_assign_target(&name),
+        crate::rakuast::dotty_assign::dot_assign_target(&name),
         method_call,
     ))
 }
