@@ -81,5 +81,12 @@ pub(crate) fn expand(declaration: Stmt, condition: Expr, kind: DeclarationModifi
             }
         }
     };
-    Stmt::SyntheticBlock(vec![declaration, modifier])
+    // Kept flat: the class-body attribute discovery flattens one level only.
+    match declaration {
+        Stmt::SyntheticBlock(mut parts) => {
+            parts.push(modifier);
+            Stmt::SyntheticBlock(parts)
+        }
+        declaration => Stmt::SyntheticBlock(vec![declaration, modifier]),
+    }
 }

@@ -1676,7 +1676,10 @@ impl Interpreter {
                     if bare.starts_with('!')
                         && bare.len() > 1
                         && bare.as_bytes()[1].is_ascii_alphabetic()
-                        && self.get_env_self().is_none()
+                        && attr_site
+                            .as_ref()
+                            .and_then(GlobalAttrSite::lacks_self)
+                            .unwrap_or_else(|| self.get_env_self().is_none())
                     {
                         // Reconstruct the display name with sigil
                         let display = if name.starts_with('!') {
@@ -4950,9 +4953,12 @@ impl Interpreter {
                     OpCode::SinkPop(user_sink, may_explode_failure) => {
                         (*user_sink, *may_explode_failure)
                     }
-                    OpCode::SinkPopCall(name_idx) => {
-                        (self.sunk_call_result_runs_sink(code, *name_idx), true)
-                    }
+                    OpCode::SinkPopCall(name_idx) => (
+                        self.sunk_call_result_runs_sink(code, *name_idx),
+                        // A block that hands back its last statement's container
+                        // sinks nothing inside it.
+                        !self.sunk_call_result_is_block_container(code, *name_idx),
+                    ),
                     _ => unreachable!(),
                 };
                 if let Some(val) = self.stack.pop() {
@@ -5099,11 +5105,12 @@ impl Interpreter {
                             // per-element time.
                             // Sinking an unsuccessful Proc (non-zero exitcode, or killed
                             // by a signal) throws X::Proc::Unsuccessful
-                            if let ValueView::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            } = val.view()
+                            if may_explode_failure
+                                && let ValueView::Instance {
+                                    class_name,
+                                    attributes,
+                                    ..
+                                } = val.view()
                                 && class_name.as_str() == "Proc"
                             {
                                 let exitcode =
@@ -6859,6 +6866,11 @@ impl Interpreter {
                 if !(*kind == crate::ast::PackageKind::Package
                     && self.registry().classes.contains_key(&name))
                 {
+                    // A same-named earlier declaration (a `my enum Foo` in a
+                    // sibling block) left its metaobject cached under the name.
+                    if self.registry().class_how_values.contains_key(&name) {
+                        self.registry_mut().class_how_values.remove(&name);
+                    }
                     self.registry_mut().package_kinds.insert(name, *kind);
                 }
                 *ip += 1;

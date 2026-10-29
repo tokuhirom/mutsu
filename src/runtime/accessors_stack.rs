@@ -1615,10 +1615,14 @@ impl Interpreter {
     /// the names to something wanting owned strings.
     pub(crate) fn bare_name_packages_syms(&self) -> crate::runtime::BareNamePackages {
         let cur_sym = self.current_package_sym();
-        let lexical_sym = self
-            .routine_stack
-            .last()
-            .and_then(|frame| frame.lexical_package);
+        // While a candidate is being matched there is no frame of it yet: its
+        // `where` clause and defaults name the routines of the compunit it was
+        // declared in, not those of the frame that is calling.
+        let lexical_sym = self.candidate_scope_lexical_package().or_else(|| {
+            self.routine_stack
+                .last()
+                .and_then(|frame| frame.lexical_package)
+        });
         if let Some(hit) = self
             .caches
             .bare_name_packages_memo

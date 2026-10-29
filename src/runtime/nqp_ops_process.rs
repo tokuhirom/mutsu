@@ -95,6 +95,20 @@ impl Interpreter {
                 // A routine answers with the roles composed into it (ADR-11827).
                 let target = Self::routine_current_view(&target).unwrap_or(target);
                 let name = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+                // A type made by `Metamodel::Primitives.create_type` has no
+                // methods of its own: `nqp::can` asks its HOW's
+                // `find_method`, and a HOW without one dies, as on Rakudo.
+                if let ValueView::CustomType(custom) = target.view() {
+                    let how = (*custom.how).clone();
+                    return Some(
+                        self.call_method_with_values(
+                            how,
+                            "find_method",
+                            vec![target.clone(), Value::str(name)],
+                        )
+                        .map(|found| Value::int(i64::from(found.truthy()))),
+                    );
+                }
                 let found = !self.collect_can_methods(&target, &name).is_empty();
                 Ok(Value::int(i64::from(found)))
             }

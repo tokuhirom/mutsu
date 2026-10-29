@@ -62,13 +62,11 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
                 &name, *decl, "does", role, init,
             ))
         }
-        ParsedStmt::WillDecl { decl, phasers } => {
-            let name = match decl.as_ref() {
-                Stmt::VarDecl { name, .. } => name.clone(),
-                _ => return Err(RuntimeError::new("will declaration without a variable")),
-            };
-            Ok(crate::parser::wrap_with_will_phasers(*decl, &name, phasers))
-        }
+        ParsedStmt::WillDecl {
+            decl,
+            name,
+            phasers,
+        } => Ok(super::will_decl::wrap(*decl, &name, phasers)),
         ParsedStmt::DeclTail { head, tail } => Ok(crate::ast::decl_tail::expand(
             super::signature_expand::lower_pending(*head)?,
             tail,
@@ -130,9 +128,18 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
             decl,
             condition,
             kind,
-        } => Ok(crate::ast::attribute_modifier::expand(
-            *decl, condition, kind,
-        )),
+        } => {
+            // A compound initializer (`has $.x //= 1 if COND`) is the
+            // declaration compound node, which lowers to the declaration and
+            // its assignment; they stay in the one flat block.
+            let decl = match *decl {
+                Stmt::Ast(node) => lower_parsed(*node)?,
+                other => other,
+            };
+            Ok(crate::ast::attribute_modifier::expand(
+                decl, condition, kind,
+            ))
+        }
         ParsedStmt::AttributeGroup(attributes) | ParsedStmt::AttributeColonArglist(attributes) => {
             Ok(Stmt::SyntheticBlock(attributes))
         }

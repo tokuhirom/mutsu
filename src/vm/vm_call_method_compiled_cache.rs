@@ -210,7 +210,12 @@ impl Interpreter {
             // — meant every assertion that passes a *variable*
             // (`is $got, $expected, "..."`, `is-deeply @a, @b, "..."`, i.e. most
             // of roast) re-ran the whole candidate walk on every call.
-            let a = match raw.view() {
+            //
+            // The unwrapped views are only built when the argument is a
+            // `VarRef` / `ContainerRef`: cloning every argument just to look at
+            // it made a named-argument `Pair` take a refcount round trip that
+            // lands in the GC candidate buffer on drop.
+            let unwrapped: Option<Value> = match raw.view() {
                 ValueView::VarRef { name, value, .. } => {
                     // The symbol is at hand and the env's own `Str` is borrowed,
                     // so a typed variable argument costs no re-intern of its
@@ -221,10 +226,11 @@ impl Interpreter {
                         keys.push(key_syms::declared_type());
                         keys.push(crate::symbol::Symbol::intern(tc.as_str()));
                     }
-                    value.clone()
+                    Some(value.clone())
                 }
-                _ => raw.clone(),
+                _ => None,
             };
+            let a: &Value = unwrapped.as_ref().unwrap_or(raw);
             // A `ContainerRef` argument (a variable boxed into a shared cell,
             // e.g. one a closure captured) type-checks by its CONTENTS
             // (`args_match_param_types_inner`), exactly like the plain value,
@@ -235,12 +241,8 @@ impl Interpreter {
             // Refusing to key it made a Text::CSV field push (`$!csv-row.push:
             // $f` with `$f` captured by the parser's `keep` closure) re-run the
             // whole candidate walk on every call (#9494).
-            let a = if a.is_container_ref() {
-                a.deref_container()
-            } else {
-                a
-            };
-            let a = &a;
+            let contents: Option<Value> = a.is_container_ref().then(|| a.deref_container());
+            let a: &Value = contents.as_ref().unwrap_or(a);
             // The call-site mask also describes declared-native variables.
             // A light frame may omit their env type record, leaving a VarRef
             // with no declared constraint; its native bit must still differ
@@ -354,19 +356,27 @@ impl Interpreter {
                 // unwrap above produces; refuse it rather than guess.
                 | ValueView::VarRef { .. } => return false,
                 _ => {
-                    let name = crate::runtime::utils::value_type_name(a);
-                    // ADR-0019 E1a shadow probe (zero behavior change): see
-                    // `todo/deep/adr0019-e1-typeid-receiver-owner.md`.
-                    self.shadow_check_owner("multi_arg_type_keys", a, name);
                     // The scalar types every numeric/string call passes are
-                    // interned once per process, not hashed per argument.
+                    // interned once per process, not hashed per argument, and
+                    // their name is not even derived.
                     let wk = crate::type_id::well_known_types();
-                    match a.view() {
-                        ValueView::Int(_) | ValueView::BigInt(_) => wk.int.symbol(),
-                        ValueView::Num(_) => wk.num.symbol(),
-                        ValueView::Str(_) => wk.str_.symbol(),
-                        ValueView::Bool(_) => wk.bool_.symbol(),
-                        _ => crate::symbol::Symbol::intern(name),
+                    let scalar = match a.view() {
+                        ValueView::Int(_) | ValueView::BigInt(_) => Some(wk.int.symbol()),
+                        ValueView::Num(_) => Some(wk.num.symbol()),
+                        ValueView::Str(_) => Some(wk.str_.symbol()),
+                        ValueView::Bool(_) => Some(wk.bool_.symbol()),
+                        _ => None,
+                    };
+                    // ADR-0019 E1a shadow probe (zero behavior change): see
+                    // `todo/deep/adr0019-e1-typeid-receiver-owner.md`. Only
+                    // asked when the stats it feeds are on.
+                    match scalar {
+                        Some(sym) if !crate::vm::vm_stats::enabled() => sym,
+                        _ => {
+                            let name = crate::runtime::utils::value_type_name(a);
+                            self.shadow_check_owner("multi_arg_type_keys", a, name);
+                            scalar.unwrap_or_else(|| crate::symbol::Symbol::intern(name))
+                        }
                     }
                 }
             };

@@ -74,12 +74,59 @@ fn candidate_names(type_name: &str) -> Vec<&'static str> {
     names
 }
 
+/// Most distinct `(type, method)` pairs the suggestion memo holds before it
+/// starts over: the keys come from the program, so the memo is bounded.
+const SUGGESTION_MEMO_LIMIT: usize = 1024;
+
+type SuggestionMemo =
+    std::collections::HashMap<Box<str>, std::collections::HashMap<Box<str>, Vec<String>>>;
+
+thread_local! {
+    /// `type -> method -> suggestions`, with the number of entries held.
+    static SUGGESTION_MEMO: std::cell::RefCell<(SuggestionMemo, usize)> =
+        std::cell::RefCell::new((SuggestionMemo::new(), 0));
+}
+
 /// Rakudo's `X::Method::NotFound` suggestions: every candidate within
 /// `max_length` edits of `method` (a long name also matches any candidate
 /// that contains it), ordered by distance then name, cut at the distance of
 /// the fourth entry.
-// Cost: O(c * l^2 + c log c), c = candidates, l = longest name.
+///
+/// The answer is a pure function of the two names (the candidates come from
+/// the static Rakudo method catalog), so it is memoized: `.?name` and `.*name`
+/// on a type without the method build and discard this error on every call,
+/// and the edit-distance walk over every candidate was ~1.3M instructions of
+/// it (Red's `$attr.type.?inflator` paid that per column).
+// Cost: O(1) expected on a memo hit; O(c * l^2 + c log c) on a miss, c = candidates, l = longest name.
 fn suggestions(method: &str, type_name: &str) -> Vec<String> {
+    let hit = SUGGESTION_MEMO.with(|memo| {
+        memo.borrow()
+            .0
+            .get(type_name)
+            .and_then(|by_method| by_method.get(method))
+            .cloned()
+    });
+    if let Some(found) = hit {
+        return found;
+    }
+    let found = compute_suggestions(method, type_name);
+    SUGGESTION_MEMO.with(|memo| {
+        let (table, held) = &mut *memo.borrow_mut();
+        if *held >= SUGGESTION_MEMO_LIMIT {
+            table.clear();
+            *held = 0;
+        }
+        table
+            .entry(type_name.into())
+            .or_default()
+            .insert(method.into(), found.clone());
+        *held += 1;
+    });
+    found
+}
+
+// Cost: O(c * l^2 + c log c), c = candidates, l = longest name.
+fn compute_suggestions(method: &str, type_name: &str) -> Vec<String> {
     let max_length = match method.chars().count() {
         0..=3 => 1,
         4..=8 => 2,

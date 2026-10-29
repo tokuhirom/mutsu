@@ -69,6 +69,66 @@ fn anon_type_display_name(name: &str) -> Option<String> {
     Some(format!("<anon|{}>", n + 1))
 }
 
+/// The names under `Metamodel::` that Rakudo defines as `Perl6::Metamodel::X`
+/// (every one but `Primitives`, which is a `Metamodel::Primitives` proper).
+// Cost: O(log n), n = the number of names (binary search over a sorted table).
+fn is_core_metamodel_name(name: &str) -> bool {
+    static NAMES: &[&str] = &[
+        "Archetypes",
+        "ArrayType",
+        "AttributeContainer",
+        "BUILDALL",
+        "BUILDPLAN",
+        "BaseType",
+        "BoolificationProtocol",
+        "C3MRO",
+        "ClassHOW",
+        "CoercionHOW",
+        "Composing",
+        "ConcreteRoleHOW",
+        "Concretization",
+        "ConcretizationCache",
+        "Configuration",
+        "ContainerSpecProtocol",
+        "CurriedRoleHOW",
+        "DefaultParent",
+        "DefiniteHOW",
+        "Documenting",
+        "EnumHOW",
+        "Explaining",
+        "Finalization",
+        "GenericHOW",
+        "GrammarHOW",
+        "LanguageRevision",
+        "MROBasedMethodDispatch",
+        "MROBasedTypeChecking",
+        "MetaMethodContainer",
+        "MethodContainer",
+        "MethodDelegation",
+        "Mixins",
+        "ModuleHOW",
+        "MultiMethodContainer",
+        "MultipleInheritance",
+        "Naming",
+        "NativeHOW",
+        "NativeRefHOW",
+        "Nominalizable",
+        "PackageHOW",
+        "ParametricRoleGroupHOW",
+        "ParametricRoleHOW",
+        "PrivateMethodContainer",
+        "REPRComposeProtocol",
+        "RoleContainer",
+        "RolePunning",
+        "Stashing",
+        "SubsetHOW",
+        "Trusting",
+        "TypePretense",
+        "Versioning",
+    ];
+    NAMES.binary_search(&name).is_ok()
+}
+
 /// A lexically-scoped `my class`/`my role` whose bare name collides with an
 /// earlier same-named lexical declaration is stored in the registry under a
 /// mangled internal name `Foo\u{0}<site-id>` so its instances keep their own
@@ -101,6 +161,14 @@ pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
         }
     }
     if !name.contains('\u{0}') {
+        // Rakudo's metamodel classes and metaroles are really named
+        // `Perl6::Metamodel::X`; `Metamodel::X` is only the alias they are
+        // reachable under (`Metamodel::ClassHOW.^name`).
+        if let Some(rest) = name.strip_prefix("Metamodel::")
+            && is_core_metamodel_name(rest)
+        {
+            return std::borrow::Cow::Owned(format!("Perl6::{name}"));
+        }
         // Fast path: nothing mangled anywhere, no allocation needed.
         if let Some(display) = anon_type_display_name(name) {
             return std::borrow::Cow::Owned(display);
