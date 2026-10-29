@@ -558,7 +558,16 @@ impl MultiRank {
     /// candidates.
     // Cost: O(1).
     fn arity_mismatch(&self, other: &MultiRank) -> bool {
-        self.arity.0 != other.arity.0 && self.arity.1 != other.arity.1
+        if self.arity.0 == other.arity.0 || self.arity.1 == other.arity.1 {
+            return false;
+        }
+        // Two fixed-arity candidates whose positional ranges nest are ordered
+        // by their parameter types as usual: rakudo answers `multi p($a?, $b?)`
+        // / `multi p(Int $c)` for `p(3)` with the `Int` one, and only a pair
+        // that overlaps without nesting (`[2..3]` / `[3..4]`) is incomparable.
+        let nested = (self.arity.0 <= other.arity.0 && other.arity.1 <= self.arity.1)
+            || (other.arity.0 <= self.arity.0 && self.arity.1 <= other.arity.1);
+        !(nested && self.non_slurpy && other.non_slurpy)
     }
 
     /// Rakudo's `is_narrower` on the candidates' own ranks, the relation the
