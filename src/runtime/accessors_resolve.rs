@@ -433,6 +433,15 @@ impl Interpreter {
                 if cand.is_default {
                     env.insert_sym(crate::symbol::wk::multi_is_default(), Value::TRUE);
                 }
+                // The candidate's return spec is its own (the dispatcher's
+                // `base_env` is a capture of the running frame).
+                env.remove_sym(crate::symbol::well_known::return_type());
+                if let Some(return_type) = &cand.return_type {
+                    env.insert(
+                        "__mutsu_return_type".to_string(),
+                        Value::str(return_type.clone()),
+                    );
+                }
                 self.with_captured_fixtures(Value::make_sub_for_routine(
                     cand.package,
                     cand.name,
