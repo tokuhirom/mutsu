@@ -95,6 +95,8 @@ impl Interpreter {
     fn push_import_scope_scoping_classes(&mut self, scope_classes: bool) {
         let snapshot = {
             crate::runtime::ImportScopeSnapshot {
+                import_writes: Vec::new(),
+                shadowed_proto_names: HashSet::new(),
                 imported_env_keys: Default::default(),
                 block_bound_keys: Default::default(),
                 shadowed_env_values: HashMap::new(),
@@ -405,15 +407,75 @@ impl Interpreter {
         foreign
     }
 
+    /// Record a routine-registry write an import is about to make, with the
+    /// value it replaces, on the innermost open import scope (none at the top
+    /// level: those imports persist).
+    // Cost: O(1) amortized.
+    pub(crate) fn log_import_write(&mut self, write: crate::runtime::ImportWrite) {
+        if let Some(scope) = self.module.import_scope_stack.last_mut() {
+            scope.import_writes.push(write);
+        }
+    }
+
+    /// Put back what `writes` replaced, newest first. Returns the function
+    /// keys whose presence changed.
+    // Cost: O(w), w = writes.
+    fn undo_import_writes(&mut self, writes: Vec<crate::runtime::ImportWrite>) -> Vec<Symbol> {
+        use crate::runtime::ImportWrite;
+        let mut changed = Vec::new();
+        for write in writes.into_iter().rev() {
+            match write {
+                ImportWrite::Function(key, prior) => {
+                    let mut registry = self.registry_mut();
+                    let functions = registry.functions_mut();
+                    match prior {
+                        Some(def) => {
+                            functions.insert(key, def);
+                        }
+                        None => {
+                            functions.remove(&key);
+                        }
+                    }
+                    changed.push(key);
+                }
+                ImportWrite::Proto(key, prior) => {
+                    let mut registry = self.registry_mut();
+                    let protos = registry.proto_functions_mut();
+                    match prior {
+                        Some(def) => {
+                            protos.insert(key, def);
+                        }
+                        None => {
+                            protos.remove(&key);
+                        }
+                    }
+                }
+                ImportWrite::ProtoSub(name, was_present) => {
+                    let mut registry = self.registry_mut();
+                    if was_present {
+                        registry.proto_subs_insert(name);
+                    } else {
+                        registry.proto_subs_retain(|key| key != name.as_str());
+                    }
+                }
+            }
+        }
+        changed
+    }
+
     // Cost: O(1) when the scope's block imported no `GLOBAL::MAIN` candidate
     // (the foreign-`MAIN` check is memoised per routine-table version), else
-    // O(k), k = interned `GLOBAL::MAIN/...` names. The routine tables are never
-    // rolled back: a routine an import binds lives in the block's lexical import
-    // set (ADR-8751), a class an import registered is the module's own, and a
-    // name it exports binds lexically. Rakudo: O(1) -- see #9170.
+    // O(k), k = interned `GLOBAL::MAIN/...` names, plus O(w), w = registry
+    // writes the scope's registry-path imports logged. The routine tables are
+    // not rolled back wholesale: a routine an import binds lives in the block's
+    // lexical import set (ADR-8751), and only the writes of an import that
+    // keeps the registry are undone. A class an import registered is the
+    // module's own. Rakudo: O(1) -- see #9170.
     pub(crate) fn pop_import_scope(&mut self) {
         if let Some(snapshot) = self.module.import_scope_stack.pop() {
             let crate::runtime::ImportScopeSnapshot {
+                import_writes,
+                shadowed_proto_names: _,
                 imported_env_keys,
                 block_bound_keys: _,
                 mut shadowed_env_values,
@@ -439,7 +501,8 @@ impl Interpreter {
             // `use` registered it before the scope opened: only the program's
             // own `MAIN` stays.
             let program_path = self.io.program_path_sym;
-            let changed_keys = self.drop_foreign_global_main_candidates(program_path);
+            let mut changed_keys = self.undo_import_writes(import_writes);
+            changed_keys.extend(self.drop_foreign_global_main_candidates(program_path));
             // The `env` half: drop the aliases this scope imported (see
             // `restore_import_env_keys`). A PRELOAD scope (`scope_classes ==
             // false`, see `push_preload_scope`) keeps them.

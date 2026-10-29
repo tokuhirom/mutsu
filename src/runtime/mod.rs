@@ -2746,6 +2746,15 @@ pub(crate) type RoutineRegistrySnapshot = (
     Arc<HashMap<Symbol, HashSet<String>>>, // imported exported-proto tags snapshot
 );
 
+/// One routine-registry write an import made inside an import scope, with the
+/// value it replaced (`None`: the key was absent).
+pub(crate) enum ImportWrite {
+    Function(Symbol, Option<Arc<FunctionDef>>),
+    Proto(Symbol, Option<Arc<FunctionDef>>),
+    /// A `proto_subs` marker, and whether it was already there.
+    ProtoSub(String, bool),
+}
+
 /// What a lexical import scope (`{ use Foo; ... }`) restores when it pops: the
 /// registry key sets that existed before the `use`, plus the pragma flags `use`
 /// can flip. Every symbol table an import writes into has to be listed here —
@@ -2753,6 +2762,15 @@ pub(crate) type RoutineRegistrySnapshot = (
 /// stayed visible to `has_proto` after the block and kept `skip(5, @a)` on the
 /// user-routine argument path (VarRef-wrapped) instead of the list builtin's.
 pub(crate) struct ImportScopeSnapshot {
+    /// The routine-registry writes the scope's registry-path imports made, in
+    /// order, each with what it replaced: the pop undoes them in reverse. A
+    /// plain routine or a multi family an import binds lexically writes none
+    /// (ADR-8751); what is left is an import that keeps the registry (a family
+    /// the block extends itself, a core listop, an operator, another unit's).
+    pub(crate) import_writes: Vec<ImportWrite>,
+    /// Fully-qualified imported proto names whose enclosing family this scope
+    /// already hid. Further imports of the name merge with the first one.
+    pub(crate) shadowed_proto_names: HashSet<String>,
     /// Exact `env` keys `import_module` wrote as an imported alias while
     /// this scope was on top of `import_scope_stack` (e.g. `&ok`, `$CONST`,
     /// or the importing-package-qualified `&GLOBAL::ok` the trait-value

@@ -8,7 +8,11 @@ impl Interpreter {
     /// suffix to the base key, then walk base, `__m1`, `__m2`, ... and insert
     /// at the first vacant slot. A slot already holding this exact `Arc`
     /// (same-module re-import) makes the call a no-op.
-    fn import_multi_candidate_merged(&mut self, target_key: &str, def: Arc<FunctionDef>) -> Symbol {
+    fn import_multi_candidate_merged(
+        &mut self,
+        target_key: &str,
+        def: Arc<FunctionDef>,
+    ) -> (Symbol, bool) {
         let base = match target_key.rfind("__m") {
             Some(pos)
                 if pos + 3 < target_key.len()
@@ -31,11 +35,11 @@ impl Interpreter {
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     let key = *entry.key();
                     entry.insert(def);
-                    return key;
+                    return (key, true);
                 }
                 std::collections::hash_map::Entry::Occupied(entry) => {
                     if Arc::ptr_eq(entry.get(), &def) {
-                        return *entry.key();
+                        return (*entry.key(), false);
                     }
                 }
             }
@@ -195,7 +199,7 @@ impl Interpreter {
         let mut installed = Vec::with_capacity(entries.len());
         for (target_key, def) in entries {
             let installed_key = if target_key.contains('/') {
-                self.import_multi_candidate_merged(&target_key, def.clone())
+                self.import_multi_candidate_merged(&target_key, def.clone()).0
             } else {
                 let key = Symbol::intern(&target_key);
                 self.registry_mut().functions_mut().insert(key, def.clone());
@@ -441,7 +445,7 @@ impl Interpreter {
         let mut installed = Vec::with_capacity(entries.len());
         for (target_key, def) in entries {
             let installed_key = if target_key.contains('/') {
-                self.import_multi_candidate_merged(&target_key, def.clone())
+                self.import_multi_candidate_merged(&target_key, def.clone()).0
             } else {
                 let key = Symbol::intern(&target_key);
                 self.registry_mut()
@@ -516,21 +520,25 @@ impl Interpreter {
             && self.types.our_scoped_package_items.contains(fq_name)
     }
 
-    /// Hide the candidate family already visible at `target_single` before a
-    /// top-level import installs its own routine of that name: raku treats the
-    /// import as a new lexical family, while the flat registry otherwise merges
-    /// its candidates with the family already there (a bare-file dependency
-    /// preloaded `GLOBAL::localtime` before `Time::localtime` imported its own
-    /// wrapper). Only a top-level import calls this: a block's import binds in
-    /// the block's lexical import set (ADR-8751), and what stays on the registry
-    /// there merges with the enclosing family rather than hiding it, because
-    /// nothing puts a hidden family back when the block exits.
+    /// Hide the candidate family already visible at `target_single` before an
+    /// import that keeps the registry installs its own proto or only-sub of
+    /// that name: raku treats the import as a new lexical family, while the flat
+    /// registry otherwise merges its candidates with an enclosing `my sub` and
+    /// lets the older declaration win. Inside an import scope the hidden
+    /// entries go on the scope's write log, which puts them back at the pop;
+    /// further imports of the name in the scope merge with the first one.
     // Cost: O(k + c), k = interned names of the family (the family index), c =
     // its candidates removed.
     fn shadow_imported_proto_family(&mut self, target_single: &str) {
         if self.import_target_declares_family(target_single) {
             return;
         }
+        if let Some(scope) = self.module.import_scope_stack.last_mut()
+            && !scope.shadowed_proto_names.insert(target_single.to_string())
+        {
+            return;
+        }
+        let in_scope = !self.module.import_scope_stack.is_empty();
         let target_sym = Symbol::intern(target_single);
         let mut keys = self.registry().functions.family_keys(target_single);
         if self.registry().functions.contains_key(&target_sym) {
@@ -538,27 +546,37 @@ impl Interpreter {
         }
         let mut removed_keys: Vec<Symbol> = Vec::new();
         for key in keys {
-            if self.registry_mut().functions_mut().remove(&key).is_some() {
+            let removed = self.registry_mut().functions_mut().remove(&key);
+            if let Some(def) = removed {
+                self.log_import_write(crate::runtime::ImportWrite::Function(key, Some(def)));
                 removed_keys.push(key);
             }
         }
-        self.registry_mut().proto_functions_mut().remove(&target_sym);
-        // `module_registered_functions` is a flat, un-scoped set of registry
-        // keys protected because some loaded module's own body once installed
-        // them (`load_module_inner`'s `module_funcs` diff, keyed by symbol
-        // only). It has no notion of a key being reassigned to a different
-        // owner; once shadowed away here the name no longer names that
-        // module's definition, and a later import reusing the exact same
-        // `GLOBAL::` key must not inherit the stale protection (#8798).
-        if !removed_keys.is_empty() {
+        let proto = self.registry_mut().proto_functions_mut().remove(&target_sym);
+        if let Some(def) = proto {
+            self.log_import_write(crate::runtime::ImportWrite::Proto(target_sym, Some(def)));
+        }
+        if self.registry().proto_subs_contains(target_single) {
+            self.log_import_write(crate::runtime::ImportWrite::ProtoSub(
+                target_single.to_string(),
+                true,
+            ));
+        }
+        // Replace the old proto marker along with its candidate family.
+        self.registry_mut()
+            .proto_subs_retain(|key| key != target_single);
+        if !in_scope && !removed_keys.is_empty() {
+            // A top-level import has no scope to restore: the family is gone
+            // for good. `module_registered_functions` is a flat set of registry
+            // keys protected because some loaded module's own body once
+            // installed them; it has no notion of a key being reassigned to a
+            // different owner, and a later import reusing the exact same
+            // `GLOBAL::` key must not inherit the stale protection (#8798).
             let table = crate::runtime::cow_table_mut(&mut self.module.module_registered_functions);
             for key in &removed_keys {
                 table.remove(key);
             }
         }
-        // Replace the old proto marker along with its candidate family.
-        self.registry_mut()
-            .proto_subs_retain(|key| key != target_single);
         // Only the shadowed family's keys left the functions map (#9170).
         self.invalidate_fn_resolution_changing_keys(removed_keys);
     }
@@ -1251,8 +1269,9 @@ impl Interpreter {
                     .iter()
                     .all(|(key, _)| !key.as_str().contains('/'));
             if !family_bound_lexically
-                && self.module.import_scope_stack.is_empty()
-                && (imported_proto || imports_only_sub || global_family_present)
+                && (((imported_proto || imports_only_sub)
+                    && !self.module.import_scope_stack.is_empty())
+                    || global_family_present)
             {
                 self.shadow_imported_proto_family(&target_single);
             }
@@ -1278,9 +1297,14 @@ impl Interpreter {
                     // instead, and skip candidates already installed (a
                     // re-import of the same module must stay idempotent).
                     self.note_lexical_import_candidate(&name, &v);
-                    let key = self.import_multi_candidate_merged(&ks, v);
+                    let (key, inserted) = self.import_multi_candidate_merged(&ks, v);
+                    if inserted {
+                        self.log_import_write(crate::runtime::ImportWrite::Function(key, None));
+                    }
                     installed_keys.push(key);
                 } else {
+                    let prior = self.registry().functions.get(&k).cloned();
+                    self.log_import_write(crate::runtime::ImportWrite::Function(k, prior));
                     self.registry_mut().functions_mut().insert(k, v);
                     installed_keys.push(k);
                 }
@@ -1303,6 +1327,8 @@ impl Interpreter {
                 .map(|v| (Symbol::intern(&target_single), v))
                 .collect();
             for (k, v) in proto_entries {
+                let prior = self.registry().proto_functions.get(&k).cloned();
+                self.log_import_write(crate::runtime::ImportWrite::Proto(k, prior));
                 self.registry_mut().proto_functions_mut().insert(k, v);
             }
             // `has_proto` consults the `proto_subs` name set, not just
@@ -1311,6 +1337,13 @@ impl Interpreter {
             // registered under their own package, a module's proto was already
             // in `proto_subs` as `GLOBAL::name` and this was invisible.)
             if imported_proto && !family_bound_lexically {
+                let was_present = self.registry().proto_subs_contains(&target_single);
+                if !was_present {
+                    self.log_import_write(crate::runtime::ImportWrite::ProtoSub(
+                        target_single.clone(),
+                        false,
+                    ));
+                }
                 self.registry_mut().proto_subs_insert(target_single.clone());
                 self.record_imported_exported_proto(target_pkg, &name, symbol_tags.iter().cloned());
             }
