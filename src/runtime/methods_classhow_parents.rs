@@ -197,7 +197,7 @@ impl Interpreter {
         let non_transitive = args[1..]
             .iter()
             .any(|a| matches!(a.view(), ValueView::Pair(k, v) if k == "transitive" && !v.truthy()));
-        let mut roles = match typed_container_roles(&class_name, local, non_transitive) {
+        let mut roles = match typed_container_roles(&class_name, local, non_transitive, is_instance) {
             Some(roles) => roles,
             None => self.collect_roles_for_class(&class_name, local, non_transitive, is_instance),
         };
@@ -474,7 +474,12 @@ impl Interpreter {
 /// parameterized `Positional[T]` / `Associative[V]` level; a one-argument
 /// `Hash[V]` keys on `Str(Any)` and is `Hash::Typed`. `None` for any other name.
 // Cost: O(n), n = chars of the type name.
-fn typed_container_roles(class_name: &str, local: bool, non_transitive: bool) -> Option<Vec<String>> {
+fn typed_container_roles(
+    class_name: &str,
+    local: bool,
+    non_transitive: bool,
+    is_instance: bool,
+) -> Option<Vec<String>> {
     let (base, rest) = class_name.split_once('[')?;
     let inner = rest.strip_suffix(']')?;
     let mut args = Vec::new();
@@ -491,6 +496,46 @@ fn typed_container_roles(class_name: &str, local: bool, non_transitive: bool) ->
         }
     }
     args.push(inner[start..].trim());
+    // `Blob[T]` / `Buf[T]` (measured from rakudo): the curried role first,
+    // then the signedness role the element type selects, and for the
+    // transitive list the `Positional[T]`/`Stringy` the group composes.
+    if let ("Blob" | "Buf", [t]) = (base, args.as_slice()) {
+        let sign = if t.starts_with('u') { "Unsigned" } else { "Signed" };
+        let blob = format!("{sign}Blob[{t}]");
+        let positional = [format!("Positional[{t}]"), "Stringy".to_string()];
+        if !is_instance {
+            // The type object does not list itself or the instance-only
+            // repeats; `:!transitive` only narrows `Buf`'s list.
+            let mut roles = Vec::new();
+            if base == "Buf" {
+                roles.extend([format!("Buf::{sign}Buf[{t}]"), format!("Blob[{t}]")]);
+                if non_transitive {
+                    return Some(roles);
+                }
+            }
+            roles.extend([blob]);
+            roles.extend(positional);
+            return Some(roles);
+        }
+        let mut roles = vec![format!("{base}[{t}]")];
+        if base == "Buf" {
+            let buf = format!("Buf::{sign}Buf[{t}]");
+            if non_transitive {
+                roles.extend([blob, buf]);
+            } else {
+                roles.extend([buf.clone(), format!("Blob[{t}]"), blob.clone()]);
+                roles.extend(positional);
+                roles.extend([blob, buf]);
+            }
+        } else if non_transitive {
+            roles.push(blob);
+        } else {
+            roles.push(blob.clone());
+            roles.extend(positional);
+            roles.push(blob);
+        }
+        return Some(roles);
+    }
     let (typed, parameterized, bare) = match (base, args.as_slice()) {
         ("Array", [t]) => (
             format!("Array::Typed[{t}]"),

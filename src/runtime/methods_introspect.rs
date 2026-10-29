@@ -414,7 +414,10 @@ impl Interpreter {
         };
         let how_cache_key = how_lookup_name.as_ref().map(|name| {
             let is_package = matches!(target.view(), ValueView::Package(_));
-            if !is_package && self.registry().roles.contains_key(name) {
+            if !is_package
+                && (self.registry().roles.contains_key(name)
+                    || crate::runtime::types::is_builtin_role_name(name))
+            {
                 match target.view() {
                     ValueView::Instance { attributes, .. } => {
                         match attributes.as_map().get("__mutsu_role_candidate_idx") {
@@ -632,6 +635,14 @@ impl Interpreter {
                 // statement, so it has no `package_kinds` entry, but it is still a
                 // package and reports `PackageHOW`, not the default `ClassHOW`.
                 "Perl6::Metamodel::PackageHOW".to_string()
+            } else if is_type_object
+                && type_name
+                    .split_once('[')
+                    .is_some_and(|(base, _)| crate::runtime::types::is_builtin_role_name(base))
+            {
+                // `Blob[uint8]`, `Callable[Int]`: a core role curried with its
+                // arguments reports `CurriedRoleHOW` like a declared one.
+                "Perl6::Metamodel::CurriedRoleHOW".to_string()
             } else if is_type_object
                 && (self.registry().roles.contains_key(&type_name) && !type_name.contains('[')
                 // The core roles mutsu models natively have no `RoleDef`; ask the

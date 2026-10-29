@@ -30,13 +30,24 @@ impl Interpreter {
             {
                 target.clone()
             }
+            // An instance of a curried core role (`Blob[uint8].new`) lists the
+            // role it was made from in `.^roles`, which a type object does not.
+            ValueView::Instance { class_name, .. }
+                if meta_method == "roles"
+                    && class_name
+                        .as_str()
+                        .split_once('[')
+                        .is_some_and(|(base, _)| matches!(base, "Blob" | "Buf")) =>
+            {
+                target.clone()
+            }
             ValueView::Instance { class_name, .. } => Value::package(class_name),
             _ => target.clone(),
         }
     }
 
     /// Check if a metamodel class name is a HOW type.
-    pub(super) fn is_metamodel_how(class_name: &Symbol) -> bool {
+    pub(crate) fn is_metamodel_how(class_name: &Symbol) -> bool {
         let cn = class_name.resolve();
         cn == "Perl6::Metamodel::ClassHOW"
             || cn == "Perl6::Metamodel::GrammarHOW"
