@@ -368,7 +368,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
     let brace = rest;
     let (rest, mut body) = package_body_block_with_terms(rest, &sigilless_terms)?;
     let spans = crate::parser::stmt::sub::package_spans(name_span, brace, rest, &body);
-    crate::parser::stmt::nested_block_methods::hoist(&mut body);
+    crate::rakuast::nested_methods::hoist(&mut body);
     // Handle `also is rw;` in the role body
     body.retain(|stmt| {
         if stmt_is_also_is_rw(stmt) {

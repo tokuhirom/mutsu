@@ -2,7 +2,7 @@
 //! declared in a nested block of a package body.
 //!
 //! The parser hoists such a declaration to the package body
-//! (`parser::stmt::nested_block_methods`), so the package-body walk installs it
+//! (`rakuast::nested_methods`), so the package-body walk installs it
 //! like any other method -- in the method table, with its return type,
 //! private/submethod/multi status and traits intact. What the hoisted copy
 //! cannot see is the block it was written in: a `sub helper` or a `my $y`

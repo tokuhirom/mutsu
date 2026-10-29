@@ -302,7 +302,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
         package_body_block(r)?
     };
     let spans = crate::parser::stmt::sub::package_spans(name_span, r, rest, &body);
-    crate::parser::stmt::nested_block_methods::hoist(&mut body);
+    crate::rakuast::nested_methods::hoist(&mut body);
     // A `grammar G { also is Base; }` body carries its parent the same way a
     // `class` body does; without this extraction the bare `is(also, Base)`
     // infix expression would reach the runtime as "two terms in a row".

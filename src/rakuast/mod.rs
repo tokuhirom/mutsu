@@ -33,6 +33,7 @@ mod decl_origins;
 pub(crate) mod empty_fields;
 mod expr_origins;
 mod if_branch;
+pub(crate) mod nested_methods;
 mod package_trait_origins;
 mod parsed_view;
 mod regex_origins;

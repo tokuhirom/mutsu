@@ -135,7 +135,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             value: RakuAstFieldValue::List(traits),
         });
     }
-    let body = crate::parser::unhoist_nested_methods(&role.body[header_len..]);
+    let body = super::nested_methods::unhoist(&role.body[header_len..]);
     fields.push(node_field(
         Some("body"),
         RakuAstNode {
