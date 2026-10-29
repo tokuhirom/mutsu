@@ -40,6 +40,38 @@ impl Parser {
     /// node because their RakuAST shape omits the Lookahead wrapper. Escaped
     /// characters and ordinary scalar interpolations are accepted when the
     /// nested tree already has a source and execution representation.
+    /// `$(EXPR)>` / `@(EXPR)>` / `%(EXPR)>` after the `<`; `None` (position
+    /// unchanged) for any other shape.
+    // Cost: O(n), n = length of the expression source.
+    fn parse_assertion_contextualizer(&mut self, sequential: bool) -> Option<RegexNode> {
+        let start = self.pos;
+        if !matches!(self.chars.get(start), Some('$' | '@' | '%'))
+            || self.chars.get(start + 1) != Some(&'(')
+        {
+            return None;
+        }
+        let node = self.parse_contextualized_interpolation(sequential);
+        match node {
+            Some(RegexNode::Extension(RegexExtension::ContextualizedInterpolation {
+                sigil,
+                sequential,
+                code,
+                ..
+            })) if self.consume_if('>') => Some(RegexNode::Extension(
+                RegexExtension::ContextualizedInterpolation {
+                    sigil,
+                    sequential,
+                    assertion: true,
+                    code,
+                },
+            )),
+            _ => {
+                self.pos = start;
+                None
+            }
+        }
+    }
+
     fn parse_single_lookaround(&mut self, sequential_interpolation: bool) -> Option<RegexNode> {
         let start = self.pos;
         self.pos += 1; // '<'
@@ -118,6 +150,14 @@ impl Parser {
         // argument tree is represented here.
         if !explicit && self.chars.get(self.pos) == Some(&'&') {
             return self.parse_callable(start);
+        }
+
+        // `<$(EXPR)>`, `<@(EXPR)>` and `<%(EXPR)>`: the same interpolation over a
+        // contextualized expression.
+        if !explicit
+            && let Some(node) = self.parse_assertion_contextualizer(sequential_interpolation)
+        {
+            return Some(node);
         }
 
         // `<$name>`, `<@name>`, and `<%name>` interpolate the current lexical

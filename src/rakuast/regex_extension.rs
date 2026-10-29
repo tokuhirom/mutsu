@@ -102,6 +102,7 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
         RegexExtension::ContextualizedInterpolation {
             sigil,
             sequential,
+            assertion,
             code,
         } => {
             let class = contextualizer_class(*sigil)?;
@@ -113,21 +114,28 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
                     .map(|statement| node_field(None, statement))
                     .collect(),
             };
+            let mut fields = vec![
+                leaf_field(Some("sequential"), Value::truth(*sequential)),
+                node_field(
+                    Some("var"),
+                    RakuAstNode {
+                        origin: Default::default(),
+                        class,
+                        fields: vec![node_field(None, sequence)],
+                    },
+                ),
+            ];
+            if !*assertion {
+                fields.push(super::regex_code::source_field(&code.code));
+            }
             RakuAstNode {
                 origin: Default::default(),
-                class: RakuAstClass::RegexInterpolation,
-                fields: vec![
-                    leaf_field(Some("sequential"), Value::truth(*sequential)),
-                    node_field(
-                        Some("var"),
-                        RakuAstNode {
-                            origin: Default::default(),
-                            class,
-                            fields: vec![node_field(None, sequence)],
-                        },
-                    ),
-                    super::regex_code::source_field(&code.code),
-                ],
+                class: if *assertion {
+                    RakuAstClass::RegexAssertionInterpolatedVar
+                } else {
+                    RakuAstClass::RegexInterpolation
+                },
+                fields,
             }
         }
         RegexExtension::ContextualizedVariable {
@@ -278,6 +286,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError
                 .or_else(|| lower_placeholder(node))
                 .or_else(|| lower_anonymous(node));
         }
+        RakuAstClass::RegexAssertionInterpolatedVar => return lower_contextualized(node),
         RakuAstClass::RegexAssertionAlias => return lower_alias(node),
         RakuAstClass::RegexAssertionNamedRegexArg => return lower_named_regex_arg(node),
         RakuAstClass::RegexBacktrackModifiedAtom => lower_backtrack_modified(node),
@@ -400,8 +409,12 @@ fn lower_contextualized(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeE
     Some((|| {
         let sequence = super::lower::named_child_or_positional(var)?;
         let sequential = super::lower::bool_field(node, "sequential")?;
+        let assertion = node.class == RakuAstClass::RegexAssertionInterpolatedVar;
         // `@$ref`: the contextualizer holds the variable itself.
         if sequence.class == RakuAstClass::VarLexical {
+            if assertion {
+                return Err(super::lower::unsupported(node));
+            }
             let name = positional_leaf(sequence)?;
             return match name.view() {
                 ValueView::Str(name)
@@ -431,14 +444,28 @@ fn lower_contextualized(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeE
                 rakuast_node_of(value).ok_or_else(|| super::lower::unsupported(node))?;
             body.push(lower_stmt(statement)?);
         }
+        // The assertion form carries no source field (rakudo's tree has none);
+        // spell the code from its single expression.
+        let code = if assertion {
+            let mut exprs = body
+                .iter()
+                .filter(|stmt| !matches!(stmt, crate::ast::Stmt::SetLine(..)));
+            match (exprs.next(), exprs.next()) {
+                (Some(crate::ast::Stmt::Expr(expr)), None) => {
+                    crate::regex_tree::expression_argument_source(expr)
+                        .ok_or_else(|| super::lower::unsupported(node))?
+                }
+                _ => return Err(super::lower::unsupported(node)),
+            }
+        } else {
+            super::regex_code::source_of(node)
+        };
         Ok(RegexNode::Extension(
             RegexExtension::ContextualizedInterpolation {
                 sigil,
                 sequential,
-                code: Box::new(RegexCode {
-                    code: super::regex_code::source_of(node),
-                    body,
-                }),
+                assertion,
+                code: Box::new(RegexCode { code, body }),
             },
         ))
     })())

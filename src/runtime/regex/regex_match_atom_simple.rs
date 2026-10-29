@@ -323,11 +323,16 @@ impl Interpreter {
                     None => self.regex_match_end_from_in_pkg(fallback, chars, pos, pkg),
                 };
             }
-            RegexAtom::CodeInterp { code, list } => {
+            RegexAtom::CodeInterp {
+                code,
+                list,
+                as_regex,
+            } => {
                 return self
                     .regex_code_interp_ends_unrecorded(
                         code,
                         *list,
+                        *as_regex,
                         chars,
                         pos,
                         &RegexCaptures::default(),

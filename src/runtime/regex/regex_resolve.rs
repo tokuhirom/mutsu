@@ -627,7 +627,13 @@ impl Interpreter {
             .strip_prefix(['$', '@'])?
             .strip_prefix('(')?
             .strip_suffix(')')?;
-        Some(format!("{{{inner}}}"))
+        // The `@` form reads the value as a list, so a lazy `.grep` / `.map`
+        // result is an alternation of its elements, not an unreified Seq.
+        Some(if rhs.starts_with('@') {
+            format!("{{(do {{ {inner} }}).list}}")
+        } else {
+            format!("{{{inner}}}")
+        })
     }
 
     /// Whether `text` is a proto candidate's long name, `ident:sym<…>` (or

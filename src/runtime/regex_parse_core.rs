@@ -2533,6 +2533,7 @@ impl Interpreter {
                         RegexAtom::CodeInterp {
                             code: code.into(),
                             list: c == '@',
+                            as_regex: false,
                         }
                     }
                     '\\' => {
@@ -3679,6 +3680,23 @@ impl Interpreter {
                                             atom
                                         } else {
                                             continue;
+                                        }
+                                    } else if let Some((code, list)) =
+                                        super::regex::regex_code_interp::assertion_code_interp(trimmed)
+                                    {
+                                        // `<$( code )>` / `<@( code )>`: the value of
+                                        // `code`, read when the atom is matched, as an
+                                        // indirect subrule (`<$x>` / `<@x>` semantics).
+                                        if mode == RegexParseMode::Validate {
+                                            RegexAtom::Named(name.clone().into())
+                                        } else {
+                                            runtime_value_atom = true;
+                                            super::regex::regex_helpers::note_regex_code_lowered();
+                                            RegexAtom::CodeInterp {
+                                                code: code.into(),
+                                                list,
+                                                as_regex: true,
+                                            }
                                         }
                                     } else if trimmed == "?" {
                                         // <?>  null assertion: matches zero-width at any position
