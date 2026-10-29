@@ -762,6 +762,10 @@ impl Interpreter {
                 if target == "_" || target == "@_" || target == "%_" {
                     continue;
                 }
+                // The record's names are no caller variables (ADR-14843).
+                if matches!(target.as_str(), "?CLASS" | "?ROLE") {
+                    continue;
+                }
                 // A sigilless param aliasing an `@`/`%` variable stores through
                 // that variable's own shape (`\c := @a; c = LIST` is
                 // `@a.STORE(LIST)`), as in `apply_rw_bindings_to_env`.

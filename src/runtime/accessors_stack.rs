@@ -797,13 +797,20 @@ impl Interpreter {
         if name != "self" {
             return false;
         }
-        match self.frame_invocant_mut() {
-            Some(slot) => {
-                *slot = value.clone();
-                true
-            }
-            None => false,
+        if let Some(slot) = self.frame_invocant_mut() {
+            *slot = value.clone();
+            return true;
         }
+        // A method run as a function through a light call has no record: its
+        // `self` parameter is a slot of the running code.
+        if let Some(code) = self.running_code()
+            && let Some(&slot) = code.local_slots_of(crate::symbol::wk::self_()).first()
+            && let Some(local) = self.locals.get_mut(slot as usize)
+        {
+            *local = value.clone();
+            return true;
+        }
+        false
     }
 
     /// The record a closure, gather or routine value created now captures:
@@ -848,10 +855,7 @@ impl Interpreter {
         if let Some(invocant) = self.frame_fixtures().and_then(|f| f.invocant.clone()) {
             return Some(invocant);
         }
-        // Last: the `self` parameter a method body run as a function was
-        // bound with (`my method FETCH` handed to a Proxy), which the binder
-        // writes under the parameter's own name.
-        self.env.get_sym(self_sym).cloned()
+        None
     }
 
 

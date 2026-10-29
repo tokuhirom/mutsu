@@ -1074,7 +1074,10 @@ impl Interpreter {
     pub(crate) fn bind_type_capture(&mut self, name: &str, value: &Value) {
         TYPE_CAPTURE_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
         let captured = self.captured_type_object_of(value);
-        self.env.insert(name.to_string(), captured.clone());
+        // `?CLASS` / `?ROLE` are the frame record's, not env keys (ADR-14843).
+        if !matches!(name, "?CLASS" | "?ROLE") {
+            self.env.insert(name.to_string(), captured.clone());
+        }
         let pkg = self.current_package_sym();
         if pkg != crate::symbol::wk::global_package()
             && !name.starts_with(['$', '@', '%', '&', '!', '.', '?', '*', '/'])
