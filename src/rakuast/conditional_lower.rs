@@ -27,7 +27,7 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
         ParsedStmt::Given { topic, block } => {
             let body = match block.params {
                 BlockParams::Topic { def: Some(def), .. } => {
-                    crate::parser::given_pointy_body(*def, block.body)
+                    super::pointy_bind::given_pointy_body(*def, block.body)
                 }
                 _ => block.body,
             };
@@ -155,7 +155,7 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
                 BlockParams::Topic { def, .. } => Some(def.into_iter().map(|d| *d).collect()),
                 BlockParams::List(defs) => Some(defs),
             };
-            let mut stmt = crate::parser::loop_pointy_clause(
+            let mut stmt = super::loop_bind::loop_pointy_clause(
                 w.condition,
                 defs,
                 w.block.body,
@@ -359,7 +359,7 @@ fn lower_loop(l: crate::ast::parsed::LoopStmt) -> Result<Stmt, RuntimeError> {
         BlockParams::Topic { name, .. } => name,
         _ => None,
     };
-    let (init, step) = crate::parser::repeat_param_clause(param);
+    let (init, step) = super::loop_bind::repeat_param_clause(param);
     let cond = l.condition.map(|cond| {
         if until {
             Expr::Unary {

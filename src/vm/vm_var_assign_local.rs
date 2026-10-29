@@ -949,6 +949,18 @@ impl Interpreter {
         if !(name.starts_with('%') || name.starts_with('@') || self.take_pending_sigilless(name)) {
             return Ok(None);
         }
+        // An `@`/`%` attribute (`%!children = ...`) lives in `self`'s attribute
+        // cell, the store of record (see `tied_candidate_outside_slot`): a plain
+        // Hash/Array there is neither tied nor mixed, which is all the probes
+        // below could find, so they (two by-name env walks) are skipped.
+        if !checked_sigilless
+            && Self::is_array_hash_attr_twigil(name)
+            && self
+                .read_self_attr_cell(name)
+                .is_some_and(|v| Self::is_plain_aggregate(&v))
+        {
+            return Ok(None);
+        }
         if checked_sigilless
             && self
                 .get_env_with_main_alias(name)
@@ -1061,6 +1073,13 @@ impl Interpreter {
             through_cell = true;
         }
         through_cell
+    }
+
+    /// Whether `val` (read through a capture cell) is a plain Hash or Array,
+    /// with no class or role mixed in.
+    // Cost: O(1).
+    fn is_plain_aggregate(val: &Value) -> bool {
+        val.with_deref(|v| matches!(v.view(), ValueView::Hash(_) | ValueView::Array(..)))
     }
 
     /// Whether `val` is a value a tie can be bound to: an instance, or the
