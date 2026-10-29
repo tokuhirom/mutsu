@@ -225,7 +225,14 @@ fn where_(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>
 fn clone(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match target.view() {
         ValueView::Package(_) | ValueView::Nil => Some(Ok(target.clone())),
-        ValueView::LazyList(ll) => Some(Ok(Value::lazy_list(crate::gc::Gc::new((**ll).clone())))),
+        ValueView::LazyList(ll) => {
+            let mut copy = (**ll).clone();
+            // A generator-driven array shares its reifier with the clone.
+            if ll.closure_seq.is_some() {
+                copy.generator_origin = Some(ll.clone());
+            }
+            Some(Ok(Value::lazy_list(crate::gc::Gc::new(copy))))
+        }
         ValueView::Array(..)
         | ValueView::Hash(..)
         | ValueView::Set(..)

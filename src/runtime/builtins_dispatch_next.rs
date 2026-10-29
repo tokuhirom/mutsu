@@ -711,7 +711,7 @@ impl Interpreter {
     /// The builtin of a `Mixin`'s native inner value, the last candidate behind
     /// a role's method (`DeferralEntry::Native`). `None` when the inner value
     /// is a user `Instance`, whose MRO is all `MethodDef`s.
-    fn mixin_base_native_entry(
+    pub(crate) fn mixin_base_native_entry(
         &mut self,
         invocant: &Value,
         method_name: &str,

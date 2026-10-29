@@ -33,6 +33,7 @@ impl LazyList {
             cached_no_sink: false,
             deleted_indices: Default::default(),
             descriptor: None,
+            generator_origin: None,
             itemized: false,
         }
     }
@@ -73,6 +74,7 @@ impl LazyList {
             cached_no_sink: false,
             deleted_indices: Default::default(),
             descriptor: None,
+            generator_origin: None,
             itemized: false,
         }
     }
@@ -102,6 +104,7 @@ impl LazyList {
             cached_no_sink: false,
             deleted_indices: Default::default(),
             descriptor: None,
+            generator_origin: None,
             itemized: false,
         }
     }
@@ -135,6 +138,7 @@ impl LazyList {
             cached_no_sink: false,
             deleted_indices: Default::default(),
             descriptor: None,
+            generator_origin: None,
             itemized: false,
         }
     }
@@ -172,6 +176,7 @@ impl LazyList {
             cached_no_sink: false,
             deleted_indices: Default::default(),
             descriptor: None,
+            generator_origin: None,
             itemized: false,
         }
     }

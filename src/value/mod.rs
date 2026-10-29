@@ -4033,6 +4033,12 @@ pub(crate) struct LazyList {
     /// eager `ArrayData` carries, so `Array.default`/`.of` answer from the
     /// value and survive the list leaving its variable (#14101).
     pub(crate) descriptor: Option<Arc<LazyArrayDescriptor>>,
+    /// For the `.clone` of a lazy closure-sequence array: the list it was cloned
+    /// from. Rakudo's `Array.clone` shares the reifier, so the elements either
+    /// array generates past the clone point are the same values in both; the
+    /// clone pulls its generated tail from this list instead of running the
+    /// generator a second time (`Interpreter::fill_closure_sequence`).
+    pub(crate) generator_origin: Option<crate::gc::Gc<LazyList>>,
 }
 
 /// See [`LazyList::hyper_kind`].

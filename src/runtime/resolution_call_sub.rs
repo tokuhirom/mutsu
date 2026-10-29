@@ -660,6 +660,16 @@ impl Interpreter {
                 {
                     let mut args = args;
                     let invocant = args.remove(0);
+                    // A role mixed into a native value (`my %h does R`, whose
+                    // `R` overrides `AT-KEY`): the method object names the
+                    // core type's own method, so it runs on the native base,
+                    // not through the override that called it (WriteOnceHash's
+                    // `my &AT-KEY := ::?CLASS.^find_method('AT-KEY')`).
+                    if matches!(invocant.view(), ValueView::Mixin(..))
+                        && let Some(result) = self.mixin_base_native_entry(&invocant, &method, &args)
+                    {
+                        return result;
+                    }
                     return match invocant.view() {
                         ValueView::Package(_) if method == "new" => {
                             self.dispatch_native_new(invocant, args)

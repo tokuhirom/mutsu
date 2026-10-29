@@ -59,22 +59,33 @@ pub(super) fn hash_bind_key(
     args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
-    if !place.came_through_vm() {
-        return None;
+    // A call through the VM names the caller's variables (the source, the
+    // receiver); `self.BIND-KEY(...)` and the like bind on the shared node only.
+    let through_vm = place.came_through_vm();
+    let mut hash = place.value().deref_container().descalarize().clone();
+    // A role mixed into the hash (`my %h does R`) wraps the hash's own storage:
+    // the bind goes to that shared node, and the mixin stays.
+    if let ValueView::Mixin(inner, _) = hash.view() {
+        let inner = inner.as_ref().clone();
+        hash = inner;
     }
-    let hash = place.value().deref_container().descalarize().clone();
     if !matches!(hash.view(), ValueView::Hash(..)) {
         return None;
     }
-    let source_var = place.arg_source(1).map(str::to_string);
+    let source_var = place
+        .arg_source(1)
+        .filter(|_| through_vm)
+        .map(str::to_string);
     let (value, install) = match bind_key_in(interp, &hash, args, source_var.as_deref()) {
         Ok(bound) => bound,
         Err(error) => return Some(Err(error)),
     };
-    if let Some((name, cell)) = install {
-        place.install_source_cell(interp, &name, cell);
+    if through_vm {
+        if let Some((name, cell)) = install {
+            place.install_source_cell(interp, &name, cell);
+        }
+        place.reseat(interp);
     }
-    place.reseat(interp);
     Some(Ok(value))
 }
 
@@ -82,7 +93,7 @@ pub(super) fn hash_bind_key(
 /// its shared node. `source_var` is the caller's variable behind the value,
 /// when the call site named one; the cell to install for it is answered.
 // Cost: O(1) expected for the hash write, plus the key normalisation.
-pub(super) fn bind_key_in(
+pub(crate) fn bind_key_in(
     interp: &mut Interpreter,
     hash: &Value,
     args: &[Value],

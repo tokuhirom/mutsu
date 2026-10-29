@@ -54,6 +54,7 @@ impl Clone for LazyList {
             cached_no_sink: self.cached_no_sink,
             deleted_indices: Default::default(),
             descriptor: self.descriptor.clone(),
+            generator_origin: self.generator_origin.clone(),
             itemized: self.itemized,
         }
     }
