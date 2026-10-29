@@ -42,6 +42,13 @@ impl Interpreter {
             if code.first_decl_ip(idx).is_some_and(|ip| ip >= block_end) {
                 continue;
             }
+            // Likewise a local of a `for` loop body that has finished by the
+            // time this block exits: a later loop that binds a same-named
+            // alias (`my $x := $b` again) must not have the dead one's stale
+            // slot written over its target (#15459).
+            if code.decl_scope_closed_at(idx, block_end) {
+                continue;
+            }
             let Some(alias_key) = code.alias_sym(idx) else {
                 continue;
             };
