@@ -35,7 +35,7 @@ src/parser/primary/misc/colonpair.rs                 1  # render_signature_item:
 src/parser/primary/misc/hash.rs                      1  # hash_pair_from_expr: shape match of one hash-literal entry (through pair markers)
 src/parser/sink_warn.rs                              5  # sink-context propagation: visits only sink positions, by design
 src/parser/stmt/assign/comma.rs                      1  # merge_seeds_into_sequence: rewrite along a feed's source spine
-src/parser/stmt/assign/compound_expr.rs              1  # build_compound_assign_expr: compound-assignment lowering
+src/rakuast/compound/expansion.rs                   1  # build_compound_assign_expr: compound-assignment lowering
 src/parser/stmt/decl/enum_decl.rs                    2  # 2 shape matches over a literal enum body (literal names, nested literal lists, pairs)
 src/parser/stmt/decl/my_decl_helpers.rs              1  # build_sigilless_bind_stmt: lowering of a sigilless declaration
 src/parser/stmt/simple/lib_paths.rs                  1  # static_path: constant evaluator of a path-method chain (`$?FILE.IO.parent.add(...)`)

@@ -425,8 +425,7 @@ pub(crate) fn build_compound_assign_expr(
         Expr::MethodCall {
             target, name, args, ..
         } => {
-            let target_var_name =
-                crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(&target);
+            let target_var_name = crate::parser::method_lvalue_target_name(&target);
             let current_value = Expr::MethodCall {
                 target: Box::new((*target).clone()),
                 name,
@@ -460,7 +459,7 @@ pub(crate) fn build_compound_assign_expr(
                     | CompoundAssignOp::DefinedOr
                     | CompoundAssignOp::LogicalOr
                     | CompoundAssignOp::LogicalAnd
-            ) && !crate::parser::stmt::simple::is_user_declared_value_term(&name) =>
+            ) && !crate::parser::is_user_declared_value_term(&name) =>
         {
             compound_assigned_value_expr(Expr::BareWord(name), op, rhs)
         }
@@ -648,11 +647,9 @@ pub(crate) fn build_compound_assign_expr(
         // callable-lvalue helper the parenthesized `=` form uses: the declaration is
         // evaluated first (declaring the variable and yielding its container), the value
         // then reads it, and the helper assigns back into that container.
-        Expr::DoStmt(stmt)
-            if crate::parser::stmt::simple_expr_stmt::decl_target_var_name(&stmt).is_some() =>
-        {
-            let name = crate::parser::stmt::simple_expr_stmt::decl_target_var_name(&stmt)
-                .expect("guarded by the match arm");
+        Expr::DoStmt(stmt) if crate::parser::decl_target_var_name(&stmt).is_some() => {
+            let name =
+                crate::parser::decl_target_var_name(&stmt).expect("guarded by the match arm");
             let read_back = match name.as_bytes().first() {
                 Some(b'@') => Expr::ArrayVar(name[1..].to_string()),
                 Some(b'%') => Expr::HashVar(name[1..].to_string()),
@@ -798,7 +795,7 @@ pub(crate) fn dotty_assign_marker(lhs: Expr, method_call: Expr, expanded: Expr) 
 /// its RIGHT operand (`RHS -= LHS`). `op` is the base operator (`-`, or `=` for
 /// `R=`); the marker's `op` is spelled `R-=` the way the source writes it.
 /// The compound lowering (`compound_lower`) builds the execution shape with
-/// [`crate::parser::expr::precedence::build_compound_assign_target_expr`].
+/// [`crate::parser::build_compound_assign_target_expr`].
 pub(crate) fn reverse_assign_marker(lhs: Expr, op: &str, rhs: Expr, expanded: Expr) -> Expr {
     Expr::CompoundAssign {
         target: Box::new(lhs),
@@ -919,8 +916,7 @@ pub(crate) fn build_custom_compound_assign_expr(
             modifier: None,
             ..
         } if name != "AT-POS" => {
-            let target_var_name =
-                crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(&target);
+            let target_var_name = crate::parser::method_lvalue_target_name(&target);
             let current_value = Expr::MethodCall {
                 target: target.clone(),
                 name,
