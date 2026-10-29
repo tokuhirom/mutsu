@@ -761,8 +761,16 @@ impl Interpreter {
                     break;
                 }
             };
-            let mut item = if param_is_copy {
+            // Only an `@`/`%` copy parameter owns a fresh aggregate; `-> $t is
+            // copy` copies the Scalar and keeps the same Array/Hash object
+            // (`$t === $outer`, `$t.push` reaching the caller), as in rakudo.
+            let copies_aggregate = param_name
+                .as_deref()
+                .is_none_or(|name| name.starts_with(['@', '%']));
+            let mut item = if param_is_copy && copies_aggregate {
                 item.deref_container().detach_shared_container()
+            } else if param_is_copy {
+                item.deref_container()
             } else {
                 item
             };
