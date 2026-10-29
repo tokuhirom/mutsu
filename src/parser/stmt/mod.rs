@@ -40,7 +40,6 @@ use assign::{
     try_parse_assign_expr,
 };
 use class::class_decl_body;
-pub(crate) mod nested_block_methods;
 use modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
 use sub::{
     expr_position_method_decl, method_decl_body, method_decl_body_my, parse_param_list,

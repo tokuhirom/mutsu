@@ -235,7 +235,7 @@ fn capture_closure(decl: &Stmt) -> Expr {
     // A method literal's invocant is its leading synthetic `self`; an
     // explicitly declared invocant is not an extra positional.
     let mut all_params = vec!["self".to_string()];
-    let mut all_param_defs = vec![crate::parser::primary::ident::anon_sub::invocant_param_def()];
+    let mut all_param_defs = vec![crate::parser::invocant_param_def()];
     for (name, pd) in params.iter().zip(param_defs.iter()) {
         if pd.is_invocant {
             continue;

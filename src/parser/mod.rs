@@ -177,10 +177,7 @@ impl Drop for NestingGuard {
 /// and for `CompiledCode::is_supply_block_body`.
 pub(crate) const SUPPLY_EMITTER_PREFIX: &str = "__mutsu_supply_emitter_";
 
-pub(crate) use stmt::nested_block_methods::{
-    hoist as hoist_nested_methods, unhoist as unhoist_nested_methods,
-};
-
+pub(crate) use primary::ident::anon_sub::invocant_param_def;
 pub(crate) use primary::var::is_known_word_infix;
 
 pub(crate) fn is_imported_function(name: &str) -> bool {
