@@ -138,7 +138,7 @@ impl Interpreter {
         // `vm_var_assign_element.rs`).
         {
             let current = self.env().get(var_name).cloned().unwrap_or(Value::NIL);
-            if self.container_type_metadata(&current).is_some() || self.is_readonly(var_name) {
+            if self.has_container_type_metadata(&current) || self.is_readonly(var_name) {
                 return None;
             }
         }
@@ -911,7 +911,7 @@ impl Interpreter {
         // (no-op Arc for array/instance side-table containers).
         if let Some(info) = saved_meta
             && let Some(container) = self.env().get(&var_name).cloned()
-            && self.container_type_metadata(&container).is_none()
+            && !self.has_container_type_metadata(&container)
         {
             let tagged = self.tag_container_metadata(container, info);
             self.env_mut().insert(var_name.to_string(), tagged.clone());

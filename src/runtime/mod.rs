@@ -2608,6 +2608,33 @@ pub(crate) fn embedded_container_type_info(value: &Value) -> Option<ContainerTyp
     }
 }
 
+/// [`container_type_metadata_with`] reduced to "is there any", with no clone of
+/// the type names. Must stay in step with it, arm for arm.
+// Cost: O(1), no allocation.
+pub(crate) fn has_container_type_metadata_with(
+    value: &Value,
+    instance_meta: &Arc<RwLock<Arc<HashMap<u64, ContainerTypeInfo>>>>,
+) -> bool {
+    match value.view() {
+        ValueView::Array(items, ..) => items.has_type_meta(),
+        ValueView::Mix(items, _) => items.has_type_meta(),
+        ValueView::Set(items, _) => items.has_type_meta(),
+        ValueView::Bag(items, _) => items.has_type_meta(),
+        ValueView::Hash(items) => items.has_type_meta(),
+        ValueView::LazyList(list) => list
+            .descriptor
+            .as_deref()
+            .is_some_and(|d| d.value_type.is_some()),
+        ValueView::Instance { id, .. } => instance_meta.read().unwrap().contains_key(&id),
+        ValueView::Mixin(inner, _) => has_container_type_metadata_with(inner, instance_meta),
+        ValueView::ContainerRef(cell) => {
+            let inner = cell.load();
+            has_container_type_metadata_with(&inner, instance_meta)
+        }
+        _ => false,
+    }
+}
+
 /// Read a value's container type metadata. Array/Hash/Set/Bag/Mix carry it
 /// embedded in their backing data struct (travels across copy-on-write);
 /// `Instance` values look it up in the shared `instance_type_metadata` side

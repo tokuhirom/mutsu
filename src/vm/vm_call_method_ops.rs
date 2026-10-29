@@ -501,7 +501,7 @@ impl Interpreter {
                     // attribute's `Str:D`) copies it, so every read answered a
                     // fresh array and `.push`/`.append` on the result never
                     // reached the attribute (#11902).
-                    && self.container_type_metadata(&out).is_none()
+                    && !self.has_container_type_metadata(&out)
                     && let Some(tc) = self.get_attr_type_constraint(&cn, method)
                     && !matches!(tc.as_str(), "Mu" | "Any")
                 {
