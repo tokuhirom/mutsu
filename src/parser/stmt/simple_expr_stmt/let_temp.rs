@@ -267,6 +267,18 @@ fn temp_declaration_stmt(input: &str) -> Option<PResult<'_, Stmt>> {
     Some(parse_statement_modifier(rest, stmt))
 }
 
+/// The type a `temp Type.method …` names: a bare name, or one an import spelled.
+fn type_object_invocant_name(invocant: &Expr) -> Option<&str> {
+    let invocant = match invocant {
+        Expr::Spelled(spelled) => &spelled.expr,
+        other => other,
+    };
+    match invocant {
+        Expr::BareWord(name) => Some(name),
+        _ => None,
+    }
+}
+
 /// The variable a `temp <invocant>.method …` saves: a plain scalar `$obj`, or
 /// `self` — spelled `self` or as the `$.attr` invocant carrier, which the
 /// parser leaves as the collapsed anonymous-state name `__ANON_STATE#`.
@@ -349,6 +361,28 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     method_args: parts.method_args.to_vec(),
                     value: parts.value.clone(),
                     is_attribute: matches!(parts.invocant, Expr::Var(name) if name == "__ANON_STATE#"),
+                    type_invocant: false,
+                },
+            );
+        }
+        // `temp Type.^meta = value` / `temp Type.method = value`: a type object
+        // is not a variable `LetSave` could snapshot, so the compiler saves what
+        // the rw call yields and writes it back when the enclosing scope leaves.
+        if let Some(parts) = crate::rakuast::method_lvalue_call_parts(&expr)
+            && let Expr::Call { args, .. } = &expr
+            && args.len() == 5
+            && let Some(type_name) = type_object_invocant_name(parts.invocant)
+            && type_name != "self"
+        {
+            return parse_statement_modifier(
+                expr_rest,
+                Stmt::TempMethodAssign {
+                    var_name: type_name.to_string(),
+                    method_name: parts.method_name.to_string(),
+                    method_args: parts.method_args.to_vec(),
+                    value: parts.value.clone(),
+                    is_attribute: false,
+                    type_invocant: true,
                 },
             );
         }
@@ -377,6 +411,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     method_args: method_args.clone(),
                     value: parts.value.clone(),
                     is_attribute: matches!(invocant.as_ref(), Expr::Var(name) if name == "__ANON_STATE#"),
+                    type_invocant: false,
                 },
             );
         }
@@ -404,6 +439,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     method_args: Vec::new(),
                     value: (**value).clone(),
                     is_attribute: true,
+                    type_invocant: false,
                 },
             );
         }
@@ -427,6 +463,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     method_args: args,
                     value: rhs_expr,
                     is_attribute: false,
+                    type_invocant: false,
                 },
             );
         }

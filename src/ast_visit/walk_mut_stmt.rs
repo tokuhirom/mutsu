@@ -394,6 +394,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             method_args,
             value,
             is_attribute: _,
+            type_invocant: _,
         } => {
             exprs_mut(v, method_args);
             v.visit_expr_mut(value);
