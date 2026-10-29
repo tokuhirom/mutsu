@@ -53,27 +53,24 @@ Both conversions are now done, so the env-first rule has nothing left to protect
    work on the invocant expression.
 6. *`__ANON_STATE#` is not a fixed name.* It is the spelling of the bare `$` variable
    (`t/lang/parsing/bare-sigil.t`) and an ordinary lexical; the fixed names are the three above.
-7. *The audit is a ratchet (to be introduced).* `make check-frame-fixtures` counts the references
-   to the three names in the runtime layers per file (`scripts/frame-fixtures-baseline.txt`); a
-   count may only fall. It is **not on `main` yet**: it changes `scripts/ci-docs-only.sh` and
-   `ci.yml` (CODEOWNERS paths), so it is its own PR,
-   [#15467](https://github.com/tokuhirom/mutsu/pull/15467), for the maintainer's review. Until
-   it lands, nothing mechanical stops a new `Env` key for one of the names; the completion
-   criterion of #14843 ("verified by an auditable inventory or ratchet") is met only when it does.
+7. *The audit is a ratchet.* `make check-frame-fixtures` counts the references to the three names
+   in the runtime layers per file (one baseline file per source file under
+   `scripts/frame-fixtures.d/`, [#15467](https://github.com/tokuhirom/mutsu/pull/15467)); a count
+   may only rise by an edit a reviewer sees, and a drop needs no baseline edit. It is an inventory
+   of name tests, not proof that no `Env` key is ever built from a computed name; with the scoped
+   helpers as the only way to rebind a name for a region, it is the auditable ratchet the
+   completion criterion of #14843 asks for.
 
-## 2.1 Known residue: a plain routine's `$self` parameter
+## 2.1 A plain routine's `$self` parameter is not the `self` term
 
-A parameter spelled `$self` in a plain (non-method) routine is compiled to the same `self` env
-key as the `self` term (`Compiler::resolve_self_lexical`, ADR-0061). The three fixed names are
-independent of it only in a method, where the parameter takes the reserved `LEX_SELF` key. In a
-plain routine the two are not separated: the argument bound to `$self` is installed as the
-frame's invocant (`function_invocant_arg`), so a closure created in a method that takes `sub
-($self)` and also names `self` sees the parameter for both
-([#15464](https://github.com/tokuhirom/mutsu/issues/15464); raku prints `xD` for
-`method both { my $f = sub ($self) { $self ~ self.^name }; $f("x") }`, mutsu `xStr`). The
-migration is therefore complete for methods, closures, gathers, routine values and the rebinding
-helpers, and **not** for this one spelling. #15464 is the follow-up (bind and read the parameter
-as `LEX_SELF` in plain routines too); this ADR does not claim the separation is done.
+A parameter spelled `$self` is a user lexical (ADR-0061). In every callable, method or plain
+routine, pointy block, `for`/`map` block or `add_method`ed sub, it binds the reserved `LEX_SELF`
+(`$self`) key (`ParamDef::storage_name`); the `self` term is read only from the frame record. The
+argument bound to a `$self` parameter is never installed as the frame's invocant, except for an
+explicit `$self:` invocant of a method (`function_invocant_arg`). So `method both { my $f = sub
+($self) { $self ~ self.^name }; $f("x") }` prints `xD`, as raku does
+([#15464](https://github.com/tokuhirom/mutsu/issues/15464), #15476, #15477;
+`t/oo/self-param-plain-routine-lexical.t`, `t/oo/self-param-lexical.t`).
 
 ## 3. Consequences
 
