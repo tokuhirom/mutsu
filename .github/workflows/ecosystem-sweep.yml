@@ -690,3 +690,40 @@ jobs:
       - name: Nothing changed
         if: steps.apply.outputs.changed == '0'
         run: echo "No record changed — every selected distribution measured identically to what is on the ledger." >> "$GITHUB_STEP_SUMMARY"
+
+  # Regenerate the body of the ecosystem dashboard issue (#15488) from the ledger
+  # `collect` just pushed, the lock board and the open `ecosystem` issues. A
+  # separate job, because it is the only one that needs `issues: write`: `sweep`
+  # runs third-party test suites and must hold no write token, and `collect`
+  # handles their output next to a `contents: write` token. This job reads none
+  # of that output -- only the ledger, issue titles/bodies and board comments
+  # (the script keeps just names that match its allowlist) -- and it rewrites one
+  # issue body, so two runs cannot lose each other's edit.
+  #
+  # A failure here must not turn the sweep red: the dashboard is a view, and the
+  # next run (or `scripts/ecosystem-dashboard.py --update 15488`) catches it up.
+  dashboard:
+    needs: [collect]
+    if: >-
+      always() && needs.collect.result == 'success'
+      && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Pull the ledger
+        run: scripts/ecosystem-ledger.sh pull
+
+      - name: Update the dashboard issue
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DASHBOARD_ISSUE: '15488'
+        run: scripts/ecosystem-dashboard.py --update "$DASHBOARD_ISSUE"
