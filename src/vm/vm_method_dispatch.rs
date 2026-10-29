@@ -2146,9 +2146,17 @@ impl Interpreter {
                 let bound = Self::named_param_fast_match_key(pd).and_then(|key| {
                     args.iter()
                         .rev()
-                        .find_map(|a| match a.unwrap_varref().view() {
-                            ValueView::Pair(k, v) if k.as_str() == key => Some(v.clone()),
-                            _ => None,
+                        .find_map(|a| {
+                            let a = a.unwrap_varref();
+                            // The tag test spares the positional arguments a
+                            // full `view()` decode.
+                            if !a.is_string_pair_value() {
+                                return None;
+                            }
+                            match a.view() {
+                                ValueView::Pair(k, v) if k.as_str() == key => Some(v.clone()),
+                                _ => None,
+                            }
                         })
                 });
                 let val = match bound {
