@@ -80,6 +80,7 @@ pub(super) fn convert_method_assign(
     method_args: &[Expr],
     value: &Expr,
     is_attribute: bool,
+    type_invocant: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
     let target = if is_attribute {
         RakuAstNode {
@@ -91,16 +92,21 @@ pub(super) fn convert_method_assign(
             )],
         }
     } else {
-        let invocant = if var_name == "self" {
-            Expr::BareWord("self".to_string())
+        let invocant = if var_name == "self" || type_invocant {
+            Expr::BareWord(var_name.to_string())
         } else {
             Expr::Var(var_name.to_string())
+        };
+        // A meta-method call keeps its `^` as the call's modifier.
+        let (method_name, modifier) = match method_name.strip_prefix('^') {
+            Some(meta) if type_invocant => (meta, Some('^')),
+            _ => (method_name, None),
         };
         convert_expr(&Expr::MethodCall {
             target: Box::new(invocant),
             name: crate::symbol::Symbol::intern(method_name),
             args: method_args.to_vec(),
-            modifier: None,
+            modifier,
             quoted: false,
             sugar: false,
         })?
@@ -321,7 +327,7 @@ fn lower_method_assign(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
         return Ok(None);
     }
     let operand = named_child(prefix, "operand")?;
-    let (var_name, method_name, method_args, is_attribute) = if operand.class
+    let (var_name, method_name, method_args, is_attribute, type_invocant) = if operand.class
         == RakuAstClass::VarAttributePublic
         && !operand
             .fields
@@ -332,21 +338,32 @@ fn lower_method_assign(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
         let Some(method) = spelling.strip_prefix("$.") else {
             return Err(unsupported(node));
         };
-        ("self".to_string(), method.to_string(), Vec::new(), true)
+        ("self".to_string(), method.to_string(), Vec::new(), true, false)
     } else {
         let Expr::MethodCall {
-            target, name, args, ..
+            target,
+            name,
+            args,
+            modifier,
+            ..
         } = lower_expr(operand)?
         else {
             return Ok(None);
         };
-        let var_name = match target.as_ref() {
-            Expr::Var(name) if name == "__ANON_STATE#" || name == "self" => "self".to_string(),
-            Expr::Var(name) => name.clone(),
-            Expr::BareWord(name) if name == "self" => "self".to_string(),
+        let (var_name, type_invocant) = match target.as_ref() {
+            Expr::Var(name) if name == "__ANON_STATE#" || name == "self" => {
+                ("self".to_string(), false)
+            }
+            Expr::Var(name) => (name.clone(), false),
+            Expr::BareWord(name) if name == "self" => ("self".to_string(), false),
+            Expr::BareWord(name) => (name.clone(), true),
             _ => return Err(unsupported(node)),
         };
-        (var_name, name.resolve(), args, false)
+        let method_name = match modifier {
+            Some('^') if type_invocant => format!("^{}", name.resolve()),
+            _ => name.resolve(),
+        };
+        (var_name, method_name, args, false, type_invocant)
     };
     let value = match wrapper {
         None => return Ok(None),
@@ -367,12 +384,21 @@ fn lower_method_assign(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
         }
         Some(_) => return Ok(None),
     };
+    if type_invocant {
+        return Ok(Some(type_method_assign(
+            &var_name,
+            &method_name,
+            &method_args,
+            &value,
+        )));
+    }
     Ok(Some(Stmt::TempMethodAssign {
         var_name,
         method_name,
         method_args,
         value,
         is_attribute,
+        type_invocant,
     }))
 }
 
@@ -383,4 +409,71 @@ fn single_level(lvalue: &Expr) -> bool {
         Expr::Index { target, .. }
             if matches!(target.as_ref(), Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_))
     )
+}
+
+/// `temp Type.method(args) = value`. A type object is not a variable `LetSave`
+/// could snapshot, so save what the rw call yields and write it back when the
+/// enclosing scope leaves: `my $saved = Type.method(args); <assign>; LEAVE
+/// <assign $saved>`.
+// Cost: O(n), n = nodes in the method arguments and the assigned value.
+fn type_method_assign(
+    type_name: &str,
+    method_name: &str,
+    method_args: &[Expr],
+    value: &Expr,
+) -> Stmt {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let saved = format!("__mutsu_temp_saved_{id}");
+    let (name, modifier) = match method_name.strip_prefix('^') {
+        Some(meta) => (meta, Some('^')),
+        None => (method_name, None),
+    };
+    let writeback = |value: Expr| Expr::Call {
+        name: crate::symbol::Symbol::intern("__mutsu_assign_method_lvalue"),
+        args: vec![
+            Expr::BareWord(type_name.to_string()),
+            Expr::Literal(Value::str(method_name.to_string())),
+            Expr::ArrayLiteral(method_args.to_vec()),
+            value,
+            Expr::Literal(Value::str(format!("\\{type_name}"))),
+        ],
+        listop: false,
+    };
+    let read = Expr::MethodCall {
+        target: Box::new(Expr::BareWord(type_name.to_string())),
+        name: crate::symbol::Symbol::intern(name),
+        args: method_args.to_vec(),
+        modifier,
+        quoted: false,
+        sugar: false,
+    };
+    Stmt::SyntheticBlock(vec![
+        Stmt::VarDecl {
+            marks: Default::default(),
+            anonymous: false,
+            name: saved.clone(),
+            expr: read,
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
+            where_constraint: None,
+        },
+        Stmt::Expr(writeback(value.clone())),
+        Stmt::Phaser {
+            kind: crate::ast::PhaserKind::Leave,
+            body: vec![Stmt::Expr(writeback(Expr::Var(saved)))],
+            condition: None,
+            end_index: None,
+            spans: Default::default(),
+            bare: true,
+        },
+    ])
 }

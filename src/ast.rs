@@ -3237,6 +3237,11 @@ pub(crate) enum Stmt {
         /// call (`self.x`). Both save the same `self` slot at runtime.
         #[serde(default)]
         is_attribute: bool,
+        /// The invocant is a type object (`temp Type.^meta = v`), not a
+        /// variable: `var_name` is then the type's name and the old value is
+        /// restored by a write-back rather than by a variable snapshot.
+        #[serde(default)]
+        type_invocant: bool,
     },
     /// A construct the parser built in its RakuAST shape, kept only by a parse
     /// whose tree the RakuAST conversion reads (ADR-10723 Stage 2,

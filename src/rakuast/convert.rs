@@ -461,6 +461,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             method_args,
             value,
             is_attribute,
+            type_invocant,
         } => Ok(Some(statement_expression(
             super::temporize::convert_method_assign(
                 var_name,
@@ -468,6 +469,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 method_args,
                 value,
                 *is_attribute,
+                *type_invocant,
             )?,
         ))),
         Stmt::VarDecl { .. } => var_decl_statement(var_decl_parts(stmt)?, false),
