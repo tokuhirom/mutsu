@@ -38,6 +38,18 @@ pub(crate) fn lower(node: Modified) -> Result<Stmt, RuntimeError> {
         })?;
         return Ok(Stmt::SyntheticBlock(vec![stmt, value]));
     }
+    // `has $.x for LIST`: an attribute is composed with its class, so the loop
+    // cannot repeat it; the declaration stays and the modifiers only evaluate
+    // their operands, over an empty statement.
+    if is_attribute_declaration(&stmt) && loop_.is_some() {
+        let value = lower(Modified {
+            stmt: Box::new(Stmt::SyntheticBlock(Vec::new())),
+            condition,
+            loop_,
+            body: crate::ast::SrcSpan::NONE,
+        })?;
+        return Ok(Stmt::SyntheticBlock(vec![stmt, value]));
+    }
     if let Some(modifier) = condition {
         stmt = condition_modifier(modifier, stmt)?;
     }

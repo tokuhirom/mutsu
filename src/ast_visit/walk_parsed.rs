@@ -42,14 +42,6 @@ pub(crate) fn walk_parsed<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast 
         }
         return;
     }
-    if let ParsedStmt::AttributeModifier {
-        decl, condition, ..
-    } = node
-    {
-        v.visit_stmt(decl);
-        v.visit_expr(condition);
-        return;
-    }
     if let ParsedStmt::TakeLogicalTail { value, right, .. } = node {
         v.visit_expr(value);
         v.visit_expr(right);
@@ -246,12 +238,6 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
             for arg in args {
                 v.visit_expr_mut(arg);
             }
-        }
-        ParsedStmt::AttributeModifier {
-            decl, condition, ..
-        } => {
-            v.visit_stmt_mut(decl);
-            v.visit_expr_mut(condition);
         }
         ParsedStmt::DoesDecl { decl, role, init } => {
             v.visit_stmt_mut(decl);

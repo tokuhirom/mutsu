@@ -148,17 +148,6 @@ pub(crate) enum ParsedStmt {
     /// `rakuast::lower` saves the variable and assigns inside the save
     /// (`ast::temporize::expand`).
     Temporize(Box<super::temporize::Temporized>),
-    /// `has $.x if COND` / `unless` / `with` / `without` / `when`: the
-    /// attribute declaration (a `Stmt::VarDecl` or a declaration list) and its
-    /// postfix modifier. The modifier cannot gate the declaration (attributes
-    /// install when the class is composed), so `rakuast::lower` expands it
-    /// into the declaration and a runtime-only test of the condition
-    /// (`ast::attribute_modifier::expand`).
-    AttributeModifier {
-        decl: Box<Stmt>,
-        condition: Expr,
-        kind: super::decl_modifier::DeclarationModifier,
-    },
     /// `has Type ($.a, $.b)`: one visible RakuAST signature declaration over
     /// the attribute declarations as written. `rakuast::lower` installs each
     /// listed attribute separately (a block of the declarations).
@@ -632,8 +621,7 @@ impl ParsedStmt {
             ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
             ParsedStmt::PackageHeader { decl, .. }
             | ParsedStmt::TempDecl(decl)
-            | ParsedStmt::ImmediateCall { decl, .. }
-            | ParsedStmt::AttributeModifier { decl, .. } => Some(decl),
+            | ParsedStmt::ImmediateCall { decl, .. } => Some(decl),
             _ => None,
         }
     }
@@ -666,8 +654,7 @@ impl ParsedStmt {
             ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
             ParsedStmt::PackageHeader { decl, .. }
             | ParsedStmt::TempDecl(decl)
-            | ParsedStmt::ImmediateCall { decl, .. }
-            | ParsedStmt::AttributeModifier { decl, .. } => Some(decl),
+            | ParsedStmt::ImmediateCall { decl, .. } => Some(decl),
             _ => None,
         }
     }
@@ -700,7 +687,6 @@ impl ParsedStmt {
             ParsedStmt::InlineProtoUse { .. } => Vec::new(),
             ParsedStmt::CallAssignList { items, .. } => items.iter().collect(),
             ParsedStmt::ImmediateCall { args, .. } => args.iter().collect(),
-            ParsedStmt::AttributeModifier { condition, .. } => vec![condition],
             ParsedStmt::DoesDecl { role, init, .. } => std::iter::once(role).chain(init).collect(),
             ParsedStmt::WillDecl { .. } => Vec::new(),
             ParsedStmt::DeclTail { tail, .. } => vec![tail],
@@ -738,7 +724,6 @@ impl ParsedStmt {
             | ParsedStmt::PackageHeader { .. }
             | ParsedStmt::TempDecl(_)
             | ParsedStmt::ImmediateCall { .. }
-            | ParsedStmt::AttributeModifier { .. }
             | ParsedStmt::AttributeGroup(_)
             | ParsedStmt::AttributeColonArglist(_)
             | ParsedStmt::MethodAssignDecl(_)
