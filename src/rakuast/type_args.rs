@@ -76,6 +76,20 @@ fn is_type_spelling(source: &str) -> bool {
     is_simple_type(base)
 }
 
+/// A colonpair argument (`:coerce(&f)`, `:!flag`) of a type application that
+/// only survives as source text: parse it as the expression it is.
+// Cost: O(n), n = argument spelling length.
+fn colonpair_argument(source: &str) -> Result<RakuAstNode, RuntimeError> {
+    let (statements, _) = crate::parser::parse_program(source)?;
+    let mut expressions = statements
+        .iter()
+        .filter(|statement| !matches!(statement, crate::ast::Stmt::SetLine(..)));
+    match (expressions.next(), expressions.next()) {
+        (Some(crate::ast::Stmt::Expr(expr)), None) => convert_expr(expr),
+        _ => Err(unsupported(&format!("type argument `{source}`"))),
+    }
+}
+
 /// Convert a type application using its parsed argument expressions. Only a
 /// type-only constraint without parsed arguments needs the spelling scanner.
 pub(super) fn parameterized_type_node(
@@ -149,6 +163,8 @@ pub(super) fn parameterized_type_node_at(
                 super::convert::convert_literal(&value)?
             } else if let Some(value) = super::type_build::plain_string_literal(source) {
                 super::convert::quoted_string(crate::value::Value::str(value.to_string()))
+            } else if source.starts_with(':') {
+                colonpair_argument(source)?
             } else {
                 build_type_node_at(source, depth + 1)?
             };
