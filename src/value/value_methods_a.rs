@@ -1122,7 +1122,7 @@ impl Value {
                 if inner.is_container_ref() {
                     let nested = inner.clone();
                     drop(inner);
-                    return nested.with_deref(f);
+                    return Self::with_deref_chain(nested, f);
                 }
                 if self.container_ref_is_itemized() {
                     let itemized = inner.clone().itemize_for_element_store();
@@ -1137,6 +1137,52 @@ impl Value {
                 let _cross_thread =
                     crate::value::container_lock::ContainerStructGuard::acquire_for_cell(&arc);
                 f(&arc.lock().unwrap())
+            }
+            _ => f(self),
+        }
+    }
+
+    /// Walk a chain of cells (`ContainerRef` whose content is a `ContainerRef`)
+    /// iteratively and apply `f` to the value at its end. A chain is a handful of
+    /// cells in practice; one that reaches [`MAX_CELL_CHAIN`] is a cell reachable
+    /// from itself (or a runaway writer), and recursing through it overflowed the
+    /// native stack (#15414). The walk stops there and hands `f` the cell it
+    /// reached, so the process survives and the caller sees a container.
+    // Cost: O(c), c = cells in the chain (bounded by MAX_CELL_CHAIN).
+    fn with_deref_chain<R>(start: Value, f: impl FnOnce(&Value) -> R) -> R {
+        const MAX_CELL_CHAIN: usize = 4096;
+        let mut cur = start;
+        for _ in 0..MAX_CELL_CHAIN {
+            let next = match cur.view() {
+                ValueView::ContainerRef(arc) => {
+                    let inner = arc.lock().unwrap();
+                    if inner.is_container_ref() {
+                        inner.clone()
+                    } else {
+                        drop(inner);
+                        return cur.with_deref_single(f);
+                    }
+                }
+                _ => return f(&cur),
+            };
+            cur = next;
+        }
+        f(&cur)
+    }
+
+    /// [`Value::with_deref`] for a cell whose content is known not to be a cell.
+    fn with_deref_single<R>(&self, f: impl FnOnce(&Value) -> R) -> R {
+        match self.view() {
+            ValueView::ContainerRef(arc) => {
+                let _cross_thread =
+                    crate::value::container_lock::ContainerStructGuard::acquire_for_cell(&arc);
+                let inner = arc.lock().unwrap();
+                if self.container_ref_is_itemized() {
+                    let itemized = inner.clone().itemize_for_element_store();
+                    f(&itemized)
+                } else {
+                    f(&inner)
+                }
             }
             _ => f(self),
         }
