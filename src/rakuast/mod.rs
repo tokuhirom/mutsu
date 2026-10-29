@@ -3458,6 +3458,7 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     names.extend(accessor_names(class));
     names.extend(derived_methods::names(class));
     if class == RakuAstClass::CompUnit {
+        names.push("add-check-code");
         names.push("replace-statement-list");
     }
     if class == RakuAstClass::StatementExpression {

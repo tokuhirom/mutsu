@@ -389,6 +389,7 @@ impl Interpreter {
             | OpCode::RegisterEnum(..)
             | OpCode::ResetStateLocals { .. }
             | OpCode::RoutineScope { .. }
+            | OpCode::RunCheckCode
             | OpCode::StateVarInitGuard(..)
             | OpCode::SucceedBarrier { .. }
             | OpCode::ThrowUndeclaredRoutine(..)

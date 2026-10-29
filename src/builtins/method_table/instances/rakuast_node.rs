@@ -65,6 +65,13 @@ pub(super) static ROWS: &[MethodRow] = &[
         .rakuast_add_child("push", a[0].clone())),
     node_row!("RakuAST::CompUnit", "replace-statement-list", |t, a| t
         .rakuast_set_field("replace-statement-list", a[0].clone())),
+    // `$*CU.add-check-code({ ... })`: an undocumented rakudo method that
+    // `static::CLI` calls (maintainer-approved, #15513); queues the closure
+    // for the unit's CHECK phase.
+    node_row!("RakuAST::CompUnit", "add-check-code", |t, a| {
+        crate::unit_source_text::add_check_code(t.clone(), a[0].clone());
+        Some(Ok(Value::NIL))
+    }),
     node_row!(
         "RakuAST::Statement::Expression",
         "set-expression",

@@ -2397,6 +2397,9 @@ pub(crate) enum Stmt {
     /// undeclared-routine guards (ADR-0134). An error raised before this
     /// point is a compile-time failure, which skips the END phasers (#10977).
     BeginPrologueEnd,
+    /// Runs the closures `$*CU.add-check-code` queued on the main unit, after
+    /// its CHECK phasers and before INIT.
+    RunCheckCode,
     Assign {
         name: String,
         expr: Expr,
