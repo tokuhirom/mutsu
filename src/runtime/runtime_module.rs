@@ -96,6 +96,7 @@ impl Interpreter {
         let snapshot = {
             crate::runtime::ImportScopeSnapshot {
                 import_writes: Vec::new(),
+                decl_order_at_open: crate::runtime::resolution::peek_decl_order(),
                 shadowed_proto_names: HashSet::new(),
                 imported_env_keys: Default::default(),
                 block_bound_keys: Default::default(),
@@ -479,6 +480,7 @@ impl Interpreter {
         if let Some(snapshot) = self.module.import_scope_stack.pop() {
             let crate::runtime::ImportScopeSnapshot {
                 import_writes,
+                decl_order_at_open: _,
                 shadowed_proto_names: _,
                 imported_env_keys,
                 block_bound_keys: _,

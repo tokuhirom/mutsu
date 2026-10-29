@@ -2768,6 +2768,10 @@ pub(crate) struct ImportScopeSnapshot {
     /// (ADR-8751); what is left is an import that keeps the registry (a family
     /// the block extends itself, a core listop, an operator, another unit's).
     pub(crate) import_writes: Vec<ImportWrite>,
+    /// `resolution::peek_decl_order` as the scope opened: a routine stamped
+    /// below it was visible when the block began, one stamped at or above it is
+    /// the block's own, which a registry-path import must not hide.
+    pub(crate) decl_order_at_open: u64,
     /// Fully-qualified imported proto names whose enclosing family this scope
     /// already hid. Further imports of the name merge with the first one.
     pub(crate) shadowed_proto_names: HashSet<String>,

@@ -534,22 +534,33 @@ impl Interpreter {
             return;
         }
         let importer = self.executing_unit_sym_for_module_load();
-        let in_scope = if let Some(scope) =
+        // (`None`: a top-level import hides everything visible.)
+        let visible_before = if let Some(scope) =
             Self::importing_scope_mut(&mut self.module.import_scope_stack, importer)
         {
             if !scope.shadowed_proto_names.insert(target_single.to_string()) {
                 return;
             }
-            true
+            Some(scope.decl_order_at_open)
         } else {
-            false
+            None
         };
+        let in_scope = visible_before.is_some();
         let target_sym = Symbol::intern(target_single);
         let mut keys = self.registry().functions.family_keys(target_single);
         if self.registry().functions.contains_key(&target_sym) {
             keys.push(target_sym);
         }
         let mut removed_keys: Vec<Symbol> = Vec::new();
+        // The block's own declarations are not the enclosing family.
+        keys.retain(|key| {
+            visible_before.is_none_or(|before| {
+                self.registry()
+                    .functions
+                    .get(key)
+                    .is_some_and(|def| def.decl_order < before)
+            })
+        });
         for key in keys {
             let removed = self.registry_mut().functions_mut().remove(&key);
             if let Some(def) = removed {
@@ -1256,11 +1267,16 @@ impl Interpreter {
             // (A plain routine bound just above is the whole import: the
             // `GLOBAL::name` proto a bare-file module's family left behind is
             // another file's, not this export's.)
-            let family_bound_lexically = bound_plain_routine
-                || (((!is_operator && !name.contains(":<"))
+            let family_bound_lexically = if bound_plain_routine {
+                // The routine is bound; the proto a bare-file module left under
+                // `GLOBAL::name` only keeps the family's own handling off.
+                proto_def.is_some()
+            } else {
+                ((!is_operator && !name.contains(":<"))
                     || crate::lexical_builtin_op::binds_lexically(&name))
                     && !exported_method_candidates
-                    && self.bind_family_lexically(&name, &function_entries, proto_def.as_deref()));
+                    && self.bind_family_lexically(&name, &function_entries, proto_def.as_deref())
+            };
             if family_bound_lexically {
                 function_entries.clear();
             }

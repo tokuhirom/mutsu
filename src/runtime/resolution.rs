@@ -40,6 +40,13 @@ pub(crate) fn next_decl_order() -> u64 {
     NEXT_DECL_ORDER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
+/// The stamp the next registration takes: a routine registered from now on has
+/// a `decl_order` at or above it.
+// Cost: O(1).
+pub(crate) fn peek_decl_order() -> u64 {
+    NEXT_DECL_ORDER.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// True when `rest` (the portion of a `token_defs` key AFTER the proto's
 /// fully-qualified name) begins a proto-regex variant adverb. Three spellings
 /// register a candidate under the proto:
