@@ -4,7 +4,7 @@ use Test;
 # metamethod unthreaded when its parameter binds it whole (`|args`, `Mu`), and
 # a proto/multi pair typed by the minted subset still dispatches on it.
 # Found with the `Kind` distribution (Kind[A | B]).
-plan 12;
+plan 13;
 
 class P {
     method ^parameterize(|args) is raw { args.list[1].^name }
@@ -52,3 +52,11 @@ for 'Foo[any(A, B)]', 'Foo[x, y]', 'Foo(A)' -> $name {
 
 # Metamodel::Primitives takes Mu arguments: no threading
 ok Metamodel::Primitives.is_type(Int|Str, Mu), 'Primitives.is_type is not threaded';
+
+# a slurpy proto (`proto method f(|) {*}`) still lets {*} thread: no candidate
+# takes the Junction whole (zef's Distribution.contains-spec relies on it)
+class D {
+    proto method cs(|) {*}
+    multi method cs(Int $i) { "int $i" }
+}
+is D.new.cs(1|2).gist, 'any(int 1, int 2)', 'proto (|) {*} threads a junction over typed candidates';

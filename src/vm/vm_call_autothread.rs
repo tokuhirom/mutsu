@@ -533,6 +533,28 @@ impl Interpreter {
         Ok(Some(Value::junction(kind, results)))
     }
 
+    /// Whether the proto parameter at positional `idx` is declared `Mu` /
+    /// `Junction` (or a smiley of them): the proto itself binds the Junction
+    /// whole, so `{*}` must not thread it. A slurpy or absent parameter says
+    /// nothing.
+    // Cost: O(p), p = parameters of the proto.
+    pub(crate) fn proto_param_takes_junction_whole(
+        pds: &[crate::ast::ParamDef],
+        idx: usize,
+    ) -> bool {
+        pds.iter()
+            .filter(|pd| !pd.named)
+            .nth(idx)
+            .is_some_and(|pd| {
+                !(pd.slurpy || pd.onearg || pd.double_slurpy)
+                    && pd.type_constraint.as_deref().is_some_and(|tc| {
+                        let nominal =
+                            crate::runtime::types::strip_type_smiley(Self::nominal_type(tc)).0;
+                        matches!(nominal, "Mu" | "Junction")
+                    })
+            })
+    }
+
     /// Whether `target` is the `Metamodel::Primitives` type object, whose
     /// methods never autothread a Junction argument.
     // Cost: O(1).

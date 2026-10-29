@@ -80,11 +80,15 @@ impl Interpreter {
                     .filter(|(_, a)| a.is_junction_value())
                     .map(|(i, _)| i)
                     .collect();
+                // A slurpy proto (`proto method f(|) {*}`) leaves the choice to
+                // the candidates, as before: a Junction threads when none of
+                // them takes it whole.
                 let proto_threads: Vec<usize> = match &proto_params {
-                    Some(pds) if !junction_indices.is_empty() => {
-                        self.autothread_indices_for_params(&args, &junction_indices, pds)
-                    }
-                    _ => junction_indices,
+                    Some(pds) => junction_indices
+                        .into_iter()
+                        .filter(|idx| !Self::proto_param_takes_junction_whole(pds, *idx))
+                        .collect(),
+                    None => junction_indices,
                 };
                 if let Some((idx, kind, values)) = args.iter().enumerate().find_map(|(idx, arg)| {
                     if !proto_threads.contains(&idx) || !arg.is_junction_value() {
