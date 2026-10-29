@@ -1011,7 +1011,8 @@ impl Interpreter {
                 // hazard the F4c design note's R8 warns about.
                 let maybe_parent_role = self.registry().roles.get(parent_base).cloned();
                 if let Some(parent_role) = maybe_parent_role {
-                    if !cx.out.composed_roles_list.contains(&resolved_parent) {
+                    let first_composition = !cx.out.composed_roles_list.contains(&resolved_parent);
+                    if first_composition {
                         cx.out.composed_roles_list.push(resolved_parent.clone());
                     }
                     let parent_type_subs: Vec<(String, String)> = if let Some(parent_tps) =
@@ -1117,6 +1118,25 @@ impl Interpreter {
                         for def in composed {
                             registry.push_user_method(owner, method_sym, def);
                         }
+                    }
+                    // The parent role has parents of its own (`role P[::H] is H`
+                    // composed as `P[Metamodel::ClassHOW]`): they are the
+                    // class's too, with P's type parameters bound to the
+                    // arguments this composition gave them (#15377).
+                    if first_composition && !parent_type_subs.is_empty() {
+                        let mut nested_values = ValueMap::default();
+                        for (param, arg) in &parent_type_subs {
+                            nested_values.insert(
+                                param.clone(),
+                                Value::package(Symbol::intern(arg)),
+                            );
+                        }
+                        self.propagate_composed_role_parent_specs(
+                            cx,
+                            parent_base,
+                            &parent_role,
+                            &nested_values,
+                        );
                     }
                 } else if ((self.registry().classes.contains_key(parent_base)
                     || BUILTIN_PARENT_TYPES.contains(&parent_base)
