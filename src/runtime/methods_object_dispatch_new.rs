@@ -2488,9 +2488,12 @@ impl Interpreter {
                         // constructor: `Mu.new` builds a defined, attribute-less
                         // instance of it, as it does for `Any` (rakudo:
                         // `Cool.new.defined` is True, `.raku` is `Cool.new`).
-                        if crate::builtin_types::catalog::builtin_type_mro_syms(&resolved)
-                            .is_some()
-                            || crate::runtime::types::is_builtin_role_name(&resolved)
+                        // `UInt` is a subset, not a class: it cannot be
+                        // instantiated (rakudo: "Cannot instantiate a subtype").
+                        if resolved != "UInt"
+                            && (crate::builtin_types::catalog::builtin_type_mro_syms(&resolved)
+                                .is_some()
+                                || crate::runtime::types::is_builtin_role_name(&resolved))
                         {
                             return Ok(Value::make_instance(name, HashMap::new()));
                         }
