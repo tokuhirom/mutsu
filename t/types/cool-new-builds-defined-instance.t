@@ -1,6 +1,6 @@
 use Test;
 
-plan 21;
+plan 20;
 
 for <Cool Numeric Real Stringy Callable> -> $name {
     my $type = ::($name);
