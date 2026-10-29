@@ -8,6 +8,10 @@ use mutsu::{Interpreter, RuntimeError, Value};
 
 mod cli_options;
 
+#[cfg(not(target_arch = "wasm32"))]
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use cli_options::{
     handle_negated_long_option, handle_negated_short_option, illegal_option, print_help,
     print_negation_error,
