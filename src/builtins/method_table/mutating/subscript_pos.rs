@@ -46,7 +46,7 @@ fn index_of(idx: &Value) -> Option<usize> {
         ValueView::Int(i) if i >= 0 => Some(i as usize),
         ValueView::Num(f) if f >= 0.0 => Some(f as usize),
         // An allomorph (`IntStr`) indexes by its numeric part.
-        ValueView::Mixin(inner, _) => index_of(&inner),
+        ValueView::Mixin(inner, _) => index_of(inner),
         _ => None,
     }
 }
