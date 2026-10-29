@@ -206,7 +206,15 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
                 *else_expr, op_name, value,
             )),
         },
-        other => assignment_ro_expr(other, value),
+        // A shape only the RakuAST expansion knows (`($s = $x if $c) ~= $y`, a
+        // statement-modifier conditional with an lvalue body): that expansion
+        // also answers `assignment_ro_expr` for what is not an lvalue.
+        other => crate::rakuast::compound::expand_compound_assign_expr(
+            other.clone(),
+            op_name,
+            value.clone(),
+        )
+        .unwrap_or_else(|_| assignment_ro_expr(other, value)),
     }
 }
 
