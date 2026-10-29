@@ -2856,9 +2856,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if let Some(atomic) = super::atomic_op::convert(name.as_str(), args) {
                 return atomic;
             }
-            if let Some(hyper) = super::hyper_prefix::convert(name.as_str(), args) {
-                return hyper;
-            }
             if name.as_str() == crate::ast::quote_processing::FORMAT {
                 return super::quoted_string::convert_format(args);
             }

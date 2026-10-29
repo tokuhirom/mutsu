@@ -294,6 +294,30 @@ pub(crate) enum ParsedExpr {
     /// declaration as written. It lowers to the declaration followed by a
     /// read of its generated name (`ast::inline_subset_term::lower`).
     InlineSubset(Box<Stmt>),
+    /// `-« @a`, `++<< @a`: a hyper prefix operator and its operand as written
+    /// (`ApplyPrefix` over `MetaPrefix::Hyper`). It lowers to the runtime's
+    /// element-wise prefix call (`rakuast::lower_hyper_prefix`).
+    HyperPrefix(HyperPrefix),
+    /// `⚛$x` and `$x ⚛= VALUE`: the atomic fetch of, and plain store into, a
+    /// variable named by its storage name. They lower to the reserved calls
+    /// the runtime executes (`ast::atomic_op::lower_var`).
+    AtomicVar(AtomicVar),
+}
+
+/// An atomic access of a variable by name.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum AtomicVar {
+    /// `⚛$x`.
+    Fetch { name: String },
+    /// `$x ⚛= VALUE`.
+    Store { name: String, value: Expr },
+}
+
+/// `OP« OPERAND`: the prefix symbol (`"-"`, `"++"`) and the operand.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct HyperPrefix {
+    pub(crate) symbol: String,
+    pub(crate) operand: Expr,
 }
 
 /// `(LVALUES) »=» VALUE`: the target, the value and the dwim flags as written.

@@ -358,14 +358,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             let rest = &after_op[marker_len..];
             let (rest, _) = ws(rest)?;
             let (rest, arg) = prefix_expr(rest)?;
-            return Ok((
-                rest,
-                Expr::Call {
-                    name: Symbol::intern("__mutsu_hyper_prefix"),
-                    args: vec![Expr::Literal(Value::str(symbol.to_string())), arg],
-                    listop: false,
-                },
-            ));
+            return Ok((rest, crate::rakuast::hyper_prefix_expr(symbol, arg)));
         }
     }
 

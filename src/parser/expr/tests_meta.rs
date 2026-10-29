@@ -181,14 +181,13 @@ fn parse_hyper_prefix_metaop_negate() {
     let (rest, expr) = expression("-« ([1, 2], 3)").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args, .. } => {
-            assert_eq!(name, "__mutsu_hyper_prefix");
-            assert_eq!(args.len(), 2);
-            assert!(
-                matches!(&args[0], Expr::Literal(lit) if matches!(lit.view(), crate::value::ValueView::Str(s) if s.as_str() == "-"))
-            );
-        }
-        _ => panic!("expected hyper prefix metaop call"),
+        Expr::Ast(node) => match *node {
+            crate::ast::parsed::ParsedExpr::HyperPrefix(prefix) => {
+                assert_eq!(prefix.symbol, "-");
+            }
+            _ => panic!("expected a hyper prefix node"),
+        },
+        _ => panic!("expected hyper prefix metaop node"),
     }
 }
 

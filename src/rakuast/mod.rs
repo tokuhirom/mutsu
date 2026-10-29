@@ -3707,3 +3707,4 @@ pub(crate) use assign_target::{
     subscript_adverb_lvalue_assign_expr, unwrap_grouped_lvalue,
 };
 pub(crate) use assign_target::{method_lvalue_call, method_lvalue_call_parts};
+pub(crate) use hyper_prefix::hyper_prefix_expr;
