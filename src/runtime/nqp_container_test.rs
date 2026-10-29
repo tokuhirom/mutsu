@@ -103,7 +103,7 @@ impl Interpreter {
         let Some(attr) = name.and_then(|n| n.strip_prefix('!')) else {
             return false;
         };
-        let Some(invocant) = self.env_self_value() else {
+        let Some(invocant) = self.frame_invocant() else {
             return false;
         };
         let marker = crate::meta_ns::MetaNs::BoundAttr.key_for_str(attr);
@@ -121,7 +121,7 @@ impl Interpreter {
     /// The native kind of attribute `attr` of the current invocant's class.
     // Cost: O(d), d = ancestors of the class.
     fn native_attribute_kind(&self, attr: &str) -> Option<char> {
-        let invocant = self.env_self_value()?;
+        let invocant = self.frame_invocant()?;
         let class = match invocant.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             ValueView::Package(name) => name.resolve(),

@@ -151,7 +151,7 @@ impl Interpreter {
         let cells: Vec<(crate::symbol::Symbol, Value)> = self
             .pending_call_arg_source_slots
             .iter()
-            .filter(|(_, slot)| **slot != u32::MAX)
+            .filter(|(name, slot)| **slot != u32::MAX && !name.is_frame_fixture())
             .filter_map(|(name, slot)| {
                 let cell = self.locals.get(*slot as usize)?;
                 cell.is_container_ref().then(|| (*name, cell.clone()))

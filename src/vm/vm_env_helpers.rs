@@ -331,7 +331,7 @@ impl Interpreter {
         // declaring scope is the invocant's class (`self`), so probe its
         // package chain too (`unit class EnumC; our enum HF <… Lists>;
         // method new(:$h = Lists)` reads `Lists` as `EnumC::Lists`).
-        let self_value = self.env_self_value();
+        let self_value = self.frame_invocant();
         let invocant_class = match self_value.as_ref().map(|v| v.view()) {
             Some(ValueView::Instance { class_name, .. }) => Some(class_name),
             Some(ValueView::Package(p)) => Some(p),
@@ -1623,6 +1623,13 @@ impl Interpreter {
         {
             return Some(v);
         }
+        // The fixed per-call names are the frame record's alone (ADR-14843).
+        if sym == crate::symbol::wk::self_() {
+            return self.frame_invocant();
+        }
+        if sym == crate::symbol::wk::class_decl() || sym == crate::symbol::wk::role_decl() {
+            return self.frame_fixture_value(sym);
+        }
         // A process-level dynamic written at run time (`$PROCESS::OUT = ...`,
         // possibly by another thread) lives only in the process stash, and a
         // read reaching the process binding must see it (ADR-11318). Asked
@@ -1988,6 +1995,20 @@ impl Interpreter {
         value: Value,
         fresh_binding: bool,
     ) {
+        // The frame record owns `self`, `?CLASS` and `?ROLE`: a by-name store
+        // of one reaches the record, never an env key (ADR-14843). A `self`
+        // with no record to take it is a non-method routine's own `$self`
+        // parameter, which keeps its env binding.
+        match name {
+            "self" => {
+                if let Some(slot) = self.frame_invocant_mut() {
+                    *slot = value;
+                    return;
+                }
+            }
+            "?CLASS" | "?ROLE" => return,
+            _ => {}
+        }
         // Write companion of the redirect in `get_env_with_main_alias`: the
         // compunit's own cell is this name's only home while one of its routines
         // is running, so the write must not land on the loading scope's env key.

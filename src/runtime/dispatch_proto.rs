@@ -485,33 +485,8 @@ impl Interpreter {
         // never changes a correct result) and it fixes the latent default-build
         // bug rather than merely the double-OFF measurement surface.
         let pre_env = ProtoPreEnv::capture(&self.env);
-        // The nested proto dispatch rebinds `env["self"]` to its own invocant and
-        // does not restore the enclosing method's `self` afterward (unlike the
-        // normal method-call path). When a plain method delegates to an attribute
-        // whose class declares a cross-module `proto method` (HTTP::Message.field
-        // -> HTTP::Header.field), the enclosing method's `self` is left holding the
-        // proto's invocant / a stale type object, and the method-return writeback
-        // then commits that back to the caller's variable — turning it into `Any`.
-        // Save and restore the enclosing invocant across the proto dispatch.
-        let self_sym = crate::symbol::wk::self_();
-        let saved_self = self.env.get_sym(self_sym).cloned();
         let result =
             self.run_proto_method(target.clone(), &cn, &owner, method, args.to_vec(), proto);
-        match saved_self {
-            // Rebinding the value the overlay already holds would only force
-            // a copy-on-write of the whole overlay (and so defeat the pin).
-            Some(v)
-                if self
-                    .env
-                    .overlay_get_sym(self_sym)
-                    .is_some_and(|cur| cur.nanbox_bits() == v.nanbox_bits()) => {}
-            Some(v) => {
-                self.env.insert("self".to_string(), v);
-            }
-            None => {
-                self.env.remove("self");
-            }
-        }
         let changed: Vec<String> = if pre_env.unchanged(&self.env) {
             Vec::new()
         } else {

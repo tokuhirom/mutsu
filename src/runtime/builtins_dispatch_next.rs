@@ -516,7 +516,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let invocant = self
-            .env_self_value()
+            .frame_invocant()
             .unwrap_or_else(|| frame_invocant.clone());
         match method_name {
             "BUILDALL" | "POPULATE" => crate::builtins::method_table::invoke_base(
@@ -1335,6 +1335,7 @@ impl Interpreter {
                 came_from_wrapper,
                 frame_wrap_arg_sources,
             ) = {
+                let record_invocant = self.frame_invocant();
                 let frame = &mut self.dispatch.method_dispatch_stack[frame_idx];
                 let entry = frame.remaining.first().cloned().expect(
                     "ADR-0019 E9b-2: the match above only falls through here for a Candidate",
@@ -1382,12 +1383,8 @@ impl Interpreter {
                 let base_invocant = if came_from_wrapper {
                     frame.invocant.clone()
                 } else {
-                    // The dispatch frame's own invocant is the fallback, so a
-                    // frame without an env `self` needs no record lookup.
-                    self.env
-                        .get_sym(crate::symbol::wk::self_())
-                        .cloned()
-                        .unwrap_or_else(|| frame.invocant.clone())
+                    // The dispatch frame's own invocant is the fallback.
+                    record_invocant.unwrap_or_else(|| frame.invocant.clone())
                 };
                 // `callwith`'s args are invocant-INCLUSIVE (element 0 is the
                 // new SELF) exactly when the caller is a wrapper block —
@@ -1796,7 +1793,7 @@ impl Interpreter {
                     .samewith_context_stack
                     .last()
                     .is_some_and(|ctx| ctx.name == "new");
-            if in_new && let Some(invocant) = self.env_self_value() {
+            if in_new && let Some(invocant) = self.frame_invocant() {
                 let call_args = match override_args {
                     Some(args) => args,
                     None => self

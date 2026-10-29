@@ -235,7 +235,7 @@ impl Interpreter {
         if name == "self"
             && let Some(v) = self
                 .exported_sub_latest_self()
-                .or_else(|| self.env_self_value())
+                .or_else(|| self.frame_invocant())
         {
             self.stack.push(v);
             return Ok(());

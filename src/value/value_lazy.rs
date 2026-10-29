@@ -14,6 +14,7 @@ impl std::fmt::Debug for LazyList {
 impl Clone for LazyList {
     fn clone(&self) -> Self {
         Self {
+            fixtures: None,
             body: self.body.clone(),
             env: self.env.clone(),
             cache: Mutex::new(self.cache.lock().unwrap().clone()),

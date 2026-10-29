@@ -32,7 +32,7 @@ pub(crate) fn method_sub_form_params(
                 .cloned(),
         );
         let self_param = crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
-            implicit_invocant: Default::default(),
+            implicit_invocant: true,
             does_target: Default::default(),
             target: Default::default(),
             type_capture: None,
@@ -99,7 +99,7 @@ impl Interpreter {
             &method_param_defs[1..]
         } else {
             sub_param_defs.push(ParamDef { spans: Default::default(), trait_meta: Default::default(),
-                implicit_invocant: Default::default(),
+                implicit_invocant: true,
                 does_target: Default::default(),
                 target: Default::default(),
                 type_capture: None,

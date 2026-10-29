@@ -648,11 +648,7 @@ impl Interpreter {
         // $?CLASS.^attributes` computes each class's own list (SBOM). The
         // class body sets `?CLASS` only after its roles are composed, so
         // without this the body saw the PREVIOUSLY registered class.
-        let saved_class = self.env.get("?CLASS").cloned();
-        self.env.insert(
-            "?CLASS".to_string(),
-            Value::package(Symbol::intern(cx.name)),
-        );
+        let fixtures_mark = self.begin_class_scope(Symbol::intern(cx.name));
         // The `my` variables the body declares: a statement naming one reaches
         // the declared variable, not a package variable of the role.
         let body_lexicals: std::collections::HashSet<String> = role
@@ -830,7 +826,7 @@ impl Interpreter {
             // borrowed before unwinding, and report it as Rakudo
             // does: X::Role::Instantiation wrapping the original.
             if let Err(err) = r {
-                Self::restore_env_entry(&mut self.env, "?CLASS", saved_class.clone());
+                self.end_scoped_fixtures(fixtures_mark);
                 if err.control.is_none() {
                     match saved_topic.clone() {
                         Some(topic) => {
@@ -856,7 +852,7 @@ impl Interpreter {
                 self.env.remove("_");
             }
         }
-        Self::restore_env_entry(&mut self.env, "?CLASS", saved_class);
+        self.end_scoped_fixtures(fixtures_mark);
         self.leave_source_file(saved_file);
         self.apply_nested_method_captures(base_role_name, cx.name);
         // Persist the role body's lexicals as class-body statics of

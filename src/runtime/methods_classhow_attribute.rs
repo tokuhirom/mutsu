@@ -332,6 +332,7 @@ impl Interpreter {
                     Value::str_from("Method"),
                 );
                 let sub_data = crate::value::SubData {
+                    fixtures: None,
                     package: Symbol::intern("GLOBAL"),
                     name: Symbol::intern("<attribute-build>"),
                     params: crate::value::empty_params(),

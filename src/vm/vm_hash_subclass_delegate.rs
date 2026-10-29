@@ -431,8 +431,10 @@ impl Interpreter {
         let updated_instance =
             Value::instance_parts(*inst_class, crate::gc::Gc::clone(attributes), inst_id);
         // Through the shared cell, not over it: see `Env::insert_through`.
-        self.env_mut()
-            .insert_through(target_name.to_string(), updated_instance.clone());
+        if !self.store_invocant_by_name(target_name, &updated_instance) {
+            self.env_mut()
+                .insert_through(target_name.to_string(), updated_instance.clone());
+        }
         updated_instance
     }
 }

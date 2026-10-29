@@ -243,6 +243,7 @@ impl Interpreter {
     // usage generator, as `&*ARGS-TO-CAPTURE` now does for the arg parser.
     fn make_stub_sub(&self, name: &str) -> Value {
         Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
+            fixtures: None,
             package: crate::symbol::Symbol::intern("GLOBAL"),
             name: crate::symbol::Symbol::intern(name),
             params: crate::value::empty_params(),

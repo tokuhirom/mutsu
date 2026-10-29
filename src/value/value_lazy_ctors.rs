@@ -11,6 +11,7 @@ impl LazyList {
     /// Create a pre-cached lazy list (no body to evaluate).
     pub(crate) fn new_cached(items: Vec<Value>) -> Self {
         Self {
+            fixtures: None,
             body: Vec::new(),
             env: crate::env::Env::new(),
             cache: Mutex::new(Some(items)),
@@ -51,6 +52,7 @@ impl LazyList {
     /// Create an infinite sequence lazy list that can generate elements on demand.
     pub(crate) fn new_sequence(seeds: Vec<Value>, spec: SequenceSpec) -> Self {
         Self {
+            fixtures: None,
             body: Vec::new(),
             env: crate::env::Env::new(),
             cache: Mutex::new(Some(seeds.clone())),
@@ -80,6 +82,7 @@ impl LazyList {
     /// Create a lazy scan (triangle reduce) list that computes elements on demand.
     pub(crate) fn new_scan(spec: ScanSpec) -> Self {
         Self {
+            fixtures: None,
             body: Vec::new(),
             env: crate::env::Env::new(),
             cache: Mutex::new(Some(Vec::new())),
@@ -113,6 +116,7 @@ impl LazyList {
     /// elements can be produced on demand via the VM.
     pub(crate) fn new_closure_sequence(seeds: Vec<Value>, state: ClosureSeqState) -> Self {
         Self {
+            fixtures: None,
             body: Vec::new(),
             env: crate::env::Env::new(),
             cache: Mutex::new(Some(seeds.clone())),
@@ -145,6 +149,7 @@ impl LazyList {
     /// the cat's attributes take effect.
     pub(crate) fn new_cat_pull(cat: Value, mode: crate::value::CatPullMode) -> Self {
         Self {
+            fixtures: None,
             body: Vec::new(),
             env: crate::env::Env::new(),
             cache: Mutex::new(Some(Vec::new())),

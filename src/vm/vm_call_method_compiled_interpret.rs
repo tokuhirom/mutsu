@@ -49,15 +49,7 @@ impl Interpreter {
         {
             return result;
         }
-        let saved_self = self.env().get_sym(crate::symbol::wk::self_()).cloned();
-        let result = self.try_compiled_method_or_interpret_inner(target, method_sym, args);
-        match saved_self {
-            Some(s) => self.set_env_with_main_alias("self", s),
-            None => {
-                self.env_mut().remove("self");
-            }
-        }
-        result
+        self.try_compiled_method_or_interpret_inner(target, method_sym, args)
     }
 
     fn try_compiled_method_or_interpret_inner(

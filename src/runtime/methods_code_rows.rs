@@ -23,6 +23,7 @@ impl Interpreter {
         if method == "assuming" {
             // Create a wrapper Sub that delegates to the multi-dispatch routine
             let mut sub_data = crate::value::SubData {
+                fixtures: None,
                 package: Symbol::intern(package),
                 name: Symbol::intern(name),
                 params: crate::value::empty_params(),

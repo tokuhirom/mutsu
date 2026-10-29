@@ -825,11 +825,7 @@ impl Interpreter {
                     // has only its parent's methods yet: the value's base type
                     // (`my &AT-KEY := ::?CLASS.^find_method('AT-KEY')` in a
                     // role mixed into a Hash is `Hash`'s, not the role's own).
-                    let saved_class = self.env.get("?CLASS").cloned();
-                    self.env.insert(
-                        "?CLASS".to_string(),
-                        Value::package(Symbol::intern(&base_type)),
-                    );
+                    let class_scope = self.begin_class_scope(Symbol::intern(&base_type));
                     let body_result = self
                         .run_role_body_for_composition(
                             role_name,
@@ -838,7 +834,7 @@ impl Interpreter {
                             decl_file.as_deref(),
                         )
                         .and_then(|()| self.run_composed_role_ancestor_bodies(role_name, role_name));
-                    Self::restore_env_entry(&mut self.env, "?CLASS", saved_class);
+                    self.end_scoped_fixtures(class_scope);
                     body_result?;
                     self.persist_role_body_lexicals(role_name, &declared);
                     self.run_role_body_block(
@@ -1026,7 +1022,6 @@ impl Interpreter {
             // attributes in ... type object" error.  The partial mixin already
             // contains the role markers and parameter bindings, so it also
             // lets a default refer to an earlier role attribute.
-            let saved_self = self.env.get("self").cloned();
             let mut saved_attr_env = Vec::new();
             // Private attribute reads in a declaration-time default use the
             // same env bridge as BUILD/TWEAK.  Seed the attributes that have
@@ -1045,10 +1040,8 @@ impl Interpreter {
                     self.env.insert(key, seed);
                 }
             }
-            self.env.insert(
-                "self".to_string(),
-                Value::mixin_with_state(inner.clone(), mixins.clone()),
-            );
+            let fixtures_mark =
+                self.begin_scoped_invocant(Value::mixin_with_state(inner.clone(), mixins.clone()));
             for (idx, attr) in role.attributes.iter().enumerate() {
                 let attr_name = &attr.name;
                 let default_expr = &attr.default;
@@ -1068,7 +1061,13 @@ impl Interpreter {
                         _ => arg.clone(),
                     }
                 } else if let Some(default_arg) = default_expr {
-                    let raw = self.eval_decl_trait_arg(default_arg)?;
+                    let raw = match self.eval_decl_trait_arg(default_arg) {
+                        Ok(raw) => raw,
+                        Err(e) => {
+                            self.end_scoped_fixtures(fixtures_mark);
+                            return Err(e);
+                        }
+                    };
                     Self::coerce_attr_value_by_sigil(raw, *sigil)
                 } else {
                     // Default value based on sigil: @ -> [], % -> {}, $ -> the
@@ -1125,11 +1124,9 @@ impl Interpreter {
                 // Keep the declaration-time invocant in sync with the mixin
                 // map as each attribute is seeded, rather than leaving it on
                 // the snapshot created before the loop.
-                self.env.insert(
-                    "self".to_string(),
-                    Value::mixin_with_state(inner.clone(), mixins.clone()),
-                );
+                self.set_scoped_invocant(Value::mixin_with_state(inner.clone(), mixins.clone()));
             }
+            self.end_scoped_fixtures(fixtures_mark);
             for (key, old_value) in saved_attr_env {
                 match old_value {
                     Some(value) => {
@@ -1138,14 +1135,6 @@ impl Interpreter {
                     None => {
                         self.env.remove(&key);
                     }
-                }
-            }
-            match saved_self {
-                Some(value) => {
-                    self.env.insert("self".to_string(), value);
-                }
-                None => {
-                    self.env.remove("self");
                 }
             }
             if let Some(saved) = saved_env {
@@ -1256,8 +1245,7 @@ impl Interpreter {
             }
         }
         // Set self for the body
-        let saved_self = self.env.get("self").cloned();
-        self.env.insert("self".to_string(), target.clone());
+        let fixtures_mark = self.begin_scoped_invocant(target.clone());
         // Execute the body directly in current scope so closure variable
         // mutations propagate to the outer scope. `$!attr` reads/writes
         // inside the compiled body resolve to `GetLocal`/`SetLocal` ops on a
@@ -1272,9 +1260,13 @@ impl Interpreter {
         if let Some(cc) = &def.compiled_code {
             let empty_fns = crate::opcode::CompiledFns::default();
             let fns_ref = def.compiled_fns.as_deref().unwrap_or(&empty_fns);
-            self.run_compiled_block_raw(cc, fns_ref)?;
-        } else {
-            self.eval_block_value(&def.body)?;
+            if let Err(e) = self.run_compiled_block_raw(cc, fns_ref) {
+                self.end_scoped_fixtures(fixtures_mark);
+                return Err(e);
+            }
+        } else if let Err(e) = self.eval_block_value(&def.body) {
+            self.end_scoped_fixtures(fixtures_mark);
+            return Err(e);
         }
         // Read back modified attribute values from env into the mixin map
         let updated_target = if let ValueView::Mixin(inner, existing_mixins) = target.view() {
@@ -1294,12 +1286,7 @@ impl Interpreter {
         } else {
             target
         };
-        // Restore self
-        if let Some(prev) = saved_self {
-            self.env.insert("self".to_string(), prev);
-        } else {
-            self.env.remove("self");
-        }
+        self.end_scoped_fixtures(fixtures_mark);
         // Restore any outer binding the role's own params seeding shadowed.
         for (param_name, prev) in saved_role_params {
             match prev {

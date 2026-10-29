@@ -2174,8 +2174,7 @@ impl Interpreter {
                             // `self` is the constructed object itself, holding
                             // the attributes settled so far.
                             inv_cell.commit_attrs(attrs.clone());
-                            let old_self = self.env.get("self").cloned();
-                            self.env.insert("self".to_string(), inv.clone());
+                            let fixtures_mark = self.begin_scoped_invocant(inv.clone());
                             let result = self.eval_decl_trait_arg_with_captured_context(
                                 &arg,
                                 captured_env.as_ref(),
@@ -2187,11 +2186,7 @@ impl Interpreter {
                                         .copied()
                                 }),
                             );
-                            if let Some(old) = old_self {
-                                self.env.insert("self".to_string(), old);
-                            } else {
-                                self.env.remove("self");
-                            }
+                            self.end_scoped_fixtures(fixtures_mark);
                             match result {
                                 Ok(v) => Self::coerce_attr_value_by_sigil(v, sigil),
                                 Err(_) => Value::NIL,

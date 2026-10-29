@@ -328,7 +328,7 @@ impl Interpreter {
             // TODO: a declared routine (`&named-sub`) has no AST body to
             // prepend to; its `self` is still the receiver.
             let lexical_self = takes_positional_invocant
-                .then(|| sub_data.env.get("self").cloned())
+                .then(|| sub_data.fixtures.as_ref().and_then(|f| f.invocant.clone()))
                 .flatten()
                 .filter(|_| !sub_data.body.is_empty());
             let (method_body, method_compiled) = match (named_invocant, lexical_self) {

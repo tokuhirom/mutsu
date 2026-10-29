@@ -283,6 +283,9 @@ impl Interpreter {
         // rejecting 0-arity callables), stabilize the id, and share the def's
         // composition cell (ADR-11827: this rebuild IS the routine, so a
         // `does` on it is seen by every other value of it).
+        // A routine declared in a method closes over the method's `self`,
+        // `?CLASS` and `?ROLE` (ADR-14843): its call continues the record.
+        data.fixtures = self.capture_fixtures();
         data.routine_cell = def.routine_cell.clone();
         data.empty_sig = empty_sig;
         if let Some(id) = stable_id {

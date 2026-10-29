@@ -34,6 +34,7 @@ impl LazyList {
             _ => Default::default(),
         };
         Self {
+            fixtures: None,
             body: Vec::new(),
             env,
             cache: Mutex::new(Some(Vec::new())),
@@ -83,6 +84,7 @@ impl LazyList {
             Value::TRUE,
         );
         Self {
+            fixtures: None,
             body: Vec::new(),
             env,
             cache: Mutex::new(Some(Vec::new())),

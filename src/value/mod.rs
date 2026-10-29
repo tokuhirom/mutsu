@@ -598,6 +598,7 @@ mod error_construct;
 mod error_typed;
 pub(crate) mod exception_message;
 pub(crate) mod flat;
+pub(crate) mod frame_fixtures;
 pub(crate) mod gist;
 mod guards;
 /// The hash key type ([`HashKey`]): inline for short keys, `Arc<str>` beyond.
@@ -1627,6 +1628,11 @@ pub struct SubData {
     pub(crate) is_rw: bool,
     pub(crate) is_raw: bool,
     pub env: Env,
+    /// The frame record (`self`, `?CLASS`, `?ROLE`) of the method this closure
+    /// was created in, if it was created in one. The closure's call pushes a
+    /// copy, so a `self` in its body is its creator's, whichever method runs
+    /// it (ADR-14843).
+    pub(crate) fixtures: Option<crate::value::frame_fixtures::FrameFixtures>,
     pub(crate) assumed_positional: Vec<Value>,
     pub(crate) assumed_named: ValueMap,
     pub id: u64,
@@ -3930,6 +3936,10 @@ pub(crate) struct WalkPendingState {
 pub(crate) struct LazyList {
     pub(crate) body: Vec<Stmt>,
     pub(crate) env: Env,
+    /// The frame record (`self`, `?CLASS`, `?ROLE`) of the method a `gather`
+    /// was evaluated in: pulling the list, however late, runs the body under it
+    /// (ADR-14843).
+    pub(crate) fixtures: Option<crate::value::frame_fixtures::FrameFixtures>,
     pub(crate) cache: Mutex<Option<Vec<Value>>>,
     /// The sequence generator's OWN trailing history, kept separate from
     /// `cache`. `cache` is the user-visible prefix and may hold an element

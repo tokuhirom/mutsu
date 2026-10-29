@@ -781,7 +781,7 @@ impl Interpreter {
         // `::?ROLE` to the method's originating role, so use that rather than
         // sweeping every role the class composes — only the role the running
         // method came from may lend its lexical types.
-        let role_value = self.env_or_fixture_sym(crate::symbol::wk::role_decl());
+        let role_value = self.frame_fixture_value(crate::symbol::wk::role_decl());
         if let Some(ValueView::Package(role)) = role_value.as_ref().map(|v| v.view()) {
             let role_name = role.resolve();
             let qualified = crate::qualified::qualified_text(&role_name, name)

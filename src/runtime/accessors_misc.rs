@@ -500,7 +500,14 @@ impl Interpreter {
             // object: `temp $x = Other.new` rebinds `$x`, and writing the saved
             // attributes into the other object would rewrite every alias of it
             // (`$kept = $x` taken inside the scope).
-            if let Some(v) = self.env.get(&name)
+            // `self` is the frame record's invocant, not an env key
+            // (ADR-14843).
+            let live = if name == "self" {
+                self.frame_invocant_ref().cloned()
+            } else {
+                self.env.get(&name).cloned()
+            };
+            if let Some(v) = live
                 && let ValueView::Instance {
                     attributes: live_attrs,
                     id: live_id,
@@ -511,8 +518,10 @@ impl Interpreter {
                 live_attrs.commit_attrs(saved_attrs.to_map());
                 return;
             }
-            self.env.insert(name, restored);
-        } else {
+            if !self.store_invocant_by_name(&name, &restored) {
+                self.env.insert(name, restored);
+            }
+        } else if !self.store_invocant_by_name(&name, &restored) {
             self.env.insert(name, restored);
         }
     }

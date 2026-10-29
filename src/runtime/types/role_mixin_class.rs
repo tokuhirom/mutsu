@@ -420,8 +420,7 @@ impl Interpreter {
         // without needing to re-bind it per attribute (contrast
         // `compose_role_on_value`'s wrapper path, which mixes into an
         // immutable map snapshot and must refresh `self` after every insert).
-        let saved_self = self.env.get("self").cloned();
-        self.env.insert("self".to_string(), target.clone());
+        let fixtures_mark = self.begin_scoped_invocant(target.clone());
         let result = (|| {
             for role_name in role_names {
                 let Some(role) = self.registry().roles.get(role_name).cloned() else {
@@ -459,14 +458,7 @@ impl Interpreter {
             }
             Ok(())
         })();
-        match saved_self {
-            Some(value) => {
-                self.env.insert("self".to_string(), value);
-            }
-            None => {
-                self.env.remove("self");
-            }
-        }
+        self.end_scoped_fixtures(fixtures_mark);
         result
     }
 

@@ -143,6 +143,7 @@ pub(crate) fn lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
     );
     Some(Ok(Value::lazy_list(crate::gc::Gc::new(
         crate::value::LazyList {
+            fixtures: None,
             body: vec![],
             env,
             cache: std::sync::Mutex::new(Some(items)),
@@ -199,6 +200,7 @@ fn retag_lazy_list(list: &crate::value::LazyList) -> Value {
     );
     let cache = list.cache.lock().unwrap().clone();
     Value::lazy_list(crate::gc::Gc::new(crate::value::LazyList {
+        fixtures: None,
         body: list.body.clone(),
         env,
         cache: std::sync::Mutex::new(cache),

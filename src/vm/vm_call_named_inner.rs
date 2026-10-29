@@ -346,6 +346,14 @@ impl Interpreter {
                 }
             }
         }
+        // A method run as a function (`my method`/`sub` with a leading implicit
+        // `self`) has its invocant in the frame's record, not in an env key.
+        let adopted = self.adopt_function_invocant(&cf.param_defs, &cf.params, &args);
+        if let Some(invocant) = adopted
+            && let Some(&slot) = cf.code.local_slots_of(crate::symbol::wk::self_()).first()
+        {
+            self.locals[slot as usize] = invocant;
+        }
         // #8452: a plain `sub` nested directly in a method body may bind an
         // attributive parameter (`sub s($!t) { ... }`) — Raku's rule is
         // lexical, so it closes over the same `self` the enclosing method's
@@ -753,6 +761,10 @@ impl Interpreter {
             // writeback merge.
             for (target, val) in &sigilless_writebacks {
                 if target == "_" || target == "@_" || target == "%_" {
+                    continue;
+                }
+                // The record's names are no caller variables (ADR-14843).
+                if matches!(target.as_str(), "?CLASS" | "?ROLE") {
                     continue;
                 }
                 // A sigilless param aliasing an `@`/`%` variable stores through

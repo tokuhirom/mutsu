@@ -3269,6 +3269,7 @@ mod tests {
         ];
 
         let block = crate::gc::Gc::new(SubData {
+            fixtures: None,
             package: Symbol::intern("GLOBAL"),
             name: Symbol::intern("__protect_test__"),
             params: crate::value::empty_params(),
