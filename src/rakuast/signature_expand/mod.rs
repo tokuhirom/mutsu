@@ -405,7 +405,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         // A SIGILLESS target binds the same way for the same reason: `my (\a,
         // \b) := ($x, $y)` aliases `$x`/`$y`, exactly as the single-variable
         // `my \a := $x` does. That form emits the bound declaration +
-        // `TermMark::Bound` (see `my_decl_helpers::build_sigilless_bind_stmt`),
+        // `TermMark::Bound` (see `rakuast::sigilless_lower::build_sigilless_bind_stmt`),
         // which leaves writability to the runtime `MarkSigillessBind` check --
         // so a non-container element (`my (\a) := (5,)`) still stays immutable.
         //
@@ -450,7 +450,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
             marks: crate::ast::var_marks::VarMarks {
                 sigilless_decl: binds_element && dvar.sigilless,
                 // The same marks `my \a := $x` carries
-                // (`my_decl_helpers::build_sigilless_bind_stmt`): the compiler learns
+                // (`rakuast::sigilless_lower::build_sigilless_bind_stmt`): the compiler learns
                 // before compiling the declaration that this bind's target is
                 // sigilless.
                 term: match (dvar.sigilless, binds_element) {
