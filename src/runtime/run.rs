@@ -716,6 +716,7 @@ impl Interpreter {
                 keep
             });
         }
+        let deferred_leave = Self::take_leave_deferred_past_main(&mut body_main);
         let mut compiler = crate::compiler::Compiler::new();
         compiler.set_current_package(self.current_package());
         compiler.is_mainline = true;
@@ -814,6 +815,7 @@ impl Interpreter {
         // diagnostics it writes and the exit code it sets) and drop its error.
         if let Err(e) = body_result {
             self.report_uncaught_early(&e);
+            let _ = self.run_deferred_mainline_leave(&deferred_leave);
             let _ = self.finish();
             return Err(e);
         }
@@ -885,9 +887,18 @@ impl Interpreter {
         // `Usage:` and exited 2 where raku exits 0 silently — which also made
         // `use <dist>; exit 0` an unusable probe for the dist-compatibility sweep,
         // since every dist exporting a MAIN dispatched it.
-        if !self.explicit_run_main && !self.is_halted() {
-            self.dispatch_main(&compiled_fns)?;
+        let main_result = if !self.explicit_run_main && !self.is_halted() {
+            self.dispatch_main(&compiled_fns)
+        } else {
+            Ok(())
+        };
+        // The file's own LEAVE phasers run once `MAIN` has returned (#15407).
+        let leave_result = self.run_deferred_mainline_leave(&deferred_leave);
+        if let Err(e) = main_result {
+            let _ = self.finish();
+            return Err(e);
         }
+        leave_result?;
         self.finish()?;
         // GC program-end collect: deliver DESTROY for leaked cycles. Skipped
         // when nothing can observe it (no DESTROY classes, no gc log/verify/
@@ -1188,6 +1199,54 @@ impl Interpreter {
     // Cost: O(n), n = current package name bytes.
     pub(super) fn current_class_is_hidden(&self) -> bool {
         self.registry().hidden_classes.contains(self.current_package_sym().as_str())
+    }
+
+    /// Rakudo calls `sub MAIN` from the end of the mainline, so a file-level
+    /// `LEAVE` of a program that declares one runs after `MAIN`. Take those
+    /// phasers out of the mainline body (source order) to run them there.
+    // Cost: O(n), n = top-level statements.
+    fn take_leave_deferred_past_main(body: &mut Vec<Stmt>) -> Vec<Vec<Stmt>> {
+        let declares_main = body.iter().any(|s| {
+            matches!(s, Stmt::SubDecl { name, multi: false, .. } if name.as_str() == "MAIN")
+        });
+        if !declares_main {
+            return Vec::new();
+        }
+        let mut taken = Vec::new();
+        body.retain_mut(|s| match s {
+            Stmt::Phaser {
+                kind: crate::ast::PhaserKind::Leave,
+                body,
+                ..
+            } => {
+                taken.push(std::mem::take(body));
+                false
+            }
+            _ => true,
+        });
+        taken
+    }
+
+    /// Run the phasers [`Self::take_leave_deferred_past_main`] took, last
+    /// declared first. An `exit` leaves no scope, so it skips them. Every one
+    /// runs; the first error is reported.
+    // Cost: O(p) block runs, p = deferred phasers.
+    fn run_deferred_mainline_leave(
+        &mut self,
+        phasers: &[Vec<Stmt>],
+    ) -> Result<(), RuntimeError> {
+        if self.is_halted() {
+            return Ok(());
+        }
+        let mut first_err = None;
+        for body in phasers.iter().rev() {
+            if let Err(e) = self.run_block_raw(&[Stmt::Block(body.clone())])
+                && first_err.is_none()
+            {
+                first_err = Some(e);
+            }
+        }
+        first_err.map_or(Ok(()), Err)
     }
 
     pub(crate) fn run_block_raw(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
