@@ -66,21 +66,13 @@ const COOL_SUBTYPE_ONLY: &[&str] = &[
 ///
 /// Verified against rakudo v2026.07 on 2026-09-10: `Any.^can` is empty for
 /// every name this yields.
-fn cool_only_names() -> &'static FxHashSet<&'static str> {
-    static NAMES: OnceLock<FxHashSet<&'static str>> = OnceLock::new();
-    NAMES.get_or_init(|| {
-        use crate::builtins::builtin_type_methods::builtin_type_method_names;
-        let inherited: FxHashSet<&'static str> = builtin_type_method_names("Any")
-            .into_iter()
-            .chain(builtin_type_method_names("Mu"))
-            .chain(ALSO_DECLARED_ON_ANY.iter().copied())
-            .collect();
-        builtin_type_method_names("Cool")
-            .into_iter()
-            .filter(|name| !inherited.contains(name))
-            .chain(COOL_SUBTYPE_ONLY.iter().copied())
-            .collect()
-    })
+fn cool_only_name(method: &str) -> bool {
+    use crate::builtins::builtin_type_methods::builtin_type_method_listed as listed;
+    COOL_SUBTYPE_ONLY.contains(&method)
+        || (listed("Cool", method)
+            && !listed("Any", method)
+            && !listed("Mu", method)
+            && !ALSO_DECLARED_ON_ANY.contains(&method))
 }
 
 /// The builtin method names `Any` declares and `Mu` does not: the `Mu` type
@@ -113,10 +105,11 @@ fn any_only_names() -> &'static FxHashSet<&'static str> {
 }
 
 /// Whether `method` is resolvable only through `Cool` or one of its subtypes
-/// (see [`cool_only_names`]).
-// Cost: O(|method|), hash lookup in a set built once per process.
+/// (see [`cool_only_name`]).
+// Cost: O(k + |method|), k = the 12 names of `COOL_SUBTYPE_ONLY`; up to three
+// per-owner hash probes, so no whole-catalog set is built on the first call.
 pub(crate) fn is_cool_only_method(method: &str) -> bool {
-    cool_only_names().contains(method)
+    cool_only_name(method)
 }
 
 /// Whether `method` is one of the [`COOL_SUBTYPE_ONLY`] names: declared on
