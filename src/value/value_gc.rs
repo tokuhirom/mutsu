@@ -18,9 +18,9 @@
 //! variant (`Int`/`Str`/`Bool`/`Nil`/`Range`/`Version`/`Routine`/... and
 //! `WeakSub`, a WEAK edge) cannot reach a live `Gc` node and is a no-op.
 
+use super::AttrMap;
 use super::ValueView;
 use std::sync::{Arc, Condvar, Mutex};
-use super::AttrMap;
 
 use crate::gc::{ErasedGc, RootVisitor, Trace, visit_map_values};
 
