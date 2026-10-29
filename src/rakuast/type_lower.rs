@@ -25,17 +25,25 @@ pub(super) fn return_constraint(
         RakuAstClass::IntLiteral | RakuAstClass::NumLiteral | RakuAstClass::RatLiteral => {
             regex_subrule_argument_source(node)
         }
-        // `--> "foo"`: a plain string literal, spelled with double quotes.
+        // `--> "foo"`: a string literal. A plain one keeps its double
+        // quotes; any other is spelled single-quoted with `\\` and `\'`
+        // escaped, which interpolates nothing.
         RakuAstClass::QuotedString => match lower_expr(node)? {
-            Expr::Literal(value)
-                if matches!(value.view(), ValueView::Str(_))
-                    && super::type_build::plain_string_literal(&format!(
-                        "\"{}\"",
-                        value.to_string_value()
-                    ))
-                    .is_some() =>
-            {
-                Ok(format!("\"{}\"", value.to_string_value()))
+            Expr::Literal(value) if matches!(value.view(), ValueView::Str(_)) => {
+                let text = value.to_string_value();
+                let spelling =
+                    if super::type_build::plain_string_literal(&format!("\"{text}\"")).is_some() {
+                        format!("\"{text}\"")
+                    } else {
+                        format!("'{}'", text.replace('\\', "\\\\").replace('\'', "\\'"))
+                    };
+                if super::type_build::string_literal_value(&spelling).as_deref()
+                    == Some(text.as_str())
+                {
+                    Ok(spelling)
+                } else {
+                    Err(unsupported(owner))
+                }
             }
             _ => Err(unsupported(owner)),
         },

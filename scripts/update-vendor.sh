@@ -57,7 +57,7 @@ remote_head() { # $1 = url  $2 = branch  -> full sha of upstream branch HEAD
 do_check() {
   local any_behind=0
   printf '%-16s %-10s %-10s %s\n' "NAME" "PINNED" "UPSTREAM" "STATUS"
-  while IFS=$'\t' read -r name dir url branch commit date; do
+  while IFS=$'\t' read -r name dir url branch commit date _paths; do
     [[ -z "${name:-}" ]] && continue
     local up
     up="$(remote_head "$url" "$branch" || true)"
@@ -83,13 +83,20 @@ update_one() { # $1 = name  $2 = ref (optional)
     echo "known names: $(read_rows | cut -f1 | tr '\n' ' ')" >&2
     exit 1
   fi
-  local dir url branch
+  local dir url branch paths
   dir="$(printf '%s' "$row" | cut -f2)"
   url="$(printf '%s' "$row" | cut -f3)"
   branch="$(printf '%s' "$row" | cut -f4)"
+  # Optional 7th column: comma-separated repo-relative files. A row that has
+  # it vendors just those files (a sparse tree such as vendor/rakudo/); a row
+  # without it vendors the whole upstream tree.
+  paths="$(printf '%s' "$row" | cut -s -f7)"
   [[ -z "$ref" ]] && ref="$branch"
 
   local target="$REPO_ROOT/$dir"
+  if [[ -n "$paths" ]]; then
+    mkdir -p "$target"
+  fi
   if [[ ! -d "$target" ]]; then
     echo "error: vendored dir '$target' does not exist" >&2
     exit 1
@@ -108,14 +115,26 @@ update_one() { # $1 = name  $2 = ref (optional)
   echo ">> $name -> $sha ($date)"
 
   echo ">> syncing into $dir/ ..."
-  # --delete makes the vendored tree an exact copy of upstream at this commit.
-  # Exclude .git; upstream-gitignored local artifacts (e.g. roast/.precomp) are
-  # not present in the source tree, so they are removed too — they regenerate.
-  rsync -a --delete --exclude='.git' "$tmp/src/" "$target/"
+  if [[ -n "$paths" ]]; then
+    # A sparse tree: exactly the listed files, at their upstream paths.
+    local p
+    for p in ${paths//,/ }; do
+      mkdir -p "$target/$(dirname "$p")"
+      cp "$tmp/src/$p" "$target/$p"
+    done
+  else
+    # --delete makes the vendored tree an exact copy of upstream at this commit.
+    # Exclude .git; upstream-gitignored local artifacts (e.g. roast/.precomp) are
+    # not present in the source tree, so they are removed too — they regenerate.
+    rsync -a --delete --exclude='.git' "$tmp/src/" "$target/"
+  fi
 
   # Rewrite this tree's row in the lock with the new commit + date.
   local newrow
   newrow="$(printf '%s\t%s\t%s\t%s\t%s\t%s' "$name" "$dir" "$url" "$branch" "$sha" "$date")"
+  if [[ -n "$paths" ]]; then
+    newrow="$newrow$(printf '\t%s' "$paths")"
+  fi
   local tmplock; tmplock="$(mktemp)"
   awk -F'\t' -v n="$name" -v repl="$newrow" '
     /^[[:space:]]*(#|$)/ { print; next }

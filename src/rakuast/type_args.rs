@@ -161,8 +161,8 @@ pub(super) fn parameterized_type_node_at(
         for source in sources {
             let node = if let Some(value) = crate::parser::numeric_literal_value(source) {
                 super::convert::convert_literal(&value)?
-            } else if let Some(value) = super::type_build::plain_string_literal(source) {
-                super::convert::quoted_string(crate::value::Value::str(value.to_string()))
+            } else if let Some(value) = super::type_build::string_literal_value(source) {
+                super::convert::quoted_string(crate::value::Value::str(value))
             } else if source.starts_with(':') {
                 colonpair_argument(source)?
             } else {

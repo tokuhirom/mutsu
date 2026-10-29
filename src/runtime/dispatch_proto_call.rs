@@ -132,6 +132,11 @@ impl Interpreter {
             let invocant_class = match ctx.invocant.view() {
                 ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
                 ValueView::Package(name) => Some(name.resolve()),
+                // A mixed-in type object (`Class.^mixin(R)`) dispatches in its class.
+                ValueView::Mixin(inner, _) => match inner.view() {
+                    ValueView::Package(name) => Some(name.resolve()),
+                    _ => None,
+                },
                 _ => None,
             };
             let proto_body_code: Option<&CompiledCode> = if self.current_code != 0 {
