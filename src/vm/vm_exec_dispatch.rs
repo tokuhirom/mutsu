@@ -206,7 +206,7 @@ impl Interpreter {
         match self.finish_op_result(code, *ip, result) {
             // Only an op that raised without moving `ip` resumes in place;
             // a control-flow signal may leave `ip` anywhere, even past the end.
-            Err(err) if *ip == at && Self::op_raise_resumes_in_place(&code.ops[at]) => {
+            Err(err) if *ip == at && Self::op_raise_resumes_in_place(code, &code.ops[at]) => {
                 self.resume_op_raise(code, ip, err)
             }
             result => result,
