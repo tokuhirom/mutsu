@@ -1676,7 +1676,10 @@ impl Interpreter {
                     if bare.starts_with('!')
                         && bare.len() > 1
                         && bare.as_bytes()[1].is_ascii_alphabetic()
-                        && self.get_env_self().is_none()
+                        && attr_site
+                            .as_ref()
+                            .and_then(GlobalAttrSite::lacks_self)
+                            .unwrap_or_else(|| self.get_env_self().is_none())
                     {
                         // Reconstruct the display name with sigil
                         let display = if name.starts_with('!') {
