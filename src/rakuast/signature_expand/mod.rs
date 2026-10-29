@@ -7,6 +7,7 @@
 mod bind_arity;
 mod binding_result;
 mod named;
+mod staged_paths;
 
 use crate::ast::parsed::ParsedStmt;
 use crate::ast::var_marks::TermMark;
@@ -17,6 +18,7 @@ use crate::value::Value;
 use bind_arity::{
     native_type_default, optional_param_default, push_bind_arity_check, staged_exists,
 };
+use staged_paths::{staged_container, staged_element, target_paths};
 
 /// A declaration as written, not yet lowered: the statement the parser hands
 /// to the statement modifiers and loose tails that split or wrap it, which read
@@ -266,20 +268,20 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
     // trailing `@x` is NOT slurpy: `my (@a, @b) := (@x, @y)` binds `@b` to `@y`,
     // not to `(@y,)`. (Rakudo type-checks each element as Positional, so the
     // shapes where the distinction is invisible are the ones it rejects outright.)
-    let mut seen_slurpy = false;
+    let paths = target_paths(decl);
+    let mut slurped_parents: Vec<Vec<usize>> = Vec::new();
     for (i, dvar) in vars.iter().enumerate() {
+        let path = &paths[i];
+        let (position, parent) = path.split_last().expect("every target has a position");
+        let position = *position;
+        let seen_slurpy = slurped_parents.iter().any(|p| p == parent);
         if let Some(lit) = &dvar.literal_value {
             // A bare literal element (`my ("foo") = ...`) is a postconstraint: the
             // i-th assigned value must smartmatch the literal, else
             // X::TypeCheck::Assignment. Emit a throwaway declaration whose
             // where-constraint IS the literal (identical to `$ where "foo"`, which
             // already enforces this), reading the i-th temp element. (subtypes.t 90)
-            let read = Expr::Index {
-                target: Box::new(Expr::ArrayVar(array_bare.clone())),
-                index: Box::new(Expr::Literal(Value::int(i as i64))),
-                is_positional: true,
-                spelling: Default::default(),
-            };
+            let read = staged_element(&array_bare, path);
             stmts.push(Stmt::VarDecl {
                 marks: Default::default(),
                 anonymous: false,
@@ -322,11 +324,11 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 Expr::Literal(Value::NIL)
             }
         } else if dvar.is_slurpy || is_implicit_slurpy {
-            seen_slurpy = true;
+            slurped_parents.push(parent.to_vec());
             Expr::Index {
-                target: Box::new(Expr::ArrayVar(array_bare.clone())),
+                target: Box::new(staged_container(&array_bare, parent)),
                 index: Box::new(Expr::Binary {
-                    left: Box::new(Expr::Literal(Value::int(i as i64))),
+                    left: Box::new(Expr::Literal(Value::int(position as i64))),
                     op: TokenKind::DotDot,
                     right: Box::new(Expr::Whatever),
                     form: Default::default(),
@@ -335,12 +337,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 spelling: Default::default(),
             }
         } else {
-            let read = Expr::Index {
-                target: Box::new(Expr::ArrayVar(array_bare.clone())),
-                index: Box::new(Expr::Literal(Value::int(i as i64))),
-                is_positional: true,
-                spelling: Default::default(),
-            };
+            let read = staged_element(&array_bare, path);
             // A *typed* element whose RHS ran out of values gets the type's
             // DEFAULT, not the `Any` an out-of-range Array read now yields
             // (`my Str ($a) = ()` → `$a` is `Str`, not the un-assignable `Any`).
@@ -367,7 +364,10 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                     .clone()
                     .unwrap_or_else(|| optional_param_default(&effective_tc));
                 Expr::Ternary {
-                    cond: Box::new(staged_exists(&array_bare, i)),
+                    cond: Box::new(staged_exists(
+                        staged_container(&array_bare, parent),
+                        position,
+                    )),
                     then_expr: Box::new(read),
                     else_expr: Box::new(fallback),
                 }
@@ -375,7 +375,10 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 // An element the RHS did not reach is `Nil` to the assignment,
                 // which resets the container to its `is default` value.
                 Expr::Ternary {
-                    cond: Box::new(staged_exists(&array_bare, i)),
+                    cond: Box::new(staged_exists(
+                        staged_container(&array_bare, parent),
+                        position,
+                    )),
                     then_expr: Box::new(read),
                     else_expr: Box::new(def_expr.clone()),
                 }
@@ -507,12 +510,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 .enumerate()
                 .map(|(i, dvar)| {
                     if dvar.literal_value.is_some() {
-                        Expr::Index {
-                            target: Box::new(Expr::ArrayVar(array_bare.clone())),
-                            index: Box::new(Expr::Literal(Value::int(i as i64))),
-                            is_positional: true,
-                            spelling: Default::default(),
-                        }
+                        staged_element(&array_bare, &paths[i])
                     } else if dvar.sigilless {
                         Expr::BareWord(dvar.name.clone())
                     } else if let Some(n) = dvar.name.strip_prefix('@') {
