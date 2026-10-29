@@ -329,9 +329,9 @@ with `scripts/frontend-cost.sh` (callgrind frontend Ir, profiling build, warm):
 | `t/grammar/grammar-cursor-attributes.t` | 31,608,298 | 25,640,877 | 123.3% |
 
 Three of five cases are already above the 110% bound of §3.2 before any slice has landed, so "after every
-slice, every case is at most 110% of the baseline" cannot be satisfied by slices 1–8, whose own cost is
-not what the figures show (the excess is the round trip plus two days of parser growth between the
-baseline and `main`; the §6.109 figures of 1.04–1.06 were against the pre-flip frontend *at that time*).
+slice, every case is at most 110% of the baseline" cannot hold at slice 1 whatever slice 1 does. The
+figures do not say how the excess splits between the round trip and the parser work that landed since
+the baseline; slice 0 does not attribute it.
 
 **Decision requested.** Replace the per-slice bound by two rules, keeping the 110% contract where it
 can bind:
