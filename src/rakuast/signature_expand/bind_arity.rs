@@ -2,7 +2,7 @@
 //! (`my ($a, $b?, *@r) := RHS`): the arity guard and the defaults of
 //! optional elements the RHS does not reach.
 
-use super::{DestructureVar, native_type_default};
+use crate::ast::SignatureVar as DestructureVar;
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
@@ -133,5 +133,15 @@ pub(super) fn push_bind_arity_check(
             total,
             format!("Too many positionals passed; {expected}"),
         );
+    }
+}
+
+/// Return the default expression for a native type, or Nil for non-native types.
+pub(super) fn native_type_default(tc: &Option<String>) -> Expr {
+    match tc.as_deref() {
+        Some(t) if crate::native_types::is_native_int_type(t) => Expr::Literal(Value::int(0)),
+        Some("num" | "num32" | "num64") => Expr::Literal(Value::num(0.0)),
+        Some("str") => Expr::Literal(Value::str(String::new())),
+        _ => Expr::Literal(Value::NIL),
     }
 }
