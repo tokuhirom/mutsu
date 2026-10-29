@@ -6798,7 +6798,7 @@ impl Interpreter {
                     .registry_mut()
                     .package_kinds
                     .insert(name.clone(), *kind);
-                if previous != Some(*kind) {
+                if previous != Some(*kind) && self.registry().class_how_values.contains_key(&name) {
                     self.registry_mut().class_how_values.remove(&name);
                 }
                 *ip += 1;
