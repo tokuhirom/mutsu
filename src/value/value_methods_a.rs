@@ -1052,6 +1052,19 @@ impl Value {
             ValueView::Array(items, kind) if kind.is_itemized() => {
                 Value::array_with_kind(items.clone(), kind.decontainerize())
             }
+            // A role mixin over an itemized aggregate (`[1,2,3] but R` held in a
+            // `$` variable) binds to `@`/`%` params as the un-itemized aggregate
+            // too, keeping the mixin's (shared) state: `for @param` must
+            // iterate it (Data::Dump::Tree's `get_columns` blocks).
+            ValueView::Mixin(inner, overrides)
+                if matches!(
+                    inner.view(),
+                    ValueView::Array(_, kind) if kind.is_itemized()
+                ) || (matches!(inner.view(), ValueView::Hash(_)) && inner.hash_is_itemized()) =>
+            {
+                let bare = inner.as_ref().clone().deitemize_for_sigil_bind();
+                Value::Mixin(Arc::new(bare), overrides.clone())
+            }
             ValueView::Hash(_) if self.hash_is_itemized() => self.with_hash_itemized(false),
             ValueView::Slip(_) if self.slip_is_itemized() => self.with_slip_itemized(false),
             _ => self,
