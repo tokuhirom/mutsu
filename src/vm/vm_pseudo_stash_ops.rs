@@ -428,6 +428,21 @@ impl Interpreter {
         self.stack.push(stash);
     }
 
+    /// The routine `name` the import sets the block owning
+    /// `import_scopes()[scope]` filled bind, or Nil.
+    // Cost: O(s), s = the scope's import sets.
+    fn scope_hook_routine(&self, scope: usize, name: Symbol) -> Value {
+        let sets = &self.import_scopes()[scope].lexical_sets;
+        let chain: Vec<Symbol> = sets.iter().rev().copied().collect();
+        match self.lexical_import_binding(&chain, name) {
+            Some(crate::runtime::lexical_imports::LexicalImport::Code(value)) => value,
+            Some(crate::runtime::lexical_imports::LexicalImport::Routine(def)) => {
+                self.sub_value_from_function_def((*def).clone())
+            }
+            None => Value::NIL,
+        }
+    }
+
     /// Add the routines the block owning `import_scopes()[scope]` imported.
     // Cost: O(a * p), a = routines that block imported, p = bare-name packages.
     fn add_scope_imported_routines(&self, scope: usize, entries: &mut ValueMap) {
@@ -440,8 +455,14 @@ impl Interpreter {
             {
                 continue;
             }
+            let key = name;
             let name = name.resolve();
-            let value = self.resolve_code_var(&name);
+            let mut value = self.resolve_code_var(&name);
+            if value.is_nil() {
+                // A routine bound only in the scope's lexical import sets
+                // (a `sub EXPORT` hook's `&name`) has no env alias.
+                value = self.scope_hook_routine(scope, key);
+            }
             if !value.is_nil() {
                 entries.entry(format!("&{name}")).or_insert(value);
             }
