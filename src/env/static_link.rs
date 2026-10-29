@@ -92,7 +92,13 @@ pub(crate) fn with_static_links_suppressed<R>(f: impl FnOnce() -> R) -> R {
 /// captured variable seeds the cell's container under the name).
 // Cost: O(1).
 pub(super) fn same_variable(a: &Value, b: &Value) -> bool {
-    a.same_binding(b) || a.with_deref(|a| b.with_deref(|b| a.same_binding(b)))
+    // `a` is read out before `b` is touched: nesting the two `with_deref`
+    // locks deadlocks (the `Mutex` is not reentrant) when `b`'s cell chain
+    // runs through the very cell `a` resolves to.
+    a.same_binding(b) || {
+        let a = a.deref_container();
+        b.with_deref(|b| a.same_binding(b))
+    }
 }
 
 /// Whether a static link skips the caller frames for `key`: a plain user
