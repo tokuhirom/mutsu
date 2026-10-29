@@ -3903,7 +3903,18 @@ impl Interpreter {
         } else {
             inner_idx
         };
-        let inner_key = inner_idx.to_string_value();
+        // An object hash (`my %h{Any}`) files its entries under the key's
+        // `.WHICH`, never the key's string form, so the chained store
+        // `%h{$obj}[3] = v` must find the same entry `%h{$obj}` does.
+        let inner_object_key = (!inner_positional
+            && self
+                .place_env_get(place, &var_name)
+                .is_some_and(|root| self.is_object_hash(&root.deref_container())))
+        .then(|| inner_idx.clone());
+        let inner_key = match &inner_object_key {
+            Some(obj) => crate::runtime::utils::value_which_key(obj),
+            None => inner_idx.to_string_value(),
+        };
         // A WhateverCode array index (`%h<k>[*-0] = v` / `@a[0][*-1] = v`) must be
         // resolved against the inner container's current length before it becomes
         // a key — a freshly-vivified inner array is length 0, so `*-0` is 0.
@@ -4353,6 +4364,11 @@ impl Interpreter {
                     // is positional (e.g. `%h<key>[42] = ...`), otherwise as Hash.
                     // ADR-0040 slice 1: itemized at the store, same as the
                     // array-outer-container arm above.
+                    if let Some(obj) = &inner_object_key {
+                        oh.original_keys
+                            .get_or_insert_with(ValueMap::default)
+                            .insert(inner_key.clone(), obj.clone());
+                    }
                     let inner_val = oh.entry(inner_key).or_insert_with(|| {
                         // See the array-outer arm: a brand-new autovivified
                         // row tracks its gaps from birth.
