@@ -83,6 +83,21 @@ impl Compiler {
                 let idx = self.code.add_constant(Value::str(attr));
                 self.code.emit(OpCode::AttrContainerRef(idx));
             }
+            // `method table is rw { $!table //= compute() }`: the assignment
+            // evaluates to the attribute's container, so run it for its effect
+            // and hand back `$!table` itself.
+            Expr::CompoundAssign { target, .. }
+                if matches!(target.as_ref(), Expr::Var(name) if Self::rw_tail_attribute_name(name).is_some()) =>
+            {
+                self.compile_expr(arg);
+                self.code.emit(OpCode::Pop);
+                self.compile_return_rw_arg(target);
+            }
+            Expr::AssignExpr { name, .. } if Self::rw_tail_attribute_name(name).is_some() => {
+                self.compile_expr(arg);
+                self.code.emit(OpCode::Pop);
+                self.compile_return_rw_arg(&Expr::Var(name.clone()));
+            }
             // `sub f() is rw { $obj.acc }`: a public `is rw` auto-accessor
             // names the attribute's Scalar, so the rw routine hands that
             // container back (raku: `f() = 4` writes `$obj.acc`). The request
