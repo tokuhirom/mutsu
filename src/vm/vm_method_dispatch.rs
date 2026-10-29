@@ -521,6 +521,16 @@ impl Interpreter {
             self.set_current_package_sym(package);
         }
 
+        // TODO(#14843): see the fast path -- an aggregate or mixin invocant is
+        // still written through the env binding of `self`.
+        if !matches!(
+            base.view(),
+            ValueView::Instance { .. } | ValueView::Package(_)
+        ) {
+            self.env_mut()
+                .insert_sym(crate::symbol::wk::self_(), base.clone());
+        }
+
         // In Raku, methods do NOT set $_ to the invocant by default.
         // $_ in a method body is Any unless the invocant is explicitly named $_
         // (e.g. `method foo ($_: ) { ... }`). The invocant binding loop below
@@ -2417,8 +2427,20 @@ impl Interpreter {
             env.reserve(param_values.len());
             Self::insert_fast_param_values(env, &param_values);
         } else {
+            // TODO(#14843): an aggregate or mixin invocant is written through
+            // the env binding of `self` (a mutating call on it writes its
+            // result back to the caller's variable by that name). The last
+            // fixed-name env write; the record cannot be the write channel
+            // until that writeback is rerouted.
+            let keeps_self_key = !matches!(
+                base.view(),
+                ValueView::Instance { .. } | ValueView::Package(_)
+            );
             let env = self.env_mut();
             env.reserve(3 + param_values.len());
+            if keeps_self_key {
+                env.insert_sym(crate::symbol::wk::self_(), base.clone());
+            }
             // The rooted frame answers `$_` and `$!` (`env::routine_owned`).
             env.set_callable_id(method_callable_id as i64);
             // Array/hash attribute env copies are no longer materialized here:

@@ -729,6 +729,22 @@ impl Interpreter {
         }
     }
 
+    /// Replace the invocant of the innermost frame record, when the running
+    /// frame owns one; `false` when it does not.
+    // Cost: O(1).
+    pub(crate) fn set_frame_invocant(&mut self, invocant: Value) -> bool {
+        if !self.routine_stack.last().is_some_and(|f| f.fixtures != 0) {
+            return false;
+        }
+        match self.routine_stack.top_fixtures_mut() {
+            Some(f) => {
+                f.invocant = Some(invocant);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// The record a closure, gather or routine value created now captures:
     /// the running frame's own, else (a method body run as a function) one
     /// made of its `self` parameter, else the innermost one (ADR-14843).
