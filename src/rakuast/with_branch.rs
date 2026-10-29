@@ -2,8 +2,10 @@
 //! parameter binds a `with` block expands into. `conditional_lower` is the one
 //! caller.
 
+use super::pointy_bind::{
+    pointy_param_bind_decl, pointy_topic_bind, simple_pointy_bind, topicalize,
+};
 use crate::ast::{Expr, GivenWithKind, ParamDef, Stmt};
-use crate::parser::{pointy_param_bind_decl, pointy_topic_bind, simple_pointy_bind, topicalize};
 
 /// The then-branch of `with COND [-> PARAM] { BODY }`: the topicalization and
 /// parameter binds the parser expands the block into. `lower` calls it too, so
