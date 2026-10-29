@@ -633,28 +633,6 @@ impl Interpreter {
         }
     }
 
-    /// Run `body` with `invocant` as `self`, keeping the innermost record's
-    /// `?CLASS` and `?ROLE`: the scoped form of a helper that used to rebind
-    /// the `self` env key around a call (ADR-14843). The record is cut back on
-    /// every exit of `body`.
-    // Cost: O(1) amortized, plus `body`.
-    pub(crate) fn with_scoped_invocant<R>(
-        &mut self,
-        invocant: Value,
-        body: impl FnOnce(&mut Self) -> R,
-    ) -> R {
-        let (class, role) = self
-            .frame_fixtures()
-            .map_or((None, None), |f| (f.class.clone(), f.role));
-        self.with_scoped_fixtures(
-            crate::value::frame_fixtures::FrameFixtures {
-                invocant: Some(invocant),
-                class,
-                role,
-            },
-            body,
-        )
-    }
 
     /// Open a scope whose `self` is `invocant` (see
     /// [`Self::with_scoped_invocant`]) for a caller that cannot wrap its
@@ -706,19 +684,6 @@ impl Interpreter {
         self.routine_stack.truncate_fixtures(mark);
     }
 
-    /// Run `body` with `fixtures` as the innermost record.
-    // Cost: O(1) amortized, plus `body`.
-    pub(crate) fn with_scoped_fixtures<R>(
-        &mut self,
-        fixtures: crate::value::frame_fixtures::FrameFixtures,
-        body: impl FnOnce(&mut Self) -> R,
-    ) -> R {
-        let mark = self.routine_stack.fixtures_len();
-        self.routine_stack.push_scoped_fixtures(fixtures);
-        let result = body(self);
-        self.routine_stack.truncate_fixtures(mark);
-        result
-    }
 
     /// Replace the invocant of the innermost record, which a
     /// [`Self::with_scoped_invocant`] body owns.
@@ -729,21 +694,6 @@ impl Interpreter {
         }
     }
 
-    /// Replace the invocant of the innermost frame record, when the running
-    /// frame owns one; `false` when it does not.
-    // Cost: O(1).
-    pub(crate) fn set_frame_invocant(&mut self, invocant: Value) -> bool {
-        if !self.routine_stack.last().is_some_and(|f| f.fixtures != 0) {
-            return false;
-        }
-        match self.routine_stack.top_fixtures_mut() {
-            Some(f) => {
-                f.invocant = Some(invocant);
-                true
-            }
-            None => false,
-        }
-    }
 
     /// The record a closure, gather or routine value created now captures:
     /// the running frame's own, else (a method body run as a function) one
@@ -793,19 +743,7 @@ impl Interpreter {
         self.env.get_sym(self_sym).cloned()
     }
 
-    /// The `?CLASS` of the innermost frame record.
-    // Cost: O(1).
-    #[inline]
-    pub(crate) fn frame_class(&self) -> Option<Value> {
-        self.frame_fixtures()?.class.clone()
-    }
 
-    /// The `?ROLE` of the innermost frame record, `None` outside a role.
-    // Cost: O(1).
-    #[inline]
-    pub(crate) fn frame_role(&self) -> Option<Symbol> {
-        self.frame_fixtures()?.role
-    }
 
     /// What the innermost method frame's record says a fixed name (`self`,
     /// `__ANON_STATE#`, `?CLASS`, `?ROLE`) holds, `None` when no record

@@ -482,6 +482,10 @@ pub(crate) struct ControlHandlerEntry {
     /// writes its changes straight back into them (`enter_installing_frame`).
     pub installing_base: usize,
     pub installing_call_depth: usize,
+    /// The installing frame's fixture record (`self`, `?CLASS`, `?ROLE`): an
+    /// inline run at a deeper raise site pushes it, so the handler body reads
+    /// its own frame's invocant, not the raise site's (ADR-14843).
+    pub installing_fixtures: Option<crate::value::frame_fixtures::FrameFixtures>,
 }
 
 /// Self-contained bytecode for running a CONTROL handler inline. The `code` is

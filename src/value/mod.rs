@@ -596,9 +596,9 @@ mod enum_display;
 mod error;
 mod error_construct;
 mod error_typed;
-pub(crate) mod frame_fixtures;
 pub(crate) mod exception_message;
 pub(crate) mod flat;
+pub(crate) mod frame_fixtures;
 pub(crate) mod gist;
 mod guards;
 /// The hash key type ([`HashKey`]): inline for short keys, `Arc<str>` beyond.

@@ -2081,10 +2081,7 @@ impl Interpreter {
                 // activation it captured, as a `CallFunc` of it would.
                 Some((data, cf)) => {
                     // The routine runs under its declaring method's record.
-                    let fixtures_mark = data
-                        .fixtures
-                        .clone()
-                        .map(|f| self.push_scoped_fixtures(f));
+                    let fixtures_mark = data.fixtures.clone().map(|f| self.push_scoped_fixtures(f));
                     let result = self.call_compiled_function_named_in(
                         &cf,
                         args,
