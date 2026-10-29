@@ -2693,11 +2693,14 @@ impl Interpreter {
                 // and mutsu's own `constant @A` behavior. Only fire for a plain
                 // Hash value; immutable Set/Bag/Mix containers keep their
                 // dedicated RO paths below.
+                // A constant bound to a real `Hash` (`constant %h = hash`,
+                // `= %(a => 1)`) keeps that mutable container, as in raku:
+                // only a Map (a list coerced by the declaration) is immutable.
                 let is_readonly_hash_var = var_name.starts_with('%') && self.is_readonly(&var_name);
                 if is_readonly_hash_var
                     && matches!(
                         self.place_env_get(place, &var_name).map(Value::view),
-                        Some(ValueView::Hash(_))
+                        Some(ValueView::Hash(h)) if h.declared_type.as_deref() == Some("Map")
                     )
                 {
                     let elem = match self.place_env_get(place, &var_name).map(Value::view) {

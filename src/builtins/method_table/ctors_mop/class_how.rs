@@ -429,6 +429,13 @@ pub(super) static ROWS: &[MethodRow] = &[
             .then(|| interp.mop_candidates(args.to_vec()))
     ),
     row!(
+        "Metamodel::ParametricRoleGroupHOW",
+        "parameterize",
+        2,
+        true,
+        |interp, _target, args, _named| Some(interp.mop_parameterize(args.to_vec()))
+    ),
+    row!(
         "Metamodel::ClassHOW",
         "concretization",
         2,
