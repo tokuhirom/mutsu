@@ -1140,7 +1140,8 @@ impl Interpreter {
         let list_arg = Self::associative_store_arg(&rhs);
         let mut store_args = vec![list_arg];
         store_args.extend(self.take_decl_initialize_arg());
-        let stored = self.try_compiled_method_or_interpret(instance.clone(), "STORE", store_args)?;
+        let stored =
+            self.try_compiled_method_or_interpret(instance.clone(), "STORE", store_args)?;
         Ok(if Self::is_tie_bindable(&stored) {
             stored
         } else {
