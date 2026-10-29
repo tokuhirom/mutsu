@@ -21,7 +21,7 @@ my @cases =
   "my \$f = -> \$a, \$b \{ \$a + \$b }; say \$f(1, 2);" => "my \$f = -> \$a, \$b \{\n    \$a + \$b\n};\nsay \$f(1, 2)\n",
   "multi sub m(Int \$a) \{ 1 }; multi sub m(Str \$a) \{ 2 }; say m(1);" => "multi sub m (Int \$a) \{\n    1\n}\nmulti sub m (Str \$a) \{\n    2\n}\nsay m(1)\n";
 
-plan @cases + 6;
+plan @cases + 5;
 
 for @cases -> $case {
     is $case.key.AST.DEPARSE, $case.value, "deparses {$case.key.raku}";
