@@ -411,12 +411,17 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
         if words.len() == 1 {
             return Ok((
                 r,
-                (name, Some(Expr::Literal(Value::str(words[0].to_string())))),
+                (
+                    name,
+                    Some(Expr::Literal(
+                        crate::parser::primary::container::angle_word_value(words[0]),
+                    )),
+                ),
             ));
         }
         let items = words
             .iter()
-            .map(|w| Expr::Literal(Value::str(w.to_string())))
+            .map(|w| Expr::Literal(crate::parser::primary::container::angle_word_value(w)))
             .collect();
         return Ok((r, (name, Some(Expr::ArrayLiteral(items)))));
     }
