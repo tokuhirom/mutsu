@@ -37,6 +37,14 @@ thread_local! {
     static PROBE_CHAIN: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
+/// One routine a probed module exports: its name and, for an operator whose
+/// declaration carried `is tighter/looser/equiv` or `is assoc`, the precedence
+/// hash the importer's parse needs ([`crate::op_prec::OpPrec`]).
+pub(crate) struct ProbedExport {
+    pub(crate) name: String,
+    pub(crate) op_prec: Option<crate::op_prec::OpPrec>,
+}
+
 /// Run `use <module>` in a fresh interpreter on a fresh thread and return the
 /// names (sigil-less, e.g. `postfix:<USD>`) of every routine the module's load
 /// registered as exported, under any tag. `lib_paths` is the parser's current
@@ -50,7 +58,7 @@ thread_local! {
 pub(crate) fn probe_module_exports(
     module: String,
     lib_paths: Vec<String>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<ProbedExport>, String> {
     let mut chain = PROBE_CHAIN.with(|c| c.borrow().clone());
     if chain.contains(&module) {
         return Ok(Vec::new());
@@ -59,7 +67,7 @@ pub(crate) fn probe_module_exports(
     let handle = crate::runtime::builtins_system::try_spawn_user_thread(
         PROBE_THREAD_NAME,
         crate::runtime::builtins_system::StackPolicy::Required,
-        move || -> Result<Vec<String>, String> {
+        move || -> Result<Vec<ProbedExport>, String> {
             PROBE_CHAIN.with(|c| *c.borrow_mut() = chain);
             let mut interp = Interpreter::new();
             for path in lib_paths {
@@ -67,6 +75,13 @@ pub(crate) fn probe_module_exports(
             }
             let loaded = interp.use_module(&module);
             let names = interp.module_exported_routine_names(&module);
+            let names: Vec<ProbedExport> = names
+                .into_iter()
+                .map(|name| {
+                    let op_prec = interp.declared_op_prec_of_name(&name);
+                    ProbedExport { name, op_prec }
+                })
+                .collect();
             // A module whose `EXPORT` hook wants arguments (`use M <a b>`)
             // dies when probed with none, but its body has already bound the
             // routines it exports through the stash: keep those names.
@@ -82,6 +97,20 @@ pub(crate) fn probe_module_exports(
 }
 
 impl Interpreter {
+    /// The `Routine.prec` hash declared on the operator routine `name`, found
+    /// through the registry's candidates for that name.
+    // Cost: O(k), k = registered candidates of `name`.
+    pub(crate) fn declared_op_prec_of_name(&mut self, name: &str) -> Option<crate::op_prec::OpPrec> {
+        crate::op_prec::split_op_name(name)?;
+        let keys = self.fn_keys_for_base(name);
+        keys.iter().find_map(|key| {
+            self.registry()
+                .functions
+                .get(key)
+                .and_then(|def| def.op_prec.clone())
+        })
+    }
+
     /// Every routine name `module` exports under any tag: its exported subs,
     /// plus the `&`-sigiled entries of its exported symbols (a closure bound
     /// into an export stash is recorded as an exported `&name` variable).
