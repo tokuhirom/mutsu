@@ -3304,6 +3304,12 @@ pub(crate) fn is_unvisited_field(node: &RakuAstNode, field: &RakuAstField) -> bo
     infix_func::is_hidden_adverbs(node, field) || regex_variable_alias::is_source_field(node, field)
 }
 
+/// The line `node`'s origin begins on, if it has one.
+// Cost: O(f), f = fields of the node.
+pub(crate) fn origin_line_of(node: &RakuAstNode) -> Option<i64> {
+    origin::line_of(node)
+}
+
 pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     if let Some(child) = regex_extension::nested_accessor(node, method) {
         return Some(child);

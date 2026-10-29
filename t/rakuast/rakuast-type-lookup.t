@@ -25,7 +25,7 @@ plan 11;
 
 # --- .^methods (default) sees the class's own model methods ------------------
 my @m = RakuAST::IntLiteral.^methods.map(*.name).sort;
-is @m, <find-nodes first grep map new value visit visit-children visit-dfs>,
+is @m, <fileline find-nodes first grep map new value visit visit-children visit-dfs>,
     '.^methods lists the model constructor, accessor and inherited tree helpers';
 
 # --- .^methods(:local) excludes methods inherited from RakuAST::Node --------

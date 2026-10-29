@@ -58,6 +58,10 @@ pub(super) static ROWS: &[MethodRow] = &[
             .or(RowFlags::SLURPY),
         named: &[],
     },
+    // `.fileline`: an undocumented rakudo method that `static::CLI`'s analysis
+    // reads (maintainer-approved, #15531): `"<file>:<line>"` of the node's
+    // origin, `Nil` for a node without one.
+    origin_row!("RakuAST::Node", "fileline", 0, fileline),
     MethodRow {
         owner: "RakuAST::Node",
         name: "visit-children",
@@ -99,6 +103,33 @@ pub(super) static ROWS: &[MethodRow] = &[
     origin_row!("RakuAST::Origin::Source", "original-line", 1, original_line),
     origin_row!("RakuAST::Origin::Source", "orig", 0, source_orig),
 ];
+
+/// `Node.fileline`: `"<file>:<line>"` where the node's origin begins. The unit
+/// itself starts on line 1; a node built by hand has no origin and answers
+/// `Nil`, as in rakudo.
+// Cost: O(f), f = fields of the node.
+fn fileline(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let base = match target.view() {
+        ValueView::RakuAst(_) => target.clone(),
+        ValueView::Instance { attributes, .. } => attributes.rakuast_base()?,
+        _ => return None,
+    };
+    let ValueView::RakuAst(node) = base.view() else {
+        return None;
+    };
+    let line = if node.class == crate::rakuast::RakuAstClass::CompUnit {
+        Some(1)
+    } else {
+        crate::rakuast::origin_line_of(node)
+    };
+    let Some(line) = line else {
+        return Some(Ok(Value::NIL));
+    };
+    let file = crate::unit_source_file::current()
+        .map(|file| file.resolve().to_string())
+        .unwrap_or_default();
+    Some(Ok(Value::str(format!("{file}:{line}"))))
+}
 
 /// `Origin.from` / `Origin.to`: the character range the node occupies.
 // Cost: O(1).
