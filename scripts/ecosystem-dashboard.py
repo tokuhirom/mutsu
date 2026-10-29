@@ -94,6 +94,9 @@ def issue_links(issues, cluster_dists) -> dict[str, list[int]]:
     return {d: sorted(ns) for d, ns in out.items()}
 
 
+SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/@+-]*")
+
+
 def live_locks(comments, live_locks_mod) -> list[tuple[str, str, int]]:
     """(dist, branch, comment id) of every lock still live, oldest first -- the
     same replay `live-locks.py` does for a rotation, so there is one rule."""
@@ -104,6 +107,11 @@ def live_locks(comments, live_locks_mod) -> list[tuple[str, str, int]]:
         if not m or not m.group(3):
             continue
         key = (m.group(2), m.group(3))
+        # Board comments are written by anyone who can comment, and this ends up
+        # in an issue body that an unattended job rewrites: keep only names that
+        # cannot carry markup, links or mentions.
+        if not all(SAFE_NAME.fullmatch(k) for k in key):
+            continue
         if m.group(1) == "Locking":
             live.setdefault(key, int(c["id"]))
         else:
@@ -221,6 +229,8 @@ def self_test() -> int:
     cm = [{"id": 1, "body": "Locking: A x/1"}, {"id": 2, "body": "Locking: B x/2"},
           {"id": 3, "body": "Unlocking: A x/1\nMerged"}, {"id": 4, "body": "Locking: A x/3"}]
     check("live locks", live_locks(cm, mod), [("B", "x/2", 2), ("A", "x/3", 4)])
+    check("unsafe lock ignored",
+          live_locks([{"id": 9, "body": "Locking: A `x@evil`"}], mod), [])
 
     rows = [{"dist": d} for d in ("A", "B", "C", "D")]
     issues = [{"number": 10, "title": "t", "body": "eco-dist: B"},
