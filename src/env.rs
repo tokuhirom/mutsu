@@ -102,6 +102,13 @@ pub(crate) fn global_base_contains(name: &str) -> bool {
 /// registry misses. See `exec_register_sub_op`.
 pub(crate) const BLOCK_LEXICAL_SUB_PREFIX: &str = "__mutsu_block_lexical_sub::";
 
+/// Env-key prefix under which a class body's `my method` stores its `Sub`
+/// value. Unlike a block `sub` (whose registry entry stays authoritative while
+/// the block is live), the methods of the class are closures over the body and
+/// the lexical method shadows a same-named routine registered globally: `&STORE`
+/// in a sibling method is the class's own `my method STORE`.
+pub(crate) const CLASS_LEXICAL_METHOD_PREFIX: &str = "__mutsu_class_lexical_method::";
+
 /// The env key / local-slot name of a **user lexical** spelled `$self`.
 ///
 /// `self` is a *term* in Raku, not a `$`-sigiled variable, and mutsu binds a
