@@ -101,6 +101,14 @@ fn assign_pos(
             index, shape[0]
         ))));
     }
+    // An element that IS a `Proxy` (`BIND-POS`-bound) mediates its own store,
+    // as `@a[0] = $v` does: fire its `STORE` instead of replacing the slot.
+    // (A `:=` of a variable holding the Proxy wraps it in alias cells.)
+    if let Some(existing) = items.get(index).map(|v| v.deref_container())
+        && matches!(existing.view(), ValueView::Proxy { storer, .. } if !storer.is_nil())
+    {
+        return Some(interp.assign_proxy_lvalue(existing, value.clone()));
+    }
     match items.get(index).map(Value::view) {
         Some(ValueView::Scalar(_)) => return Some(Err(RuntimeError::assignment_ro(None))),
         // An element `BIND-POS`-bound to a bare value (#10924).
