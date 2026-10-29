@@ -312,6 +312,20 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // A named regex passed as a value (`.comb(&Named)`) is a `Routine`;
+        // comb with its regex source, as `.subst` and `.match` do.
+        let named_regex: Vec<Value>;
+        let args: &[Value] = if let Some(i) = args.iter().position(|a| {
+            matches!(a.view(), ValueView::Routine { is_regex: true, .. })
+        }) && let Some(p) = self.named_regex_routine_pattern(&args[i])
+        {
+            let mut owned = args.to_vec();
+            owned[i] = Value::regex(p);
+            named_regex = owned;
+            &named_regex
+        } else {
+            args
+        };
         let text = target.string_value_cow();
 
         // Separate positional args from named ones. `.comb` declares only

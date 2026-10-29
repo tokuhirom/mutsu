@@ -145,7 +145,12 @@ fn package(target: &Value, _args: &[Value]) -> Answer {
         {
             return Ok(owner.clone());
         }
-        let owner = fact_str(meta, "__mutsu_attr_owner").unwrap_or_else(|| "Any".to_string());
+        // An attribute a role contributes to a run-time mixin (`42 but R`) is
+        // owned by the mixin's anonymous class (`Int+{R}`), which is what
+        // `.package` names; the owner key stays the role for lookups.
+        let owner = fact_str(meta, "__mutsu_attr_package")
+            .or_else(|| fact_str(meta, "__mutsu_attr_owner"))
+            .unwrap_or_else(|| "Any".to_string());
         Ok(Value::package(Symbol::intern(&owner)))
     })
 }

@@ -2483,6 +2483,27 @@ impl Interpreter {
                                 self.no_such_qualified_symbol(pkg_prefix.as_str(), short.as_str())
                             );
                         }
+                        // An abstract built-in (`Cool`, `Numeric`, `Real`,
+                        // `Stringy`, `Callable`, ...) with no native
+                        // constructor: `Mu.new` builds a defined, attribute-less
+                        // instance of it, as it does for `Any` (rakudo:
+                        // `Cool.new.defined` is True, `.raku` is `Cool.new`).
+                        // `UInt` is a subset, not a class: it cannot be
+                        // instantiated (rakudo: "Cannot instantiate a subtype").
+                        // Rakudo also refuses `Code` and its subclasses
+                        // (`Sub`, `Block`, `Method`, `Regex`, ...), `Junction`
+                        // and `Failure`: they have no useful empty instance.
+                        let mro = crate::builtin_types::catalog::builtin_type_mro_syms(&resolved);
+                        let refused = resolved == "UInt"
+                            || resolved == "Junction"
+                            || resolved == "Failure"
+                            || mro.as_ref().is_some_and(|m| m.iter().any(|c| c == "Code"));
+                        if !refused
+                            && (mro.is_some()
+                                || crate::runtime::types::is_builtin_role_name(&resolved))
+                        {
+                            return Ok(Value::make_instance(name, HashMap::new()));
+                        }
                         Err(crate::runtime::did_you_mean::method_not_found(
                             "new", &resolved,
                         ))

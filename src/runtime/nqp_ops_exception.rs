@@ -276,6 +276,12 @@ impl Interpreter {
                 None,
             )),
             CONTROL_TAKE => self.builtin_take_value(payload),
+            // A warning carrying an exception object (a user `CX::Warn`
+            // subclass) is thrown as that object, so a `CONTROL { when
+            // TheClass {...} }` handler gets it as its topic and can `.resume`.
+            CONTROL_WARN if matches!(payload.view(), ValueView::Instance { .. }) => {
+                self.exception_control(&payload, "throw")
+            }
             CONTROL_WARN => self.builtin_warn(&[Value::str(message.to_string_value())]),
             CONTROL_SUCCEED => self.builtin_succeed(&[payload]),
             CONTROL_PROCEED => Err(RuntimeError::proceed_signal()),
