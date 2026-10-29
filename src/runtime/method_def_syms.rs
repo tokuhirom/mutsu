@@ -102,6 +102,13 @@ impl super::MethodDef {
     }
 }
 
+/// [`NamedFast::of_param`] reduced to what the light named-call plan stores:
+/// `None` when the fast path cannot serve `pd`, else its constant default.
+// Cost: O(1).
+pub(crate) fn named_fast_fill(pd: &crate::ast::ParamDef) -> Option<Option<crate::value::Value>> {
+    NamedFast::of_param(pd).map(|f| f.fill)
+}
+
 impl NamedFast {
     // Cost: O(1).
     pub(crate) fn of_param(pd: &crate::ast::ParamDef) -> Option<Self> {

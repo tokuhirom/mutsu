@@ -80,7 +80,7 @@ mod decl_types;
 pub(crate) mod deferred_body_imports;
 pub(crate) mod enum_bare_names;
 mod method_def_syms;
-pub(crate) use method_def_syms::NamedFast;
+pub(crate) use method_def_syms::{NamedFast, named_fast_fill};
 pub(crate) mod term_names;
 pub(crate) mod toplevel_callable_ids;
 pub(crate) mod toplevel_markers;
