@@ -82,7 +82,9 @@ fn condition_modifier(modifier: StatementModifier, stmt: Stmt) -> Result<Stmt, R
             let stmt = rewrite_placeholder_block(stmt, &expr);
             // A declaration takes effect unconditionally; only its
             // initializer is gated.
-            if let Some(split) = crate::parser::conditional_declaration(&stmt, &expr, is_unless)? {
+            if let Some(split) =
+                super::decl_modifier_split::conditional_declaration(&stmt, &expr, is_unless)?
+            {
                 return Ok(split);
             }
             let stmt = super::signature_expand::lower_pending(stmt)?;
@@ -171,7 +173,9 @@ fn with_modifier(is_without: bool, topic: Expr, stmt: Stmt) -> Result<Stmt, Runt
         };
         return Ok(Stmt::Expr(Expr::DoStmt(Box::new(given))));
     }
-    if let Some(expanded) = crate::parser::topical_declaration(&stmt, &topic, is_without)? {
+    if let Some(expanded) =
+        super::decl_modifier_split::topical_declaration(&stmt, &topic, is_without)?
+    {
         return Ok(expanded);
     }
     let stmt = super::signature_expand::lower_pending(stmt)?;

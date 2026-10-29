@@ -150,7 +150,7 @@ pub(crate) mod parsed_block;
 pub(crate) use parsed_block::{finish, parsed_block};
 mod pointy_param;
 mod react;
-pub(in crate::parser::stmt) mod source_body;
+pub(crate) mod source_body;
 mod while_until;
 pub(crate) use source_body::check_signature;
 mod with_stmt;
