@@ -561,6 +561,7 @@ impl Interpreter {
         Self::inject_x_wrapper_prelude(&code, &mut stmts);
         Self::inject_precomp_api_prelude(&code, &mut stmts);
         Self::inject_formatter_syntax_prelude(&code, &mut stmts);
+        Self::inject_deparse_prelude(&code, &mut stmts);
         Self::inject_container_descriptor_prelude(&code, &mut stmts);
         // Install EVERY END phaser this compunit declares — top-level, inside
         // a block, inside a sub or a method — before the VM runs a single

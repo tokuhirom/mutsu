@@ -20,6 +20,7 @@ pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
                 "declarator",
                 "parsed-declarator",
                 "parameterization",
+                "is-stub",
             ],
             _ => &["default-scope", "scope"],
         };
@@ -31,6 +32,7 @@ pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
             &["dispatch", "dispatcher"]
         }
         VarDeclarationSimple => &["original-type"],
+        VarDeclarationSignature => &["type"],
         Signature => &["parameters-initialized"],
         Sub | RegexDeclaration | TokenDeclaration | RuleDeclaration => &["declarator"],
         ApplyInfix | Postfix => &["colonpairs"],
@@ -130,6 +132,9 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         // mutsu records only the written type, which is what rakudo's
         // `original-type` is before a `where`/coercion rewrite of `type`.
         (VarDeclarationSimple, "original-type") => Some(field(node, "type").unwrap_or(Value::NIL)),
+        // The type written before a signature declaration (`my Int ($a, $b)`),
+        // Nil when none was.
+        (VarDeclarationSignature, "type") => Some(field(node, "type").unwrap_or(Value::NIL)),
         // A signature whose parameter list was given at all (even empty), or
         // its return type. A parsed signature always has one.
         (Signature, "parameters-initialized") => Some(Value::truth(
@@ -311,6 +316,10 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
                     origin: Default::default(),
                 })))
             }),
+        // mutsu does not model a `class C {...}` stub: no package is one.
+        (Class | Role | Grammar | Module | Package | Native, "is-stub") => {
+            Some(field(node, "is-stub").unwrap_or_else(|| Value::truth(false)))
+        }
         (Class | Grammar | Module | Package | Native, "parameterization") => {
             Some(Value::package(crate::symbol::Symbol::intern("Mu")))
         }
