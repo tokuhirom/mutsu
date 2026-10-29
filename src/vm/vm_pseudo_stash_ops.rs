@@ -502,7 +502,12 @@ impl Interpreter {
     /// paths — so the type travels as the hash's declared type, exactly the way
     /// a `Map` does. Without this the spellings answered a bare `Hash`, with no
     /// symbol-table type at all.
-    pub(super) fn pseudo_stash_hash(&mut self, entries: ValueMap) -> Value {
+    pub(super) fn pseudo_stash_hash(&mut self, mut entries: ValueMap) -> Value {
+        // `$_` is a declared lexical of every scope, `Any` until something
+        // topicalizes it, so a lexical stash always answers it.
+        if entries.get("$_").is_none_or(Value::is_nil) {
+            entries.insert("$_".to_string(), Value::package(Symbol::intern("Any")));
+        }
         let hash = Value::hash_with_data(Value::hash_arc(entries));
         self.tag_container_metadata(
             hash,
