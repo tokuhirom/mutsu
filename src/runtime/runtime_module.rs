@@ -182,6 +182,20 @@ impl Interpreter {
         }
     }
 
+    /// The innermost open import scope, when it belongs to `importer`'s
+    /// compunit. Only the importing compunit's own scope owns an import: a
+    /// module loaded while the importer's block is open imports its own `use`s
+    /// for itself, and recording them on the block's scope would hand them to
+    /// the block's pad and let the block shadow the module's private copy of
+    /// a routine (`Cro::Iri`'s `decode-percents`).
+    // Cost: O(1).
+    fn importing_scope_mut(
+        stack: &mut [crate::runtime::ImportScopeSnapshot],
+        importer: Symbol,
+    ) -> Option<&mut crate::runtime::ImportScopeSnapshot> {
+        stack.last_mut().filter(|top| top.unit == importer)
+    }
+
     /// Record that `import_module` just wrote `key` into `env` as an
     /// imported alias, so the innermost open import scope (if any) knows to
     /// remove it again on pop. No-op outside any `use`-containing block —
@@ -198,11 +212,7 @@ impl Interpreter {
         // (`use M :t; { use M } t`). Only an import visible when the scope
         // opened counts: an alias a BEGIN-time preload left in `env` is not
         // one.
-        // Only the importing compunit's own scope owns the key: a module loaded
-        // while the block is open imports its own `use`s for itself, not into
-        // the block's pad.
-        if let Some(top) = self.module.import_scope_stack.last_mut()
-            && top.unit == unit
+        if let Some(top) = Self::importing_scope_mut(&mut self.module.import_scope_stack, unit)
             && top.imported_env_keys.insert(key_sym)
             && top
                 .unit_env_imports
@@ -220,14 +230,8 @@ impl Interpreter {
     pub(crate) fn record_imported_routine_alias(&mut self, package: &str, name: &str) {
         self.note_lexical_import_routine(package, name);
         let alias = Symbol::intern(crate::qualified::qualified_text(package, name).as_str());
-        // Only the importing compunit's own scope owns the import: a module
-        // loaded while the importer's block is open records its own `use`s on
-        // that block's scope otherwise, and the block then shadows the module's
-        // private copy of the routine (`Cro::Iri`'s `decode-percents`).
         let importer = self.executing_unit_sym_for_module_load();
-        if let Some(top) = self.module.import_scope_stack.last_mut()
-            && top.unit == importer
-        {
+        if let Some(top) = Self::importing_scope_mut(&mut self.module.import_scope_stack, importer) {
             top.own_routine_imports.insert(alias);
         }
         std::sync::Arc::make_mut(&mut self.module.imported_routine_aliases).insert(alias);
