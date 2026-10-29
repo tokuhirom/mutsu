@@ -1,22 +1,31 @@
 use Test;
+use lib 't/fixtures/temp-imported-type/lib';
+use TempImportedCfg;
 
 # `temp Type.method = value` and `temp Type.^meta = value` restore the old value
 # when the scope leaves (Red t/23-metamodel-model: `temp Bla.^table = "..."`).
 
-plan 5;
+plan 7;
 
-class Cfg {
+class Local {
     my $level = "info";
     method level() is rw { $level }
 }
 
-is Cfg.level, "info", "starts at the default";
+is Local.level, "info", "starts at the default";
 {
-    temp Cfg.level = "debug";
-    is Cfg.level, "debug", "temp sets the value";
+    temp Local.level = "debug";
+    is Local.level, "debug", "temp sets the value";
 }
-is Cfg.level, "info", "and restores it on scope exit";
+is Local.level, "info", "and restores it on scope exit";
 
-sub noisy { temp Cfg.level = "trace"; my $seen = Cfg.level; $seen }
+sub noisy { temp Local.level = "trace"; my $seen = Local.level; $seen }
 is noisy(), "trace", "temp inside a routine";
-is Cfg.level, "info", "restored after the routine returns";
+is Local.level, "info", "restored after the routine returns";
+
+# The same through a type the module exported (Red's `model Bla` is an imported term).
+{
+    temp Cfg.level = "warn";
+    is Cfg.level, "warn", "temp on an imported type object";
+}
+is Cfg.level, "info", "restored";

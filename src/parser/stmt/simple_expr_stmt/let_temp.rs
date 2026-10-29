@@ -267,6 +267,15 @@ fn temp_declaration_stmt(input: &str) -> Option<PResult<'_, Stmt>> {
     Some(parse_statement_modifier(rest, stmt))
 }
 
+/// The type a `temp Type.method …` names: a bare name, or one an import spelled.
+fn type_object_invocant_name(invocant: &Expr) -> Option<&str> {
+    match invocant {
+        Expr::BareWord(name) => Some(name),
+        Expr::Spelled(spelled) => type_object_invocant_name(&spelled.expr),
+        _ => None,
+    }
+}
+
 /// The variable a `temp <invocant>.method …` saves: a plain scalar `$obj`, or
 /// `self` — spelled `self` or as the `$.attr` invocant carrier, which the
 /// parser leaves as the collapsed anonymous-state name `__ANON_STATE#`.
@@ -359,13 +368,13 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         if let Some(parts) = crate::rakuast::method_lvalue_call_parts(&expr)
             && let Expr::Call { args, .. } = &expr
             && args.len() == 5
-            && let Expr::BareWord(type_name) = parts.invocant
+            && let Some(type_name) = type_object_invocant_name(parts.invocant)
             && type_name != "self"
         {
             return parse_statement_modifier(
                 expr_rest,
                 Stmt::TempMethodAssign {
-                    var_name: type_name.clone(),
+                    var_name: type_name.to_string(),
                     method_name: parts.method_name.to_string(),
                     method_args: parts.method_args.to_vec(),
                     value: parts.value.clone(),
