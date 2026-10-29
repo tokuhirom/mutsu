@@ -573,6 +573,14 @@ impl Interpreter {
                                 ),
                             ));
                         }
+                        // An inherited multi family (several candidates under one
+                        // name) satisfies a NON-MULTI stub by name, as one inherited
+                        // method does: rakudo only asks that `find_method` locates
+                        // something (PDF::Native's `COSType` stub `method delegate
+                        // {...}` against `_Node`'s `:D:`/`:U:` multi pair).
+                        if total > 1 && !required.is_multi {
+                            continue;
+                        }
                         if total > 1 {
                             return Err(RuntimeError::new(format!(
                                 "X::Role::Composition::Conflict: multiple inherited candidates for required method '{}'",

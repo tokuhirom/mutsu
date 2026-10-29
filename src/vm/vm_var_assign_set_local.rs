@@ -1716,7 +1716,7 @@ impl Interpreter {
                 self.coerce_constant_hash_value(name, raw_popped)?
             } else {
                 let decl = self.local_store_decl(code, idx);
-                self.coerce_hash_var_value(decl, name, raw_popped)?
+                self.coerce_hash_var_value(decl, name, raw_popped, None)?
             }
         } else if name.starts_with('@') {
             if is_bind {

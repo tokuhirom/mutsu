@@ -514,6 +514,7 @@ impl Interpreter {
         // triggers. A `use`d module and an `EVAL` re-publish their own over
         // this one for the span they own.
         let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(Some(unit_file));
+        let _unit_text = crate::unit_source_text::UnitSourceTextGuard::enter(&preprocessed);
         self.cur_source_line = 1;
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());

@@ -2993,6 +2993,8 @@ impl Interpreter {
                                         Some('r') => literal.push('\r'),
                                         Some('f') => literal.push('\u{000C}'),
                                         Some('b') => literal.push('\u{0008}'), // backspace
+                                        Some('a') => literal.push('\u{0007}'), // bell
+                                        Some('e') => literal.push('\u{001B}'), // escape (ESC)
                                         Some('0') => literal.push('\0'),
                                         Some('c') | Some('C') => {
                                             // \c[NAME] or \c[NAME1, NAME2] inside double-quoted regex string
@@ -3583,10 +3585,13 @@ impl Interpreter {
                                                 || rhs.starts_with("-:")
                                                 || rhs.starts_with(":!")
                                                 || rhs.starts_with("!:")
-                                                // `<t=@a>` / `<t=@(code)>` / `<t=$(code)>`: the
-                                                // alias names the interpolation's own match.
-                                                || rhs.starts_with('@')
-                                                || rhs.starts_with("$(");
+                                                // `<x=@w>`: an array-variable
+                                                // alternation under an alias
+                                                // (`@(…)` is code: it runs at
+                                                // match time, see
+                                                // `contextualizer_alias_code`).
+                                                || (rhs.starts_with('@')
+                                                    && !rhs.starts_with("@("));
                                             if lhs_is_ident && rhs_is_class_or_prop {
                                                 pending_named_capture = Some(lhs.to_string());
                                                 pending_named_capture_is_angle_alias = true;

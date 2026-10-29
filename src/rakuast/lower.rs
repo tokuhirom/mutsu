@@ -4520,7 +4520,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     });
                 }
                 return Ok(Expr::Grouped(Box::new(
-                    crate::parser::lower_paren_sections(sections, Vec::new(), true),
+                    super::sections::lower_paren_sections(sections, Vec::new(), true),
                 )));
             }
             let inner = named_child_or_positional(semilist)?;
@@ -4597,7 +4597,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         other => vec![other],
                     });
                 }
-                return Ok(crate::parser::lower_array_sections(
+                return Ok(super::sections::lower_array_sections(
                     sections,
                     Vec::new(),
                     true,
