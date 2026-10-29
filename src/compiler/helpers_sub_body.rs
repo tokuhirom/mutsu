@@ -896,6 +896,20 @@ impl Compiler {
     /// `return` decontainerizes, in Rakudo too.
     pub(super) fn compile_routine_tail_expr(&mut self, expr: &Expr) {
         if self.rw_tail {
+            // `method m is rw { $!a //= 1 }` hands back `$!a` itself: run the
+            // compound assignment, then yield its (variable) target as the
+            // container, as a bare `$!a` tail does.
+            if let Expr::CompoundAssign { target, .. } = expr
+                && matches!(
+                    target.as_ref(),
+                    Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
+                )
+            {
+                self.with_stmt_root(|c| c.compile_expr(expr));
+                self.code.emit(OpCode::Pop);
+                self.compile_return_rw_arg(target);
+                return;
+            }
             self.compile_return_rw_arg(expr);
         } else if let Expr::Literal(v) = expr
             && matches!(v.view(), crate::value::ValueView::RegexWithAdverbs(_))

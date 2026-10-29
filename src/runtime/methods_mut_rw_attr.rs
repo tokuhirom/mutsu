@@ -28,6 +28,13 @@ impl Interpreter {
         let significant = || body.iter().filter(|s| !s.is_marker());
         let last = significant().next_back()?;
         let extract_attr = |expr: &Expr| -> Option<(String, char)> {
+            // `$!attr //= default` (and the other compound assignments) yields
+            // the attribute's container, so a tail `method m is rw { $!a //= 1 }`
+            // exposes `$!a` just like a bare `$!a` does (Red's `^table`).
+            let expr = match expr {
+                Expr::CompoundAssign { target, .. } => target.as_ref(),
+                other => other,
+            };
             match expr {
                 Expr::Var(name) if name.starts_with('!') && name.len() > 1 => {
                     Some((name[1..].to_string(), '$'))
