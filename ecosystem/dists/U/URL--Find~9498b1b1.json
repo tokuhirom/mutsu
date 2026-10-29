@@ -7,16 +7,109 @@
     "unresolved": []
   },
   "dist": "URL::Find",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-url-find-unicode.t",
+      "raku": {
+        "first_failure": "Type check failed for return value; expected List but got Seq ((\"http://www.com/com...)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-url-find-ascii.t",
+      "raku": {
+        "first_failure": "Type check failed for return value; expected List but got Seq ((\"http://www.com/com...)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-url-find-quoted.t",
+      "raku": {
+        "first_failure": "Type check failed for return value; expected List but got Seq ((\"http://www.com/com...)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-url-any.t",
+      "raku": {
+        "first_failure": "Type check failed for return value; expected List but got Seq ((\"file://home/me/myf...)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-non-lowercase-urls.t",
+      "raku": {
+        "first_failure": "Type check failed for return value; expected List but got Seq ((\"hTTPs://www.google...)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "URL::Find": "Failed to parse module 'URL::Find': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: regex declaration without a source tr"
+    "URL::Find": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-27",
+    "date": "2026-10-28",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1bfedbe3",
+    "mutsu_commit": "d15777dd",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -27,12 +120,12 @@
     "index": "fez",
     "url": "https://raw.githubusercontent.com/raku/REA/main/archive/U/URL%3A%3AFind/URL%3A%3AFind%3Aver%3Cv0.2%3E%3Aauth%3Cgithub%3Asamcv%3E.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "v0.2"

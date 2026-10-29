@@ -36,33 +36,585 @@
     "unresolved": []
   },
   "dist": "Net::BGP",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller nuint16(Int:D, Int:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/00-conversions.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 154,
+        "plan": 154,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-ip-test.t",
+      "raku": {
+        "nok": 0,
+        "ok": 154,
+        "plan": 154,
+        "secs": 2.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller nuint16(Int:D, Int:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 7,
+        "plan": null,
+        "secs": 0.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-as-list.t",
+      "raku": {
+        "nok": 0,
+        "ok": 39,
+        "plan": 39,
+        "secs": 1.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-afi-safi.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-linux-socket.t",
+      "raku": {
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 240.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "timeout"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Could not bind",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/11-socket.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unhandled exception in code scheduled on thread 7",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 1.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/30-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unhandled exception in code scheduled on thread 7",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/31-conn-open-close-event.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/32-Command-Dead-Child.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/50-messages.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/51-bgp-messages-from-hash.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller nuint32(Int:D, Int:D, Int:D, Int:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 2,
+        "plan": null,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/52-bgp-messages-raw.t",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller nuint32(Int:D, Int:D, Int:D, Int:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 25,
+        "plan": null,
+        "secs": 1.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/53-Open-With-Multiple-CapOpts.t",
+      "raku": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller nuint32(Int:D, Int:D, Int:D, Int:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 4,
+        "plan": null,
+        "secs": 1.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/54-Update-Failure.t",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller nuint16(Int:D, Int:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/55-bgp-notification-raw.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unhandled exception in code scheduled on thread 7",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/56-bgp-invalid-marker.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unhandled exception in code scheduled on thread 7",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/57-bgp-open-bad-asn.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller nuint16(Int:D, Int:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/58-as4-update.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/60-Path-Attributes.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in assignment to $!peer-ip; where constraint failed",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/70-peer-object.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller nuint32(Int:D, Int:D, Int:D, Int:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/80-Validator-Aggregation.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 2.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller nuint32(Int:D, Int:D, Int:D, Int:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/81-Validator-AS-Path.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unhandled exception in code scheduled on thread 7",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/90-basic-bgp.t",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 2.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unhandled exception in code scheduled on thread 7",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 1.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/91-send-update.t",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/95-bgpmon.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 20.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "Net::BGP": "raku_also_fails",
+    "Net::BGP": "ok",
     "Net::BGP::AFI": "ok",
     "Net::BGP::AFI-SAFI": "ok",
-    "Net::BGP::AS-List": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::CIDR": "Runtime error: No return arguments allowed when return value buf8:D is already specified in the signature",
+    "Net::BGP::AS-List": "ok",
+    "Net::BGP::CIDR": "ok",
     "Net::BGP::Capability": "ok",
-    "Net::BGP::Capability::ASN32": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
+    "Net::BGP::Capability::ASN32": "ok",
     "Net::BGP::Capability::Deprecated-Dynamic-Capability": "ok",
     "Net::BGP::Capability::FQDN": "ok",
     "Net::BGP::Capability::Generic": "ok",
-    "Net::BGP::Capability::Graceful-Restart": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
+    "Net::BGP::Capability::Graceful-Restart": "ok",
     "Net::BGP::Capability::Graceful-Restart::Per-AF": "ok",
-    "Net::BGP::Capability::MPBGP": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
+    "Net::BGP::Capability::MPBGP": "ok",
     "Net::BGP::Capability::Route-Refresh": "ok",
     "Net::BGP::Capability::Route-Refresh-Cisco": "ok",
     "Net::BGP::Command": "ok",
     "Net::BGP::Command::BGP-Message": "ok",
     "Net::BGP::Command::Dead-Child": "ok",
     "Net::BGP::Command::Stop": "ok",
-    "Net::BGP::Connection": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Connection-List": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
+    "Net::BGP::Connection": "ok",
+    "Net::BGP::Connection-List": "ok",
     "Net::BGP::Connection-Role": "ok",
-    "Net::BGP::Controller": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Controller-Handle-BGP": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Conversions": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
+    "Net::BGP::Controller": "ok",
+    "Net::BGP::Controller-Handle-BGP": "ok",
+    "Net::BGP::Conversions": "ok",
     "Net::BGP::Conversions-Post201812": "ok",
     "Net::BGP::Conversions-Pre201812": "ok",
     "Net::BGP::Error": "ok",
@@ -77,64 +629,64 @@
     "Net::BGP::Event::BGP-Message": "ok",
     "Net::BGP::Event::Closed-Connection": "ok",
     "Net::BGP::Event::New-Connection": "ok",
-    "Net::BGP::IP": "Runtime error: No return arguments allowed when return value buf8:D is already specified in the signature",
+    "Net::BGP::IP": "ok",
     "Net::BGP::Message": "ok",
     "Net::BGP::Message::Generic": "ok",
     "Net::BGP::Message::Keep-Alive": "ok",
-    "Net::BGP::Message::Notify": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Cease": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Cease::Administrative-Reset": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Cease::Administrative-Shutdown": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Cease::Connection-Rejected": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Cease::Generic": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Cease::Peer-Deconfigured": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Generic": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Header": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Header::Connection-Not-Syncronized": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Header::Generic": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Hold-Timer-Expired": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Open": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Open::Bad-Peer-AS": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Open::Generic": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Open::Unsupported-Optional-Parameter": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Notify::Open::Unsupported-Version": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Open": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Message::Update": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
+    "Net::BGP::Message::Notify": "ok",
+    "Net::BGP::Message::Notify::Cease": "ok",
+    "Net::BGP::Message::Notify::Cease::Administrative-Reset": "ok",
+    "Net::BGP::Message::Notify::Cease::Administrative-Shutdown": "ok",
+    "Net::BGP::Message::Notify::Cease::Connection-Rejected": "ok",
+    "Net::BGP::Message::Notify::Cease::Generic": "ok",
+    "Net::BGP::Message::Notify::Cease::Peer-Deconfigured": "ok",
+    "Net::BGP::Message::Notify::Generic": "ok",
+    "Net::BGP::Message::Notify::Header": "ok",
+    "Net::BGP::Message::Notify::Header::Connection-Not-Syncronized": "ok",
+    "Net::BGP::Message::Notify::Header::Generic": "ok",
+    "Net::BGP::Message::Notify::Hold-Timer-Expired": "ok",
+    "Net::BGP::Message::Notify::Open": "ok",
+    "Net::BGP::Message::Notify::Open::Bad-Peer-AS": "ok",
+    "Net::BGP::Message::Notify::Open::Generic": "ok",
+    "Net::BGP::Message::Notify::Open::Unsupported-Optional-Parameter": "ok",
+    "Net::BGP::Message::Notify::Open::Unsupported-Version": "ok",
+    "Net::BGP::Message::Open": "ok",
+    "Net::BGP::Message::Update": "ok",
     "Net::BGP::Parameter": "ok",
-    "Net::BGP::Parameter::Capabilities": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
+    "Net::BGP::Parameter::Capabilities": "ok",
     "Net::BGP::Parameter::Generic": "ok",
-    "Net::BGP::Path-Attribute": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::AS-Path": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::AS4-Aggregator": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::AS4-Path": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::Aggregator": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::Atomic-Aggregate": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::Cluster-List": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::Community": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::Extended-Community": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::Generic": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::Local-Pref": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::Long-Community": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::MED": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::MP-NLRI": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::MP-Unreachable": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::Next-Hop": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::Origin": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Path-Attribute::Originator-ID": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Peer": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
-    "Net::BGP::Peer-List": "Runtime error: No return arguments allowed when return value buf8:D is already specified in the signature",
+    "Net::BGP::Path-Attribute": "ok",
+    "Net::BGP::Path-Attribute::AS-Path": "ok",
+    "Net::BGP::Path-Attribute::AS4-Aggregator": "ok",
+    "Net::BGP::Path-Attribute::AS4-Path": "ok",
+    "Net::BGP::Path-Attribute::Aggregator": "ok",
+    "Net::BGP::Path-Attribute::Atomic-Aggregate": "ok",
+    "Net::BGP::Path-Attribute::Cluster-List": "ok",
+    "Net::BGP::Path-Attribute::Community": "ok",
+    "Net::BGP::Path-Attribute::Extended-Community": "ok",
+    "Net::BGP::Path-Attribute::Generic": "ok",
+    "Net::BGP::Path-Attribute::Local-Pref": "ok",
+    "Net::BGP::Path-Attribute::Long-Community": "ok",
+    "Net::BGP::Path-Attribute::MED": "ok",
+    "Net::BGP::Path-Attribute::MP-NLRI": "ok",
+    "Net::BGP::Path-Attribute::MP-Unreachable": "ok",
+    "Net::BGP::Path-Attribute::Next-Hop": "ok",
+    "Net::BGP::Path-Attribute::Origin": "ok",
+    "Net::BGP::Path-Attribute::Originator-ID": "ok",
+    "Net::BGP::Peer": "ok",
+    "Net::BGP::Peer-List": "ok",
     "Net::BGP::SAFI": "ok",
     "Net::BGP::Speaker": "raku_also_fails",
     "Net::BGP::Speaker::Display": "ok",
     "Net::BGP::Time": "ok",
-    "Net::BGP::Validation": "Runtime error: No return arguments allowed when return value buf8:D is already specified in the signature"
+    "Net::BGP::Validation": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-27",
+    "date": "2026-10-28",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1bfedbe3",
+    "mutsu_commit": "d15777dd",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -145,13 +697,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/N/ET/NET_BGP/b2acc52958f570b9100f1f523aeae0d1bdade510.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 309,
+    "baseline_files": 23,
+    "mutsu_assertions": 208,
+    "parity_files": 6,
+    "regressed_files": 17
   },
   "version": "0.9.0"
 }

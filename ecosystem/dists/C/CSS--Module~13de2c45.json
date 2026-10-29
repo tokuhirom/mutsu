@@ -15,27 +15,380 @@
     "unresolved": []
   },
   "dist": "CSS::Module",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 23,
+        "plan": 23,
+        "secs": 5.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 23,
+        "plan": 23,
+        "secs": 75.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/at-rules.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 54,
+        "plan": 54,
+        "secs": 13.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/css1-properties.t",
+      "raku": {
+        "nok": 0,
+        "ok": 54,
+        "plan": 54,
+        "secs": 3.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 5.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/css21-properties.t",
+      "raku": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 1.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 0.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/css3-_base.t",
+      "raku": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 1.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 116,
+        "plan": 116,
+        "secs": 2.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/css3x-colors.t",
+      "raku": {
+        "nok": 0,
+        "ok": 116,
+        "plan": 116,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 179,
+        "plan": 179,
+        "secs": 4.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/css3x-fonts.t",
+      "raku": {
+        "nok": 0,
+        "ok": 179,
+        "plan": 179,
+        "secs": 1.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 3.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/css3x-media-queries.t",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 35,
+        "plan": 35,
+        "secs": 2.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/css3x-namespaces.t",
+      "raku": {
+        "nok": 0,
+        "ok": 35,
+        "plan": 35,
+        "secs": 1.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 44,
+        "plan": 44,
+        "secs": 2.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/css3x-paged-media.t",
+      "raku": {
+        "nok": 0,
+        "ok": 44,
+        "plan": 44,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 2.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/css3x-values-and-units.t",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 128,
+        "plan": 128,
+        "secs": 5.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/error-handling.t",
+      "raku": {
+        "nok": 0,
+        "ok": 128,
+        "plan": 128,
+        "secs": 1.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 2.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/module-extensions.t",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/module-vivify.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 2.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/module.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 12.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 67,
+        "plan": 67,
+        "secs": 8.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/svg-properties.t",
+      "raku": {
+        "nok": 0,
+        "ok": 67,
+        "plan": 67,
+        "secs": 2.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "CSS::Module": "Failed to parse module 'Color::Names::CSS3': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
-    "CSS::Module::CSS1": "Failed to parse module 'Color::Names::CSS3': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
-    "CSS::Module::CSS1::Actions": "Failed to parse module 'Color::Names::CSS3': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
+    "CSS::Module": "ok",
+    "CSS::Module::CSS1": "ok",
+    "CSS::Module::CSS1::Actions": "ok",
     "CSS::Module::CSS1::Gen::Actions": "ok",
     "CSS::Module::CSS1::Gen::External": "ok",
     "CSS::Module::CSS1::Gen::Grammar": "ok",
     "CSS::Module::CSS1::Metadata": "ok",
-    "CSS::Module::CSS21": "Failed to parse module 'Color::Names::CSS3': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
-    "CSS::Module::CSS21::Actions": "Failed to parse module 'Color::Names::CSS3': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
+    "CSS::Module::CSS21": "ok",
+    "CSS::Module::CSS21::Actions": "ok",
     "CSS::Module::CSS21::Gen::Actions": "ok",
     "CSS::Module::CSS21::Gen::External": "ok",
     "CSS::Module::CSS21::Gen::Grammar": "ok",
     "CSS::Module::CSS21::Metadata": "ok",
-    "CSS::Module::CSS3": "Failed to parse module 'Color::Names::CSS3': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
-    "CSS::Module::CSS3::Actions": "Failed to parse module 'Color::Names::CSS3': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
+    "CSS::Module::CSS3": "ok",
+    "CSS::Module::CSS3::Actions": "ok",
     "CSS::Module::CSS3::Colors": "ok",
-    "CSS::Module::CSS3::Fonts": "Failed to parse module 'Color::Names::CSS3': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
-    "CSS::Module::CSS3::Fonts::Actions": "Failed to parse module 'Color::Names::CSS3': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
-    "CSS::Module::CSS3::Fonts::AtFontFace": "Failed to parse module 'Color::Names::CSS3': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
+    "CSS::Module::CSS3::Fonts": "ok",
+    "CSS::Module::CSS3::Fonts::Actions": "ok",
+    "CSS::Module::CSS3::Fonts::AtFontFace": "ok",
     "CSS::Module::CSS3::Fonts::AtFontFace::Gen::Actions": "ok",
     "CSS::Module::CSS3::Fonts::AtFontFace::Gen::External": "ok",
     "CSS::Module::CSS3::Fonts::AtFontFace::Gen::Grammar": "ok",
@@ -47,17 +400,17 @@
     "CSS::Module::CSS3::MediaQueries": "ok",
     "CSS::Module::CSS3::Metadata": "ok",
     "CSS::Module::CSS3::Namespaces": "ok",
-    "CSS::Module::CSS3::PagedMedia": "Failed to parse module 'Color::Names::CSS3': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
+    "CSS::Module::CSS3::PagedMedia": "ok",
     "CSS::Module::CSS3::PagedMedia::Gen::Actions": "ok",
     "CSS::Module::CSS3::PagedMedia::Gen::External": "ok",
     "CSS::Module::CSS3::PagedMedia::Gen::Grammar": "ok",
-    "CSS::Module::CSS3::Values_and_Units": "Failed to parse module 'Color::Names::CSS3': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
+    "CSS::Module::CSS3::Values_and_Units": "ok",
     "CSS::Module::CSS3::Values_and_Units::Gen::Actions": "ok",
     "CSS::Module::CSS3::Values_and_Units::Gen::External": "ok",
     "CSS::Module::CSS3::Values_and_Units::Gen::Grammar": "ok",
     "CSS::Module::Property": "ok",
-    "CSS::Module::SVG": "Failed to parse module 'Color::Names::CSS3': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
-    "CSS::Module::SVG::Actions": "Failed to parse module 'Color::Names::CSS3': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Anonymous`",
+    "CSS::Module::SVG": "ok",
+    "CSS::Module::SVG::Actions": "ok",
     "CSS::Module::SVG::Gen::Actions": "ok",
     "CSS::Module::SVG::Gen::External": "ok",
     "CSS::Module::SVG::Gen::Grammar": "ok",
@@ -65,10 +418,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-27",
+    "date": "2026-10-28",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1bfedbe3",
+    "mutsu_commit": "d15777dd",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -79,12 +432,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_MODULE/8e8190296b61e39b27b1963bbf6d7654daf807a3.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 745,
+    "baseline_files": 16,
+    "mutsu_assertions": 745,
+    "parity_files": 16,
     "regressed_files": 0
   },
   "version": "0.7.8"

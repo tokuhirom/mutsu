@@ -11,16 +11,62 @@
     "unresolved": []
   },
   "dist": "IRC::Log::Colabti",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 76,
+        "plan": 76,
+        "secs": 0.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 76,
+        "plan": 76,
+        "secs": 8.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Checking '\\(:lt-target(\"2021-04-22Z08:01-0001\"))'",
+        "nok": 5,
+        "ok": 41,
+        "plan": 46,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-search.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 46,
+        "plan": 46,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "IRC::Log::Colabti": "Can't use unknown trait 'is' -> 'built' in an attribute declaration."
+    "IRC::Log::Colabti": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-27",
+    "date": "2026-10-28",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1bfedbe3",
+    "mutsu_commit": "d15777dd",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -31,13 +77,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/I/RC/IRC_LOG_COLABTI/1a69532335e2a7d39768942d7df3cbc810b142c5.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 122,
+    "baseline_files": 2,
+    "mutsu_assertions": 117,
+    "parity_files": 1,
+    "regressed_files": 1
   },
   "version": "0.0.53"
 }

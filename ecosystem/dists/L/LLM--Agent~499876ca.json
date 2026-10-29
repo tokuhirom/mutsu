@@ -40,9 +40,610 @@
     "unresolved": []
   },
   "dist": "LLM::Agent",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 3.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-testkit.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 44.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-tokencount.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/Digest__SHA256__Native/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/deps/Diges",
+        "nok": 0,
+        "ok": 9,
+        "plan": 21,
+        "secs": 7.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 22,
+        "plan": 22,
+        "secs": 2.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-events.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 22,
+        "plan": 22,
+        "secs": 4.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-loop-basic.rakutest",
+      "raku": {
+        "first_failure": "================================================================================",
+        "nok": 0,
+        "ok": 0,
+        "plan": 17,
+        "secs": 29.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-loop-tools.rakutest",
+      "raku": {
+        "first_failure": "================================================================================",
+        "nok": 0,
+        "ok": 0,
+        "plan": 18,
+        "secs": 13.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-loop-retry.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t05-2-1793228752' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 3.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-loop-cancel.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t06-2-1793228762' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 3.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-session.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t07-2-1793228771' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 16,
+        "secs": 2.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-session-resume.rakutest",
+      "raku": {
+        "first_failure": "================================================================================",
+        "nok": 0,
+        "ok": 0,
+        "plan": 25,
+        "secs": 18.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 3.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/09-compactor.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 5.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-prompt.rakutest",
+      "raku": {
+        "first_failure": "================================================================================",
+        "nok": 0,
+        "ok": 7,
+        "plan": 15,
+        "secs": 4.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/11-integration.rakutest",
+      "raku": {
+        "first_failure": "================================================================================",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 11.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/12-mailbox-ownership.rakutest",
+      "raku": {
+        "first_failure": "the log hook cannot land an event after the loop finished the run",
+        "nok": 1,
+        "ok": 2,
+        "plan": 5,
+        "secs": 186.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/13-canonical.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/Digest__SHA256__Native/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/deps/Diges",
+        "nok": 0,
+        "ok": 2,
+        "plan": 8,
+        "secs": 1.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/14-request-budget.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t14-2-1793229344' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 28,
+        "secs": 5.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/15-artifacts.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t15-2-1793229355' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 3.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/16-tool-operation.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/Digest__SHA256__Native/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/deps/Diges",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 2.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/17-tool-envelopes.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t17-2-1793229370' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/18-tool-dispatch.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t18-2-1793229379' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 14,
+        "secs": 3.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/19-events-v2.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t19-2-1793229390' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 9,
+        "secs": 2.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/20-run-context.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t20-2-1793229397' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 2.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/21-subagents.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t21-2-1793229407' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 28,
+        "secs": 5.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/22-concurrency-groups.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t22-2-1793229420' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 11,
+        "secs": 2.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/23-steering.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t23-2-1793229429' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 11,
+        "secs": 2.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/24-provider-length.rakutest",
+      "raku": {
+        "first_failure": "a length near the window compacts once and then succeeds",
+        "nok": 4,
+        "ok": 0,
+        "plan": 17,
+        "secs": 4.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/25-observation-aging.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t25-2-1793229451' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 15,
+        "secs": 3.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/26-per-model-budget.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/Digest__SHA256__Native/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/deps/Diges",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 2.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/27-usage-clip.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t27-2-1793229470' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 3.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/28-question-channel.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t28-2-1793229481' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 9,
+        "secs": 4.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 1.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/29-completion-bus.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 2.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/30-background-tasks.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t30-2-1793229497' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 13,
+        "secs": 4.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/31-tool-round-handoff.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t31-2-1793229509' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 11,
+        "secs": 2.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/32-revival.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t32-2-1793229517' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 85,
+        "secs": 2.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/33-empty-completion.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t33-2-1793229526' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 15,
+        "secs": 3.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/34-empty-retrieval-handoff.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$message'; expected LLM::Chat::Conversation::Message but got Nil (Nil)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/35-retrieval-handoff.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t35-2-1793229546' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 15,
+        "secs": 3.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/36-tool-routing.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 43.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/37-schema-routing.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t37-2-1793229622' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 30,
+        "secs": 4.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/38-env-block-handles.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/39-lock-snapshots.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t39-2-1793229636' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 5,
+        "secs": 2.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "LLM::Agent": "expected statement: expected expression statement or listop argument expression or '.' or digits or generic radix literal or ... [at LLM/Agent/Session.rakumod:963]",
+    "LLM::Agent": "ok",
     "LLM::Agent::Artifacts": "ok",
     "LLM::Agent::Canonical": "ok",
     "LLM::Agent::Compactor": "ok",
@@ -51,22 +652,22 @@
     "LLM::Agent::Loop": "ok",
     "LLM::Agent::Prompt": "ok",
     "LLM::Agent::RequestBudget": "ok",
-    "LLM::Agent::Revival": "expected statement: expected expression statement or listop argument expression or '.' or digits or generic radix literal or ... [at LLM/Agent/Session.rakumod:963]",
+    "LLM::Agent::Revival": "ok",
     "LLM::Agent::Run": "ok",
     "LLM::Agent::RunContext": "ok",
-    "LLM::Agent::Session": "expected statement: expected expression statement or listop argument expression or '.' or digits or generic radix literal or ... [at LLM/Agent/Session.rakumod:963]",
+    "LLM::Agent::Session": "ok",
     "LLM::Agent::Subagents": "ok",
-    "LLM::Agent::Test::Kit": "expected statement: expected expression statement or listop argument expression or '.' or digits or generic radix literal or ... [at LLM/Agent/Session.rakumod:963]",
+    "LLM::Agent::Test::Kit": "ok",
     "LLM::Agent::TokenCount": "ok",
     "LLM::Agent::ToolOperation": "ok",
     "LLM::Agent::ToolRouting": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-27",
+    "date": "2026-10-28",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1bfedbe3",
+    "mutsu_commit": "d15777dd",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -77,12 +678,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/LM/LLM_AGENT/8dcdc52cb8d99fced912e4bf16a54d1efe614fc8.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 73,
+    "baseline_files": 5,
+    "mutsu_assertions": 73,
+    "parity_files": 5,
     "regressed_files": 0
   },
   "version": "0.6.2"

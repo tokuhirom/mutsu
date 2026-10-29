@@ -9,22 +9,23 @@
   "dist": "Grid",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Unknown function: diagonal",
         "nok": 0,
-        "ok": 44,
+        "ok": 34,
         "plan": 44,
-        "secs": 0.25,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/basic.t",
       "raku": {
         "nok": 0,
         "ok": 44,
         "plan": 44,
-        "secs": 3.22,
+        "secs": 2.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,10 +37,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-27",
+    "date": "2026-10-28",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1bfedbe3",
+    "mutsu_commit": "d15777dd",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -50,13 +51,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/RI/GRID/24d243c362b017bca8296c25bd6ee78d6b4e472a.tar.gz"
   },
-  "status": "green",
+  "status": "red",
   "totals": {
     "baseline_assertions": 44,
     "baseline_files": 1,
-    "mutsu_assertions": 44,
-    "parity_files": 1,
-    "regressed_files": 0
+    "mutsu_assertions": 34,
+    "parity_files": 0,
+    "regressed_files": 1
   },
   "version": "0.0.5"
 }

@@ -25,11 +25,100 @@
     "unresolved": []
   },
   "dist": "Chemistry::Stoichiometry",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 7.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-Element-data-functions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 63.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 8.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-Chemical-element-name-translation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 2.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 9.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-Chemical-equation-parsing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 2.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 8.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-Molecular-mass.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Chemistry::Stoichiometry": "Failed to parse module 'Math::Matrix': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::Sub`",
-    "Chemistry::Stoichiometry::Actions::EquationBalance": "Failed to parse module 'Math::Matrix': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::Sub`",
-    "Chemistry::Stoichiometry::Actions::EquationMatrix": "Failed to parse module 'Math::Matrix': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: EVAL does not yet support lowering `RakuAST::Sub`",
+    "Chemistry::Stoichiometry": "ok",
+    "Chemistry::Stoichiometry::Actions::EquationBalance": "ok",
+    "Chemistry::Stoichiometry::Actions::EquationMatrix": "ok",
     "Chemistry::Stoichiometry::Actions::MolecularMass": "ok",
     "Chemistry::Stoichiometry::Actions::WL::System": "ok",
     "Chemistry::Stoichiometry::Grammar": "ok",
@@ -39,10 +128,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-27",
+    "date": "2026-10-28",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1bfedbe3",
+    "mutsu_commit": "d15777dd",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -53,12 +142,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/HE/CHEMISTRY_STOICHIOMETRY/351810d181a39429b020e9309dc8501e056a09ae.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 30,
+    "baseline_files": 4,
+    "mutsu_assertions": 30,
+    "parity_files": 4,
     "regressed_files": 0
   },
   "version": "0.1.10"

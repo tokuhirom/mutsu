@@ -20,66 +20,661 @@
     "unresolved": []
   },
   "dist": "SBOM::CycloneDX",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 7.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 46.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 8.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-contact.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 6.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 8.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-address.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 7.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-organization.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 7.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-property.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 3.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 7.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/06-energycost.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 8.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/07-analysis.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 8.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/08-affects.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 8.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/09-annotation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 8.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/10-licensing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 8.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/11-license.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 8.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/12-spdxlicense.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 8.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/14-publickey.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 8.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/15-signature.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 4.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 9.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/16-chain.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 4.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 8.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/17-signers.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 9.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/18-composition.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 8.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/19-servicedataset.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 8.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/20-governor.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 9.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/21-governance.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 4.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 10.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/22-metadata.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 9.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/23-tool.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 4.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 9.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/24-legacytool.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 9.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/25-identity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 6.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/26-all-methods.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 45,
+        "plan": 45,
+        "secs": 193.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/90-valid.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 45,
+        "plan": 45,
+        "secs": 30.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 6.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/91-invalid.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 3.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
     "SBOM": "ok",
-    "SBOM::AlgorithmProperties": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Annotation": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Attachment": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Attestation": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Claim": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Component": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::ComponentDataset": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::ComponentEvidence": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Composition": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Confidence": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Considerations": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::CryptoMaterialProperties": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::CryptoProperties": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::CryptoProtocolProperties": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::CycloneDX": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::DataContents": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Declarations": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Definition": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Dependency": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::ExecutionStep": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Formulation": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Governance": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Graphics": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::HashedString": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Identity": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Input": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::License": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Metadata": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::ModelCard": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::ModelParameters": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Organization": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Output": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Property": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Reference": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::ReleaseNotes": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Requirement": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::RequirementGrouping": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Resolve": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::RuntimeTopology": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Service": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Signature": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Source": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Task": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Tool": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Trigger": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Vulnerability": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Workflow": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
-    "SBOM::Workspace": "Can't use unknown trait 'is' -> 'built' in an attribute declaration.",
+    "SBOM::AlgorithmProperties": "ok",
+    "SBOM::Annotation": "ok",
+    "SBOM::Attachment": "ok",
+    "SBOM::Attestation": "ok",
+    "SBOM::Claim": "ok",
+    "SBOM::Component": "ok",
+    "SBOM::ComponentDataset": "ok",
+    "SBOM::ComponentEvidence": "ok",
+    "SBOM::Composition": "ok",
+    "SBOM::Confidence": "ok",
+    "SBOM::Considerations": "ok",
+    "SBOM::CryptoMaterialProperties": "ok",
+    "SBOM::CryptoProperties": "ok",
+    "SBOM::CryptoProtocolProperties": "ok",
+    "SBOM::CycloneDX": "ok",
+    "SBOM::DataContents": "ok",
+    "SBOM::Declarations": "ok",
+    "SBOM::Definition": "ok",
+    "SBOM::Dependency": "ok",
+    "SBOM::ExecutionStep": "ok",
+    "SBOM::Formulation": "ok",
+    "SBOM::Governance": "ok",
+    "SBOM::Graphics": "ok",
+    "SBOM::HashedString": "ok",
+    "SBOM::Identity": "ok",
+    "SBOM::Input": "ok",
+    "SBOM::License": "ok",
+    "SBOM::Metadata": "ok",
+    "SBOM::ModelCard": "ok",
+    "SBOM::ModelParameters": "ok",
+    "SBOM::Organization": "ok",
+    "SBOM::Output": "ok",
+    "SBOM::Property": "ok",
+    "SBOM::Reference": "ok",
+    "SBOM::ReleaseNotes": "ok",
+    "SBOM::Requirement": "ok",
+    "SBOM::RequirementGrouping": "ok",
+    "SBOM::Resolve": "ok",
+    "SBOM::RuntimeTopology": "ok",
+    "SBOM::Service": "ok",
+    "SBOM::Signature": "ok",
+    "SBOM::Source": "ok",
+    "SBOM::Task": "ok",
+    "SBOM::Tool": "ok",
+    "SBOM::Trigger": "ok",
+    "SBOM::Vulnerability": "ok",
+    "SBOM::Workflow": "ok",
+    "SBOM::Workspace": "ok",
     "SBOM::enums": "ok",
     "SBOM::subsets": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-27",
+    "date": "2026-10-28",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1bfedbe3",
+    "mutsu_commit": "d15777dd",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -90,12 +685,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/BO/SBOM_CYCLONEDX/33aae9f01355a468fdc409dc8a4e4404ace26c2c.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 167,
+    "baseline_files": 27,
+    "mutsu_assertions": 167,
+    "parity_files": 27,
     "regressed_files": 0
   },
   "version": "0.0.18"

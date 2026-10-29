@@ -7,19 +7,64 @@
     "unresolved": []
   },
   "dist": "Rainbow",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/sub-langs.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 10.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 9.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/tokenize.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 3.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Rainbow": "Failed to parse module 'Rainbow::RakuGrammar': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: regex declaration without ",
-    "Rainbow::RakuGrammar": "Failed to parse module 'Rainbow::RakuGrammar': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: regex declaration without ",
-    "Rainbow::RakuGrammarActions": "Failed to parse module 'Rainbow::RakuGrammar': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: regex declaration without ",
+    "Rainbow": "ok",
+    "Rainbow::RakuGrammar": "ok",
+    "Rainbow::RakuGrammarActions": "ok",
     "Rainbow::Token": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-27",
+    "date": "2026-10-28",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1bfedbe3",
+    "mutsu_commit": "d15777dd",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -30,12 +75,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/R/AI/RAINBOW/c0ab94f8853edf741491ebd78fc8eee1a263c350.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 12,
+    "baseline_files": 2,
+    "mutsu_assertions": 12,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "0.4.4"

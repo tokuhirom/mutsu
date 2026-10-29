@@ -44,115 +44,110 @@
   "dist": "ML::AssociationRuleLearning",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Failed to parse module 'URL::Find': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: regex declaration without a source tr",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.66,
+        "ok": 9,
+        "plan": 9,
+        "secs": 13.6,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic-usage-frequent-sets.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 99.94,
+        "secs": 91.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Failed to parse module 'URL::Find': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: regex declaration without a source tr",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.56,
+        "ok": 5,
+        "plan": 5,
+        "secs": 56.87,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-basic-usage-apriori.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 11.33,
+        "secs": 9.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Failed to parse module 'URL::Find': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: regex declaration without a source tr",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.4,
+        "ok": 5,
+        "plan": 5,
+        "secs": 14.28,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-basic-usage-eclat.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 3.45,
+        "secs": 3.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Failed to parse module 'URL::Find': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: regex declaration without a source tr",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.39,
+        "ok": 3,
+        "plan": 3,
+        "secs": 25.45,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/04-correct-support.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.3,
+        "secs": 6.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Failed to parse module 'URL::Find': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: regex declaration without a source tr",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.47,
+        "ok": 3,
+        "plan": 3,
+        "secs": 21.51,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/05-basic-usage-associationa-rules.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 5.0,
+        "secs": 3.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -169,10 +164,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-27",
+    "date": "2026-10-28",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1bfedbe3",
+    "mutsu_commit": "d15777dd",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -183,13 +178,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/L_/ML_ASSOCIATIONRULELEARNING/006f796858c6b31113f9542123442409703f526f.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 25,
     "baseline_files": 5,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 5
+    "mutsu_assertions": 25,
+    "parity_files": 5,
+    "regressed_files": 0
   },
   "version": "0.1.5"
 }
