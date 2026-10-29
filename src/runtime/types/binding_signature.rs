@@ -2284,7 +2284,11 @@ impl Interpreter {
                                     encode_slurpy_rw_param(&slurpy_key, items.len(), source_index),
                                     source_name,
                                 ));
-                                items.push(if source_value.is_container_ref() {
+                                // A `Proxy` mediates its own FETCH/STORE; a cell
+                                // around it would take a plain write instead.
+                                items.push(if source_value.is_container_ref()
+                                    || matches!(source_value.view(), ValueView::Proxy { .. })
+                                {
                                     source_value
                                 } else {
                                     Value::container_ref(crate::gc::Gc::new(
