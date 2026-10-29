@@ -1037,7 +1037,9 @@ impl Interpreter {
         {
             return Err(self.typecheck_assignment_failure(&constraint, &new_val, None));
         }
-        arc.lock().unwrap().clone_from(&new_val);
+        arc.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone_from(&new_val);
         self.stack.push(if post { old } else { new_val });
         Ok(true)
     }
