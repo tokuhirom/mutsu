@@ -370,3 +370,25 @@ text of §2.2 does not match the tree or contradicts itself.
    test of §3.1 item 7 is `t/rakuast/rakuast-stage2-<family>-paths.t`.
 
 Nothing here changes the end state of §2.1 or the order of slices 2–9.
+
+## 9. Amendment 3 — slice 2 has nothing to reconstruct (2026-10-29)
+
+Slice 2 ("`use` / `need` / `import` / `no` / `require`", deleting "the shape-based reconstruction of imports")
+was read against the tree before any code was written.
+
+- `Stmt::Use`, `Stmt::No`, `Stmt::Need` and `Stmt::Import` are lossless: the parser builds them from the
+  written statement with no `SyntheticBlock` and no `__…` spelling (`src/parser/stmt/decl/use_decl.rs` has
+  neither), and `convert_use` / `convert_need` / `convert_import` / `convert_no` translate fields one to one
+  (tags to `ColonPair::True`, the pragma list to `RakuAST::Pragma`). By §2.1.4 they are T1, their own typed
+  node. `use_origins.rs` and `unit_source.rs` place source ranges for the view; they reconstruct nothing.
+- The one desugared spelling in the family is `use v6.X`, which the parser stores as the pseudo-module `"v6"`
+  with the version text as its argument. Seven compiler and runtime sites read that spelling
+  (`compiler/stmt.rs`, `compiler/begin_use.rs`, `runtime/eval_name_scans.rs`,
+  `runtime/begin_prologue/nested/pragmas.rs`, `runtime/run_prelude.rs`,
+  `runtime/undeclared_routines/conditional.rs`). Making it a typed `LanguageVersion` statement changes what
+  the compiler consumes, which §2.1 excludes.
+
+**Decision requested.** Reclassify the `use` family as T1: slice 2 is struck from the table, with the
+`v6` pseudo-module recorded as the same kind of item as Amendment 2 point 2 (a compiler-side decision with its
+own issue). The family's `convert` functions are renamed to the view's names by slice 9, as for every T1 arm.
+Slices 3–9 keep their numbers.
