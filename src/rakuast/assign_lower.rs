@@ -114,7 +114,7 @@ pub(crate) fn lower_expression(node: Assign) -> Expr {
         Expr::ArrayLiteral(items) => {
             match crate::parser::single_target_list_lvalue_expr(items.clone(), source.clone()) {
                 Some(expr) => expr,
-                None => super::assign_target::callable_lvalue_assign_expr(
+                None => super::assign_writeback::callable_lvalue_assign_expr(
                     Expr::ArrayLiteral(items),
                     Vec::new(),
                     source,
@@ -124,7 +124,7 @@ pub(crate) fn lower_expression(node: Assign) -> Expr {
         // `-$x = 5`, `c ?? $a !! $b = 1`, `$<c> = $0`, `($a || $b) = 1`,
         // `(my $v) = 1, 2`: write through the expression's result.
         target if is_callable_lvalue_target(&target) => {
-            super::assign_target::callable_lvalue_assign_expr(target, Vec::new(), source)
+            super::assign_writeback::callable_lvalue_assign_expr(target, Vec::new(), source)
         }
         // Every other target is the one general dispatch: a variable, a
         // subscript, a call, a method call (the rw-accessor writeback, and

@@ -180,15 +180,16 @@ fn parse_prefix_boolify_codevar_method_call() {
 fn parse_hyper_prefix_metaop_negate() {
     let (rest, expr) = expression("-« ([1, 2], 3)").unwrap();
     assert_eq!(rest, "");
-    match expr {
-        Expr::Ast(node) => match *node {
-            crate::ast::parsed::ParsedExpr::HyperPrefix(prefix) => {
-                assert_eq!(prefix.symbol, "-");
-            }
-            _ => panic!("expected a hyper prefix node"),
-        },
-        _ => panic!("expected hyper prefix metaop node"),
-    }
+    assert!(
+        matches!(
+            &expr,
+            Expr::Ast(node) if matches!(
+                node.as_ref(),
+                crate::ast::parsed::ParsedExpr::HyperPrefix(prefix) if prefix.symbol == "-"
+            )
+        ),
+        "expected a hyper prefix node, got {expr:?}"
+    );
 }
 
 #[test]
