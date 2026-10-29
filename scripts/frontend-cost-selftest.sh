@@ -21,11 +21,17 @@ exit124) echo "==1== Collected : 1" >&2; exit 124 ;;
 nothing) exit 0 ;;
 collected-only) [ $toggle = 1 ] && echo "==1== Collected : 1234" >&2; exit 0 ;;
 zero) echo "==1== Collected : 0" >&2; echo "==1== I   refs:      0" >&2; exit 0 ;;
-*) if [ $toggle = 1 ]; then echo "==1== Collected : 1234" >&2; else echo "==1== I   refs:      5,678" >&2; fi ;;
+*) if [ $toggle = 1 ]; then echo "==1== Collected : 1234" >&2; else echo "==1== I   refs:      5,678" >&2; fi
+   # The Zef case ends with status 1 under the real binary, and valgrind passes it through.
+   case "$*" in *CLI.rakumod*) exit "${FAKE_ZEF_EXIT:-1}" ;; esac ;;
 esac
 EOF
 chmod +x "$T/valgrind"
-printf '#!/usr/bin/env bash\nexit "${FAKE_BIN_EXIT:-0}"\n' >"$T/mutsu"
+cat >"$T/mutsu" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in *CLI.rakumod*) exit "${FAKE_ZEF_EXIT:-1}" ;; esac
+exit "${FAKE_BIN_EXIT:-0}"
+EOF
 chmod +x "$T/mutsu"
 
 run() { # run MODE [ENV=VAL...] -> exit status of `check`
@@ -55,6 +61,8 @@ expect_fail "no output at all" nothing
 expect_fail "only the Collected line" collected-only
 expect_fail "zero instructions" zero
 expect_fail "the warm run of the binary fails" ok FAKE_BIN_EXIT=3
+expect_fail "the Zef case ends with a status other than 1" ok FAKE_ZEF_EXIT=0
+expect_fail "the Zef case crashes" ok FAKE_ZEF_EXIT=139
 
 # validate: a table must hold each case exactly once.
 cases=$(sed -n 's/^    "\([^	]*\)	.*/\1/p' scripts/frontend-cost.sh)

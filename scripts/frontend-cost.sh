@@ -29,49 +29,52 @@ BASELINE_DIR=tmp/frontend-cost-baseline
 BOUND_PERCENT=110
 TOGGLE='*parse_compilation_unit_of*'
 
-# name<TAB>path. The four cases of ADR-10723 section 6.109 plus a declaration-heavy test, so a
+# name<TAB>path<TAB>the exit status `mutsu -c` must end with (any other status, a timeout or a
+# crash included, is a failed run). Zef/CLI.rakumod ends with 1: `use Zef` is not on the module
+# path, and the frozen baseline was measured the same way, after the parse this figure covers.
+# The four cases of ADR-10723 section 6.109 plus a declaration-heavy test, so a
 # program that is mostly declarations (the families the round trip reconstructs) is measured.
 CASES=(
-    "zef-cli	vendor/zef/lib/Zef/CLI.rakumod"
-    "s32-exceptions-misc	roast/S32-exceptions/misc.t"
-    "s12-class-attributes	roast/S12-class/attributes.t"
-    "s15-nfg-emoji-test	roast/S15-nfg/emoji-test.t"
-    "grammar-cursor-attributes	t/grammar/grammar-cursor-attributes.t"
+    "zef-cli	vendor/zef/lib/Zef/CLI.rakumod	1"
+    "s32-exceptions-misc	roast/S32-exceptions/misc.t	0"
+    "s12-class-attributes	roast/S12-class/attributes.t	0"
+    "s15-nfg-emoji-test	roast/S15-nfg/emoji-test.t	0"
+    "grammar-cursor-attributes	t/grammar/grammar-cursor-attributes.t	0"
 )
 
 VALGRIND=${FRONTEND_COST_VALGRIND:-valgrind}
 LOGDIR=${FRONTEND_COST_LOGDIR:-tmp/frontend-cost-logs}
 
-# run_logged LABEL LOG CMD... -> runs CMD with stderr in LOG; a nonzero exit (a timeout is 124, a
-# missing tool 127) keeps the log, says where it is and fails: a run that did not finish is
+# run_logged LABEL LOG WANT CMD... -> runs CMD with stderr in LOG; an exit status other than WANT
+# (a timeout is 124, a missing tool 127) keeps the log, says where it is and fails: a run that did not finish is
 # never a measurement.
 run_logged() {
-    local label=$1 log=$2
-    shift 2
+    local label=$1 log=$2 want=$3
+    shift 3
     mkdir -p "$LOGDIR"
     local rc=0
     "$@" >/dev/null 2>"$log" || rc=$?
-    if [ "$rc" -ne 0 ]; then
+    if [ "$rc" -ne "$want" ]; then
         cp "$log" "$LOGDIR/$label.err" 2>/dev/null || true
         echo "frontend-cost: $label failed (exit $rc); log: $LOGDIR/$label.err" >&2
         return 1
     fi
 }
 
-# measure_one BIN FILE -> "<frontend Ir> <whole-process Ir>"; fails unless every run exits 0 and
+# measure_one BIN FILE WANT -> "<frontend Ir> <whole-process Ir>"; fails unless every run exits 0 and
 # both figures are positive integers.
 measure_one() {
-    local bin=$1 file=$2 out label collected total
+    local bin=$1 file=$2 want=$3 out label collected total
     label=$(basename "$file")
     out=$(mktemp)
     # Warm: the first run may recompile precompiled modules.
-    run_logged "$label.warm" "$out.err" timeout 600 "$bin" -c "$file" || { rm -f "$out" "$out.err"; return 1; }
-    MUTSU_FUDGE=1 run_logged "$label.frontend" "$out.err" timeout 1800 "$VALGRIND" --tool=callgrind \
+    run_logged "$label.warm" "$out.err" "$want" timeout 600 "$bin" -c "$file" || { rm -f "$out" "$out.err"; return 1; }
+    MUTSU_FUDGE=1 run_logged "$label.frontend" "$out.err" "$want" timeout 1800 "$VALGRIND" --tool=callgrind \
         --cache-sim=no --branch-sim=no --toggle-collect="$TOGGLE" --callgrind-out-file="$out" \
         "$bin" -c "$file" || { rm -f "$out" "$out.err"; return 1; }
     collected=$(sed -n 's/^==[0-9]*== Collected : *\([0-9]*\).*/\1/p' "$out.err" | tail -1)
     # With a toggle, "I refs" repeats the collected figure; the whole-process figure needs its own run.
-    MUTSU_FUDGE=1 run_logged "$label.whole" "$out.err" timeout 1800 "$VALGRIND" --tool=callgrind \
+    MUTSU_FUDGE=1 run_logged "$label.whole" "$out.err" "$want" timeout 1800 "$VALGRIND" --tool=callgrind \
         --cache-sim=no --branch-sim=no --callgrind-out-file="$out" "$bin" -c "$file" \
         || { rm -f "$out" "$out.err"; return 1; }
     total=$(sed -n 's/^==[0-9]*== I *refs: *\([0-9,]*\).*/\1/p' "$out.err" | tail -1 | tr -d ',')
@@ -93,11 +96,13 @@ measure_one() {
 
 # measure_all BIN -> table "name<TAB>frontend<TAB>whole" on stdout; fails on the first failed case.
 measure_all() {
-    local bin=$1 name path line
+    local bin=$1 name path want line
     for c in "${CASES[@]}"; do
         name=${c%%$'\t'*}
         path=${c#*$'\t'}
-        line=$(measure_one "$bin" "$path") || return 1
+        want=${path#*$'\t'}
+        path=${path%%$'\t'*}
+        line=$(measure_one "$bin" "$path" "$want") || return 1
         printf '%s\t%s\t%s\n' "$name" "${line% *}" "${line#* }"
     done
 }
