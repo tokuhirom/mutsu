@@ -498,6 +498,7 @@ fn lower_alias(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
                 | RakuAstClass::RegexAssertionCallable
                 | RakuAstClass::RegexAssertionCharClass
                 | RakuAstClass::RegexAssertionInterpolatedBlock
+                | RakuAstClass::RegexInterpolation
         )
     {
         return None;
