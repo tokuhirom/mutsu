@@ -46,14 +46,40 @@ pub(super) fn probe_dynamic_exports(module: &str) -> Rc<Vec<InlineModuleExport>>
     let exports: Rc<Vec<InlineModuleExport>> = Rc::new(
         names
             .into_iter()
-            .map(|name| InlineModuleExport {
-                name,
-                precedence: None,
-                associativity: None,
-                is_test_assertion: false,
+            .map(|export| {
+                let (precedence, associativity) = parser_precedence(export.op_prec.as_ref());
+                InlineModuleExport {
+                    name: export.name,
+                    precedence,
+                    associativity,
+                    is_test_assertion: false,
+                }
             })
             .collect(),
     );
     PROBE_CACHE.with(|c| c.borrow_mut().insert(key, exports.clone()));
     exports
+}
+
+/// The parser's numeric precedence level and associativity for a probed
+/// operator's `Routine.prec` hash: the level of the built-in operator it was
+/// derived from, moved by five per `is tighter` / `is looser` step.
+// Cost: O(n), n = built-in operator count.
+fn parser_precedence(prec: Option<&crate::op_prec::OpPrec>) -> (Option<i32>, Option<String>) {
+    let Some(prec) = prec else {
+        return (None, None);
+    };
+    let field = |key: &str| {
+        prec.entries()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v.to_string())
+    };
+    let level = field("prec").and_then(|level| {
+        let (base, steps) = crate::op_prec::split_prec_marks(&level);
+        crate::op_prec::infix_symbols_with_prec(&base)
+            .find_map(super::super::registry::resolve_op_precedence)
+            .map(|anchor| anchor + 5 * steps)
+    });
+    let assoc = field("assoc").filter(|assoc| assoc != "left");
+    (level, assoc)
 }
