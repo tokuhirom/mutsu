@@ -963,6 +963,17 @@ impl Compiler {
                     let slot = self.local_map.get(&name).copied();
                     let name_idx = self.code.add_constant(Value::str(name));
                     self.code.emit(OpCode::DoesVar(name_idx, slot, is_bareword));
+                    // `my %h does R = init`: the initializer's store (the very
+                    // next one) hands the role's `STORE` `:INITIALIZE`.
+                    if matches!(
+                        expr,
+                        Expr::Binary {
+                            form: crate::ast::BinaryForm::DoesDeclInit,
+                            ..
+                        }
+                    ) {
+                        self.code.emit(OpCode::MarkExplicitInitializerContext);
+                    }
                     return;
                 }
             }

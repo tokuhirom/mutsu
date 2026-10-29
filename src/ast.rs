@@ -1319,6 +1319,10 @@ pub(crate) enum BinaryForm {
     ColonPairNumber,
     /// `^EXPR`, the prefix spelling of the range `0 ..^ EXPR`.
     CaretPrefix,
+    /// The `%h does R` of `my %h does R = init`: the declaration's own
+    /// initializer assignment follows, so the role's `STORE` receives it with
+    /// `:INITIALIZE`. Spelled like [`BinaryForm::Infix`] everywhere else.
+    DoesDeclInit,
 }
 
 /// The brackets of an associative [`Expr::Index`] (see its `spelling` field).
