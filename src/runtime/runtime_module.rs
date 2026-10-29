@@ -198,7 +198,11 @@ impl Interpreter {
         // (`use M :t; { use M } t`). Only an import visible when the scope
         // opened counts: an alias a BEGIN-time preload left in `env` is not
         // one.
+        // Only the importing compunit's own scope owns the key: a module loaded
+        // while the block is open imports its own `use`s for itself, not into
+        // the block's pad.
         if let Some(top) = self.module.import_scope_stack.last_mut()
+            && top.unit == unit
             && top.imported_env_keys.insert(key_sym)
             && top
                 .unit_env_imports
