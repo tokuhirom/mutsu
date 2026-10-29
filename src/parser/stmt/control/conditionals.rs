@@ -1,27 +1,9 @@
 use super::*;
 
-use super::conditional_binding::{
-    ensure_last_clause_binding_var, lower_else_binding, parse_if_binding_params,
-};
+use super::conditional_binding::parse_if_binding_params;
 use crate::ast::parsed::{
     BlockParams, ClauseKind, Conditional, ConditionalClause, ConditionalKind, ParsedBlock,
 };
-
-#[derive(Clone)]
-pub(crate) struct IfChainClause {
-    pub(crate) cond: Expr,
-    pub(crate) then_branch: Vec<Stmt>,
-    pub(crate) binding_var: Option<String>,
-    /// `Some(WithBlockKind::Orwith)` for an `orwith` clause, which desugars
-    /// into the same `.defined` conditional an `elsif` would but which raku
-    /// models as its own `Statement::Orwith`. See `Stmt::If`'s `with_kind`.
-    pub(crate) with_kind: Option<WithBlockKind>,
-}
-
-pub(crate) struct ElseClause {
-    pub(crate) binding_params: Option<Vec<ParamDef>>,
-    pub(crate) body: Vec<Stmt>,
-}
 
 pub(super) fn conditional_expr(input: &str) -> PResult<'_, Expr> {
     match parse_comma_or_expr(input) {
@@ -181,52 +163,6 @@ pub(crate) fn topic_clause_block<'a>(
     super::parsed_block::parsed_block(start, rest, params)
 }
 
-pub(crate) fn lower_if_chain(
-    mut clauses: Vec<IfChainClause>,
-    else_clause: Option<ElseClause>,
-) -> Result<Stmt, crate::value::RuntimeError> {
-    let mut else_branch = if let Some(else_clause) = else_clause {
-        let mut body = lower_else_clause(&mut clauses, else_clause)?;
-        // An explicit `else {}` with an empty body should evaluate to Nil,
-        // not be indistinguishable from a missing else clause.
-        if body.is_empty() {
-            body.push(Stmt::Expr(Expr::Literal(crate::value::Value::NIL)));
-        }
-        body
-    } else {
-        Vec::new()
-    };
-
-    while let Some(clause) = clauses.pop() {
-        else_branch = vec![Stmt::If {
-            cond: clause.cond,
-            then_branch: clause.then_branch,
-            else_branch,
-            binding_var: clause.binding_var,
-            is_statement_modifier: false,
-            is_unless: false,
-            with_kind: clause.with_kind,
-        }];
-    }
-
-    else_branch
-        .pop()
-        .ok_or_else(|| crate::value::RuntimeError::new("if chain must have at least one clause"))
-}
-
-fn lower_else_clause(
-    clauses: &mut [IfChainClause],
-    else_clause: ElseClause,
-) -> Result<Vec<Stmt>, crate::value::RuntimeError> {
-    if else_clause.binding_params.is_none() {
-        return Ok(else_clause.body);
-    }
-    let Some(source_binding) = ensure_last_clause_binding_var(clauses) else {
-        return Ok(else_clause.body);
-    };
-    lower_else_binding(&source_binding, else_clause)
-}
-
 /// Parse `unless` statement.
 pub(crate) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("unless", input).ok_or_else(|| PError::expected("unless statement"))?;
@@ -258,52 +194,4 @@ pub(crate) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
     let stmt = super::parsed_block::finish(crate::ast::parsed::ParsedStmt::Conditional(node))
         .map_err(|error| PError::fatal(error.message.into_owned()))?;
     Ok((rest, stmt))
-}
-
-/// Expand the written unless clause through the same conditional binder.
-// Cost: O(n), n = size of the signature and body.
-pub(crate) fn unless_clause(
-    cond: Expr,
-    binding_params: Option<Vec<ParamDef>>,
-    body: Vec<Stmt>,
-) -> Result<Stmt, crate::value::RuntimeError> {
-    expand_unless_clause(cond, binding_params, body)
-}
-
-fn expand_unless_clause(
-    cond: Expr,
-    binding_params: Option<Vec<ParamDef>>,
-    body: Vec<Stmt>,
-) -> Result<Stmt, crate::value::RuntimeError> {
-    // `unless COND -> $x { BODY }` binds the condition's OWN value (rakudo:
-    // `unless 0 -> $_ { $_.say }` prints `0`, not the negation). Lower it as
-    // the *else* branch of an un-negated `if`, which is exactly the machinery
-    // `if COND { } else -> $x { }` already uses to hand the else clause the
-    // condition value — rather than negating the condition and binding that.
-    if let Some(params) = binding_params {
-        let clauses = vec![IfChainClause {
-            cond,
-            then_branch: Vec::new(),
-            binding_var: None,
-            with_kind: None,
-        }];
-        let else_clause = ElseClause {
-            binding_params: Some(params),
-            body,
-        };
-        return lower_if_chain(clauses, Some(else_clause));
-    }
-    Ok(Stmt::If {
-        cond: Expr::Unary {
-            op: TokenKind::Bang,
-            expr: Box::new(cond),
-            word: false,
-        },
-        then_branch: body,
-        else_branch: Vec::new(),
-        binding_var: None,
-        is_statement_modifier: false,
-        is_unless: true,
-        with_kind: None,
-    })
 }
