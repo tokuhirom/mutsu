@@ -504,6 +504,7 @@ pub(crate) fn permutations(target: &Value, args: &[Value]) -> Option<Result<Valu
     if items.len() > 20 {
         let factorial = crate::builtins::functions::factorial_bigint(items.len() as u64);
         let ll = crate::value::LazyList {
+            fixtures: None,
             body: Vec::new(),
             env: crate::env::Env::new(),
             cache: std::sync::Mutex::new(None),

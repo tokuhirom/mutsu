@@ -323,6 +323,7 @@ impl Interpreter {
             // compiles fresh, exactly as the map/grep sibling does.
             let (compiled_code, compiled_fns) = self.compile_gather_body_cached(&analysis_cc, body);
             let list = LazyList {
+                fixtures: self.capture_fixtures(),
                 body: body.clone(),
                 env,
                 cache: std::sync::Mutex::new(None),

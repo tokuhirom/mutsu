@@ -688,6 +688,18 @@ impl Interpreter {
         mark
     }
 
+    /// Push a copy of `fixtures` as a scope; [`Self::end_scoped_fixtures`]
+    /// closes it.
+    // Cost: O(1) amortized.
+    pub(crate) fn push_scoped_fixtures(
+        &mut self,
+        fixtures: crate::value::frame_fixtures::FrameFixtures,
+    ) -> usize {
+        let mark = self.routine_stack.fixtures_len();
+        self.routine_stack.push_scoped_fixtures(fixtures);
+        mark
+    }
+
     /// Close the scope [`Self::begin_scoped_invocant`] opened.
     // Cost: O(1).
     pub(crate) fn end_scoped_fixtures(&mut self, mark: usize) {
@@ -717,11 +729,52 @@ impl Interpreter {
         }
     }
 
+    /// The record a closure, gather or routine value created now captures:
+    /// the running frame's own, else (a method body run as a function) one
+    /// made of its `self` parameter, else the innermost one (ADR-14843).
+    // Cost: O(1).
+    pub(crate) fn capture_fixtures(&self) -> Option<crate::value::frame_fixtures::FrameFixtures> {
+        let top = self.frame_fixtures();
+        if self.routine_stack.last().is_some_and(|f| f.fixtures != 0) {
+            return top.cloned();
+        }
+        match self.frame_invocant() {
+            Some(invocant) => Some(crate::value::frame_fixtures::FrameFixtures {
+                invocant: Some(invocant),
+                class: top.and_then(|f| f.class.clone()),
+                role: top.and_then(|f| f.role),
+            }),
+            None => top.cloned(),
+        }
+    }
+
     /// The invocant (`self`, `__ANON_STATE#`) of the innermost frame record.
     // Cost: O(1).
     #[inline]
     pub(crate) fn frame_invocant(&self) -> Option<Value> {
-        self.frame_fixtures()?.invocant.clone()
+        if self.routine_stack.last().is_some_and(|f| f.fixtures != 0)
+            && let Some(invocant) = self.frame_fixtures().and_then(|f| f.invocant.clone())
+        {
+            return Some(invocant);
+        }
+        // A method body run as a function (a `my method` code object called as
+        // a sub, a Proxy's `FETCH`) has no record of its own: its invocant is
+        // its `self` parameter, a local of the running code.
+        let self_sym = crate::symbol::wk::self_();
+        if let Some(code) = self.running_code()
+            && let Some(&slot) = code.local_slots_of(self_sym).first()
+            && let Some(value) = self.locals.get(slot as usize)
+            && !value.is_nil()
+        {
+            return Some(value.clone());
+        }
+        if let Some(invocant) = self.frame_fixtures().and_then(|f| f.invocant.clone()) {
+            return Some(invocant);
+        }
+        // Last: the `self` parameter a method body run as a function was
+        // bound with (`my method FETCH` handed to a Proxy), which the binder
+        // writes under the parameter's own name.
+        self.env.get_sym(self_sym).cloned()
     }
 
     /// The `?CLASS` of the innermost frame record.
@@ -745,7 +798,7 @@ impl Interpreter {
     // Cost: O(1).
     pub(crate) fn frame_fixture_value(&self, sym: Symbol) -> Option<Value> {
         let fixtures = self.frame_fixtures()?;
-        if sym == crate::symbol::wk::self_() || sym == crate::symbol::wk::anon_state() {
+        if sym == crate::symbol::wk::self_() {
             fixtures.invocant.clone()
         } else if sym == crate::symbol::wk::class_decl() {
             fixtures.class.clone()
@@ -1281,6 +1334,34 @@ impl Interpreter {
         Some(saved)
     }
 
+    /// [`Self::enter_gather_package`] plus the gather's frame record: the
+    /// body runs with the `self` and `?CLASS` of the method it was written in.
+    // Cost: O(1) amortized.
+    pub(crate) fn enter_gather_scope(&mut self, list: &crate::value::LazyList) -> GatherScope {
+        GatherScope {
+            package: self.enter_gather_package(&list.env),
+            fixtures_mark: list
+                .fixtures
+                .clone()
+                .map(|f| {
+                    let mark = self.routine_stack.fixtures_len();
+                    self.routine_stack.push_scoped_fixtures(f);
+                    mark
+                }),
+        }
+    }
+
+    /// Undo [`Self::enter_gather_scope`].
+    // Cost: O(1).
+    pub(crate) fn leave_gather_scope(&mut self, scope: GatherScope) {
+        if let Some(pkg) = scope.package {
+            self.set_current_package(pkg);
+        }
+        if let Some(mark) = scope.fixtures_mark {
+            self.routine_stack.truncate_fixtures(mark);
+        }
+    }
+
     /// The current package as an interned `Symbol`, read from the atomic mirror
     /// of `current_package`. Cheap enough (one relaxed load) for per-call use on
     /// the hot dispatch path, where `current_package()`'s `String` clone is not.
@@ -1652,4 +1733,11 @@ mod call_site_file_tests {
             interp.current_source_file_sym()
         );
     }
+}
+
+/// What [`Interpreter::enter_gather_scope`] changed, for
+/// [`Interpreter::leave_gather_scope`] to put back.
+pub(crate) struct GatherScope {
+    package: Option<String>,
+    fixtures_mark: Option<usize>,
 }

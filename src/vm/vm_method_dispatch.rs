@@ -999,7 +999,7 @@ impl Interpreter {
         }
         // The fixed names are the frame record's, not env keys (ADR-14843).
         for (i, local_name) in cc.locals.iter().enumerate() {
-            if matches!(local_name.as_str(), "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE")
+            if matches!(local_name.as_str(), "self" | "?CLASS" | "?ROLE")
                 && let Some(val) = self.frame_fixture_value(Symbol::intern(local_name))
             {
                 self.locals[i] = val;

@@ -3936,6 +3936,10 @@ pub(crate) struct WalkPendingState {
 pub(crate) struct LazyList {
     pub(crate) body: Vec<Stmt>,
     pub(crate) env: Env,
+    /// The frame record (`self`, `?CLASS`, `?ROLE`) of the method a `gather`
+    /// was evaluated in: pulling the list, however late, runs the body under it
+    /// (ADR-14843).
+    pub(crate) fixtures: Option<crate::value::frame_fixtures::FrameFixtures>,
     pub(crate) cache: Mutex<Option<Vec<Value>>>,
     /// The sequence generator's OWN trailing history, kept separate from
     /// `cache`. `cache` is the user-visible prefix and may hold an element

@@ -1624,11 +1624,10 @@ impl Interpreter {
             return Some(v);
         }
         // The fixed per-call names are the frame record's alone (ADR-14843).
-        if sym == crate::symbol::wk::self_()
-            || sym == crate::symbol::wk::anon_state()
-            || sym == crate::symbol::wk::class_decl()
-            || sym == crate::symbol::wk::role_decl()
-        {
+        if sym == crate::symbol::wk::self_() {
+            return self.frame_invocant();
+        }
+        if sym == crate::symbol::wk::class_decl() || sym == crate::symbol::wk::role_decl() {
             return self.frame_fixture_value(sym);
         }
         // A process-level dynamic written at run time (`$PROCESS::OUT = ...`,

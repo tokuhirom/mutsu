@@ -1060,7 +1060,10 @@ impl Interpreter {
             // The legacy binding path: a single pointy-block parameter
             // (`-> $self { }`) arrives as a bare name with no `ParamDef`.
             || (param_defs.is_empty() && crate::ast::param_names_declare_self_lexical(params));
-        if declares_self && let Some(bound) = self.frame_invocant() {
+        // The explicit `$self` parameter's own binding (a parameter named
+        // `self`, not the frame record's invocant), mirrored onto the reserved
+        // key.
+        if declares_self && let Some(bound) = self.env.get_sym(crate::symbol::wk::self_()).cloned() {
             self.env.insert(crate::env::LEX_SELF.to_string(), bound);
         }
         result

@@ -285,12 +285,7 @@ impl Interpreter {
         // `does` on it is seen by every other value of it).
         // A routine declared in a method closes over the method's `self`,
         // `?CLASS` and `?ROLE` (ADR-14843): its call continues the record.
-        if compiled_body
-            .as_ref()
-            .is_some_and(|body| body.get().code.declared_in_routine)
-        {
-            data.fixtures = self.frame_fixtures().cloned();
-        }
+        data.fixtures = self.capture_fixtures();
         data.routine_cell = def.routine_cell.clone();
         data.empty_sig = empty_sig;
         if let Some(id) = stable_id {

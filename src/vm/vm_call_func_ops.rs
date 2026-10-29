@@ -2079,14 +2079,25 @@ impl Interpreter {
                 // A block-declared routine's code object (#13049): its
                 // compiled routine runs on the named-call path, linked to the
                 // activation it captured, as a `CallFunc` of it would.
-                Some((data, cf)) => self.call_compiled_function_named_in(
-                    &cf,
-                    args,
-                    cf.compiled_fns.as_deref().unwrap_or(compiled_fns),
-                    self.current_package_sym(),
-                    name_sym,
-                    Some(&data.env),
-                ),
+                Some((data, cf)) => {
+                    // The routine runs under its declaring method's record.
+                    let fixtures_mark = data
+                        .fixtures
+                        .clone()
+                        .map(|f| self.push_scoped_fixtures(f));
+                    let result = self.call_compiled_function_named_in(
+                        &cf,
+                        args,
+                        cf.compiled_fns.as_deref().unwrap_or(compiled_fns),
+                        self.current_package_sym(),
+                        name_sym,
+                        Some(&data.env),
+                    );
+                    if let Some(mark) = fixtures_mark {
+                        self.end_scoped_fixtures(mark);
+                    }
+                    result
+                }
                 None => self.vm_call_on_value_at(target, args, Some(compiled_fns), site),
             };
             self.rw_return_context = saved_rw_context;

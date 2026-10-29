@@ -617,6 +617,7 @@ fn lazy_list_roundtrips_by_identity() {
     // `LazyList` has interior Mutex state and no meaningful Debug shape, so
     // check node identity instead of Debug equality.
     let node = Gc::new(LazyList {
+        fixtures: None,
         body: vec![],
         env: Env::new(),
         cache: Mutex::new(Some(vec![Value::int(1)])),
