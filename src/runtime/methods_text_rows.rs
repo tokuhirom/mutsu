@@ -190,6 +190,14 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // A named regex passed as a value (`.split(&Named)`) is a `Routine`;
+        // split with its regex source, as `.subst` and `.match` do.
+        let mut args = args;
+        if let Some(first) = args.first()
+            && let Some(p) = self.named_regex_routine_pattern(first)
+        {
+            args[0] = Value::regex(p);
+        }
         let splitter = args.first().cloned();
         self.with_regex_closure_scope(splitter, |me| me.handle_split_method(target, args))
     }
