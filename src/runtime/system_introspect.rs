@@ -195,6 +195,7 @@ impl Interpreter {
     // Cost: O(1).
     fn block_frame_code() -> Value {
         Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
+            fixtures: None,
             package: Symbol::intern("GLOBAL"),
             name: Symbol::intern(""),
             params: std::sync::Arc::new(Vec::new()),

@@ -247,6 +247,7 @@ fn container_ref_itemized_roundtrips_as_the_same_value_repr_variant() {
 
 fn sample_sub() -> Gc<SubData> {
     Gc::new(SubData {
+        fixtures: None,
         package: Symbol::intern("Main"),
         name: Symbol::intern("nanbox-test-sub"),
         params: crate::value::empty_params(),

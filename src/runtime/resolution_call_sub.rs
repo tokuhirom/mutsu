@@ -1252,6 +1252,7 @@ impl Interpreter {
             }
             // &?BLOCK: weak self-reference to break reference cycles
             let block_arc = crate::gc::Gc::new(crate::value::SubData {
+                fixtures: None,
                 package: data.package,
                 name: data.name,
                 params: data.params.clone(),
@@ -1338,6 +1339,7 @@ impl Interpreter {
             };
             self.record_profile_routine_frame(&frame);
             self.routine_stack.push(frame);
+            self.attach_closure_fixtures(&data);
             self.block_stack
                 .push(crate::runtime::CodeFrame::Ready(block_sub));
             let return_spec = data

@@ -412,20 +412,6 @@ impl Interpreter {
         // its default resolves bare names through THAT package's import
         // aliases and file-scope lexicals (#8842).
         let decl_package = declaring_package.unwrap_or(class_key);
-        let old_self = self.env.get("self").cloned();
-        self.env.insert("self".to_string(), self_val.clone());
-        // A compiled method-body chunk always carries an implicit `__ANON_STATE#`
-        // param alongside `self` (see `compile_routine_closure_body`); mirror that
-        // here so an anonymous-`$`-referencing default resolves the same way a
-        // method body would.
-        let old_anon = self.env.get("__ANON_STATE#").cloned();
-        self.env
-            .insert("__ANON_STATE#".to_string(), self_val.clone());
-        // `::?CLASS` in a default (e.g. `has $.Version = ::?CLASS.^ver` composed
-        // from a role) resolves through `?CLASS`; bind it to the class being built.
-        let old_class = self.env.get("?CLASS").cloned();
-        self.env
-            .insert("?CLASS".to_string(), Value::package(class_name));
         let mut saved_attr_env: Vec<(String, Option<Value>)> = Vec::new();
         for (a_name, a_val) in attrs {
             let bang = format!("!{}", a_name);
@@ -472,6 +458,16 @@ impl Interpreter {
             self.executing_source_file_sym(),
             decl_file,
         );
+        // The default sees the object under construction as `self` (and, as a
+        // method body's chunk carries it, `__ANON_STATE#`), and the class
+        // being built as `::?CLASS` (`has $.Version = ::?CLASS.^ver` composed
+        // from a role).
+        self.routine_stack
+            .attach_fixtures_to_top(crate::value::frame_fixtures::FrameFixtures {
+                invocant: Some(self_val.clone()),
+                class: Some(Symbol::intern(&class_name.to_string())),
+                role: None,
+            });
         let result = self.eval_decl_trait_arg_with_captured_env(arg, captured_env);
         self.pop_routine();
         self.current_unit = saved_unit;
@@ -483,21 +479,6 @@ impl Interpreter {
             } else {
                 self.env.remove(&key);
             }
-        }
-        if let Some(old) = old_self {
-            self.env.insert("self".to_string(), old);
-        } else {
-            self.env.remove("self");
-        }
-        if let Some(old) = old_anon {
-            self.env.insert("__ANON_STATE#".to_string(), old);
-        } else {
-            self.env.remove("__ANON_STATE#");
-        }
-        if let Some(old) = old_class {
-            self.env.insert("?CLASS".to_string(), old);
-        } else {
-            self.env.remove("?CLASS");
         }
         // An attribute initializer is an ASSIGNMENT, so the attribute gets a
         // COPY of whatever container the default evaluated to, not that

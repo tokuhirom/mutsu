@@ -623,6 +623,37 @@ impl Interpreter {
         self.routine_stack.top_fixtures()
     }
 
+    /// Continue a closure's creator record in the frame just pushed for the
+    /// closure's call (ADR-14843).
+    // Cost: O(1) amortized.
+    #[inline]
+    pub(crate) fn attach_closure_fixtures(&mut self, data: &crate::value::SubData) {
+        if let Some(fixtures) = &data.fixtures {
+            self.routine_stack.attach_fixtures_to_top(fixtures.clone());
+        }
+    }
+
+    /// The invocant (`self`, `__ANON_STATE#`) of the innermost frame record.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn frame_invocant(&self) -> Option<Value> {
+        self.frame_fixtures()?.invocant.clone()
+    }
+
+    /// The `?CLASS` of the innermost frame record.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn frame_class(&self) -> Option<Symbol> {
+        self.frame_fixtures()?.class
+    }
+
+    /// The `?ROLE` of the innermost frame record, `None` outside a role.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn frame_role(&self) -> Option<Symbol> {
+        self.frame_fixtures()?.role
+    }
+
     /// What the innermost method frame's record says a fixed name (`self`,
     /// `__ANON_STATE#`, `?CLASS`, `?ROLE`) holds, `None` when no record
     /// answers or the name is not a fixed one. An absent role is `None`, as
@@ -631,9 +662,9 @@ impl Interpreter {
     pub(crate) fn frame_fixture_value(&self, sym: Symbol) -> Option<Value> {
         let fixtures = self.frame_fixtures()?;
         if sym == crate::symbol::wk::self_() || sym == crate::symbol::wk::anon_state() {
-            Some(fixtures.invocant.clone())
+            fixtures.invocant.clone()
         } else if sym == crate::symbol::wk::class_decl() {
-            Some(Value::package(fixtures.class))
+            fixtures.class.map(Value::package)
         } else if sym == crate::symbol::wk::role_decl() {
             fixtures.role.map(Value::package)
         } else {

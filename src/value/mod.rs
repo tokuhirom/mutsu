@@ -596,6 +596,7 @@ mod enum_display;
 mod error;
 mod error_construct;
 mod error_typed;
+pub(crate) mod frame_fixtures;
 pub(crate) mod exception_message;
 pub(crate) mod flat;
 pub(crate) mod gist;
@@ -1627,6 +1628,11 @@ pub struct SubData {
     pub(crate) is_rw: bool,
     pub(crate) is_raw: bool,
     pub env: Env,
+    /// The frame record (`self`, `?CLASS`, `?ROLE`) of the method this closure
+    /// was created in, if it was created in one. The closure's call pushes a
+    /// copy, so a `self` in its body is its creator's, whichever method runs
+    /// it (ADR-14843).
+    pub(crate) fixtures: Option<crate::value::frame_fixtures::FrameFixtures>,
     pub(crate) assumed_positional: Vec<Value>,
     pub(crate) assumed_named: ValueMap,
     pub id: u64,

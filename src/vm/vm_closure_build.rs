@@ -163,7 +163,12 @@ impl Interpreter {
             .as_ref()
             .filter(|cc| !cc.state_locals.is_empty())
             .map(|_| crate::value::state_scope_reaper::StateScopeGuard::new(id));
+        // The record of the method this closure is created in: its `self`,
+        // `?CLASS` and `?ROLE` are the creator's whichever method runs it
+        // later (ADR-14843).
+        let fixtures = self.frame_fixtures().cloned();
         Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
+            fixtures,
             package: self.lexical_closure_package_sym(),
             name: spec.name,
             empty_sig: spec.empty_sig,

@@ -338,6 +338,7 @@ impl Interpreter {
             self.executing_source_file_sym(),
             data.source_file_sym(),
         );
+        self.attach_closure_fixtures(data);
 
         // Restore everything above on every exit, a Rust panic in the body
         // included (as the positional light call does).
