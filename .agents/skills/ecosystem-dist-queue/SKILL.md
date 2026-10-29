@@ -104,7 +104,7 @@ scripts/ecosystem-dashboard.py                  # needs `gh api`; prints the bod
 scripts/ecosystem-dashboard.py --issues-json tmp/issues.json --comments-json tmp/board.json
 ```
 
-The dashboard issue's body is this output, regenerated wholesale (`--update <N>`); nobody edits it
+The dashboard issue is [#15488](https://github.com/tokuhirom/mutsu/issues/15488) (deliberately without the `ecosystem` label, so the script does not read its own output). Its body is this output, regenerated wholesale (`--update <N>`); nobody edits it
 by hand. Locks are still appended to the board as comments, never kept in the dashboard body: a
 body edit is a read-modify-write that two agents can both win.
 
