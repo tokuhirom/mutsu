@@ -2451,7 +2451,7 @@ impl Interpreter {
             {
                 continue;
             }
-            let bare = name.strip_prefix(['@', '%']).unwrap_or(name);
+            let bare = name.strip_prefix(['@', '%', '&']).unwrap_or(name);
             if bare
                 .chars()
                 .next()
