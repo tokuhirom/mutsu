@@ -77,7 +77,7 @@ src/vm/vm_package_scope.rs                                  1
 src/vm/vm_raw_invocant_arrival.rs                           2
 src/vm/vm_raw_invocant_lvalue.rs                            2
 src/vm/vm_rw_attr_container.rs                              1
-src/vm/vm_store_place.rs                                    3
+src/vm/vm_store_place.rs                                    4
 src/vm/vm_var_assign_computed_attr.rs                       1
 src/vm/vm_var_assign_element.rs                             1
 src/vm/vm_var_get_ops.rs                                    2
