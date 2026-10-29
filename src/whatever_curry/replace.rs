@@ -182,6 +182,7 @@ impl VisitMut for Replacer<'_> {
             | Expr::HyperMethodCall { target, .. }
             | Expr::HyperMethodCallDynamic { target, .. }
             | Expr::CallOn { target, .. }
+            | Expr::Exists { target, .. }
             | Expr::Index { target, .. } => self.visit_expr_mut(target),
             // A user-declared prefix/postfix operator application: its operand
             // curries like a built-in unary's.
