@@ -732,7 +732,12 @@ impl Interpreter {
             .iter()
             .filter(|v| !matches!(v.view(), ValueView::Pair(_, _)));
         if implicit {
-            return positional.next().cloned();
+            // The invocant is the object, not the caller's variable holding
+            // it (`m($o, 5)` runs `$o.&m(5)`).
+            return positional.next().map(|v| match v.view() {
+                ValueView::VarRef { value, .. } => value.deref_container(),
+                _ => v.deref_container(),
+            });
         }
         // An explicit invocant spelled `$self:` takes the leading positional.
         // A plain routine's ordinary `$self` parameter is a lexical of its
