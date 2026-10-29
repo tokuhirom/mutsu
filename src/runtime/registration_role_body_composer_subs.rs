@@ -161,7 +161,18 @@ impl Interpreter {
         }
         // A parametric composition's lexical-package copy of each re-declared
         // sub knows nothing of the composition's parameters (#15100).
-        if result.is_ok() && !params.is_empty() {
+        //
+        // TODO: a role instantiation composed at run time (`@a does R[:c(1)]`
+        // composes the target `R[:c(1)]`) keeps the copy: the mixin's role
+        // methods run in the role's own package (`method_body_package`), where
+        // the re-declaration under the instantiation's name is not found, so
+        // dropping the copy left the sub unknown (Grid). The sub then lacks the
+        // composition's value parameters; the right fix is to run the mixin's
+        // role methods where its re-declared subs live.
+        let role_instantiation = class
+            .strip_prefix(role_name)
+            .is_some_and(|rest| rest.starts_with('['));
+        if result.is_ok() && !params.is_empty() && !role_instantiation {
             for name in &redeclared {
                 self.unseclude_role_lexical_routine(name, class, role.decl_file.as_deref());
             }
