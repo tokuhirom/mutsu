@@ -454,6 +454,7 @@ impl Interpreter {
         let unit_sets: Vec<Symbol> = crate::compiler::Compiler::eval_unit_use_set_ids(stmts)
             .into_iter()
             .flatten()
+            .chain(self.module.eval_prerun_sets.iter().copied())
             .collect();
         self.check_eval_unit_routines(stmts, |name| {
             imported.types.contains(name)

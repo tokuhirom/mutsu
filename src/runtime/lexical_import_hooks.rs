@@ -217,6 +217,7 @@ impl Interpreter {
         crate::compiler::Compiler::eval_unit_use_set_ids(stmts)
             .into_iter()
             .flatten()
+            .chain(self.module.eval_prerun_sets.iter().copied())
             .filter_map(|id| self.module.lexical_import_hook_values.get(&id))
             .flat_map(|values| values.keys())
             .filter_map(|key| {

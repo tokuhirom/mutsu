@@ -506,6 +506,9 @@ pub(crate) struct ModuleState {
     /// validation runs, whose names the checks read from the interpreter, not
     /// from the module's source (`run_eval_hook_uses`, #13441).
     pub(crate) eval_prerun_modules: HashSet<String>,
+    /// The import sets the pre-run of the `use`s nested in the `EVAL`'d unit's
+    /// blocks filled, for the unit's CHECK-time name checks.
+    pub(crate) eval_prerun_sets: Vec<Symbol>,
     /// What each `sub EXPORT` hook returned while an `EVAL` unit's pre-run
     /// ran it, by module and `use` arguments (`hook_replay_key`). The same
     /// `use` left in its block replays the map instead of running the hook a
@@ -751,6 +754,7 @@ impl ModuleState {
             eval_import_unit: None,
             eval_failed_classes: HashSet::new(),
             eval_prerun_modules: HashSet::new(),
+            eval_prerun_sets: Vec::new(),
             eval_hook_results: HashMap::new(),
             eval_hook_recording: false,
             foreign_main_clean_version: None,
@@ -859,6 +863,7 @@ impl ModuleState {
             eval_import_unit: self.eval_import_unit,
             eval_failed_classes: HashSet::new(),
             eval_prerun_modules: self.eval_prerun_modules.clone(),
+            eval_prerun_sets: self.eval_prerun_sets.clone(),
             eval_hook_results: self.eval_hook_results.clone(),
             eval_hook_recording: false,
             foreign_main_clean_version: self.foreign_main_clean_version,
