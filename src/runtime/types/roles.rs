@@ -821,13 +821,25 @@ impl Interpreter {
                             );
                         }
                     }
-                    self.run_role_body_for_composition(
-                        role_name,
-                        role_name,
-                        &ops,
-                        decl_file.as_deref(),
-                    )?;
-                    self.run_composed_role_ancestor_bodies(role_name, role_name)?;
+                    // `::?CLASS` in the body is the type being composed, which
+                    // has only its parent's methods yet: the value's base type
+                    // (`my &AT-KEY := ::?CLASS.^find_method('AT-KEY')` in a
+                    // role mixed into a Hash is `Hash`'s, not the role's own).
+                    let saved_class = self.env.get("?CLASS").cloned();
+                    self.env.insert(
+                        "?CLASS".to_string(),
+                        Value::package(Symbol::intern(&base_type)),
+                    );
+                    let body_result = self
+                        .run_role_body_for_composition(
+                            role_name,
+                            role_name,
+                            &ops,
+                            decl_file.as_deref(),
+                        )
+                        .and_then(|()| self.run_composed_role_ancestor_bodies(role_name, role_name));
+                    Self::restore_env_entry(&mut self.env, "?CLASS", saved_class);
+                    body_result?;
                     self.persist_role_body_lexicals(role_name, &declared);
                     self.run_role_body_block(
                         role_name,
