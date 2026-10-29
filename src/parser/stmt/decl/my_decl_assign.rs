@@ -912,7 +912,9 @@ fn sunk_list(mut stmts: Vec<Stmt>) -> Stmt {
         || stmts.len() < 2
         || !stmts[1..].iter().all(|s| matches!(s, Stmt::Expr(_)))
     {
-        return Stmt::SyntheticBlock(stmts);
+        return crate::parser::stmt::control::parsed_block::finish_total(
+            crate::ast::parsed::ParsedStmt::CommaDecls(stmts),
+        );
     }
     let items = stmts
         .drain(1..)
