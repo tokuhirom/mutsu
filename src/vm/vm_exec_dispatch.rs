@@ -6788,7 +6788,15 @@ impl Interpreter {
                     self.declare_package_ancestors(code.const_sym(*name_idx));
                 }
                 self.release_foreign_provenance(&name);
-                self.registry_mut().package_kinds.insert(name, *kind);
+                // A child module's `unit package Parent;` runs after `Parent`
+                // declared itself a class (`unit class Parent; use Parent::Child;`):
+                // the package statement re-opens the namespace, it does not
+                // demote the class to a bare package.
+                if !(*kind == crate::ast::PackageKind::Package
+                    && self.registry().classes.contains_key(&name))
+                {
+                    self.registry_mut().package_kinds.insert(name, *kind);
+                }
                 *ip += 1;
             }
             // Cost: O(a + c), a = trait name bytes, c = trait_mod:<is> candidates; excludes the callback body.
