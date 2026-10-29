@@ -45,7 +45,9 @@ pub(super) fn staged_container(array_bare: &str, parent: &[usize]) -> Expr {
 /// The staged RHS element a target at `path` reads.
 // Cost: O(d), d = nesting depth.
 pub(super) fn staged_element(array_bare: &str, path: &[usize]) -> Expr {
-    let (position, parent) = path.split_last().expect("every target has a position");
+    let Some((position, parent)) = path.split_last() else {
+        return Expr::Literal(Value::NIL);
+    };
     Expr::Index {
         target: Box::new(staged_container(array_bare, parent)),
         index: Box::new(Expr::Literal(Value::int(*position as i64))),

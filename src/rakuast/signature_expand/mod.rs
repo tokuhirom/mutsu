@@ -272,7 +272,9 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
     let mut slurped_parents: Vec<Vec<usize>> = Vec::new();
     for (i, dvar) in vars.iter().enumerate() {
         let path = &paths[i];
-        let (position, parent) = path.split_last().expect("every target has a position");
+        let Some((position, parent)) = path.split_last() else {
+            continue;
+        };
         let position = *position;
         let seen_slurpy = slurped_parents.iter().any(|p| p == parent);
         if let Some(lit) = &dvar.literal_value {
