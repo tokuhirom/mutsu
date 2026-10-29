@@ -677,7 +677,7 @@ impl Interpreter {
         // owns a DISTINCT container per iteration. Mutations write through the
         // shared backing node (container identity §3), so binding the element
         // value as-is would let `@row[0] = v` reach the source element.
-        let param_is_copy = spec.is_rw && !spec.do_writeback;
+        let param_is_copy = spec.is_rw && !spec.do_writeback && !spec.param_raw;
         // ADR-0045 slices 1-3: an aliasing binding — `is rw` / `<->` /
         // sigilless `\v`, or the implicit topic — over a real mutable
         // `Array`/`Hash` source binds the element's own `ContainerRef` instead
