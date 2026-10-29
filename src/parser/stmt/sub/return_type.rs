@@ -82,7 +82,11 @@ pub(crate) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
         let b = bytes[idx];
 
         if in_single {
-            if b == b'\'' {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'\'' {
                 in_single = false;
             }
             idx += 1;

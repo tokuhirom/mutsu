@@ -24,7 +24,7 @@ our sub run(Mu \node, *@roles) {
         if $_ ~~ Str {
             $class := $class.^mixin($core.slang($_));
         }
-        elsif $_.HOW.can('pun') {
+        elsif $_.HOW.archetypes.composable {
             $class := $class.^mixin($_);
         }
         else {
