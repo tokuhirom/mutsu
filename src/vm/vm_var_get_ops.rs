@@ -960,6 +960,15 @@ impl Interpreter {
                 // in a module file, read from a sub of that file, whose frame
                 // carries none of the package's `our` members).
                 && !self.is_declared_package(name)
+                // `UNIT::errno` / `MY::errno` naming a lexical class of that
+                // compunit: the pseudo-package selects the scope, the bare
+                // name is the type.
+                && !(Interpreter::strip_pseudo_packages(name) != name
+                    && (self.has_type(Interpreter::strip_pseudo_packages(name))
+                        || self
+                            .env()
+                            .get(Interpreter::strip_pseudo_packages(name))
+                            .is_some_and(|v| matches!(v.view(), ValueView::Package(_)))))
             {
                 // The last segment starts with lowercase, indicating a qualified
                 // function/sub call (e.g. `Our::Package::pkg`). If the prefix
@@ -972,7 +981,16 @@ impl Interpreter {
                 // Strip pseudo-package prefixes (OUR::, GLOBAL::, MY::, etc.)
                 // and resolve to the bare type name if it exists.
                 let bare = Interpreter::strip_pseudo_packages(name);
-                if bare != name
+                // A lexical class of the compunit is bound under its bare name
+                // to its (mangled) storage name: that is the type `UNIT::name`
+                // / `MY::name` denotes.
+                let lexical_type = (bare != name)
+                    .then(|| self.env().get(bare).cloned())
+                    .flatten()
+                    .filter(|v| matches!(v.view(), ValueView::Package(_)));
+                if let Some(lexical_type) = lexical_type {
+                    lexical_type
+                } else if bare != name
                     && (self.has_type(bare)
                         || Self::is_builtin_type(bare)
                         || Self::is_type_with_smiley(bare, self)

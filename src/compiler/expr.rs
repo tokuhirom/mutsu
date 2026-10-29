@@ -371,6 +371,20 @@ impl Compiler {
                     self.code.emit(OpCode::NqpOp { id, arity: 0 });
                     return;
                 }
+                // `UNIT::errno` / `MY::errno` naming a lexical class declared in
+                // this compunit is that class, read by its bare name so a
+                // closure (a `Proxy` FETCH) captures the binding.
+                if let Some(bare) = name
+                    .strip_prefix("UNIT::")
+                    .or_else(|| name.strip_prefix("MY::"))
+                    .filter(|bare| {
+                        !bare.contains("::") && self.lexical_types_in_scope.contains(*bare)
+                    })
+                {
+                    let name_idx = self.code.add_constant(Value::str(bare.to_string()));
+                    self.code.emit(OpCode::GetGlobal(name_idx));
+                    return;
+                }
                 // A lexical type shadowing an enclosing constant (#11517): the
                 // type's own `MY::` binding, read by name so a nested closure
                 // captures it. `GetBareWord` would find the constant's term key.

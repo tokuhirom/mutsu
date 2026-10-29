@@ -1340,6 +1340,10 @@ impl Interpreter {
             // distinguish between variables set by prior END phasers (which
             // should propagate) and stale captured values (which should not
             // override live values).
+            // A `my $*x` of the mainline dies with its frame: rakudo runs END
+            // with no caller chain, so `$*x` there is the process-level value
+            // (or undefined), not the mainline's lexical dynamic.
+            let dead_dynamics = self.drop_mainline_lexical_dynamics();
             let original_env = self.env.clone();
             // rakudo runs END after the mainline's warning handler is gone, so
             // an unhandled `warn` (explicit, or an uninitialized-value
@@ -1362,6 +1366,16 @@ impl Interpreter {
                 // END — a closure over the container — sees that variable's
                 // final value, so the live value wins there.
                 for (k, v) in captured_env.iter() {
+                    // A dynamic is looked up through callers, never captured: no
+                    // frame calls an END, so the declaring block's `my $*x` is gone.
+                    if dead_dynamics.contains(k)
+                        || k.with_str(|s| {
+                            s.starts_with('*')
+                                || ["$*", "@*", "%*", "&*"].iter().any(|p| s.starts_with(p))
+                        })
+                    {
+                        continue;
+                    }
                     if !self.env.contains_key_sym(*k) {
                         overlay_keys.push(k.resolve());
                         self.env.insert_sym(*k, v.clone());

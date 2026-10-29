@@ -372,7 +372,7 @@ impl Interpreter {
                         return Some((*cn, only.clone()));
                     }
                 }
-                for def in overloads {
+                for def in overloads.iter() {
                     if def.is_private {
                         continue;
                     }
@@ -386,7 +386,7 @@ impl Interpreter {
                     }
                     let args_match = self.method_args_match_for_invocant(
                         class_name,
-                        &def,
+                        def,
                         arg_values,
                         role_bindings.as_ref(),
                         invocant,
@@ -396,11 +396,11 @@ impl Interpreter {
                             // Non-multi: return the first match immediately,
                             // but only if no multi candidates were already
                             // collected from a child class in the MRO.
-                            return Some((*cn, def));
+                            return Some((*cn, def.clone()));
                         }
-                        all_matches.push((*cn, def));
+                        all_matches.push((*cn, def.clone()));
                     } else if def.is_multi {
-                        rivals.push((*cn, def));
+                        rivals.push((*cn, def.clone()));
                     }
                 }
                 // A non-multi submethod on an ancestor blocks the MRO search
@@ -500,7 +500,7 @@ impl Interpreter {
                 .get_method_overloads_with_role_fallback(cn.as_str(), method_name);
             if let Some(overloads) = overloads {
                 let is_ancestor = cn.as_str() != class_name;
-                for def in overloads {
+                for def in overloads.iter() {
                     if def.is_private {
                         continue;
                     }
@@ -510,12 +510,12 @@ impl Interpreter {
                     }
                     if self.method_args_match_for_invocant(
                         class_name,
-                        &def,
+                        def,
                         arg_values,
                         role_bindings.as_ref(),
                         None,
                     ) {
-                        matches.push((*cn, def));
+                        matches.push((*cn, def.clone()));
                     }
                 }
             }

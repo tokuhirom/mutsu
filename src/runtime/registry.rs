@@ -58,9 +58,60 @@ pub(crate) struct MethodEntryKey {
     pub(crate) name: Symbol,
 }
 
+/// The user candidates of one `(owner, name)` method row. Shared, so a dispatch
+/// that reads the row takes a reference count instead of deep-copying every
+/// `MethodDef` (`user_method_overloads` ran on each multi-method call and each
+/// `new` of a class declaring one); a mutator copies on write through
+/// [`Self::make_mut`]. Borrowed iteration and slice/`Vec` reads work as on the
+/// `Vec` this replaces; consuming it by value clones the definitions, as before.
+#[derive(Clone, Default)]
+pub(crate) struct MethodOverloads(Arc<Vec<MethodDef>>);
+
+impl MethodOverloads {
+    // Cost: O(1) when unshared; O(c) copy when a dispatch still holds the row, c = candidates.
+    pub(crate) fn make_mut(&mut self) -> &mut Vec<MethodDef> {
+        Arc::make_mut(&mut self.0)
+    }
+}
+
+impl From<Vec<MethodDef>> for MethodOverloads {
+    fn from(defs: Vec<MethodDef>) -> Self {
+        Self(Arc::new(defs))
+    }
+}
+
+impl std::ops::Deref for MethodOverloads {
+    type Target = Vec<MethodDef>;
+    fn deref(&self) -> &Vec<MethodDef> {
+        &self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a MethodOverloads {
+    type Item = &'a MethodDef;
+    type IntoIter = std::slice::Iter<'a, MethodDef>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl IntoIterator for MethodOverloads {
+    type Item = MethodDef;
+    type IntoIter = std::vec::IntoIter<MethodDef>;
+    // Cost: O(c) clone unless this was the last holder.
+    fn into_iter(self) -> Self::IntoIter {
+        Arc::try_unwrap(self.0)
+            .unwrap_or_else(|shared| (*shared).clone())
+            .into_iter()
+    }
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct MethodEntry {
-    pub(crate) user_candidates: Vec<MethodDef>,
+    /// Shared so a dispatch that reads the candidates (`user_method_overloads`)
+    /// takes a reference count, not a deep copy of every `MethodDef`; the
+    /// mutators below go through `Arc::make_mut`.
+    pub(crate) user_candidates: MethodOverloads,
     /// Visibility of the auto-generated accessor for a `has $.x`/`has $!x`
     /// attribute this class declares directly, keyed by attribute name under
     /// the same `(owner, name)` row as a same-named method would occupy
@@ -812,7 +863,7 @@ impl Registry {
         &self,
         class_name: &str,
         method_name: &str,
-    ) -> Option<Vec<MethodDef>> {
+    ) -> Option<MethodOverloads> {
         self.method_entries
             .get(&MethodEntryKey {
                 owner: Symbol::intern(class_name),
@@ -884,7 +935,7 @@ impl Registry {
             return (false, false);
         };
         let (mut local, mut role) = (false, false);
-        for d in &entry.user_candidates {
+        for d in entry.user_candidates.iter() {
             if d.is_private || (d.is_my && is_ancestor) {
                 continue;
             }
@@ -1720,7 +1771,7 @@ impl Registry {
         &self,
         class_name: &str,
         method_name: &str,
-    ) -> Option<Vec<MethodDef>> {
+    ) -> Option<MethodOverloads> {
         self.user_method_overloads(class_name, method_name)
     }
 
@@ -1758,9 +1809,9 @@ impl Registry {
         &self,
         class_name: &str,
         method_name: &str,
-    ) -> Option<Vec<MethodDef>> {
+    ) -> Option<MethodOverloads> {
         self.get_method_overloads(class_name, method_name)
-            .or_else(|| self.role_method_overloads(class_name, method_name))
+            .or_else(|| self.role_method_overloads(class_name, method_name).map(MethodOverloads::from))
     }
 
     /// Bound role type parameters for `class_name` (e.g. the `::T` -> value map

@@ -286,7 +286,7 @@ impl Interpreter {
                     .get_method_overloads_with_role_fallback(owner_str, name.as_str()),
             };
             if let Some(overloads) = overloads {
-                for (stored_idx, def) in overloads.into_iter().enumerate() {
+                for (stored_idx, def) in overloads.iter().enumerate() {
                     let visible = match visibility {
                         MethodVisibility::Public => !(def.is_private || (def.is_my && is_ancestor)),
                         MethodVisibility::Private => def.is_private,
@@ -296,7 +296,7 @@ impl Interpreter {
                     }
                     candidates.push(ResolvedCandidate::User {
                         owner: *owner,
-                        def: Arc::new(def),
+                        def: Arc::new(def.clone()),
                         level: level as u16,
                         stored_idx: stored_idx as u16,
                     });
