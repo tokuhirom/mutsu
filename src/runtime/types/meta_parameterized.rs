@@ -71,6 +71,13 @@ impl Interpreter {
         if let Some(ty) = self.caches.meta_parameterized_types.get(constraint) {
             return Some(ty.clone());
         }
+        // A spelling that is already the name of a minted subset (`Kind[any(A,
+        // B)]`, what a constant bound to a parameterization writes into a
+        // signature) denotes that type: re-running `^parameterize` on the
+        // text would split `any(A, B)` at its comma and mint a different one.
+        if self.registry().subsets.contains_key(constraint) {
+            return Some(Value::package(Symbol::intern(constraint)));
+        }
         let ty = self.eval_meta_parameterized(constraint)?;
         self.caches
             .meta_parameterized_types
