@@ -376,7 +376,6 @@ pub(crate) fn lowered_assignment(expr: crate::ast::Expr) -> crate::ast::Expr {
     }
 }
 pub(crate) use expr::precedence::{literal_assign_ro_expr, literal_assign_ro_parts};
-pub(crate) use expr::precedence_meta_ops::lower_hyper_assignment as hyper_assignment_expr;
 pub(crate) use expr::precedence_meta_ops::negated_glyph_relation;
 pub(crate) use stmt::assign::written_assignment;
 pub(crate) use stmt::simple::{fold_use_lib_path, use_lib_args};

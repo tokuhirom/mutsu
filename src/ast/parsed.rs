@@ -288,7 +288,7 @@ pub(crate) enum ParsedExpr {
     StartBody(Vec<Stmt>),
     /// `(LVALUES) »=» VALUE` over a literal list of lvalues (`ApplyInfix`
     /// over `Assignment` under a hyper meta-infix). It lowers to the
-    /// element-wise expansion (`parser::hyper_assignment_expr`).
+    /// element-wise expansion (`rakuast::hyper_assign::lower_hyper_assignment`).
     HyperAssign(HyperAssign),
     /// An inline `subset` used as a term, `subset :: of Int where * > 0`: the
     /// declaration as written. It lowers to the declaration followed by a

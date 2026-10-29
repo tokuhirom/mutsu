@@ -5121,7 +5121,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             // `Assignment` node; the parser's own expansion handles a literal
             // list of lvalues.
             if infix.class == RakuAstClass::Assignment {
-                return Ok(crate::parser::hyper_assignment_expr(
+                return Ok(super::hyper_assign::lower_hyper_assignment(
                     *left, *right, dwim_left, dwim_right,
                 ));
             }
