@@ -554,7 +554,33 @@ impl Interpreter {
                 .map(|s| (*s, Value::NIL))
                 .collect::<crate::value::AttrMap>(),
         );
-        let layout = std::sync::Arc::new(crate::value::ClassLayout::new(attr_syms.iter().copied()));
+        // What a `$!x = <scalar>` store has to check, per layout slot (first
+        // declaration wins for a repeated key, like the layout itself). Anything
+        // the kind cannot describe exactly declines to the general store.
+        let store_kinds = {
+            let mut seen = rustc_hash::FxHashSet::default();
+            let mut kinds = Vec::with_capacity(attr_syms.len());
+            for (i, (a, sym)) in class_attrs.iter().zip(attr_syms.iter()).enumerate() {
+                if !seen.insert(*sym) {
+                    continue;
+                }
+                kinds.push(
+                    if a.sigil != '$'
+                        || a.where_constraint.is_some()
+                        || has_smiley
+                        || attr_is_types.contains_key(&a.name)
+                    {
+                        crate::value::AttrStoreKind::Decline
+                    } else {
+                        crate::value::AttrStoreKind::classify(attr_constraints[i].as_deref())
+                    },
+                );
+            }
+            kinds
+        };
+        let layout = std::sync::Arc::new(
+            crate::value::ClassLayout::new(attr_syms.iter().copied()).with_store_kinds(store_kinds),
+        );
         let create_slots = std::sync::Arc::new(if registered {
             self.create_default_attr_slots(cn_resolved, &layout)
         } else {
