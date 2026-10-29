@@ -138,8 +138,15 @@ impl Interpreter {
     /// resolve by name, keeps the env alias.
     // Cost: O(|key|).
     pub(crate) fn bind_hook_term_lexically(&mut self, key: &str, value: &Value) -> bool {
-        if !key.starts_with(|c: char| c.is_lowercase())
+        if !key.starts_with(|c: char| c.is_alphabetic())
             || !key.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''))
+        {
+            return false;
+        }
+        // An uppercase key usually hands out a type, which type positions
+        // resolve by name; only a plain value is a term of the set.
+        if key.starts_with(|c: char| c.is_uppercase())
+            && matches!(value.view(), ValueView::Package(_) | ValueView::CustomType { .. })
         {
             return false;
         }
@@ -193,6 +200,25 @@ impl Interpreter {
             .filter_map(|id| self.module.lexical_import_hook_values.get(id))
             .flat_map(|values| values.keys())
             .filter(|key| !self.env.frame_hides_unit_name(**key))
+            .filter_map(|key| {
+                crate::runtime::term_names::term_spelling(&key.resolve()).map(str::to_string)
+            })
+            .collect()
+    }
+
+    /// The names of the terms a `sub EXPORT` hook bound in the import sets
+    /// the pre-run of the `EVAL`'d unit `stmts` filled for its top-level
+    /// `use`s, for the unit's CHECK-time name checks.
+    // Cost: O(s + t), s = the unit's top-level statements, t = their hook values.
+    pub(crate) fn eval_unit_hook_terms(&self, stmts: &[Stmt]) -> Vec<String> {
+        if self.module.lexical_import_hook_values.is_empty() {
+            return Vec::new();
+        }
+        crate::compiler::Compiler::eval_unit_use_set_ids(stmts)
+            .into_iter()
+            .flatten()
+            .filter_map(|id| self.module.lexical_import_hook_values.get(&id))
+            .flat_map(|values| values.keys())
             .filter_map(|key| {
                 crate::runtime::term_names::term_spelling(&key.resolve()).map(str::to_string)
             })

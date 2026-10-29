@@ -136,6 +136,11 @@ impl Interpreter {
             Keep,
             /// Runs here and is dropped from the unit (a `sub EXPORT` hook).
             Drop,
+            /// A hook module's `use` with literal arguments: runs here into its
+            /// lexical import set, records the map the hook returned, and stays
+            /// in the unit, whose in-position run replays that map into the
+            /// same set (ADR-8751).
+            Replay,
         }
         // An `import` is pre-run only for a module an earlier pre-run `use`
         // loaded: one the unit declares itself does not exist yet.
@@ -155,7 +160,11 @@ impl Interpreter {
                 Stmt::Use { arg, .. } => match crate::compiler::begin_use::loads_module_in_position(stmt) {
                     Some(module) if self.module_imports_through_export_hook(module) => {
                         loaded.insert(module);
-                        Prerun::Drop
+                        if arg.as_ref().is_none_or(super::eval_nested_hook_uses::is_literal_arg) {
+                            Prerun::Replay
+                        } else {
+                            Prerun::Drop
+                        }
                     }
                     // Its arguments would be evaluated twice.
                     Some(module) if arg.is_none() => {
@@ -201,8 +210,8 @@ impl Interpreter {
                     // In position, like the compiled `use`: a LEAVE phaser the
                     // hook attaches (`$*R.find-attach-target`) belongs to this
                     // compunit.
-                    self.module.eval_hook_recording = idx < lifted;
-                    let set_id = set_id.filter(|_| how == Prerun::Keep);
+                    self.module.eval_hook_recording = idx < lifted || how == Prerun::Replay;
+                    let set_id = set_id.filter(|_| matches!(how, Prerun::Keep | Prerun::Replay));
                     let outer = set_id.map(|id| self.begin_lexical_import_capture(id));
                     let loaded = self
                         .with_use_attach_depth(|this| this.use_module_with_tags(module, tags));
@@ -218,7 +227,7 @@ impl Interpreter {
                 }
                 _ => {}
             }
-            if how != Prerun::Drop {
+            if !matches!(how, Prerun::Drop) {
                 rest.push(stmt);
             }
         }

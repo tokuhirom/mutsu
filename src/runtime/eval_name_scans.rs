@@ -461,9 +461,12 @@ impl Interpreter {
                 || hook_terms.iter().any(|term| term == name)
                 || terms.names.contains(name)
                 || (!unit_sets.is_empty()
-                    && self
+                    && (self
                         .lexical_import_operator_binding(&unit_sets, Symbol::intern(name))
-                        .is_some())
+                        .is_some()
+                        || self
+                            .lexical_import_hook_term(&unit_sets, Symbol::intern(name))
+                            .is_some()))
         })
     }
 
@@ -499,6 +502,7 @@ impl Interpreter {
         // The terms a hook bound in the import sets of the blocks the `EVAL`
         // runs in (ADR-8751): the snippet's bare words read them.
         declared.extend(self.active_lexical_import_hook_terms());
+        declared.extend(self.eval_unit_hook_terms(stmts));
         if let Some((name, _)) = self.first_undeclared_name(stmts, &declared, false) {
             let suggestions = self.suggest_type_names(&name);
             return Err(RuntimeError::undeclared_type_symbols(

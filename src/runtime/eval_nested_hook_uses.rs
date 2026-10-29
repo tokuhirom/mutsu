@@ -41,7 +41,7 @@ struct Lifter {
 
 /// Whether a `use` argument can be evaluated ahead of its block: a literal or
 /// a flat list of literals (`use M <A B>`, `use M "a", 3`).
-fn is_literal_arg(expr: &Expr) -> bool {
+pub(super) fn is_literal_arg(expr: &Expr) -> bool {
     match expr {
         Expr::ArrayLiteral(items) => items.iter().all(|i| matches!(i, Expr::Literal(_))),
         other => matches!(other, Expr::Literal(_)),
