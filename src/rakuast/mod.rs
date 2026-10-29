@@ -33,6 +33,7 @@ mod decl_origins;
 pub(crate) mod dotty_assign;
 pub(crate) mod empty_fields;
 mod expr_origins;
+pub(crate) mod hyper_assign;
 mod if_branch;
 mod loop_bind;
 pub(crate) mod nested_methods;

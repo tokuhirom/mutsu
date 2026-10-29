@@ -27,7 +27,6 @@ src/parser/expr/precedence/assign.rs                 1  # compound-assignment lo
 src/parser/expr/precedence/comparison.rs             1  # comparison_tail: recursive-descent parse function (the Expr is its accumulator), not a walk
 src/parser/expr/precedence/feed.rs                   1  # feed_leftmost_operand_mut: spine to a feed chain's leftmost operand
 src/parser/expr/precedence_meta_ops/arith.rs         1  # autoincrement_expr: recursive-descent parse function, not a walk
-src/parser/expr/precedence_meta_ops/hyper_concat.rs  2  # 2 lowerings of a hyper-assignment target list (shape and per-element assignment)
 src/parser/expr/whatever.rs                          2  # contains_whatever/contains_xx_with_bare_whatever are priming-scope operand walks (only curry operand positions count -- the positive list is the semantics): stay hand-rolled
 src/parser/expr/whatever_wrap.rs                     2  # 2 parser rewrites: `o` composition operands and method-call chains wrapped as WhateverCode
 src/parser/primary/container/meta_ops.rs             3  # X/Z meta-op operand-chain spines and the chained-zip normalization rewrite
@@ -36,6 +35,7 @@ src/parser/primary/misc/hash.rs                      1  # hash_pair_from_expr: s
 src/parser/sink_warn.rs                              5  # sink-context propagation: visits only sink positions, by design
 src/parser/stmt/assign/comma.rs                      1  # merge_seeds_into_sequence: rewrite along a feed's source spine
 src/rakuast/compound/expansion.rs                   1  # build_compound_assign_expr: compound-assignment lowering
+src/rakuast/hyper_assign.rs                        2  # 2 lowerings of a hyper-assignment target list (shape and per-element assignment)
 src/parser/stmt/decl/enum_decl.rs                    2  # 2 shape matches over a literal enum body (literal names, nested literal lists, pairs)
 src/parser/stmt/decl/my_decl_helpers.rs              1  # build_sigilless_bind_stmt: lowering of a sigilless declaration
 src/parser/stmt/simple/lib_paths.rs                  1  # static_path: constant evaluator of a path-method chain (`$?FILE.IO.parent.add(...)`)

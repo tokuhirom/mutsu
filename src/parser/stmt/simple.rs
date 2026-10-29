@@ -371,8 +371,6 @@ pub(crate) fn eval_preseed_active() -> bool {
         || EVAL_LANGUAGE_VERSION_PRESEED.with(|p| p.borrow().is_some())
 }
 
-pub(in crate::parser) use crate::rakuast::compound::TMP_INDEX_COUNTER;
-
 /// Numeric precedence levels for built-in operator categories.
 /// Higher values mean tighter binding.
 pub(in crate::parser) const PREC_SEQUENCE: i32 = 10;
