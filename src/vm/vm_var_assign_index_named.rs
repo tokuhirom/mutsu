@@ -828,6 +828,15 @@ impl Interpreter {
                 // Unwrap the bind marker so neither BIND-KEY nor the ASSIGN
                 // fallback stores the internal wrapper pair as the value.
                 let (val, _bind_source) = Self::unwrap_bind_index_value(raw_val);
+                if is_positional
+                    && method == assign_method
+                    && let Some(result) = self.assign_slice_through_assign_pos(&target, &idx, &val)
+                {
+                    let result = result?;
+                    self.apply_pending_rw_writeback(code);
+                    self.stack.push(result);
+                    return Ok(());
+                }
                 // Unwrap a single-element subscript list (`<baz>` parses as a
                 // one-element list) to the bare key/index.
                 let idx_arg = match idx.view() {

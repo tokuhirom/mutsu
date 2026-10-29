@@ -7,6 +7,7 @@ fn pos_index(v: &Value) -> Option<usize> {
     match v.view() {
         ValueView::Int(i) if i >= 0 => Some(i as usize),
         ValueView::Num(f) if f >= 0.0 => Some(f as usize),
+        ValueView::Mixin(inner, _) => pos_index(inner),
         _ => None,
     }
 }
