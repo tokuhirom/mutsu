@@ -13761,6 +13761,12 @@ pub(crate) struct NamedParamBind {
     pub(crate) alias_binds: Vec<(String, Option<usize>)>,
     /// `outer_sub_signature` alias keys (sigils trimmed) that also match.
     pub(crate) outer_alias_keys: Vec<String>,
+    /// The parameter declares a fast type (`Bool :$flag`): a supplied value is
+    /// checked by name before it binds.
+    pub(crate) typed: bool,
+    /// The constant default (`:$flag = True`, already verified against the
+    /// type) an unsupplied call binds. `None` for no default.
+    pub(crate) fill: Option<Value>,
 }
 
 /// A compiled function body (SubDecl compiled to bytecode).
@@ -14350,6 +14356,7 @@ impl CompiledFunction {
                 .unwrap_or(match_key)
                 .to_string();
             let slot = slot_of(&pd.name);
+            let fast = crate::runtime::NamedFast::of_param(pd);
             let mut alias_keys = Vec::new();
             let mut alias_binds = Vec::new();
             if let Some(ref sub_params) = pd.sub_signature {
@@ -14408,6 +14415,8 @@ impl CompiledFunction {
                 alias_keys,
                 alias_binds,
                 outer_alias_keys,
+                typed: pd.type_constraint.is_some() && fast.is_some(),
+                fill: fast.and_then(|f| f.fill),
             }));
         }
         self.named_call_plan = Some(Box::new(NamedCallPlan {

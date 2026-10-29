@@ -104,7 +104,7 @@ impl super::MethodDef {
 
 impl NamedFast {
     // Cost: O(1).
-    fn of_param(pd: &crate::ast::ParamDef) -> Option<Self> {
+    pub(crate) fn of_param(pd: &crate::ast::ParamDef) -> Option<Self> {
         use crate::opcode::{CompiledFunction, FastParamCheck};
         if !pd.named
             || pd.has_traits()
