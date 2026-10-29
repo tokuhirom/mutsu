@@ -3428,6 +3428,12 @@ fn merge_method_env(
     (saved, wrote, changed_caller_locals, capture_writes)
 }
 
+/// The names a frame's record owns (`self`, `?CLASS`, `?ROLE`): no env key
+/// stores them (ADR-14843).
+fn is_fixed_frame_name(name: &str) -> bool {
+    matches!(name, "self" | "?CLASS" | "?ROLE")
+}
+
 #[cfg(test)]
 mod cheaply_unchanged_tests {
     use super::cheaply_unchanged;
@@ -3487,10 +3493,4 @@ mod cheaply_unchanged_tests {
         )));
         assert!(!cheaply_unchanged(&a, &b));
     }
-}
-
-/// The names a frame's record owns (`self`, `?CLASS`, `?ROLE`): no env key
-/// stores them (ADR-14843).
-fn is_fixed_frame_name(name: &str) -> bool {
-    matches!(name, "self" | "?CLASS" | "?ROLE")
 }

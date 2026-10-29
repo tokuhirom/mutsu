@@ -808,7 +808,7 @@ impl Interpreter {
                 def_file,
             );
         }
-        self.attach_closure_fixtures(&data);
+        self.attach_closure_fixtures(data);
         if !cc.is_routine {
             crate::runtime::return_target::record_block_return_target(
                 self.env_mut(),

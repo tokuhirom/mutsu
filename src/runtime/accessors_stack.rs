@@ -633,10 +633,8 @@ impl Interpreter {
         }
     }
 
-
-    /// Open a scope whose `self` is `invocant` (see
-    /// [`Self::with_scoped_invocant`]) for a caller that cannot wrap its
-    /// region in a closure; [`Self::end_scoped_fixtures`] closes it.
+    /// Open a scope whose `self` is `invocant`, keeping the innermost record's
+    /// `?CLASS` and `?ROLE`; [`Self::end_scoped_fixtures`] closes it.
     // Cost: O(1) amortized.
     pub(crate) fn begin_scoped_invocant(&mut self, invocant: Value) -> usize {
         let mark = self.routine_stack.fixtures_len();
@@ -684,16 +682,14 @@ impl Interpreter {
         self.routine_stack.truncate_fixtures(mark);
     }
 
-
     /// Replace the invocant of the innermost record, which a
-    /// [`Self::with_scoped_invocant`] body owns.
+    /// [`Self::begin_scoped_invocant`] scope owns.
     // Cost: O(1).
     pub(crate) fn set_scoped_invocant(&mut self, invocant: Value) {
         if let Some(f) = self.routine_stack.top_fixtures_mut() {
             f.invocant = Some(invocant);
         }
     }
-
 
     /// The invocant of the running method frame's own record, by reference.
     // Cost: O(1).
@@ -1733,6 +1729,13 @@ impl Drop for CurrentPackageGuard {
     }
 }
 
+/// What [`Interpreter::enter_gather_scope`] changed, for
+/// [`Interpreter::leave_gather_scope`] to put back.
+pub(crate) struct GatherScope {
+    package: Option<String>,
+    fixtures_mark: Option<usize>,
+}
+
 #[cfg(test)]
 mod call_site_file_tests {
     use super::*;
@@ -1802,11 +1805,4 @@ mod call_site_file_tests {
             interp.current_source_file_sym()
         );
     }
-}
-
-/// What [`Interpreter::enter_gather_scope`] changed, for
-/// [`Interpreter::leave_gather_scope`] to put back.
-pub(crate) struct GatherScope {
-    package: Option<String>,
-    fixtures_mark: Option<usize>,
 }
