@@ -170,6 +170,16 @@ impl Interpreter {
                 Value::hash(crate::value::HashData::default())
             }
         });
+        // An intermediate element that is a shared `ContainerRef` cell (a
+        // binding cell left by `%h{$k} = ...` over a captured hash) is written
+        // THROUGH: the deeper store reaches the cell's content and the cell
+        // stays where it is. Storing the cell back under its own key placed it
+        // inside itself, a cyclic chain every later read recursed through until
+        // the stack overflowed (LLM::Graph's `with %!nodes{$n}<test-function>`).
+        if matches!(child.view(), ValueView::ContainerRef(_)) {
+            Self::assign_element_source_path(&mut child, &path[1..], value);
+            return;
+        }
         Self::assign_element_source_path(&mut child, &path[1..], value);
         let _ = Self::assign_into_nested_container(target, &key, child);
     }
