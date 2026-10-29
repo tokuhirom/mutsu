@@ -74,7 +74,30 @@ pub(super) fn convert_declaration(decl: &Stmt) -> Result<RakuAstNode, RuntimeErr
 /// already-expanded writeback value for the compiler; its identity marker
 /// preserves the compound operator and original left operand for this model.
 // Cost: O(e), e = size of the assignment value and method arguments.
-pub(super) fn convert_method_assign(
+pub(super) fn convert_method_assign_stmt(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+    let Stmt::TempMethodAssign {
+        var_name,
+        method_name,
+        method_args,
+        value,
+        is_attribute,
+        type_invocant,
+    } = stmt
+    else {
+        return Err(super::convert::unsupported("temp method assignment"));
+    };
+    convert_method_assign(
+        var_name,
+        method_name,
+        method_args,
+        value,
+        *is_attribute,
+        *type_invocant,
+    )
+}
+
+// Cost: O(e), e = size of the assignment value and method arguments.
+fn convert_method_assign(
     var_name: &str,
     method_name: &str,
     method_args: &[Expr],

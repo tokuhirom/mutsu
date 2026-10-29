@@ -455,22 +455,8 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         // `proceed` / `succeed` without arguments are bare calls as well.
         Stmt::Proceed => Ok(Some(statement_expression(control_call("proceed", &[])?))),
         Stmt::Succeed => Ok(Some(statement_expression(control_call("succeed", &[])?))),
-        Stmt::TempMethodAssign {
-            var_name,
-            method_name,
-            method_args,
-            value,
-            is_attribute,
-            type_invocant,
-        } => Ok(Some(statement_expression(
-            super::temporize::convert_method_assign(
-                var_name,
-                method_name,
-                method_args,
-                value,
-                *is_attribute,
-                *type_invocant,
-            )?,
+        Stmt::TempMethodAssign { .. } => Ok(Some(statement_expression(
+            super::temporize::convert_method_assign_stmt(stmt)?,
         ))),
         Stmt::VarDecl { .. } => var_decl_statement(var_decl_parts(stmt)?, false),
         Stmt::DocPhaser(inner) => Ok(Some(super::doc_phaser::convert(inner)?)),
