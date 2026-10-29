@@ -6843,9 +6843,12 @@ impl Interpreter {
                 // A child module's `unit package Parent;` runs after `Parent`
                 // declared itself a class (`unit class Parent; use Parent::Child;`):
                 // the package statement re-opens the namespace, it does not
-                // demote the class to a bare package.
+                // demote the class to a bare package. The class is already
+                // declared while its own body registers (attribute traits run
+                // before it reaches `classes`), so `user_declared_classes` counts.
                 if !(*kind == crate::ast::PackageKind::Package
-                    && self.registry().classes.contains_key(&name))
+                    && (self.registry().classes.contains_key(&name)
+                        || self.types.user_declared_classes.contains(&name)))
                 {
                     self.registry_mut().package_kinds.insert(name, *kind);
                 }
