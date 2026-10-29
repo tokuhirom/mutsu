@@ -1060,7 +1060,8 @@ impl Value {
                 if matches!(
                     inner.view(),
                     ValueView::Array(_, kind) if kind.is_itemized()
-                ) || (matches!(inner.view(), ValueView::Hash(_)) && inner.hash_is_itemized()) =>
+                ) || (matches!(inner.view(), ValueView::Hash(_))
+                    && inner.hash_is_itemized()) =>
             {
                 let bare = inner.as_ref().clone().deitemize_for_sigil_bind();
                 Value::Mixin(Arc::new(bare), overrides.clone())
