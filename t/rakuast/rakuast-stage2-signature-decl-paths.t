@@ -23,7 +23,6 @@ my @inside =
     'modifier for',    'my @l; for 1..2 { my ($x, $y) = $_, $_ * 2; @l.push: $x ~ $y }; @l.join(",")', '12,24',
     'in if head',      'my $r; if (my ($a, $b) = 3, 4) { $r = $a * $b }; $r',               '12',
     'in while',        'my $n = 0; my @r; while ($n < 2) { my ($i, $j) = $n, $n + 1; @r.push: $i ~ $j; $n++ }; @r.join(",")', '01,12';
-# TODO: `my ($a, ($b, $c)) = 1, (2, 3)` binds the nested group wrongly (#15452).
 
 # Declared in the calling scope: the snippet only names them.
 my @outside =
