@@ -17,8 +17,6 @@ stores them any more (#14843, ADR-14843):
 - A by-name store of `self` (a mutating call on `self`, `self{$k} = v`, `temp self.attr`) reaches the
   record's invocant (`store_invocant_by_name`); `self{...}` subscripts compile against the invocant
   expression, never a variable called `self`.
-- `make check-frame-fixtures` keeps the references to the three names in the runtime layers from
-  growing (`scripts/frame-fixtures-baseline.txt`).
 
 The one remaining `self` env key is a plain routine's own `sub f($self)` parameter, a user lexical
 that shares the spelling (ADR-0061).
