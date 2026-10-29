@@ -137,8 +137,13 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => String::new(),
         };
-        let does_x_control =
-            cn == "X::Control" || self.class_mro(&cn).iter().any(|p| p == "X::Control");
+        // A user subclass of `CX::Warn` is a control exception too (it is
+        // delivered to `CONTROL { when TheClass {...} }` as itself).
+        let does_x_control = cn == "X::Control"
+            || self
+                .class_mro(&cn)
+                .iter()
+                .any(|p| p == "X::Control" || p == "CX::Warn");
         let target = self.stamp_thrown_exception_dynamics(&target);
         let defer_message = self.has_user_method(&cn, "message");
         let msg = if defer_message {
@@ -165,14 +170,45 @@ impl Interpreter {
         // A control exception of a user-declared class runs the active CONTROL
         // handlers at the throw site, so a handler's `.resume` continues after
         // the `.throw` (the built-in `CX::*` signals unwind as before).
+        let warn_subclass = cn != "CX::Warn" && self.class_mro(&cn).iter().any(|p| p == "CX::Warn");
         if does_x_control
             && method == "throw"
             && !self.control.control_handlers.is_empty()
             && self.registry().classes.contains_key(&cn)
         {
-            return self.try_control_inline_signal(err);
+            let outcome = self.try_control_inline_signal(err);
+            // Every handler declined a thrown `CX::Warn` subclass: the default
+            // handler prints it and the throw returns, as for any warning.
+            return match outcome {
+                Err(e) if warn_subclass && e.catch_inline_verdict().is_none() => {
+                    let text = match e.exception.as_deref() {
+                        Some(ex) => self.exception_message_or_died_with(ex),
+                        None => e.message.to_string(),
+                    };
+                    self.default_warn_handler(&text);
+                    Ok(Value::NIL)
+                }
+                other => other,
+            };
+        }
+        if warn_subclass && method == "throw" {
+            let text = match err.exception.as_deref() {
+                Some(ex) => self.exception_message_or_died_with(ex),
+                None => err.message.to_string(),
+            };
+            self.default_warn_handler(&text);
+            return Ok(Value::NIL);
         }
         Err(err)
+    }
+
+    /// The default handler of a warning: write it to stderr (unless the
+    /// region is quiet) and let the raise expression continue.
+    // Cost: O(m), m = chars of the message.
+    fn default_warn_handler(&mut self, message: &str) {
+        if !self.warning_suppressed() {
+            self.write_warn_to_stderr(message);
+        }
     }
 
     /// `Failure.rethrow`, `die` and `fail`: Rakudo's `Failure` answers each
