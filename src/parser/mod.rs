@@ -18,7 +18,6 @@ pub(crate) use stmt::simple::{PREC_SEQUENCE, lookup_custom_infix_precedence};
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
 pub(crate) use primary::ident::slipped_control_stmt;
-pub(crate) use primary::ident::supply_method_call;
 pub(crate) use primary::ident::{
     TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers,
 };
@@ -171,7 +170,7 @@ impl Drop for NestingGuard {
 }
 
 /// Prefix of the emitter parameter `supply { … }` lowers to (see
-/// `primary::ident::supply::supply_method_call`). It is what identifies a
+/// `rakuast::supply_lower::supply_method_call`). It is what identifies a
 /// supply-block body after parsing — both for the out-of-scope `whenever` check
 /// and for `CompiledCode::is_supply_block_body`.
 pub(crate) const SUPPLY_EMITTER_PREFIX: &str = "__mutsu_supply_emitter_";

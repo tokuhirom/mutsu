@@ -7775,7 +7775,7 @@ pub(crate) struct CompiledCode {
     pub(crate) may_observe_named_slurpy: bool,
     /// True if this code is the body of a `supply { … }` block — the lambda
     /// `Supply.on-demand` is handed, recognised by its generated emitter
-    /// parameter (`__mutsu_supply_emitter_N`, see `supply_method_call`).
+    /// parameter (`__mutsu_supply_emitter_N`, see `rakuast::supply_lower`).
     ///
     /// Such a body is a scope of its own that the caller never re-enters, so the
     /// names it declares with `my` are private to it: they must not be written

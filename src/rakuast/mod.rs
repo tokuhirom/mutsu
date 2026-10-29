@@ -52,6 +52,7 @@ mod core_term_names;
 use crate::core_type_names;
 mod decl_compound_assign;
 mod decl_modifier_split;
+mod supply_lower;
 mod will_decl;
 pub(crate) use decl_compound_assign::ZIP_ASSIGN;
 mod decl_tail;
