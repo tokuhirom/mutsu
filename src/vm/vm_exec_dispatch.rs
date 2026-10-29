@@ -1620,7 +1620,26 @@ impl Interpreter {
                 }
                 // Interned once: the typed-lexical probes below run several
                 // times per store and each `&str` probe re-hashed the name.
-                let name_sym = crate::symbol::Symbol::intern(&name);
+                let name_sym = if name == name_str {
+                    code.const_sym(*name_idx)
+                } else {
+                    crate::symbol::Symbol::intern(&name)
+                };
+                // An `@!x` / `%!x` store has no local slot; the chunk caches
+                // where the attribute lives per `SetGlobal` operand. Only the
+                // spelling the operand names is cached. A plain `=` resolves
+                // the attribute's cell and declared type once for the helpers
+                // below.
+                let attr_site = if Self::is_array_hash_attr_twigil(&name) && name == name_str {
+                    let site = code.global_attr_site(*name_idx);
+                    Some(if is_bind_ctx || is_rebind || raw_mode {
+                        GlobalAttrSite::bare(code, site)
+                    } else {
+                        self.prefetch_global_attr_site(code, site, &name, name_sym)
+                    })
+                } else {
+                    None
+                };
                 // A rebind of a captured lexical that the declaring frame gave a
                 // binding cell (#9307): note the cell before the store replaces
                 // the env entry, so the new binding can be seated inside it.
@@ -1643,7 +1662,9 @@ impl Interpreter {
                         && !is_bind_ctx
                         && !is_rebind
                         && (name.starts_with('%') || name.starts_with('@'))))
-                    && self.maybe_tied_store_reassign_named(&name)?.is_some()
+                    && self
+                        .maybe_tied_store_reassign_named(&name, attr_site.as_ref())?
+                        .is_some()
                 {
                     self.stack.pop();
                     *ip += 1;
@@ -1964,7 +1985,7 @@ impl Interpreter {
                     // Apply quant-hash (SetHash/BagHash/MixHash) coercion first
                     // so that typed container assignment sees a Set/Bag/Mix,
                     // not a Hash with element-level type errors.
-                    self.coerce_hash_var_value(None, &name, raw_val)?
+                    self.coerce_hash_var_value(None, &name, raw_val, attr_site.as_ref())?
                 } else if name.starts_with('@') {
                     if is_bind_ctx || is_rebind {
                         // `:=` bind (e.g. `@!attr := @x.List`, `our @a := ...`)
@@ -2056,7 +2077,16 @@ impl Interpreter {
                     self.bind_container_by_name(&name, &val)?;
                 } else if name.starts_with('%')
                     && (loan_env!(self, var_type_constraint_sym(name_sym)).is_some()
-                        || loan_env!(self, var_hash_key_constraint(&name)).is_some())
+                        || match &attr_site {
+                            // The attribute's declared type was read once above.
+                            Some(at) if at.has_prefetched_type() => self
+                                .var_hash_key_constraint_with_attr(
+                                    name_sym,
+                                    at.type_constraint.as_deref(),
+                                )
+                                .is_some(),
+                            _ => loan_env!(self, var_hash_key_constraint(&name)).is_some(),
+                        })
                 {
                     val = if is_attr_twigil {
                         self.coerce_typed_container_assignment(None, &name, val, false)?
@@ -2111,8 +2141,20 @@ impl Interpreter {
                 // An attribute twigil (`@!c = ...` as a statement lands on
                 // SetGlobal): the element type lives in the class registry,
                 // which none of the name-keyed lookups above can see.
-                val =
-                    self.apply_attr_container_element_type(&name, val, is_bind_ctx || is_rebind)?;
+                val = match &attr_site {
+                    Some(at) if at.has_prefetched_type() => self
+                        .apply_attr_container_element_type_with(
+                            &name,
+                            val,
+                            is_bind_ctx || is_rebind,
+                            at.type_constraint.clone(),
+                        )?,
+                    _ => self.apply_attr_container_element_type(
+                        &name,
+                        val,
+                        is_bind_ctx || is_rebind,
+                    )?,
+                };
                 if let Some(kind) = decl_readonly_kind {
                     self.mark_readonly_sym_with(name_sym, kind);
                     val = Self::readonly_value_binding(val, kind);
@@ -2139,14 +2181,24 @@ impl Interpreter {
                 if is_array_hash_attr_twigil
                     && (seats_bound_proxy || !Self::is_non_mirrorable_attr_value(&val))
                 {
-                    self.write_self_attr_cell(&name, val.clone());
+                    match &attr_site {
+                        Some(at) => {
+                            self.write_self_attr_cell_at(at.code, at.site, &name, val.clone())
+                        }
+                        None => self.write_self_attr_cell(&name, val.clone()),
+                    }
                     // Attribute assignments have no lexical/global store to
                     // reconcile.  Finish them here so a stale by-name mirror
                     // left by a nested accessor call cannot be routed through
                     // a topic-owned ContainerRef by any later generic store
                     // path.
                     if !is_bind_ctx && !is_rebind && bind_source.is_none() {
-                        self.env_mut().insert_sym_noting(name_sym, val);
+                        // The cell is the store of record: a frame that holds
+                        // no by-name mirror of the attribute does not grow one
+                        // (its merge back into the caller would only drop it).
+                        if self.env().get_sym(name_sym).is_some() {
+                            self.env_mut().insert_sym_noting(name_sym, val);
+                        }
                         *ip += 1;
                         return Ok(());
                     }

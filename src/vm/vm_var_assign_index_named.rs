@@ -3406,7 +3406,7 @@ impl Interpreter {
         let val = if env_key.starts_with('@') {
             runtime::coerce_to_array(val)
         } else if env_key.starts_with('%') {
-            self.coerce_hash_var_value(None, &env_key, val)?
+            self.coerce_hash_var_value(None, &env_key, val, None)?
         } else {
             let stored =
                 Self::itemize_scalar_store(&env_key, Self::normalize_scalar_assignment_value(val));
@@ -3527,7 +3527,7 @@ impl Interpreter {
             let mut val = if resolved_name.starts_with('@') {
                 runtime::coerce_to_array(val)
             } else if resolved_name.starts_with('%') {
-                self.coerce_hash_var_value(None, &resolved_name, val)?
+                self.coerce_hash_var_value(None, &resolved_name, val, None)?
             } else {
                 Self::itemize_scalar_store(
                     &resolved_name,
