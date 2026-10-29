@@ -120,8 +120,8 @@ pub(crate) const CLASS_LEXICAL_METHOD_PREFIX: &str = "__mutsu_class_lexical_meth
 ///
 /// Only the *lexical* takes this key. `"self"` still means the invocant
 /// everywhere, and a routine whose own signature declares a `$self` parameter
-/// (`method m($self: $n)`, `sub ($self)`, `-> $self, $x`) resolves `$self` back
-/// to that parameter — see `Compiler::self_is_signature_param`.
+/// (`method m($self: $n)`, `sub ($self)`, `-> $self, $x`) binds that parameter
+/// under this key — see `ParamDef::storage_name`.
 pub(crate) const LEX_SELF: &str = "$self";
 
 /// Internal assignment target emitted for `self = ...` inside a method.
