@@ -429,9 +429,10 @@ pub use stmt::simple::{
 };
 
 pub(crate) use expr::precedence::{
-    assign_to_target_expr, single_target_list_lvalue_expr, unwrap_grouped_lvalue,
+    assign_to_target_expr, assignment_ro_expr, single_target_list_lvalue_expr,
 };
-pub(crate) use stmt::assign::named_sub_lvalue_assign_expr;
+pub(crate) use expr::wrap_finished_expr;
+pub(crate) use stmt::simple_expr_stmt::lvalue::method_lvalue_target_name;
 
 /// `expr`, with an assignment a `.AST` parse kept in its RakuAST shape
 /// lowered to the executable shape the parser builds otherwise. For a parser

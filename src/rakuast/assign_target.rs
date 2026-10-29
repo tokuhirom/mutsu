@@ -1,4 +1,16 @@
-use super::*;
+//! The one lowering of an assignment target to the expression the compiler runs
+//! (ADR-15334 slice 1): the rw-accessor writeback for a method-call target, the
+//! named-routine and callable writebacks, and the general target dispatch
+//! [`assign_to_target_expr`] that [`super::assign_lower`] falls back to.
+//!
+//! The parser used to build these calls (`__mutsu_assign_*_lvalue`) itself at
+//! every site that read an `=`; it now asks this module, so the spelling the
+//! compiler dispatches on exists in one place.
+
+use crate::ast::{Expr, Stmt};
+use crate::parser::{assignment_ro_expr, method_lvalue_target_name, wrap_finished_expr};
+use crate::symbol::Symbol;
+use crate::value::Value;
 
 pub(crate) fn method_lvalue_assign_expr(
     target: Expr,
@@ -47,14 +59,14 @@ fn method_lvalue_assign_expr_with_intent(
     // the accessor call. Preserve that language-level value here so
     // `$obj.rw-accessor = * + 1` stores a WhateverCode rather than evaluating
     // `Whatever + 1` immediately.
-    let value = force_positional_pairs(crate::parser::expr::wrap_finished_expr(value));
+    let value = force_positional_pairs(wrap_finished_expr(value));
     // `$(EXPR) = value` lowers `$(EXPR)` to `EXPR.item`, but the item
     // contextualizer is transparent as an lvalue: it names the same container as
     // `EXPR`. Assign straight through to `EXPR` (`$(@a[0]) = ...` writes `@a[0]`)
     // instead of dispatching a `.item` method-lvalue, which has no writable slot
     // and threw X::Assignment::RO.
     if method_name == "item" && method_args.is_empty() {
-        return crate::parser::expr::precedence::assign_to_target_expr(target, value);
+        return assign_to_target_expr(target, value);
     }
     // A Slip RHS is the value assigned to the accessor, not an interpolation
     // into this generated helper call. Group it so the call compiler preserves
@@ -67,6 +79,27 @@ fn method_lvalue_assign_expr_with_intent(
         } => Expr::Grouped(Box::new(value)),
         other => other,
     };
+    method_lvalue_call(
+        target,
+        target_var_name,
+        method_name,
+        method_args,
+        value,
+        preserve_hash_entries,
+    )
+}
+
+/// The writeback call itself, for a caller that has already prepared `value`
+/// (`$x .= foo` over a set operator builds its combined value first).
+// Cost: O(n), n = size of the target, arguments and value.
+pub(crate) fn method_lvalue_call(
+    target: Expr,
+    target_var_name: Option<String>,
+    method_name: String,
+    method_args: Vec<Expr>,
+    value: Expr,
+    preserve_hash_entries: bool,
+) -> Expr {
     let mut args = vec![
         target,
         Expr::Literal(Value::str(method_name)),
@@ -85,6 +118,39 @@ fn method_lvalue_assign_expr_with_intent(
         args,
         listop: false,
     }
+}
+
+/// The pieces of a method-lvalue writeback call [`method_lvalue_call`] built,
+/// or `None` for any other expression. `temp $obj.method = value` saves and
+/// restores through the same accessor, so it reads the call back apart.
+// Cost: O(1).
+pub(crate) fn method_lvalue_call_parts(expr: &Expr) -> Option<MethodLvalueParts<'_>> {
+    let Expr::Call { name, args, .. } = expr else {
+        return None;
+    };
+    if name != "__mutsu_assign_method_lvalue" || args.len() < 4 {
+        return None;
+    }
+    let Expr::Literal(method_name) = &args[1] else {
+        return None;
+    };
+    let Expr::ArrayLiteral(method_args) = &args[2] else {
+        return None;
+    };
+    Some(MethodLvalueParts {
+        invocant: &args[0],
+        method_name: method_name.as_str()?,
+        method_args,
+        value: &args[3],
+    })
+}
+
+/// See [`method_lvalue_call_parts`].
+pub(crate) struct MethodLvalueParts<'a> {
+    pub(crate) invocant: &'a Expr,
+    pub(crate) method_name: &'a str,
+    pub(crate) method_args: &'a [Expr],
+    pub(crate) value: &'a Expr,
 }
 
 /// A method-lvalue writeback is an internal positional call, not a user call
@@ -279,5 +345,180 @@ pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Optio
         // so the generic index-assign path's `ContainerRef` write-through
         // reaches the same backing element without a special case.
         _ => None,
+    }
+}
+
+pub(crate) fn unwrap_grouped_lvalue(target: Expr) -> Expr {
+    match target {
+        Expr::Grouped(inner) => unwrap_grouped_lvalue(*inner),
+        // A source-preserving literal is an immutable lvalue exactly like the
+        // plain literal it wraps; the sink-warn source text is irrelevant here.
+        Expr::LiteralSrc(v, _) => Expr::Literal(v),
+        // `$(EXPR) = v` decides on the `.item` call the contextualizer is.
+        contextualizer @ Expr::Contextualizer { .. } => contextualizer.contextualizer_call(),
+        other => other,
+    }
+}
+
+pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
+    match unwrap_grouped_lvalue(target) {
+        Expr::Var(name) => Expr::AssignExpr {
+            name,
+            expr: Box::new(value),
+            is_bind: false,
+        },
+        Expr::ArrayVar(name) => Expr::AssignExpr {
+            name: format!("@{}", name),
+            expr: Box::new(value),
+            is_bind: false,
+        },
+        Expr::HashVar(name) => Expr::AssignExpr {
+            name: format!("%{}", name),
+            expr: Box::new(value),
+            is_bind: false,
+        },
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+            spelling,
+            ..
+        } => Expr::IndexAssign {
+            target,
+            index,
+            value: Box::new(value),
+            is_positional,
+            spelling,
+        },
+        Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } => Expr::MultiDimIndexAssign {
+            target,
+            dimensions,
+            value: Box::new(value),
+            is_positional,
+        },
+        // A method-call lvalue (`$o.a = v` — an rw accessor, or `$o.AT-POS(i) = v`).
+        // Mirrors the statement-level `lvalue_assign_to_expr` so a chained assignment
+        // whose middle term is a method call (`my $c = $o.a = 42`, `say($o.a = 42)`)
+        // lowers to the `__mutsu_assign_method_lvalue` writeback instead of being
+        // left unconsumed (which surfaced as a `Confused` parse error).
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier,
+            ..
+        } => {
+            // Match the expression-context lowering in `paren.rs` (NOT the
+            // statement-level `lvalue_assign_to_expr`, which drops a
+            // `BareWord` target to `None`): a sigilless raw binding (`\h`)
+            // reaches here as a `BareWord`, and the writeback needs its name
+            // so `h.AT-KEY(k) = v` mutates the bound container in place.
+            // The write-back name is a property of what the parentheses
+            // hold: `(my $x = $s).substr-rw(...) = $c` writes back through
+            // `$x`.
+            let target_var_name = method_lvalue_target_name(&target);
+            let method_name = if let Some(m @ ('!' | '^')) = modifier {
+                format!("{m}{}", name.resolve())
+            } else {
+                name.resolve()
+            };
+            method_lvalue_assign_expr(*target, target_var_name, method_name, args, value)
+        }
+        // An indirect method-call lvalue (`$o."$name"() = v`) in expression
+        // position, e.g. the middle term of a chained assignment. Mirror the
+        // `MethodCall` arm but with a runtime-computed name (see
+        // `dynamic_method_lvalue_assign_expr`).
+        Expr::DynamicMethodCall {
+            target,
+            name_expr,
+            args,
+            modifier,
+            ..
+        } => {
+            let target_var_name = method_lvalue_target_name(&target);
+            dynamic_method_lvalue_assign_expr(
+                *target,
+                target_var_name,
+                *name_expr,
+                modifier,
+                args,
+                value,
+            )
+        }
+        Expr::Call { name, args, .. } => named_sub_lvalue_assign_expr(name.resolve(), args, value),
+        Expr::CallOn { target, args } => Expr::Call {
+            name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+            args: vec![*target, Expr::ArrayLiteral(args), value],
+            listop: false,
+        },
+        // A compound assignment is transparent to the execution AST marker.
+        // When its result is itself used as an lvalue (for example the RHS of
+        // a reverse meta compound assignment), apply the writeback to the
+        // established expansion so short-circuiting still preserves the
+        // original assignment semantics.
+        Expr::CompoundAssign { expanded, .. } => assign_to_target_expr(*expanded, value),
+        // `(cond ?? $a !! $b) = rhs`: the ternary selects an lvalue branch; the
+        // assignment writes through to whichever branch is taken. Desugar to
+        // `cond ?? ($a = rhs) !! ($b = rhs)`. A non-lvalue branch recurses to the
+        // RO-error `other` arm, which raises only when that branch is selected.
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => Expr::Ternary {
+            cond,
+            then_expr: Box::new(assign_to_target_expr(*then_expr, value.clone())),
+            else_expr: Box::new(assign_to_target_expr(*else_expr, value)),
+        },
+        Expr::SymbolicDeref { sigil, expr } => Expr::SymbolicDerefAssign {
+            sigil,
+            expr,
+            value: Box::new(value),
+        },
+        Expr::IndirectTypeLookup(inner) => Expr::IndirectTypeLookupAssign {
+            expr: inner,
+            value: Box::new(value),
+        },
+        Expr::DoStmt(stmt) => {
+            if let Stmt::VarDecl {
+                name,
+                type_constraint,
+                is_state,
+                is_our,
+                is_dynamic,
+                is_export,
+                export_tags,
+                custom_traits,
+                marks,
+                where_constraint,
+                ..
+            } = *stmt
+            {
+                Expr::DoStmt(Box::new(Stmt::VarDecl {
+                    marks,
+                    anonymous: false,
+                    name,
+                    expr: value,
+                    type_constraint,
+                    is_state,
+                    is_our,
+                    is_dynamic,
+                    is_export,
+                    export_tags,
+                    custom_traits,
+                    has_initializer: false,
+                    constant: None,
+                    bind: None,
+                    where_constraint,
+                }))
+            } else {
+                assignment_ro_expr(Expr::DoStmt(stmt), value)
+            }
+        }
+        other => assignment_ro_expr(other, value),
     }
 }

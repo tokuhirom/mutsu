@@ -162,7 +162,6 @@ mod bracket;
 mod comma;
 mod compound_expr;
 mod compound_lower;
-mod lvalue;
 mod op;
 mod paren;
 mod set_compound;
@@ -184,16 +183,15 @@ pub(crate) use compound_lower::{
 };
 pub(in crate::parser) use try_assign::{paren_assign_rhs_is_complete, try_parse_assign_expr};
 
+pub(crate) use crate::rakuast::{
+    callable_lvalue_assign_expr, method_lvalue_assign_expr, method_lvalue_roundtrip_assign_expr,
+    subscript_adverb_lvalue_assign_expr,
+};
 pub(crate) use bracket::parse_bracket_meta_assign_op;
 pub(crate) use compound_expr::{
     DOTTY_ASSIGN_OP, build_compound_assign_expr, build_custom_compound_assign_expr,
     build_meta_assign_expr, compound_assign_marker, dotty_assign_marker, is_dotty_assign,
     preserve_compound_assign, reverse_assign_marker, zip_assign_call,
-};
-pub(crate) use lvalue::{
-    callable_lvalue_assign_expr, dynamic_method_lvalue_assign_expr, method_lvalue_assign_expr,
-    method_lvalue_roundtrip_assign_expr, named_sub_lvalue_assign_expr,
-    subscript_adverb_lvalue_assign_expr,
 };
 pub(crate) use op::{ShortCircuitKeep, short_circuit_keep, short_circuit_test};
 pub(crate) use op::{
