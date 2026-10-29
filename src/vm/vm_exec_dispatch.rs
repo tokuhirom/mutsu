@@ -1621,6 +1621,11 @@ impl Interpreter {
                 // Interned once: the typed-lexical probes below run several
                 // times per store and each `&str` probe re-hashed the name.
                 let name_sym = crate::symbol::Symbol::intern(&name);
+                // An `@!x` / `%!x` store has no local slot; the chunk caches
+                // where the attribute lives per `SetGlobal` operand. Only the
+                // spelling the operand names is cached.
+                let attr_site = (Self::is_array_hash_attr_twigil(&name) && name == name_str)
+                    .then(|| (code, code.global_attr_site(*name_idx)));
                 // A rebind of a captured lexical that the declaring frame gave a
                 // binding cell (#9307): note the cell before the store replaces
                 // the env entry, so the new binding can be seated inside it.
@@ -1643,7 +1648,7 @@ impl Interpreter {
                         && !is_bind_ctx
                         && !is_rebind
                         && (name.starts_with('%') || name.starts_with('@'))))
-                    && self.maybe_tied_store_reassign_named(&name)?.is_some()
+                    && self.maybe_tied_store_reassign_named(&name, attr_site)?.is_some()
                 {
                     self.stack.pop();
                     *ip += 1;
@@ -1964,7 +1969,7 @@ impl Interpreter {
                     // Apply quant-hash (SetHash/BagHash/MixHash) coercion first
                     // so that typed container assignment sees a Set/Bag/Mix,
                     // not a Hash with element-level type errors.
-                    self.coerce_hash_var_value(None, &name, raw_val)?
+                    self.coerce_hash_var_value(None, &name, raw_val, attr_site)?
                 } else if name.starts_with('@') {
                     if is_bind_ctx || is_rebind {
                         // `:=` bind (e.g. `@!attr := @x.List`, `our @a := ...`)
@@ -2139,7 +2144,12 @@ impl Interpreter {
                 if is_array_hash_attr_twigil
                     && (seats_bound_proxy || !Self::is_non_mirrorable_attr_value(&val))
                 {
-                    self.write_self_attr_cell(&name, val.clone());
+                    match attr_site {
+                        Some((code, site)) => {
+                            self.write_self_attr_cell_at(code, site, &name, val.clone())
+                        }
+                        None => self.write_self_attr_cell(&name, val.clone()),
+                    }
                     // Attribute assignments have no lexical/global store to
                     // reconcile.  Finish them here so a stale by-name mirror
                     // left by a nested accessor call cannot be routed through

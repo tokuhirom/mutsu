@@ -136,7 +136,7 @@ impl Interpreter {
         }
         let mut val = if name.starts_with('%') {
             let decl = self.local_store_decl(code, idx);
-            self.coerce_hash_var_value(decl, name, raw_val)?
+            self.coerce_hash_var_value(decl, name, raw_val, None)?
         } else if name.starts_with('@') {
             let mut assigned = if let ValueView::LazyList(list) = raw_val.view() {
                 // Mirror the SetLocal `@`-assign arm: an unreifiable lazy list
@@ -944,6 +944,7 @@ impl Interpreter {
     pub(super) fn maybe_tied_store_reassign_named(
         &mut self,
         name: &str,
+        attr_site: Option<(&CompiledCode, usize)>,
     ) -> Result<Option<()>, RuntimeError> {
         let checked_sigilless = self.pending_sigilless_store.as_deref() == Some(name);
         if !(name.starts_with('%') || name.starts_with('@') || self.take_pending_sigilless(name)) {
@@ -955,9 +956,11 @@ impl Interpreter {
         // below could find, so they (two by-name env walks) are skipped.
         if !checked_sigilless
             && Self::is_array_hash_attr_twigil(name)
-            && self
-                .read_self_attr_cell(name)
-                .is_some_and(|v| Self::is_plain_aggregate(&v))
+            && match attr_site {
+                Some((code, site)) => self.read_self_attr_cell_at(code, site, name),
+                None => self.read_self_attr_cell(name),
+            }
+            .is_some_and(|v| Self::is_plain_aggregate(&v))
         {
             return Ok(None);
         }

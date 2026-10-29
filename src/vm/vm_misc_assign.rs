@@ -328,7 +328,7 @@ impl Interpreter {
         // captured lexical reached through this env-named path rather than a
         // local slot) must route through the class's STORE, exactly like the
         // local-slot `maybe_tied_store_reassign` does.
-        if self.maybe_tied_store_reassign_named(&name)?.is_some() {
+        if self.maybe_tied_store_reassign_named(&name, None)?.is_some() {
             return Ok(());
         }
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);

@@ -49,7 +49,7 @@ impl Interpreter {
         if !self.set_local_scalar_metadata_lanes_clear(code, idx, desc) {
             return false;
         }
-        let Some((layout_id, slot)) = code.attr_sites.cached(code.locals.len(), idx) else {
+        let Some((layout_id, slot)) = code.attr_sites.cached(code.attr_site_words(), idx) else {
             return false;
         };
         if self.method_class_top_is_role() {
