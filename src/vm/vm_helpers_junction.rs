@@ -337,7 +337,12 @@ impl Interpreter {
         // generator that reads past the elements it has so far (`{ @h[5] }`
         // for `my @h = 0, {...} ... *`) finds the list as short as it is and
         // does not start a second, empty-history generation.
-        let Some(mut history) = list.generation_state.lock().unwrap().take() else {
+        let Some(mut history) = list
+            .generation_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        else {
             return Ok(());
         };
         // `cache` and the history end at the same generator frontier, but
@@ -368,15 +373,24 @@ impl Interpreter {
         let (own_len, cached_len) = (
             list.generation_state
                 .lock()
-                .unwrap()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .as_ref()
                 .map_or(0, Vec::len),
-            list.cache.lock().unwrap().as_ref().map_or(0, Vec::len),
+            list.cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .as_ref()
+                .map_or(0, Vec::len),
         );
         // The history runs ahead of the cache by what a front mutation removed.
         let target = needed + own_len.saturating_sub(cached_len);
         self.fill_closure_sequence(origin, target)?;
-        let fresh: Vec<Value> = match origin.generation_state.lock().unwrap().as_ref() {
+        let fresh: Vec<Value> = match origin
+            .generation_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
             Some(history) if history.len() > own_len => {
                 history[own_len..history.len().min(target)].to_vec()
             }
@@ -387,12 +401,12 @@ impl Interpreter {
         }
         list.generation_state
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get_or_insert_with(Vec::new)
             .extend_from_slice(&fresh);
         list.cache
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get_or_insert_with(Vec::new)
             .extend_from_slice(&fresh);
         Ok(())
@@ -414,7 +428,10 @@ impl Interpreter {
         // list (`my @h = 0, { @h[0] + 1 } ... *`) asks the list's laziness,
         // which locks the state, so the lock cannot be held across the call.
         let state_mutex = list.closure_seq.as_ref().unwrap();
-        let mut state = state_mutex.lock().unwrap().clone();
+        let mut state = state_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
         let result = self.run_closure_sequence(
             &mut state,
             &list.cache,
@@ -423,7 +440,10 @@ impl Interpreter {
             generated_from,
             cached_len,
         );
-        state_mutex.lock().unwrap().finished = state.finished;
+        state_mutex
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .finished = state.finished;
         result
     }
 
@@ -593,7 +613,9 @@ fn publish_generated(
     if *published >= history.len() {
         return;
     }
-    let mut cache = cache.lock().unwrap();
+    let mut cache = cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     match cache.as_mut() {
         Some(cached) => cached.extend_from_slice(&history[*published..]),
         None => *cache = Some(history.to_vec()),
