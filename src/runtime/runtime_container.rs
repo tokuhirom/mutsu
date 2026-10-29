@@ -624,9 +624,10 @@ impl Interpreter {
                 ValueView::Hash(map) => elems.extend(map.values().cloned()),
                 _ => {}
             }
+            let mut memo = crate::runtime::elem_type_memo::ElemTypeMemo::default();
             for it in &elems {
                 if !it.is_nil()
-                    && !self.type_matches_value(elem_type, it)
+                    && !self.type_matches_value_memo(elem_type, it, &mut memo)
                     // The freshly re-seeded element type object is type-legal.
                     && !(matches!(it.view(), ValueView::Package(p) if p.resolve() == elem_type))
                 {
