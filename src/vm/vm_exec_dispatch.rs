@@ -4953,9 +4953,12 @@ impl Interpreter {
                     OpCode::SinkPop(user_sink, may_explode_failure) => {
                         (*user_sink, *may_explode_failure)
                     }
-                    OpCode::SinkPopCall(name_idx) => {
-                        (self.sunk_call_result_runs_sink(code, *name_idx), true)
-                    }
+                    OpCode::SinkPopCall(name_idx) => (
+                        self.sunk_call_result_runs_sink(code, *name_idx),
+                        // A block that hands back its last statement's container
+                        // sinks nothing inside it.
+                        !self.sunk_call_result_is_block_container(code, *name_idx),
+                    ),
                     _ => unreachable!(),
                 };
                 if let Some(val) = self.stack.pop() {
@@ -5102,11 +5105,12 @@ impl Interpreter {
                             // per-element time.
                             // Sinking an unsuccessful Proc (non-zero exitcode, or killed
                             // by a signal) throws X::Proc::Unsuccessful
-                            if let ValueView::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            } = val.view()
+                            if may_explode_failure
+                                && let ValueView::Instance {
+                                    class_name,
+                                    attributes,
+                                    ..
+                                } = val.view()
                                 && class_name.as_str() == "Proc"
                             {
                                 let exitcode =
