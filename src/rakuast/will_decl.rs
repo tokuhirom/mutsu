@@ -13,11 +13,7 @@ use crate::ast::{Expr, PhaserKind, Stmt};
 /// This ensures the correct type is available even before runtime
 /// initialization (e.g. `@a` has type `Array`, not `Nil`, at BEGIN time).
 // Cost: O(n), n = size of the declaration and the phaser bodies.
-pub(super) fn wrap(
-    stmt: Stmt,
-    var_name: &str,
-    will_phasers: Vec<(PhaserKind, Vec<Stmt>)>,
-) -> Stmt {
+pub(super) fn wrap(stmt: Stmt, var_name: &str, will_phasers: Vec<(PhaserKind, Vec<Stmt>)>) -> Stmt {
     // Extract the initialization expression from the VarDecl (if any) so
     // compile-time phasers (BEGIN/CHECK/INIT) can bind $_ to the container.
     let init_expr = if let Stmt::VarDecl { expr, .. } = &stmt {
@@ -56,4 +52,3 @@ pub(super) fn wrap(
     }
     Stmt::SyntheticBlock(stmts)
 }
-
