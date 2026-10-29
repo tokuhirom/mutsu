@@ -392,3 +392,39 @@ was read against the tree before any code was written.
 `v6` pseudo-module recorded as the same kind of item as Amendment 2 point 2 (a compiler-side decision with its
 own issue). The family's `convert` functions are renamed to the view's names by slice 9, as for every T1 arm.
 Slices 3–9 keep their numbers.
+
+## 10. Amendment 4 — the internal names are executable IR, not only reconstruction markers (2026-10-29)
+
+Slices 1 and 2 and a read of slices 3–9 against the tree show one pattern that §1.1 and §2.2 do not state.
+
+**The finding.** Many of the `__…` spellings and the `SyntheticBlock` wrappers are not a private channel
+between the parser and `convert`; they are the *executable* form the compiler and the runtime consume by name.
+Examples: `ParamDef.name` placeholders `__subsig__` / `__literal__` (14 compiler, runtime and `value` sites),
+the `"v6"` pseudo-module of `use v6.X` (7 sites), the `__mutsu_assign_*_lvalue` calls (19 compiler sites),
+`Stmt::SyntheticBlock` itself (263 references in 90 files). Deleting such a spelling means changing what the
+compiler consumes, which §2.1 ("What this ADR does not change: the compiler, the VM") excludes. Where the
+spelling was only a reconstruction marker (the `convert` side), it is already gone or a refusal guard
+(`is_desugar_marker`, `is_parameter_trait_name`) that disappears with the last marker.
+
+Distribution of the `"__…` literals still in `src/parser` (measured on `main` 2026-10-29, before slice 1):
+`expr/postfix` 35 (subscript adverbs, hyper, atomic), `stmt/assign` 28, `stmt/sub_param` 16, `stmt/sub` 13,
+`stmt/decl` 12, everything else under 8 per directory. `SyntheticBlock` producers: `modifier_decl_split` 8,
+`has_decl` 7, `control` 7, `sink_warn` 5, `my_decl_assign` 4, `decl/mod` 4, the rest 3 or fewer.
+
+**What slice 1 did, and the rule it implies.** It kept the lowered spelling (the compiler is unchanged) and
+made the *parser* build a typed node, with the one lowering in `rakuast` the only place that names the
+spelling. That removes the parser's duplicate desugaring and `convert`'s recognizer without touching the
+compiler.
+
+**Decision requested.** State which of two readings Stage 2 means, because the answer sizes slices 3–9:
+
+- **(B) Parser-side typing only (what slices 0–1 implement).** A slice is complete when the parser builds
+  a typed node, the spelling exists in one `rakuast` lowering, and `convert` has no recognizer for it. The
+  compiler keeps consuming the spelled form; deleting that is a separate compiler ADR per family. Slice 9
+  removes `SyntheticBlock` by splicing the lowering's statements into the parent list.
+- **(A) Compiler-visible IR changes in Stage 2.** A slice also replaces the spelling by a typed `Expr` /
+  `Stmt` / `ParamDef` shape the compiler consumes. This is the larger reading; it needs the compiler and VM
+  change authorized in §2.1, an ADR per IR family, and a per-slice cache-version bump.
+
+Without a decision, sessions continue under (B), the smaller reading, which the merged slices 0–1 already
+satisfy and which (A) can build on.
