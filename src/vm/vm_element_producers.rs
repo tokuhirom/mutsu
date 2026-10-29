@@ -212,6 +212,16 @@ impl Interpreter {
             ValueView::Hash(..) if !matches!(method, "reverse" | "sort") => {
                 self.hash_element_producer(target, method)
             }
+            // A role mixed into a hash (`my %h does R`) keeps the hash's own
+            // storage: its elements are the same containers (bound ones stay
+            // bound). The caller has already ruled out a user override of the
+            // method.
+            ValueView::Mixin(inner, _)
+                if matches!(inner.view(), ValueView::Hash(..))
+                    && !matches!(method, "reverse" | "sort") =>
+            {
+                self.hash_element_producer(inner.as_ref(), method)
+            }
             _ => None,
         }
     }

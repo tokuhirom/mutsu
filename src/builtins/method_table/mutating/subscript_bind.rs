@@ -93,7 +93,7 @@ pub(super) fn hash_bind_key(
 /// its shared node. `source_var` is the caller's variable behind the value,
 /// when the call site named one; the cell to install for it is answered.
 // Cost: O(1) expected for the hash write, plus the key normalisation.
-pub(super) fn bind_key_in(
+pub(crate) fn bind_key_in(
     interp: &mut Interpreter,
     hash: &Value,
     args: &[Value],
