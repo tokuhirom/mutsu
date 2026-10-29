@@ -304,9 +304,10 @@ fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResul
     // `CommaDecls` so the RakuAST conversion can put them back.
     if let [Stmt::Ast(node)] = stmts.as_slice()
         && matches!(node.as_ref(), crate::ast::parsed::ParsedStmt::CommaDecls(_))
+        && let Some(head) = stmts.pop()
     {
         use crate::ast::parsed::ParsedStmt;
-        let mut declarations = ParsedStmt::comma_operands(stmts.pop().expect("one statement"));
+        let mut declarations = ParsedStmt::comma_operands(head);
         declarations.extend(sinks.into_iter().map(Stmt::Expr));
         return Ok((
             r_inner,
