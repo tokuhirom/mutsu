@@ -3134,9 +3134,9 @@ pub(super) fn lower_var_decl_kept(node: &RakuAstNode) -> Result<Stmt, RuntimeErr
             return Err(unsupported(node));
         };
         let name = name.clone();
-        let _ = name;
         return super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::WillDecl {
             decl: Box::new(declaration),
+            name,
             phasers,
         });
     }

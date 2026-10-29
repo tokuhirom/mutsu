@@ -151,7 +151,7 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
                 },
             )?)
         }
-        ParsedStmt::WillDecl { decl, phasers } => super::var_will::convert(decl, phasers)?,
+        ParsedStmt::WillDecl { decl, phasers, .. } => super::var_will::convert(decl, phasers)?,
         ParsedStmt::DoesDecl { decl, role, init } => {
             super::convert::does_declaration(decl, role, init.as_ref())?
                 .ok_or_else(|| super::convert::unsupported("does declaration"))?
