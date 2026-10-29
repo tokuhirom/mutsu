@@ -154,6 +154,9 @@ impl Interpreter {
     pub(super) fn place_env_get(&self, place: StorePlace, name: &str) -> Option<&Value> {
         match place {
             StorePlace::Slot { slot } => self.locals.get(slot),
+            StorePlace::Named if name == "self" => {
+                self.frame_invocant_ref().or_else(|| self.env().get(name))
+            }
             StorePlace::Named => self.env().get(name),
         }
     }
@@ -164,6 +167,9 @@ impl Interpreter {
     pub(super) fn place_env_bound(&self, place: StorePlace, name: &str) -> bool {
         match place {
             StorePlace::Slot { .. } => true,
+            StorePlace::Named if name == "self" => {
+                self.frame_invocant_ref().is_some() || self.env().contains_key(name)
+            }
             StorePlace::Named => self.env().contains_key(name),
         }
     }
@@ -190,6 +196,9 @@ impl Interpreter {
     ) -> Option<&mut Value> {
         match place {
             StorePlace::Slot { slot } => self.locals.get_mut(slot),
+            StorePlace::Named if name == "self" && self.frame_invocant_ref().is_some() => {
+                self.frame_invocant_mut()
+            }
             StorePlace::Named => self.env_mut().get_mut(name),
         }
     }

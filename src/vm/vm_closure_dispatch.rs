@@ -809,11 +809,6 @@ impl Interpreter {
             );
         }
         self.attach_closure_fixtures(&data);
-        if let Some(invocant) =
-            Self::function_invocant_arg(&data.param_defs, &data.params, &args)
-        {
-            self.install_function_invocant(invocant);
-        }
         if !cc.is_routine {
             crate::runtime::return_target::record_block_return_target(
                 self.env_mut(),
@@ -911,6 +906,7 @@ impl Interpreter {
         // frame is active; putting a MarkReadonly in the body would leak from
         // native map/grep/first loops that execute the body without a call
         // frame.
+        self.adopt_function_invocant(&data.param_defs, &data.params, &args);
         self.mark_placeholder_params_readonly(&data.params);
 
         // A plain `$`-sigiled single pointy-block parameter (`-> $v { }`,

@@ -1325,11 +1325,7 @@ impl Interpreter {
             self.record_profile_routine_frame(&frame);
             self.routine_stack.push(frame);
             self.attach_closure_fixtures(&data);
-            if let Some(invocant) =
-                Self::function_invocant_arg(&data.param_defs, &data.params, &call_args)
-            {
-                self.install_function_invocant(invocant);
-            }
+            self.adopt_function_invocant(&data.param_defs, &data.params, &call_args);
             self.block_stack
                 .push(crate::runtime::CodeFrame::Ready(block_sub));
             let return_spec = data

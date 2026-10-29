@@ -1079,7 +1079,7 @@ impl Interpreter {
         name_sym: Symbol,
         value: Value,
     ) {
-        if pd.is_implicit_invocant() && binding_name == "self" {
+        if pd.is_implicit_invocant() && binding_name == "self" && pd.default.is_none() {
             return;
         }
         self.bind_param_value_sym(binding_name, name_sym, value);

@@ -263,6 +263,13 @@ impl Compiler {
     /// a sigil-less `constant`): `Hash<z>:delete` subscripts a type object.
     // Cost: O(w + |name|), w = wrappers peeled.
     pub(super) fn postfix_index_name(&self, target: &Expr) -> Option<String> {
+        self.postfix_index_name_any(target)
+            // `self` is the frame record's, not a named variable (ADR-14843):
+            // the subscript works on the invocant expression.
+            .filter(|name| name != "self")
+    }
+
+    fn postfix_index_name_any(&self, target: &Expr) -> Option<String> {
         let peel = LvaluePeel::ASSIGN | LvaluePeel::DECL | LvaluePeel::SIGILLESS;
         match target.lvalue_root(peel)? {
             crate::ast::LvalueRoot::Key(key) => Some(key),

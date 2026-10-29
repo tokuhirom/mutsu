@@ -695,6 +695,15 @@ impl Interpreter {
     }
 
 
+    /// The invocant of the running method frame's own record, by reference.
+    // Cost: O(1).
+    pub(crate) fn frame_invocant_ref(&self) -> Option<&Value> {
+        if !self.routine_stack.last().is_some_and(|f| f.fixtures != 0) {
+            return None;
+        }
+        self.routine_stack.top_fixtures()?.invocant.as_ref()
+    }
+
     /// The invocant of the running method frame's own record, to write through:
     /// the place a mutating call on `self` (`self.push(...)`) changes. `None`
     /// when the running frame owns no record.
@@ -729,6 +738,32 @@ impl Interpreter {
         args.iter()
             .find(|v| !matches!(v.view(), ValueView::Pair(_, _)))
             .cloned()
+    }
+
+    /// The invocant of the frame just pushed for a call of a method run as a
+    /// function, once its parameters are bound: [`Self::function_invocant_arg`],
+    /// or the default of a defaulted implicit invocant (`method ($c = 42:)`),
+    /// which the binder alone could evaluate and left under the `self` key for
+    /// this to take. Installed in the frame's record.
+    // Cost: O(1) amortized.
+    pub(crate) fn adopt_function_invocant(
+        &mut self,
+        param_defs: &[crate::ast::ParamDef],
+        params: &[String],
+        args: &[Value],
+    ) -> Option<Value> {
+        let invocant = Self::function_invocant_arg(param_defs, params, args).or_else(|| {
+            let defaulted = param_defs
+                .first()
+                .is_some_and(|pd| pd.name == "self" && pd.is_implicit_invocant() && pd.default.is_some());
+            if defaulted {
+                self.env.remove_sym(crate::symbol::wk::self_())
+            } else {
+                None
+            }
+        })?;
+        self.install_function_invocant(invocant.clone());
+        Some(invocant)
     }
 
     /// Make `invocant` the `self` of the frame just pushed for a call of a
