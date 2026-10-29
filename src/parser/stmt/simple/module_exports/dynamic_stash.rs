@@ -77,7 +77,7 @@ fn parser_precedence(prec: Option<&crate::op_prec::OpPrec>) -> (Option<i32>, Opt
     let level = field("prec").and_then(|level| {
         let (base, steps) = crate::op_prec::split_prec_marks(&level);
         crate::op_prec::infix_symbols_with_prec(&base)
-            .find_map(|symbol| super::super::registry::resolve_op_precedence(symbol))
+            .find_map(super::super::registry::resolve_op_precedence)
             .map(|anchor| anchor + 5 * steps)
     });
     let assoc = field("assoc").filter(|assoc| assoc != "left");
