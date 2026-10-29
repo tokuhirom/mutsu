@@ -44,6 +44,33 @@ impl Interpreter {
         // `call_method_with_values`, like `try_any_list_view_method`.
         if let ValueView::Instance { class_name, .. } = val.view() {
             let cn = class_name.resolve();
+            // A `Range`/`Seq`/`List` subclass with its own `iterator` (and no
+            // `list`/`Slip`) slips what that iterator yields: a lazy iterator rides the Slip as one lazy
+            // list (as an unbounded Range does below) instead of being drained,
+            // so `|$naturals` of a never-ending `Range` subclass does not hang.
+            if crate::builtins::native_base::has_iterable_payload(&val)
+                && self.has_user_method(&cn, "iterator")
+                && !self.has_user_method(&cn, "list")
+                && !self.has_user_method(&cn, "Slip")
+            {
+                let iterator =
+                    self.try_compiled_method_or_interpret(val.clone(), "iterator", Vec::new())?;
+                if self.is_lazy_user_iterator(&iterator)? {
+                    self.stack
+                        .push(Value::slip(vec![Self::lazy_list_over_user_iterator(
+                            iterator,
+                        )]));
+                } else {
+                    let (items, _) = self.drive_iterator_value_items(iterator)?;
+                    self.stack.push(Value::slip(
+                        items
+                            .into_iter()
+                            .map(Self::containerize_pair_item)
+                            .collect(),
+                    ));
+                }
+                return Ok(());
+            }
             // A `Seq` or `Range` subclass slips the elements of the value it
             // carries (its inherited `list`).
             if (self.has_user_method(&cn, "list")

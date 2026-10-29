@@ -129,7 +129,13 @@ impl Interpreter {
             });
             method_param_defs
         };
-        let invocant_name = sub_param_defs[0].name.clone();
+        // An explicit `$self:` invocant is the sub's `$self` lexical; a
+        // synthesized one is bound under the plain `self` key.
+        let invocant_name = if sub_param_defs[0].declares_self_lexical() {
+            crate::env::LEX_SELF.to_string()
+        } else {
+            sub_param_defs[0].name.clone()
+        };
         // The method's named parameters become one slurpy hash on the exported
         // sub, forwarded as `|%hash`: the method rebinds and checks them, and an
         // omitted optional one stays omitted (no explicit `Any` is passed).

@@ -379,7 +379,7 @@ impl Compiler {
             package_routine_scoped_cache: std::sync::OnceLock::new(),
         };
         cf.precompute_param_local_slots();
-        cf.precompute_named_call_plan();
+        cf.precompute_named_call_plan(crate::runtime::named_fast_fill);
         cf.precompute_param_name_syms();
         cf.detect_inner_subs();
         cf.compute_declared_locals();
