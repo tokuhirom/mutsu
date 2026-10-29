@@ -212,6 +212,10 @@ impl Interpreter {
             && !cf.has_inner_subs
             && !cf.param_defs.is_empty()
             && cf.param_defs.iter().any(|pd| pd.named)
+            // A `$self` parameter binds the reserved `LEX_SELF` lexical, which
+            // the light named bind (keyed by the parameter's own name) cannot
+            // reach; the general binder does.
+            && !cf.param_defs.iter().any(|pd| pd.declares_self_lexical())
             && cf.param_defs.iter().all(|pd| {
                 let common = pd.where_constraint.is_none()
                     && !pd.slurpy

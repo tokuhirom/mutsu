@@ -124,6 +124,8 @@ is_doc_path() {
     scripts/check-layer-deps.py) return 1 ;;
     # `make check-interp-fields` (ADR-10779 D4) runs it with --check.
     scripts/interp-field-matrix.py) return 1 ;;
+    # `make check-frame-fixtures` (ADR-14843), likewise a `make checks` ratchet.
+    scripts/check-frame-fixtures.py) return 1 ;;
     # `make check-exec-route` (a `make checks` step, #12299) runs it with --check.
     scripts/gen-exec-route.py) return 1 ;;
     scripts/*.py) return 0 ;;
@@ -392,6 +394,7 @@ self_test() {
   check false 'the interp ratchet'      scripts/check-interp-construction.py
   check false 'the layer-deps ratchet'  scripts/check-layer-deps.py
   check false 'the interp-fields ratchet' scripts/interp-field-matrix.py
+  check false 'the frame-fixtures ratchet' scripts/check-frame-fixtures.py
   check false 'shell script'            scripts/run-t-test.sh
   check false 'node script'             scripts/check-site-snippets.mjs
   check false 'nested tsv'              t/fixtures/data.tsv

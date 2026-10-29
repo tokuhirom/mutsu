@@ -1141,6 +1141,9 @@ fn bind_sub_param_name(interpreter: &mut Interpreter, name: &str, value: Value) 
             .param_bound_aggregates
             .note(name, &value);
     }
+    // A sub-parameter spelled `$self` is the reserved lexical, never the
+    // invocant (ADR-0061).
+    let name = if name == "self" { crate::env::LEX_SELF } else { name };
     interpreter.env.insert(name.to_string(), value);
 }
 

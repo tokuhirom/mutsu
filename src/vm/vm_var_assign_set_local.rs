@@ -1973,6 +1973,21 @@ impl Interpreter {
                     _ if runtime::utils::infinite_range_to_lazy_array(&raw_popped).is_some() => {
                         runtime::utils::infinite_range_to_lazy_array(&raw_popped).unwrap()
                     }
+                    // `my @a = |(1..*)`: `|` rides an unreifiable lazy list in a
+                    // one-item Slip (see `exec_make_slip_op`), which the array
+                    // keeps lazy exactly as it does the bare list.
+                    ValueView::Slip(items)
+                        if items.len() == 1
+                            && matches!(
+                                items[0].view(),
+                                ValueView::LazyList(ref l) if l.preserve_lazy_on_array_assign()
+                            ) =>
+                    {
+                        match items[0].view() {
+                            ValueView::LazyList(list) => self.lazy_array_value(&list, name),
+                            _ => runtime::coerce_to_array(raw_popped.clone()),
+                        }
+                    }
                     _ => {
                         // Resolve bound-element sentinels before coercing to
                         // array.  Assignment (not binding) creates new
