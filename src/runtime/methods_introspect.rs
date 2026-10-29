@@ -1191,7 +1191,17 @@ impl Interpreter {
             // `.^name` path resolves that same node here before falling back
             // to the synthesized `Base+{Role,...}` name.
             ValueView::Mixin(inner, mixins) => {
-                self.mixin_instance_type_name(target, inner, mixins)?
+                let name = self.mixin_instance_type_name(target, inner, mixins)?;
+                // A role mixed into a typed container keeps the container's
+                // parameterization (`my %h{Str} does R` is
+                // `Hash[Any,Str]+{R}`): rename the bare `Hash` base.
+                match (inner.view(), name.strip_prefix("Hash+")) {
+                    (ValueView::Hash(_), Some(suffix)) => {
+                        let base = self.dispatch_caret_name(inner)?.to_string_value();
+                        format!("{base}+{suffix}")
+                    }
+                    _ => name,
+                }
             }
             // `p.class_name()` is the raw internal storage name, which for a
             // lexical Promise subclass (`my class Meows is Promise {}`)

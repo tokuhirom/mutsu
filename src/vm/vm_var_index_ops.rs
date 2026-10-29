@@ -2722,6 +2722,17 @@ impl Interpreter {
                 data.declared_type = declared_type;
                 Value::array_with_kind(crate::gc::Gc::new(data), crate::value::ArrayKind::Array)
             }
+            // An associative subscript with an `Int` key (`%h{42}` on a hash a
+            // role was mixed into) is `AT-KEY`, never a positional index.
+            (ValueView::Mixin(inner, _), ValueView::Int(_))
+                if !is_positional && matches!(inner.view(), ValueView::Hash(_)) =>
+            {
+                let default = self.typed_container_default(&target);
+                let result = self
+                    .try_compiled_method_or_interpret(target.clone(), "AT-KEY", vec![index.clone()])?
+                    .deref_container();
+                if result.is_nil() { default } else { result }
+            }
             (ValueView::Mixin(inner, _), ValueView::Int(i)) => {
                 if let ValueView::Mixin(_, mixins) = target.view()
                     && let Some(attr_value) =
