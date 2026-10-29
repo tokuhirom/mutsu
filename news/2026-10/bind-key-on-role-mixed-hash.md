@@ -1,7 +1,7 @@
-# `BIND-KEY` works on a hash with a role mixed in
+# `BIND-KEY` on a role-mixed hash aliases the caller's variable
 
-`%h.BIND-KEY(k, v)` (and `self.BIND-KEY(...)` inside a role method) on a hash a
-role was mixed into (`my %h does R`) died with `No such method 'BIND-KEY' for
-invocant of type 'Hash'`. The `Hash` row now runs for a mixed-in hash, binding
-on its shared node (including the caller-variable alias) while the mixin stays.
-Found with WriteOnceHash (#15393).
+`%h.BIND-KEY(k, $v)` on a hash a role was mixed into (`my %h does R`) now runs
+the `Hash` row with the call's receiver and argument sources, so the key is
+bound to `$v` itself, as it is for a plain hash: a later `$v = 6` shows through
+`%h{k}`. The mixed-in hash was only reached through the source-less path, which
+copied the value. Found with WriteOnceHash (#15393).
