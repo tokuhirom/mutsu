@@ -164,6 +164,7 @@ pub(crate) fn lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
             cached_no_sink: false,
             deleted_indices: Default::default(),
             descriptor: None,
+            generator_origin: None,
             itemized: false,
         },
     ))))
@@ -244,6 +245,7 @@ fn retag_lazy_list(list: &crate::value::LazyList) -> Value {
         cached_no_sink: list.cached_no_sink,
         deleted_indices: Default::default(),
         descriptor: None,
+        generator_origin: None,
         itemized: list.itemized,
     }))
 }

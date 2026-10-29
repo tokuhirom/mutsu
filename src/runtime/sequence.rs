@@ -738,6 +738,7 @@ impl Interpreter {
             // may have hidden state or side effects. Strict consumers reify
             // them through their explicit forcing paths.
             (SeqMode::Closure, Some(EndpointKind::Value(_))) => 0,
+            (SeqMode::Closure, None) => 0,
             (_, Some(_)) => 10000,
             (_, None) => 32,
         };
