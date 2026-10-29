@@ -162,6 +162,18 @@ impl Interpreter {
         self.multi_arg_type_keys_impl(args, keys, NamedArgs::Refuse)
     }
 
+    /// [`Self::multi_arg_type_keys_into`] for a call whose named arguments are
+    /// keyed by name and value type ([`NamedArgs::Key`]) instead of refusing
+    /// the call: the plain-method lane's key.
+    // Cost: O(a), a = arguments (one type-key intern each).
+    pub(crate) fn multi_arg_type_keys_into_with_named(
+        &mut self,
+        args: &[Value],
+        keys: &mut Vec<crate::symbol::Symbol>,
+    ) -> bool {
+        self.multi_arg_type_keys_impl(args, keys, NamedArgs::Key)
+    }
+
     /// [`Self::multi_arg_type_keys`] for a METHOD candidate set, which keys a
     /// named argument by its name and its value's type key instead of
     /// refusing the whole call (see [`NamedArgs::Key`]).
