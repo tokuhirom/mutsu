@@ -39,10 +39,43 @@ impl Interpreter {
         if !dispatches {
             return None;
         }
+        if is_positional && let Some(result) = self.assign_slice_through_assign_pos(object, idx, val)
+        {
+            return Some(result);
+        }
         let idx_arg = match idx.view() {
             ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
             _ => idx.clone(),
         };
         Some(self.call_method_with_values(object.clone(), method, vec![idx_arg, val.clone()]))
+    }
+
+    /// A slice assignment to an object with its own `ASSIGN-POS`
+    /// (`@o[1, 2] = a, b`): one call per index, each taking the next value
+    /// (`Nil` past the end). `None` unless `idx` is a list of other than one
+    /// index.
+    // Cost: O(n) calls, n = indices.
+    pub(crate) fn assign_slice_through_assign_pos(
+        &mut self,
+        object: &Value,
+        idx: &Value,
+        val: &Value,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let idx = idx.deref_container().descalarize().clone();
+        let indices: Vec<Value> = match idx.view() {
+            ValueView::Array(items, _) if items.len() != 1 => items.iter().cloned().collect(),
+            ValueView::Seq(items) if items.len() != 1 => items.iter().cloned().collect(),
+            _ => return None,
+        };
+        let mut values = crate::value::to_list::value_to_list(val).into_iter();
+        let mut results = Vec::with_capacity(indices.len());
+        for i in indices {
+            let v = values.next().unwrap_or(Value::NIL);
+            match self.call_method_with_values(object.clone(), "ASSIGN-POS", vec![i, v]) {
+                Ok(r) => results.push(r),
+                Err(e) => return Some(Err(e)),
+            }
+        }
+        Some(Ok(Value::array(results)))
     }
 }
