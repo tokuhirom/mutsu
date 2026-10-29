@@ -36,6 +36,7 @@ mod if_branch;
 mod package_trait_origins;
 mod parsed_view;
 mod regex_origins;
+pub(crate) mod signature_expand;
 mod trait_is_constructor;
 mod with_branch;
 use constructor_positional::single_positional_class;

@@ -4,14 +4,19 @@
 //! parser keeps the declaration as `ParsedStmt::SignatureDecl`, which lowers
 //! through [`signature_decl`], and `.AST` renders the node.
 
-use super::bind_arity::{optional_param_default, push_bind_arity_check, staged_exists};
-use super::native_type_default;
+mod bind_arity;
+mod binding_result;
+mod named;
+
 use crate::ast::parsed::ParsedStmt;
 use crate::ast::var_marks::TermMark;
 use crate::ast::{Expr, ParamTrait, SignatureDecl, SignatureInit, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
+use bind_arity::{
+    native_type_default, optional_param_default, push_bind_arity_check, staged_exists,
+};
 
 /// A declaration as written, not yet lowered: the statement the parser hands
 /// to the statement modifiers and loose tails that split or wrap it, which read
@@ -19,23 +24,10 @@ use crate::value::Value;
 /// size check is the only way the lowering fails, so it runs here.
 // Cost: O(n), n = nodes of the declaration.
 pub(crate) fn pending(decl: SignatureDecl) -> Result<Stmt, crate::value::RuntimeError> {
-    crate::parser::stmt::control::source_body::check_signature(&decl)?;
+    crate::parser::check_signature(&decl)?;
     Ok(Stmt::Ast(Box::new(ParsedStmt::SignatureDecl(Box::new(
         decl,
     )))))
-}
-
-/// A statement from [`pending`] becomes what the parse produces for it: the
-/// lowered expansion, or, for a parse that keeps the written nodes, the node
-/// once its lowering has been checked. Any other statement is returned as is.
-// Cost: O(n), n = size of the declaration.
-pub(crate) fn settle(stmt: Stmt) -> Result<Stmt, crate::value::RuntimeError> {
-    match stmt {
-        Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::SignatureDecl(_)) => {
-            crate::parser::stmt::control::parsed_block::finish(*node)
-        }
-        other => Ok(other),
-    }
 }
 
 /// A statement from [`pending`] lowered to its expansion, whatever the parse
@@ -55,7 +47,7 @@ pub(crate) fn lower_pending(stmt: Stmt) -> Result<Stmt, crate::value::RuntimeErr
 
 /// The whole expansion of `decl`.
 pub(crate) fn signature_decl(decl: SignatureDecl) -> Result<Stmt, crate::value::RuntimeError> {
-    crate::parser::stmt::control::source_body::check_signature(&decl)?;
+    crate::parser::check_signature(&decl)?;
     let stmts = match &decl.init {
         None => expand_bare(&decl),
         Some(_) => {
@@ -73,14 +65,14 @@ pub(crate) fn signature_decl(decl: SignatureDecl) -> Result<Stmt, crate::value::
 pub(crate) fn expand_with_rhs(
     decl: &SignatureDecl,
 ) -> Result<(Vec<Stmt>, Expr), crate::value::RuntimeError> {
-    crate::parser::stmt::control::source_body::check_signature(decl)?;
+    crate::parser::check_signature(decl)?;
     if decl.vars.iter().any(|var| var.is_named)
         && let Some(init) = &decl.init
         && init.is_binding
     {
         return Ok((
-            super::named::expand(decl, init.rhs.clone()),
-            super::binding_result::binding_result(decl),
+            named::expand(decl, init.rhs.clone()),
+            binding_result::binding_result(decl),
         ));
     }
     Ok(match &decl.init {
@@ -508,7 +500,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
     // it (#9342). A literal postconstraint element yields its staged value.
     // Binding a declaring signature yields the signature itself.
     let result = if is_binding {
-        super::binding_result::binding_result(decl)
+        binding_result::binding_result(decl)
     } else {
         Expr::ArrayLiteral(
             vars.iter()

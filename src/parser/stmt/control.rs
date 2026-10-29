@@ -473,6 +473,7 @@ mod pointy_param;
 mod react;
 pub(in crate::parser::stmt) mod source_body;
 mod while_until;
+pub(crate) use source_body::check_signature;
 mod with_stmt;
 
 // Re-exports preserving each function's original visibility (all `pub(super)`).

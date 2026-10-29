@@ -169,8 +169,8 @@ pub(crate) enum ParsedStmt {
     /// `my ($a, @b) = RHS` (also `:=`, `state`, `our`, a typed or nested
     /// group): the declaration as written. `rakuast::lower` expands it into
     /// ordinary declarations reading a staging temporary
-    /// (`parser::signature_decl_expansion`). The parser holds it unlowered
-    /// (see `parser::stmt::decl::destructure::desugar::pending`) until the
+    /// (`rakuast::signature_expand::signature_decl`). The parser holds it unlowered
+    /// (see `rakuast::signature_expand::pending`) until the
     /// statement modifiers and loose tails that read it have been parsed.
     SignatureDecl(Box<super::SignatureDecl>),
     /// `:(...) := RHS`: the signature literal and the right-hand side as

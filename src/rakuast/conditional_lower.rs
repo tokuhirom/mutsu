@@ -70,7 +70,7 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
             Ok(crate::parser::wrap_with_will_phasers(*decl, &name, phasers))
         }
         ParsedStmt::DeclTail { head, tail } => Ok(crate::ast::decl_tail::expand(
-            crate::parser::lower_pending_declaration(*head)?,
+            super::signature_expand::lower_pending(*head)?,
             tail,
         )),
         ParsedStmt::DeclCompound { decl, op, source } => {
@@ -138,7 +138,7 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
         }
         ParsedStmt::Temporize(t) => crate::ast::temporize::expand(*t)
             .ok_or_else(|| RuntimeError::new("temp/let of something that is not a variable")),
-        ParsedStmt::SignatureDecl(decl) => crate::parser::signature_decl_expansion(*decl),
+        ParsedStmt::SignatureDecl(decl) => super::signature_expand::signature_decl(*decl),
         ParsedStmt::SignatureBind { signature, rhs } => {
             crate::ast::signature_bind::expand(signature, rhs)
                 .ok_or_else(|| RuntimeError::new("signature bind without a signature literal"))

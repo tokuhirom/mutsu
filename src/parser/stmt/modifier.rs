@@ -204,7 +204,7 @@ fn second_modifier_allowed(first: &str, next: &str) -> bool {
 pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     let (rest, stmt) = parse_statement_modifier_inner(input, stmt)?;
     // A signature declaration no modifier took stays as written until here.
-    let stmt = super::decl::destructure::desugar::settle(stmt).map_err(PError::from_typed)?;
+    let stmt = super::decl::destructure::settle(stmt).map_err(PError::from_typed)?;
     Ok((rest, stmt))
 }
 
