@@ -68,7 +68,25 @@ impl Interpreter {
         // happens to be constructing the object: anchor the running-package
         // lookups on it for the duration of the check.
         self.push_method_class_sym(scope.package, None);
+        // Closures the predicate builds (`where { chk($^a) }`) stamp the file of
+        // the innermost routine frame as their own `source_file`, and enter
+        // that compunit when called. Construction runs under the caller's
+        // frame, so without a frame for the declaring unit the closure belongs
+        // to whoever called `.new` and cannot see the declaring file's imports
+        // (a proto/multi family `use`d beside the class: ecosystem Net::BGP).
+        let decl_file = match scope.unit {
+            Some(unit) if unit != crate::runtime::main_unit() => Some(unit),
+            _ => self.io.program_path_sym,
+        };
+        self.push_block_routine_with_location(
+            scope.package,
+            Symbol::intern(""),
+            None,
+            self.executing_source_file_sym(),
+            decl_file,
+        );
         let ok = self.check_attribute_where_constraint_in_scope(pred, value);
+        self.pop_routine();
         self.pop_method_class();
         self.set_current_package_with_sym(saved_package, saved_package_sym);
         self.current_unit = saved_unit;
