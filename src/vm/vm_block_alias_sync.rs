@@ -13,7 +13,7 @@ use crate::value::{Value, ValueView};
 impl Interpreter {
     // Cost: O(a + s), a = alias keys ever bound in the process, s = slots of
     // this chunk carrying one of them; O(1) for a program that never bound one.
-    pub(super) fn sync_block_exit_alias_targets(&mut self, code: &CompiledCode) {
+    pub(super) fn sync_block_exit_alias_targets(&mut self, code: &CompiledCode, block_end: usize) {
         if !crate::env::sigilless_meta_keys_possible() {
             return;
         }
@@ -34,6 +34,14 @@ impl Interpreter {
         slots.dedup();
         for slot in slots {
             let idx = slot as usize;
+            // A local declared after this block's end has not been declared yet
+            // on this pass: its alias is left over from the previous iteration
+            // of an enclosing loop, and writing its stale value back would undo
+            // the target's new binding (`for @a -> $b { ENTER {...}; my $x :=
+            // $b; ... }` re-read `$b` as its first value).
+            if code.first_decl_ip(idx).is_some_and(|ip| ip >= block_end) {
+                continue;
+            }
             let Some(alias_key) = code.alias_sym(idx) else {
                 continue;
             };

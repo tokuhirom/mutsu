@@ -1108,7 +1108,7 @@ impl Interpreter {
             }
         }
         *self.env_mut() = restored_env;
-        self.sync_block_exit_alias_targets(code);
+        self.sync_block_exit_alias_targets(code, end);
         // Drop readonly flags for block-declared variables so a later outer
         // `my` redeclaration of the same name is not marked as readonly by
         // the now-gone binding (`my %h := SetHash.new(...)` inside a block
