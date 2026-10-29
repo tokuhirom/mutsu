@@ -2490,6 +2490,7 @@ impl Interpreter {
                         // `Cool.new.defined` is True, `.raku` is `Cool.new`).
                         if crate::builtin_types::catalog::builtin_type_mro_syms(&resolved)
                             .is_some()
+                            || crate::runtime::types::is_builtin_role_name(&resolved)
                         {
                             return Ok(Value::make_instance(name, HashMap::new()));
                         }
