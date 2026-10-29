@@ -1158,7 +1158,7 @@ impl Value {
 
     /// Walk a chain of cells (`ContainerRef` whose content is a `ContainerRef`)
     /// iteratively and apply `f` to the value at its end. A chain is a handful of
-    /// cells in practice; one that reaches [`MAX_CELL_CHAIN`] is a cell reachable
+    /// cells in practice; one that reaches `MAX_CELL_CHAIN` is a cell reachable
     /// from itself (or a runaway writer), and recursing through it overflowed the
     /// native stack (#15414). The walk stops there and hands `f` the cell it
     /// reached, so the process survives and the caller sees a container.
@@ -1169,7 +1169,7 @@ impl Value {
         for _ in 0..MAX_CELL_CHAIN {
             let next = match cur.view() {
                 ValueView::ContainerRef(arc) => {
-                    let inner = arc.lock().unwrap();
+                    let inner = arc.lock().unwrap_or_else(|e| e.into_inner());
                     if inner.is_container_ref() {
                         inner.clone()
                     } else {
@@ -1190,7 +1190,7 @@ impl Value {
             ValueView::ContainerRef(arc) => {
                 let _cross_thread =
                     crate::value::container_lock::ContainerStructGuard::acquire_for_cell(&arc);
-                let inner = arc.lock().unwrap();
+                let inner = arc.lock().unwrap_or_else(|e| e.into_inner());
                 if self.container_ref_is_itemized() {
                     let itemized = inner.clone().itemize_for_element_store();
                     f(&itemized)
