@@ -68,10 +68,7 @@ impl Interpreter {
             .module_visibility
             .package_granting_modules
             .get(top.as_str())?;
-        if modules
-            .iter()
-            .any(|&module| self.module_merged_here(module))
-        {
+        if self.any_module_merged_here(modules) {
             return None;
         }
         let unsigiled = qualified(pkg, Symbol::intern(split.bare));
