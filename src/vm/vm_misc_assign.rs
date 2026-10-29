@@ -209,7 +209,7 @@ impl Interpreter {
             // Array/Hash value shares its backing node with every holder, so
             // it is reassigned in place either way; a container object is
             // assigned through its `STORE`, as `=` on any container is.
-            let self_value = self.env_self_value();
+            let self_value = self.frame_invocant();
             let (cell, current) = match self_value.as_ref().map(Value::view) {
                 Some(ValueView::ContainerRef(cell)) => {
                     let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();

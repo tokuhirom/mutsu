@@ -633,6 +633,90 @@ impl Interpreter {
         }
     }
 
+    /// Run `body` with `invocant` as `self`, keeping the innermost record's
+    /// `?CLASS` and `?ROLE`: the scoped form of a helper that used to rebind
+    /// the `self` env key around a call (ADR-14843). The record is cut back on
+    /// every exit of `body`.
+    // Cost: O(1) amortized, plus `body`.
+    pub(crate) fn with_scoped_invocant<R>(
+        &mut self,
+        invocant: Value,
+        body: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let (class, role) = self
+            .frame_fixtures()
+            .map_or((None, None), |f| (f.class.clone(), f.role));
+        self.with_scoped_fixtures(
+            crate::value::frame_fixtures::FrameFixtures {
+                invocant: Some(invocant),
+                class,
+                role,
+            },
+            body,
+        )
+    }
+
+    /// Open a scope whose `self` is `invocant` (see
+    /// [`Self::with_scoped_invocant`]) for a caller that cannot wrap its
+    /// region in a closure; [`Self::end_scoped_fixtures`] closes it.
+    // Cost: O(1) amortized.
+    pub(crate) fn begin_scoped_invocant(&mut self, invocant: Value) -> usize {
+        let mark = self.routine_stack.fixtures_len();
+        let (class, role) = self
+            .frame_fixtures()
+            .map_or((None, None), |f| (f.class.clone(), f.role));
+        self.routine_stack
+            .push_scoped_fixtures(crate::value::frame_fixtures::FrameFixtures {
+                invocant: Some(invocant),
+                class,
+                role,
+            });
+        mark
+    }
+
+    /// Open a scope whose `?CLASS` is `class` and which has no invocant: a
+    /// class body. [`Self::end_scoped_fixtures`] closes it.
+    // Cost: O(1) amortized.
+    pub(crate) fn begin_class_scope(&mut self, class: Symbol) -> usize {
+        let mark = self.routine_stack.fixtures_len();
+        self.routine_stack
+            .push_scoped_fixtures(crate::value::frame_fixtures::FrameFixtures {
+                invocant: None,
+                class: Some(Value::package(class)),
+                role: None,
+            });
+        mark
+    }
+
+    /// Close the scope [`Self::begin_scoped_invocant`] opened.
+    // Cost: O(1).
+    pub(crate) fn end_scoped_fixtures(&mut self, mark: usize) {
+        self.routine_stack.truncate_fixtures(mark);
+    }
+
+    /// Run `body` with `fixtures` as the innermost record.
+    // Cost: O(1) amortized, plus `body`.
+    pub(crate) fn with_scoped_fixtures<R>(
+        &mut self,
+        fixtures: crate::value::frame_fixtures::FrameFixtures,
+        body: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let mark = self.routine_stack.fixtures_len();
+        self.routine_stack.push_scoped_fixtures(fixtures);
+        let result = body(self);
+        self.routine_stack.truncate_fixtures(mark);
+        result
+    }
+
+    /// Replace the invocant of the innermost record, which a
+    /// [`Self::with_scoped_invocant`] body owns.
+    // Cost: O(1).
+    pub(crate) fn set_scoped_invocant(&mut self, invocant: Value) {
+        if let Some(f) = self.routine_stack.top_fixtures_mut() {
+            f.invocant = Some(invocant);
+        }
+    }
+
     /// The invocant (`self`, `__ANON_STATE#`) of the innermost frame record.
     // Cost: O(1).
     #[inline]
@@ -643,8 +727,8 @@ impl Interpreter {
     /// The `?CLASS` of the innermost frame record.
     // Cost: O(1).
     #[inline]
-    pub(crate) fn frame_class(&self) -> Option<Symbol> {
-        self.frame_fixtures()?.class
+    pub(crate) fn frame_class(&self) -> Option<Value> {
+        self.frame_fixtures()?.class.clone()
     }
 
     /// The `?ROLE` of the innermost frame record, `None` outside a role.
@@ -664,33 +748,12 @@ impl Interpreter {
         if sym == crate::symbol::wk::self_() || sym == crate::symbol::wk::anon_state() {
             fixtures.invocant.clone()
         } else if sym == crate::symbol::wk::class_decl() {
-            fixtures.class.map(Value::package)
+            fixtures.class.clone()
         } else if sym == crate::symbol::wk::role_decl() {
             fixtures.role.map(Value::package)
         } else {
             None
         }
-    }
-
-    /// The value of a fixed name as the running code sees it: an env key
-    /// first (a closure's lexical `self`, a helper's temporary rebind, a
-    /// frame that still writes its keys), else the innermost method frame's
-    /// record. A method frame that wrote no keys (ADR-14633 slice 2) is only
-    /// answered by the record, which is correct because such a frame is only
-    /// entered when no env key of a fixed name is visible from it.
-    // Cost: O(c) env chain probe, c = env chain depth, then O(1).
-    pub(crate) fn env_or_fixture_sym(&self, sym: Symbol) -> Option<Value> {
-        match self.env.get_sym(sym) {
-            Some(v) => Some(v.clone()),
-            None => self.frame_fixture_value(sym),
-        }
-    }
-
-    /// [`Self::env_or_fixture_sym`] for the invocant, `self`.
-    // Cost: as `env_or_fixture_sym`.
-    #[inline]
-    pub(crate) fn env_self_value(&self) -> Option<Value> {
-        self.env_or_fixture_sym(crate::symbol::wk::self_())
     }
 
     pub(crate) fn pop_routine(&mut self) {

@@ -2056,7 +2056,7 @@ impl Interpreter {
             saved.push((key.clone(), this.env.get(&key).cloned()));
             this.env.insert(key, val);
         };
-        bind(self, "self".to_string(), target.clone());
+        let fixtures_mark = self.begin_scoped_invocant(target.clone());
         let mut ai = 0;
         for pd in method_def.param_defs.iter() {
             if pd.is_invocant || pd.named || pd.slurpy {
@@ -2107,6 +2107,7 @@ impl Interpreter {
             )
         })();
         restore(self, saved);
+        self.end_scoped_fixtures(fixtures_mark);
         Ok(Some(recur?))
     }
 }

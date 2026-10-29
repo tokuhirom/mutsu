@@ -25,6 +25,27 @@ impl Interpreter {
         role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
         invocant: Option<&Value>,
     ) -> bool {
+        // Candidate matching evaluates user code (a `where` constraint, a
+        // default) before the method frame exists, so `self` -- and hence
+        // `$.attr` -- is a scoped frame record for the window, not an env key
+        // (ADR-14843).
+        let fixtures_mark = invocant.map(|inv| self.begin_scoped_invocant(inv.clone()));
+        let verdict =
+            self.method_args_match_in_window(class_name, def, arg_values, role_bindings, invocant);
+        if let Some(mark) = fixtures_mark {
+            self.end_scoped_fixtures(mark);
+        }
+        verdict
+    }
+
+    fn method_args_match_in_window(
+        &mut self,
+        class_name: &str,
+        def: &MethodDef,
+        arg_values: &[Value],
+        role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
+        invocant: Option<&Value>,
+    ) -> bool {
         // Candidate matching is a *speculative* window: everything it binds
         // (role type params, the method's captured lexical scope, `self`, type
         // captures) is rolled back when it ends, and it can run for every
@@ -109,9 +130,6 @@ impl Interpreter {
         // could not be told apart from its sibling and the first candidate
         // declared always won. The whole block runs inside the
         // `saved_env`/restore window, so this binding is scoped to the match.
-        if let Some(inv) = invocant {
-            self.env.insert("self".to_string(), inv.clone());
-        }
         for pd in def.param_defs.iter() {
             if !pd.is_invocant {
                 continue;

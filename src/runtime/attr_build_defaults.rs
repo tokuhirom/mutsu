@@ -465,7 +465,7 @@ impl Interpreter {
         self.routine_stack
             .attach_fixtures_to_top(crate::value::frame_fixtures::FrameFixtures {
                 invocant: Some(self_val.clone()),
-                class: Some(Symbol::intern(&class_name.to_string())),
+                class: Some(Value::package(Symbol::intern(&class_name.to_string()))),
                 role: None,
             });
         let result = self.eval_decl_trait_arg_with_captured_env(arg, captured_env);

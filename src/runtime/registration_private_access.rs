@@ -78,7 +78,7 @@ impl Interpreter {
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        let self_value = self.env_self_value();
+        let self_value = self.frame_invocant();
         let class_name = match self_value.as_ref().map(Value::view) {
             Some(ValueView::Instance { class_name, .. }) => class_name.resolve(),
             _ => return Ok(()),

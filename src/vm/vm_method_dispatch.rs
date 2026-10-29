@@ -575,7 +575,10 @@ impl Interpreter {
         }
         if let Some(bindings) = method_def.role_param_bindings.as_deref() {
             for (name, value) in bindings {
-                self.env_mut().insert(name.clone(), value.clone());
+                // `::?CLASS` is the frame record's (below), not an env key.
+                if name != "?CLASS" {
+                    self.env_mut().insert(name.clone(), value.clone());
+                }
             }
         }
         // A method can carry its defining lexical environment either from an
@@ -615,7 +618,10 @@ impl Interpreter {
         // capture metadata otherwise supplies a same-named nil entry.
         if let Some(bindings) = method_def.role_param_bindings.as_deref() {
             for (name, value) in bindings {
-                self.env_mut().insert(name.clone(), value.clone());
+                // `::?CLASS` is the frame record's (below), not an env key.
+                if name != "?CLASS" {
+                    self.env_mut().insert(name.clone(), value.clone());
+                }
             }
         }
 
@@ -907,7 +913,15 @@ impl Interpreter {
             method_callable_id,
             crate::runtime::routine_stack::FrameFixtures {
                 invocant: Some(base.clone()),
-                class: Some(owner_sym),
+                // A role method composed into a mixin sees the mixin type as
+                // `::?CLASS` (the binding `dispatch_mixin_method_call` stages).
+                class: Some(
+                    method_def
+                        .role_param_bindings
+                        .as_deref()
+                        .and_then(|b| b.iter().find(|(n, _)| n == "?CLASS"))
+                        .map_or_else(|| Value::package(owner_sym), |(_, v)| v.clone()),
+                ),
                 role: role_context.as_deref().map(crate::symbol::Symbol::intern),
             },
         );
@@ -981,6 +995,14 @@ impl Interpreter {
         for (i, local_name) in cc.locals.iter().enumerate() {
             if let Some(val) = self.env().get(local_name) {
                 self.locals[i] = val.clone();
+            }
+        }
+        // The fixed names are the frame record's, not env keys (ADR-14843).
+        for (i, local_name) in cc.locals.iter().enumerate() {
+            if matches!(local_name.as_str(), "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE")
+                && let Some(val) = self.frame_fixture_value(Symbol::intern(local_name))
+            {
+                self.locals[i] = val;
             }
         }
         // Phase 3 Stage 2c (i): an attributive parameter (`method m($!x)` /
@@ -2683,7 +2705,7 @@ impl Interpreter {
             method_callable_id,
             crate::runtime::routine_stack::FrameFixtures {
                 invocant: Some(base.clone()),
-                class: Some(owner_sym),
+                class: Some(Value::package(owner_sym)),
                 role: role_context.as_deref().map(crate::symbol::Symbol::intern),
             },
         );

@@ -1186,7 +1186,6 @@ impl Interpreter {
             // attributes — never snapshot them (see the filtered branch below).
             flat.retain(|k, _| !k.is_attr_twigil_env_key());
             self.capture_bare_callees(cc, &mut flat);
-            self.materialize_frame_self_into_capture(code, cc, &mut flat);
             // Taken while the program scope itself runs: the closure's frame
             // links to the live program scope when it is called (ADR-12529),
             // so its scalars need no cells.
@@ -1278,7 +1277,6 @@ impl Interpreter {
         // imported sub installed by `use` inside EVAL: closing its ImportScope may remove
         // the registry alias, while the escaping closure still owns `&name`.
         self.capture_bare_callees(cc, env);
-        self.materialize_frame_self_into_capture(code, cc, env);
     }
 
     /// ADR-0024 §4: while [`Self::mainline_lexical_frame_active`] holds (a
@@ -1407,60 +1405,6 @@ impl Interpreter {
                 && let Some(value) = self.env().get_sym(id_key)
             {
                 env.insert_sym(id_key, value.clone());
-            }
-        }
-    }
-
-    /// `self` is lexical: a closure created inside a method body must capture
-    /// that method's invocant. On the fast method path (skip_env_setup) `self`
-    /// lives ONLY in a local slot, so the env-based capture above misses it and
-    /// a later `$.attr`/`$!attr` in the closure body resolved against whatever
-    /// `self` the *invoking* frame happened to carry — a supply block created
-    /// in `Sink.sinker` and tapped from another object's method read `$!sum`
-    /// off that other object (Cro::Service.start's assembled pipeline).
-    ///
-    /// A method frame that omitted its fixed env keys (ADR-14792) has no
-    /// `?CLASS`, `?ROLE` or `__ANON_STATE#` to capture either, and the
-    /// closure's later call must see its creator's, not those of the method it
-    /// happens to run under; they come from the frame's record, for the names
-    /// the closure reads (all of them for a reflective capture).
-    fn materialize_frame_self_into_capture(
-        &self,
-        code: &CompiledCode,
-        cc: &CompiledCode,
-        env: &mut Env,
-    ) {
-        // Symbol-keyed: this runs on every closure creation, where interning
-        // the literal (a thread-local hash of the string) and allocating a
-        // `String` for the insert were pure per-creation overhead.
-        let self_sym = crate::symbol::wk::self_();
-        if env.get_sym(self_sym).is_none()
-            && let Some(&slot) = code.local_slots_of(self_sym).first()
-            && let Some(val) = self.locals.get(slot as usize)
-            && !val.is_nil()
-        {
-            // `note_env_key` has nothing to latch for `self` (it only tracks
-            // `^`- and `__mutsu_`-prefixed keys), so the symbol-keyed insert is
-            // equivalent to the `String`-keyed one.
-            env.insert_sym(self_sym, val.clone());
-        }
-        if self.frame_fixtures().is_none() || self.env().contains_key_sym(self_sym) {
-            return;
-        }
-        // The frame wrote no keys: its record is what the closure's creator
-        // saw. (A frame under a key-writing caller wrote its own.)
-        let all = cc.needs_reflective_capture;
-        for sym in [
-            self_sym,
-            crate::symbol::wk::anon_state(),
-            crate::symbol::wk::class_decl(),
-            crate::symbol::wk::role_decl(),
-        ] {
-            if (all || cc.free_var_syms.contains(&sym) || sym == self_sym)
-                && env.get_sym(sym).is_none()
-                && let Some(val) = self.frame_fixture_value(sym)
-            {
-                env.insert_sym(sym, val);
             }
         }
     }

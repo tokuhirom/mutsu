@@ -833,7 +833,7 @@ impl Interpreter {
             return None;
         }
         // An instance's cell, or a `Proxy` subclass instance's (#14259).
-        let attrs = Self::self_instance_attrs(&self.env_self_value()?)?;
+        let attrs = Self::self_instance_attrs(&self.frame_invocant()?)?;
         let key = {
             let map = attrs.as_map();
             match self.types.method_class_stack.last() {

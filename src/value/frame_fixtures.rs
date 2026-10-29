@@ -15,6 +15,6 @@ use crate::value::Value;
 #[derive(Clone, Debug)]
 pub(crate) struct FrameFixtures {
     pub(crate) invocant: Option<Value>,
-    pub(crate) class: Option<Symbol>,
+    pub(crate) class: Option<Value>,
     pub(crate) role: Option<Symbol>,
 }

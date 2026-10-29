@@ -187,7 +187,7 @@ impl Interpreter {
             if let Some(def) = self.resolve_hidden_owned_export(&cur_pkg, name) {
                 return Some(def);
             }
-            let self_value = self.env_self_value();
+            let self_value = self.frame_invocant();
             if let Some(ValueView::Instance { class_name, .. }) =
                 self_value.as_ref().map(Value::view)
             {

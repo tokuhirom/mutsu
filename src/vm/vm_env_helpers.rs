@@ -331,7 +331,7 @@ impl Interpreter {
         // declaring scope is the invocant's class (`self`), so probe its
         // package chain too (`unit class EnumC; our enum HF <… Lists>;
         // method new(:$h = Lists)` reads `Lists` as `EnumC::Lists`).
-        let self_value = self.env_self_value();
+        let self_value = self.frame_invocant();
         let invocant_class = match self_value.as_ref().map(|v| v.view()) {
             Some(ValueView::Instance { class_name, .. }) => Some(class_name),
             Some(ValueView::Package(p)) => Some(p),
@@ -1622,6 +1622,14 @@ impl Interpreter {
             && let Some(v) = self.exported_sub_latest_self()
         {
             return Some(v);
+        }
+        // The fixed per-call names are the frame record's alone (ADR-14843).
+        if sym == crate::symbol::wk::self_()
+            || sym == crate::symbol::wk::anon_state()
+            || sym == crate::symbol::wk::class_decl()
+            || sym == crate::symbol::wk::role_decl()
+        {
+            return self.frame_fixture_value(sym);
         }
         // A process-level dynamic written at run time (`$PROCESS::OUT = ...`,
         // possibly by another thread) lives only in the process stash, and a
