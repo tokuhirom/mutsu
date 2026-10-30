@@ -457,10 +457,15 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(super) fn exec_function_compose_op(&mut self) {
+    pub(super) fn exec_function_compose_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let composed = self.compose_callables(left, right);
+        // A declared `multi infix:<o>` is a candidate of the core operator.
+        let composed = match self.try_user_infix("infix:<o>", &left, &right)? {
+            Some(value) => value,
+            None => self.compose_callables(left, right),
+        };
         self.stack.push(composed);
+        Ok(())
     }
 }

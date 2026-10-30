@@ -141,6 +141,21 @@ fn comparison_tail(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Ex
             r,
         ));
     }
+    // A declared `multi infix:<eq>` (or another core comparison word) keeps the
+    // core operator's level, which is this one: it is taken here, not at the
+    // additive level every other trait-less declared word defaults to.
+    {
+        use crate::parser::stmt::simple::{PREC_AND_AND, PREC_STRUCTURAL};
+        if let Some(new_rest) = crate::parser::expr::precedence::try_custom_infix_word(
+            r,
+            &mut left,
+            PREC_AND_AND,
+            PREC_STRUCTURAL,
+            &|s| structural_comparison_expr_mode(s, mode),
+        )? {
+            return comparison_tail(new_rest, left, mode);
+        }
+    }
     // Longest-token rule (Raku LTM): a user-declared *symbol* infix operator that
     // starts here and is LONGER than the comparison operator that would otherwise
     // match (e.g. `infix:<==⨧>` vs `==`) is that infix, not a comparison. Leave it

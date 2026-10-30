@@ -609,6 +609,11 @@ impl Interpreter {
     pub(super) fn exec_coll_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // A declared `multi infix:<coll>` is a candidate of the core operator.
+        if let Some(value) = self.try_user_infix("infix:<coll>", &left, &right)? {
+            self.stack.push(value);
+            return Ok(());
+        }
         let left_s = Self::stringify_compare_operand(&left)?;
         let right_s = Self::stringify_compare_operand(&right)?;
 
@@ -622,6 +627,11 @@ impl Interpreter {
     pub(super) fn exec_unicmp_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // A declared `multi infix:<unicmp>` is a candidate of the core operator.
+        if let Some(value) = self.try_user_infix("infix:<unicmp>", &left, &right)? {
+            self.stack.push(value);
+            return Ok(());
+        }
         let left_s = Self::stringify_compare_operand(&left)?;
         let right_s = Self::stringify_compare_operand(&right)?;
 

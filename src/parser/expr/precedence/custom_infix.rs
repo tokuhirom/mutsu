@@ -251,6 +251,21 @@ pub(crate) fn is_declared_custom_infix_word(input: &str) -> bool {
 /// candidate (`t/routines/dispatch/core-infix-user-candidate-fallbacks.t`).
 const CORE_PARSED_INFIX_WORDS: &[&str] = &["cmp", "leg", "min", "max", "x", "xx"];
 
+/// The precedence a declared `multi infix:<word>` of a core word keeps when it
+/// names no `is tighter`/`is looser`/`is equiv` trait: the declaration adds a
+/// candidate to the core operator, so it stays at the core operator's level
+/// (`2 + 1 eq 4 - 1` is `(2 + 1) eq (4 - 1)` with an `eq` candidate declared).
+// Cost: O(1) over a fixed word list.
+fn core_infix_word_level(name: &str) -> Option<i32> {
+    use crate::parser::stmt::simple::{PREC_CONCAT, PREC_STRUCTURAL};
+    match name {
+        "eq" | "ne" | "lt" | "gt" | "le" | "ge" | "eqv" | "after" | "before" | "unicmp"
+        | "coll" => Some(PREC_STRUCTURAL),
+        "o" => Some(PREC_CONCAT),
+        _ => None,
+    }
+}
+
 /// Parse one application of a user-declared `infix:<word>` operator, folding it
 /// into `left`. Returns `Ok(None)` when `r` does not open with a custom infix
 /// word whose precedence level falls in `(min_level, max_level]` — with `None`
@@ -296,7 +311,7 @@ pub(crate) fn try_custom_infix_word<'a>(
     }
     let level = crate::parser::stmt::simple::lookup_custom_infix_precedence(&name).unwrap_or({
         if crate::parser::stmt::simple::is_user_defined_infix(&name) {
-            PREC_ADDITIVE
+            core_infix_word_level(&name).unwrap_or(PREC_ADDITIVE)
         } else {
             PREC_SEQUENCE
         }
