@@ -14018,6 +14018,12 @@ pub(crate) struct CompiledFunction {
     /// no `is rw` parameter — the overwhelming majority — pays no per-call
     /// scan for one. Computed once in `precompute_param_name_syms`.
     pub(crate) has_rw_positional_param: bool,
+    /// True when at least one positional `param_defs` entry carries exactly
+    /// the `copy` trait on a plain `$` scalar. The positional-light bind then
+    /// leaves that parameter writable, as the general binder does for
+    /// `is copy`; a routine with none pays no per-call trait scan.
+    /// Computed once in `precompute_param_name_syms`.
+    pub(crate) has_copy_positional_param: bool,
     /// Bit `i` is set when parameter `i` is a plain `@x`/`%x` the
     /// positional-light paths may bind
     /// ([`FastParamCheck::light_aggregate_sigil`]), so neither the eligibility
@@ -14663,6 +14669,10 @@ impl CompiledFunction {
             .param_defs
             .iter()
             .any(|pd| !pd.named && pd.traits.iter().any(|t| t == "rw"));
+        self.has_copy_positional_param = self
+            .param_defs
+            .iter()
+            .any(|pd| !pd.named && pd.traits.iter().any(|t| t == "copy"));
         self.aggregate_positional_params = self
             .param_defs
             .iter()
@@ -14769,6 +14779,7 @@ mod compiled_fns_identity {
             is_raw: false,
             uses_return_rw: false,
             has_rw_positional_param: false,
+            has_copy_positional_param: false,
             aggregate_positional_params: 0,
             param_local_slots: None,
             params_fill_frame: false,

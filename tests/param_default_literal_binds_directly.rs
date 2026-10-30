@@ -40,10 +40,10 @@ fn param_default_counts(stderr: &str) -> (u64, u64) {
 
 #[test]
 fn literal_default_is_bound_without_evaluating_it() {
-    // `is copy` keeps `f` off the positional light path (which fills constant
+    // `is raw` keeps `f` off the positional light path (which fills constant
     // defaults from its own table), so every call below goes through the
     // general binder and its `eval_param_default`.
-    let src = "sub f($a, $s is copy, $d = '', $n = 1) { $s ~ $d ~ $n }; \
+    let src = "sub f($a, $s is raw, $d = '', $n = 1) { $s ~ $d ~ $n }; \
                my $r; for ^50 { $r = f(1, 'x') }; say $r";
     let (out, err, ok) = run_with_stats(src);
     assert!(ok, "run failed: {err}");
@@ -60,7 +60,7 @@ fn literal_default_is_bound_without_evaluating_it() {
 fn non_literal_default_is_still_evaluated_per_call() {
     // A default that reads an earlier parameter is an expression; it must be
     // evaluated each call, with the earlier parameter in scope.
-    let src = "sub g($a, $b is copy, $c = $a * 2) { $c }; \
+    let src = "sub g($a, $b is raw, $c = $a * 2) { $c }; \
                my @r; for 1..3 { @r.push(g($_, 0)) }; say @r";
     let (out, err, ok) = run_with_stats(src);
     assert!(ok, "run failed: {err}");
@@ -73,7 +73,7 @@ fn non_literal_default_is_still_evaluated_per_call() {
 fn container_literal_default_stays_fresh_per_call() {
     // `[]` is a container literal: each call must get its OWN array, so the
     // shortcut must not apply (a shared constant would accumulate pushes).
-    let src = "sub h($a, $b is copy, $acc = []) { $acc.push($a); $acc.elems }; \
+    let src = "sub h($a, $b is raw, $acc = []) { $acc.push($a); $acc.elems }; \
                say (h(1, 0), h(2, 0), h(3, 0))";
     let (out, err, ok) = run_with_stats(src);
     assert!(ok, "run failed: {err}");

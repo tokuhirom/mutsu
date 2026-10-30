@@ -426,6 +426,7 @@ impl Interpreter {
             is_hidden_from_backtrace: def.is_hidden_from_backtrace,
             uses_return_rw: crate::opcode::body_uses_return_rw(&def.body),
             has_rw_positional_param: false,
+            has_copy_positional_param: false,
             aggregate_positional_params: 0,
             is_cached: def.is_cached,
             param_local_slots: None,
