@@ -309,6 +309,10 @@ fn sub_value(
     use crate::rakuast::RakuAstClass as K;
     match node.class {
         K::Method | K::Submethod => return method_value(interp, target, _args, _named),
+        // A block's value is its closure.
+        K::Block | K::PointyBlock => {
+            return Some(interp.eval_rakuast_node(&crate::rakuast::as_item_call_statement(target)));
+        }
         // `::T` stands for a type nobody has bound yet.
         K::TypeCapture => return Some(Ok(Value::package(Symbol::intern("Any")))),
         // A constant's value is its initializer's, evaluated now.
