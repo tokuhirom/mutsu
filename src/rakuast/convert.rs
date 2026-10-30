@@ -2994,10 +2994,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // it would hand back a node with block semantics (`let`/`temp`
             // resolution) the original never had -- GH-7635.
             if origin != &crate::ast::DoBlockOrigin::SourceBlock {
-                // `120 = 3`: the written assignment to an immutable literal.
-                if let Some((literal, rhs)) = crate::parser::literal_assign_ro_parts(expr) {
-                    return assignment_around(convert_expr(literal)?, false, rhs);
-                }
                 return Err(unsupported("desugared do-block"));
             }
             let expression = RakuAstNode {

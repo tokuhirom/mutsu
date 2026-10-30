@@ -2860,7 +2860,7 @@ fn literal_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
         return Ok(None);
     }
     let value = lower_expr(named_child(node, "right")?)?;
-    Ok(Some(crate::parser::literal_assign_ro_expr(literal, value)))
+    Ok(Some(super::literal_assign_ro_expr(literal, value)))
 }
 
 /// `TARGET = SOURCE` over any other target the assignment family's lowering

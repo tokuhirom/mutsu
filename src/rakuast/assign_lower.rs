@@ -103,6 +103,9 @@ pub(crate) fn lower_expression(node: Assign) -> Expr {
         target = spelled.expr;
     }
     match super::assign_target::unwrap_grouped_lvalue(target) {
+        // `120 = 3`: an immutable literal, which dies once the source has run.
+        Expr::Literal(value) => super::literal_assign_ro_expr(Expr::Literal(value), source),
+        Expr::LiteralSrc(value, _) => super::literal_assign_ro_expr(Expr::Literal(value), source),
         // `&f = …, …` (a statement whose comma list follows the assignment).
         Expr::CodeVar(name) => Expr::AssignExpr {
             name: format!("&{name}"),
