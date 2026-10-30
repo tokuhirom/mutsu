@@ -178,7 +178,12 @@ pub(super) static ROWS: &[MethodRow] = &[
     origin_row!("RakuAST::Origin", "source", 0, origin_source),
     origin_row!("RakuAST::Origin::Source", "original-line", 1, original_line),
     origin_row!("RakuAST::Origin::Source", "orig", 0, source_orig),
-    origin_row!("RakuAST::Origin::Source", "prepost-of-pos", 1, prepost_of_pos),
+    origin_row!(
+        "RakuAST::Origin::Source",
+        "prepost-of-pos",
+        1,
+        prepost_of_pos
+    ),
 ];
 
 /// `Node.fileline`: `"<file>:<line>"` where the node's origin begins. The unit
@@ -486,8 +491,17 @@ fn prepost_of_pos(target: &Value, args: &[Value]) -> Option<Result<Value, Runtim
         .iter()
         .take_while(|c| **c != '\n')
         .collect();
-    let side = |text: String, empty: &str| Value::str(if text.is_empty() { empty.to_string() } else { text });
-    Some(Ok(Value::array(vec![side(pre, "<BOL>"), side(post, "<EOL>")])))
+    let side = |text: String, empty: &str| {
+        Value::str(if text.is_empty() {
+            empty.to_string()
+        } else {
+            text
+        })
+    };
+    Some(Ok(Value::array(vec![
+        side(pre, "<BOL>"),
+        side(post, "<EOL>"),
+    ])))
 }
 
 /// The child nodes of `node`, in field order: every field value that is itself

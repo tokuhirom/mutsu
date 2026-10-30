@@ -98,9 +98,12 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
         hoist(node, scopes);
     }
     // A method remembers the package that declares it, for `compile-time-value`.
-    let package = matches!(node.class, C::Class | C::Role | C::Grammar | C::Module | C::Package)
-        .then(|| package_name(node))
-        .flatten();
+    let package = matches!(
+        node.class,
+        C::Class | C::Role | C::Grammar | C::Module | C::Package
+    )
+    .then(|| package_name(node))
+    .flatten();
     if matches!(node.class, C::Method | C::Submethod) && !scopes.packages.is_empty() {
         node.origin.2 = Some(Value::str(scopes.packages.join("::")));
     }
