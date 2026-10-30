@@ -297,6 +297,17 @@ fn held(node: &RakuAstNode) -> Result<Held, RuntimeError> {
     })
 }
 
+/// Whether a statement declares a routine the statements after it can call:
+/// a `sub` or a `&name` variable (see `register_rakuast_user_sub_binding`).
+// Cost: O(1).
+fn declares_routine(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::SubDecl { .. } => true,
+        Stmt::VarDecl { name, .. } => name.starts_with('&'),
+        _ => false,
+    }
+}
+
 /// Lowers every kept [`crate::ast::parsed::ParsedStmt`] of a tree, innermost first.
 struct Kept(Option<RuntimeError>);
 
@@ -336,8 +347,6 @@ impl Kept {
 }
 
 impl VisitMut for Kept {
-    // The traits a routine was written with are compiler-inert: lowering them
-    // produces no statement (a stub body `{ ... }` is the body's only one).
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
         body.retain(|s| match s {
             // A `;` that ends no statement runs nothing and is no block's value.
@@ -348,7 +357,14 @@ impl VisitMut for Kept {
         // they do when it is converted.
         let _scope = super::bareword::BlockScope::enter(body);
         // A routine or `&name` declared in the body is in scope for the
-        // statements after it, as it is for the parser.
+        // statements after it, as it is for the parser; a body that declares
+        // none needs no scope of its own.
+        if !body.iter().any(declares_routine) {
+            for stmt in body.iter_mut() {
+                self.visit_stmt_mut(stmt);
+            }
+            return;
+        }
         crate::parser::with_rakuast_lexical_scope(|| {
             for stmt in body.iter_mut() {
                 self.visit_stmt_mut(stmt);
