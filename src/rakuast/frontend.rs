@@ -24,19 +24,8 @@ use crate::value::RuntimeError;
 /// Whether `MUTSU_RAKUAST=convert` is set: the test level without passthrough
 /// leaves. Read once per process.
 fn convert_level() -> bool {
-    #[cfg(test)]
-    if let Some(forced) = CONVERT_OVERRIDE.with(|c| c.get()) {
-        return forced;
-    }
     static CONVERT: OnceLock<bool> = OnceLock::new();
     *CONVERT.get_or_init(|| convert_level_from(std::env::var("MUTSU_RAKUAST").ok().as_deref()))
-}
-
-#[cfg(test)]
-thread_local! {
-    /// The differential oracle (`passthrough::oracle`) forces a level per call.
-    pub(super) static CONVERT_OVERRIDE: std::cell::Cell<Option<bool>> =
-        const { std::cell::Cell::new(None) };
 }
 
 // Cost: O(1).

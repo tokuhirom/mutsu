@@ -509,8 +509,6 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
 }
 
-#[cfg(test)]
-mod oracle;
 mod pure;
 #[cfg(test)]
 mod tests;
