@@ -3336,11 +3336,16 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     if node.class == RakuAstClass::Block && method == "may-have-signature" {
         return Some(Value::truth(false));
     }
+    // `code-statements` (undocumented in rakudo; `static::CLI`'s analysis
+    // reads it, #15608) answers the same statements as `statements` for every
+    // statement kind measured under `raku` (expressions, declarations, `use`,
+    // phasers, loops, `CATCH`, empty statements).
     if (method == "statements"
         && matches!(
             node.class,
             RakuAstClass::StatementList | RakuAstClass::StatementSequence | RakuAstClass::SemiList
         ))
+        || (method == "code-statements" && node.class == RakuAstClass::StatementList)
         || (method == "args" && node.class == RakuAstClass::ArgList)
     {
         let items = node
@@ -3471,6 +3476,9 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     if class == RakuAstClass::CompUnit {
         names.push("add-check-code");
         names.push("replace-statement-list");
+    }
+    if class == RakuAstClass::StatementList {
+        names.push("code-statements");
     }
     if class == RakuAstClass::StatementExpression {
         names.push("set-expression");
