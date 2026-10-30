@@ -695,9 +695,12 @@ impl Interpreter {
                 // unit's CHECK phasers (which follow the marker), before INIT.
                 // Only a unit with BEGIN-time effects can have queued any.
                 if end > 0 {
+                    // Declarations the reorder left among the CHECK phasers
+                    // (`my $v = 1;`) must not end the run early: it goes after
+                    // the last CHECK phaser.
                     let checks = body_main[end + 1..]
                         .iter()
-                        .take_while(|stmt| {
+                        .rposition(|stmt| {
                             matches!(
                                 stmt,
                                 Stmt::Phaser {
@@ -706,7 +709,7 @@ impl Interpreter {
                                 }
                             )
                         })
-                        .count();
+                        .map_or(0, |last| last + 1);
                     body_main.insert(end + 1 + checks, Stmt::RunCheckCode);
                 }
                 (end > 0, if end > 0 { end + 1 } else { 0 })
