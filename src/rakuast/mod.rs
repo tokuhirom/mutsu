@@ -48,6 +48,7 @@ mod trait_is_constructor;
 mod with_branch;
 use constructor_positional::single_positional_class;
 mod convert;
+mod statements;
 mod core_term_names;
 use crate::core_type_names;
 mod decl_compound_assign;
