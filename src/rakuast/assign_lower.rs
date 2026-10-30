@@ -150,6 +150,13 @@ pub(crate) fn lower_expression(node: Assign) -> Expr {
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_statement(node: Assign) -> Stmt {
     match variable_name(&node.target) {
+        // `$.x = v` writes through the attribute's rw accessor, which
+        // `Stmt::Assign` has no path for: it is the assignment expression.
+        Some(name) if name.starts_with('.') => Stmt::Expr(Expr::AssignExpr {
+            name,
+            expr: Box::new(node.source),
+            is_bind: false,
+        }),
         Some(name) => Stmt::Assign {
             name,
             expr: node.source,

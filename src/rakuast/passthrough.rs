@@ -300,6 +300,22 @@ fn held(node: &RakuAstNode) -> Result<Held, RuntimeError> {
 struct Kept(Option<RuntimeError>);
 
 impl Kept {
+    /// The operands of a compound assignment lowered as the conversion reads
+    /// them: `* *= 2` curries to `{ $_ *= 2 }`, so a priming argument target is
+    /// the bare `*`, and a conditional target is restored.
+    fn compound_operands(&mut self, compound: &mut crate::ast::parsed::CompoundAssign) {
+        self.visit_expr_mut(&mut compound.target);
+        self.visit_expr_mut(&mut compound.source);
+        let target = std::mem::replace(&mut compound.target, Expr::Whatever);
+        let target = match super::compound_stmt::restore_conditional_target(target) {
+            Expr::WhateverArg => Expr::Whatever,
+            other => other,
+        };
+        compound.target = target;
+    }
+}
+
+impl Kept {
     fn finish(self, held: Held) -> Result<Held, RuntimeError> {
         match self.0 {
             Some(err) => Err(err),
@@ -376,8 +392,7 @@ impl VisitMut for Kept {
             let ParsedExpr::CompoundAssign(mut compound) = *node else {
                 unreachable!("checked above");
             };
-            self.visit_expr_mut(&mut compound.target);
-            self.visit_expr_mut(&mut compound.source);
+            self.compound_operands(&mut compound);
             match super::compound::lower::lower_compound_expression_with(
                 compound,
                 super::shadowed_terms::is_value_term,
@@ -423,8 +438,7 @@ impl VisitMut for Kept {
             let ParsedExpr::CompoundAssign(mut compound) = *node else {
                 unreachable!("checked above");
             };
-            self.visit_expr_mut(&mut compound.target);
-            self.visit_expr_mut(&mut compound.source);
+            self.compound_operands(&mut compound);
             match super::compound::lower::lower_compound_statement_with(
                 compound,
                 super::shadowed_terms::is_value_term,

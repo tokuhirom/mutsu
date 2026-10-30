@@ -209,10 +209,12 @@ impl Purity {
             // A type name: the spelled parse leaves a lowercase bareword to
             // the lowering, which resolves it against what the unit imported.
             Expr::BareWord(word) => {
+                // `Pointer[int8]` is a parameterized type name as the parser wrote it.
                 word.starts_with(|c: char| c.is_uppercase())
-                    && word
-                        .chars()
-                        .all(|c| c.is_alphanumeric() || matches!(c, ':' | '-' | '_'))
+                    && (word.ends_with(']') && word.contains('[')
+                        || word
+                            .chars()
+                            .all(|c| c.is_alphanumeric() || matches!(c, ':' | '-' | '_')))
             }
             // A `;` that ends no statement is no statement of the lowered
             // tree (`sub f { 1;; }` still returns 1); only the lowering of the
