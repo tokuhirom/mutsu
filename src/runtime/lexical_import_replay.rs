@@ -31,7 +31,7 @@ type TypeAliases = Arc<crate::runtime::package_keyed::PackageKeyed<String>>;
 /// What a block-scoped `use` wrote that its scope's exit removes again.
 pub(crate) struct LexicalImportReplay {
     /// The module-merge env keys, the values the import bound them to and
-    /// whether `record_import_env_key` noted them as the unit's imports.
+    /// whether `note_import_env_key` noted them as the unit's imports.
     env_keys: Vec<(Symbol, Value, bool)>,
     /// The modules whose packages the `use` merged into the block.
     merged: Vec<Symbol>,
@@ -91,8 +91,10 @@ impl Interpreter {
                 .module
                 .import_scope_stack
                 .last()
-                .map(|top| top.imported_env_keys.clone())
-                .unwrap_or_default(),
+                .and_then(|top| self.env.import_layer_keys(top.import_layer))
+                .unwrap_or_default()
+                .into_iter()
+                .collect(),
             own_imports_before: self
                 .module
                 .import_scope_stack
@@ -164,17 +166,18 @@ impl Interpreter {
         }
         let top = self.module.import_scope_stack.last()?;
         let mut env_keys = Vec::new();
-        for key in top.imported_env_keys.difference(&probe.env_keys_before) {
-            let value = self.env.get_sym(*key)?;
-            // Besides the module-merge grants, an imported type name or enum
-            // value is the same object on every run. Any other env alias the
-            // import wrote (an exported variable, a term, a `&name` hook
-            // value) is not replayed.
-            if !Self::replayable_import_value(value) {
+        for (key, value) in self.env.import_layer_entries(top.import_layer).unwrap_or_default() {
+            if probe.env_keys_before.contains(&key) {
+                continue;
+            }
+            // An imported type name or enum value is the same object on every
+            // run. Any other env alias the import wrote (an exported variable,
+            // a term, a `&name` hook value) is not replayed.
+            if !Self::replayable_import_value(&value) {
                 return None;
             }
-            let noted = self.env_key_imported_here(*key);
-            env_keys.push((*key, value.clone(), noted));
+            let noted = self.env_key_imported_here(key);
+            env_keys.push((key, value, noted));
         }
         let routine_aliases = self
             .module
@@ -243,23 +246,8 @@ impl Interpreter {
             }
             self.types.package_type_aliases = Arc::clone(types_after);
         }
-        // What `record_import_env_key` records for a key no enclosing import
-        // bound. A key an import of this unit visible when the scope opened
-        // already bound is shadowed, and the scope's exit puts that binding
-        // back, as `record_import_env_key` arranges on a real import.
-        let unit = self.executing_unit_sym_for_module_load();
+        let layer = self.module.import_scope_stack.last().map_or(0, |top| top.import_layer);
         if let Some(top) = self.module.import_scope_stack.last_mut() {
-            for (key, ..) in &replay.env_keys {
-                if top.imported_env_keys.insert(*key)
-                    && top
-                        .unit_env_imports
-                        .get(key)
-                        .is_some_and(|entry| entry.units.contains(&unit))
-                    && let Some(previous) = self.env.get_sym(*key)
-                {
-                    top.shadowed_env_values.insert(*key, previous.clone());
-                }
-            }
             top.own_routine_imports
                 .extend(replay.own_routine_imports.iter().copied());
             top.merged_modules.extend(replay.merged.iter().copied());
@@ -269,7 +257,9 @@ impl Interpreter {
                 .insert_sym(crate::meta_ns::MetaNs::ModuleMerge.key(*module), Value::TRUE);
         }
         for (key, value, _) in &replay.env_keys {
-            self.env.insert_sym(*key, value.clone());
+            if layer == 0 || !self.env.insert_import_sym(layer, *key, value.clone()) {
+                self.env.insert_sym(*key, value.clone());
+            }
         }
         let (before, after) = &replay.env_aliases_memo;
         if Arc::ptr_eq(&self.module.unit_env_imports, before) {

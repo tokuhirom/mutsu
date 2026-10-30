@@ -98,10 +98,9 @@ impl Interpreter {
                 import_writes: Vec::new(),
                 decl_order_at_open: crate::runtime::resolution::peek_decl_order(),
                 shadowed_proto_names: HashSet::new(),
-                imported_env_keys: Default::default(),
+                import_layer: 0,
                 merged_modules: Default::default(),
                 block_bound_keys: Default::default(),
-                shadowed_env_values: HashMap::new(),
                 imported_routine_aliases: self.module.imported_routine_aliases.clone(),
                 own_routine_imports: Default::default(),
                 imported_exported_proto_tags: self.module.imported_exported_proto_tags.clone(),
@@ -197,32 +196,59 @@ impl Interpreter {
         stack.last_mut().filter(|top| top.unit == importer)
     }
 
-    /// Record that `import_module` just wrote `key` into `env` as an
-    /// imported alias, so the innermost open import scope (if any) knows to
-    /// remove it again on pop. No-op outside any `use`-containing block —
-    /// a top-level `use` (or one inside a block with no `use` of its own)
-    /// has nothing on `import_scope_stack` to record against, and its
-    /// imports are meant to persist anyway.
-    pub(crate) fn record_import_env_key(&mut self, key: &str) {
-        let key_sym = Symbol::intern(key);
-        self.note_lexical_import_env_key(key_sym);
+    /// Record the unit-level facts of an imported `env` name (`key`): the
+    /// `&name` the lexical import capture sees and the unit's import table
+    /// the pseudo-stash and the bare-name gates read.
+    pub(crate) fn note_import_env_key(&mut self, key: Symbol) {
+        self.note_lexical_import_env_key(key);
+        self.note_unit_env_import(key);
+    }
+
+    /// The import layer an import running now binds into: the innermost open
+    /// import scope's, when it belongs to the importing compunit. Only that
+    /// compunit's own scope owns an import (see [`Self::importing_scope_mut`]).
+    // Cost: O(1).
+    fn importing_layer(&self) -> Option<u32> {
         let unit = self.executing_unit_sym_for_module_load();
-        self.note_unit_env_import(key_sym);
-        // A block's import over a name an enclosing import of the same unit
-        // already bound shadows that binding, and its scope exit puts it back
-        // (`use M :t; { use M } t`). Only an import visible when the scope
-        // opened counts: an alias a BEGIN-time preload left in `env` is not
-        // one.
-        if let Some(top) = Self::importing_scope_mut(&mut self.module.import_scope_stack, unit)
-            && top.imported_env_keys.insert(key_sym)
-            && top
-                .unit_env_imports
-                .get(&key_sym)
-                .is_some_and(|entry| entry.units.contains(&unit))
-            && let Some(previous) = self.env.get_sym(key_sym)
+        self.module
+            .import_scope_stack
+            .last()
+            .filter(|top| top.unit == unit && top.import_layer != 0)
+            .map(|top| top.import_layer)
+    }
+
+    /// Bind `key` as an imported alias: in the import layer of the open
+    /// import scope that owns the import, else (a top-level `use`, a BEGIN
+    /// preload, a block with no `use` of its own) in the `env` itself, where
+    /// it is meant to persist. An import over a name an enclosing scope
+    /// bound shadows it, and the scope's exit takes the layer away
+    /// (`use M :t; { use M } t` still sees the outer `t`).
+    // Cost: O(d), d = env chain depth, plus a copy-on-write of the shared tiers above the layer.
+    pub(crate) fn import_env_insert(&mut self, key: &str, value: Value) {
+        let sym = Symbol::intern(key);
+        self.note_import_env_key(sym);
+        if let Some(id) = self.importing_layer()
+            && self.env.insert_import_sym(id, sym, value.clone())
         {
-            top.shadowed_env_values.insert(key_sym, previous.clone());
+            return;
         }
+        self.env.insert_sym(sym, value);
+    }
+
+    /// Bind `key` in the innermost open import scope's layer, with no import
+    /// bookkeeping (a lexical stub rather than an import), or in the `env`
+    /// itself when no scope owns one.
+    // Cost: as `import_env_insert`.
+    pub(crate) fn bind_in_open_import_layer(&mut self, key: &str, value: Value) {
+        let sym = Symbol::intern(key);
+        if let Some(top) = self.module.import_scope_stack.last()
+            && top.scope_classes
+            && top.import_layer != 0
+            && self.env.insert_import_sym(top.import_layer, sym, value.clone())
+        {
+            return;
+        }
+        self.env.insert_sym(sym, value);
     }
 
     /// Record a routine name imported into `package`. A later local
@@ -483,10 +509,9 @@ impl Interpreter {
                 import_writes,
                 decl_order_at_open: _,
                 shadowed_proto_names: _,
-                imported_env_keys,
+                import_layer: _,
                 merged_modules: _,
                 block_bound_keys: _,
-                mut shadowed_env_values,
                 unit_env_imports,
                 imported_routine_aliases,
                 own_routine_imports: _,
@@ -496,7 +521,7 @@ impl Interpreter {
                 fatal_mode,
                 lexical_fatal_mode,
                 monkey_typing,
-                scope_classes,
+                scope_classes: _,
                 leave_phasers: _,
                 lexical_sets: _,
                 routine_depth: _,
@@ -511,12 +536,6 @@ impl Interpreter {
             let program_path = self.io.program_path_sym;
             let mut changed_keys = self.undo_import_writes(import_writes);
             changed_keys.extend(self.drop_foreign_global_main_candidates(program_path));
-            // The `env` half: drop the aliases this scope imported (see
-            // `restore_import_env_keys`). A PRELOAD scope (`scope_classes ==
-            // false`, see `push_preload_scope`) keeps them.
-            if scope_classes {
-                self.restore_import_env_keys(imported_env_keys, &mut shadowed_env_values);
-            }
             self.io.newline_mode = newline_mode;
             self.module.strict_mode = strict_mode;
             self.module.fatal_mode = fatal_mode;

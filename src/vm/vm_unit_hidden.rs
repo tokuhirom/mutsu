@@ -87,7 +87,10 @@ impl Interpreter {
             None => {
                 if !self.module.import_scope_stack.iter().any(|scope| {
                     scope.scope_classes
-                        && !(scope.imported_env_keys.is_empty()
+                        && !(self
+                            .env()
+                            .import_layer_keys(scope.import_layer)
+                            .is_none_or(|keys| keys.is_empty())
                             && scope.merged_modules.is_empty()
                             && scope.block_bound_keys.is_empty())
                 }) {
@@ -112,18 +115,21 @@ impl Interpreter {
             .iter()
             .filter(|scope| scope.scope_classes)
             .flat_map(|scope| {
-                scope
-                    .imported_env_keys
-                    .iter()
+                self.env()
+                    .import_layer_keys(scope.import_layer)
+                    .unwrap_or_default()
+                    .into_iter()
                     .filter(|key| {
                         key.with_str(|s| {
                             crate::env::is_user_variable_key(s)
                                 // An imported enum value's own key
                                 // namespace (#7914, #14214).
                                 || s.starts_with(crate::meta_ns::ENUM_BARE_PREFIX)
-                        }) && !scope.shadowed_env_values.contains_key(*key)
+                        }) && !scope
+                            .unit_env_imports
+                            .get(key)
+                            .is_some_and(|entry| entry.units.contains(&scope.unit))
                     })
-                    .copied()
                     .chain(scope.block_bound_keys.iter().copied())
                     .chain(
                         scope

@@ -579,6 +579,14 @@ pub struct Env {
     /// every overlay write ([`Self::cow_mut`]) and fallback install. Always
     /// empty on any other env.
     capture_merged: OnceLock<Arc<Tier>>,
+    /// Non-zero on a tier that is an *import layer* (ADR-14140): the names an
+    /// import scope's imports bind live here, below the block tier the region
+    /// runs over, and the region drops the whole layer on exit. The value is
+    /// the layer's id, which the import scope records.
+    import_layer: u32,
+    /// Non-zero on the block tier an import region runs over, above its import
+    /// layer: the id of that layer (see [`Env::open_import_region`]).
+    import_region: u32,
     /// Number of parent tiers below this env (0 for a flat env). Used to bound
     /// the chain length: a recursive function would otherwise grow the chain one
     /// tier per call, making `get`/`Drop`/`flattened` recurse to the recursion
@@ -729,10 +737,26 @@ pub(crate) struct BlockTier {
     pub(crate) parent: Env,
 }
 
+/// An import region closed (see [`Env::close_import_region`]).
+pub(crate) struct ClosedImportRegion {
+    /// The block tier's by-name writes.
+    pub(crate) overlay: Arc<Tier>,
+    /// Keys the region removed that the enclosing env still binds.
+    pub(crate) tombstones: Option<rustc_hash::FxHashSet<Symbol>>,
+    /// The enclosing env, as it was handed to [`Env::open_import_region`].
+    pub(crate) outer: Env,
+}
+
 /// Maximum overlay chain length before [`Env::scoped_child`] flattens the parent.
 /// Typical method/function nesting is a handful of tiers, well under this; only
 /// deep recursion ever hits it, paying one O(env) flatten per this many frames.
 const MAX_OVERLAY_DEPTH: u16 = 16;
+
+/// The next import layer id (never 0).
+pub(crate) fn next_import_layer_id() -> u32 {
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
 
 /// Process-wide shared empty overlay map for fresh scoped children. A brand-new
 /// overlay is always empty, so every frame can share one allocation: the first
@@ -833,6 +857,8 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
+            import_layer: 0,
+            import_region: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,
@@ -971,6 +997,8 @@ impl Env {
                     outer_is_foreign_unit: false,
                     owns_routine_state: false,
                     capture_merged: OnceLock::new(),
+            import_layer: 0,
+            import_region: 0,
                     frame_writes: None,
                     code_entries: None,
                     dyn_base: None,
@@ -998,6 +1026,8 @@ impl Env {
                 outer_is_foreign_unit: false,
                 owns_routine_state: false,
                 capture_merged: OnceLock::new(),
+            import_layer: 0,
+            import_region: 0,
                 frame_writes: None,
                 code_entries: None,
                 dyn_base: None,
@@ -1030,6 +1060,8 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
+            import_layer: 0,
+            import_region: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,
@@ -1076,11 +1108,147 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
+            import_layer: 0,
+            import_region: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,
         };
         Ok((child, parent))
+    }
+
+    /// Whether opening two more tiers over this env would hit the depth cap
+    /// (an import region opens an import layer and a block tier).
+    // Cost: O(1).
+    pub(crate) fn needs_flatten_for_import_region(&self) -> bool {
+        self.depth + 1 >= MAX_OVERLAY_DEPTH
+    }
+
+    /// Open an import region over `parent` (ADR-14140): an import layer with
+    /// the id `id`, and above it the block tier the region's by-name writes
+    /// land in. Only the returned tier holds the layer, so
+    /// [`Self::insert_import_sym`] writes it in place instead of copying it.
+    /// Pair with [`Self::close_import_region`]. `Err(parent)` when the chain is
+    /// too deep for two more tiers; flatten it first
+    /// ([`Self::needs_flatten_for_import_region`]).
+    // Cost: O(1) (two `Env` handle clones and two `Arc` allocations).
+    pub(crate) fn open_import_region(parent: Env, id: u32) -> Result<Env, Env> {
+        if parent.needs_flatten_for_import_region() {
+            return Err(parent);
+        }
+        let (mut layer, parent_arc) = Env::open_block_tier(parent)?;
+        drop(parent_arc);
+        layer.import_layer = id;
+        let (mut tier, layer_arc) = Env::open_block_tier(layer)
+            .unwrap_or_else(|_| unreachable!("the layer is below the depth cap"));
+        drop(layer_arc);
+        tier.import_region = id;
+        Ok(tier)
+    }
+
+    /// Leave the import region [`Self::open_import_region`] opened: the block
+    /// tier's writes and removals, and the enclosing env, with the import
+    /// layer dropped. `Err(self)` when `self` is no longer that region's tier
+    /// (the env was replaced wholesale while the region ran).
+    // Cost: O(1) when nothing else holds the region's tiers; otherwise one
+    // `Env` handle clone per tier.
+    pub(crate) fn close_import_region(mut self, id: u32) -> Result<ClosedImportRegion, Env> {
+        let intact = self.import_region == id
+            && self.fallback.is_none()
+            && self.frame_writes.is_none()
+            && self.parent.as_ref().is_some_and(|layer| {
+                layer.import_layer == id && layer.parent.is_some()
+            });
+        if !intact {
+            return Err(self);
+        }
+        let layer_arc = self.parent.take().expect("checked above");
+        let overlay = std::mem::replace(&mut self.inner, empty_overlay());
+        let tombstones = self.tombstones.take().map(|t| *t);
+        drop(self);
+        let mut layer = Arc::try_unwrap(layer_arc).unwrap_or_else(|a| (*a).clone());
+        let outer_arc = layer.parent.take().expect("checked above");
+        let outer = Arc::try_unwrap(outer_arc).unwrap_or_else(|a| (*a).clone());
+        Ok(ClosedImportRegion {
+            overlay,
+            tombstones,
+            outer,
+        })
+    }
+
+    /// Whether the chain holds the import layer `id`.
+    // Cost: O(d), d = chain depth (at most `MAX_OVERLAY_DEPTH`).
+    pub(crate) fn has_import_layer(&self, id: u32) -> bool {
+        let mut cur = self;
+        loop {
+            if cur.import_layer == id {
+                return true;
+            }
+            match &cur.parent {
+                Some(parent) => cur = parent,
+                None => return false,
+            }
+        }
+    }
+
+    /// Bind `key` in the import layer `id` of the chain, shadowing whatever the
+    /// tiers below it bind. `false`, having written nothing, when the chain has
+    /// no such layer.
+    // Cost: O(d) to find the layer, plus a copy-on-write of each tier above it
+    // that a closure or a snapshot shares; d = chain depth.
+    pub(crate) fn insert_import_sym(&mut self, id: u32, key: Symbol, value: Value) -> bool {
+        if !self.has_import_layer(id) {
+            return false;
+        }
+        self.import_layer_mut(id).insert_sym(key, value);
+        true
+    }
+
+    fn import_layer_mut(&mut self, id: u32) -> &mut Env {
+        if self.import_layer == id {
+            return self;
+        }
+        let parent = self.parent.as_mut().expect("has_import_layer found the layer");
+        Arc::make_mut(parent).import_layer_mut(id)
+    }
+
+    /// What the import layer `id` binds, if the chain holds it.
+    // Cost: O(d + k), d = chain depth, k = the layer's bindings.
+    pub(crate) fn import_layer_entries(&self, id: u32) -> Option<Vec<(Symbol, Value)>> {
+        let mut cur = self;
+        loop {
+            if cur.import_layer == id {
+                return Some(cur.inner.iter().map(|(k, v)| (*k, v.clone())).collect());
+            }
+            cur = cur.parent.as_deref()?;
+        }
+    }
+
+    /// The names the import layer `id` binds, if the chain holds it.
+    // Cost: O(d + k), d = chain depth, k = the layer's bindings.
+    pub(crate) fn import_layer_keys(&self, id: u32) -> Option<Vec<Symbol>> {
+        let mut cur = self;
+        loop {
+            if cur.import_layer == id {
+                return Some(cur.inner.iter().map(|(k, _)| *k).collect());
+            }
+            cur = cur.parent.as_deref()?;
+        }
+    }
+
+    /// Whether the import layer `id` binds `key`.
+    // Cost: O(d), d = chain depth.
+    pub(crate) fn import_layer_binds(&self, id: u32, key: Symbol) -> bool {
+        let mut cur = self;
+        loop {
+            if cur.import_layer == id {
+                return cur.inner.contains_key(&key);
+            }
+            match cur.parent.as_deref() {
+                Some(parent) => cur = parent,
+                None => return false,
+            }
+        }
     }
 
     /// A flat, empty env that shares the process-wide empty map instead of
@@ -1102,6 +1270,8 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
+            import_layer: 0,
+            import_region: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,
@@ -1602,6 +1772,8 @@ impl Env {
                     outer_is_foreign_unit: false,
                     owns_routine_state: false,
                     capture_merged: OnceLock::new(),
+            import_layer: 0,
+            import_region: 0,
                     frame_writes: None,
                     code_entries: None,
                     dyn_base,
@@ -1736,6 +1908,8 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
+            import_layer: 0,
+            import_region: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base,
@@ -1926,6 +2100,8 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
+            import_layer: 0,
+            import_region: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base,
@@ -2104,6 +2280,8 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
+            import_layer: 0,
+            import_region: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base,
@@ -2295,6 +2473,8 @@ impl Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
+            import_layer: 0,
+            import_region: 0,
             fallback,
             frame_writes: None,
             code_entries: None,
@@ -3317,6 +3497,8 @@ impl From<ValueMap> for Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
+            import_layer: 0,
+            import_region: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,
@@ -3344,6 +3526,8 @@ impl From<HashMap<Symbol, Value>> for Env {
             outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
+            import_layer: 0,
+            import_region: 0,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,

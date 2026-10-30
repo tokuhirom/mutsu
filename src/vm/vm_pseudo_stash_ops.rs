@@ -387,7 +387,9 @@ impl Interpreter {
         for (key, display) in self.env_imports_here() {
             let key = &key;
             if let Some(scope) = own_imports
-                && !scope.is_some_and(|i| self.import_scopes()[i].imported_env_keys.contains(key))
+                && !scope.is_some_and(|i| {
+                    self.env().import_layer_binds(self.import_scopes()[i].import_layer, *key)
+                })
             {
                 continue;
             }

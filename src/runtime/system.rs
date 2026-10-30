@@ -331,6 +331,19 @@ impl Interpreter {
     /// cleanup that keeps the unit's own `my` declarations out of the
     /// caller's pad. String `EVAL` and `RakuAST::Node.EVAL` share it.
     pub(super) fn run_eval_unit_stmts(&mut self, stmts: Vec<Stmt>) -> Result<Value, RuntimeError> {
+        // A unit that imports binds the names in an env import region of its
+        // own, dropped when the unit ends; one that imports nothing needs no
+        // region (ADR-14140).
+        let region = crate::compiler::Compiler::has_use_stmt(&stmts)
+            .then(|| self.open_import_region());
+        let result = self.run_eval_unit_stmts_body(stmts);
+        if let Some(region) = region {
+            self.close_import_region(region);
+        }
+        result
+    }
+
+    fn run_eval_unit_stmts_body(&mut self, stmts: Vec<Stmt>) -> Result<Value, RuntimeError> {
         // When EVAL is called inside a class body, MethodDecl statements
         // should be added to the enclosing class rather than lowered to subs.
         let mut stmts = self.inject_eval_methods_into_class(stmts);

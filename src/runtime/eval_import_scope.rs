@@ -1,22 +1,83 @@
 //! The import scope an `EVAL` opens around its compunit (#11069), and the
-//! `env` half of every import scope's rollback.
+//! env region every import scope runs over.
 //!
 //! What a `use` imports is lexical to the unit that holds it. A `use`-holding
-//! block rolls back the routine/class registries and the `env` aliases with
-//! `push_import_scope`/`pop_import_scope`. An `EVAL` already rolls back its
+//! block rolls back the routine/class registries with
+//! `push_import_scope`/`pop_import_scope`, and runs over an env *import
+//! region* ([`ImportRegion`]): the names its imports bind live in a layer the
+//! region drops whole on exit (ADR-14140). An `EVAL` already rolls back its
 //! registries itself (`eval_eval_string_unit`'s snapshots, which know to keep
 //! an EVAL's own `our sub` and the classes it declares), so it needs only the
-//! `env` half: the aliases `import_module` wrote (a `sub EXPORT` hook's
+//! env half: the aliases `import_module` wrote (a `sub EXPORT` hook's
 //! terms, an exported class name) must not outlive the EVAL.
 
 use super::*;
 
+/// An env import region opened by [`Interpreter::open_import_region`].
+pub(crate) struct ImportRegion {
+    id: u32,
+}
+
 impl Interpreter {
+    /// Open the env import region of the import scope just pushed: the scope
+    /// records the layer's id, and its imports bind there.
+    // Cost: O(1), or O(v) once when the env chain is at the depth cap (one
+    // flatten, v = visible names).
+    pub(crate) fn open_import_region(&mut self) -> ImportRegion {
+        if self.env().needs_flatten_for_import_region() {
+            let flat = self.env().flattened();
+            *self.env_mut() = flat;
+        }
+        let id = crate::env::next_import_layer_id();
+        let entry = std::mem::replace(self.env_mut(), Env::empty_placeholder());
+        match Env::open_import_region(entry, id) {
+            Ok(tier) => *self.env_mut() = tier,
+            Err(_) => unreachable!("the chain was flattened below the depth cap"),
+        }
+        if let Some(top) = self.module.import_scope_stack.last_mut() {
+            top.import_layer = id;
+        }
+        ImportRegion { id }
+    }
+
+    /// Leave an import region: the region's by-name writes merge into the
+    /// enclosing env (the block-level module-merge grants stay behind), and
+    /// the import layer is dropped.
+    // Cost: O(w), w = the region's by-name writes.
+    pub(crate) fn close_import_region(&mut self, region: ImportRegion) {
+        let current = std::mem::replace(self.env_mut(), Env::empty_placeholder());
+        match current.close_import_region(region.id) {
+            Ok(closed) => {
+                let mut restored = closed.outer;
+                let grant = crate::meta_ns::MetaNs::ModuleMerge.prefix();
+                for (key, value) in closed.overlay.iter() {
+                    if key.with_str(|k| k.starts_with(grant)) {
+                        continue;
+                    }
+                    restored.insert_sym(*key, value.clone());
+                }
+                if let Some(removed) = closed.tombstones {
+                    for key in removed {
+                        restored.remove_sym(key);
+                    }
+                }
+                *self.env_mut() = restored;
+            }
+            Err(replaced) => {
+                // The env was replaced wholesale while the region ran: no
+                // layer to drop. Keep what is there; the mismatch is a bug
+                // elsewhere (no test or whitelisted roast file reaches it).
+                debug_assert!(false, "an import region's env was replaced wholesale");
+                *self.env_mut() = replaced;
+            }
+        }
+    }
+
     /// Run `body` (an `EVAL`'s compunit) with its imported `env` aliases
     /// dropped again afterwards, on every exit path, along with the alias
     /// bookkeeping (`unit_env_imports`) they were recorded in.
-    // Cost: O(k) plus the body, k = aliases the body imported (the import-scope
-    // snapshot holds the copy-on-write registry tables, O(1)).
+    // Cost: O(w) plus the body, w = by-name writes the body made (the
+    // import-scope snapshot holds the copy-on-write registry tables, O(1)).
     pub(crate) fn with_eval_import_scope<T>(
         &mut self,
         body: impl FnOnce(&mut Self) -> Result<T, RuntimeError>,
@@ -25,94 +86,13 @@ impl Interpreter {
         let result = body(self);
         if let Some(snapshot) = self.module.import_scope_stack.pop() {
             let ImportScopeSnapshot {
-                imported_env_keys,
-                mut shadowed_env_values,
                 unit_env_imports,
                 importer_type_aliases,
                 ..
             } = snapshot;
-            self.restore_import_env_keys(imported_env_keys, &mut shadowed_env_values);
             self.restore_importer_type_aliases(importer_type_aliases);
             self.module.unit_env_imports = unit_env_imports;
         }
         result
-    }
-
-    /// Drop the `env` aliases an import scope recorded. `import_module` writes
-    /// an imported symbol's aliased name straight into `env` (a
-    /// bare `&ok`/`$CONST`, or the `GLOBAL::name`-qualified form under
-    /// the importing package), alongside the registry entry
-    /// `pop_import_scope` rolls back. Remove exactly the keys `record_import_env_key` recorded
-    /// for THIS scope — never a before/after diff of the whole `env`.
-    /// `env` also carries ordinary statement-level state with nothing
-    /// to do with imports (`$!`, `$_`, a plain `my` local, a `package`
-    /// type object, ...), and a block is not required to run through
-    /// the general `BlockScope` restore that scopes those (a
-    /// `use`-containing block takes this lighter path instead, purely
-    /// so the registries above can be scoped) — so diffing dropped
-    /// any of them that happened to be written for the first time
-    /// inside a `use`-containing block. That silently erased `$!`
-    /// itself the first time any block anywhere in the process wrote
-    /// it while a `use` was in scope, breaking `$!.backtrace`'s
-    /// identity across a later, unrelated block
-    /// (`roast/integration/error-reporting.t` "Backtrace does not
-    /// change on additional .backtrace").
-    ///
-    /// Same keep-rule as the registry for the keys we DO track: a
-    /// module's own package-qualified entry (`Foo::name`, not
-    /// `GLOBAL::name`) persists, because a sibling block's later
-    /// `use` re-imports by reading that qualified env value (see the
-    /// `vars` loop in `import_module`) — though in practice
-    /// `import_module` never records one of those (it writes the
-    /// module's own qualified form separately, at module-load time,
-    /// never through `record_import_env_key`); the check is kept for
-    /// symmetry with `pop_import_scope`'s registry-side rule and to cover the
-    /// trait-value path's `&{importing_pkg}::{name}` write. A sigil
-    /// (`$@%&`) may prefix the qualifier, so strip it before checking.
-    ///
-    /// A PRELOAD scope (`scope_classes == false`, see
-    /// `push_preload_scope`) never removes these bare aliases at all,
-    /// for the same reason it keeps the classes/qualified defs a
-    /// preload registers (see that function's doc comment): a custom
-    /// `sub EXPORT`'s installed symbol (e.g. JSON::Fast's `&to-json`)
-    /// lives ONLY in `env` -- unlike a tag-based `is export` routine,
-    /// it has no registry entry to fall back on -- and a `sub`
-    /// hoisted to the head of the SAME package block (`RegisterDecl`,
-    /// emitted before the block's own in-position `use` runs) needs it
-    /// visible right away. Removing it here and relying on the
-    /// in-position `use`'s later re-install left that hoisted sub
-    /// permanently unable to resolve the symbol (#8564): the preload
-    /// and the hoisted registration both run before the in-position
-    /// `use`, so the bare alias must already be live by then. A real
-    /// scope-exit removal still happens for a genuine user block
-    /// (`{ use JSON::Fast; ... }` brackets the in-position `use`
-    /// with its own ordinary `ImportScope` region, which is not a
-    /// preload scope).
-    // Cost: O(k), k = keys the scope imported.
-    pub(crate) fn restore_import_env_keys(
-        &mut self,
-        imported_env_keys: rustc_hash::FxHashSet<Symbol>,
-        shadowed_env_values: &mut HashMap<Symbol, Value>,
-    ) {
-        for key in imported_env_keys {
-            // A sigil carries no `:`, so the key's own classification answers.
-            let is_module_owned_qualified = crate::qualified::is_qualified(key)
-                && !key.with_str(|ks| {
-                    ks.strip_prefix(['$', '@', '%', '&'])
-                        .unwrap_or(ks)
-                        .starts_with("GLOBAL::")
-                });
-            if is_module_owned_qualified {
-                continue;
-            }
-            match shadowed_env_values.remove(&key) {
-                Some(previous) => {
-                    self.env.insert_sym(key, previous);
-                }
-                None => {
-                    self.env.remove_sym(key);
-                }
-            }
-        }
     }
 }
