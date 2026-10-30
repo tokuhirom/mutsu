@@ -56,11 +56,20 @@ impl Interpreter {
     // Cost: O(g), g = the cost of the exception's `.gist`.
     fn diagnostic_body(&mut self, exception: &Value) -> Result<String, RuntimeError> {
         let full = self.render_gist_value(exception)?;
-        let heading =
-            match self.call_method_with_values(exception.clone(), "sorry_heading", Vec::new()) {
-                Ok(heading) => heading.to_string_value(),
-                Err(_) => return Ok(full),
-            };
+        // `X::Comp.sorry_heading`, from the file name the exception carries.
+        let filename = match exception.view() {
+            ValueView::Instance { attributes, .. } => attributes
+                .as_map()
+                .get("filename")
+                .map(|file| file.deref_container())
+                .filter(|file| matches!(file.view(), ValueView::Str(_)))
+                .map(|file| file.to_string_value()),
+            _ => None,
+        };
+        let heading = match filename {
+            Some(file) => format!("===SORRY!=== Error while compiling {file}\n"),
+            None => "===SORRY!=== Error while compiling:\n".to_string(),
+        };
         Ok(match full.strip_prefix(heading.as_str()) {
             Some(body) => body.to_string(),
             None => full,
