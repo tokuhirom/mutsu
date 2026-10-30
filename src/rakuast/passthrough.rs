@@ -44,7 +44,8 @@ thread_local! {
 
 /// Whether an executing round trip is running ([`Scope`] is installed): nothing
 /// then reads the source positions `.AST` reports, only the line a statement
-/// began on.
+/// began on, and a bare `$` is carried with the `state` declaration the parser
+/// put with it (`.AST` shows only the node).
 // Cost: O(1).
 pub(super) fn executing() -> bool {
     TABLE.with(|t| t.borrow().is_some())
