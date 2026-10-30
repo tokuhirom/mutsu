@@ -6,6 +6,21 @@
 
 use super::*;
 
+/// Bit set in the decl-id suffix of a type `new_type` minted under a name an
+/// earlier type already used: far above any id the declaration counter reaches.
+const MINTED_TYPE_ID_BIT: u64 = 1u64 << 40;
+
+/// Whether `name` is the storage identity of a type `Metamodel::*HOW.new_type`
+/// minted under a name another type already held (`Foo\u{0}<id>`). It is a
+/// different type from the earlier `Foo`, so a source-written `Foo` must not
+/// match it through the demangled name (#14711).
+// Cost: O(|name|).
+pub(crate) fn is_minted_type_name(name: &str) -> bool {
+    name.split_once('\u{0}')
+        .and_then(|(_, id)| id.parse::<u64>().ok())
+        .is_some_and(|id| id & MINTED_TYPE_ID_BIT != 0)
+}
+
 impl Interpreter {
     /// The native `new_type` metamethod: mint a type object named by the
     /// `:name` argument, register an empty class definition for it (so `.new`
@@ -48,7 +63,7 @@ impl Interpreter {
         } else {
             // Digits only, like a lexical declaration id, and far above the ids
             // the declaration counter reaches, so the two never collide.
-            let n = crate::value::next_instance_id() | (1u64 << 40);
+            let n = crate::value::next_instance_id() | MINTED_TYPE_ID_BIT;
             format!("{name}\u{0}{n}")
         };
         // The builtin metamodel class this call ultimately goes through: the

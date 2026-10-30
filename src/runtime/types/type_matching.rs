@@ -2196,7 +2196,12 @@ impl Interpreter {
                 if constraint == cn || constraint == shown.as_ref() || constraint == "Mu" {
                     return true;
                 }
-            } else if Self::type_matches(constraint, cn) || Self::type_matches(constraint, &shown) {
+            } else if Self::type_matches(constraint, cn)
+                // A type minted under an earlier type's name is a different
+                // type: the demangled name is not its identity (#14711).
+                || (!crate::runtime::metamodel_new_type::is_minted_type_name(cn)
+                    && Self::type_matches(constraint, &shown))
+            {
                 return true;
             }
             // Buf/Blob hierarchy: Buf[uint8] isa Buf, buf8 isa Buf, etc.
