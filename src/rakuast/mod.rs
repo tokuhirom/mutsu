@@ -161,6 +161,7 @@ mod use_stmt;
 mod var_decl_constructor;
 mod var_does;
 mod var_will;
+mod word_list;
 mod word_quote;
 
 pub use formatter::formatter_ast;
@@ -3840,3 +3841,4 @@ pub(crate) use assign_writeback::{
 };
 pub(crate) use hash_literal::object_hash_expr;
 pub(crate) use hyper_prefix::hyper_prefix_expr;
+pub(crate) use word_list::{word_list_expr, words_atom_expr};

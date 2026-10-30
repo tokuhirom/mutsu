@@ -1,10 +1,11 @@
 use crate::ast::Expr;
+use crate::ast::parsed::{WordItem, WordSource};
 use crate::ast::spelled::Spelling;
 use crate::parser::expr::expression;
 use crate::parser::helpers::{is_non_breaking_space, split_angle_words};
 use crate::parser::parse_result::{PError, PResult};
 use crate::parser::primary::quote_adverbs::QuoteFlags;
-use crate::parser::primary::string::{parse_quotewords_quoted_atom, quotewords_atom_expr};
+use crate::parser::primary::string::parse_quotewords_quoted_atom;
 use crate::symbol::Symbol;
 
 use super::allomorph::{angle_word_is_numeric_literal, angle_word_value, strip_allomorph};
@@ -45,42 +46,30 @@ pub(crate) fn double_angle_list(input: &str) -> PResult<'_, Expr> {
 
 /// A `«…»` term; see [`angle_term`].
 pub(crate) fn french_quote_term(input: &str) -> PResult<'_, Expr> {
-    spelled_quotewords(input, "«", "»", french_quote_list(input)?)
+    french_quote_list(input)
 }
 
 /// A `<<…>>` term; see [`angle_term`].
 pub(crate) fn double_angle_term(input: &str) -> PResult<'_, Expr> {
-    spelled_quotewords(input, "<<", ">>", double_angle_list(input)?)
+    double_angle_list(input)
 }
 
-/// Keep the raw text of a `«…»` / `<<…>>` list as `processors => <quotewords
-/// val>`; one that interpolates or quotes a word also has segments.
-fn spelled_quotewords<'a>(
-    input: &'a str,
-    open: &str,
-    close: &str,
-    (rest, expr): (&'a str, Expr),
-) -> PResult<'a, Expr> {
-    let content = &input[open.len()..input.len() - rest.len() - close.len()];
-    if !crate::parser::primary::string::word_quote_text_is_plain(content) {
-        return Ok((
-            rest,
-            Expr::spelled(expr, || Spelling::InterpolatingWords {
-                val: true,
-                text: content.into(),
-                delimiter: open.chars().next(),
-                interpolates: true,
-            }),
-        ));
-    }
-    Ok((
-        rest,
-        Expr::spelled(expr, || Spelling::WordQuote {
+/// The source of a `«…»` / `<<…>>` list or interpolating angle subscript: the
+/// raw text as `processors => <quotewords val>`; one that interpolates or
+/// quotes a word also has segments.
+fn quotewords_source(content: &str, delimiter: Option<char>) -> WordSource {
+    if crate::parser::primary::string::word_quote_text_is_plain(content) {
+        WordSource::Plain {
             quotewords: true,
-            val: true,
             text: content.into(),
-        }),
-    ))
+        }
+    } else {
+        WordSource::Interpolating {
+            text: content.into(),
+            delimiter,
+            interpolates: true,
+        }
+    }
 }
 
 fn parse_quote_word_list<'a>(
@@ -132,10 +121,14 @@ fn parse_quote_word_list<'a>(
         ));
     }
     if quoted_words {
-        let exprs = split_quotish_words(content, Some((open, close)))?;
+        let items = split_quotish_words(content, Some((open, close)))?;
         return Ok((
             rest,
-            crate::parser::primary::string::make_word_result_expr(exprs),
+            crate::rakuast::word_list_expr(
+                items,
+                true,
+                quotewords_source(content, open.chars().next()),
+            ),
         ));
     }
     Ok((rest, angle_words_expr(content)))
@@ -279,45 +272,34 @@ fn find_nested_angle_close(input: &str) -> Option<usize> {
     None
 }
 
-/// Build the index expression for an interpolating angle subscript (`%h«...»` /
-/// `%h<<...>>`), reusing the qqww word-splitter so quoted words (`"$x"`, `'lit'`)
-/// and sigil interpolation (`$x`, `@a[]`, `%h{}`) behave exactly as in a standalone
-/// `«...»` term. A single word yields a scalar key; multiple words yield a slice
-/// (matching Rakudo's `%h«a b»` semantics). Falls back to a plain literal key if the
-/// content cannot be tokenised as quote-words.
-pub(crate) fn angle_words_subscript_index_expr(content: &str) -> Expr {
-    match split_quotish_words(content, None) {
-        Ok(exprs) => crate::parser::primary::string::make_word_result_expr(exprs),
-        Err(_) => Expr::Literal(crate::value::Value::str(content.to_string())),
-    }
+/// The words of an interpolating angle subscript (`%h«...»` / `%h<<...>>`),
+/// split by the qqww word-splitter so quoted words (`"$x"`, `'lit'`) and sigil
+/// interpolation (`$x`, `@a[]`, `%h{}`) behave exactly as in a standalone
+/// `«...»` term.
+pub(crate) fn angle_words_subscript_items(content: &str) -> Result<Vec<WordItem>, PError> {
+    split_quotish_words(content, None)
 }
 
-/// [`angle_words_subscript_index_expr`] with the raw text kept for RakuAST: an
-/// interpolating angle subscript is `LiteralHashIndex(index => QuotedString(
-/// processors => <quotewords val>, ...))`, whose segments the conversion
-/// re-derives from the text (a parse that keeps no spellings gets the plain
-/// expression).
+/// The index expression of an interpolating angle subscript: a single word
+/// yields a scalar key, several a slice (matching Rakudo's `%h«a b»`). RakuAST
+/// writes it `LiteralHashIndex(index => QuotedString(processors => <quotewords
+/// val>, ...))`. Falls back to a plain literal key if the content cannot be
+/// tokenised as quote-words.
 pub(crate) fn spelled_subscript_index_expr(content: &str, delimiter: char) -> Expr {
-    let expr = angle_words_subscript_index_expr(content);
-    if crate::parser::primary::string::word_quote_text_is_plain(content) {
-        Expr::spelled(expr, || Spelling::WordQuote {
-            quotewords: true,
-            val: true,
-            text: content.into(),
-        })
-    } else {
-        Expr::spelled(expr, || Spelling::InterpolatingWords {
-            val: true,
-            text: content.into(),
-            delimiter: Some(delimiter),
-            interpolates: true,
-        })
+    match angle_words_subscript_items(content) {
+        Ok(items) => {
+            crate::rakuast::word_list_expr(items, true, quotewords_source(content, Some(delimiter)))
+        }
+        Err(_) => Expr::Literal(crate::value::Value::str(content.to_string())),
     }
 }
 
 /// `delims` is the list's own `(open, close)` pair when known: a nested copy of
 /// it ends the word it is glued to (`<< a<<b>>c >>` is `("a<<", "b", ">>c")`).
-fn split_quotish_words(content: &str, delims: Option<(&str, &str)>) -> Result<Vec<Expr>, PError> {
+fn split_quotish_words(
+    content: &str,
+    delims: Option<(&str, &str)>,
+) -> Result<Vec<WordItem>, PError> {
     let mut words = Vec::new();
     let mut rest = content;
     let flags = QuoteFlags::qq_double();
@@ -327,7 +309,7 @@ fn split_quotish_words(content: &str, delims: Option<(&str, &str)>) -> Result<Ve
             break;
         }
         if let Some((r, quoted)) = parse_quoted_word(rest)? {
-            words.push(quoted);
+            words.push(WordItem::Expr(quoted));
             rest = r;
             continue;
         }
@@ -337,14 +319,14 @@ fn split_quotish_words(content: &str, delims: Option<(&str, &str)>) -> Result<Ve
             && let Ok((remaining, expr)) = expression(word)
             && remaining.is_empty()
         {
-            words.push(Expr::MethodCall {
+            words.push(WordItem::Expr(Expr::MethodCall {
                 target: Box::new(expr),
                 name: Symbol::intern("item"),
                 args: vec![],
                 modifier: None,
                 quoted: false,
                 sugar: false,
-            });
+            }));
         } else if word.contains('$')
             || word.contains('@')
             || word.contains('%')
@@ -354,11 +336,14 @@ fn split_quotish_words(content: &str, delims: Option<(&str, &str)>) -> Result<Ve
         {
             let expr =
                 crate::parser::primary::quote_adverbs::process_content_with_flags(word, &flags)?;
-            words.push(quotewords_atom_expr(expr));
+            words.push(WordItem::Atom {
+                string: expr,
+                allomorphic: true,
+            });
         } else {
             // «...» and <<...>> are equivalent to qqww:v, so fractions
             // also produce allomorphic types (RatStr).
-            words.push(Expr::Literal(angle_word_value(word)));
+            words.push(WordItem::Expr(Expr::Literal(angle_word_value(word))));
         }
         rest = r;
     }

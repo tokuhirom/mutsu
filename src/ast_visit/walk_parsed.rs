@@ -4,7 +4,7 @@
 //! be.
 
 use super::{Visit, VisitMut, params, params_mut};
-use crate::ast::parsed::{BlockParams, ParsedBlock, ParsedExpr, ParsedStmt};
+use crate::ast::parsed::{BlockParams, ParsedBlock, ParsedExpr, ParsedStmt, WordItem};
 
 /// Visits every child of `node`.
 // Cost: O(n), n = size of `node`'s subtree.
@@ -323,6 +323,15 @@ pub(crate) fn walk_parsed_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &
                 v.visit_expr(entry);
             }
         }
+        ParsedExpr::WordList(list) => {
+            for item in &list.items {
+                match item {
+                    WordItem::Expr(expr) => v.visit_expr(expr),
+                    WordItem::Atom { string, .. } => v.visit_expr(string),
+                }
+            }
+        }
+        ParsedExpr::WordsAtom(atom) => v.visit_expr(&atom.string),
         ParsedExpr::SubscriptAdverbs(s) => {
             v.visit_expr(&s.subscript);
             for pair in &s.pairs {
@@ -361,6 +370,15 @@ pub(crate) fn walk_parsed_expr_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut P
                 v.visit_expr_mut(entry);
             }
         }
+        ParsedExpr::WordList(list) => {
+            for item in &mut list.items {
+                match item {
+                    WordItem::Expr(expr) => v.visit_expr_mut(expr),
+                    WordItem::Atom { string, .. } => v.visit_expr_mut(string),
+                }
+            }
+        }
+        ParsedExpr::WordsAtom(atom) => v.visit_expr_mut(&mut atom.string),
         ParsedExpr::SubscriptAdverbs(s) => {
             v.visit_expr_mut(&mut s.subscript);
             for pair in &mut s.pairs {

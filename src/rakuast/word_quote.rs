@@ -7,8 +7,7 @@
 //! segment, interpolated only when the quote permits it. Every quoted word is
 //! a `QuoteWordsAtom` over its own `QuotedString`. The parser keeps the raw text
 //! (`Spelling::InterpolatingWords`), so the segments are re-derived here; the
-//! lowering splits them back into words and hands them to the parser's own
-//! `quotewords_from_words`.
+//! lowering splits them back into words and hands them to `word_list::lower_quotewords`.
 
 use super::convert::{convert_expr, interp_segment, node_field};
 use super::lower::{
@@ -93,62 +92,8 @@ fn convert_nested(
     })
 }
 
-/// The parser's call for an interpolating `words` quote (`qqw/a $x/`,
-/// `qq:w:v/$x 1/`): `__mutsu_words_atom(STRING)`, or
-/// `__mutsu_quotewords_atom(STRING)` with allomorphs. Rakudo 2026.09 renders
-/// the string with `processors => ("words",)` / `<words val>` over its
-/// interpolation segments. `None` for any other call.
-// Cost: O(n), n = size of the string.
-pub(super) fn convert_words_atom(
-    name: &str,
-    args: &[Expr],
-) -> Option<Result<RakuAstNode, RuntimeError>> {
-    let val = match name {
-        WORDS_ATOM => false,
-        QUOTEWORDS_ATOM => true,
-        _ => return None,
-    };
-    let [string] = args else {
-        return None;
-    };
-    Some(words_string(string, val))
-}
-
-const WORDS_ATOM: &str = "__mutsu_words_atom";
-const QUOTEWORDS_ATOM: &str = "__mutsu_quotewords_atom";
-
-fn words_string(string: &Expr, val: bool) -> Result<RakuAstNode, RuntimeError> {
-    let items = match string {
-        Expr::StringInterpolation(items) => items.as_slice(),
-        other => std::slice::from_ref(other),
-    };
-    let segments = items
-        .iter()
-        .map(|item| Ok(Value::rakuast(Box::new(interp_segment(item)?))))
-        .collect::<Result<Vec<_>, RuntimeError>>()?;
-    let mut processors = vec![Value::str("words".to_string())];
-    if val {
-        processors.push(Value::str("val".to_string()));
-    }
-    Ok(RakuAstNode {
-        origin: Default::default(),
-        class: RakuAstClass::QuotedString,
-        fields: vec![
-            RakuAstField {
-                name: Some("processors"),
-                value: RakuAstFieldValue::List(processors),
-            },
-            RakuAstField {
-                name: Some("segments"),
-                value: RakuAstFieldValue::List(segments),
-            },
-        ],
-    })
-}
-
-/// The interpolating `words` string the parser calls `__mutsu_words_atom` /
-/// `__mutsu_quotewords_atom` on: `Some(val)` for a `words` quote whose
-/// segments are not one literal run.
+/// The interpolating `words` string a `WordsAtom` spells: `Some(val)` for a
+/// `words` quote whose segments are not one literal run.
 // Cost: O(p), p = processors of the node.
 pub(super) fn interpolating_plain_words(node: &RakuAstNode, segments: &[Value]) -> Option<bool> {
     let processors = list_field(node, "processors").ok()?;
@@ -163,22 +108,12 @@ pub(super) fn interpolating_plain_words(node: &RakuAstNode, segments: &[Value]) 
     (!one_literal).then_some(val)
 }
 
-/// [`convert_words_atom`]'s call over the lowered interpolation.
-// Cost: O(1).
-pub(super) fn lower_words_atom(string: Expr, val: bool) -> Expr {
-    Expr::Call {
-        name: crate::symbol::Symbol::intern(if val { QUOTEWORDS_ATOM } else { WORDS_ATOM }),
-        args: vec![string],
-        listop: false,
-    }
-}
-
 /// Lower the segments of a `quotewords` string back to the word list they
 /// spell: runs split at whitespace, a variable or block joins the word it
 /// touches, a `QuoteWordsAtom` is a word of its own.
 // Cost: O(s + n), s = segments, n = their text.
 pub(super) fn lower(node: &RakuAstNode, val: bool) -> Result<Expr, RuntimeError> {
-    Ok(crate::parser::quotewords_from_words(
+    Ok(super::word_list::lower_quotewords(
         val,
         lower_parts(node, val, 0)?,
     ))

@@ -176,10 +176,7 @@ fn lower_contents(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     {
         let mut plain = node.clone();
         plain.fields.retain(|f| f.name != Some("processors"));
-        return Ok(super::word_quote::lower_words_atom(
-            lower_expr(&plain)?,
-            val,
-        ));
+        return Ok(super::word_list::lower_words_atom(lower_expr(&plain)?, val));
     }
     if let Some((quotewords, val, content)) = word_quote_content(node)? {
         // `<…>` keeps its own lowering (a lone numeric word is a
@@ -187,7 +184,7 @@ fn lower_contents(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         return Ok(if !quotewords && val {
             crate::parser::angle_words_expr(&content)
         } else {
-            crate::parser::word_quote_expr(quotewords, val, &content)
+            super::word_list::lower_word_quote(quotewords, val, &content)
         });
     }
     if segments.len() == 1

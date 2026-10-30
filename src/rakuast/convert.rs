@@ -2318,14 +2318,17 @@ pub(super) fn angle_key_text(index: &Expr) -> Option<String> {
 /// The raw text of an interpolating angle subscript (`%h<<$k>>`), when the
 /// parser kept it.
 fn spelled_angle_text(index: &Expr) -> Option<&str> {
+    use crate::ast::parsed::{ParsedExpr, WordSource};
     match index {
-        Expr::Spelled(spelled) => match &spelled.spelling {
-            Spelling::WordQuote {
-                quotewords: true,
-                text,
-                ..
-            }
-            | Spelling::InterpolatingWords { text, .. } => Some(text),
+        Expr::Ast(node) => match node.as_ref() {
+            ParsedExpr::WordList(list) => match &list.source {
+                WordSource::Plain {
+                    quotewords: true,
+                    text,
+                }
+                | WordSource::Interpolating { text, .. } => Some(text),
+                WordSource::Plain { .. } => None,
+            },
             _ => None,
         },
         _ => None,
@@ -2619,17 +2622,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 convert_expr(&spelled.expr)
             }
             Spelling::Heredoc { stop, body } => heredoc_node(&spelled.expr, stop, *body),
-            Spelling::WordQuote {
-                quotewords,
-                val,
-                text,
-            } => Ok(word_quote_with(*quotewords, *val, text)),
-            Spelling::InterpolatingWords {
-                val,
-                text,
-                delimiter,
-                interpolates,
-            } => super::word_quote::convert(*val, text, *delimiter, *interpolates),
             Spelling::EmptyStatement => Ok(RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::StatementEmpty,
@@ -2821,9 +2813,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             if name.as_str() == crate::ast::quote_processing::FORMAT {
                 return super::quoted_string::convert_format(args);
-            }
-            if let Some(words) = super::word_quote::convert_words_atom(name.as_str(), args) {
-                return words;
             }
             if is_desugar_marker(name.as_str()) {
                 return Err(desugared(name.as_str()));

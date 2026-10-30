@@ -47,27 +47,6 @@ pub(crate) enum Spelling {
         #[serde(default)]
         body: crate::ast::SrcSpan,
     },
-    /// `qw/a b/`, `qqww/a b/`, `«a b»`: the raw text and the processors the
-    /// quote applies to it (`words` or `quotewords`, then optionally `val`).
-    WordQuote {
-        /// `quotewords` (honours inner quotes) rather than `words`.
-        quotewords: bool,
-        /// Words become allomorphs (`val`).
-        val: bool,
-        text: Box<str>,
-    },
-    /// `«a $b "c d"»`, `qqww/a $b/`, `Qww/"c d"/`: a `quotewords` quote
-    /// whose text is nonplain. RakuAST keeps its segments, which conversion
-    /// re-derives from the raw text.
-    InterpolatingWords {
-        /// Words become allomorphs (`val`).
-        val: bool,
-        text: Box<str>,
-        /// The source delimiter for nested `<< >>` or `« »` word quotes.
-        delimiter: Option<char>,
-        /// Whether unquoted text interpolates (`qqww`/angle quotes, unlike `Qww`).
-        interpolates: bool,
-    },
     /// `not(EXPR)` / `so(EXPR)`: the tight call form, which the parser folds
     /// into the prefix `!` / `?` but RakuAST keeps as a `Call::Name` of the sub.
     PrefixCall,

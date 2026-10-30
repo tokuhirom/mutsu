@@ -215,6 +215,8 @@ pub(super) fn parsed_expr_node(node: &ParsedExpr) -> Result<RakuAstNode, Runtime
         ParsedExpr::HyperPrefix(p) => super::hyper_prefix::node(&p.symbol, &p.operand),
         ParsedExpr::AtomicVar(a) => super::atomic_op::var_node(a),
         ParsedExpr::ObjectHash(entries) => super::hash_literal::object_hash_node(entries),
+        ParsedExpr::WordList(list) => super::word_list::list_node(list),
+        ParsedExpr::WordsAtom(atom) => super::word_list::atom_node(atom),
         ParsedExpr::SubscriptAdverbs(s) => {
             super::subscript_adverb::postcircumfix_node(&s.subscript, &s.pairs)
         }
