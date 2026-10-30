@@ -665,10 +665,10 @@ fn field_children(node: &RakuAstNode) -> Vec<Value> {
         crate::rakuast::RakuAstClass::StatementLoopRepeatWhile
             | crate::rakuast::RakuAstClass::StatementLoopRepeatUntil
     );
-    let visited = node
-        .fields
-        .iter()
-        .filter(|field| !crate::rakuast::is_unvisited_field(node, field));
+    let visited = node.fields.iter().filter(|field| {
+        !crate::rakuast::is_unvisited_field(node, field)
+            && !crate::rakuast::is_unwalked_field(node, field)
+    });
     let fields: Vec<_> = if repeat {
         let (condition, rest): (Vec<_>, Vec<_>) =
             visited.partition(|f| f.name == Some("condition"));

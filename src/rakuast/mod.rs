@@ -3481,6 +3481,13 @@ pub(crate) fn is_unvisited_field(node: &RakuAstNode, field: &RakuAstField) -> bo
     infix_func::is_hidden_adverbs(node, field) || regex_variable_alias::is_source_field(node, field)
 }
 
+/// Whether Rakudo's `visit-children` skips `field` although the accessor
+/// answers it: `Parameter.type-captures`.
+// Cost: O(1).
+pub(crate) fn is_unwalked_field(node: &RakuAstNode, field: &RakuAstField) -> bool {
+    node.class == RakuAstClass::Parameter && field.name == Some("type-captures")
+}
+
 /// The line `node`'s origin begins on, if it has one.
 // Cost: O(f), f = fields of the node.
 pub(crate) fn origin_line_of(node: &RakuAstNode) -> Option<i64> {
