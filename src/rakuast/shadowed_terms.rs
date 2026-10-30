@@ -139,6 +139,7 @@ fn walk(node: &RakuAstNode, in_decl: bool, found: &mut Found) {
         let mut facts = super::passthrough::ScopeFacts::default();
         super::passthrough::scope_facts_of(node, &mut facts);
         found.shadowed.extend(facts.terms.iter().cloned());
+        found.shadowed.extend(facts.shadowed);
         found.terms.extend(facts.terms);
         found.packages.extend(facts.packages);
         super::passthrough::declared_routines_of(node, &mut found.routines);

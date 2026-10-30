@@ -150,10 +150,13 @@ impl Purity {
                 nested_capture_index: None,
                 ..
             } => true,
+            // `temp Type.meth = v` is expanded (save, assign, restore) by the
+            // conversion of the temporizer, not by the compiler.
+            Stmt::TempMethodAssign { .. } => false,
             Stmt::Call { args, .. } => args
                 .iter()
                 .all(|a| matches!(a, CallArg::Positional(_) | CallArg::Named { .. })),
-            _ => false,
+            _ => true,
         }
     }
 

@@ -448,6 +448,8 @@ pub(super) fn declared_routines_of(
 #[derive(Default)]
 pub(super) struct ScopeFacts {
     pub(super) terms: std::collections::HashSet<String>,
+    /// Names a constant or enum declaration makes the unit's own (`shadowed_terms`).
+    pub(super) shadowed: std::collections::HashSet<String>,
     pub(super) packages: std::collections::HashSet<String>,
 }
 
@@ -463,6 +465,25 @@ pub(super) fn scope_facts_of(node: &RakuAstNode, facts: &mut ScopeFacts) {
                     if let ParsedStmt::SigillessDecl(source) = node.as_ref() {
                         self.0.terms.insert(source.name.clone());
                     }
+                }
+                Stmt::VarDecl {
+                    name,
+                    constant: Some(sigil),
+                    ..
+                } => {
+                    // `constant term:<$box> = ...` declares the term `$box`.
+                    // A sigiled constant is the term `term:<$x>`, as the
+                    // conversion spells it; the parser stores the bare name.
+                    if matches!(sigil, crate::ast::ConstantSigil::Term) {
+                        self.0.terms.insert(name.clone());
+                    }
+                    self.0.shadowed.insert(name.clone());
+                }
+                Stmt::EnumDecl { name, variants, .. } => {
+                    self.0.shadowed.insert(name.resolve());
+                    self.0
+                        .shadowed
+                        .extend(variants.iter().map(|(variant, _)| variant.clone()));
                 }
                 Stmt::ClassDecl { name, .. }
                 | Stmt::RoleDecl { name, .. }
