@@ -13,7 +13,7 @@
 //! ```
 //!
 //! The parser keeps the colonpairs as written (`ParsedExpr::SubscriptAdverbs`);
-//! [`node`] is their view and [`lower`] the one lowering, which expands them
+//! [`postcircumfix_node`] is their view and [`lower`] the one lowering, which expands them
 //! into the shapes the compiler executes (`ast::subscript_adverb::expand`).
 
 use super::convert::{
@@ -54,7 +54,10 @@ pub(super) fn convert_hyper_slice(expr: &Expr) -> Option<Result<RakuAstNode, Run
 /// The postcircumfix node of `subscript` carrying the colonpairs `pairs`, as
 /// the parser kept them (`ParsedExpr::SubscriptAdverbs`).
 // Cost: O(n), n = nodes under the subscript and its adverbs.
-pub(super) fn node(subscript: &Expr, pairs: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn postcircumfix_node(
+    subscript: &Expr,
+    pairs: &[Expr],
+) -> Result<RakuAstNode, RuntimeError> {
     let colonpairs = pairs
         .iter()
         .map(|pair| convert_expr(pair).map(|node| Value::rakuast(Box::new(node))))
