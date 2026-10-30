@@ -379,7 +379,7 @@ impl VisitMut for Kept {
         let mut pending = None;
         if let Stmt::Ast(node) = stmt
             && let ParsedStmt::Modified(modified) = node.as_mut()
-            && matches!(modified.stmt.as_ref(), Stmt::Ast(_))
+            && matches!(modified.stmt.as_ref(), Stmt::Ast(inner) if matches!(inner.as_ref(), ParsedStmt::SignatureDecl(_)))
         {
             pending = Some(std::mem::replace(modified.stmt.as_mut(), Stmt::Last(None)));
         }
