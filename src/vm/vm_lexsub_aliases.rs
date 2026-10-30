@@ -167,6 +167,17 @@ impl Interpreter {
                     crate::runtime::cow_table_mut(&mut self.lexicals.lexsub_latest_cells)
                         .remove(&(sub, a.var));
                 }
+                // After the declaration ran and the variable still cannot be
+                // boxed (a constrained scalar such as `my Bool $c = True`), the
+                // alias the hoisted pass seeded still holds its `Nil` seed and
+                // the sub would keep reading that instead of the variable.
+                // Drop it so the read falls back to the by-name binding.
+                if !hoisted_pass {
+                    self.env_mut().remove_sym(a.alias);
+                    if let Some(slot) = self.locals.get_mut(a.alias_slot as usize) {
+                        *slot = Value::NIL;
+                    }
+                }
                 continue;
             };
             // A variable the sub rebinds with `:=` needs a binding cell, so
