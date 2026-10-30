@@ -999,6 +999,11 @@ impl ArgOwner {
 /// so a `Pointer`/int held in a variable would be passed as 0.
 #[cfg(feature = "libffi")]
 fn resolve_arg(v: &Value) -> Value {
+    // A CArray element bound to a variable (`my $fd := $carray[1]`) is an
+    // `IntPosRef`-style reference; the call takes the element it addresses.
+    if let Some(element) = crate::runtime::native_pos_ref::fetch_native_pos_ref(v) {
+        return element;
+    }
     match v.view() {
         ValueView::Scalar(inner) => resolve_arg(inner),
         ValueView::ContainerRef(cell) => cell.lock().map(|g| resolve_arg(&g)).unwrap_or(Value::NIL),
