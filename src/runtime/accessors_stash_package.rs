@@ -650,25 +650,33 @@ impl Interpreter {
             .functions
             .get(&qualified(pkg, name_sym))
             .cloned();
-        if let Some(def) = exact {
-            return self.sub_value_from_function_def((*def).clone());
-        }
         let pkg_str = pkg.as_str();
-        let mut candidates: Vec<(Symbol, Arc<FunctionDef>)> = self
-            .registry()
-            .functions
-            .iter()
-            .filter(|(key, _)| {
-                super::dispatch_key::key_is_candidate_of(key.as_str(), pkg_str, name)
-            })
-            .map(|(key, def)| (*key, def.clone()))
-            .collect();
+        let mut candidates: Vec<(Symbol, Arc<FunctionDef>)> = match exact {
+            Some(def) => vec![(qualified(pkg, name_sym), def)],
+            None => self
+                .registry()
+                .functions
+                .iter()
+                .filter(|(key, _)| {
+                    super::dispatch_key::key_is_candidate_of(key.as_str(), pkg_str, name)
+                })
+                .map(|(key, def)| (*key, def.clone()))
+                .collect(),
+        };
         if candidates.is_empty() {
             return Value::NIL;
         }
         // Registry iteration order is unspecified; the key is the candidate
         // order's stable tie-break, as in the ordinary candidate gather.
         candidates.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
+        // A `multi` the module declares while it imported the family's `proto`
+        // extends that family: its `&name` holds the imported candidates too.
+        let unit = self.unit_of_source(candidates[0].1.source_file.as_deref());
+        let imported = self.imported_family_candidates(unit, name);
+        if candidates.len() == 1 && imported.is_empty() {
+            return self.sub_value_from_function_def((*candidates[0].1).clone());
+        }
+        candidates.extend(imported);
         self.sub_value_from_multi_candidates(
             name,
             candidates.into_iter().map(|(_, def)| def).collect(),
