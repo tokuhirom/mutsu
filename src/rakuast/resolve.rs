@@ -415,6 +415,18 @@ fn leaf(node: &RakuAstNode, name: &str) -> Option<String> {
         })
 }
 
+/// `VarDeclaration::Simple.container-type`: the container class of the
+/// sigil (`Array` for `@`, `Hash` for `%`, `Scalar` otherwise).
+// Cost: O(f), f = fields of the node.
+pub(super) fn container_type(node: &RakuAstNode) -> Value {
+    let name = match leaf(node, "sigil").as_deref() {
+        Some("@") => "Array",
+        Some("%") => "Hash",
+        _ => "Scalar",
+    };
+    Value::package(crate::symbol::Symbol::intern(name))
+}
+
 /// The variable (`$x`, `@a`, `&f`) a declaration node declares.
 // Cost: O(1).
 fn declared_variable(node: &RakuAstNode) -> Option<String> {
