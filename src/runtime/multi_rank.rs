@@ -54,7 +54,7 @@ pub(crate) struct RankProfile {
     /// Some positional argument is unrelated to its parameter's type: the
     /// candidate cannot bind these arguments, and its distances say nothing
     /// about its narrowness (see [`assign_tiers`]).
-    unrelated: bool,
+    pub(super) unrelated: bool,
     /// Some positional argument carries a mixed-in role that its parameter
     /// names: that parameter scores nearer than the value's own type would,
     /// though the role and another candidate's nominal type may be unrelated
