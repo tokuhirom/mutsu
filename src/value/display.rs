@@ -54,6 +54,10 @@ fn anon_type_display_name(name: &str) -> Option<String> {
     } else {
         name
     };
+    // `my Int $x where * > 0`'s refined type has no name of its own.
+    if name.starts_with("__mutsu_anon_subset_") {
+        return Some("<anon>".to_string());
+    }
     let inner = name.strip_suffix("__")?;
     let n = ["__ANON_CLASS_", "__ANON_GRAMMAR_", "__ANON_ROLE_"]
         .iter()

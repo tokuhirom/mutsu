@@ -5,7 +5,7 @@ use Test;
 # `===SORRY!===` and exit code 1, worries "Potential difficulties" on stderr
 # (#15666; `static`'s `fail-on-*` modes). Expected output is rakudo 2026.09's.
 
-plan 16;
+plan 20;
 
 my $class = 'class E does X::Comp { has $.n; method message { "boom msg {$!n}" } };';
 
@@ -58,3 +58,10 @@ like %mixed<err>, /^ '===SORRY!===' \n 'boom msg 5' .* 'Other potential difficul
 
 ok RakuAST::CompUnit.^can('add-sorry'), 'RakuAST::CompUnit can add-sorry';
 ok RakuAST::CompUnit.^can('add-worry'), 'RakuAST::CompUnit can add-worry';
+
+# `$*CU.sorries` / `worries` list what was queued so far (static's t/07).
+my %seen = compile $class ~ ' CHECK { my $cu = $*CU; note $cu.sorries.elems, $cu.worries.elems, $cu.has-check-time-problems; $cu.add-worry(E.new(:n(7))); note $cu.sorries.elems, $cu.worries.elems, $cu.has-check-time-problems; $cu.worries[0].n.note }';
+like %seen<err>, /^ '00False' \n '01True' \n '7'/, 'sorries, worries and has-check-time-problems follow add-worry';
+ok RakuAST::CompUnit.^can('sorries'), 'CompUnit can sorries';
+ok RakuAST::CompUnit.^can('worries'), 'CompUnit can worries';
+ok RakuAST::CompUnit.^can('has-check-time-problems'), 'CompUnit can has-check-time-problems';

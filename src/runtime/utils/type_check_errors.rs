@@ -259,7 +259,7 @@ pub(crate) fn type_check_assignment_error_with_repr(
     // A lexical (`my`) type's storage name carries its declaration-site id
     // (ADR-0047); the message names it by its source spelling.
     let demangled;
-    let expected = if expected.contains('\u{0}') {
+    let expected = if expected.contains('\u{0}') || expected.starts_with("__mutsu_anon_subset_") {
         demangled = crate::value::user_facing_type_name(expected).into_owned();
         demangled.as_str()
     } else {

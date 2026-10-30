@@ -3660,6 +3660,9 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     if class == RakuAstClass::CompUnit {
         names.push("add-check-code");
         names.push("add-sorry");
+        names.push("sorries");
+        names.push("worries");
+        names.push("has-check-time-problems");
         names.push("add-worry");
         names.push("replace-statement-list");
     }
