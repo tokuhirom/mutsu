@@ -31,6 +31,7 @@ pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
         CallQuotedMethod | CallNameAsMethod | CallTermAsMethod | CallPrivateMethod => {
             &["dispatch", "dispatcher"]
         }
+        InitializerAssign | InitializerCallAssign | InitializerBind => &["is-binding"],
         VarDeclarationSimple => &["original-type", "return-type"],
         VarDeclarationSignature => &["type"],
         Signature => &["parameters-initialized"],
@@ -238,6 +239,8 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
             Some(field(node, method).unwrap_or(Value::NIL))
         }
         (VarDeclarationSimple, "return-type") => Some(super::resolve::return_type(node)),
+        (InitializerAssign | InitializerCallAssign, "is-binding") => Some(Value::truth(false)),
+        (InitializerBind, "is-binding") => Some(Value::truth(true)),
         (ContextualizerItem, "sigil") => Some(Value::str_from("$")),
         (ContextualizerList, "sigil") => Some(Value::str_from("@")),
         (ContextualizerHash, "sigil") => Some(Value::str_from("%")),
