@@ -180,6 +180,45 @@ Until a spike measures the import tier against the 13 tests listed above, option
 A is **not** the recommendation to implement; the choice between A (with region
 handles on routines) and the import tier is the open decision for the maintainer.
 
+## 2.2 Spike result: the grant in a region-owned env tier
+
+A spike (branch `spike/14140-import-tier`, not for merge) moved only the
+module-merge grant. `OpCode::ImportScope` opens `open_block_env_tier` with the
+region and, on exit, merges every tier write except the `ModuleMerge` keys back
+into the enclosing env; the grant no longer enters `imported_env_keys` /
+`shadowed_env_values`. The scope keeps a small `merged_modules` set (for
+`hide_unit_names_from_frame`, `MY::` and the replay record), nothing else.
+
+Measured on a debug build, 2026-10-30:
+
+- **(a) Visibility tests.** With the grant out of the key list and no restore
+  for it, all of `t/` passes (about 9,100 files; five files timed out only under
+  a 6-way parallel run and pass alone), including the three files that fail
+  when the restore is skipped, plus the 15 whitelisted `roast/S11-modules`
+  files. The three files read the grant through the static link, which the tier
+  keeps.
+- **(b) Cost.** One tier per executed region (an `Env` handle clone and one
+  `Arc`). A loop of 3,000 `{ use M }` regions took 0.34-0.46 s on the spike and
+  0.34-0.53 s on `main`: no difference above the noise. This is wall clock, not
+  callgrind `Ir`; the `Ir` measurement is still owed before an implementation PR.
+- **(c) A routine called by name inside the block.** `{ use M; sub f { ::('T')
+  } f() }` gives `none` on both `main` and the spike; rakudo gives the type.
+  The tier changes nothing here, because the gap is the registry call having no
+  link to the block's pad (#15661), not the grant's storage.
+
+What the spike does not show: the other import kinds (types and terms the scan
+cannot see, hook maps, `import M`, `require`) still write the env and the key
+list. They need the same tier plus an exclusion rule per kind (the tier merge
+must keep non-import writes), which the grant alone does not exercise.
+
+**Updated recommendation: the import tier (§2.1 option "tier"), not option A.**
+It keeps the static-link behavior the existing tests pin, needs no per-frame
+record and no capture on closures or routines, and the grant slice is a small
+independent change (the spike diff is about 70 lines). Option A stays rejected
+for the reasons in the findings above. Open to the maintainer: whether the next
+slice moves the other import kinds into the same tier by exclusion (keep every
+non-import write) or by an explicit import layer below the block tier.
+
 ## 3. Consequences
 
 - A name an import binds is invisible after the block and in callees, as in
