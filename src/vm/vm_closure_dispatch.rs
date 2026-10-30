@@ -799,6 +799,9 @@ impl Interpreter {
             // able to tell that a `return` aimed at it (e.g. from an inline
             // CATCH handler) still has its routine on the stack.
             self.set_top_routine_callable_id(data.id);
+            if cc.is_hidden_from_backtrace {
+                self.hide_top_routine_from_backtrace();
+            }
         } else {
             self.push_block_routine_with_location(
                 data.package,

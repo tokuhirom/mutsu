@@ -276,15 +276,28 @@ fn sub_value(
     let ValueView::RakuAst(node) = target.view() else {
         return None;
     };
-    // One row serves the routine kinds (the first owner that declares a name
-    // is the only one the walk asks).
-    if matches!(
-        node.class,
-        crate::rakuast::RakuAstClass::Method | crate::rakuast::RakuAstClass::Submethod
-    ) {
-        return method_value(interp, target, _args, _named);
+    // One row serves the declaration kinds (the first owner that declares a
+    // name is the only one the walk asks).
+    use crate::rakuast::RakuAstClass as K;
+    match node.class {
+        K::Method | K::Submethod => return method_value(interp, target, _args, _named),
+        // `::T` stands for a type nobody has bound yet.
+        K::TypeCapture => return Some(Ok(Value::package(Symbol::intern("Any")))),
+        // A constant's value is its initializer's, evaluated now.
+        K::VarDeclarationConstant => {
+            let init = crate::rakuast::node_accessor(node, "initializer")?;
+            let ValueView::RakuAst(init) = init.view() else {
+                return None;
+            };
+            let expression = crate::rakuast::node_accessor(init, "expression")?;
+            return Some(interp.eval_rakuast_node(&expression));
+        }
+        _ => {}
     }
-    let name = crate::rakuast::declared_sub_name(node)?;
+    let Some(name) = crate::rakuast::declared_sub_name(node) else {
+        // An anonymous sub is its own closure.
+        return (node.class == K::Sub).then(|| interp.eval_rakuast_node(target));
+    };
     let routine = interp.resolve_code_var(&name);
     // A CHECK phaser runs before the unit's subs are installed as lexicals,
     // but they are already in the function table (preregistered).
@@ -308,9 +321,63 @@ fn parameter_meta_object(
     let ValueView::RakuAst(node) = target.view() else {
         return None;
     };
+    // A parameter of a routine the unit declares is that routine's own
+    // `Parameter`, so the analysis can match it with the signature it dispatches
+    // over (`$routine.signature.params[$i] === $node.meta-object`).
+    if let Some(own) = routine_parameter(interp, node) {
+        return Some(Ok(own));
+    }
     Some(crate::rakuast::parameter_param_def(node).map(|def| {
         crate::value::signature::make_parameter_value_from_param_def(&def, Some(&*interp))
     }))
+}
+
+/// The `Parameter` the declared routine holds for the node's position.
+// Cost: O(p) for the routine's signature, p = its parameters.
+fn routine_parameter(
+    interp: &mut Interpreter,
+    node: &crate::rakuast::RakuAstNode,
+) -> Option<Value> {
+    let tag = crate::rakuast::declared_parameter_owner(node)?;
+    let index: usize = tag.last()?.parse().ok()?;
+    let routine = match tag.first()?.as_str() {
+        "sub" => {
+            let name = tag.get(1)?;
+            let routine = interp.resolve_code_var(name);
+            if matches!(routine.view(), ValueView::Sub(_)) {
+                routine
+            } else {
+                let def = interp.resolve_function(name).map(|a| (*a).clone())?;
+                interp.sub_value_from_function_def(def)
+            }
+        }
+        "method" => interp
+            .call_method_with_values(
+                Value::package(Symbol::intern(tag.get(1)?)),
+                "^find_method",
+                vec![Value::str(tag.get(2)?.clone())],
+            )
+            .ok()?,
+        _ => return None,
+    };
+    let signature = interp
+        .call_method_with_values(routine, "signature", Vec::new())
+        .ok()?;
+    let params = interp
+        .call_method_with_values(signature, "params", Vec::new())
+        .ok()?;
+    let ValueView::Array(items, _) = params.view() else {
+        return None;
+    };
+    let items = items.as_slice();
+    // A method's signature starts with its invocant, which the node omits.
+    let first_is_invocant = items.first().is_some_and(|first| {
+        interp
+            .call_method_with_values(first.clone(), "invocant", Vec::new())
+            .is_ok_and(|v| v.truthy())
+    });
+    let offset = usize::from(tag.first().is_some_and(|k| k == "method") && first_is_invocant);
+    items.get(index + offset).cloned()
 }
 
 /// `Origin.as-match`: a `RakuAST::Origin::Match` for the span: the unit's file,

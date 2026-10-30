@@ -44,6 +44,8 @@ struct Scopes<'a> {
     imported: &'a dyn Fn(&str) -> bool,
     /// The named packages enclosing the node being walked, innermost last.
     packages: Vec<String>,
+    /// How many `*` arguments the enclosing thunk has numbered so far.
+    whatever_args: Vec<usize>,
 }
 
 impl Scopes<'_> {
@@ -67,6 +69,7 @@ pub(super) fn annotate(node: &mut RakuAstNode, imported: &dyn Fn(&str) -> bool) 
         scopes: vec![HashMap::new()],
         imported,
         packages: Vec::new(),
+        whatever_args: vec![0],
     };
     walk(node, &mut scopes);
 }
@@ -93,6 +96,7 @@ fn opens_scope(class: C) -> bool {
 // Cost: O(size of the subtree * d).
 fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     let opened = opens_scope(node.class);
+    let node_class = node.class;
     if opened {
         scopes.scopes.push(HashMap::new());
         hoist(node, scopes);
@@ -111,6 +115,19 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     if let Some(name) = package {
         scopes.packages.push(name);
     }
+    // `*` arguments are numbered within one thunk: a statement, a parameter's
+    // `where`, or a side of a short-circuit operator.
+    let numbers_whatever = matches!(node.class, C::StatementExpression | C::Parameter)
+        || (node.class == C::ApplyInfix && short_circuits(node));
+    if numbers_whatever {
+        scopes.whatever_args.push(0);
+    }
+    if node.class == C::WhateverCodeArgument
+        && let Some(count) = scopes.whatever_args.last_mut()
+    {
+        *count += 1;
+        node.origin.2 = Some(Value::str(format!("_whatever_arg_{count}")));
+    }
     let parameter_type = (node.class == C::Parameter).then(|| type_field(node));
     for field in &mut node.fields {
         match &mut field.value {
@@ -120,7 +137,40 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
                 }
                 visit_child(child, scopes);
             }
-            RakuAstFieldValue::Node(child) => visit_child(child, scopes),
+            RakuAstFieldValue::Node(child) => {
+                visit_child(child, scopes);
+                // A block that is a statement's expression is a block statement.
+                if node_class == C::StatementExpression
+                    && field.name == Some("expression")
+                    && let ValueView::RakuAst(held) = child.view()
+                    && matches!(held.class, C::Block | C::PointyBlock)
+                {
+                    let mut marked = RakuAstNode::clone(held);
+                    marked.origin.2 = Some(Value::TRUE);
+                    *child = Value::rakuast(Box::new(marked));
+                }
+                // The body of a conditional or a loop runs in place.
+                if matches!(
+                    node_class,
+                    C::StatementIf
+                        | C::StatementUnless
+                        | C::StatementElsif
+                        | C::StatementWith
+                        | C::StatementWithout
+                        | C::StatementOrwith
+                        | C::StatementLoop
+                        | C::StatementLoopWhile
+                        | C::StatementLoopUntil
+                        | C::StatementLoopRepeatWhile
+                        | C::StatementLoopRepeatUntil
+                ) && let ValueView::RakuAst(held) = child.view()
+                    && held.class == C::Block
+                {
+                    let mut marked = RakuAstNode::clone(held);
+                    marked.origin.2 = Some(Value::str("immediate".to_string()));
+                    *child = Value::rakuast(Box::new(marked));
+                }
+            }
             RakuAstFieldValue::List(items) => {
                 for item in items {
                     visit_child(item, scopes);
@@ -128,6 +178,14 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
             }
             _ => {}
         }
+    }
+    // A routine's parameters remember which routine they belong to, so
+    // `Parameter.meta-object` can answer the routine's own `Parameter`.
+    if let Some(owner) = parameter_owner(node, scopes) {
+        annotate_parameters(node, &owner);
+    }
+    if numbers_whatever {
+        scopes.whatever_args.pop();
     }
     if named_package {
         scopes.packages.pop();
@@ -187,6 +245,83 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
     if !opens_scope(held.class) {
         hoist(held, scopes);
     }
+}
+
+/// Whether the infix of an `ApplyInfix` is a short-circuit operator, whose
+/// sides are thunks of their own.
+// Cost: O(f), f = fields of the node.
+fn short_circuits(node: &RakuAstNode) -> bool {
+    node.fields.iter().any(|f| {
+        let RakuAstFieldValue::Node(infix) = &f.value else {
+            return false;
+        };
+        let ValueView::RakuAst(infix) = infix.view() else {
+            return false;
+        };
+        infix.class == C::Infix
+            && matches!(
+                leaf(infix, "operator").as_deref(),
+                Some("&&" | "||" | "//" | "and" | "or" | "andthen" | "orelse")
+            )
+    })
+}
+
+/// Who owns the parameters of `node`: `sub\u{1}NAME` or `method\u{1}OWNER\u{1}NAME`.
+// Cost: O(f), f = fields of the node.
+fn parameter_owner(node: &RakuAstNode, scopes: &Scopes) -> Option<String> {
+    match node.class {
+        C::Sub => super::declared_routines::declared_by(node).map(|name| format!("sub\u{1}{name}")),
+        C::Method | C::Submethod if !scopes.packages.is_empty() => {
+            let name = package_name(node)?;
+            Some(format!(
+                "method\u{1}{}\u{1}{name}",
+                scopes.packages.join("::")
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// Stamp every parameter of the routine node's signature with its owner and
+/// position (`owner\u{1}INDEX`).
+// Cost: O(p), p = parameters of the routine.
+fn annotate_parameters(node: &mut RakuAstNode, owner: &str) {
+    for field in &mut node.fields {
+        let RakuAstFieldValue::Node(signature) = &mut field.value else {
+            continue;
+        };
+        let ValueView::RakuAst(held) = signature.view() else {
+            continue;
+        };
+        if held.class != C::Signature {
+            continue;
+        }
+        let mut sig = RakuAstNode::clone(held);
+        for sig_field in &mut sig.fields {
+            let RakuAstFieldValue::List(items) = &mut sig_field.value else {
+                continue;
+            };
+            for (index, item) in items.iter_mut().enumerate() {
+                let ValueView::RakuAst(param) = item.view() else {
+                    continue;
+                };
+                if param.class != C::Parameter {
+                    continue;
+                }
+                let mut marked = RakuAstNode::clone(param);
+                marked.origin.2 = Some(Value::str(format!("{owner}\u{1}{index}")));
+                *item = Value::rakuast(Box::new(marked));
+            }
+        }
+        *signature = Value::rakuast(Box::new(sig));
+    }
+}
+
+/// The routine and position a `Parameter` of the unit tree belongs to.
+// Cost: O(1).
+pub(super) fn parameter_owner_of(node: &RakuAstNode) -> Option<Vec<String>> {
+    let tag = node.origin.2.as_ref()?.to_string_value();
+    Some(tag.split('\u{1}').map(str::to_string).collect())
 }
 
 /// The package and name of a method declared in a named package of the unit
@@ -413,6 +548,18 @@ fn leaf(node: &RakuAstNode, name: &str) -> Option<String> {
             ValueView::Str(s) => Some(s.to_string()),
             _ => None,
         })
+}
+
+/// `VarDeclaration::Simple.container-type`: the container class of the
+/// sigil (`Array` for `@`, `Hash` for `%`, `Scalar` otherwise).
+// Cost: O(f), f = fields of the node.
+pub(super) fn container_type(node: &RakuAstNode) -> Value {
+    let name = match leaf(node, "sigil").as_deref() {
+        Some("@") => "Array",
+        Some("%") => "Hash",
+        _ => "Scalar",
+    };
+    Value::package(crate::symbol::Symbol::intern(name))
 }
 
 /// The variable (`$x`, `@a`, `&f`) a declaration node declares.

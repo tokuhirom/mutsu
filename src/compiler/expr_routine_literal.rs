@@ -265,11 +265,24 @@ impl Compiler {
             compiled.is_pointy_block = true;
         }
         compiled.is_whatever_code = is_whatever_code;
+        // `is hidden-from-backtrace` is written into the body's trait record.
+        let compiled_hidden = body.iter().any(|stmt| {
+            matches!(stmt, Stmt::Ast(node) if matches!(
+                node.as_ref(),
+                crate::ast::parsed::ParsedStmt::RoutineTraits(traits)
+                    if traits.iter().any(|t| matches!(
+                        t,
+                        crate::ast::routine_trait::RoutineTrait::Is { name, .. }
+                            if name == "hidden-from-backtrace"
+                    ))
+            ))
+        });
+        compiled.is_hidden_from_backtrace = compiled_hidden;
         compiled.declarator_doc = declarator_doc;
         let esc = self.escaping_position;
         let cc_idx = self.add_closure_code_baked(compiled, esc);
         let idx = self.code.add_stmt(Stmt::SubDecl {
-            is_hidden_from_backtrace: false,
+            is_hidden_from_backtrace: compiled_hidden,
             spans: Default::default(),
             name: routine_name,
             name_expr: None,

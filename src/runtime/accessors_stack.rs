@@ -304,6 +304,15 @@ impl Interpreter {
         }
     }
 
+    /// Mark the innermost routine frame `is hidden-from-backtrace`.
+    // Cost: O(1).
+    pub(crate) fn hide_top_routine_from_backtrace(&mut self) {
+        if let Some(mut frame) = self.routine_stack.last().copied() {
+            frame.is_hidden_from_backtrace = true;
+            self.routine_stack.replace_top(frame);
+        }
+    }
+
     /// Stamp `id` on the innermost routine frame, for a routine that has no
     /// registry entry to resolve its id from (an anonymous `sub`).
     // Cost: O(1).
