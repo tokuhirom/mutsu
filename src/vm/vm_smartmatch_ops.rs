@@ -6,7 +6,12 @@ impl Interpreter {
     /// direct scalar-variable read. Native values are not carried through the
     /// NaN box as a distinct `Value` tag: their declared container type is the
     /// provenance that distinguishes `my int $x; $x ~~ int` from `5 ~~ int`.
-    fn direct_native_lhs_match(&self, lhs_var: Option<&String>, right: &Value) -> Option<bool> {
+    fn direct_native_lhs_match(
+        &self,
+        lhs_var: Option<&String>,
+        left: &Value,
+        right: &Value,
+    ) -> Option<bool> {
         let ValueView::Package(type_name) = right.view() else {
             return None;
         };
@@ -24,6 +29,16 @@ impl Interpreter {
         // representation-neutral `:_` smiley on a native type object.
         if smiley.is_some_and(|s| s != ":_") {
             return Some(false);
+        }
+        // The type object itself (`num64 ~~ num64`, `my $t = num64; $t ~~ num64`)
+        // is its own native type: only a *value* needs the declared container
+        // to tell `my int $x` from a boxed `5`.
+        if let ValueView::Package(left_name) = left.view() {
+            let left_name = left_name.resolve();
+            let (left_base, _) = crate::runtime::types::strip_type_smiley(&left_name);
+            if left_base == base {
+                return Some(true);
+            }
         }
         let Some(name) = lhs_var else {
             return Some(false);
@@ -206,7 +221,7 @@ impl Interpreter {
         // this frame's locals; publish those before matching against it.
         let value_names = Self::smartmatch_value_sync(&left, &right);
         self.apply_smartmatch_sync(code, &value_names);
-        let native_lhs_match = self.direct_native_lhs_match(lhs_var, &right);
+        let native_lhs_match = self.direct_native_lhs_match(lhs_var, &left, &right);
         // A destructive `s///`/`tr///` that actually matched against a string
         // literal has no writable container to update, so Raku throws
         // X::Assignment::RO (e.g. `'abc' ~~ s/b/g/`). A non-matching attempt is
