@@ -24,7 +24,6 @@ impl Interpreter {
                 | "Str"
                 | "Stringy"
                 | "gist"
-                | "raku"
                 | "join"
                 | "sort"
                 | "reverse"

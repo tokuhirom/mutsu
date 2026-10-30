@@ -784,6 +784,20 @@ impl Interpreter {
         if let Some(pairs) = crate::builtins::method_table::io_path_parts_pairs(iterable) {
             return Ok(Some(pairs));
         }
+        // A `but`-mixed instance iterates through its `iterator` as the bare
+        // instance does, with the mixed value as `self` (#14921).
+        if let ValueView::Mixin(inner, _) = iterable.view() {
+            let inner_class = match inner.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                _ => None,
+            };
+            if self.mixin_composes_method(iterable, "iterator")
+                || inner_class.is_some_and(|cn| self.has_user_method(&cn, "iterator"))
+            {
+                return self.drive_user_iterator_items(iterable).map(Some);
+            }
+            return Ok(None);
+        }
         let ValueView::Instance {
             class_name,
             attributes,
@@ -863,7 +877,14 @@ impl Interpreter {
         &mut self,
         iterable: &Value,
     ) -> Result<Vec<Value>, RuntimeError> {
-        let iterator = if let Some(result) =
+        // The class's own `iterator` of a `but`-mixed `does Sequence` instance
+        // runs with the mixed value as `self`; the `Sequence` role's `iterator`
+        // would wrap the instance (#14921).
+        let iterator = if matches!(iterable.view(), ValueView::Mixin(..))
+            && self.is_iterator_sequence_instance(iterable)
+        {
+            self.call_user_iterator_on_mixin(iterable)?
+        } else if let Some(result) =
             self.dispatch_mixin_method_call(iterable, "iterator", Vec::new())
         {
             result?
