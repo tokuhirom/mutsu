@@ -164,6 +164,18 @@ impl Interpreter {
         self.module.lexical_import_capture.replace(capture)
     }
 
+    /// Whether the running import is the top-level `use` of a module unit: its
+    /// bindings are the whole unit's, not a block's.
+    // Cost: O(1).
+    pub(crate) fn lexical_import_is_module_unit(&self) -> bool {
+        self.module
+            .lexical_import_capture
+            .as_ref()
+            .is_some_and(|capture| {
+                capture.module_unit && capture.unit == self.executing_unit_sym_for_module_load()
+            })
+    }
+
     /// Whether the running import binds `name` lexically rather than
     /// aliasing it into the registry, and if so record `def` as its binding.
     /// Only a plain routine (no multi candidates, no proto, not an operator)

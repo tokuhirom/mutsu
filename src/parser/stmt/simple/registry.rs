@@ -112,6 +112,14 @@ pub(crate) fn resolve_op_precedence(ref_op: &str) -> Option<i32> {
     if let Some(symbol) = op.strip_prefix("infix:<").and_then(|s| s.strip_suffix('>')) {
         return resolve_infix_symbol_precedence(symbol);
     }
+    // The interpolating spelling, needed when the symbol holds a `>`
+    // (`is tighter(&infix:«|>»)`).
+    if let Some(symbol) = op
+        .strip_prefix("infix:\u{ab}")
+        .and_then(|s| s.strip_suffix('\u{bb}'))
+    {
+        return resolve_infix_symbol_precedence(symbol);
+    }
     if op.starts_with("prefix:<") || op.starts_with("postfix:<") {
         // A user-defined prefix/postfix may itself carry a precedence trait, and a later
         // `is looser(&postfix:<k>)` has to be relative to *that* level, not to the default
@@ -137,8 +145,12 @@ fn resolve_infix_symbol_precedence(symbol: &str) -> Option<i32> {
         // (#9405).
         "Z" | "X" | "..." | "...^" | "\u{2026}" | "\u{2026}^" | "minmax" => Some(PREC_SEQUENCE),
         _ => {
-            // Check if it's a user-defined op with a registered level
-            lookup_op_precedence(&format!("infix:<{}>", symbol))
+            // Check if it's a user-defined op with a registered level; a
+            // declared one without a precedence trait sits at the additive
+            // level (`is tighter(&infix:<mine>)` is relative to that).
+            lookup_op_precedence(&format!("infix:<{}>", symbol)).or_else(|| {
+                crate::parser::stmt::simple::is_user_defined_infix(symbol).then_some(PREC_ADDITIVE)
+            })
         }
     }
 }

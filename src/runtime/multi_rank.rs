@@ -29,7 +29,7 @@ pub(crate) const PROFILE_LEN: usize = 6;
 ///
 /// `scores[i]` is `2 * distance + (1 if unrefined)`, lower being narrower, and
 /// `u16::MAX` for a parameter the candidate does not have.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct RankProfile {
     scores: [u16; PROFILE_LEN],
     /// Each parameter's nominal type (`None`: not recorded), so a score
@@ -320,7 +320,7 @@ impl RankProfile {
 /// type. So `multi f($x where ...)` must lose to `multi f(Int $x)` for
 /// `f(42)`, while `multi f(Int $x where ...)` still beats `multi f(Int $x)`
 /// ([#8958](https://github.com/tokuhirom/mutsu/issues/8958)).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct MultiRank {
     pub(crate) nominal: (usize, usize),
     pub(crate) distance: usize,

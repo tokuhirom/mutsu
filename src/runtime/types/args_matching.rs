@@ -641,6 +641,26 @@ impl Interpreter {
                     if !is_varref && !has_arg_source && !is_container && !is_proxy {
                         return false;
                     }
+                    // A `$x is raw` parameter bound to a literal holds the value
+                    // itself, so forwarding `$x` supplies no container either.
+                    if has_arg_source && !is_container && !is_proxy {
+                        let source_immutable = arg_idx
+                            .and_then(|idx| {
+                                self.pending_call_arg_sources
+                                    .as_ref()
+                                    .and_then(|sources| sources.get(idx))
+                                    .and_then(|name| name.as_deref())
+                            })
+                            .is_some_and(|name| {
+                                matches!(
+                                    self.readonly_kind(name),
+                                    Some(crate::ast::ReadonlyKind::Immutable)
+                                )
+                            });
+                        if source_immutable {
+                            return false;
+                        }
+                    }
                 }
                 if let Some(literal) = &pd.literal_value {
                     if let Some(arg) = arg_for_checks.as_ref() {

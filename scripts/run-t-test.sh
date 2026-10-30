@@ -50,6 +50,19 @@ per_file_timeout_scale() {
       # The work is the point of the test, so the budget scales (x3).
       echo 3
       ;;
+    t/rakuast/rakuast-deparse.t)
+      # Nineteen deparses through rakudo's RakuAST::Deparse, whose 267
+      # `multi method deparse` candidates are ranked against each node's
+      # type on every dispatch. Measured on an opt-level-0 debug binary,
+      # alone on an idle box: 106s (GC-stress and JIT-stress alike) after the
+      # RakuAST conformance memo, 145s before it; ~4.4s on a release binary.
+      # The debug binary also re-checks every memoised answer against the
+      # general walk. The nightly stress jobs' 90s debug budget ran out at
+      # case 10 (exit 124, "planned 19 ran 10", no crash report; #15598).
+      # What remains is the per-dispatch pairwise tiering (todo:perf), so the
+      # budget scales (x3) until that is gone.
+      echo 3
+      ;;
     *)
       echo 1
       ;;

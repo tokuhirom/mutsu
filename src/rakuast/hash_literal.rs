@@ -101,6 +101,31 @@ fn contents_node(pairs: &[(String, Option<Expr>)]) -> Result<Option<RakuAstNode>
     Ok(Some(list))
 }
 
+/// The typed node the parser builds for an object hash `:{ ... }`.
+// Cost: O(1).
+pub(crate) fn object_hash_expr(entries: Vec<Expr>) -> Expr {
+    Expr::Ast(Box::new(crate::ast::parsed::ParsedExpr::ObjectHash(
+        entries,
+    )))
+}
+
+/// The `Circumfix::HashComposer(:object-hash)` of an object hash's entries.
+// Cost: O(n), n = size of the entries.
+pub(super) fn object_hash_node(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+    let mut fields = Vec::with_capacity(2);
+    if args.len() == 1 {
+        fields.push(node_field(None, convert_expr(&args[0])?));
+    } else if !args.is_empty() {
+        fields.push(node_field(None, super::convert::comma_list_node(args)?));
+    }
+    fields.push(leaf_field(Some("object-hash"), Value::truth(true)));
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::CircumfixHashComposer,
+        fields,
+    })
+}
+
 /// `Circumfix::HashComposer` -> a composer-spelled [`Expr::Hash`] or an
 /// object-hash constructor call.
 // Cost: O(p), p = pairs of the composer (plus lowering their values).

@@ -686,6 +686,7 @@ impl Compiler {
             // compiled routine keeps no body AST to re-derive it from.
             uses_return_rw: crate::opcode::body_uses_return_rw(body),
             has_rw_positional_param: false,
+            has_copy_positional_param: false,
             aggregate_positional_params: 0,
             is_cached,
             param_local_slots: None,

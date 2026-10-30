@@ -66,9 +66,12 @@ fn run(src: &str) -> (String, Counts) {
 }
 
 /// A sub that returns a closure, called and its result called, `n` times.
+/// The closure's free variable is a `my` of the sub, not its parameter: a
+/// readonly parameter is captured by value in the closure's upvalues (#15625)
+/// and so costs no capture-env entry, while a plain local still does.
 fn closure_loop(n: u32) -> String {
     format!(
-        "sub mk($a) {{ -> $x {{ $x eq $a }} }}\n\
+        "sub mk($a) {{ my $b = $a; -> $x {{ $x eq $b }} }}\n\
          my $s = 0; for ^{n} {{ $s += mk('a')('a') }}; say $s;"
     )
 }
@@ -86,7 +89,7 @@ fn counters_track_calls_and_closure_creations() {
         10,
         "one capture per closure creation"
     );
-    // Each captured closure copies at least its one free variable (`$a`).
+    // Each captured closure copies at least its one free variable (`$b`).
     assert!(
         c20.capture_own_entries - c10.capture_own_entries >= 10,
         "capture entries must be counted"

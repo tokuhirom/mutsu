@@ -243,6 +243,14 @@ pub(crate) fn is_declared_custom_infix_word(input: &str) -> bool {
         || crate::parser::stmt::simple::is_user_defined_infix(&name)
 }
 
+/// Core infix words whose dedicated parser level also dispatches to a declared
+/// candidate, so a declaration of one (an overload) does not need the
+/// custom-word path to be parsed. Other core words are not here: the comparison
+/// words (`eq`, `lt`, `eqv`, `after`, ...) are reached only through that path,
+/// and `unicmp`, `coll` and `o` run their core body without trying the declared
+/// candidate (`t/routines/dispatch/core-infix-user-candidate-fallbacks.t`).
+const CORE_PARSED_INFIX_WORDS: &[&str] = &["cmp", "leg", "min", "max", "x", "xx"];
+
 /// Parse one application of a user-declared `infix:<word>` operator, folding it
 /// into `left`. Returns `Ok(None)` when `r` does not open with a custom infix
 /// word whose precedence level falls in `(min_level, max_level]` — with `None`
@@ -275,6 +283,17 @@ pub(crate) fn try_custom_infix_word<'a>(
     // Str` would become `infix:<but>`). Only an operator the parser has SEEN
     // declared gets rakudo's real default precedence for a trait-less infix,
     // additive.
+    // A declaration of a word the core grammar owns as an infix (`multi
+    // infix:<cmp>`, `multi infix:<min>`) adds a candidate to the core operator
+    // and keeps its precedence. Taking it here as a "new" word operator would
+    // give it the trait-less additive level and read `$a + 1 cmp $b + 1` as
+    // `$a + (1 cmp $b) + 1`. The core parser at the operator's own level takes
+    // it and dispatches to the declared candidates.
+    if crate::parser::stmt::simple::lookup_custom_infix_precedence(&name).is_none()
+        && CORE_PARSED_INFIX_WORDS.contains(&name.as_str())
+    {
+        return Ok(None);
+    }
     let level = crate::parser::stmt::simple::lookup_custom_infix_precedence(&name).unwrap_or({
         if crate::parser::stmt::simple::is_user_defined_infix(&name) {
             PREC_ADDITIVE

@@ -12,7 +12,7 @@ use Test;
 # `L10N::Testish` (t/lib/L10N/Testish.rakumod) is a miniature of the generated
 # roles those distributions ship.
 
-plan 14;
+plan 15;
 
 # --- replacement categories: the localized spelling stands in for the keyword.
 my $ast = 'mine $x = 41; $x + 1'.AST('Testish');
@@ -41,6 +41,10 @@ is 'tryish { die "boom" }; 7'.AST('Testish').EVAL, 7,
 # A non-ASCII spelling, matched on a character boundary rather than a byte one.
 is 'mine $x = 0; なければ $x { 9 }'.AST('Testish').EVAL, 9,
     'a multi-byte localized keyword parses';
+
+# A spelling with an apostrophe (L10N::TLH's `block-loop` is `"'eS"`).
+is 'mine $n = 0; \'tick { $n++; last }; $n'.AST('Testish').EVAL, 1,
+    'a localized keyword containing an apostrophe parses';
 
 # --- the ASCII spelling of a *replaced* keyword is gone, as it is in rakudo.
 dies-ok { 'my $x = 1'.AST('Testish') },
