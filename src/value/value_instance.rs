@@ -344,6 +344,20 @@ impl InstanceAttrs {
                 let taken = std::mem::replace(v, Value::NIL);
                 *v = taken.deref_container();
             }
+            // An `@`/`%` attribute nobody has filled yet is not vivified in
+            // Rakudo, so the clone and the original each vivify their own on
+            // first use (Data::Dump::Tree's `self.clone` followed by
+            // `@.kb_colors.append` leaves the original's list empty); a filled
+            // one is shared. A scalar holding an array is itemized and stays
+            // shared.
+            let unfilled = match v.view() {
+                ValueView::Array(arc, kind) => !kind.is_itemized() && arc.items().is_empty(),
+                ValueView::Hash(arc) => !v.hash_is_itemized() && arc.is_empty(),
+                _ => false,
+            };
+            if unfilled && let Some(fresh) = v.detached_container_copy() {
+                *v = fresh;
+            }
         }
         attrs
     }
