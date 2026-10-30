@@ -203,7 +203,10 @@ fn follows_regex_quote_word(rest: &[char], slash: usize) -> bool {
     // `$rx/2`, `@m/2`, `.m/2`, `a-rx/2`: part of a longer name or a value.
     if start > 0
         && (rest[start - 1].is_alphanumeric()
-            || matches!(rest[start - 1], '$' | '@' | '%' | '&' | '.' | ':' | '\\' | '-' | '_'))
+            || matches!(
+                rest[start - 1],
+                '$' | '@' | '%' | '&' | '.' | ':' | '\\' | '-' | '_'
+            ))
     {
         return false;
     }
