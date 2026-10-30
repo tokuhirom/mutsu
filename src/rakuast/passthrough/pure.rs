@@ -76,10 +76,26 @@ impl<'ast> Visit<'ast> for Purity {
         if !self.stmt_allowed(stmt) {
             self.pure = false;
             self.reason = Some(match stmt {
-                Stmt::Assign { name, target_is_sigilless, .. } => format!("Assign {} sigilless={target_is_sigilless}", name.chars().take(14).collect::<String>()),
-                Stmt::VarDecl { name, anonymous, .. } => format!("VarDecl {} anon={anonymous}", name.chars().take(14).collect::<String>()),
+                Stmt::Assign {
+                    name,
+                    target_is_sigilless,
+                    ..
+                } => format!(
+                    "Assign {} sigilless={target_is_sigilless}",
+                    name.chars().take(14).collect::<String>()
+                ),
+                Stmt::VarDecl {
+                    name, anonymous, ..
+                } => format!(
+                    "VarDecl {} anon={anonymous}",
+                    name.chars().take(14).collect::<String>()
+                ),
                 Stmt::Ast(n) => format!("Ast {:?}", n).chars().take(20).collect(),
-                other => format!("{other:?}").split(|c: char| !c.is_alphanumeric()).next().unwrap_or("").to_string(),
+                other => format!("{other:?}")
+                    .split(|c: char| !c.is_alphanumeric())
+                    .next()
+                    .unwrap_or("")
+                    .to_string(),
             });
             return;
         }
@@ -232,7 +248,9 @@ impl Purity {
             // over a tree the parser already marked wraps it again), and a `||`
             // dimension splat is a spelled form it rewrites.
             // The marker a `my T $x .= new` declaration carries as its initializer.
-            Expr::CompoundAssign { op, .. } => op == crate::ast::method_assign_decl::DECL_INITIALIZER_OP,
+            Expr::CompoundAssign { op, .. } => {
+                op == crate::ast::method_assign_decl::DECL_INITIALIZER_OP
+            }
             Expr::Unary { op, .. } => !matches!(op, crate::token_kind::TokenKind::OrOr),
             Expr::AnonSubParams { custom_traits, .. } => custom_traits.as_slice().is_empty(),
             Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => !has_code(tree),

@@ -116,7 +116,9 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
                     if let Some(line) = super::passthrough::line_of(child) {
                         stmts.push(Stmt::SetLine(line, crate::ast::SrcSpan::NONE));
                     }
-                    stmts.push(super::passthrough::lower_stmt(child)?);
+                    let stmt = super::passthrough::lower_stmt(child)?;
+                    crate::parser::register_rakuast_user_sub_binding(&stmt);
+                    stmts.push(stmt);
                     continue;
                 }
                 // An empty statement runs nothing and is no block's value.

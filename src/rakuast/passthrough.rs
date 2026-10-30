@@ -339,7 +339,6 @@ impl VisitMut for Kept {
     // produces no statement (a stub body `{ ... }` is the body's only one).
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
         body.retain(|s| match s {
-            Stmt::Ast(node) => !matches!(node.as_ref(), ParsedStmt::RoutineTraits(_)),
             // A `;` that ends no statement runs nothing and is no block's value.
             Stmt::Expr(Expr::Spelled(spelled)) => !pure::is_empty_statement(spelled),
             _ => true,
@@ -347,7 +346,14 @@ impl VisitMut for Kept {
         // The names a body declares classify the barewords written in it, as
         // they do when it is converted.
         let _scope = super::bareword::BlockScope::enter(body);
-        crate::ast_visit::walk_stmts_mut(self, body);
+        // A routine or `&name` declared in the body is in scope for the
+        // statements after it, as it is for the parser.
+        crate::parser::with_rakuast_lexical_scope(|| {
+            for stmt in body.iter_mut() {
+                self.visit_stmt_mut(stmt);
+                crate::parser::register_rakuast_user_sub_binding(stmt);
+            }
+        });
     }
 
     // A spelling only annotates the expression it wraps (ADR-12199): an
@@ -470,7 +476,9 @@ impl VisitMut for Kept {
         {
             *modified.stmt = inner;
         }
-        if matches!(stmt, Stmt::Ast(_))
+        // The traits a routine was written with stay in its body (the runtime
+        // reads them); they are compiler-inert.
+        if matches!(stmt, Stmt::Ast(node) if !matches!(node.as_ref(), ParsedStmt::RoutineTraits(_)))
             && let Stmt::Ast(node) = std::mem::replace(stmt, Stmt::Last(None))
         {
             match super::lower_parsed_stmt(*node) {
