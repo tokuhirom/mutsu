@@ -18,7 +18,7 @@ is %apply-methods.keys.sort.join(','), 'add-colonpair,colonpairs,infix,left,new,
 is RakuAST::Name.^method_table.keys.sort.join(','),
     'colonpairs,from-identifier,from-identifier-parts,is-anonymous,is-empty,is-indirect-lookup,new,parts',
     'named constructor appears in the method table';
-is RakuAST::StatementList.^method_table.keys.sort.join(','), 'add-statement,new,statements,unshift-statement',
+is RakuAST::StatementList.^method_table.keys.sort.join(','), 'add-statement,code-statements,new,statements,unshift-statement',
     'mutable model class exposes construction, mutation, and its accessor';
 is RakuAST::Assignment.^method_table.keys.sort.join(','), 'new,operator',
     'a class with a constructor and a computed method lists both';

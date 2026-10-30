@@ -23,7 +23,7 @@ is RakuAST::Name.^methods(:local).map(*.name).sort.join(','),
     'Name exposes its supported constructors and accessor';
 
 is RakuAST::StatementList.^methods(:local).map(*.name).sort.join(','),
-    'add-statement,new,statements,unshift-statement',
+    'add-statement,code-statements,new,statements,unshift-statement',
     'StatementList exposes construction, mutation, and its read accessor';
 
 is RakuAST::Statement::Expression.^methods(:local).map(*.name).sort.join(','),
