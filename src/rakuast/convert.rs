@@ -51,13 +51,23 @@ pub(super) fn leaf_field(name: Option<&'static str>, value: Value) -> RakuAstFie
 pub(super) fn statement_list(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     let _underscore_scope = super::underscore_bindings::Scope::reset();
     let _scope = bareword::DeclaredNames::collect(stmts);
-    statement_list_inner(stmts)
+    statement_list_inner(Statements::Shared(stmts))
+}
+
+/// [`statement_list`] for the executing round trip, which owns the unit: a
+/// statement the round trip carries moves into its leaf instead of being
+/// copied, and the unit is not read again afterwards.
+// Cost: O(n), n = size of the statements.
+pub(super) fn statement_list_owned(stmts: &mut [Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let _underscore_scope = super::underscore_bindings::Scope::reset();
+    let _scope = bareword::DeclaredNames::collect(stmts);
+    statement_list_inner(Statements::Owned(stmts))
 }
 
 /// The statements of `stmts`, each as its node.
 // Cost: O(n), n = size of the statements.
 pub(super) fn block_statements(stmts: &[Stmt]) -> Result<Vec<RakuAstNode>, RuntimeError> {
-    Ok(statement_list_inner(stmts)?
+    Ok(statement_list_inner(Statements::Shared(stmts))?
         .fields
         .into_iter()
         .filter_map(|field| match field.value {
@@ -70,31 +80,56 @@ pub(super) fn block_statements(stmts: &[Stmt]) -> Result<Vec<RakuAstNode>, Runti
         .collect())
 }
 
-fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+/// The statements a list is converted from: shared with the caller, or owned by
+/// an executing round trip.
+enum Statements<'a> {
+    Shared(&'a [Stmt]),
+    Owned(&'a mut [Stmt]),
+}
+
+impl Statements<'_> {
+    fn all(&self) -> &[Stmt] {
+        match self {
+            Statements::Shared(stmts) => stmts,
+            Statements::Owned(stmts) => stmts,
+        }
+    }
+
+    /// The leaf carrying statement `at`, which an owned list gives up.
+    fn carry(&mut self, at: usize, line: Option<i64>) -> Option<RakuAstNode> {
+        match self {
+            Statements::Shared(stmts) => super::passthrough::stmt_leaf(&stmts[at], line),
+            Statements::Owned(stmts) => super::passthrough::stmt_leaf_taking(&mut stmts[at], line),
+        }
+    }
+}
+
+fn statement_list_inner(mut stmts: Statements<'_>) -> Result<RakuAstNode, RuntimeError> {
     let _statements = super::passthrough::Block::enter();
-    let _underscore_scope = super::underscore_bindings::Scope::block(stmts);
-    let _block = bareword::BlockScope::enter(stmts);
+    let _underscore_scope = super::underscore_bindings::Scope::block(stmts.all());
+    let _block = bareword::BlockScope::enter(stmts.all());
     let mut fields = Vec::new();
     // The line of the statement about to be converted: the `SetLine` marker
     // in front of it becomes the node's hidden origin (see `origin`).
     let mut line = None;
     let mut trace = None;
-    for (at, stmt) in stmts.iter().enumerate() {
+    for at in 0..stmts.all().len() {
+        let stmt = &stmts.all()[at];
         if let Stmt::SetLine(n, span) = stmt {
             line = Some((*n, *span));
             continue;
         }
         if matches!(stmt, Stmt::Trace { .. }) {
-            trace = Some(stmt);
+            trace = Some(stmt.clone());
             continue;
         }
         // `unit module M;` / `unit package P;`: rakudo holds the rest of the
         // unit in the declaration's body; the parser leaves it beside it.
         let _statement = super::expr_origins::InStatement::enter(line.map(|(_, span)| span));
-        if let Some(unit) = unit_package_taking(stmt, &stmts[at + 1..]) {
+        if let Some(unit) = unit_package_taking(stmt, &stmts.all()[at + 1..]) {
             if let Some(mut node) = convert_stmt(&unit)? {
                 super::routine_origins::package_origins(&mut node, &unit);
-                if let Some(field) = trace.take().and_then(origin::trace_field) {
+                if let Some(field) = trace.take().as_ref().and_then(origin::trace_field) {
                     node.fields.push(field);
                 }
                 if let Some((n, span)) = line.take() {
@@ -110,15 +145,16 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
             continue;
         }
         if trace.is_none()
-            && let Some(leaf) = super::passthrough::stmt_leaf(stmt, line.map(|(n, _)| n))
+            && let Some(leaf) = stmts.carry(at, line.map(|(n, _)| n))
         {
             line = None;
             fields.push(node_field(None, leaf));
             continue;
         }
+        let stmt = &stmts.all()[at];
         if let Some(mut node) = convert_stmt(stmt)? {
             super::routine_origins::package_origins(&mut node, stmt);
-            if let Some(field) = trace.take().and_then(origin::trace_field) {
+            if let Some(field) = trace.take().as_ref().and_then(origin::trace_field) {
                 node.fields.push(field);
             }
             if let Some((n, span)) = line.take() {
@@ -4150,7 +4186,7 @@ pub(super) fn blockoid(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::Blockoid,
-        fields: vec![node_field(None, statement_list_inner(body)?)],
+        fields: vec![node_field(None, statement_list_inner(Statements::Shared(body))?)],
     })
 }
 

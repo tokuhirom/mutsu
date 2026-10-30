@@ -32,6 +32,9 @@ enum Held {
 struct Slot {
     held: Held,
     fixup: bool,
+    /// The tree is read once, by the lowering of the statement list that holds
+    /// it, so it is taken out of the table instead of cloned.
+    once: bool,
 }
 
 thread_local! {
@@ -186,11 +189,11 @@ impl Drop for Scope {
     }
 }
 
-fn leaf_node(held: Held, fixup: bool, line: Option<i64>) -> Option<RakuAstNode> {
+fn leaf_node(held: Held, fixup: bool, once: bool, line: Option<i64>) -> Option<RakuAstNode> {
     let slot = TABLE.with(|t| {
         let mut table = t.borrow_mut();
         let table = table.as_mut()?;
-        table.push(Some(Slot { held, fixup }));
+        table.push(Some(Slot { held, fixup, once }));
         Some(table.len() as i64 - 1)
     })?;
     let mut fields = vec![RakuAstField {
@@ -218,7 +221,7 @@ pub(super) fn expr_leaf(expr: &Expr) -> Option<RakuAstNode> {
         return None;
     }
     let fixup = analyse_expr(expr)?;
-    leaf_node(Held::Expr(expr.clone()), fixup, None)
+    leaf_node(Held::Expr(expr.clone()), fixup, false, None)
 }
 
 /// [`expr_leaf`] for a call argument, whose parent reads no class from it.
@@ -234,7 +237,20 @@ pub(super) fn stmt_leaf(stmt: &Stmt, line: Option<i64>) -> Option<RakuAstNode> {
         return None;
     }
     let fixup = analyse_stmt(stmt)?;
-    leaf_node(Held::Stmt(Box::new(stmt.clone())), fixup, line)
+    leaf_node(Held::Stmt(Box::new(stmt.clone())), fixup, false, line)
+}
+
+/// [`stmt_leaf`] for a statement of the unit's own list, which only the lowering
+/// of that list reads: the statement moves into the leaf and `stmt` is left
+/// empty. A statement that cannot be carried is left as it is.
+// Cost: O(s) to test, s = nodes of `stmt`; O(1) to move; O(1) outside a scope.
+pub(super) fn stmt_leaf_taking(stmt: &mut Stmt, line: Option<i64>) -> Option<RakuAstNode> {
+    if blocked() || !TABLE.with(|t| t.borrow().is_some()) {
+        return None;
+    }
+    let fixup = analyse_stmt(stmt)?;
+    let taken = Box::new(std::mem::replace(stmt, Stmt::Last(None)));
+    leaf_node(Held::Stmt(taken), fixup, true, line)
 }
 
 // Cost: O(1).
@@ -267,11 +283,17 @@ pub(super) fn line_of(node: &RakuAstNode) -> Option<i64> {
 
 fn held(node: &RakuAstNode) -> Result<Held, RuntimeError> {
     let at = slot(node)?;
-    // Some lowerings read a node more than once, so the tree is cloned out.
+    // Some lowerings read a node more than once, so the tree is cloned out,
+    // unless its slot is read exactly once.
     let (held, fixup) = TABLE
         .with(|t| {
-            let table = t.borrow();
-            let slot = table.as_ref()?.get(at)?.as_ref()?;
+            let mut table = t.borrow_mut();
+            let slots = table.as_mut()?;
+            if slots.get(at)?.as_ref()?.once {
+                let slot = slots[at].take()?;
+                return Some((slot.held, slot.fixup));
+            }
+            let slot = slots[at].as_ref()?;
             let held = match &slot.held {
                 Held::Expr(e) => Held::Expr(e.clone()),
                 Held::Stmt(s) => Held::Stmt(s.clone()),
