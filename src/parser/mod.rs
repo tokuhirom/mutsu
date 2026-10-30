@@ -345,9 +345,7 @@ pub use stmt::simple::{
     set_parser_program_path, set_parser_source_file,
 };
 
-pub(crate) use expr::precedence::{
-    assign_to_target_expr, assignment_ro_expr, single_target_list_lvalue_expr,
-};
+pub(crate) use expr::precedence::{assign_to_target_expr, single_target_list_lvalue_expr};
 pub(crate) use expr::wrap_finished_expr;
 pub(crate) use stmt::simple_expr_stmt::lvalue::method_lvalue_target_name;
 
@@ -371,7 +369,6 @@ pub(crate) fn lowered_assignment(expr: crate::ast::Expr) -> crate::ast::Expr {
         other => other,
     }
 }
-pub(crate) use expr::precedence::{literal_assign_ro_expr, literal_assign_ro_parts};
 pub(crate) use expr::precedence_meta_ops::negated_glyph_relation;
 pub(crate) use stmt::assign::written_assignment;
 pub(crate) use stmt::simple::{fold_use_lib_path, use_lib_args};

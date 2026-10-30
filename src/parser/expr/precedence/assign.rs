@@ -1,55 +1,5 @@
 use super::*;
-
-pub(crate) fn assignment_ro_expr(lhs: Expr, rhs: Expr) -> Expr {
-    Expr::desugar_block(vec![
-        Stmt::Expr(lhs),
-        Stmt::Expr(rhs),
-        Stmt::Expr(Expr::Call {
-            name: Symbol::intern("__mutsu_assignment_ro"),
-            args: Vec::new(),
-            listop: false,
-        }),
-    ])
-}
-
-/// `LITERAL = RHS`: assigning to an immutable literal throws
-/// `X::Assignment::RO` once the right-hand side has been evaluated.
-///
-/// The expansion is `{ RHS; __mutsu_assignment_ro(LITERAL) }`, built here for
-/// both the parser and RakuAST lowering, and taken apart again by
-/// [`literal_assign_ro_parts`] when `.AST` renders the written assignment.
-pub(crate) fn literal_assign_ro_expr(literal: Expr, rhs: Expr) -> Expr {
-    Expr::desugar_block(vec![
-        Stmt::Expr(rhs),
-        Stmt::Expr(Expr::Call {
-            name: Symbol::intern("__mutsu_assignment_ro"),
-            args: vec![literal],
-            listop: false,
-        }),
-    ])
-}
-
-/// The `(literal, rhs)` of an expansion [`literal_assign_ro_expr`] built.
-// Cost: O(1).
-pub(crate) fn literal_assign_ro_parts(expr: &Expr) -> Option<(&Expr, &Expr)> {
-    let Expr::DoBlock {
-        body,
-        label: None,
-        origin: crate::ast::DoBlockOrigin::Desugar,
-    } = expr
-    else {
-        return None;
-    };
-    let [Stmt::Expr(rhs), Stmt::Expr(Expr::Call { name, args, .. })] = body.as_slice() else {
-        return None;
-    };
-    match args.as_slice() {
-        [literal @ Expr::Literal(_)] if name.with_str(|n| n == "__mutsu_assignment_ro") => {
-            Some((literal, rhs))
-        }
-        _ => None,
-    }
-}
+use crate::rakuast::assignment_ro_expr;
 
 pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, value: Expr) -> Expr {
     let target = unwrap_grouped_lvalue(target);

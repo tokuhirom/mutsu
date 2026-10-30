@@ -6,8 +6,9 @@
 use super::assign_writeback::{
     dynamic_method_lvalue_assign_expr, method_lvalue_assign_expr, named_sub_lvalue_assign_expr,
 };
+use super::assignment_ro_expr;
 use crate::ast::{Expr, Stmt};
-use crate::parser::{assignment_ro_expr, method_lvalue_target_name};
+use crate::parser::method_lvalue_target_name;
 use crate::symbol::Symbol;
 
 pub(crate) fn unwrap_grouped_lvalue(target: Expr) -> Expr {

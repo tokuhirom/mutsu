@@ -390,7 +390,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Expr::LiteralSrc(v, _) => Expr::Literal(v),
                     other => other,
                 };
-                Stmt::Expr(crate::parser::literal_assign_ro_expr(lit, rhs))
+                crate::parser::stmt::assign::written_assignment_stmt(lit, rhs)
             }
             Expr::SymbolicDeref { sigil, expr: inner } => Stmt::Expr(Expr::SymbolicDerefAssign {
                 sigil,

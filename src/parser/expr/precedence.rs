@@ -6,7 +6,7 @@ use super::super::stmt::assign::{
     short_circuit_compound_assign_expr,
 };
 
-use crate::ast::{Expr, Stmt};
+use crate::ast::Expr;
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
@@ -56,8 +56,7 @@ pub(crate) use feed::{feed_leftmost_operand_mut, lift_feed_in_list};
 // ---- Internal cross-submodule helper re-exports (so `use super::*` reaches them) ----
 pub(crate) use crate::rakuast::{assign_to_target_expr, unwrap_grouped_lvalue};
 pub(crate) use assign::{
-    assignment_ro_expr, build_compound_assign_target_expr, literal_assign_ro_expr,
-    literal_assign_ro_parts, parse_assignment_rhs_mode, parse_compound_assign_rhs_mode,
+    build_compound_assign_target_expr, parse_assignment_rhs_mode, parse_compound_assign_rhs_mode,
     single_target_list_lvalue_expr,
 };
 pub(crate) use chain_cmp::{make_chain_cmp, wrap_smartmatch_rhs};
