@@ -138,7 +138,6 @@ impl Purity {
                 name_expr: None,
                 associativity: None,
                 precedence_trait: None,
-                return_type: None,
                 signature_alternates,
                 export_tags,
                 custom_traits,
@@ -156,7 +155,6 @@ impl Purity {
             Stmt::MethodDecl {
                 name_expr: None,
                 value_prototype: None,
-                return_type: None,
                 deprecated_message: None,
                 handles,
                 custom_traits,
