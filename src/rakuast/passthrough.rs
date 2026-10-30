@@ -571,6 +571,13 @@ pub(super) fn scope_facts_of(node: &RakuAstNode, facts: &mut ScopeFacts) {
             }
             crate::ast_visit::walk_stmt(self, stmt);
         }
+        // `-> \p { ... }`: a sigilless parameter is a term of its body.
+        fn visit_param(&mut self, param: &'ast crate::ast::ParamDef) {
+            if param.sigilless {
+                self.0.terms.insert(param.name.clone());
+            }
+            crate::ast_visit::walk_param(self, param);
+        }
     }
     let Ok(at) = slot(node) else { return };
     TABLE.with(|t| {
