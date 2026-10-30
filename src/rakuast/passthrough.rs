@@ -42,6 +42,14 @@ thread_local! {
     static DESUGARED: Cell<u32> = const { Cell::new(0) };
 }
 
+/// Whether an executing round trip is running ([`Scope`] is installed): nothing
+/// then reads the source positions `.AST` reports, only the line a statement
+/// began on.
+// Cost: O(1).
+pub(super) fn executing() -> bool {
+    TABLE.with(|t| t.borrow().is_some())
+}
+
 fn blocked() -> bool {
     INSPECTING.with(|c| c.get()) > 0 || DESUGARED.with(|c| c.get()) > 0
 }
@@ -368,6 +376,40 @@ impl VisitMut for Kept {
             }
         }
     }
+}
+
+/// The routine names the tree a leaf carries declares: a named `sub`, a `&name`
+/// parameter. A node outside any leaf says it with its own class
+/// (`declared_routines::declared_by`).
+// Cost: O(n), n = nodes of the carried tree.
+pub(super) fn declared_routines_of(node: &RakuAstNode, found: &mut std::collections::HashSet<String>) {
+    struct Names<'f>(&'f mut std::collections::HashSet<String>);
+    impl<'ast> crate::ast_visit::Visit<'ast> for Names<'_> {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            if let Stmt::SubDecl { name, .. } = stmt {
+                self.0.insert(name.resolve());
+            }
+            crate::ast_visit::walk_stmt(self, stmt);
+        }
+        fn visit_param(&mut self, param: &'ast crate::ast::ParamDef) {
+            if let Some(name) = param.name.strip_prefix('&') {
+                self.0.insert(name.to_string());
+            }
+            crate::ast_visit::walk_param(self, param);
+        }
+    }
+    let Ok(at) = slot(node) else { return };
+    TABLE.with(|t| {
+        let table = t.borrow();
+        let Some(Some(slot)) = table.as_ref().and_then(|t| t.get(at)) else {
+            return;
+        };
+        let mut names = Names(found);
+        match &slot.held {
+            Held::Expr(e) => crate::ast_visit::Visit::visit_expr(&mut names, e),
+            Held::Stmt(s) => crate::ast_visit::Visit::visit_stmt(&mut names, s),
+        }
+    });
 }
 
 /// The expression a leaf carries.
