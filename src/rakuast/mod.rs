@@ -1506,6 +1506,12 @@ pub(crate) fn declared_method(node: &RakuAstNode) -> Option<(String, String)> {
     resolve::declared_method(node)
 }
 
+/// `[kind, owner.., name, index]` of a `Parameter` of the unit tree `$*CU` answers.
+// Cost: O(1).
+pub(crate) fn declared_parameter_owner(node: &RakuAstNode) -> Option<Vec<String>> {
+    resolve::parameter_owner_of(node)
+}
+
 /// The `VarDeclaration::Simple` annotated onto a `ParameterTarget::Var` of the
 /// unit tree `$*CU` answers (see [`resolve`]).
 // Cost: O(1).
@@ -3445,10 +3451,29 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
             RakuAstClass::StatementExpression => return Some(Value::TRUE),
             // A block is a block statement when it is a statement itself.
             RakuAstClass::Block | RakuAstClass::PointyBlock => {
-                return Some(Value::truth(node.origin.2.is_some()));
+                return Some(Value::truth(node.origin.2.as_ref().is_some_and(|mark| {
+                    mark.truthy() && mark.to_string_value() != "immediate"
+                })));
             }
             _ => {}
         }
+    }
+    // 1 for the body of a conditional or loop (it runs in place), else 0.
+    if method == "is-immediate-block-user-body" && node.class == RakuAstClass::Block {
+        let immediate = node
+            .origin
+            .2
+            .as_ref()
+            .is_some_and(|mark| mark.to_string_value() == "immediate");
+        return Some(Value::int(i64::from(immediate)));
+    }
+    if method == "name" && node.class == RakuAstClass::WhateverCodeArgument {
+        return Some(
+            node.origin
+                .2
+                .clone()
+                .unwrap_or_else(|| Value::str("_whatever_arg_1".to_string())),
+        );
     }
     if method == "container-type" && node.class == RakuAstClass::VarDeclarationSimple {
         return Some(resolve::container_type(node));
@@ -3646,6 +3671,12 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
         RakuAstClass::StatementExpression | RakuAstClass::Block | RakuAstClass::PointyBlock
     ) {
         names.push("is-block-statement");
+    }
+    if class == RakuAstClass::Block {
+        names.push("is-immediate-block-user-body");
+    }
+    if class == RakuAstClass::WhateverCodeArgument {
+        names.push("name");
     }
     if class == RakuAstClass::VarDeclarationSimple {
         names.push("container-type");
