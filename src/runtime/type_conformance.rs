@@ -51,6 +51,12 @@ struct NameFacts {
     /// The env leaves this name alone (it may be the `sup`).
     sup_ok: bool,
     sup_serial: u32,
+    /// The measured RakuAST names this name conforms to, when it is one
+    /// (`None` inside: it is not). Static, like the table it comes from.
+    rakuast: Option<Option<Ancestors>>,
+    /// Whether this name is a RakuAST name a measured name can be compared
+    /// with (no smiley), as a `sup`.
+    rakuast_sup: Option<bool>,
 }
 
 #[derive(Default)]
@@ -168,6 +174,21 @@ impl Interpreter {
         let serial = cache.scope_serial.get();
         // Nothing below runs user code or re-enters this cache.
         let mut names = cache.names.borrow_mut();
+        // Two RakuAST names: the measured hierarchy answers, exactly as
+        // `type_hierarchy_distance` does for a node or type object of the
+        // `sub` class (rakudo's own `RakuAST::Deparse` ranks 267 candidates
+        // by it). Not a registry fact, so independent of the stamp and scope.
+        let sup_is_rakuast = *names
+            .get_or_default(sup)?
+            .rakuast_sup
+            .get_or_insert_with(|| Self::is_rakuast_sup_name(sup));
+        if let Some(conforms_to) = names
+            .get_or_default(sub)?
+            .rakuast
+            .get_or_insert_with(|| Self::compute_rakuast_conformance(sub))
+        {
+            return sup_is_rakuast.then(|| conforms_to.contains(&sup.raw()));
+        }
         let sup_facts = names.get_or_default(sup)?;
         if sup_facts.sup_serial != serial {
             sup_facts.sup_ok = self.compute_conformance_sup_is_plain(sup);
@@ -227,6 +248,24 @@ impl Interpreter {
             ids.extend(roles.iter().map(|role| Symbol::intern(role).raw()));
         }
         // Sorted for the binary search; an MRO is a handful of names.
+        ids.sort_unstable();
+        ids.dedup();
+        Some(Arc::from(ids))
+    }
+
+    /// Whether `sup` is a RakuAST name without a smiley, the shape the
+    /// measured-hierarchy answer of `type_hierarchy_distance` covers.
+    // Cost: O(1), a prefix and suffix test.
+    fn is_rakuast_sup_name(sup: Symbol) -> bool {
+        sup.with_str(|n| n.starts_with("RakuAST::") && !n.ends_with(":D") && !n.ends_with(":U"))
+    }
+
+    /// The ids of the measured RakuAST names `sub` conforms to, when `sub` is
+    /// a measured name.
+    // Cost: O(d + r), d = MRO depth, r = roles of `sub`.
+    fn compute_rakuast_conformance(sub: Symbol) -> Option<Ancestors> {
+        let names = sub.with_str(crate::rakuast::type_object_conforms_to)?;
+        let mut ids: Vec<u32> = names.iter().map(|n| Symbol::intern(n).raw()).collect();
         ids.sort_unstable();
         ids.dedup();
         Some(Arc::from(ids))

@@ -1081,6 +1081,22 @@ pub fn type_object_distance(actual: &str, expected: &str) -> Option<Option<usize
     Some(None)
 }
 
+/// Every RakuAST name a node or type object of class `class_name` conforms to
+/// (the class it is measured as, its MRO without `Any`/`Mu`, and its roles),
+/// excluding `class_name` itself; `None` when it is not a measured name. The
+/// set [`type_object_distance`] ranks by, for a memo of the relation.
+// Cost: O(d + r), d = MRO depth, r = roles of `class_name`.
+pub(crate) fn type_object_conforms_to(class_name: &str) -> Option<Vec<String>> {
+    let measured = measured_name(class_name);
+    let entry = hierarchy::entry(measured)?;
+    let mut names: Vec<String> = Vec::with_capacity(entry.mro.len() + entry.roles.len() + 1);
+    if measured != class_name {
+        names.push(measured.to_string());
+    }
+    names.extend(entry.mro.iter().chain(entry.roles.iter()).map(|n| n.to_string()));
+    Some(names)
+}
+
 /// The `.^roles` of a RakuAST type object, as rakudo prints them.
 pub fn type_object_roles(class_name: &str) -> Option<Vec<&'static str>> {
     hierarchy::entry(measured_name(class_name)).map(|e| e.roles.clone())
