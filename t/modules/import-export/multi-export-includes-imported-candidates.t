@@ -1,7 +1,7 @@
 use Test;
 use lib 't/lib';
 
-plan 5;
+plan 6;
 
 # A module that imported a family's `proto` and declares its own `multi`
 # exports the imported candidates too (rakudo), so re-exporting both
@@ -20,4 +20,12 @@ plan 5;
     is MultiExpT::EXPORT::DEFAULT::<&task>.candidates.elems, 1,
         'the provider exports only its own';
     is task('y'), 'str y', 'direct imports dispatch as before';
+}
+
+# The same when the declaring file is a `unit class`.
+{
+    use MultiExpT;
+    use MultiExpCls;
+    is MultiExpCls::EXPORT::DEFAULT::<&task>.candidates.elems, 2,
+        'a unit class exports the imported candidate too';
 }

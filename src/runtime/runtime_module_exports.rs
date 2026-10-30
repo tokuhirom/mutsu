@@ -1224,6 +1224,16 @@ impl Interpreter {
                 && !exported_method_candidates
                 && self.bind_family_lexically(&name, &function_entries, proto_def.as_deref());
             if family_bound_lexically {
+                // A module unit's own top-level `use` is the unit's, whole: the
+                // candidates stay visible to it, and a `multi` it declares
+                // extends the family in what it exports (#15619).
+                if self.lexical_import_is_module_unit() {
+                    self.record_operator_import(
+                        &name,
+                        function_entries.iter().map(|(_, def)| def),
+                        false,
+                    );
+                }
                 function_entries.clear();
             }
             // An imported `only` sub (no multi candidates) is a single lexical
