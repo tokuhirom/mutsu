@@ -206,6 +206,7 @@ mod vm_trailing_sub_decl;
 pub(crate) use vm_operator_values::StrCmp;
 mod vm_concat_assign;
 mod vm_control_ops;
+mod vm_compile_diagnostics;
 mod vm_core_helpers;
 mod vm_data_io_ops;
 pub(crate) use vm_data_io_ops::OutputKind;

@@ -655,6 +655,7 @@ impl Interpreter {
         Self::inject_iterator_role_prelude(&code, &mut stmts);
         Self::inject_hash_ordered_prelude(&code, &mut stmts);
         Self::inject_x_wrapper_prelude(&code, &mut stmts);
+        Self::inject_x_comp_prelude(&code, &mut stmts);
         Self::inject_precomp_api_prelude(&code, &mut stmts);
         Self::inject_formatter_syntax_prelude(&code, &mut stmts);
         Self::inject_deparse_prelude(&code, &mut stmts);

@@ -73,6 +73,7 @@ pub(crate) mod trir;
 pub(crate) mod type_id;
 mod ucd;
 pub(crate) mod unit_source_file;
+pub(crate) mod unit_diagnostics;
 pub(crate) mod unit_source_text;
 mod value;
 mod vm;
