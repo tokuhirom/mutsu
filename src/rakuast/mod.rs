@@ -1543,6 +1543,64 @@ pub(crate) fn as_item_call_statement(node: &Value) -> Value {
     }))
 }
 
+/// `node` as a statement of its own.
+// Cost: O(1).
+pub(crate) fn as_statement(node: &Value) -> Value {
+    Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::StatementExpression,
+        fields: vec![RakuAstField {
+            name: Some("expression"),
+            value: RakuAstFieldValue::Node(node.clone()),
+        }],
+    }))
+}
+
+thread_local! {
+    static REGISTERED_SUBSETS: std::cell::RefCell<std::collections::HashSet<String>> =
+        std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
+/// The statement that declares the subset `node` stands for, and its name, when
+/// it is an anonymous subset of the unit tree `$*CU` answers (see
+/// [`resolve`]) not declared yet; `None` for a named subset or one already
+/// declared.
+// Cost: O(f), f = fields of the node.
+pub(crate) fn anonymous_subset_declaration(node: &RakuAstNode) -> Option<(Value, String)> {
+    let name = node.origin.2.as_ref()?.to_string_value();
+    if node.class != RakuAstClass::TypeSubset
+        || !REGISTERED_SUBSETS.with(|set| set.borrow_mut().insert(name.clone()))
+    {
+        return None;
+    }
+    let mut named = RakuAstNode::clone(node);
+    named.fields.insert(
+        0,
+        RakuAstField {
+            name: Some("name"),
+            value: RakuAstFieldValue::Node(Value::rakuast(Box::new(name_parts::name_from_parts(
+                vec![name_parts::simple_part(&name)],
+            )))),
+        },
+    );
+    named.origin = Default::default();
+    let statement = RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::StatementExpression,
+        fields: vec![RakuAstField {
+            name: Some("expression"),
+            value: RakuAstFieldValue::Node(Value::rakuast(Box::new(named))),
+        }],
+    };
+    Some((Value::rakuast(Box::new(statement)), name))
+}
+
+/// The identifier a package-like declaration (`class Bar`, `subset Pos`) is named by.
+// Cost: O(f), f = fields of the node.
+pub(crate) fn declared_package_name(node: &RakuAstNode) -> Option<String> {
+    resolve::package_name(node)
+}
+
 /// `[kind, owner.., name, index]` of a `Parameter` of the unit tree `$*CU` answers.
 // Cost: O(1).
 pub(crate) fn declared_parameter_owner(node: &RakuAstNode) -> Option<Vec<String>> {
@@ -3520,6 +3578,17 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
                 .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Mu"))),
         );
     }
+    // A variable of an anonymous subset keeps its `where` on that subset.
+    if method == "where"
+        && node.class == RakuAstClass::VarDeclarationSimple
+        && !node.fields.iter().any(|f| f.name == Some("where"))
+        && let Some(field) = node.fields.iter().find(|f| f.name == Some("type"))
+        && let RakuAstFieldValue::Node(ty) = &field.value
+        && let ValueView::RakuAst(ty) = ty.view()
+        && ty.class == RakuAstClass::TypeSubset
+    {
+        return node_accessor(ty, "where");
+    }
     if method == "container-type" && node.class == RakuAstClass::VarDeclarationSimple {
         return Some(resolve::container_type(node));
     }
@@ -3728,7 +3797,11 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
         names.push("name");
     }
     if class == RakuAstClass::VarDeclarationSimple {
-        names.push("container-type");
+        for name in ["container-type", "return-type", "original-type"] {
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
     }
     if matches!(
         class,
@@ -3741,6 +3814,7 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
             | RakuAstClass::VarDeclarationConstant
             | RakuAstClass::Block
             | RakuAstClass::PointyBlock
+            | RakuAstClass::TypeSubset
     ) {
         names.push("compile-time-value");
     }
