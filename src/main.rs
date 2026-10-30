@@ -351,6 +351,20 @@ fn run_main() {
         input
     };
 
+    // `-M'Module args'` is `use Module args;` in the program's own unit (so the
+    // module's `EXPORT` addresses it through `$*CU`): written on the program's
+    // first line, which keeps every line number. A bare module name loads
+    // before the program as before.
+    let (with_args, preload_modules): (Vec<String>, Vec<String>) = preload_modules
+        .into_iter()
+        .partition(|module| module.contains(char::is_whitespace));
+    let input = if with_args.is_empty() {
+        input
+    } else {
+        let uses: String = with_args.iter().map(|m| format!("use {m}; ")).collect();
+        format!("{uses}{input}")
+    };
+
     if dump_ast {
         match mutsu::dump_ast(&input) {
             Ok(ast) => println!("{}", ast),
