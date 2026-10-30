@@ -28,6 +28,7 @@ impl Encode for CompiledFunction {
             has_rw_positional_param,
             has_copy_positional_param,
             aggregate_positional_params,
+            bool_coerce_positional_params,
             param_local_slots,
             params_fill_frame,
             has_inner_subs,
@@ -67,6 +68,7 @@ impl Encode for CompiledFunction {
         has_rw_positional_param.encode(encoder)?;
         has_copy_positional_param.encode(encoder)?;
         aggregate_positional_params.encode(encoder)?;
+        bool_coerce_positional_params.encode(encoder)?;
         param_local_slots.encode(encoder)?;
         params_fill_frame.encode(encoder)?;
         has_inner_subs.encode(encoder)?;
@@ -115,6 +117,7 @@ impl Decode<DecodeCtx> for CompiledFunction {
             has_rw_positional_param: Decode::decode(decoder)?,
             has_copy_positional_param: Decode::decode(decoder)?,
             aggregate_positional_params: Decode::decode(decoder)?,
+            bool_coerce_positional_params: Decode::decode(decoder)?,
             param_local_slots: Decode::decode(decoder)?,
             params_fill_frame: Decode::decode(decoder)?,
             has_inner_subs: Decode::decode(decoder)?,

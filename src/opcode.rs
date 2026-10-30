@@ -13914,6 +13914,12 @@ impl FastParamCheck {
     /// The plan for parameter `pd`: [`Self::of`] its type constraint, except
     /// that an untyped `&` parameter still checks the implicit `Callable`.
     pub(crate) fn of_param(pd: &ParamDef) -> Option<Self> {
+        // The coercion is a no-op for the `Bool` argument the per-call gate
+        // admits (`positional_light_aggregate_args_admitted`), so there is
+        // nothing left to check.
+        if Self::bool_coercion_param(pd) {
+            return Some(Self::Unconstrained);
+        }
         if pd.type_constraint.is_none() && pd.name.starts_with('&') && !pd.slurpy {
             return Some(Self::ImplicitCallable);
         }
@@ -13921,6 +13927,35 @@ impl FastParamCheck {
             return Some(Self::RequiresAny);
         }
         Self::of(pd.type_constraint.as_ref())
+    }
+
+    /// A readonly plain `$` parameter typed `Bool(Mu)`, `Bool(Any)` or
+    /// `Bool()` (`Test::proclaim`'s `$cond`). The positional-light paths bind
+    /// it only for a call whose argument is already a `Bool` value, for which
+    /// the coercion returns the argument unchanged; any other argument runs
+    /// the general binder, which calls the argument's own `.Bool`. A
+    /// readonly parameter is never stored to, so the constraint metadata the
+    /// general binder registers for it is unobservable.
+    // Cost: O(1).
+    pub(crate) fn bool_coercion_param(pd: &ParamDef) -> bool {
+        matches!(
+            pd.type_constraint.as_deref(),
+            Some("Bool(Mu)" | "Bool(Any)" | "Bool()")
+        ) && !pd.named
+            && !pd.slurpy
+            && !pd.double_slurpy
+            && !pd.onearg
+            && !pd.sigilless
+            && !pd.is_invocant
+            && pd.no_traits()
+            && pd.where_constraint.is_none()
+            && pd.literal_value.is_none()
+            && pd.sub_signature.is_none()
+            && pd.outer_sub_signature.is_none()
+            && pd.code_signature.is_none()
+            && pd.default.is_none()
+            && !pd.optional_marker
+            && pd.name.as_bytes().first().is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
     }
 
     /// The sigil (`@` or `%`) of a plain positional aggregate parameter the
@@ -14033,6 +14068,13 @@ pub(crate) struct CompiledFunction {
     /// aggregate past index 63 sets no bit and keeps the general binder.
     /// Computed once in `precompute_param_name_syms`.
     pub(crate) aggregate_positional_params: u64,
+    /// Bit `i` is set when parameter `i` is a readonly `Bool(Mu)` / `Bool(Any)`
+    /// / `Bool()` coercion the positional-light paths may bind
+    /// ([`FastParamCheck::bool_coercion_param`]), given a `Bool` argument.
+    /// `positional_light_aggregate_args_admitted` re-checks the argument per
+    /// call; zero means a routine pays nothing for it. Computed once in
+    /// `precompute_param_name_syms`.
+    pub(crate) bool_coerce_positional_params: u64,
     /// Pre-computed mapping from positional parameter index to locals slot index.
     /// Used by the positional light call fast path to avoid name-based lookup per call.
     pub(crate) param_local_slots: Option<Vec<usize>>,
@@ -14680,6 +14722,13 @@ impl CompiledFunction {
             .enumerate()
             .filter(|(_, pd)| FastParamCheck::light_aggregate_sigil(pd).is_some())
             .fold(0, |mask, (i, _)| mask | (1u64 << i));
+        self.bool_coerce_positional_params = self
+            .param_defs
+            .iter()
+            .take(64)
+            .enumerate()
+            .filter(|(_, pd)| FastParamCheck::bool_coercion_param(pd))
+            .fold(0, |mask, (i, _)| mask | (1u64 << i));
     }
 
     /// True if `sym` names a *callee-local* of this function — a parameter, a
@@ -14781,6 +14830,7 @@ mod compiled_fns_identity {
             has_rw_positional_param: false,
             has_copy_positional_param: false,
             aggregate_positional_params: 0,
+            bool_coerce_positional_params: 0,
             param_local_slots: None,
             params_fill_frame: false,
             has_inner_subs: false,

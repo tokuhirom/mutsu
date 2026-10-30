@@ -428,6 +428,7 @@ impl Interpreter {
             has_rw_positional_param: false,
             has_copy_positional_param: false,
             aggregate_positional_params: 0,
+            bool_coerce_positional_params: 0,
             is_cached: def.is_cached,
             param_local_slots: None,
             params_fill_frame: false,

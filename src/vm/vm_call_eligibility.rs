@@ -548,11 +548,14 @@ impl Interpreter {
                             && Self::is_plain_scalar_param_name(&pd.name)))
                     && pd.sub_signature.is_none()
                     // Only allow basic type constraints that fast_type_check handles.
-                    // Excludes subset types, parametric roles, etc.
-                    && pd
+                    // Excludes subset types, parametric roles, etc. A readonly
+                    // `Bool(Mu)` coercion is admitted for a `Bool` argument
+                    // (`positional_light_aggregate_args_admitted`).
+                    && (pd
                         .type_constraint
                         .as_deref()
                         .is_none_or(Self::is_fast_type_name)
+                        || crate::opcode::FastParamCheck::bool_coercion_param(pd))
                     // A `::T` type capture needs the general binder to bind it
                     // (#7984); the `is_fast_type_name` test above used to reject
                     // it only because the capture was spelled into

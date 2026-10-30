@@ -43,6 +43,7 @@ impl CompiledFunction {
             || pd.code_signature.is_some()
             || pd.shape_constraints.is_some()
             || pd.literal_value.is_some()
+            || FastParamCheck::bool_coercion_param(pd)
             // A plain `$x is copy` keeps its constant default: the fill is an
             // immutable constant bound by value, and the light bind leaves the
             // parameter writable (`has_copy_positional_param`).

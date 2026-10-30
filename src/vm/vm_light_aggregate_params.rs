@@ -41,7 +41,32 @@ impl Interpreter {
     ) -> bool {
         // Inlined down to this test, so a routine with no such parameter (the
         // `fib` hot path) pays one branch and no call.
-        cf.aggregate_positional_params == 0 || Self::aggregate_args_admitted_masked(cf, args)
+        (cf.aggregate_positional_params == 0 && cf.bool_coerce_positional_params == 0)
+            || (Self::aggregate_args_admitted_masked(cf, args)
+                && Self::bool_coerce_args_admitted(cf, args))
+    }
+
+    /// Whether every readonly `Bool(Mu)` coercion parameter
+    /// ([`crate::opcode::FastParamCheck::bool_coercion_param`]) receives, at
+    /// THIS call, a `Bool` value: the coercion is then the identity, so the
+    /// light bind can take the argument as it is. Any other argument (an
+    /// `Int`, a type object, a user instance with its own `.Bool`) declines
+    /// to the general binder, which coerces through the argument's method.
+    // Cost: O(k), k = `Bool(Mu)` coercion parameters.
+    #[inline(never)]
+    fn bool_coerce_args_admitted(cf: &CompiledFunction, args: &[Value]) -> bool {
+        let mut mask = cf.bool_coerce_positional_params;
+        while mask != 0 {
+            let i = mask.trailing_zeros() as usize;
+            mask &= mask - 1;
+            let Some(arg) = args.get(i) else {
+                return false;
+            };
+            if !matches!(arg.unwrap_varref().view(), ValueView::Bool(_)) {
+                return false;
+            }
+        }
+        true
     }
 
     /// The argument walk of [`Self::positional_light_aggregate_args_admitted`].
