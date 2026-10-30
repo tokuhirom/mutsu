@@ -43,7 +43,7 @@ pub(crate) fn embedded_container_type_name(target: &Value) -> Option<String> {
 
 impl Interpreter {
     /// Dispatch .WHAT method
-    pub(super) fn dispatch_what(
+    pub(crate) fn dispatch_what(
         &mut self,
         target: &Value,
         args: Vec<Value>,
@@ -310,7 +310,7 @@ impl Interpreter {
     /// `install_custom_class_how`), keyed by the string that identifies the
     /// type the HOW describes, so a later `.HOW` call for the same type finds
     /// it via the lookup below instead of minting again.
-    pub(super) fn dispatch_how(
+    pub(crate) fn dispatch_how(
         &mut self,
         target: &Value,
         args: &[Value],
