@@ -239,7 +239,11 @@ impl Interpreter {
             .take()
             .unwrap_or_default();
         // The `EVAL` pre-run already ran this `use`'s hook: install its map.
-        if let Some(result) = self.replay_eval_hook_result(module, &export_args) {
+        // A pre-run itself always runs the hook: every `use` runs it at BEGIN
+        // time, a repeated `use M; use M` twice.
+        if !self.module.eval_hook_recording
+            && let Some(result) = self.replay_eval_hook_result(module, &export_args)
+        {
             let importer = self.module.module_load_stack.last().cloned();
             self.install_export_map(&result, importer.as_deref());
             return Ok(());
