@@ -92,6 +92,31 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             let b_name = b.name.resolve();
             !a_name.is_empty() && a_name == b_name && a.package == b.package
         }
+        // `&CORE::name` taken while the program declares a routine of that name
+        // is a tagged Sub (`Interpreter::core_routine_sub`); the core routine
+        // itself is the by-name handle, and they are one object.
+        (
+            ValueView::Sub(sub),
+            ValueView::Routine {
+                package,
+                name,
+                is_regex: false,
+                ..
+            },
+        )
+        | (
+            ValueView::Routine {
+                package,
+                name,
+                is_regex: false,
+                ..
+            },
+            ValueView::Sub(sub),
+        ) => {
+            sub.env.contains_key(crate::meta_ns::CORE_ROUTINE_KEY)
+                && sub.package == package
+                && sub.name == name
+        }
         (ValueView::WeakSub(a), ValueView::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(&a, &b),
         // A regex is a code object: identical only to an alias of itself, not
         // to another evaluation of the same literal (`eqv` stays structural).

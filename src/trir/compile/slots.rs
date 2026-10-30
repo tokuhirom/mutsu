@@ -24,6 +24,8 @@ impl TrirCompiler<'_> {
             is_dynamic,
             is_export,
             custom_traits,
+            bind,
+            marks,
             where_constraint,
             ..
         } = stmt
@@ -71,15 +73,10 @@ impl TrirCompiler<'_> {
             }
             return Some(None);
         }
-        // `__has_initializer` is the parser's own marker for `my T $x = ...`;
-        // `__scalar_bind` marks `my $x := ...`, which binds rather than
+        // `bind` marks `my $x := ...`, which binds rather than
         // assigns — for a fresh `my` in a TRIR frame the two are the same
-        // thing, because nothing else can name the slot. Any other trait
-        // declines.
-        if custom_traits
-            .iter()
-            .any(|(t, _)| t != "__has_initializer" && t != "__scalar_bind")
-        {
+        // thing, because nothing else can name the slot. Any trait declines.
+        if !custom_traits.is_empty() || !marks.is_plain() {
             return None;
         }
         let tc = type_constraint.as_deref();
@@ -106,7 +103,7 @@ impl TrirCompiler<'_> {
         if let Some(w) = width {
             self.sized.insert(slot, w);
         }
-        let bound = custom_traits.iter().any(|(t, _)| t == "__scalar_bind");
+        let bound = *bind == Some(crate::ast::bind_decl::BindKind::Scalar);
         if kind == TrKind::Obj && bound && tc.is_none() && from_nqp {
             self.nqp_bound.insert(slot);
         }

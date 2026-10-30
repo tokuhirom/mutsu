@@ -15,6 +15,15 @@ pub(crate) enum UserMethodOrAccessor {
     Accessor,
 }
 
+/// What a read of a public attribute accessor needs to know about its
+/// declaration (see `Interpreter::find_public_class_attribute`).
+#[derive(Clone, Copy)]
+pub(crate) struct PublicAttributeShape {
+    pub(crate) sigil: char,
+    pub(crate) is_public: bool,
+    pub(crate) is_rw: bool,
+}
+
 impl Interpreter {
     pub(crate) fn class_has_method(&mut self, class_name: &str, method_name: &str) -> bool {
         // Read guard first: this is a pure question, and `registry_mut()`'s
@@ -723,20 +732,70 @@ impl Interpreter {
     pub(crate) fn collect_class_attributes(&mut self, class_name: &str) -> Vec<ClassAttributeDef> {
         let mro = self.class_mro(class_name);
         let mut attrs: Vec<ClassAttributeDef> = Vec::new();
+        // The class each entry of `attrs` was declared in.
+        let mut owners: Vec<Symbol> = Vec::new();
         for cn in mro.iter().rev() {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in &class_def.attributes {
-                    if let Some(pos) = attrs
-                        .iter()
-                        .position(|a| a.name == attr.name && a.sigil == attr.sigil)
-                    {
+                    // A redeclaration replaces the base class's slot of the same
+                    // name and sigil. A PUBLIC attribute of a derived class also
+                    // replaces a public base attribute of another sigil (`$.v`
+                    // in the base, `@.v` in the derived class): both answer the
+                    // one accessor, which the derived class owns. Attributes of
+                    // one class never replace each other (`has @.x; has %!x`).
+                    if let Some(pos) = attrs.iter().zip(&owners).position(|(a, owner)| {
+                        a.name == attr.name
+                            && (a.sigil == attr.sigil
+                                || (owner != cn && a.is_public && attr.is_public))
+                    }) {
                         attrs.remove(pos);
+                        owners.remove(pos);
                     }
                     attrs.push(attr.clone());
+                    owners.push(*cn);
                 }
             }
         }
         attrs
+    }
+
+    /// The shape of the public attribute `name` of `class_name`, exactly as
+    /// `collect_class_attributes(class_name).into_iter().find(|a| a.is_public
+    /// && a.name == name)` would answer, without cloning any attribute
+    /// definition.
+    // Cost: O(m * a), m = classes in the MRO, a = attributes per class.
+    pub(crate) fn find_public_class_attribute(
+        &mut self,
+        class_name: &str,
+        name: &str,
+    ) -> Option<PublicAttributeShape> {
+        let mro = self.class_mro(class_name);
+        let mut found: Vec<(Symbol, PublicAttributeShape)> = Vec::new();
+        for cn in mro.iter().rev() {
+            if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
+                for attr in class_def.attributes.iter().filter(|a| a.name == name) {
+                    // Same override rule as `collect_class_attributes`: a
+                    // redeclaration of the same name and sigil replaces the
+                    // base-class slot, public or not, and a public attribute
+                    // of a derived class replaces a public one of another
+                    // sigil.
+                    if let Some(pos) = found.iter().position(|(owner, a)| {
+                        a.sigil == attr.sigil || (owner != cn && a.is_public && attr.is_public)
+                    }) {
+                        found.remove(pos);
+                    }
+                    found.push((
+                        *cn,
+                        PublicAttributeShape {
+                            sigil: attr.sigil,
+                            is_public: attr.is_public,
+                            is_rw: attr.is_rw,
+                        },
+                    ));
+                }
+            }
+        }
+        found.into_iter().map(|(_, a)| a).find(|a| a.is_public)
     }
 
     /// Collect a class's attributes in *introspection* order — the order
@@ -791,12 +850,18 @@ impl Interpreter {
         let mut result: Vec<(String, ClassAttributeDef)> = Vec::new();
         // Track which attribute names appear in multiple classes (need qualified storage)
         let mut attr_counts: HashMap<(String, char), usize> = HashMap::new();
+        // The classes that declare a PUBLIC attribute of a bare name, whatever
+        // its sigil: they share the one accessor, so each needs its own slot.
+        let mut public_declarers: HashMap<String, usize> = HashMap::new();
         for cn in mro.iter() {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in &class_def.attributes {
                     *attr_counts
                         .entry((attr.name.clone(), attr.sigil))
                         .or_insert(0) += 1;
+                    if attr.is_public {
+                        *public_declarers.entry(attr.name.clone()).or_insert(0) += 1;
+                    }
                 }
             }
         }
@@ -809,6 +874,8 @@ impl Interpreter {
                         .copied()
                         .unwrap_or(0)
                         > 1
+                        || (attr.is_public
+                            && public_declarers.get(&attr.name).copied().unwrap_or(0) > 1)
                     {
                         result.push((cn.resolve(), attr.clone()));
                     }

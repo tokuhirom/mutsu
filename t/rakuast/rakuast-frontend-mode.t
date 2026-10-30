@@ -35,7 +35,7 @@ my $hash_alias = q[my $x = " a"; $x ~~ m/%<chars>=( \s+ \S+ )+/; say 1];
 
 {
     my ($rc, $out) = run-mutsu('', '-e', $hash_alias);
-    is $out, "1\n", 'without the mode the same program runs normally';
+    is $out, "1\n", 'without the variable the same program runs the same';
 }
 
 {
@@ -46,5 +46,5 @@ my $hash_alias = q[my $x = " a"; $x ~~ m/%<chars>=( \s+ \S+ )+/; say 1];
 
 {
     my ($rc, $out) = run-mutsu('1', '-e', 'use Test; plan 1; ok 1, "module loaded"');
-    is $rc, 0, 'MUTSU_RAKUAST=1 leaves used modules alone';
+    is $rc, 0, 'a used module round-trips and loads';
 }

@@ -103,6 +103,34 @@ impl Interpreter {
         }
     }
 
+    /// The receiver of the method call about to run when its name is one a
+    /// native array retypes (see [`Self::retype_answer`]).
+    // Cost: O(1), a name scan.
+    fn retype_receiver(&self, code: &CompiledCode, name_idx: u32, arity: u32) -> Option<Value> {
+        if !crate::builtins::method_table::native_array_result::retypes(Self::const_str(
+            code, name_idx,
+        )) {
+            return None;
+        }
+        let base = self.stack.len().checked_sub(arity as usize + 1)?;
+        Some(self.stack[base].clone())
+    }
+
+    /// Retype the answer on top of the stack to `receiver`'s native array
+    /// type (`my int @a; @a.sort` is an `array[int]`).
+    // Cost: O(n) for a native array receiver, n = answer elements; O(1) else.
+    fn retype_answer(&mut self, code: &CompiledCode, name_idx: u32, receiver: Option<Value>) {
+        let Some(receiver) = receiver else { return };
+        if let Some(answer) = self.stack.pop() {
+            self.stack
+                .push(crate::builtins::method_table::native_array_result::retype(
+                    &receiver,
+                    Self::const_str(code, name_idx),
+                    answer,
+                ));
+        }
+    }
+
     /// `OpCode::CallMethod` at `code.ops[ip]`.
     pub(super) fn exec_call_method_site(
         &mut self,
@@ -132,6 +160,8 @@ impl Interpreter {
         let throw_base = self
             .method_name_is_resumable_throw(code, *name_idx)
             .then(|| self.stack.len().saturating_sub(*arity as usize + 1));
+        // A native array's `sort`/`reverse`/... answers a native array.
+        let retype_receiver = self.retype_receiver(code, *name_idx, *arity);
         // A method has a dispatcher of its own: a `{*}` reached from inside
         // it does not see an enclosing proto body (#10746).
         let result = self.in_method_call(|vm| {
@@ -144,6 +174,9 @@ impl Interpreter {
                 *arg_sources_idx,
             )
         });
+        if result.is_ok() {
+            self.retype_answer(code, *name_idx, retype_receiver);
+        }
         match result {
             Ok(()) => {}
             Err(e) if throw_base.is_some() && !e.is_resume() => match self.try_catch_inline(e) {
@@ -214,18 +247,49 @@ impl Interpreter {
                 if *arity == 0 && Self::const_str(code, *name_idx) == "VAR" {
                     self.publish_reflected_binding(code, *target_name_idx, *target_slot);
                 }
-                self.call_method_mut_site_around(code, ip, *arity, *target_name_idx, |vm| {
-                    vm.exec_call_method_mut_op(
-                        code,
-                        *name_idx,
-                        *arity,
-                        *target_name_idx,
-                        *target_slot,
-                        *modifier_idx,
-                        *quoted,
-                        *arg_sources_idx,
-                    )
-                })
+                // ADR-0072: `$ex.throw` on a named receiver is a resumable throw
+                // site too, exactly as in `exec_call_method_site`: a CATCH up
+                // the stack handles it INLINE, before the frames between unwind,
+                // so a LEAVE of the routine owning the CATCH runs after it.
+                let throw_base = self
+                    .method_name_is_resumable_throw(code, *name_idx)
+                    .then(|| self.stack.len().saturating_sub(*arity as usize + 1));
+                // A native array's `sort`/`reverse`/... answers a native array.
+                let retype_receiver = self.retype_receiver(code, *name_idx, *arity);
+                let result =
+                    self.call_method_mut_site_around(code, ip, *arity, *target_name_idx, |vm| {
+                        vm.exec_call_method_mut_op(
+                            code,
+                            *name_idx,
+                            *arity,
+                            *target_name_idx,
+                            *target_slot,
+                            *modifier_idx,
+                            *quoted,
+                            *arg_sources_idx,
+                        )
+                    });
+                if result.is_ok() {
+                    self.retype_answer(code, *name_idx, retype_receiver);
+                }
+                match result {
+                    Err(e) if throw_base.is_some() && !e.is_resume() => {
+                        match self.try_catch_inline(e) {
+                            Ok(v) => {
+                                self.stack.truncate(throw_base.unwrap_or(0));
+                                self.stack.push(v);
+                                Ok(())
+                            }
+                            Err(e) => {
+                                if self.resume_ip.is_none() {
+                                    self.resume_ip = Some((Self::resume_code_fp(code), ip + 1));
+                                }
+                                Err(e)
+                            }
+                        }
+                    }
+                    other => other,
+                }
             }
             // The run-time-named spelling (`$var."$name"(...)`) shares every
             // step around the dispatch -- above all the rebound-receiver

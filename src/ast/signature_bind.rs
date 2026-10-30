@@ -24,6 +24,7 @@ pub(crate) fn expand(signature: Expr, rhs: Expr) -> Option<Stmt> {
     let temp_name = format!("__sig_bind_tmp_{id}");
     let bound_name = format!("{temp_name}_bound");
     let decl = |name: String, expr: Expr| Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name,
         expr,
@@ -34,6 +35,9 @@ pub(crate) fn expand(signature: Expr, rhs: Expr) -> Option<Stmt> {
         is_export: false,
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
+        has_initializer: false,
+        constant: None,
+        bind: None,
         where_constraint: None,
     };
     let mut statements = Vec::with_capacity(params.len() + 3);

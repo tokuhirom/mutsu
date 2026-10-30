@@ -143,8 +143,14 @@ impl Compiler {
         {
             return Some(false);
         }
+        // A smiley (`buf8:D`, `int:D`) leaves the name a type.
+        let unsmiled = s
+            .strip_suffix(":D")
+            .or_else(|| s.strip_suffix(":U"))
+            .or_else(|| s.strip_suffix(":_"))
+            .unwrap_or(s);
         if s.chars().next().is_some_and(|c| c.is_ascii_lowercase())
-            && !crate::runtime::utils::is_known_type_constraint(s)
+            && !crate::runtime::utils::is_known_type_constraint(unsmiled)
         {
             if super::compile_inputs::is_imported_value_term(s) {
                 return None;
@@ -218,7 +224,7 @@ impl Compiler {
                     // where raku gives `[0 0 0]`. `compile_block_inline`'s own
                     // tail arm already routes this way — this mirrors it.
                     Stmt::Block(inner) => {
-                        if Self::has_block_enter_leave_phasers(inner) {
+                        if Self::needs_phaser_block_scope(inner) {
                             self.compile_phaser_block_literal_inline(inner);
                         } else {
                             self.compile_bare_block_inline(inner);
@@ -359,6 +365,15 @@ impl Compiler {
             (bare.clone(), Expr::Var(bare))
         };
         let var_decl = Stmt::VarDecl {
+            // A sigilless pointy parameter is a term (ADR-12441).
+            marks: crate::ast::var_marks::VarMarks {
+                term: if is_term {
+                    crate::ast::var_marks::TermMark::Slot
+                } else {
+                    crate::ast::var_marks::TermMark::No
+                },
+                ..Default::default()
+            },
             anonymous: false,
             name: bare_name,
             expr: cond.clone(),
@@ -369,12 +384,12 @@ impl Compiler {
             is_export: false,
             export_tags: vec![],
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         };
-        // A sigilless pointy parameter is a term (ADR-12441).
-        self.decl_is_term = is_term;
         self.compile_stmt(&var_decl);
-        self.decl_is_term = false;
         (read_expr, None)
     }
 
@@ -407,14 +422,15 @@ impl Compiler {
         } else {
             source.clone()
         };
-        self.bind_vardecl = true;
-        self.compile_stmt(&Self::plain_var_decl(name.clone(), source));
-        self.bind_vardecl = false;
+        self.compile_stmt(&crate::ast::var_marks::with_bound_mark(
+            Self::plain_var_decl(name.clone(), source),
+        ));
     }
 
     /// A `my NAME = EXPR;` declaration with no traits/constraints.
     fn plain_var_decl(name: String, expr: Expr) -> Stmt {
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name,
             expr,
@@ -425,6 +441,9 @@ impl Compiler {
             is_export: false,
             export_tags: vec![],
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         }
     }
@@ -1200,9 +1219,14 @@ impl Compiler {
         // `use fatal` lives, even though `$f` is textually the try's tail).
         let mut tail_is_bare_container_read = false;
         if Self::has_block_enter_leave_phasers(&main_stmts) {
-            self.synthetic_block_body = true;
-            self.compile_stmt(&Stmt::Block(main_stmts.clone()));
-            self.compile_expr(&Expr::Var("_".to_string()));
+            // The body is a real phaser block scope whose trailing value stays
+            // on the stack. Routing it through the statement-position block
+            // discarded the value and read the enclosing `$_` instead, so a
+            // routine with `CATCH` plus `LEAVE`/`KEEP` returned `Any`
+            // (Red's `automatic-transaction`).
+            let saved_scope = self.push_dynamic_scope_lexical();
+            self.compile_phaser_block_scope(&main_stmts, PhaserBlockResult::Push);
+            self.pop_dynamic_scope_lexical(saved_scope);
             main_leaves_value = true;
         } else {
             // A CATCH/CONTROL phaser occupies a slot in the block's statement

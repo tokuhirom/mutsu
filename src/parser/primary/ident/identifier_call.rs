@@ -352,6 +352,12 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
         } else {
             term_expr(rest)?
         };
+    // The operand is a module name whether or not the unit keeps the term's
+    // spelling (an import makes a bareword an `ImportedTerm`).
+    let target_raw = match target_raw {
+        Expr::Spelled(spelled) if matches!(spelled.expr, Expr::BareWord(_)) => spelled.expr,
+        other => other,
+    };
     let module_name_for_parse = match &target_raw {
         Expr::BareWord(name) => Some(name.clone()),
         Expr::Literal(v) => match v.view() {
@@ -1100,7 +1106,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 // A NAMED `anon class Foo { ... }` keeps its name (`.^name`,
                 // gist `(Foo)`) but installs no symbol anywhere — not the
                 // enclosing scope, not the current package's stash. Marks the
-                // declaration `anon` (`ANON_DECL_TRAIT`) and mangles its registry name so
+                // declaration `anon` (`marks.anon`) and mangles its registry name so
                 // no env/alias/stash write it triggers is bareword-reachable.
                 // See `mark_anon_package_decl`'s doc comment for the full
                 // mechanism.
@@ -2087,7 +2093,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((r3, make_listop_expr(name, input, vec![block_expr])));
             }
             let mut method_args = Vec::new();
-            let (mut r3, first_arg) = expression(r3)?;
+            // The arguments after the block are a listop's: the loose
+            // word-logicals end them (`lives-ok { ... }, "x" and is ...`).
+            let (mut r3, first_arg) = crate::parser::expr::listop_arg_expr_list_infix(r3)?;
             method_args.push(first_arg);
             loop {
                 let (r4, _) = ws(r3)?;
@@ -2100,7 +2108,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     r3 = r4;
                     break;
                 }
-                let (r4, next_arg) = expression(r4)?;
+                let (r4, next_arg) = crate::parser::expr::listop_arg_expr_list_infix(r4)?;
                 method_args.push(next_arg);
                 r3 = r4;
             }
@@ -2203,6 +2211,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !r.starts_with(')')
         && !r.starts_with(']')
         && !r.starts_with(',')
+        // `-->` is a signature's return arrow, never a listop argument:
+        // `:$id = uuid-v4 --> Str:D` calls `uuid-v4` with no arguments.
+        && !r.starts_with("-->")
         && !rest.starts_with('.')
         && !rest.starts_with('[')
         // A `{` with NO whitespace after the name is a postcircumfix hash
@@ -2343,6 +2354,16 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let is_nullary_term_keyword = crate::parser::primary::ident::predicates::is_term_keyword(&name)
         && !crate::parser::stmt::simple::is_user_declared_sub(&name)
         && !crate::parser::stmt::simple::is_imported_function(&name);
+    // A built-in or package-qualified type name (`Int (elem) @types`,
+    // `IO::Path (elem) @types`) is a complete term: a following `(` starts an
+    // infix, not the argument list of a call. A type is spelled with a capital
+    // and a lowercase letter in its last component (`TEST-ITER-OPT args` is an
+    // all-caps routine, and `Keccak $x, ...` still reads as a listop call).
+    let is_type_like_name = name.rsplit("::").next().is_some_and(|last| {
+        last.starts_with(|c: char| c.is_ascii_uppercase())
+            && last.chars().any(|c| c.is_ascii_lowercase())
+    }) && !crate::parser::stmt::simple::is_user_declared_sub(&name)
+        && !crate::parser::stmt::simple::is_imported_function(&name);
     if !is_keyword(&name)
         && !is_declarator_head
         && !is_nullary_term_keyword
@@ -2460,8 +2481,18 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         {
             return Ok((r2, expr));
         }
+        // A type name followed by a bare anonymous sigil that ends at a
+        // closing delimiter (`[@ Int @]`, `(Int @)`) is not a call of the
+        // type with an anonymous variable: the sigil belongs to what follows
+        // (a user circumfix's closer).
+        let type_before_bare_sigil = is_type_like_name
+            && matches!(next, '$' | '@' | '%')
+            && r[next.len_utf8()..].chars().next().is_none_or(|c| {
+                c.is_whitespace() || matches!(c, ']' | ')' | '}' | '>' | ',' | ';')
+            });
         // Only trigger if next token starts a term (not an operator)
-        if (next == '$'
+        if !type_before_bare_sigil
+            && (next == '$'
             || next == '@'
             || next == '%'
             || next == '&'
@@ -2476,7 +2507,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || next == '\u{201D}'
             || next == '\u{201E}'
             || next == '\u{FF62}'
-            || next == '('
+            || (next == '(' && !is_type_like_name)
             || (next == '\\' && r.starts_with("\\("))
             || next.is_ascii_digit()
             // A Unicode numeric literal (vulgar fraction `⅔`, superscript, ...)

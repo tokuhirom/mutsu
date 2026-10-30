@@ -215,9 +215,11 @@ impl Interpreter {
             is_export,
             export_tags,
             is_test_assertion,
+            is_hidden_from_backtrace,
             supersede,
             scope,
             custom_traits,
+            pass,
             fingerprint: site_fp,
             routine_metadata,
             frame_lexical: _,
@@ -235,7 +237,7 @@ impl Interpreter {
             // Not in the hoist pass: a `constant` it would read is declared but
             // not yet assigned (it reads `Any`), so only the in-sequence
             // registration can tell what the alias names.
-            let hoisting = custom_traits.iter().any(|(t, _)| t == "__hoisted");
+            let hoisting = pass.hoisted;
             let frame_aliases = if hoisting {
                 Vec::new()
             } else {
@@ -294,9 +296,9 @@ impl Interpreter {
             // at hoist time. `hoist_sub_decls` already strips *sub*-level
             // custom traits for this reason; do the same for *parameter*-level
             // ones by skipping the check here and letting the in-sequence
-            // registration (no `__hoisted` marker, guaranteed to run after
+            // registration (no hoisted pass, guaranteed to run after
             // every preceding `use`) validate it for real.
-            let is_hoisted_pass = custom_traits.iter().any(|(t, _)| t == "__hoisted");
+            let is_hoisted_pass = pass.hoisted;
             if !is_hoisted_pass {
                 self.check_param_custom_traits(param_defs)?;
                 // ADR-0041 §9: the program has now textually reached this
@@ -360,8 +362,10 @@ impl Interpreter {
                     *is_rw,
                     *is_raw,
                     *is_test_assertion,
+                    *is_hidden_from_backtrace,
                     *supersede,
                     *scope,
+                    *pass,
                     custom_traits,
                     reg_fp,
                     routine_metadata,
@@ -487,8 +491,10 @@ impl Interpreter {
                             *is_rw,
                             *is_raw,
                             *is_test_assertion,
+                            *is_hidden_from_backtrace,
                             *supersede,
                             *scope,
+                            *pass,
                             custom_traits,
                             alt_metadata,
                             alt_compiled,
@@ -864,7 +870,11 @@ impl Interpreter {
                     // cell, `my @b := @a; sub f { @b := [9] }` stored `[9]`
                     // through the cell `@b` shares with `@a` (#9416).
                     if (rebound_syms.contains(&sym)
-                        || code.rebound_slots.contains(&(slot_idx as u32)))
+                        || code.rebound_slots.contains(&(slot_idx as u32))
+                        // A sibling sub that only reads the variable captures
+                        // the cell first, so it must already be a binding cell
+                        // when another sub of this frame rebinds the variable.
+                        || Self::frame_sub_rebinds_var(code, compiled_fns, sym))
                         && Self::binding_cell_of(&cell).is_none()
                     {
                         cell = Self::wrap_in_binding_cell(cell);

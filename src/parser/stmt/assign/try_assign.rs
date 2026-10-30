@@ -294,7 +294,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 b'%' => Expr::HashVar(var),
                 _ => Expr::Var(var),
             };
-            // Wrap the RHS in the `__mutsu_bind_index_value` marker so the
+            // Wrap the RHS in `Expr::IndexBindValue` so the
             // IndexAssign VM path takes *bind* semantics (write-time values, no
             // boundary truncation) rather than plain assignment — matching the
             // statement-level `:=` handler (`simple_expr_stmt::core`). Without
@@ -418,9 +418,8 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             return Ok((
                 rest,
                 super::written_dotty_assignment(
-                    crate::parser::expr::dot_assign_target(&name),
+                    crate::rakuast::dotty_assign::dot_assign_target(&name),
                     method_expr,
-                    false,
                 ),
             ));
         }
@@ -498,9 +497,8 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         return Ok((
             r,
             super::written_dotty_assignment(
-                crate::parser::expr::dot_assign_target(&name),
+                crate::rakuast::dotty_assign::dot_assign_target(&name),
                 method_expr,
-                false,
             ),
         ));
     }
@@ -721,10 +719,6 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         let name = format!("{}{}", prefix, var);
         if is_atomic {
             return Ok((rest, crate::ast::atomic_op::store_var(name, rhs)));
-        }
-        let name = format!("{}{}", prefix, var);
-        if let Some(expr) = rewrite_scalar_assignment_rhs_as_sink(name, rhs.clone()) {
-            return Ok((rest, expr));
         }
         let target = match sigil {
             b'@' => Expr::ArrayVar(var),

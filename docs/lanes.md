@@ -76,8 +76,8 @@ drift. Its next item follows the queue rule.
 RakuAST Stage 2 (the parser emits RakuAST directly) will take a long time, and freezing the
 parser for that long is not realistic (user decision, 2026-10-11). So a parser fix may land
 from any lane, before and during Stage 2, and `lane:rakuast` absorbs it: the campaign rebases
-over parser changes rather than serializing them. A parser fix keeps the RakuAST round trip
-green (the files in `ci/rakuast-frontend-passing.txt`) so the two frontends do not drift
+over parser changes rather than serializing them. A parser fix keeps the RakuAST frontend
+green (the default; the files in `ci/rakuast-frontend-passing.txt`) so the two frontends do not drift
 apart, and a fix to a construct Stage 2 has already moved is made in the new path.
 
 ## Who sets what

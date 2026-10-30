@@ -4,7 +4,7 @@
 > see [`docs/maintenance.md`](maintenance.md). This file covers the mechanics of
 > the vendored trees.
 
-Three directories in this repository are copied verbatim from upstream Raku
+Four directories in this repository are copied verbatim from upstream Raku
 projects rather than written here:
 
 | Directory         | Upstream                                   | What it is                                    |
@@ -12,6 +12,7 @@ projects rather than written here:
 | `roast/`          | <https://github.com/Raku/roast>            | The official Raku spec test suite             |
 | `raku-doc/`       | <https://github.com/Raku/doc>              | The official Raku language/type documentation |
 | `old-design-docs/`| <https://github.com/Raku/old-design-docs>  | The historical Perl 6 design synopses         |
+| `vendor/rakudo/`  | <https://github.com/rakudo/rakudo>         | A sparse copy: `RakuAST::Deparse`, run by `.DEPARSE` (ADR-14845) |
 
 ## Why vendored, not git submodules
 
@@ -25,7 +26,7 @@ that (see `AGENTS.md`: "Do not create PRs or Issues against Raku org repositorie
 is impossible.
 
 The trees are **read-only**: never hand-edit files under `roast/`, `raku-doc/`,
-or `old-design-docs/`. The only supported way to change them is to re-vendor a
+`old-design-docs/` or `vendor/rakudo/`. The only supported way to change them is to re-vendor a
 newer upstream commit with the tool below.
 
 ## Version tracking: `vendor.lock`
@@ -77,3 +78,13 @@ expectations of files that are currently whitelisted. After a roast update:
 
 Because of this test-suite churn, roast updates are done in their own PR,
 separate from the doc-only trees.
+
+## `vendor/rakudo/`: a sparse tree
+
+`vendor/rakudo/` holds only the files of rakudo that mutsu runs as Raku code,
+at their upstream paths (today `src/core.c/RakuAST/Deparse.rakumod`, tracked at
+the `2026.09` release). Its `vendor.lock` row has a seventh column listing
+those files (comma-separated); `scripts/update-vendor.sh rakudo <tag>` copies
+exactly them. mutsu injects the class into a program that mentions `DEPARSE`
+(`src/runtime/run_prelude_deparse.rs`), changing nothing in the file but
+lifting its declaration into `GLOBAL::`.

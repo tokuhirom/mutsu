@@ -1097,7 +1097,6 @@ impl Interpreter {
                 // caller (which resolves `self` from env via `GetSelfOrNoSelf`)
                 // doesn't see the actions object leaked in. (Same hazard the
                 // stringify path fixes for `try_compiled_method_or_interpret`.)
-                let saved_self = self.env.get("self").cloned();
                 let result = self
                     .invoke_grammar_actions(match_obj, actions, &start_rule)
                     .and_then(|walked| {
@@ -1106,14 +1105,6 @@ impl Interpreter {
                     });
                 if let Some(saved) = deferred_repeats {
                     self.restore_deferred_repeats(saved);
-                }
-                match saved_self {
-                    Some(s) => {
-                        self.env.insert("self".to_string(), s);
-                    }
-                    None => {
-                        self.env.remove("self");
-                    }
                 }
                 let result = result?;
                 // Update the actions attribute on the final Match to reflect
@@ -1248,17 +1239,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let covered = (caps.from, caps.to);
         let partial = Self::match_object_from_captures(caps, text);
-        let saved_self = self.env.get("self").cloned();
-        let dispatched = self.invoke_grammar_actions(partial, actions, start_rule);
-        match saved_self {
-            Some(s) => {
-                self.env.insert("self".to_string(), s);
-            }
-            None => {
-                self.env.remove("self");
-            }
-        }
-        dispatched?;
+        self.invoke_grammar_actions(partial, actions, start_rule)?;
         self.replay_backtracked_reduce_actions(actions, Some(covered), text)
     }
 
@@ -1325,7 +1306,6 @@ impl Interpreter {
             .into_iter()
             .map(|i| &outside[i])
             .collect();
-        let saved_self = self.env.get("self").cloned();
         let mut result = Ok(());
         let rtarget = MatchTarget::new(text);
         for (rule, caps) in maximal {
@@ -1338,14 +1318,6 @@ impl Interpreter {
             {
                 result = Err(e);
                 break;
-            }
-        }
-        match saved_self {
-            Some(s) => {
-                self.env.insert("self".to_string(), s);
-            }
-            None => {
-                self.env.remove("self");
             }
         }
         result

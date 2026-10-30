@@ -23,21 +23,10 @@
 //! pays for rendering it (#9172).
 
 use super::RoutineFrame;
-use crate::symbol::Symbol;
-use crate::value::Value;
 use std::cell::RefCell;
 use std::sync::Arc;
 
-/// The fixed per-call names of a method frame (ADR-14633 §2.1): the invocant
-/// (`self` and `__ANON_STATE#`, one value for both names), `?CLASS` and
-/// `?ROLE`. Kept beside the frame rather than in it so [`RoutineFrame`] stays
-/// `Copy`: a frame points at its record by [`RoutineFrame::fixtures`].
-#[derive(Clone, Debug)]
-pub(crate) struct FrameFixtures {
-    pub(crate) invocant: Value,
-    pub(crate) class: Symbol,
-    pub(crate) role: Option<Symbol>,
-}
+pub(crate) use crate::value::frame_fixtures::FrameFixtures;
 
 /// One frame of an immutable stack snapshot, linked to the frame below it.
 /// Snapshots taken at different depths share their common prefix.
@@ -127,6 +116,50 @@ impl RoutineStack {
             self.lexical_package_frames += 1;
         }
         self.frames.push(frame);
+    }
+
+    /// Give the innermost frame, which has no record, a copy of `fixtures`:
+    /// the call of a closure continues its creator's record (ADR-14843).
+    // Cost: O(1) amortized.
+    pub(crate) fn attach_fixtures_to_top(&mut self, fixtures: FrameFixtures) {
+        let Some(top) = self.frames.last_mut() else {
+            return;
+        };
+        if top.fixtures != 0 {
+            return;
+        }
+        self.fixtures.push(fixtures);
+        top.fixtures = self.fixtures.len() as u32;
+        self.cut_nodes_to(self.frames.len() - 1);
+    }
+
+    /// The innermost record, for the scope that pushed it to change.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn top_fixtures_mut(&mut self) -> Option<&mut FrameFixtures> {
+        self.fixtures.last_mut()
+    }
+
+    /// The number of live records, frames' and scoped ones.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn fixtures_len(&self) -> usize {
+        self.fixtures.len()
+    }
+
+    /// Push a record no frame owns: a helper that runs code in a scope that is
+    /// no frame of its own (an attribute default, a role body) installs one
+    /// for the duration and cuts it back with [`Self::truncate_fixtures`].
+    // Cost: O(1) amortized.
+    pub(crate) fn push_scoped_fixtures(&mut self, fixtures: FrameFixtures) {
+        self.fixtures.push(fixtures);
+    }
+
+    /// Cut the records back to `len` (a [`Self::fixtures_len`] taken before
+    /// the scoped push).
+    // Cost: O(dropped).
+    pub(crate) fn truncate_fixtures(&mut self, len: usize) {
+        self.fixtures.truncate(len);
     }
 
     /// The record of the innermost frame that has one (the fixture rule of
@@ -253,6 +286,14 @@ impl std::ops::Deref for RoutineStack {
 mod tests {
     use super::*;
     use crate::symbol::Symbol;
+    use crate::value::Value;
+
+    fn class_of(stack: &RoutineStack) -> String {
+        match stack.top_fixtures().unwrap().class.as_ref().unwrap().view() {
+            crate::value::ValueView::Package(p) => p.as_str().to_string(),
+            other => panic!("not a package: {other:?}"),
+        }
+    }
 
     fn frame(lexical: bool) -> RoutineFrame {
         RoutineFrame {
@@ -387,8 +428,8 @@ mod tests {
 
     fn fixtures(class: &str) -> FrameFixtures {
         FrameFixtures {
-            invocant: Value::int(1),
-            class: Symbol::intern(class),
+            invocant: Some(Value::int(1)),
+            class: Some(Value::package(Symbol::intern(class))),
             role: None,
         }
     }
@@ -400,23 +441,23 @@ mod tests {
         stack.push_with_fixtures(frame(false), fixtures("A"));
         stack.push(frame(false));
         stack.push_with_fixtures(frame(false), fixtures("B"));
-        assert_eq!(stack.top_fixtures().unwrap().class.as_str(), "B");
+        assert_eq!(class_of(&stack), "B");
         // A frame without a record leaves the innermost record answering.
         stack.push(frame(false));
-        assert_eq!(stack.top_fixtures().unwrap().class.as_str(), "B");
+        assert_eq!(class_of(&stack), "B");
         stack.pop();
         stack.pop();
-        assert_eq!(stack.top_fixtures().unwrap().class.as_str(), "A");
+        assert_eq!(class_of(&stack), "A");
         // replace_top keeps the record of the frame it replaces.
         let top = *stack.last().unwrap();
         stack.replace_top(RoutineFrame { callable_id: 7, ..top });
         assert_eq!(stack.last().unwrap().callable_id, 7);
-        assert_eq!(stack.top_fixtures().unwrap().class.as_str(), "A");
+        assert_eq!(class_of(&stack), "A");
         // truncate drops the records of every dropped frame.
         stack.push_with_fixtures(frame(false), fixtures("C"));
         stack.push_with_fixtures(frame(false), fixtures("D"));
         stack.truncate(1);
-        assert_eq!(stack.top_fixtures().unwrap().class.as_str(), "A");
+        assert_eq!(class_of(&stack), "A");
         stack.truncate(0);
         assert!(stack.top_fixtures().is_none());
     }
@@ -428,10 +469,10 @@ mod tests {
         stack.push(frame(false));
         let original = stack.iter().next().copied().unwrap();
         stack.push_copy(original);
-        assert_eq!(stack.top_fixtures().unwrap().class.as_str(), "A");
+        assert_eq!(class_of(&stack), "A");
         // Popping the copy leaves the original's record in place.
         stack.pop();
-        assert_eq!(stack.top_fixtures().unwrap().class.as_str(), "A");
+        assert_eq!(class_of(&stack), "A");
         stack.pop();
         stack.pop();
         assert!(stack.top_fixtures().is_none());

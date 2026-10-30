@@ -30,13 +30,24 @@ impl Interpreter {
             {
                 target.clone()
             }
+            // An instance of a curried core role (`Blob[uint8].new`) lists the
+            // role it was made from in `.^roles`, which a type object does not.
+            ValueView::Instance { class_name, .. }
+                if meta_method == "roles"
+                    && class_name
+                        .as_str()
+                        .split_once('[')
+                        .is_some_and(|(base, _)| matches!(base, "Blob" | "Buf")) =>
+            {
+                target.clone()
+            }
             ValueView::Instance { class_name, .. } => Value::package(class_name),
             _ => target.clone(),
         }
     }
 
     /// Check if a metamodel class name is a HOW type.
-    pub(super) fn is_metamodel_how(class_name: &Symbol) -> bool {
+    pub(crate) fn is_metamodel_how(class_name: &Symbol) -> bool {
         let cn = class_name.resolve();
         cn == "Perl6::Metamodel::ClassHOW"
             || cn == "Perl6::Metamodel::GrammarHOW"
@@ -100,6 +111,16 @@ impl Interpreter {
         // `(invocant, value)` shape every other mutator arm uses.
         if method == "set_why" {
             how_args.insert(0, target_package());
+            return how_args;
+        }
+        // `H.^mixin(R)` on a metaobject instance `H` is `H.HOW.mixin(H, R)`:
+        // the mixin must change `H` itself (and its cached `.HOW` slot), so
+        // the instance stays the invocant instead of its metaclass's type.
+        if method == "mixin"
+            && how_args
+                .first()
+                .is_some_and(|a| Self::how_target_from_value(a).is_some())
+        {
             return how_args;
         }
         match how_args.first().map(Value::view) {

@@ -2,7 +2,7 @@
 //! `my %h := …`.
 //!
 //! The compiler needs a binding declaration wrapped in bookkeeping statements
-//! (`MarkBind`, `MarkReadonly`, the bound-array length record) chosen by the
+//! (`VarMarks::bound`, `MarkReadonly`, the bound-array length record) chosen by the
 //! sigil and the right-hand side. The parser keeps the declaration as written
 //! (`ParsedStmt::BindDecl`, ADR-10723 Stage 2) and [`expand`] is the one place
 //! the wrapping is built: the lowering of that node calls it, for the parser's
@@ -13,34 +13,44 @@
 
 use super::{Expr, ReadonlyKind, Stmt};
 
-/// The internal trait marking a `$` declaration as bound (`:=`) rather than
-/// assigned; the compiler reads it to bind instead of storing into a Scalar.
-pub(crate) const SCALAR_BIND: &str = "__scalar_bind";
-
-/// Source binding intent for a callable declaration, whose execution needs
-/// no scalar-container or aggregate binding bookkeeping.
-pub(crate) const CODE_BIND: &str = "__code_bind";
+/// What a binding declaration (`:=`) binds, recorded on `Stmt::VarDecl::bind`
+/// (ADR-10723 Stage 2: a field of the declaration, not a marker trait).
+/// `@` and `%` binds carry none: their wrapping statements say so.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    bincode::Encode,
+    bincode::Decode,
+)]
+pub(crate) enum BindKind {
+    /// `my $x := …`: the compiler binds instead of storing into a Scalar.
+    Scalar,
+    /// `my &f := …`: a callable declaration, whose execution needs no
+    /// scalar-container or aggregate binding bookkeeping.
+    Code,
+}
 
 /// Whether a binding declaration of `name` (a `$` name carries no sigil) is a
-/// scalar bind, the kind that carries [`SCALAR_BIND`].
+/// scalar bind, the kind recorded as [`BindKind::Scalar`].
 pub(crate) fn is_scalar_bind_name(name: &str) -> bool {
     !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&')
 }
 
 /// The statement the compiler runs for the binding declaration `decl`, a
-/// `Stmt::VarDecl` whose `expr` is the bound right-hand side (and which carries
-/// [`SCALAR_BIND`] when [`is_scalar_bind_name`] says so).
-// Cost: O(n + t), n = name length, t = custom traits on a callable declaration.
+/// `Stmt::VarDecl` whose `expr` is the bound right-hand side (and whose `bind` is
+/// [`BindKind::Scalar`] when [`is_scalar_bind_name`] says so).
+// Cost: O(n), n = name length.
 pub(crate) fn expand(mut decl: Stmt) -> Stmt {
-    if let Stmt::VarDecl {
-        name,
-        custom_traits,
-        ..
-    } = &mut decl
+    if let Stmt::VarDecl { name, bind, .. } = &mut decl
         && name.starts_with('&')
-        && !custom_traits.iter().any(|(name, _)| name == CODE_BIND)
     {
-        custom_traits.push((CODE_BIND.to_string(), None));
+        *bind = Some(BindKind::Code);
     }
     let Stmt::VarDecl { name, expr, .. } = &decl else {
         return decl;
@@ -49,11 +59,9 @@ pub(crate) fn expand(mut decl: Stmt) -> Stmt {
     let is_array = bound_name.starts_with('@');
     let is_hash = bound_name.starts_with('%');
     if is_array || is_hash {
-        let mut stmts = Vec::new();
-        // The bind marker tells the compiler the declaration binds (keeps the
+        // The bound mark tells the compiler the declaration binds (keeps the
         // bound container's type: a List stays a List).
-        stmts.push(Stmt::MarkBind);
-        stmts.push(decl);
+        let mut stmts = vec![super::var_marks::with_bound_mark(decl)];
         if is_hash {
             // A `SyntheticBlock` yields its LAST statement's value, so re-read
             // the now-bound hash to keep `my %h := %src` usable in expression
@@ -84,13 +92,13 @@ pub(crate) fn expand(mut decl: Stmt) -> Stmt {
     }
     // A multi-dimensional subscript RHS (`my $x := @a[0;0;3]`) binds the leaf
     // element's container exactly like the single-dimension form, so it takes
-    // the same `MarkBind` route: the compiler then emits `MultiDimIndexBindRef`
+    // the same bound-declaration route: the compiler then emits `MultiDimIndexBindRef`
     // (via `compile_call_arg`) instead of a plain read, and a later `$x = v`
     // writes through to the real nested slot.
     // A conditional whose every branch is such a container binds the branch
     // it selects (`my $x := $c ?? @a[0] !! @a[1]`).
     if binds_a_container(expr) {
-        return Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl]);
+        return Stmt::SyntheticBlock(vec![super::var_marks::with_bound_mark(decl)]);
     }
     decl
 }
@@ -122,23 +130,21 @@ pub(crate) fn declared(stmt: &Stmt) -> Option<&Stmt> {
     match stmt {
         // A bare `$` / `&` bind carries its marker trait; `@` and `%` binds
         // are always wrapped.
-        Stmt::VarDecl {
-            name,
-            custom_traits,
-            ..
-        } => {
-            let marker = if name.starts_with('&') {
-                CODE_BIND
+        Stmt::VarDecl { name, bind, .. } => {
+            let expected = if name.starts_with('&') {
+                BindKind::Code
             } else {
-                SCALAR_BIND
+                BindKind::Scalar
             };
             (is_scalar_bind_name(name) || name.starts_with('&'))
-                .then(|| custom_traits.iter().any(|(t, _)| t == marker))
-                .filter(|bound| *bound)
+                .then_some(())
+                .filter(|_| *bind == Some(expected))
                 .map(|_| stmt)
         }
         Stmt::SyntheticBlock(stmts) => {
-            if !matches!(stmts.first(), Some(Stmt::MarkBind | Stmt::MarkReadonly(..))) {
+            if !matches!(stmts.first(), Some(Stmt::MarkReadonly(..)))
+                && !super::var_marks::is_bind_group(stmts)
+            {
                 return None;
             }
             let mut decls = stmts.iter().filter(|s| matches!(s, Stmt::VarDecl { .. }));
@@ -154,8 +160,9 @@ mod tests {
     use super::*;
     use crate::value::Value;
 
-    fn decl(name: &str, expr: Expr, traits: &[&str]) -> Stmt {
+    fn decl(name: &str, expr: Expr, bind: Option<BindKind>) -> Stmt {
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: name.to_string(),
             expr,
@@ -165,7 +172,10 @@ mod tests {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: traits.iter().map(|t| (t.to_string(), None)).collect(),
+            custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind,
             where_constraint: None,
         }
     }
@@ -173,12 +183,16 @@ mod tests {
     #[test]
     fn every_expansion_reads_back_as_its_declaration() {
         for d in [
-            decl("x", Expr::Literal(Value::int(1)), &[SCALAR_BIND]),
-            decl("x", Expr::Var("y".to_string()), &[SCALAR_BIND]),
-            decl("x", Expr::BareWord("f".to_string()), &[SCALAR_BIND]),
-            decl("@a", Expr::ArrayVar("b".to_string()), &[]),
-            decl("%h", Expr::HashVar("s".to_string()), &[]),
-            decl("&f", Expr::CodeVar("source".to_string()), &[CODE_BIND]),
+            decl("x", Expr::Literal(Value::int(1)), Some(BindKind::Scalar)),
+            decl("x", Expr::Var("y".to_string()), Some(BindKind::Scalar)),
+            decl("x", Expr::BareWord("f".to_string()), Some(BindKind::Scalar)),
+            decl("@a", Expr::ArrayVar("b".to_string()), None),
+            decl("%h", Expr::HashVar("s".to_string()), None),
+            decl(
+                "&f",
+                Expr::CodeVar("source".to_string()),
+                Some(BindKind::Code),
+            ),
         ] {
             let expanded = expand(d.clone());
             assert!(declared(&expanded).is_some(), "{expanded:?}");
@@ -188,15 +202,11 @@ mod tests {
     #[test]
     fn an_assignment_is_not_a_binding() {
         // `my $x = $y`: no bind trait.
-        let assign = decl("x", Expr::Var("y".to_string()), &["__has_initializer"]);
+        let assign = decl("x", Expr::Var("y".to_string()), None);
         assert!(declared(&assign).is_none());
-        let code_assign = decl(
-            "&f",
-            Expr::CodeVar("source".to_string()),
-            &["__has_initializer"],
-        );
+        let code_assign = decl("&f", Expr::CodeVar("source".to_string()), None);
         assert!(declared(&code_assign).is_none());
         // `my @a = …` is never wrapped the way a bind is.
-        assert!(declared(&decl("@a", Expr::ArrayVar("b".to_string()), &[])).is_none());
+        assert!(declared(&decl("@a", Expr::ArrayVar("b".to_string()), None)).is_none());
     }
 }

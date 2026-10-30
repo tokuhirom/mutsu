@@ -572,6 +572,7 @@ mod array_holes;
 /// The instance-attribute map (`Symbol -> Value`); see [`AttrMap`].
 mod attr_map;
 mod attr_site;
+mod attr_store_kind;
 mod bareword_site;
 pub(crate) mod buf_class_names;
 pub(crate) mod capture_text;
@@ -598,6 +599,7 @@ mod error_construct;
 mod error_typed;
 pub(crate) mod exception_message;
 pub(crate) mod flat;
+pub(crate) mod frame_fixtures;
 pub(crate) mod gist;
 mod guards;
 /// The hash key type ([`HashKey`]): inline for short keys, `Arc<str>` beyond.
@@ -724,6 +726,7 @@ pub(crate) use attr_map::{
     AttrBits, AttrKey, AttrMap, ClassLayout, OBJAT_STR_PAYLOAD, attr_twigil_base, attr_twigil_sigil,
 };
 pub(crate) use attr_site::AttrSiteCaches;
+pub(crate) use attr_store_kind::AttrStoreKind;
 pub(crate) use bareword_site::BarewordSiteCaches;
 pub(crate) use entry_path::EntryRoot;
 pub use entry_path::EntryStep;
@@ -767,6 +770,7 @@ pub(crate) fn current_time_secs_f64() -> f64 {
     }
 }
 
+pub(crate) use display::is_core_metamodel_name;
 pub(crate) use display::user_facing_type_name;
 pub(crate) use display::with_quanthash_render_guard;
 pub use display::{format_complex, tclc_str, wordcase_segments, wordcase_str};
@@ -1627,6 +1631,11 @@ pub struct SubData {
     pub(crate) is_rw: bool,
     pub(crate) is_raw: bool,
     pub env: Env,
+    /// The frame record (`self`, `?CLASS`, `?ROLE`) of the method this closure
+    /// was created in, if it was created in one. The closure's call pushes a
+    /// copy, so a `self` in its body is its creator's, whichever method runs
+    /// it (ADR-14843).
+    pub(crate) fixtures: Option<crate::value::frame_fixtures::FrameFixtures>,
     pub(crate) assumed_positional: Vec<Value>,
     pub(crate) assumed_named: ValueMap,
     pub id: u64,
@@ -1913,7 +1922,10 @@ impl SubData {
     /// parameter is spelled bare there but binds its term key (ADR-12441).
     // Cost: O(d), d = param_defs.
     pub(crate) fn param_storage_sym(&self, p: &str) -> Symbol {
-        if self
+        // A block's `-> $self` is the user lexical, not the `self` term.
+        if p == "self" {
+            crate::symbol::wk::lex_self()
+        } else if self
             .param_defs
             .iter()
             .any(|pd| pd.sigilless && pd.name == p)
@@ -2037,6 +2049,20 @@ impl SubData {
         self.compiled_routine
             .as_ref()
             .is_none_or(|cf| cf.returns_container())
+    }
+
+    /// [`Self::returns_container`] for a multi candidate: a compiled routine
+    /// answers exactly; one with no compiled body (the forwarding sub an
+    /// `is export` method installs) answers from its own declaration instead
+    /// of the "unknown means container" default, which made every call of
+    /// such a dispatcher run its callee under `rw_return_context` (#15094).
+    // Cost: O(1) for a compiled routine; as [`Self::declares_container_return`] otherwise.
+    pub(crate) fn candidate_returns_container(&self) -> bool {
+        if self.compiled_routine.is_some() {
+            self.returns_container()
+        } else {
+            self.declares_container_return()
+        }
     }
 
     /// The strict twin of [`Self::returns_container`]: whether this code
@@ -2276,7 +2302,16 @@ pub fn bigrat_to_f64(n: &NumBigInt, d: &NumBigInt) -> f64 {
         0u32
     };
     let scaled = &na << shift;
-    let quotient = &scaled / &da;
+    let mut quotient = &scaled / &da;
+    // The quotient was truncated: when the division left a remainder, mark the
+    // lost bits with a sticky low bit, so the conversion below rounds the
+    // exact ratio and not a value that sits exactly on a rounding midpoint
+    // (`29849362802126903/6250000000000000` came out one ulp low). The quotient
+    // has at least 55 bits, so the sticky bit is below the 53-bit result and
+    // the guard bit.
+    if !(&scaled % &da).is_zero() {
+        quotient |= NumBigInt::from(1u8);
+    }
     let qf = quotient.to_f64().unwrap_or(f64::INFINITY);
     // Scale back: divide by 2^shift. `2.0f64.powi(-shift)` computed as a
     // single value underflows to exactly 0.0 once `shift` exceeds ~1074 (the
@@ -2384,6 +2419,11 @@ pub struct HashData {
     /// by `Value::hash`, which must not itemize the values of a hash that has
     /// declared they are not containers.
     pub bare_values: bool,
+    /// `true` once `nqp::atkey` has promoted every value of this hash to its
+    /// element cell, the Scalar containers Rakudo's `$!storage` holds (#15106).
+    /// From then on a bare value in the map is one `nqp::bindkey` bound on
+    /// purpose, and `atkey` answers it as it is.
+    pub storage_cells: bool,
 }
 
 /// Backing data for `Value::Array`: the element vector plus embedded
@@ -3471,6 +3511,10 @@ pub(crate) enum PipeAdaptor {
     /// The callback is the owning spec's `func`.
     MultiMap {
         arity: usize,
+        /// How many of the `arity` positionals are required: a final chunk
+        /// shorter than `arity` still calls the callback when it covers them
+        /// (`-> $a, $b? { }` over an odd number of elements).
+        required: usize,
         /// A lazy list the callback slipped that cannot be seen to end, with
         /// the index of its next element (see `MapGrepSpec::pending_slip`).
         pending: Option<(Value, usize)>,
@@ -3620,6 +3664,12 @@ pub(crate) enum CatPullMode {
     /// `for $c.list { }` run its body as each item arrives (#12727) instead
     /// of only after the channel closes.
     ChannelReceive,
+    /// A user `does Iterator` instance (`cat`) whose `is-lazy` is True, pulled
+    /// one `pull-one` at a time by `my @a = <Seq over it>` / an `Iterable`
+    /// instance assigned to an `@` array, so the array reifies on demand
+    /// instead of draining a never-ending iterator (#15305). `IterationEnd`
+    /// ends the list; unlike the other modes the list may be unbounded.
+    UserIterator,
 }
 
 /// Lazy `IO::CatHandle.lines` / `.handles` generator. Holds the live cat
@@ -3892,6 +3942,10 @@ pub(crate) struct WalkPendingState {
 pub(crate) struct LazyList {
     pub(crate) body: Vec<Stmt>,
     pub(crate) env: Env,
+    /// The frame record (`self`, `?CLASS`, `?ROLE`) of the method a `gather`
+    /// was evaluated in: pulling the list, however late, runs the body under it
+    /// (ADR-14843).
+    pub(crate) fixtures: Option<crate::value::frame_fixtures::FrameFixtures>,
     pub(crate) cache: Mutex<Option<Vec<Value>>>,
     /// The sequence generator's OWN trailing history, kept separate from
     /// `cache`. `cache` is the user-visible prefix and may hold an element
@@ -3985,6 +4039,12 @@ pub(crate) struct LazyList {
     /// eager `ArrayData` carries, so `Array.default`/`.of` answer from the
     /// value and survive the list leaving its variable (#14101).
     pub(crate) descriptor: Option<Arc<LazyArrayDescriptor>>,
+    /// For the `.clone` of a lazy closure-sequence array: the list it was cloned
+    /// from. Rakudo's `Array.clone` shares the reifier, so the elements either
+    /// array generates past the clone point are the same values in both; the
+    /// clone pulls its generated tail from this list instead of running the
+    /// generator a second time (`Interpreter::fill_closure_sequence`).
+    pub(crate) generator_origin: Option<crate::gc::Gc<LazyList>>,
 }
 
 /// See [`LazyList::hyper_kind`].

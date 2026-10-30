@@ -311,9 +311,14 @@ impl Interpreter {
     }
 
     fn default_check_constraint_base(constraint: &str) -> &str {
+        let bytes = constraint.as_bytes();
         let mut end = constraint.len();
         for (idx, ch) in constraint.char_indices() {
-            if ch == '[' || ch == '(' || ch == ':' {
+            // A `:` ends the name only as a type smiley (`Int:D`); the `::` of a
+            // package-qualified name (`X::AdHoc`) is part of it.
+            let package_separator = ch == ':'
+                && (bytes.get(idx + 1) == Some(&b':') || (idx > 0 && bytes[idx - 1] == b':'));
+            if ch == '[' || ch == '(' || (ch == ':' && !package_separator) {
                 end = idx;
                 break;
             }
@@ -639,8 +644,10 @@ impl Interpreter {
         is_rw: bool,
         is_raw: bool,
         is_test_assertion: bool,
+        is_hidden_from_backtrace: bool,
         supersede: bool,
         scope: crate::ast::SubScope,
+        pass: crate::ast::DeclPass,
         custom_traits: &crate::opcode::DeclTraits,
         metadata: Option<&crate::opcode::CompiledRoutineMetadata>,
         compiled: Option<&std::sync::Arc<crate::compiled_lazy::LazyFn>>,
@@ -656,8 +663,10 @@ impl Interpreter {
             is_rw,
             is_raw,
             is_test_assertion,
+            is_hidden_from_backtrace,
             supersede,
             scope,
+            pass,
             custom_traits,
             None,
             metadata,
@@ -715,8 +724,10 @@ impl Interpreter {
         is_rw: bool,
         is_raw: bool,
         is_test_assertion: bool,
+        is_hidden_from_backtrace: bool,
         supersede: bool,
         scope: crate::ast::SubScope,
+        pass: crate::ast::DeclPass,
         custom_traits: &crate::opcode::DeclTraits,
         site_fingerprint: Option<u64>,
         metadata: &crate::opcode::CompiledRoutineMetadata,
@@ -733,8 +744,10 @@ impl Interpreter {
             is_rw,
             is_raw,
             is_test_assertion,
+            is_hidden_from_backtrace,
             supersede,
             scope,
+            pass,
             custom_traits,
             site_fingerprint,
             Some(metadata),
@@ -755,8 +768,10 @@ impl Interpreter {
         is_rw: bool,
         is_raw: bool,
         is_test_assertion: bool,
+        is_hidden_from_backtrace: bool,
         supersede: bool,
         scope: crate::ast::SubScope,
+        pass: crate::ast::DeclPass,
         custom_traits: &crate::opcode::DeclTraits,
         site_fingerprint: Option<u64>,
         metadata: Option<&crate::opcode::CompiledRoutineMetadata>,
@@ -854,8 +869,10 @@ impl Interpreter {
                     is_rw,
                     is_raw,
                     is_test_assertion,
+                    is_hidden_from_backtrace,
                     supersede,
                     scope,
+                    pass,
                     custom_traits,
                     site_fingerprint,
                     metadata,
@@ -865,25 +882,18 @@ impl Interpreter {
                 return outcome;
             }
         }
-        let is_method_value_decl = custom_traits
-            .iter()
-            .any(|(t, _)| t == "__mutsu_method_decl");
-        // Which declarator the source wrote, recovered from the marker the
-        // `Stmt::MethodDecl` lowering left behind (`src/compiler/stmt.rs`).
-        // `Sub` for every ordinary `sub` declaration, which carries no marker.
-        let declarator = crate::ast::RoutineDeclarator::from_markers(
-            custom_traits.iter().map(|(t, _)| t.as_str()),
-        );
+        // Which declarator the source wrote, from the plan's pass (the
+        // `Stmt::MethodDecl` lowering in `src/compiler/stmt.rs` sets it);
+        // `Sub` for every ordinary `sub` declaration.
+        let declarator = pass.declarator;
+        let is_method_value_decl = declarator != crate::ast::RoutineDeclarator::Sub;
         let allow_redeclare = supersede || is_method_value_decl;
         let is_our_scoped = scope == crate::ast::SubScope::Our;
-        let is_lexical_hoist = custom_traits.iter().any(|(t, _)| t == "__lexical_hoist");
+        let is_lexical_hoist = pass.lexical_hoist;
         // Declared in a scope nested in its compilation unit's or routine's
         // own (an `if` body, a bare block): it may shadow an outer `&name`
         // binding, as rakudo's lexical `sub` does (#13855).
-        let in_nested_scope = is_lexical_hoist
-            || custom_traits
-                .iter()
-                .any(|(t, _)| t == crate::ast::NESTED_SCOPE_DECL_MARKER);
+        let in_nested_scope = is_lexical_hoist || pass.nested_scope;
         let package = self.current_package();
         // Imports are aliases in the importing scope, not declarations in
         // that scope. A later local `sub` replaces the alias; once replaced,
@@ -1047,7 +1057,7 @@ impl Interpreter {
         // NativeCall's `constant size_t = NativeCall::Types::size_t`) names
         // the aliased type, also resolved here (#11555).
         // Not in the hoist pass, whose `constant`s are not assigned yet.
-        let resolve_aliases = !custom_traits.iter().any(|(t, _)| t == "__hoisted");
+        let resolve_aliases = !pass.hoisted;
         let effective_return_type = return_type.map(|rt| {
             let resolved = rt.replace("::?CLASS", &package);
             let resolved = self.resolve_method_type_name(&package, &resolved);
@@ -1220,10 +1230,9 @@ impl Interpreter {
             // time the proto is not yet in `proto_subs`. Each multi candidate is
             // also re-registered in textual order, which runs *after* the proto;
             // that in-sequence registration enforces the check with the proto
-            // present. (`is_lexical_hoist` only marks block-scope hoists; the
-            // mainline hoist uses the separate `__hoisted` marker.)
-            let is_hoisted =
-                is_lexical_hoist || custom_traits.iter().any(|(t, _)| t == "__hoisted");
+            // present. (`lexical_hoist` only marks block-scope hoists; the
+            // mainline hoist sets `hoisted` instead.)
+            let is_hoisted = is_lexical_hoist || pass.hoisted;
             if is_our_scoped && !is_hoisted && !self.registry().proto_subs_contains(&single_key) {
                 let mut attrs = ValueMap::default();
                 attrs.insert("scope".to_string(), Value::str("our".to_string()));
@@ -1251,9 +1260,7 @@ impl Interpreter {
             param_defs: effective_param_defs,
             body: body.to_vec(),
             is_test_assertion,
-            is_hidden_from_backtrace: custom_traits
-                .iter()
-                .any(|(t, _)| t == "__hidden_from_backtrace"),
+            is_hidden_from_backtrace,
             is_implementation_detail: custom_traits
                 .iter()
                 .any(|(t, _)| t == "implementation-detail"),
@@ -2541,6 +2548,17 @@ impl Interpreter {
         roles: &[String],
         is_my: bool,
     ) -> Result<Value, RuntimeError> {
+        // An earlier same-named `package`/`module` (a sibling block's `my
+        // module Foo`) is no longer what the name means: the enum's own
+        // metaobject replaces the one cached for it.
+        // Probed through the shared registry first: a write copies it on a
+        // thread clone (`tests/my_enum_thread_registry_cow.rs`).
+        if self.registry().package_kinds.contains_key(name) {
+            self.registry_mut().package_kinds.remove(name);
+        }
+        if self.registry().class_how_values.contains_key(name) {
+            self.registry_mut().class_how_values.remove(name);
+        }
         // Handle dynamic enum body: `enum Stuff (@variable)`
         let expanded;
         let variants: &[(String, Option<Expr>)] =

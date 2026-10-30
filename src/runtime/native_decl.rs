@@ -107,9 +107,9 @@ impl Interpreter {
         &mut self,
         type_name: &str,
         repr: Option<&str>,
+        is_native: bool,
         traits: &[(String, Option<DeclTraitArg>)],
     ) -> Result<(), RuntimeError> {
-        let is_native = traits.iter().any(|(t, _)| t == "__mutsu_native_decl");
         let mut decl = NativeDecl {
             repr: repr.map(str::to_string),
             ..NativeDecl::default()

@@ -424,6 +424,22 @@ impl Interpreter {
         if let Some(coerced) = self.coerce_into_builtin_inheriting_role(base_target, &value) {
             return coerced;
         }
+        // `Array[T]()` builds the typed array from the value's elements, as
+        // `Array[T].new(|$value)` does: a `Seq` into `Array[Str]()`, or into a
+        // `subset Names of Array[Name]` target's refinee (Physics::Unit's
+        // `method names(--> Names())`). An element outside `T` fails its own
+        // typed-array check.
+        if base_target.starts_with("Array[")
+            && base_target.ends_with(']')
+            && let ValueView::Seq(..) | ValueView::Array(..) | ValueView::LazyList(..) =
+                value.view()
+        {
+            let type_object = Value::package(Symbol::intern(base_target));
+            let built = self.call_method_with_values(type_object, "new", vec![value.clone()])?;
+            if self.type_matches_value(base_target, &built) {
+                return Ok(built);
+            }
+        }
         Err(coerce_impossible_error(target, &value))
     }
 

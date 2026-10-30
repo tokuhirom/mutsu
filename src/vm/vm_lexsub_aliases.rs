@@ -81,6 +81,20 @@ impl Interpreter {
         })
     }
 
+    /// Whether ANY sub declared in `code`'s frame rebinds `var`. A sibling that
+    /// only reads the variable captures its cell before the rebinding sub is
+    /// registered, so the cell must be a binding cell from the first capture.
+    // Cost: O(p * r), p = sub plans of the frame, r = rebound free variables.
+    pub(super) fn frame_sub_rebinds_var(
+        code: &CompiledCode,
+        compiled_fns: &CompiledFns,
+        var: Symbol,
+    ) -> bool {
+        code.sub_decl_plans
+            .iter()
+            .any(|p| Self::lexsub_rebinds_var(p, compiled_fns, var))
+    }
+
     /// `RegisterDecl` of a sub plan: bind this activation's aliases.
     pub(super) fn bind_lexsub_free_aliases(
         &mut self,
@@ -112,7 +126,7 @@ impl Interpreter {
         let owner = Self::lexsub_plan_owner(plan, compiled_fns);
         // Only the hoisted registration can run before a free variable's
         // declaration (see `lexsub_alias_cell`).
-        let hoisted_pass = plan.custom_traits.iter().any(|(t, _)| t == "__hoisted");
+        let hoisted_pass = plan.pass.hoisted;
         for a in &plan.lexsub_free_aliases {
             // The hoisted pass runs before a declaration in the sub's own
             // scope has: whatever the slot holds is not that variable yet (a
@@ -160,7 +174,7 @@ impl Interpreter {
             // slot shares (`unit_scope_lexical_rebind`) instead of replacing
             // the callee's env entry, which the return would then drop.
             let cell = if Self::binding_cell_of(&cell).is_none()
-                && Self::lexsub_rebinds_var(plan, compiled_fns, a.var)
+                && Self::frame_sub_rebinds_var(code, compiled_fns, a.var)
                 && let Some(slot) = a.var_slot.map(|s| s as usize)
                 && code.locals.get(slot).is_some_and(|n| *n == a.var.resolve())
             {
@@ -206,7 +220,7 @@ impl Interpreter {
         let Some(owner) = Self::lexsub_plan_owner(plan, compiled_fns) else {
             return;
         };
-        let Some(self_val) = self.env().get_sym(crate::symbol::wk::self_()).cloned() else {
+        let Some(self_val) = self.frame_invocant() else {
             return;
         };
         crate::runtime::cow_table_mut(&mut self.lexicals.lexsub_latest_cells).insert(

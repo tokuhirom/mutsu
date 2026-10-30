@@ -116,55 +116,6 @@ pub(super) fn is_stmt_modifier_keyword(input: &str) -> bool {
     leading_modifier_keyword(input).is_some()
 }
 
-/// Parse the source condition and kind that an attribute modifier's runtime
-/// expansion would otherwise erase. The general modifier parser still handles
-/// validation and consumption of the complete modifier.
-pub(crate) fn attribute_modifier_source(
-    input: &str,
-) -> PResult<'_, (Expr, crate::ast::decl_modifier::DeclarationModifier)> {
-    let (rest, _) = ws(input)?;
-    let (rest, kind, comma_condition) = if let Some(rest) = keyword("if", rest) {
-        (
-            rest,
-            crate::ast::decl_modifier::DeclarationModifier::If,
-            true,
-        )
-    } else if let Some(rest) = keyword("unless", rest) {
-        (
-            rest,
-            crate::ast::decl_modifier::DeclarationModifier::Unless,
-            true,
-        )
-    } else if let Some(rest) = keyword("with", rest) {
-        (
-            rest,
-            crate::ast::decl_modifier::DeclarationModifier::With,
-            false,
-        )
-    } else if let Some(rest) = keyword("without", rest) {
-        (
-            rest,
-            crate::ast::decl_modifier::DeclarationModifier::Without,
-            false,
-        )
-    } else if let Some(rest) = keyword("when", rest) {
-        (
-            rest,
-            crate::ast::decl_modifier::DeclarationModifier::When,
-            true,
-        )
-    } else {
-        return Err(PError::expected("attribute condition modifier"));
-    };
-    let (rest, _) = ws1(rest)?;
-    let (rest, condition) = if comma_condition {
-        parse_comma_or_expr(rest)?
-    } else {
-        expression(rest)?
-    };
-    Ok((rest, (condition, kind)))
-}
-
 /// A statement-modifier keyword sitting right after a *trailing comma*
 /// (`die "x", if @c;` / `return 1, if 0;` — legal Raku, the trailing comma is an
 /// empty list slot). Rejects a same-named **pair key** (`1, with => 2`) so a
@@ -204,7 +155,7 @@ fn second_modifier_allowed(first: &str, next: &str) -> bool {
 pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     let (rest, stmt) = parse_statement_modifier_inner(input, stmt)?;
     // A signature declaration no modifier took stays as written until here.
-    let stmt = super::decl::destructure::desugar::settle(stmt).map_err(PError::from_typed)?;
+    let stmt = super::decl::destructure::settle(stmt).map_err(PError::from_typed)?;
     Ok((rest, stmt))
 }
 

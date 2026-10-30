@@ -18,7 +18,7 @@ impl Interpreter {
                     Stmt::VarDecl {
                         name,
                         is_our: true,
-                        custom_traits,
+                        constant,
                         ..
                     },
                 ..
@@ -29,9 +29,7 @@ impl Interpreter {
             // Constants and legacy scalar forms still resolve through their
             // bare binding. Only ordinary package cells and aggregate stores
             // have the authoritative qualified home this cleanup preserves.
-            if custom_traits
-                .iter()
-                .any(|(trait_name, _)| trait_name == "__constant")
+            if constant.is_some()
                 || name.starts_with('&')
             {
                 continue;

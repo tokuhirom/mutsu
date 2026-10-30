@@ -29,6 +29,7 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
                 return Ok((
                     rest,
                     Stmt::VarDecl {
+                        marks: Default::default(),
                         anonymous: false,
                         name,
                         expr,
@@ -38,7 +39,10 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
                         is_dynamic: false,
                         is_export: false,
                         export_tags: Vec::new(),
-                        custom_traits: vec![("__has_initializer".to_string(), None)],
+                        custom_traits: Vec::new(),
+                        has_initializer: true,
+                        constant: None,
+                        bind: None,
                         where_constraint: None,
                     },
                 ));
@@ -46,6 +50,7 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
             return Ok((
                 rest,
                 Stmt::VarDecl {
+                    marks: Default::default(),
                     anonymous: false,
                     name,
                     expr: Expr::Literal(crate::value::Value::NIL),
@@ -56,6 +61,9 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
                     is_export: false,
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
+                    has_initializer: false,
+                    constant: None,
+                    bind: None,
                     where_constraint: None,
                 },
             ));
@@ -361,30 +369,6 @@ fn repeat_condition_first(r: &str, until: bool) -> PResult<'_, Stmt> {
     };
     let stmt = finish_loop(kind, None, Some(cond), None, block)?;
     Ok((r, stmt))
-}
-
-/// The `init`/`step` pair a `repeat while/until COND -> $param { }` loop keeps
-/// its pointy parameter in: the parameter starts as Mu; the compiler binds the
-/// raw condition value between passes. Shared with the RakuAST lowerer, which
-/// rebuilds the loop from the `PointyBlock` the converter writes for it.
-// Cost: O(|name|).
-pub(crate) fn repeat_param_clause(param: Option<String>) -> (Option<Box<Stmt>>, Option<Expr>) {
-    let init = param.as_ref().map(|name| {
-        Box::new(Stmt::VarDecl {
-            anonymous: false,
-            name: name.clone(),
-            expr: Expr::Literal(crate::value::Value::package(Symbol::intern("Mu"))),
-            type_constraint: None,
-            is_state: false,
-            is_our: false,
-            is_dynamic: false,
-            is_export: false,
-            export_tags: Vec::new(),
-            custom_traits: Vec::new(),
-            where_constraint: None,
-        })
-    });
-    (init, None)
 }
 
 /// Parse `repeat while/until` loop.

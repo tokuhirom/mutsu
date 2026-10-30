@@ -9,6 +9,7 @@
 //! is kept in the set too; the block's bareword reads find it through their
 //! `OpCode::LexImportCall` prefix.
 
+use super::lexical_imports::{LATE_IMPORT_MARK, LexicalImport};
 use super::*;
 
 impl Interpreter {
@@ -98,6 +99,26 @@ impl Interpreter {
             .cloned()
     }
 
+    /// What a top-level `use` of the running code binds `name` to, for a use
+    /// written BELOW the call that names it. Raku binds the `use` at compile
+    /// time, so a name that resolved nowhere else still reaches it; this is
+    /// consulted only where the lookup would report the name as unknown.
+    /// The sets come from the code's fallback chains
+    /// (`Compiler::register_late_import_fallback`).
+    // Cost: O(c + s), c = the code's import chains, s = sets in the fallback chains.
+    pub(crate) fn unit_late_import(&self, name: &str) -> Option<LexicalImport> {
+        let code = self.running_code()?;
+        let name = Symbol::intern(name);
+        code.lexical_import_chains
+            .iter()
+            .filter(|chain| {
+                chain
+                    .first()
+                    .is_some_and(|mark| mark.with_str(|m| m == LATE_IMPORT_MARK))
+            })
+            .find_map(|chain| self.lexical_import_binding(&chain[1..], name))
+    }
+
     /// The value a `sub EXPORT` hook returned for the declaration key `name`
     /// in the `use` that fills lexical import set `set`.
     // Cost: O(1).
@@ -117,9 +138,31 @@ impl Interpreter {
     /// resolve by name, keeps the env alias.
     // Cost: O(|key|).
     pub(crate) fn bind_hook_term_lexically(&mut self, key: &str, value: &Value) -> bool {
-        if !key.starts_with(|c: char| c.is_lowercase())
+        if !key.starts_with(|c: char| c.is_alphabetic())
             || !key.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''))
         {
+            return false;
+        }
+        // An uppercase key usually hands out a type (a class, a role, a mixin
+        // type object), which type positions resolve by name; only a plain
+        // defined value is a term of the set.
+        if key.starts_with(|c: char| c.is_uppercase())
+            && !matches!(
+                value.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Rat(..)
+                    | ValueView::Instance { .. }
+            )
+        {
+            return false;
+        }
+        // A CORE term keyword the hook shadows (`True`, `Nil`, ...) is read
+        // through `OpCode::GetShadowableTerm`, which asks the env (#9047).
+        if matches!(key, "True" | "False" | "Nil" | "Empty" | "Any") {
             return false;
         }
         let importer = self.executing_unit_sym_for_module_load();
@@ -172,6 +215,26 @@ impl Interpreter {
             .filter_map(|id| self.module.lexical_import_hook_values.get(id))
             .flat_map(|values| values.keys())
             .filter(|key| !self.env.frame_hides_unit_name(**key))
+            .filter_map(|key| {
+                crate::runtime::term_names::term_spelling(&key.resolve()).map(str::to_string)
+            })
+            .collect()
+    }
+
+    /// The names of the terms a `sub EXPORT` hook bound in the import sets
+    /// the pre-run of the `EVAL`'d unit `stmts` filled for its top-level
+    /// `use`s, for the unit's CHECK-time name checks.
+    // Cost: O(s + t), s = the unit's top-level statements, t = their hook values.
+    pub(crate) fn eval_unit_hook_terms(&self, stmts: &[Stmt]) -> Vec<String> {
+        if self.module.lexical_import_hook_values.is_empty() {
+            return Vec::new();
+        }
+        crate::compiler::Compiler::eval_unit_use_set_ids(stmts)
+            .into_iter()
+            .flatten()
+            .chain(self.module.eval_prerun_sets.iter().copied())
+            .filter_map(|id| self.module.lexical_import_hook_values.get(&id))
+            .flat_map(|values| values.keys())
             .filter_map(|key| {
                 crate::runtime::term_names::term_spelling(&key.resolve()).map(str::to_string)
             })

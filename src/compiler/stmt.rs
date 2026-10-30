@@ -1,5 +1,6 @@
 use super::block_imported_vars::ImportedVarSource;
 use super::*;
+use crate::ast::var_marks::TermMark;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
@@ -98,6 +99,9 @@ impl Compiler {
                 language_version,
                 custom_traits,
                 is_unit,
+                is_native,
+                export_tags,
+                marks,
                 implicit_grammar_parent,
                 is_grammar,
                 decl_id,
@@ -128,32 +132,25 @@ impl Compiler {
                     repr: repr.clone(),
                     body: body.clone(),
                     language_version: language_version.clone(),
-                    custom_traits: {
-                        let mut traits = custom_traits.clone();
-                        if crate::qualified::is_qualified(Symbol::intern(&bare)) {
-                            traits.push((
-                                "__source_compound_name".to_string(),
-                                Some(Expr::Literal(Value::str(bare.clone()))),
-                            ));
-                        }
+                    custom_traits: custom_traits.clone(),
+                    is_unit: *is_unit,
+                    is_native: *is_native,
+                    export_tags: export_tags.clone(),
+                    marks: crate::ast::PackageMarks {
+                        source_compound_name: crate::qualified::is_qualified(Symbol::intern(&bare))
+                            .then(|| bare.clone()),
                         // The qualified parent names above are a guess that the
                         // name is a type of this package. When it is a trait
                         // instead (`is foo`), it is dispatched under the name
                         // as written (#11349).
-                        for (written, qualified) in parents.iter().zip(&new_parents) {
-                            if written != qualified {
-                                traits.push((
-                                    "__parent_spelling".to_string(),
-                                    Some(Expr::Literal(Value::pair(
-                                        qualified.clone(),
-                                        Value::str(written.clone()),
-                                    ))),
-                                ));
-                            }
-                        }
-                        traits
+                        parent_spellings: parents
+                            .iter()
+                            .zip(&new_parents)
+                            .filter(|(written, qualified)| written != qualified)
+                            .map(|(written, qualified)| (qualified.clone(), written.clone()))
+                            .collect(),
+                        ..marks.clone()
                     },
-                    is_unit: *is_unit,
                     implicit_grammar_parent: *implicit_grammar_parent,
                     is_grammar: *is_grammar,
                     decl_id: *decl_id,
@@ -170,9 +167,11 @@ impl Compiler {
                 export_tags,
                 body,
                 is_rw,
+                is_lexical,
                 language_version,
                 custom_traits,
                 decl_id,
+                marks,
                 ..
             } => Stmt::RoleDecl {
                 spans: Default::default(),
@@ -183,18 +182,15 @@ impl Compiler {
                 export_tags: export_tags.clone(),
                 body: body.clone(),
                 is_rw: *is_rw,
+                is_lexical: *is_lexical,
                 language_version: language_version.clone(),
-                custom_traits: {
-                    let mut traits = custom_traits.clone();
-                    if crate::qualified::is_qualified(Symbol::intern(&bare)) {
-                        traits.push((
-                            "__source_compound_name".to_string(),
-                            Some(Expr::Literal(Value::str(bare.clone()))),
-                        ));
-                    }
-                    traits
-                },
+                custom_traits: custom_traits.clone(),
                 decl_id: *decl_id,
+                marks: crate::ast::PackageMarks {
+                    source_compound_name: crate::qualified::is_qualified(Symbol::intern(&bare))
+                        .then(|| bare.clone()),
+                    ..marks.clone()
+                },
             },
             _ => stmt.clone(),
         }
@@ -463,6 +459,7 @@ impl Compiler {
         // element to `@tmp` would wrap it as a one-element array and iterate
         // the wrong thing.
         let decl = Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: format!("@{}", tmp),
             expr: Expr::MethodCall {
@@ -479,7 +476,10 @@ impl Compiler {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![("__has_initializer".to_string(), None)],
+            custom_traits: Vec::new(),
+            has_initializer: true,
+            constant: None,
+            bind: None,
             where_constraint: None,
         };
 
@@ -664,10 +664,9 @@ impl Compiler {
         // In particular, `$r := 0..2` is a bare Range slice selector; a plain
         // `=` store here would turn the temporary into a Scalar-wrapped Range
         // and misclassify the bound range as a single element.
-        let idx_decl = Stmt::SyntheticBlock(vec![
-            Stmt::MarkBind,
+        let idx_decl = Stmt::SyntheticBlock(vec![crate::ast::var_marks::with_bound_mark(
             Self::init_decl(&idx_tmp, (**index).clone()),
-        ]);
+        )]);
         // A literal subscript can never turn into a slice selector at
         // runtime, so the `$idx ~~ Iterable` half folds to `False` and only
         // the element-itemization check remains live.
@@ -761,6 +760,7 @@ impl Compiler {
     /// A `my <NAME> = <EXPR>;` declaration for a compiler-synthesized temp.
     fn init_decl(name: &str, expr: Expr) -> Stmt {
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: name.to_string(),
             expr,
@@ -770,7 +770,10 @@ impl Compiler {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![("__has_initializer".to_string(), None)],
+            custom_traits: Vec::new(),
+            has_initializer: true,
+            constant: None,
+            bind: None,
             where_constraint: None,
         }
     }
@@ -955,9 +958,34 @@ impl Compiler {
         // one frame below it, and a `Stmt::Expr` root is reset to depth 0
         // below (see `Compiler::expr_depth`).
         let saved = std::mem::replace(&mut self.expr_depth, 1);
+        let term = self.begin_term_decl_of(stmt);
+        let init_aggregate = self.begin_decl_initializer_aggregate(stmt);
         self.compile_stmt_inner(stmt);
+        if init_aggregate {
+            self.decl_initializer_aggregates.pop();
+        }
+        if let Some((name, kind)) = term {
+            self.end_term_decl(name, kind);
+        }
         self.expr_depth = saved;
         self.share_outer_written_decl(stmt);
+    }
+
+    /// Record the `@`/`%` name of `my @a = <initializer>` while its initializer
+    /// compiles (see `Compiler::decl_initializer_aggregates`). Returns whether a
+    /// name was pushed. Kept out of the recursive `compile_stmt`.
+    fn begin_decl_initializer_aggregate(&mut self, stmt: &Stmt) -> bool {
+        if let Stmt::VarDecl {
+            name,
+            has_initializer: true,
+            ..
+        } = stmt
+            && name.starts_with(['@', '%'])
+        {
+            self.decl_initializer_aggregates.push(name.clone());
+            return true;
+        }
+        false
     }
 
     fn compile_stmt_inner(&mut self, stmt: &Stmt) {
@@ -994,6 +1022,9 @@ impl Compiler {
             }
             Stmt::BeginPrologueEnd => {
                 self.code.emit(OpCode::EndBeginPrologue);
+            }
+            Stmt::RunCheckCode => {
+                self.code.emit(OpCode::RunCheckCode);
             }
             Stmt::NestedMethodCapture {
                 index,
@@ -1128,40 +1159,6 @@ impl Compiler {
                 let idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::MarkVarReadonly(idx, *kind));
             }
-            Stmt::MarkBind => {
-                // Handled by SyntheticBlock detection; no-op when compiled standalone.
-            }
-            Stmt::MarkSigilless(name) => {
-                // Track a sigilless local so BareWord compilation reads it from its
-                // slot (GetLocal), not via GetBareWord/env. Unlike
-                // MarkSigillessReadonly this does NOT set the readonly flag: a typed
-                // sigilless bind (`my Int \d := 7`) keeps container mutability.
-                self.sigilless_locals.insert(name.clone());
-                // Whether this term is writable depends on what the declaration
-                // bound it to, which only the runtime knows. The verdict is
-                // taken with the bind source still on the stack, by the
-                // `MarkSigillessBindSource` the declaration itself emits (see
-                // `sigilless_bind_vardecl` in the `Stmt::VarDecl` arm); this op
-                // writes the readonly marker, and has to run AFTER the store
-                // because a declaration clears that marker.
-                let name_idx = self
-                    .code
-                    .add_constant(Value::str(crate::runtime::term_names::term_key(name)));
-                self.code.emit(OpCode::MarkSigillessBind(name_idx));
-            }
-            Stmt::MarkSigillessReadonly(name) => {
-                // Track sigilless locals so BareWord compilation can
-                // distinguish them from `$`-sigiled variables.
-                self.sigilless_locals.insert(name.clone());
-                // Set __mutsu_sigilless_readonly::\NAME = true in env
-                let key = crate::runtime::sigilless_readonly_key(
-                    &crate::runtime::term_names::term_key(name),
-                );
-                let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));
-                let true_idx = self.code.add_constant(Value::TRUE);
-                self.code.emit(OpCode::LoadConst(true_idx));
-                self.code.emit(OpCode::SetGlobal(key_idx));
-            }
             Stmt::Say(exprs) => {
                 self.compile_slurpy_out_args(exprs);
                 self.code.emit(OpCode::Say(exprs.len() as u32));
@@ -1180,6 +1177,7 @@ impl Compiler {
             }
             Stmt::VarTrait { name, op } => self.compile_var_trait_stmt(name, op),
             Stmt::VarDecl {
+                marks,
                 name,
                 expr,
                 type_constraint,
@@ -1189,6 +1187,9 @@ impl Compiler {
                 is_export,
                 export_tags,
                 custom_traits,
+                has_initializer,
+                constant,
+                bind,
                 where_constraint,
                 anonymous: _,
             } => {
@@ -1199,7 +1200,7 @@ impl Compiler {
                         name,
                         *is_our,
                         type_constraint.as_deref(),
-                        custom_traits,
+                        *constant,
                     )
                     .map(Some);
                 let smiley_from_pragma = pragma_type_constraint.is_some();
@@ -1207,7 +1208,7 @@ impl Compiler {
                 // ADR-0061: `my $self` declares the reserved lexical key, unless
                 // this routine's signature already declares a `$self` parameter
                 // (a redeclaration, which then shares that parameter's binding).
-                let name = &self.resolve_self_lexical(name).to_string();
+                let name = &name.to_string();
                 // A sigil-less `constant b` is a TERM, a different symbol from
                 // a same-named `$b`; it is stored under its term-namespace key
                 // (`runtime::term_names`, #9962) so the two never share a local
@@ -1219,10 +1220,10 @@ impl Compiler {
                 // is a term too, and lives under the same key (ADR-12441).
                 let spelled = name;
                 let term_storage;
-                let declares_term = std::mem::take(&mut self.decl_is_term)
-                    && !name.starts_with(['$', '@', '%', '&', '\\']);
+                let declares_term =
+                    marks.term != TermMark::No && !name.starts_with(['$', '@', '%', '&', '\\']);
                 let name = if declares_term
-                    || crate::runtime::term_names::is_term_constant_decl(name, custom_traits)
+                    || crate::runtime::term_names::is_term_constant_decl(name, *constant)
                 {
                     term_storage = crate::runtime::term_names::term_key(name);
                     &term_storage
@@ -1237,20 +1238,12 @@ impl Compiler {
                 let binds_term = self
                     .sigilless_locals
                     .contains(spelled.strip_prefix('\\').unwrap_or(spelled));
-                // Snapshot-and-clear `bind_vardecl` immediately: it is a
-                // one-shot signal meant for THIS declaration's own store
-                // (set by an enclosing `SyntheticBlock`/inline-block for a
-                // `:=` bind). Left set on `self` while the RHS below is
-                // compiled, it would leak into any nested `my`-declared
-                // variable inside that RHS (e.g. `@state` in `my @x := do {
-                // my uint8 @state = 0..255; ...; @state }`), wrongly giving
-                // that unrelated declaration bind-context treatment and
-                // skipping the array-from-Range materialization it needs
-                // ("Cannot modify an immutable Range").
-                let bind_vardecl = self.bind_vardecl;
-                self.bind_vardecl = false;
-                let sigilless_bind_vardecl = self.sigilless_bind_vardecl;
-                self.sigilless_bind_vardecl = false;
+                // The declaration's own `:=` bind: a mark on THIS declaration,
+                // so the RHS compiled below cannot hand it to a nested `my`
+                // (e.g. `@state` in `my @x := do { my uint8 @state = 0..255;
+                // ...; @state }`).
+                let bind_vardecl = marks.bound;
+                let sigilless_bind_vardecl = bind_vardecl && marks.sigilless_decl;
                 // `my &infix:<+> = ...` installs a user operator just like a
                 // `sub infix:<+>` does — disable constant folding (ADR-0006 §2.1).
                 self.note_operator_decl(name);
@@ -1307,6 +1300,7 @@ impl Compiler {
                             version: String::new(),
                             is_export: false,
                             export_tags: Vec::new(),
+                            custom_traits: Vec::new(),
                             // Anonymous where-subsets are internal; never
                             // alias them under the enclosing package.
                             is_my: true,
@@ -1342,7 +1336,7 @@ impl Compiler {
                 }
                 // Track constant declarations so the compiler can avoid itemizing
                 // them in `for` loops (constants have no Scalar container).
-                let is_constant_decl = custom_traits.iter().any(|(t, _)| t == "__constant");
+                let is_constant_decl = constant.is_some();
                 if is_constant_decl
                     && !spelled.starts_with(['$', '@', '%', '&'])
                     && let Expr::BareWord(target) = expr
@@ -1372,18 +1366,11 @@ impl Compiler {
                     // (see roast S06-operator-overloading/sub.t). Key the
                     // duplicate-detection set by the source sigil so only true
                     // same-sigil redeclarations are caught.
-                    let constant_sigil = custom_traits
-                        .iter()
-                        .find(|(t, _)| t == "__constant_sigil")
-                        .and_then(|(_, e)| match e {
-                            Some(Expr::Literal(lit)) => match lit.view() {
-                                ValueView::Str(s) => Some(s.to_string()),
-                                _ => None,
-                            },
-                            _ => None,
-                        })
-                        .unwrap_or_default();
-                    let redecl_key = format!("{}{}", constant_sigil, spelled);
+                    let redecl_key = format!(
+                        "{}{}",
+                        constant.map_or("", crate::ast::ConstantSigil::as_str),
+                        spelled
+                    );
                     if !self.constant_vars_current_scope.insert(redecl_key) {
                         let sym = spelled.trim_start_matches(['$', '@', '%', '&']).to_string();
                         let mut attrs = std::collections::HashMap::new();
@@ -1445,7 +1432,7 @@ impl Compiler {
                     && !bind_vardecl
                     && where_constraint.is_none();
                 if is_plain_my {
-                    let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+                    let has_init = *has_initializer;
                     // Only the default-init form (a bare `my $f;` / `my Int $f;` /
                     // `my @a;` / `my %h;`, whose RHS is the synthesized empty type
                     // default — see `Compiler::is_synthesized_decl_default`) is a
@@ -1464,10 +1451,8 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 // The parser marks a declaration whose initializer reads the
                 // new binding (`my $x = do { $x }`, `my $*X = $*X + 1`, #9770).
-                let init_sees_self = !*is_state
-                    && !*is_our
-                    && !is_constant_decl
-                    && custom_traits.iter().any(|(n, _)| n == "__init_sees_self");
+                let init_sees_self =
+                    !*is_state && !*is_our && !is_constant_decl && marks.init_sees_self;
                 // `my @*x = f()` / `my %*x = f()`: the fresh empty container is
                 // already the dynamic binding a callee of the initializer sees
                 // (the outer or absent one must not show through).
@@ -1492,10 +1477,7 @@ impl Compiler {
                 // The static half of a `:D` scalar holds its type object, which
                 // the constraint rejects: register the constraint after the
                 // store, as for an `is default` trait.
-                let defer_type_constraint = has_default_trait
-                    || custom_traits
-                        .iter()
-                        .any(|(n, _)| n == crate::runtime::phasers::BEGIN_STATIC_DEFINITE_TRAIT);
+                let defer_type_constraint = has_default_trait || marks.begin_static_definite;
                 let shadows_by_name = !self.local_map.contains_key(name.as_str())
                     && self.by_name_for_params.iter().any(|p| p == name);
                 let set_var_dynamic_idx = self.code.emit(OpCode::SetVarDynamic {
@@ -1506,13 +1488,10 @@ impl Compiler {
                     // The early registration below is the very next op.
                     type_follows: !defer_type_constraint && type_constraint.is_some(),
                     bind_declaration: bind_vardecl
-                        || custom_traits
-                            .iter()
-                            .any(|(trait_name, _)| trait_name == "__scalar_bind"),
+                        || *bind == Some(crate::ast::bind_decl::BindKind::Scalar),
                     shadows_by_name,
                 });
-                let has_explicit_initializer =
-                    custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+                let has_explicit_initializer = *has_initializer;
                 let preapply_container_default = has_default_trait
                     && has_explicit_initializer
                     && name.starts_with('@')
@@ -1573,17 +1552,16 @@ impl Compiler {
                 // silently, with no error (#7953). The synthesized defaults are,
                 // by sigil: `Literal(Nil)` for `$`/`&`, an empty `Literal(Array)`
                 // for `@`, and an empty `Expr::Hash` for `%`. A real initializer
-                // — including an explicit `our %H = ()` — carries the parser's
-                // `__has_initializer` marker and must still run.
-                let is_our_bare_decl = *is_our
-                    && Self::is_synthesized_decl_default(expr)
-                    && !custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+                // — including an explicit `our %H = ()` — sets the
+                // declaration's `has_initializer` and must still run.
+                let is_our_bare_decl =
+                    *is_our && Self::is_synthesized_decl_default(expr) && !*has_initializer;
                 // A scalar `:=` bind to a Positional makes the scalar a
                 // non-container alias; record it so SetLocal can mark it
                 // decontainerized (so `@a = $bound` flattens, not itemizes).
                 // The parser tags such binds with the internal `__scalar_bind`
                 // trait.
-                let scalar_bind_decont = custom_traits.iter().any(|(t, _)| t == "__scalar_bind");
+                let scalar_bind_decont = *bind == Some(crate::ast::bind_decl::BindKind::Scalar);
                 // Capture whether this is a `:=` bind of an `@`/`%` container var
                 // *before* the RHS-compilation branches below consume `bind_vardecl`.
                 // Used by the `our` global store to skip the readonly check (the
@@ -1632,7 +1610,7 @@ impl Compiler {
                 // branches consume `bind_vardecl`; recorded on the CompiledCode so
                 // `compute_free_vars` can vouch for it despite it reaching a call as
                 // an argument (an immutable binding never goes stale). Both the
-                // MarkBind form (`my $x := $y`, sets `bind_vardecl`) and the inline
+                // bound form (`my $x := $y`, sets `bind_vardecl`) and the inline
                 // `__scalar_bind` trait form (`my $x := my $y`) count.
                 let is_scalar_colon_bind = (bind_vardecl || scalar_bind_decont)
                     && !name.starts_with('@')
@@ -1712,7 +1690,7 @@ impl Compiler {
                     // The signal is `scalar_bind_decont`, i.e. the parser's
                     // `__scalar_bind` tag, NOT `bind_vardecl`: a multi-
                     // parameter loop chunk is desugared into the very same
-                    // `SyntheticBlock([MarkBind, VarDecl])` shape (see
+                    // `SyntheticBlock([bound VarDecl])` shape (see
                     // `build_for_bind_stmts`) and DOES depend on the promotion
                     // to refresh its parameter each iteration. Only a
                     // declaration the parser itself tagged is a declaration
@@ -1780,7 +1758,7 @@ impl Compiler {
                     // Likewise a bind to an inline declaration (`my $a := my $b`,
                     // which the parser leaves as a bare `VarDecl` with the
                     // `__scalar_bind` trait rather than wrapping it in the
-                    // MarkBind SyntheticBlock that `my $a := $b` gets) must alias
+                    // bound SyntheticBlock that `my $a := $b` gets) must alias
                     // the freshly-declared variable's container.
                     // Route through compile_call_arg so WrapVarRef is emitted and
                     // SetLocal's bind path shares one cell. (Scalar binds normally
@@ -1832,6 +1810,8 @@ impl Compiler {
                         expr,
                         type_constraint.as_deref(),
                         custom_traits,
+                        *bind,
+                        *has_initializer,
                     ) {
                         &any_default
                     } else if let Some(native_default) = native_default.as_ref() {
@@ -1869,7 +1849,7 @@ impl Compiler {
                 }
                 // `constant @x = ...` should store a List, not an Array.
                 // Coerce the value on the stack before storing.
-                if name.starts_with('@') && custom_traits.iter().any(|(t, _)| t == "__constant") {
+                if name.starts_with('@') && constant.is_some() {
                     self.code.emit(OpCode::CoerceToList);
                 }
                 // Skip TypeCheck for hash declarations: the type constraint
@@ -1913,9 +1893,7 @@ impl Compiler {
                     // check wrapped in a VarRef, which only the bind check
                     // looks through. A sigilless name in a list declaration
                     // (`my (\b where "x") = ...`) is assigned, not bound.
-                    if sigilless_bind_vardecl
-                        || custom_traits.iter().any(|(t, _)| t == "__sigilless_decl")
-                    {
+                    if marks.sigilless_decl {
                         self.code
                             .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
                     } else if scalar_bind_decont && !name.starts_with('@') && !name.starts_with('%')
@@ -1947,11 +1925,7 @@ impl Compiler {
                 // declaration (#11834). A `:=` bind takes the bound container,
                 // so its type is whatever that container's is: leave it unrecorded
                 // for the run-time check to answer.
-                if !bind_vardecl
-                    && !custom_traits
-                        .iter()
-                        .any(|(trait_name, _)| trait_name == "__scalar_bind")
-                {
+                if !bind_vardecl && *bind != Some(crate::ast::bind_decl::BindKind::Scalar) {
                     self.record_scalar_decl_type(name, type_constraint.as_deref());
                 }
                 if !*is_state
@@ -2013,7 +1987,7 @@ impl Compiler {
                         self.code.emit(OpCode::StateVarInit(slot, key_sym));
                     }
                 } else {
-                    let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
+                    let is_constant = constant.is_some();
                     // A plain scalar `our $x = <expr>` (no `:=` bind, no native
                     // type, no container sigil, no `constant`, no trait besides
                     // the internal "has an initializer" marker): install ONE
@@ -2046,7 +2020,8 @@ impl Compiler {
                         && !binds_term
                         && !has_default_trait
                         && !scalar_bind_decont
-                        && custom_traits.iter().all(|(t, _)| t == "__has_initializer");
+                        && custom_traits.is_empty()
+                        && marks.is_plain();
                     // A typed `our @a` / `our %h` publishes the typed container
                     // `SetLocal` just built, not a second copy of the raw
                     // initializer: the global store would coerce that copy to a
@@ -2136,7 +2111,7 @@ impl Compiler {
                         // A shaped declaration (`my @a[5] = ...`) keeps its declared
                         // shape; mark it so SetLocal does not strip the shape the way
                         // an unshaped value-copy (`my @u = @shaped`) does.
-                        if custom_traits.iter().any(|(t, _)| t == "__shaped_decl") {
+                        if marks.shaped {
                             self.code.emit(OpCode::MarkShapedDeclContext);
                         }
                         // For % variables with QuantHash `is` traits, skip hash coercion
@@ -2361,21 +2336,10 @@ impl Compiler {
                 // X::Assignment::RO ("Cannot modify an immutable Rat (3.14)")
                 // because the lvalue is the value itself. mutsu's AST strips
                 // the `$` from a scalar constant name, so the source sigil is
-                // recovered from the `__constant_sigil` trait recorded by the
+                // recovered from the declaration's `constant` field set by the
                 // parser (`@`/`%` constants behave like the value form too).
                 if is_constant_decl {
-                    let sigil = custom_traits
-                        .iter()
-                        .find(|(t, _)| t == "__constant_sigil")
-                        .and_then(|(_, e)| match e {
-                            Some(Expr::Literal(lit)) => match lit.view() {
-                                ValueView::Str(s) => Some(s.to_string()),
-                                _ => None,
-                            },
-                            _ => None,
-                        })
-                        .unwrap_or_default();
-                    let kind = if sigil == "$" {
+                    let kind = if *constant == Some(crate::ast::ConstantSigil::Scalar) {
                         crate::ast::ReadonlyKind::Immutable
                     } else {
                         crate::ast::ReadonlyKind::ImmutableValue
@@ -2392,7 +2356,7 @@ impl Compiler {
                 // ADR-0061: inside a routine whose signature declares a `$self`
                 // parameter, the reserved `$self` lexical key names that
                 // parameter (which binds `"self"`).
-                let name = &self.resolve_self_lexical(name).to_string();
+                let name = &name.to_string();
                 // `$OUTER::x := $y` / `$OUTER::x = v` stores to the binding
                 // `OUTER::` names (#10676, #10827): the plain `$x` when no
                 // scope in between shadows it, else the key that binding's
@@ -2693,7 +2657,7 @@ impl Compiler {
                 // Array/Hash `v` is bound to (`Array.STORE`), so every other
                 // holder of it sees the new contents.
                 if matches!(op, AssignOp::Assign) && *target_is_sigilless {
-                    let name = self.resolve_self_lexical(effective_name);
+                    let name = effective_name;
                     let slot = self.local_map.get(name).copied().unwrap_or(u32::MAX);
                     let name_idx = self
                         .code
@@ -3261,7 +3225,7 @@ impl Compiler {
                 // routine returns (#9060). Taken first so the topic never sees it.
                 let rw_branch = std::mem::take(&mut self.rw_tail_branch);
                 // A pointy `-> $_ is copy` block starts with a parser-generated
-                // lexical declaration carrying the `__pointy_copy` marker: the
+                // lexical declaration carrying `VarMarks::pointy_copy`: the
                 // topic becomes a fresh, writable copy with NO writeback to the
                 // source. Detect that declaration so the topic is not marked
                 // read-only (`given 42 -> $_ is copy` must allow `$_ = ...`) and
@@ -3270,8 +3234,7 @@ impl Compiler {
                 let is_copy_topic = body.first().is_some_and(|stmt| {
                     matches!(
                         stmt,
-                        Stmt::VarDecl { custom_traits, .. }
-                            if custom_traits.iter().any(|(name, _)| name == "__pointy_copy")
+                        Stmt::VarDecl { marks, .. } if marks.pointy_copy
                     )
                 });
                 // An lvalue container *element* topic (`given %h<k>` /
@@ -3363,7 +3326,7 @@ impl Compiler {
                         && topic_decl_scalar.is_none();
                 }
                 // A pointy block (`given @a -> @p { ... }`) starts with a
-                // parser-generated synthetic declaration containing MarkBind.
+                // parser-generated synthetic declaration containing a bound declaration.
                 // Record that bound parameter so topic-source writeback reads its
                 // final value (e.g. after `@p.push`) instead of `$_`, propagating
                 // the mutation back to the source. `is copy` carries a declaration
@@ -3371,18 +3334,14 @@ impl Compiler {
                 // back.
                 // A native-typed pointy param (`given $x -> int $v is rw {...}`)
                 // cannot use `:=` (see `pointy_topic_bind`'s native branch), so
-                // it carries `__pointy_native_param` instead of `MarkBind` —
+                // it carries `VarMarks::pointy_native_param` instead of `VarMarks::bound` —
                 // either bare (`is rw`) or wrapped in a `SyntheticBlock` with a
                 // trailing `MarkReadonly` (the default, readonly case).
-                let is_pointy_native_decl = |s: &Stmt| {
-                    matches!(s, Stmt::VarDecl { custom_traits, .. }
-                        if custom_traits.iter().any(|(t, _)| t == "__pointy_native_param"))
-                };
+                let is_pointy_native_decl = |s: &Stmt| matches!(s, Stmt::VarDecl { marks, .. } if marks.pointy_native_param);
                 let pointy_param_name = match body.first() {
                     Some(Stmt::SyntheticBlock(inner))
-                        if inner
-                            .iter()
-                            .any(|s| matches!(s, Stmt::MarkBind) || is_pointy_native_decl(s)) =>
+                        if crate::ast::var_marks::is_bind_group(inner)
+                            || inner.iter().any(is_pointy_native_decl) =>
                     {
                         inner.iter().find_map(|s| match s {
                             Stmt::VarDecl { name, .. }
@@ -3424,8 +3383,7 @@ impl Compiler {
                 }
                 let restore_outer_topic = body.first().is_some_and(|stmt| match stmt {
                     Stmt::SyntheticBlock(stmts) => stmts.iter().any(|stmt| {
-                        matches!(stmt, Stmt::VarDecl { custom_traits, .. }
-                            if custom_traits.iter().any(|(name, _)| name == "__restore_pointy_given_topic"))
+                        matches!(stmt, Stmt::VarDecl { marks, .. } if marks.restore_pointy_given_topic)
                     }),
                     _ => false,
                 });
@@ -3774,7 +3732,6 @@ impl Compiler {
                         // flags above could promote it.  Ask the VM to retain
                         // (or install) its scalar cell instead of compiling a
                         // normal, decontainerizing variable read.
-                        let name = self.resolve_self_lexical(name);
                         let local_idx = self.local_map.get(name).copied();
                         let resolved_name = if local_idx.is_some() {
                             name.to_string()
@@ -3804,7 +3761,7 @@ impl Compiler {
                         // bare-`Expr::Var` arm above (#8521).
                         let decl_name = decl_name.clone();
                         self.compile_stmt(decl_stmt);
-                        let name = self.resolve_self_lexical(&decl_name);
+                        let name = &decl_name;
                         let local_idx = self.local_map.get(name).copied();
                         let resolved_name = if local_idx.is_some() {
                             name.to_string()
@@ -4057,6 +4014,7 @@ impl Compiler {
                     body: body.clone(),
                     condition: None,
                     end_index: *end_index,
+                    bare: false,
                 };
                 let idx = self.code.add_stmt(end_stmt);
                 let site_id = super::compile_session::mint();
@@ -4130,6 +4088,7 @@ impl Compiler {
                 is_raw,
                 scope,
                 custom_traits,
+                is_hidden_from_backtrace,
                 ..
             } => {
                 // A routine declared in a nested block that does not hoist its
@@ -4176,34 +4135,17 @@ impl Compiler {
                     self.code.emit(OpCode::Die { user_throw: false });
                     return;
                 }
-                // The hoist pass marks its copy of a body-local declaration
-                // `__lexical_hoist`; the in-sequence registration is the same
+                // The hoist pass registers its copy of a body-local declaration
+                // as a lexical hoist; the in-sequence registration is the same
                 // declaration and has to say so too, or registering it a second
                 // time reports the *sibling* scope's routine of that name as a
                 // redeclaration.
                 let body_local =
                     self.in_lexical_scope && !self.lexical_dup_routines.contains(&name.resolve());
-                let mark_hoist =
-                    body_local && !custom_traits.iter().any(|(t, _)| t == "__lexical_hoist");
-                let mark_nested = self.decl_scope_depth > 0
-                    && !custom_traits
-                        .iter()
-                        .any(|(t, _)| t == crate::ast::NESTED_SCOPE_DECL_MARKER);
-                let idx = if mark_hoist || mark_nested {
-                    let mut marked = stmt.clone();
-                    if let Stmt::SubDecl { custom_traits, .. } = &mut marked {
-                        if mark_hoist {
-                            custom_traits.push(("__lexical_hoist".to_string(), None));
-                        }
-                        if mark_nested {
-                            custom_traits
-                                .push((crate::ast::NESTED_SCOPE_DECL_MARKER.to_string(), None));
-                        }
-                    }
-                    self.add_sub_decl_plan(&marked)
-                } else {
-                    self.add_sub_decl_plan(stmt)
-                };
+                let mut pass = std::mem::take(&mut self.next_sub_decl_pass);
+                pass.lexical_hoist |= body_local;
+                pass.nested_scope |= self.decl_scope_depth > 0;
+                let idx = self.add_sub_decl_plan(stmt, pass);
                 self.code.emit(OpCode::RegisterDecl(idx));
                 if name_expr.is_none() {
                     self.note_scope_routine(*name);
@@ -4263,9 +4205,7 @@ impl Compiler {
                     *is_rw,
                     *is_raw,
                     is_cached,
-                    custom_traits
-                        .iter()
-                        .any(|(t, _)| t == "__hidden_from_backtrace"),
+                    *is_hidden_from_backtrace,
                     deprecated_info.clone(),
                 ) {
                     compiled_routine_keys.push(key);
@@ -4283,9 +4223,7 @@ impl Compiler {
                         *is_rw,
                         *is_raw,
                         is_cached,
-                        custom_traits
-                            .iter()
-                            .any(|(t, _)| t == "__hidden_from_backtrace"),
+                        *is_hidden_from_backtrace,
                         deprecated_info.clone(),
                     ) {
                         compiled_routine_keys.push(key);
@@ -4365,6 +4303,7 @@ impl Compiler {
                 is_export,
                 export_tags,
                 custom_traits,
+                is_hidden_from_backtrace,
                 return_type,
                 is_submethod,
                 is_my,
@@ -4375,11 +4314,9 @@ impl Compiler {
                 // code objects (&name), so lower them through sub registration.
                 //
                 // The lowering is to a `SubDecl`, so the declarator has to ride
-                // along as a marker or it is lost here -- which is what made
-                // `my method foo` and `my submethod foo` both register as a
-                // plain `Sub`. `register_sub` reads it back with
-                // `RoutineDeclarator::from_markers`, the same way the closure
-                // opcode does for a `method (...) { }` literal.
+                // along on the plan's `DeclPass` or it is lost here -- which is
+                // what made `my method foo` and `my submethod foo` both
+                // register as a plain `Sub`.
                 let declarator = if *is_submethod {
                     crate::ast::RoutineDeclarator::Submethod
                 } else {
@@ -4423,6 +4360,7 @@ impl Compiler {
                     first.is_invocant = true;
                 }
                 let lowered = Stmt::SubDecl {
+                    is_hidden_from_backtrace: *is_hidden_from_backtrace,
                     spans: Default::default(),
                     name: *name,
                     name_expr: name_expr.clone(),
@@ -4445,16 +4383,13 @@ impl Compiler {
                     } else {
                         crate::ast::SubScope::My
                     },
-                    custom_traits: {
-                        let mut traits = custom_traits.clone();
-                        traits.push(("__mutsu_method_decl".to_string(), None));
-                        if let Some(marker) = declarator.literal_marker() {
-                            traits.push((marker.to_string(), None));
-                        }
-                        traits
-                    },
+                    custom_traits: custom_traits.clone(),
                 };
-                let idx = self.add_sub_decl_plan(&lowered);
+                let pass = crate::ast::DeclPass {
+                    declarator,
+                    ..Default::default()
+                };
+                let idx = self.add_sub_decl_plan(&lowered, pass);
                 self.code.emit(OpCode::RegisterDecl(idx));
                 if name_expr.is_none() {
                     let mut method_params: Vec<String> = vec![
@@ -4522,15 +4457,11 @@ impl Compiler {
                 let body_local =
                     self.in_lexical_scope && !self.lexical_dup_routines.contains(&name.resolve());
                 let arguments = self.compile_proto_trait_args(custom_traits, trait_args);
-                let idx = if body_local && !custom_traits.iter().any(|t| t == "__lexical_hoist") {
-                    let mut marked = stmt.clone();
-                    if let Stmt::ProtoDecl { custom_traits, .. } = &mut marked {
-                        custom_traits.push("__lexical_hoist".to_string());
-                    }
-                    self.code.add_proto_decl_plan(&marked, arguments)
-                } else {
-                    self.code.add_proto_decl_plan(stmt, arguments)
+                let pass = crate::ast::DeclPass {
+                    lexical_hoist: body_local,
+                    ..Default::default()
                 };
+                let idx = self.code.add_proto_decl_plan(stmt, arguments, pass);
                 // A trivial proto body (empty, or a bare `{*}`) dispatches
                 // implicitly and has no candidate body of its own to compile
                 // (mirrors `vm_resolve_trivial_proto_candidate`'s gate). A
@@ -4667,6 +4598,11 @@ impl Compiler {
             Stmt::Use {
                 module, tags, arg, ..
             } if module == "Test" || module.starts_with("Test::") => {
+                // Below the unit's top level its routines bind in the enclosing
+                // block, like any module's (ADR-8751).
+                let lexical_set_idx = self
+                    .open_lexical_use_set(stmt)
+                    .map(|id| self.code.add_constant(Value::str(id.resolve())));
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
                 if tags.is_empty() && arg.as_ref().is_some_and(Expr::is_empty_import_list) {
                     self.code.emit(OpCode::NeedModule(name_idx));
@@ -4685,7 +4621,7 @@ impl Compiler {
                         name_idx,
                         tags_idx,
                         arg_count,
-                        lexical_set_idx: None,
+                        lexical_set_idx,
                     });
                 }
             }
@@ -4849,8 +4785,8 @@ impl Compiler {
             Stmt::ClassDecl {
                 name,
                 body,
-                custom_traits,
                 is_lexical,
+                marks,
                 ..
             } => {
                 // A top-level `class Failure` shadows the built-in the way a
@@ -4878,9 +4814,7 @@ impl Compiler {
                 // redeclares (the current-scope set is reset on block entry).
                 // An `anon class NAME { ... }` installs no symbol at all, so it
                 // neither claims the name nor collides with a previous claim.
-                let is_anon_decl = custom_traits
-                    .iter()
-                    .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT);
+                let is_anon_decl = marks.anon;
                 if !is_anon_decl && !Self::is_stub_class_body(body) {
                     let cname = name.resolve();
                     // Package blocks share this compiler scope, so key the
@@ -4944,7 +4878,7 @@ impl Compiler {
                     self.lexical_types_in_scope.insert(name.resolve());
                 }
                 let stmt = self.qualify_decl_name(stmt);
-                let idx = self.add_class_decl_plan(&stmt);
+                let idx = self.add_class_decl_plan(&stmt, Default::default());
                 self.code.emit(OpCode::RegisterDecl(idx));
                 // #10999: bound this frame's env-sync set by what the class
                 // registration actually reads by name, instead of every local.
@@ -4972,11 +4906,9 @@ impl Compiler {
             // role-body-placeholder-mu-supply (#7550).
             Stmt::RoleDecl { body, .. } if self.emit_block_placeholder_die(body) => {}
             Stmt::RoleDecl {
-                name,
-                custom_traits,
-                ..
+                name, is_lexical, ..
             } => {
-                if custom_traits.iter().any(|(t, _)| t == "__my_scoped") {
+                if *is_lexical {
                     self.shadow_constant_with_lexical_type(&name.resolve());
                     self.lexical_types_in_scope.insert(name.resolve());
                 }
@@ -4984,7 +4916,7 @@ impl Compiler {
                 // and `add_role_decl_plan`'s method-body compile pass harvests
                 // the lexicals its methods write.
                 let stmt = self.qualify_decl_name(stmt);
-                let idx = self.add_role_decl_plan(&stmt);
+                let idx = self.add_role_decl_plan(&stmt, Default::default());
                 self.code.emit(OpCode::RegisterDecl(idx));
                 // #11078: the role twin of the class arm's env-sync bound.
                 self.note_role_decl_env_sync(idx);
@@ -5108,6 +5040,7 @@ impl Compiler {
                 method_args,
                 value,
                 is_attribute: _,
+                type_invocant: _,
             } => {
                 let slot = self.local_map.get(var_name).copied();
                 let name_idx = self.code.add_constant(Value::str(var_name.clone()));

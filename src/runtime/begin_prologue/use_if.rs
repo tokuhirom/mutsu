@@ -36,7 +36,7 @@ pub(crate) fn if_condition_slot(condition: &Expr) -> Option<&str> {
 pub(super) fn if_condition_check(condition: Expr, slot: &str) -> Vec<Stmt> {
     let slot_var = || Expr::Var(slot.to_string());
     vec![
-        Stmt::VarDecl {
+        Stmt::VarDecl { marks: Default::default(),
             anonymous: false,
             name: slot.to_string(),
             expr: condition,
@@ -46,7 +46,10 @@ pub(super) fn if_condition_check(condition: Expr, slot: &str) -> Vec<Stmt> {
             is_dynamic: false,
             is_export: false,
             export_tags: vec![],
-            custom_traits: vec![("__has_initializer".to_string(), None)],
+            custom_traits: Vec::new(),
+            has_initializer: true,
+            constant: None,
+            bind: None,
             where_constraint: None,
         },
         Stmt::If {

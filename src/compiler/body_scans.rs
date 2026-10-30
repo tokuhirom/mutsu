@@ -278,12 +278,10 @@ impl<'ast> Visit<'ast> for BlockLocalDeclScan {
             Stmt::ClassDecl {
                 is_lexical: true, ..
             }
-            | Stmt::Package { is_my: true, .. } => self.found = true,
-            Stmt::RoleDecl { custom_traits, .. }
-                if custom_traits.iter().any(|(t, _)| t == "__my_scoped") =>
-            {
-                self.found = true
+            | Stmt::RoleDecl {
+                is_lexical: true, ..
             }
+            | Stmt::Package { is_my: true, .. } => self.found = true,
             _ => walk_stmt_own_scope(self, stmt),
         }
     }
@@ -407,10 +405,10 @@ impl<'ast> Visit<'ast> for TypeAliasScan {
         if let Stmt::VarDecl {
             name,
             expr: Expr::BareWord(target),
-            custom_traits,
+            constant,
             ..
         } = stmt
-            && custom_traits.iter().any(|(t, _)| t == "__constant")
+            && constant.is_some()
             && !name.starts_with(['$', '@', '%', '&'])
         {
             self.out.push((name.clone(), target.clone()));

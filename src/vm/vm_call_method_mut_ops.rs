@@ -455,6 +455,19 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        if arity == 0
+            && modifier_idx.is_none()
+            && !quoted
+            && arg_sources_idx.is_none()
+            && !self.accessor_ref_pending
+            && let Some(result) = self.try_mop_reflection_lane(name.raw)
+        {
+            self.pending_call_arg_source_slots.clear();
+            self.set_pending_call_arg_sources(None);
+            self.stack.pop();
+            self.stack.push(result?);
+            return Ok(());
+        }
         // #8880: the plain-method lane's early form for a call without
         // arguments on an ordinary object (`try_plain_method_early_lane`).
         if arity == 0
@@ -609,6 +622,7 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        Self::metarole_render_failure(method, &target)?;
         if method == "raku"
             && crate::builtins::methods_0arg::raku_repr::raku_scalar_itemized(&target)
         {
@@ -726,13 +740,20 @@ impl Interpreter {
             self.stack.push(slip);
             return Ok(());
         }
-        let target = Self::lazy_slip_receiver(target, method);
-        let target = Self::shaped_iteration_receiver(target, method);
-        let target = match self.take_seq_prefix(&target, method, &args)? {
-            Some(prefix) => prefix,
-            None => target,
+        // An `Instance` is none of what the four steps below act on (a lazy-tail
+        // Slip, a shaped array, a Seq or a Scalar/container holding one), so the
+        // ubiquitous user-class receiver skips the whole chain.
+        let target = if matches!(target.view(), ValueView::Instance { .. }) {
+            target
+        } else {
+            let target = Self::lazy_slip_receiver(target, method);
+            let target = Self::shaped_iteration_receiver(target, method);
+            let target = match self.take_seq_prefix(&target, method, &args)? {
+                Some(prefix) => prefix,
+                None => target,
+            };
+            self.consume_seq_for_call(target, method, &mut args, false)?
         };
-        let target = self.consume_seq_for_call(target, method, &mut args, false)?;
         // A `does Sequence` class with its own `iterator`: see
         // `vm_sequence_role_delegate.rs`.
         if let Some(result) = self.try_sequence_role_delegate(&target, method_sym, &args) {
@@ -1575,7 +1596,7 @@ impl Interpreter {
                         "callmethodmut",
                         "nil-predispatch",
                     );
-                    let resumed = self.raise_resumable_warning(message, resume)?;
+                    let resumed = self.raise_resumable_warning(&message, resume)?;
                     self.stack.push(resumed);
                     return Ok(());
                 }
@@ -1729,7 +1750,7 @@ impl Interpreter {
                     );
                     if is_array_method
                         && !self.has_user_method(&cn, method)
-                        && attributes.contains_key("__mutsu_array_storage")
+                        && attributes.contains_key(crate::symbol::wk::array_storage())
                         && self
                             .mro_readonly(&cn)
                             .iter()
@@ -1757,7 +1778,7 @@ impl Interpreter {
                         }
                         let mut storage = attributes
                             .as_map()
-                            .get("__mutsu_array_storage")
+                            .get(crate::symbol::wk::array_storage())
                             .cloned()
                             .unwrap_or(Value::real_array(Vec::new()));
                         // Interpreter-native fast path: simple mutators on the plain
@@ -2156,8 +2177,10 @@ impl Interpreter {
             inst_id,
         );
         // Through the shared cell, not over it: see `Env::insert_through`.
-        self.env_mut()
-            .insert_through(target_name.to_string(), updated_instance.clone());
+        if !self.store_invocant_by_name(target_name, &updated_instance) {
+            self.env_mut()
+                .insert_through(target_name.to_string(), updated_instance.clone());
+        }
         updated_instance
     }
 }

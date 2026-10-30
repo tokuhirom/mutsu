@@ -59,6 +59,7 @@ pub(crate) mod lazy_pull;
 mod lazy_refusal;
 pub(crate) mod lazy_stream;
 mod mutating;
+pub(crate) mod native_array_result;
 mod place;
 pub(crate) mod receiver_step;
 mod row;
@@ -99,6 +100,7 @@ pub(crate) use io_concurrency::promise_channel::{
 pub(crate) use io_concurrency::supplier_scheduler;
 pub(crate) use io_concurrency::systemic::names as systemic_names;
 pub(crate) use mutating::autoviv::vivifies_undefined_receiver;
+pub(crate) use mutating::subscript_bind::bind_key_in;
 pub(crate) use scalars::{
     blob, coerce, complex_math, numeric_base, numeric_coerce, numify, real, real_misc, str,
     str_numeric, str_search, truth,

@@ -33,6 +33,7 @@ impl Interpreter {
         cc_idx: Option<u32>,
         is_whatever_code: bool,
         prototype: Option<Symbol>,
+        declarator: crate::ast::RoutineDeclarator,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
@@ -48,17 +49,11 @@ impl Interpreter {
             self.check_param_custom_traits(param_defs)?;
             let signature = code.closure_signature(idx as usize);
             // A `method`/`submethod` literal compiles down this same routine
-            // path; the declarator the parser recorded reaches here as a
-            // marker on the pooled decl, and is what makes the closure answer
+            // path; its declarator is what makes the closure answer
             // `Method`/`Submethod` rather than the `Sub` every other routine
             // literal is. It wins over `WhateverCode`.
-            let callable_type = custom_traits
-                .iter()
-                .find_map(|(t, _)| match t.as_str() {
-                    crate::ast::METHOD_LITERAL_MARKER => Some("Method"),
-                    crate::ast::SUBMETHOD_LITERAL_MARKER => Some("Submethod"),
-                    _ => None,
-                })
+            let callable_type = declarator
+                .callable_type()
                 .or(is_whatever_code.then_some("WhateverCode"));
             let is_pointy =
                 cc_idx.is_some_and(|i| code.closure_compiled_codes[i as usize].is_pointy_block);

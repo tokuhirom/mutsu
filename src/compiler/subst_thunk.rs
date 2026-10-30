@@ -29,6 +29,7 @@ impl Compiler {
         let esc = self.escaping_position;
         let cc_idx = self.add_closure_code_baked(compiled, esc);
         let idx = self.code.add_stmt(Stmt::SubDecl {
+            is_hidden_from_backtrace: false,
             spans: Default::default(),
             name: Symbol::intern(""),
             name_expr: None,
@@ -49,7 +50,12 @@ impl Compiler {
             scope: crate::ast::SubScope::My,
             custom_traits: Vec::new(),
         });
-        self.code
-            .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false, None));
+        self.code.emit(OpCode::MakeAnonSubParams(
+            idx,
+            Some(cc_idx),
+            false,
+            None,
+            Default::default(),
+        ));
     }
 }

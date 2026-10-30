@@ -728,7 +728,8 @@ impl Interpreter {
         } else {
             None
         };
-        let ran_undo = !Self::should_run_success_queue(&body_result, body_value.clone());
+        let ran_undo = !Self::should_run_success_queue(&body_result, body_value.clone())
+            || matches!(&body_result, Err(e) if self.return_passes_through_innermost_routine(e));
 
         // Set $! before LEAVE/UNDO phasers run so they can see the exception
         if let Err(ref e) = body_result
@@ -1107,7 +1108,7 @@ impl Interpreter {
             }
         }
         *self.env_mut() = restored_env;
-        self.sync_block_exit_alias_targets(code);
+        self.sync_block_exit_alias_targets(code, end);
         // Drop readonly flags for block-declared variables so a later outer
         // `my` redeclaration of the same name is not marked as readonly by
         // the now-gone binding (`my %h := SetHash.new(...)` inside a block

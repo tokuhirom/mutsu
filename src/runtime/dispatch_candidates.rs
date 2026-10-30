@@ -156,6 +156,25 @@ impl Interpreter {
         if sub == sup {
             return true;
         }
+        // Inside a ranking scope the relation between two plain classes is a
+        // memoised set lookup (see `type_conformance`); debug builds check it
+        // against the general walk.
+        if let Some(fast) = self.conformance_fast(sub, sup) {
+            debug_assert_eq!(
+                fast,
+                self.nominal_type_conforms_general(sub, sup),
+                "type_conformance disagrees with type_hierarchy_distance for {sub:?} / {sup:?}"
+            );
+            return fast;
+        }
+        self.nominal_type_conforms_general(sub, sup)
+    }
+
+    // Cost: O(h), h = the hierarchy walk of `type_hierarchy_distance`.
+    fn nominal_type_conforms_general(&self, sub: Symbol, sup: Symbol) -> bool {
+        if sub == sup {
+            return true;
+        }
         // `Any` and `Mu` are ancestors of every type, including the ones the
         // hierarchy walk below cannot place from a type object.
         if sup.with_str(|n| n == "Mu") || (sup.with_str(|n| n == "Any") && !sub.with_str(|n| n == "Mu")) {
@@ -188,8 +207,10 @@ impl Interpreter {
         args: &[Value],
         matches: Vec<(MultiRank, Arc<FunctionDef>)>,
     ) -> Result<Vec<Arc<FunctionDef>>, RuntimeError> {
-        let (matches, ambiguous) =
-            prune_to_maximal(matches, &|x, y| self.nominal_type_conforms(x, y));
+        let (matches, ambiguous) = {
+            let _scope = self.conformance_scope();
+            prune_to_maximal(matches, &|x, y| self.nominal_type_conforms(x, y))
+        };
         let defs: Vec<Arc<FunctionDef>> = matches.into_iter().map(|(_, d)| d).collect();
         if ambiguous {
             return Err(self.ambiguous_multi_dispatch_error(name, args, &defs));
@@ -309,9 +330,12 @@ impl Interpreter {
             let key = self.candidate_rank_key(&def, rank_args);
             ranked.push((key, def));
         }
-        multi_rank::assign_tiers(&mut ranked, |(key, _)| key, &|x, y| {
-            self.nominal_type_conforms(x, y)
-        });
+        {
+            let _scope = self.conformance_scope();
+            multi_rank::assign_tiers(&mut ranked, |(key, _)| key, &|x, y| {
+                self.nominal_type_conforms(x, y)
+            });
+        }
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
         self.bind_ranked_candidates(name, args, fetched.as_deref(), ranked, rejected)
     }
@@ -528,6 +552,7 @@ impl Interpreter {
                 let mut shape = self.candidate_dispatch_shape(def, positional_args);
                 shape.sort();
                 shape == best_shape_sorted
+                    || self.shapes_tie_on_incomparable_types(&shape, &best_shape_sorted)
             })
         {
             // `is default` trait tie-breaking: if exactly one tied candidate
@@ -643,7 +668,24 @@ impl Interpreter {
     ///
     /// A subset of a subset (`subset Top of Mid of Int`) resolves through the
     /// chain; the iteration bound keeps a cyclic declaration from spinning.
-    pub(super) fn dispatch_nominal_base<'a>(&self, base: &'a str) -> std::borrow::Cow<'a, str> {
+    pub(super) fn dispatch_nominal_base<'a>(
+        &self,
+        base: &'a str,
+        arg: Option<&Value>,
+    ) -> std::borrow::Cow<'a, str> {
+        use std::borrow::Cow;
+        let resolved = self.dispatch_subset_chain_base(base);
+        // A subset of a coercion type (`subset CC of Str() where ...`) is as
+        // narrow as that coercion parameter would be (see
+        // [`Self::effective_dispatch_constraint`]); left as `Str()` the
+        // hierarchy walk finds it nowhere and ranks it unrelated.
+        if is_coercion_constraint(&resolved) {
+            return Cow::Owned(self.effective_dispatch_constraint(&resolved, arg).to_string());
+        }
+        resolved
+    }
+
+    fn dispatch_subset_chain_base<'a>(&self, base: &'a str) -> std::borrow::Cow<'a, str> {
         use std::borrow::Cow;
         // `UInt` is `subset UInt of Int where * >= 0` in rakudo, but mutsu
         // implements it as a type-matching special case rather than a registry

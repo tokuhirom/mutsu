@@ -147,6 +147,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                         // without actually generating all permutations.
                         let factorial = factorial_bigint(n as u64);
                         let ll = crate::value::LazyList {
+                            fixtures: None,
                             body: Vec::new(),
                             env: crate::env::Env::new(),
                             cache: std::sync::Mutex::new(None),
@@ -168,6 +169,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                             cached_no_sink: false,
                             deleted_indices: Default::default(),
                             descriptor: None,
+                            generator_origin: None,
                             itemized: false,
                         };
                         return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));
@@ -183,6 +185,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 // For large iterables, return a lazy list that knows its count
                 let factorial = factorial_bigint(items.len() as u64);
                 let ll = crate::value::LazyList {
+                    fixtures: None,
                     body: Vec::new(),
                     env: crate::env::Env::new(),
                     cache: std::sync::Mutex::new(None),
@@ -204,6 +207,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     cached_no_sink: false,
                     deleted_indices: Default::default(),
                     descriptor: None,
+                    generator_origin: None,
                     itemized: false,
                 };
                 return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));

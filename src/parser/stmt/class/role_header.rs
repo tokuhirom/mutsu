@@ -13,11 +13,7 @@ pub(super) struct Header {
     pub written: Vec<RoutineTrait>,
 }
 
-pub(super) fn parse<'a>(
-    mut rest: &'a str,
-    name: &str,
-    type_params: &[String],
-) -> PResult<'a, Header> {
+pub(super) fn parse(mut rest: &str) -> PResult<'_, Header> {
     // (name, bracket args, came-from-`is`). The third element keeps the
     // declarator: `role R is Unknown` is a custom `trait_mod:<is>` trait,
     // `role R does Unknown` is a typo, and the runtime cannot tell them apart
@@ -42,12 +38,9 @@ pub(super) fn parse<'a>(
             // of its own role group (`role R[Int $n] does R`).  Only reject
             // the same candidate: an unparameterised declaration composing
             // its unparameterised self (`role R does R`) remains invalid.
-            if role_name == name && type_params.is_empty() && bracket_suffix.is_empty() {
-                return Err(PError::fatal(format!(
-                    "X::InvalidType: role '{}' cannot compose itself",
-                    name
-                )));
-            }
+            // `role R does R` is refused when no like-named core role stands
+            // behind the name -- decided at registration, which can see the
+            // core roles (`role Iterator does Iterator` composes the core one).
             let (r, _) = ws(r)?;
             let args = super::class_decl::parse_bracket_arg_exprs(bracket_suffix);
             let full_name = format!("{}{}", role_name, bracket_suffix);

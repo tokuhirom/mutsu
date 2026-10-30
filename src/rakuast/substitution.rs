@@ -131,7 +131,7 @@ fn substitution(
                 .ok_or_else(|| unsupported_what("compound substitution replacement"))?;
             convert_expr(rhs)?
         }
-        None => convert_expr(&crate::parser::interpolate_qq_content(replacement))?,
+        None => convert_expr(&crate::parser::interpolate_qq_content(replacement)?)?,
     };
     fields.push(node_field(Some("pattern"), regex_node(&tree.body)?));
     fields.push(node_field(Some("replacement"), replacement));

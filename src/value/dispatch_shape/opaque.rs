@@ -111,6 +111,23 @@ pub(super) const fn opaque(
         ),
         S::RakuAstOrigin => ("RakuAST::Origin", &["RakuAST::Origin"]),
         S::RakuAstOriginSource => ("RakuAST::Origin::Source", &["RakuAST::Origin::Source"]),
+        S::RakuAstOriginMatch => ("RakuAST::Origin::Match", &["RakuAST::Origin::Match"]),
+        S::RakuAstDeclarationExternalSetting => (
+            "RakuAST::Declaration::External::Setting",
+            &["RakuAST::Declaration::External::Setting"],
+        ),
+        S::RakuAstDeclarationExternalConstant => (
+            "RakuAST::Declaration::External::Constant",
+            &["RakuAST::Declaration::External::Constant"],
+        ),
+        S::RakuAstDeclarationImport => (
+            "RakuAST::Declaration::Import",
+            &["RakuAST::Declaration::Import"],
+        ),
+        S::RakuAstDeclarationLexicalPackage => (
+            "RakuAST::Declaration::LexicalPackage",
+            &["RakuAST::Declaration::LexicalPackage"],
+        ),
         _ => return None,
     })
 }

@@ -138,7 +138,7 @@ impl Interpreter {
         // `vm_var_assign_element.rs`).
         {
             let current = self.env().get(var_name).cloned().unwrap_or(Value::NIL);
-            if self.container_type_metadata(&current).is_some() || self.is_readonly(var_name) {
+            if self.has_container_type_metadata(&current) || self.is_readonly(var_name) {
                 return None;
             }
         }
@@ -537,8 +537,8 @@ impl Interpreter {
         // itself defers to a real user override when the class declares one.
         if let Some(target) = self.env().get(&var_name).cloned()
             && let ValueView::Instance { attributes, .. } = target.view()
-            && (attributes.contains_key("__mutsu_hash_storage")
-                || attributes.contains_key("__baggy_data__"))
+            && (attributes.contains_key(crate::symbol::wk::hash_storage())
+                || attributes.contains_key(crate::symbol::wk::baggy_data()))
         {
             let idx_arg = match idx.view() {
                 ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
@@ -572,7 +572,20 @@ impl Interpreter {
         // (DELETE-POS/DELETE-KEY). The opcode does not carry the subscript
         // kind, so pick by the index's type, falling back to whichever
         // protocol method the class declares.
-        if let Some(target) = self.env().get(&var_name).cloned()
+        // The variable may hold the object through a `:=`-bound cell, or as the
+        // `Proxy` an rw accessor / subscript handed back (`my $t := $d<a><b>`,
+        // Red's JSON items): the delete addresses what that FETCHes to.
+        let held = self
+            .env()
+            .get(&var_name)
+            .cloned()
+            .map(|value| value.deref_container());
+        let object_target = match held {
+            Some(value) if value.is_proxy_value() => self.auto_fetch_proxy(&value).ok(),
+            other => other,
+        }
+        .map(|value| value.descalarize().clone());
+        if let Some(target) = object_target
             && matches!(
                 target.view(),
                 ValueView::Instance { .. } | ValueView::Mixin(..)
@@ -898,7 +911,7 @@ impl Interpreter {
         // (no-op Arc for array/instance side-table containers).
         if let Some(info) = saved_meta
             && let Some(container) = self.env().get(&var_name).cloned()
-            && self.container_type_metadata(&container).is_none()
+            && !self.has_container_type_metadata(&container)
         {
             let tagged = self.tag_container_metadata(container, info);
             self.env_mut().insert(var_name.to_string(), tagged.clone());
@@ -993,6 +1006,12 @@ impl Interpreter {
         }
         if matches!(target.view(), ValueView::Array(..)) && Self::is_type_object_index(&idx) {
             return Err(Self::type_object_index_error());
+        }
+        // An object reached through an expression (`$m.num1<k>:delete`,
+        // `make()<k>:delete`) that declares the subscript protocol itself.
+        if let Some(answer) = self.delete_through_subscript_protocol(&target, &idx, kind)? {
+            self.stack.push(answer);
+            return Ok(());
         }
         // Note: We cannot distinguish Bag from BagHash or Set from SetHash
         // in the expression form (no variable metadata), so immutability

@@ -244,6 +244,7 @@ impl Interpreter {
                         src_method.as_ref(),
                     )
                     .filter(|defs| defs.iter().any(|d| d.is_multi))
+                    .map(|defs| defs.to_vec())
             })();
             // A plain block -- or a `sub`, anonymous or DECLARED
             // (`&named-sub`) -- passed to `^add_method` receives the
@@ -282,10 +283,11 @@ impl Interpreter {
                 if defs.is_empty()
                     && let Some(name) = sub_data.params.first()
                 {
-                    defs.push(super::methods_format::positional_param(&format!(
-                        "${}",
-                        name.trim_start_matches('$')
-                    )));
+                    // A parameter literally named `$self` stays `self`, the
+                    // spelling the binder recognises as the `$self` lexical.
+                    let bare = name.trim_start_matches('$');
+                    let spelled = if bare == "self" { bare.to_string() } else { format!("${bare}") };
+                    defs.push(super::methods_format::positional_param(&spelled));
                 }
                 if let Some(first) = defs.first_mut()
                     && !first.named
@@ -327,12 +329,12 @@ impl Interpreter {
             // TODO: a declared routine (`&named-sub`) has no AST body to
             // prepend to; its `self` is still the receiver.
             let lexical_self = takes_positional_invocant
-                .then(|| sub_data.env.get("self").cloned())
+                .then(|| sub_data.fixtures.as_ref().and_then(|f| f.invocant.clone()))
                 .flatten()
                 .filter(|_| !sub_data.body.is_empty());
             let (method_body, method_compiled) = match (named_invocant, lexical_self) {
                 (None, Some(outer_self)) => {
-                    let mut body = vec![crate::ast::Stmt::VarDecl {
+                    let mut body = vec![crate::ast::Stmt::VarDecl { marks: Default::default(),
                         anonymous: false,
                         name: "self".to_string(),
                         expr: crate::ast::Expr::Literal(outer_self),
@@ -343,6 +345,9 @@ impl Interpreter {
                         is_export: false,
                         export_tags: Vec::new(),
                         custom_traits: Vec::new(),
+                        has_initializer: false,
+                        constant: None,
+                        bind: None,
                         where_constraint: None,
                     }];
                     body.extend(sub_data.body.iter().cloned());
@@ -350,7 +355,10 @@ impl Interpreter {
                 }
                 (Some(inv_name), _) => {
                     let mut body = vec![
-                        crate::ast::Stmt::VarDecl {
+                        crate::ast::Stmt::VarDecl { marks: crate::ast::var_marks::VarMarks {
+                                term: crate::ast::var_marks::TermMark::Readonly,
+                                ..Default::default()
+                            },
                             anonymous: false,
                             name: inv_name.clone(),
                             expr: crate::ast::Expr::BareWord("self".to_string()),
@@ -361,9 +369,11 @@ impl Interpreter {
                             is_export: false,
                             export_tags: Vec::new(),
                             custom_traits: Vec::new(),
+                            has_initializer: false,
+                            constant: None,
+                            bind: None,
                             where_constraint: None,
                         },
-                        crate::ast::Stmt::MarkSigillessReadonly(inv_name),
                     ];
                     body.extend(sub_data.body.iter().cloned());
                     (std::sync::Arc::new(body), None)
@@ -427,8 +437,8 @@ impl Interpreter {
                 value_prototype: None,
                 syms: Default::default(),
                 lexical_package: sub_data.package,
-                params: filtered_params,
-                param_defs: filtered_param_defs,
+                params: (filtered_params).into(),
+                param_defs: (filtered_param_defs).into(),
                 body: method_body,
                 is_rw: sub_data.is_rw,
                 is_raw: sub_data.is_raw,

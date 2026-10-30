@@ -582,10 +582,7 @@ impl Interpreter {
             // A role that only `handles` the method forwards it to an
             // attribute; the mixin delegation path owns that write.
             && self.delegated_mixin_attr_key(mixins, assign_method).is_none()
-            && !matches!(
-                self.stack.last().map(Value::view),
-                Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
-            )
+            && !self.stack.last().is_some_and(Self::is_bind_index_value)
         {
             let val = self.stack.pop().unwrap_or(Value::NIL);
             let idx_arg = match idx.view() {
@@ -617,10 +614,7 @@ impl Interpreter {
             .map(|t| t.deref_container())
             && let ValueView::Mixin(..) = target.view()
             && self.mixin_composes_method(&target, bind_method)
-            && matches!(
-                self.stack.last().map(Value::view),
-                Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
-            )
+            && self.stack.last().is_some_and(Self::is_bind_index_value)
         {
             let raw_val = self.stack.pop().unwrap_or(Value::NIL);
             let (val, _bind_source) = Self::unwrap_bind_index_value(raw_val);
@@ -637,6 +631,50 @@ impl Interpreter {
             self.apply_pending_rw_writeback(code);
             self.stack.push(result);
             return Ok(());
+        }
+        // `my $c = Col.new but Meths; $c<k> = v` where the role supplies a
+        // user AT-KEY/AT-POS: as for an instance below, the accessor owns the
+        // element container (it may be a Proxy), so the store goes through the
+        // method-lvalue machinery unless the role also supplies ASSIGN-KEY /
+        // ASSIGN-POS, which then owns the assignment.
+        if let Some(target) = target_slot
+            .and_then(|slot| self.locals.get(slot as usize).cloned())
+            .or_else(|| self.place_env_get(place, &var_name).cloned())
+            .map(|t| t.deref_container())
+            && let ValueView::Mixin(_, mixins) = target.view()
+            && !matches!(
+                self.stack.last().map(Value::view),
+                Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
+            )
+        {
+            let (at_method, assign_method) = if is_positional {
+                ("AT-POS", "ASSIGN-POS")
+            } else {
+                ("AT-KEY", "ASSIGN-KEY")
+            };
+            // A role that only `handles` the accessor forwards it to an
+            // attribute; the mixin delegation path owns that write.
+            if self.mixin_composes_method(&target, at_method)
+                && self.delegated_mixin_attr_key(mixins, at_method).is_none()
+                && !self.mixin_composes_method(&target, assign_method)
+            {
+                let idx_arg = match idx.view() {
+                    ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                    _ => idx.clone(),
+                };
+                let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+                let (val, _) = Self::unwrap_bind_index_value(raw_val);
+                let assigned = self.assign_method_lvalue_with_values(
+                    Some(&var_name),
+                    target,
+                    at_method,
+                    vec![idx_arg],
+                    val,
+                    false,
+                )?;
+                self.stack.push(assigned);
+                return Ok(());
+            }
         }
         if let Some(target) = target_slot
             .and_then(|slot| self.locals.get(slot as usize).cloned())
@@ -687,10 +725,7 @@ impl Interpreter {
                     .resolve_method_with_owner(&cls, at_method, std::slice::from_ref(&idx_arg))
                     .is_some_and(|(_, def)| def.is_rw)
                 && !self.has_user_method_including_role(&cls, assign_method)
-                && !matches!(
-                    self.stack.last().map(Value::view),
-                    Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
-                )
+                && !self.stack.last().is_some_and(Self::is_bind_index_value)
             {
                 let raw_val = self.stack.pop().unwrap_or(Value::NIL);
                 let (val, _) = Self::unwrap_bind_index_value(raw_val);
@@ -706,13 +741,10 @@ impl Interpreter {
                 return Ok(());
             }
             // A `:=` element bind (`%h<c> := $x`) arrives with the RHS wrapped in
-            // a `__mutsu_bind_index_value` marker; route it to the class's
+            // a bind-marker marker; route it to the class's
             // BIND-KEY/BIND-POS when declared, so the class controls the bind
             // instead of the marker being stored verbatim via ASSIGN.
-            let is_bind = matches!(
-                self.stack.last().map(Value::view),
-                Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
-            );
+            let is_bind = self.stack.last().is_some_and(Self::is_bind_index_value);
             // A user-declared 3-argument `multi sub postcircumfix:<[
             // ]>(SELF, index, value)` / `postcircumfix:<{ }>` candidate
             // intercepts a subscript ASSIGNMENT (`@obj[i] = v`) — a genuine
@@ -796,6 +828,15 @@ impl Interpreter {
                 // Unwrap the bind marker so neither BIND-KEY nor the ASSIGN
                 // fallback stores the internal wrapper pair as the value.
                 let (val, _bind_source) = Self::unwrap_bind_index_value(raw_val);
+                if is_positional
+                    && method == assign_method
+                    && let Some(result) = self.assign_slice_through_assign_pos(&target, &idx, &val)
+                {
+                    let result = result?;
+                    self.apply_pending_rw_writeback(code);
+                    self.stack.push(result);
+                    return Ok(());
+                }
                 // Unwrap a single-element subscript list (`<baz>` parses as a
                 // one-element list) to the bare key/index.
                 let idx_arg = match idx.view() {
@@ -1066,27 +1107,9 @@ impl Interpreter {
             _ => idx,
         };
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);
-        let (val, bind_mode, bind_sources) = match raw_val.view() {
-            ValueView::Pair(name, payload) if name == "__mutsu_bind_index_value" => {
-                match payload.view() {
-                    ValueView::Array(items, ..) if items.len() >= 2 => {
-                        let value = items.first().cloned().unwrap_or(Value::NIL);
-                        let sources = match items.get(1).map(Value::view) {
-                            Some(ValueView::Array(srcs, ..)) => srcs
-                                .iter()
-                                .map(|src| match src.view() {
-                                    ValueView::Str(s) if !s.is_empty() => Some((**s).clone()),
-                                    _ => None,
-                                })
-                                .collect(),
-                            _ => Vec::new(),
-                        };
-                        (value, true, sources)
-                    }
-                    _ => (payload.clone(), true, Vec::new()),
-                }
-            }
-            _ => (raw_val, false, Vec::new()),
+        let (val, bind_mode, bind_sources) = match Self::split_bind_index_marker(raw_val) {
+            Ok((value, sources)) => (value, true, sources),
+            Err(raw_val) => (raw_val, false, Vec::new()),
         };
         // A `$` holding a DEFINED value the subscript's protocol does not apply
         // to refuses the store instead of being replaced by a fresh container.
@@ -1215,7 +1238,7 @@ impl Interpreter {
             // the instance inside it is the target all the same (#10356).
             && let Some(inst) = self.place_env_get(place, &var_name).map(Value::deref_container)
             && let ValueView::Instance { attributes, .. } = inst.view()
-            && attributes.contains_key("__mutsu_array_storage")
+            && attributes.contains_key(crate::symbol::wk::array_storage())
         {
             let idx_i = crate::runtime::utils::to_int(&idx);
             if idx_i >= 0 {
@@ -1258,7 +1281,7 @@ impl Interpreter {
                 .place_env_get(place, &var_name)
                 .map(Value::deref_container)
             && matches!(&inst.view(), ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_array_storage"))
+                if attributes.contains_key(crate::symbol::wk::array_storage()))
         {
             let key = crate::runtime::utils::to_int(&idx);
             if key >= 0 {
@@ -2679,11 +2702,14 @@ impl Interpreter {
                 // and mutsu's own `constant @A` behavior. Only fire for a plain
                 // Hash value; immutable Set/Bag/Mix containers keep their
                 // dedicated RO paths below.
+                // A constant bound to a real `Hash` (`constant %h = hash`,
+                // `= %(a => 1)`) keeps that mutable container, as in raku:
+                // only a Map (a list coerced by the declaration) is immutable.
                 let is_readonly_hash_var = var_name.starts_with('%') && self.is_readonly(&var_name);
                 if is_readonly_hash_var
                     && matches!(
                         self.place_env_get(place, &var_name).map(Value::view),
-                        Some(ValueView::Hash(_))
+                        Some(ValueView::Hash(h)) if h.declared_type.as_deref() == Some("Map")
                     )
                 {
                     let elem = match self.place_env_get(place, &var_name).map(Value::view) {
@@ -3392,7 +3418,7 @@ impl Interpreter {
         let val = if env_key.starts_with('@') {
             runtime::coerce_to_array(val)
         } else if env_key.starts_with('%') {
-            self.coerce_hash_var_value(None, &env_key, val)?
+            self.coerce_hash_var_value(None, &env_key, val, None)?
         } else {
             let stored =
                 Self::itemize_scalar_store(&env_key, Self::normalize_scalar_assignment_value(val));
@@ -3513,7 +3539,7 @@ impl Interpreter {
             let mut val = if resolved_name.starts_with('@') {
                 runtime::coerce_to_array(val)
             } else if resolved_name.starts_with('%') {
-                self.coerce_hash_var_value(None, &resolved_name, val)?
+                self.coerce_hash_var_value(None, &resolved_name, val, None)?
             } else {
                 Self::itemize_scalar_store(
                     &resolved_name,
@@ -3683,20 +3709,8 @@ impl Interpreter {
             outer_idx
         };
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);
-        // Detect bind marker (__mutsu_bind_index_value) and extract the actual value
-        let mut is_bind_value = false;
-        let val = match raw_val.view() {
-            ValueView::Pair(name, payload) if name == "__mutsu_bind_index_value" => {
-                is_bind_value = true;
-                match payload.view() {
-                    ValueView::Array(items, ..) if !items.is_empty() => {
-                        items.first().cloned().unwrap_or(Value::NIL)
-                    }
-                    _ => payload.clone(),
-                }
-            }
-            _ => raw_val,
-        };
+        let is_bind_value = Self::is_bind_index_value(&raw_val);
+        let (val, _) = Self::unwrap_bind_index_value(raw_val);
         // ADR-0040's store boundary, Proxy half: a chained subscript still
         // lands in an element `Scalar`, so an assigned `Proxy` FETCHes. A `:=`
         // bind installs the Proxy itself and is exempt.
@@ -3799,18 +3813,27 @@ impl Interpreter {
                 // (`$obj<support><source> = v` with both levels custom
                 // Associative — META6's AutoAssoc). The instance's attribute
                 // cell is shared, so the mutation is visible through the base.
-                if let ValueView::Instance {
-                    class_name: inner_cn,
-                    ..
-                } = inner.view()
-                {
-                    let icn = inner_cn.resolve();
+                // An instance with a role mixed in (`$obj but Role`, Red's JSON
+                // items) is one too: the role serves the subscripts.
+                let inner_object = match inner.view() {
+                    ValueView::Instance { class_name, .. } => Some((class_name.resolve(), false)),
+                    ValueView::Mixin(wrapped, _) => match wrapped.view() {
+                        ValueView::Instance { class_name, .. } => {
+                            Some((class_name.resolve(), true))
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some((icn, mixed)) = inner_object {
                     let assign = if outer_positional {
                         "ASSIGN-POS"
                     } else {
                         "ASSIGN-KEY"
                     };
-                    if self.has_user_method(&icn, assign) {
+                    if self.has_user_method(&icn, assign)
+                        || (mixed && self.mixin_composes_method(&inner, assign))
+                    {
                         self.call_method_with_values(inner, assign, vec![outer_idx, val.clone()])?;
                         self.stack.push(val);
                         return Ok(());
@@ -3822,7 +3845,7 @@ impl Interpreter {
                     // Fusing the two levels (`$obj[i][j] = v`) used to drop the
                     // write: nothing here descended past the inner collection.
                     if let Some(at_outer) = self.object_subscript_accessor(&inner, outer_positional)
-                        && self.class_method_is_rw_capable(&icn, at_outer)
+                        && (mixed || self.class_method_is_rw_capable(&icn, at_outer))
                     {
                         let location = self.call_method_with_values(
                             inner.clone(),
@@ -3892,7 +3915,18 @@ impl Interpreter {
         } else {
             inner_idx
         };
-        let inner_key = inner_idx.to_string_value();
+        // An object hash (`my %h{Any}`) files its entries under the key's
+        // `.WHICH`, never the key's string form, so the chained store
+        // `%h{$obj}[3] = v` must find the same entry `%h{$obj}` does.
+        let inner_object_key = (!inner_positional
+            && self
+                .place_env_get(place, &var_name)
+                .is_some_and(|root| self.is_object_hash(&root.deref_container())))
+        .then(|| inner_idx.clone());
+        let inner_key = match &inner_object_key {
+            Some(obj) => crate::runtime::utils::value_which_key(obj),
+            None => inner_idx.to_string_value(),
+        };
         // A WhateverCode array index (`%h<k>[*-0] = v` / `@a[0][*-1] = v`) must be
         // resolved against the inner container's current length before it becomes
         // a key — a freshly-vivified inner array is length 0, so `*-0` is 0.
@@ -4342,6 +4376,11 @@ impl Interpreter {
                     // is positional (e.g. `%h<key>[42] = ...`), otherwise as Hash.
                     // ADR-0040 slice 1: itemized at the store, same as the
                     // array-outer-container arm above.
+                    if let Some(obj) = &inner_object_key {
+                        oh.original_keys
+                            .get_or_insert_with(ValueMap::default)
+                            .insert(inner_key.clone(), obj.clone());
+                    }
                     let inner_val = oh.entry(inner_key).or_insert_with(|| {
                         // See the array-outer arm: a brand-new autovivified
                         // row tracks its gaps from birth.
@@ -5003,7 +5042,19 @@ impl Interpreter {
         if !var_name.starts_with(crate::runtime::utils::LVALUE_ROOT_TEMP_PREFIX) {
             return None;
         }
-        let root = self.env().get(var_name)?.deref_container();
+        let mut root = self.env().get(var_name)?.deref_container();
+        // An `is rw` accessor hands its container back as a `Proxy` (Red's
+        // `has Json $.data is rw is column`): the chain stores through what
+        // that FETCHes to, so judge the fetched value.
+        if root.is_proxy_value()
+            && let Ok(fetched) = self.auto_fetch_proxy(&root)
+        {
+            root = fetched.deref_container();
+            // The temp is compiler-made and read again by the chain walk: leave
+            // it holding the fetched object, which is what the walk descends
+            // through.
+            self.env_mut().insert(var_name.to_string(), root.clone());
+        }
         if matches!(root.view(), ValueView::Array(..) | ValueView::Hash(..)) {
             return None;
         }
@@ -5210,7 +5261,7 @@ impl Interpreter {
 
         let raw_val_for_junction = self.stack.pop().unwrap_or(Value::NIL);
         // ADR-0040's store boundary, Proxy half — see the two-level op. The
-        // bind marker (`__mutsu_bind_index_value`) is a `Pair`, never a
+        // bind marker (bind-marker) is a `Pair`, never a
         // `Proxy`, so the probe inside skips it.
         let raw_val_for_junction = self.fetch_proxy_for_store(raw_val_for_junction)?;
 
@@ -5219,7 +5270,7 @@ impl Interpreter {
         // outermost key, so re-dispatch for each expanded key (previously the
         // junction/array was stringified into one garbage entry).
         let outermost = &indices_val[depth - 1];
-        if !matches!(raw_val_for_junction.view(), ValueView::Pair(n, _) if n == "__mutsu_bind_index_value")
+        if !Self::is_bind_index_value(&raw_val_for_junction)
             && matches!(
                 outermost.view(),
                 ValueView::Junction { .. } | ValueView::Array(..)
@@ -5317,8 +5368,7 @@ impl Interpreter {
         // those two stay `None` while the statement is still a bind. The
         // junction re-dispatch above already keys on the marker for the same
         // reason; the hooks below need the same answer.
-        let is_bind_value =
-            matches!(val.view(), ValueView::Pair(n, _) if n == "__mutsu_bind_index_value");
+        let is_bind_value = Self::is_bind_index_value(&val);
         let (val, bind_source) = Self::unwrap_bind_index_value(val);
         let bind_source =
             bind_source.filter(|s| !s.contains("\x00idx\x00") && !s.starts_with(['@', '%']));
@@ -5490,7 +5540,10 @@ impl Interpreter {
             // ordinary `%h<a><b><c> = v` walk pays only a discriminant test per
             // level.
             if level < depth - 1
-                && matches!(unsafe { (*current).view() }, ValueView::Instance { .. })
+                && matches!(
+                    unsafe { (*current).view() },
+                    ValueView::Instance { .. } | ValueView::Mixin(..)
+                )
             {
                 let cur_val = unsafe { (*current).clone() };
                 if let Some(accessor) = self.object_subscript_accessor(&cur_val, is_positional) {
@@ -5674,6 +5727,22 @@ impl Interpreter {
                     }
                 }
             } else {
+                // Final level through an object that serves the subscript
+                // protocol itself (`.data<a><b>[1] = v` where the walk reached a
+                // role-mixed JSON item): its `ASSIGN-POS`/`ASSIGN-KEY`, else the
+                // location its rw `AT-POS`/`AT-KEY` hands back, takes the store.
+                if !is_bind_value {
+                    let cur_val = unsafe { (*current).clone() };
+                    if let Some(result) = self.assign_through_object_location(
+                        &cur_val,
+                        &indices_val[level],
+                        &val,
+                        is_positional,
+                    ) {
+                        result?;
+                        continue;
+                    }
+                }
                 // Final level: assign the value. When binding, install the
                 // shared cell *directly* (replacing any prior leaf), rather than
                 // writing through it — a fresh `:=` rebinds the element to the
@@ -5913,27 +5982,9 @@ impl Interpreter {
             _ => true,
         };
 
-        // Detect bind marker (__mutsu_bind_index_value) and extract the actual value
-        let (val, bind_source, was_bind) = match raw_val.view() {
-            ValueView::Pair(name, payload) if name == "__mutsu_bind_index_value" => {
-                match payload.view() {
-                    ValueView::Array(items, ..) if items.len() >= 2 => {
-                        let value = items.first().cloned().unwrap_or(Value::NIL);
-                        let source = match items.get(1).map(Value::view) {
-                            Some(ValueView::Array(srcs, ..)) => srcs.first().and_then(|s| match s
-                                .view()
-                            {
-                                ValueView::Str(name) if !name.is_empty() => Some((**name).clone()),
-                                _ => None,
-                            }),
-                            _ => None,
-                        };
-                        (value, source, true)
-                    }
-                    _ => (payload.clone(), None, true),
-                }
-            }
-            _ => (raw_val, None, false),
+        let (val, bind_source, was_bind) = match Self::split_bind_index_marker(raw_val) {
+            Ok((value, sources)) => (value, sources.into_iter().next().flatten(), true),
+            Err(raw_val) => (raw_val, None, false),
         };
 
         // An element that IS a `Proxy` (`@bound[1] := item(...)`) mediates its
@@ -5973,7 +6024,7 @@ impl Interpreter {
         // `CArray[T]` is such an object).
         if !was_bind
             && let Some(result) =
-                self.assign_through_subscript_protocol(&target, &idx, &val, is_positional)
+                self.assign_through_object_location(&target, &idx, &val, is_positional)
         {
             result?;
             self.stack.push(val);
@@ -6295,7 +6346,7 @@ impl Interpreter {
             // real-world instance of exactly this shape:
             // `$m.logger.routines<Warn> = &die`).
             ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_hash_storage") =>
+                if attributes.contains_key(crate::symbol::wk::hash_storage()) =>
             {
                 let stored = match &bind_cell {
                     Some((_, cell)) => Value::container_ref(cell.clone()),
@@ -6325,7 +6376,7 @@ impl Interpreter {
             // same way for the same reason — same in-place-through-the-
             // shared-cell rationale.
             ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_array_storage") =>
+                if attributes.contains_key(crate::symbol::wk::array_storage()) =>
             {
                 if let Ok(i) = key.parse::<usize>() {
                     attributes.with_attr_mut("__mutsu_array_storage", |storage| {

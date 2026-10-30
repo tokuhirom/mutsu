@@ -618,6 +618,37 @@ impl Interpreter {
         }
     }
 
+    /// Whether the class behind `target` (an instance, or the instance a mixin
+    /// wraps) declares its own `AT-POS`.
+    // Cost: O(1) amortized, memoized class probes.
+    fn sequence_declares_at_pos(&mut self, target: &Value) -> bool {
+        let inner = match target.view() {
+            ValueView::Mixin(inner, _) => (**inner).clone(),
+            _ => target.clone(),
+        };
+        match inner.view() {
+            ValueView::Instance { class_name, .. } => {
+                self.has_user_method_including_role(&class_name.resolve(), "AT-POS")
+            }
+            _ => false,
+        }
+    }
+
+    /// `.elems` of a subscripted instance or mixin, for resolving a WhateverCode
+    /// index: a `does Sequence` class's is its iterator's (the delegate), any
+    /// other is its own `elems` method.
+    // Cost: O(n) for a Sequence class (drains its iterator), n = elements; else the method's.
+    fn subscripted_elems(&mut self, target: &Value) -> i64 {
+        let elems = self
+            .try_sequence_role_delegate(target, crate::symbol::Symbol::intern("elems"), &[])
+            .and_then(Result::ok)
+            .or_else(|| {
+                self.try_compiled_method_or_interpret(target.clone(), "elems", vec![])
+                    .ok()
+            });
+        elems.map_or(0, |value| crate::runtime::to_int(&value).max(0))
+    }
+
     /// Evaluate a `WhateverCode` subscript (`*-1`, `*-3`, `* div 2`) against the
     /// container's element count, or `None` when the index is not one.
     ///
@@ -929,6 +960,22 @@ impl Interpreter {
         if target.is_proxy_value() {
             target = loan_env!(self, auto_fetch_proxy(&target))?;
         }
+        // A `does Sequence` class with its own `iterator` and no `AT-POS` is
+        // subscripted through its elements, as `Any.AT-POS` reads `self.list`
+        // (also when it composes `Positional`, which would otherwise make the
+        // object its own one-element list). The List is the delegate's.
+        if is_positional
+            && matches!(
+                target.view(),
+                ValueView::Instance { .. } | ValueView::Mixin(..)
+            )
+            && self.is_iterator_sequence_instance(&target)
+            && !self.sequence_declares_at_pos(&target)
+            && let Some(Ok(list)) =
+                self.try_sequence_role_delegate(&target, crate::symbol::Symbol::intern("List"), &[])
+        {
+            target = list;
+        }
         // A scalar-held Range is a Range receiver for its own positional
         // indexing; only an itemized Range *index* above remains a single index.
         // A member of a `my Array enum` subscripts as its base value.
@@ -1000,8 +1047,33 @@ impl Interpreter {
         if !is_positional && !target_is_object_hash {
             index = self.hash_key_through_user_str(&target, index)?;
         }
+        // `Type[A | B]` on a type with its own `^parameterize` hands the
+        // Junction to the metaclass whole: type arguments are not a dispatch
+        // position, and `Kind[A | B]` is a refinement over the junction
+        // (it reaches the `|args` capture of the metamethod unthreaded).
+        let parameterized_by_user_metamethod = is_positional
+            && index.is_junction_value()
+            && match target.view() {
+                ValueView::Package(name)
+                    if !self.is_role(&name.resolve())
+                        && self.has_user_method(name.as_str(), "^parameterize") =>
+                {
+                    // The metamethod takes (type, args...): thread only when
+                    // the parameter the Junction binds to would.
+                    let how_args = [target.clone(), index.clone()];
+                    match self.resolve_method_with_owner(name.as_str(), "^parameterize", &how_args)
+                    {
+                        Some((_, def)) => self
+                            .autothread_indices_for_params(&how_args, &[1], &def.param_defs)
+                            .is_empty(),
+                        None => false,
+                    }
+                }
+                _ => false,
+            };
         if let ValueView::Junction { kind, values } = index.view()
             && !target_is_object_hash
+            && !parameterized_by_user_metamethod
         {
             let mut results = Vec::with_capacity(values.len());
             for value in values.iter() {
@@ -1114,9 +1186,13 @@ impl Interpreter {
             // A typed array can carry a user-defined postcircumfix overload
             // (`DataSlice @rows, Whatever`) that turns `rows[*]` into a new
             // object.  The Whatever-specific mixin path below must retain its
-            // own handling, but ordinary arrays need overload resolution here.
+            // own handling, but ordinary arrays and instances (`DataFrame:D $df,
+            // Whatever`) need overload resolution here.
             && (!matches!(index.view(), ValueView::Whatever)
-                || matches!(target.view(), ValueView::Array(..)))
+                || matches!(target.view(), ValueView::Array(..) | ValueView::Instance { .. })
+                // A punned role instance is a mixin over an `Instance`.
+                || matches!(target.view(), ValueView::Mixin(inner, _)
+                    if matches!(inner.view(), ValueView::Instance { .. })))
         {
             let op_name = crate::lexical_builtin_op::postcircumfix_of_subscript(is_positional);
             let args = vec![target.clone(), index.clone()];
@@ -1128,6 +1204,12 @@ impl Interpreter {
                     self.stack.push(value);
                     return Ok(());
                 }
+            } else if let Some(value) = self.try_exported_captured_family(op_name, args.clone())? {
+                // A `sub EXPORT` hook handed the family out as `&postcircumfix:<[ ]>`:
+                // its candidates are private to the exporter, so the registry
+                // below never holds them (Red's JSON-column subscripts).
+                self.stack.push(value);
+                return Ok(());
             } else if let Some(def) = self
                 .resolve_function_with_types(op_name, &args)
                 .ok()
@@ -1278,7 +1360,7 @@ impl Interpreter {
                 // elements are its backing storage's (`$a[1, 3 ... *]`).
                 ValueView::Instance { attributes, .. } => attributes
                     .as_map()
-                    .get("__mutsu_array_storage")
+                    .get(crate::symbol::wk::array_storage())
                     .and_then(|storage| match storage.view() {
                         ValueView::Array(items, _) => Some(items.len()),
                         _ => None,
@@ -2051,10 +2133,14 @@ impl Interpreter {
                     ..
                 },
                 _,
-            ) if attributes.contains_key("__baggy_data__")
+            ) if attributes.contains_key(crate::symbol::wk::baggy_data())
                 && !self.has_user_method_including_role(&class_name.resolve(), "AT-KEY") =>
             {
-                let inner = attributes.as_map().get("__baggy_data__").unwrap().clone();
+                let inner = attributes
+                    .as_map()
+                    .get(crate::symbol::wk::baggy_data())
+                    .unwrap()
+                    .clone();
                 let idx_clone = index.clone();
                 // Re-enter the index logic with the inner bag/set value
                 self.stack.push(inner);
@@ -2210,7 +2296,7 @@ impl Interpreter {
                 let has_typed_positional_default = is_positional_type
                     && !has_user_at_pos
                     && !has_user_at_key
-                    && self.container_type_metadata(&target).is_some();
+                    && self.has_container_type_metadata(&target);
                 let result = if !is_positional && has_user_at_key {
                     // Curly subscripts use AT-KEY regardless of the key's type.
                     self.try_compiled_method_or_interpret(
@@ -2282,7 +2368,7 @@ impl Interpreter {
                 let has_typed_positional_default = is_positional_type
                     && !has_user_at_pos
                     && !has_user_at_key
-                    && self.container_type_metadata(&target).is_some();
+                    && self.has_container_type_metadata(&target);
                 let result = if is_positional && !has_user_at_pos && has_user_at_key {
                     self.try_compiled_method_or_interpret(
                         target.clone(),
@@ -2372,7 +2458,7 @@ impl Interpreter {
                 },
                 ValueView::Whatever,
             ) if is_positional
-                && (attributes.contains_key("__mutsu_array_storage")
+                && (attributes.contains_key(crate::symbol::wk::array_storage())
                     || (self.type_matches_value("Positional", &target)
                         && self.has_user_method_including_role(&class_name.resolve(), "keys"))) =>
             {
@@ -2406,15 +2492,18 @@ impl Interpreter {
             // only answers AT-POS (Trie's `$t[*-1]`).
             (ValueView::Instance { class_name, .. }, ValueView::Sub(_))
                 if is_positional
-                    && self.type_matches_value("Positional", &target)
-                    && (self.has_user_method_including_role(&class_name.resolve(), "keys")
-                        || self
-                            .has_user_method_including_role(&class_name.resolve(), "AT-POS")) =>
+                    && ((self.type_matches_value("Positional", &target)
+                        && (self
+                            .has_user_method_including_role(&class_name.resolve(), "keys")
+                            || self.has_user_method_including_role(
+                                &class_name.resolve(),
+                                "AT-POS",
+                            )))
+                        || self.is_iterator_sequence_instance(&target)) =>
             {
-                let len = self
-                    .try_compiled_method_or_interpret(target.clone(), "elems", vec![])
-                    .map(|value| crate::runtime::to_int(&value).max(0))
-                    .unwrap_or(0);
+                // A `Sequence` class's `elems` is the delegate's, which reads
+                // its iterator; `call_method_with_values` reaches it.
+                let len = self.subscripted_elems(&target);
                 let resolved = self
                     .eval_whatever_code_index(&index, len)
                     .unwrap_or(Value::NIL);
@@ -2551,10 +2640,7 @@ impl Interpreter {
             // object directly to the role method and returned the whole
             // object instead of its final element.
             (ValueView::Mixin(..), ValueView::Sub(_)) if is_positional => {
-                let len = self
-                    .try_compiled_method_or_interpret(target.clone(), "elems", vec![])
-                    .map(|value| crate::runtime::to_int(&value).max(0))
-                    .unwrap_or(0);
+                let len = self.subscripted_elems(&target);
                 let resolved = self
                     .eval_whatever_code_index(&index, len)
                     .unwrap_or(Value::NIL);
@@ -2692,6 +2778,21 @@ impl Interpreter {
                 data.value_type = value_type;
                 data.declared_type = declared_type;
                 Value::array_with_kind(crate::gc::Gc::new(data), crate::value::ArrayKind::Array)
+            }
+            // An associative subscript with an `Int` key (`%h{42}` on a hash a
+            // role was mixed into) is `AT-KEY`, never a positional index.
+            (ValueView::Mixin(inner, _), ValueView::Int(_))
+                if !is_positional && matches!(inner.view(), ValueView::Hash(_)) =>
+            {
+                let default = self.typed_container_default(&target);
+                let result = self
+                    .try_compiled_method_or_interpret(
+                        target.clone(),
+                        "AT-KEY",
+                        vec![index.clone()],
+                    )?
+                    .deref_container();
+                if result.is_nil() { default } else { result }
             }
             (ValueView::Mixin(inner, _), ValueView::Int(i)) => {
                 if let ValueView::Mixin(_, mixins) = target.view()

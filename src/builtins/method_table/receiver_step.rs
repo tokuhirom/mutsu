@@ -261,7 +261,7 @@ pub(crate) fn general_entry_owns(
         && argc == 0
         && !target.is_lazy_match_value()
         && matches!(target.view(), ValueView::Hash(_))
-        && interp.container_type_metadata(target).is_some()
+        && interp.has_container_type_metadata(target)
 }
 
 /// Whether `target`'s elements are pulled through an iterator the rows cannot
@@ -277,8 +277,8 @@ fn iterates_elsewhere(interp: &mut Interpreter, target: &Value, method: &str) ->
             class_name,
             attributes,
             ..
-        } if !attributes.contains_key("__mutsu_array_storage")
-            && !attributes.contains_key("__mutsu_hash_storage") =>
+        } if !attributes.contains_key(crate::symbol::wk::array_storage())
+            && !attributes.contains_key(crate::symbol::wk::hash_storage()) =>
         {
             interp.has_user_method(class_name.as_str(), "iterator")
                 && !interp.has_user_method(class_name.as_str(), method)

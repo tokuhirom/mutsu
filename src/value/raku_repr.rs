@@ -234,8 +234,8 @@ pub(crate) fn raku_raw_iterable(rendered: String) -> Value {
 pub(crate) fn raku_leaf_is_iterable(v: &Value) -> bool {
     match v.view() {
         ValueView::Instance { attributes, .. } => {
-            attributes.contains_key("__mutsu_array_storage")
-                || attributes.contains_key("__mutsu_hash_storage")
+            attributes.contains_key(crate::symbol::wk::array_storage())
+                || attributes.contains_key(crate::symbol::wk::hash_storage())
         }
         _ => false,
     }

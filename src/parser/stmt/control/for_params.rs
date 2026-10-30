@@ -209,7 +209,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                     any_rw = true;
                 }
                 // Prefix sigilless params with \\ so the compiler can
-                // emit MarkSigillessReadonly for them.
+                // mark them readonly.
                 if next.sigilless {
                     params.push(format!("\\{}", next.name));
                 } else {

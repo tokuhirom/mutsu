@@ -10,6 +10,13 @@ fn parse_single_handle_spec<'a>(input: &'a str, specs: &mut Vec<HandleSpec>) -> 
     if r.starts_with('<') {
         return parse_handle_word_list(r, specs);
     }
+    // A variable holding the names inside the parentheses: `handles(@PathAPI)`
+    // (HTML::Canvas), the parenthesised spelling of `handles @PathAPI`.
+    if r.starts_with(['$', '@', '%']) {
+        let (rest, expr) = expression(r)?;
+        specs.push(HandleSpec::Expr(Box::new(expr)));
+        return Ok((rest, ()));
+    }
     // Capture slips in a parenthesized list, e.g. `|SomeType.methods`.
     // The slip itself is only syntax here; declaration composition expands the
     // resulting value into individual method names.
@@ -133,8 +140,9 @@ pub(in crate::parser) fn parse_handle_specs<'a>(
         *rest_out = rest;
     } else if r.starts_with(['$', '@', '%']) {
         // A variable holding the names: `handles @coercers` (Config::BINDish
-        // fills `our @coercers` in a BEGIN block).
-        let (rest, expr) = expression(r)?;
+        // fills `our @coercers` in a BEGIN block). Not an assignment expression:
+        // `handles @names = Class.new` initializes the attribute.
+        let (rest, expr) = crate::parser::expr::expression_no_assign(r)?;
         specs.push(HandleSpec::Expr(Box::new(expr)));
         *rest_out = rest;
     } else if r.starts_with('<') {
@@ -214,7 +222,9 @@ pub(in crate::parser) fn handles_clause_term(
     specs: &[HandleSpec],
 ) -> Option<crate::ast::Expr> {
     let (after, term) = crate::parser::primary::primary(input).ok()?;
-    if after.len() != rest.len() {
+    // `primary` may or may not consume the whitespace after the term; the
+    // clause's own end is where the spec parse stopped.
+    if after.trim_start().len() != rest.trim_start().len() {
         return None;
     }
     let rebuilt = match &term {

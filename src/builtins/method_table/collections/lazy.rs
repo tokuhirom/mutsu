@@ -143,6 +143,7 @@ pub(crate) fn lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
     );
     Some(Ok(Value::lazy_list(crate::gc::Gc::new(
         crate::value::LazyList {
+            fixtures: None,
             body: vec![],
             env,
             cache: std::sync::Mutex::new(Some(items)),
@@ -164,6 +165,7 @@ pub(crate) fn lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
             cached_no_sink: false,
             deleted_indices: Default::default(),
             descriptor: None,
+            generator_origin: None,
             itemized: false,
         },
     ))))
@@ -198,10 +200,18 @@ fn retag_lazy_list(list: &crate::value::LazyList) -> Value {
     );
     let cache = list.cache.lock().unwrap().clone();
     Value::lazy_list(crate::gc::Gc::new(crate::value::LazyList {
+        fixtures: None,
         body: list.body.clone(),
         env,
         cache: std::sync::Mutex::new(cache),
-        generation_state: std::sync::Mutex::new(None),
+        // The producer's own trailing history: a closure sequence generates its
+        // next element from it, so a retagged copy must carry it along.
+        generation_state: std::sync::Mutex::new(
+            list.generation_state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
+        ),
         compiled_code: list.compiled_code.clone(),
         compiled_fns: list.compiled_fns.clone(),
         elems_count: list.elems_count.clone(),
@@ -237,6 +247,7 @@ fn retag_lazy_list(list: &crate::value::LazyList) -> Value {
         cached_no_sink: list.cached_no_sink,
         deleted_indices: Default::default(),
         descriptor: None,
+        generator_origin: None,
         itemized: list.itemized,
     }))
 }

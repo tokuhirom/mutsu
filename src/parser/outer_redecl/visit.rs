@@ -45,9 +45,11 @@ impl Ctx {
         if text.is_empty() {
             return;
         }
-        let mut parsed = vec![Stmt::Expr(crate::parse_dispatch::parse_qq_interpolation(
-            text,
-        ))];
+        // A text the `qq` grammar rejects is reported where it runs; it reads nothing here.
+        let Ok(expr) = crate::parse_dispatch::parse_qq_interpolation(text) else {
+            return;
+        };
+        let mut parsed = vec![Stmt::Expr(expr)];
         self.visit_stmts_mut(&mut parsed);
     }
 }
@@ -179,7 +181,6 @@ impl VisitMut for Ctx {
                     | ParsedStmt::SigillessDecl(_)
                     | ParsedStmt::PackageHeader { .. }
                     | ParsedStmt::TempDecl(_)
-                    | ParsedStmt::BarePhaser(_)
                     | ParsedStmt::CommaDecls(_)
                     | ParsedStmt::AttributeGroup(_)
                     | ParsedStmt::AttributeColonArglist(_)
@@ -192,15 +193,12 @@ impl VisitMut for Ctx {
                     | ParsedStmt::InlineProtoUse { .. }
                     | ParsedStmt::CallAssignList { .. }
                     | ParsedStmt::RoutineTraits(_)
-                    | ParsedStmt::ImmediateCall { .. }
-                    | ParsedStmt::AttributeModifier { .. } => {
+                    | ParsedStmt::ImmediateCall { .. } => {
                         crate::ast_visit::walk_parsed_mut(self, node)
                     }
-                    ParsedStmt::WillDecl { decl, phasers } => {
+                    ParsedStmt::WillDecl { decl, phasers, .. } => {
                         // The declaration runs in the enclosing scope.
-                        let mut one = vec![std::mem::replace(decl.as_mut(), Stmt::MarkBind)];
-                        self.visit_stmts_mut(&mut one);
-                        *decl.as_mut() = one.pop().expect("one statement");
+                        super::walk_list(std::slice::from_mut(decl.as_mut()), self);
                         for (_, body) in phasers {
                             self.scoped(Vec::new(), |v| v.visit_stmts_mut(body));
                         }

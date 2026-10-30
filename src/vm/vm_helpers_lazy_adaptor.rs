@@ -213,7 +213,8 @@ impl Interpreter {
             // ADR-0021 I2: data-minted pairs default positional, and the key
             // keeps its own value/type.
             RowCombine::Pair => match <[Value; 2]>::try_from(row) {
-                Ok([k, v]) => Ok(Value::value_pair(k, v)),
+                // A Proxy key is FETCHed, as `MakePair` does.
+                Ok([k, v]) => Ok(Value::value_pair(self.pair_key_fetching_proxy(k)?, v)),
                 Err(row) => Ok(Value::array(row)),
             },
             RowCombine::SmartMatch => {
@@ -323,7 +324,11 @@ impl Interpreter {
                 };
                 Ok(one(vec![elem], at + 1))
             }
-            PipeAdaptor::MultiMap { arity, pending } => {
+            PipeAdaptor::MultiMap {
+                arity,
+                required,
+                pending,
+            } => {
                 // A lazy list the last callback slipped is read to its end
                 // (or as far as the consumer pulls) before the callback runs
                 // again (#14295).
@@ -339,6 +344,10 @@ impl Interpreter {
                     match self.pull_source_element(source, idx + i)? {
                         Some(v) => args.push(v),
                         None if i == 0 => return Ok(AdaptorStep::finished(idx)),
+                        // The final chunk is short: the callback still runs
+                        // when the elements left cover its required
+                        // positionals, as for `(1, 2, 3).map(-> $a, $b? { })`.
+                        None if i >= *required => break,
                         None => {
                             return Err(RuntimeError::new(
                                 "Not enough elements for map block arity",
@@ -346,7 +355,7 @@ impl Interpreter {
                         }
                     }
                 }
-                let next = idx + *arity;
+                let next = idx + args.len();
                 match self
                     .vm_call_on_value(func.clone(), args, None)
                     .and_then(|v| self.reify_lazy_slip_tail(v))

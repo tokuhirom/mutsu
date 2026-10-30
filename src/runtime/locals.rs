@@ -101,6 +101,13 @@ impl Locals {
         }
     }
 
+    /// One slot by absolute stack index.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn absolute_slot(&self, index: usize) -> Option<&Value> {
+        self.slots.get(index)
+    }
+
     /// Open a frame of `num_locals` `Nil` slots on top of the stack and return
     /// the **caller's base**, to be handed back to [`Self::pop_frame`]. This
     /// replaces both `mem::take(&mut self.locals)` (`push_frame(0)`) and the

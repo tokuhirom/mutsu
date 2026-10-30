@@ -192,7 +192,6 @@ impl Compiler {
                 );
             }
             Expr::Var(name) => {
-                let name = self.resolve_self_lexical(name);
                 self.compile_expr_var(name);
             }
             Expr::ArrayVar(name) => {
@@ -371,6 +370,20 @@ impl Compiler {
                     self.code.emit(OpCode::NqpOp { id, arity: 0 });
                     return;
                 }
+                // `UNIT::errno` / `MY::errno` naming a lexical class declared in
+                // this compunit is that class, read by its bare name so a
+                // closure (a `Proxy` FETCH) captures the binding.
+                if let Some(bare) = name
+                    .strip_prefix("UNIT::")
+                    .or_else(|| name.strip_prefix("MY::"))
+                    .filter(|bare| {
+                        !bare.contains("::") && self.lexical_types_in_scope.contains(*bare)
+                    })
+                {
+                    let name_idx = self.code.add_constant(Value::str(bare.to_string()));
+                    self.code.emit(OpCode::GetGlobal(name_idx));
+                    return;
+                }
                 // A lexical type shadowing an enclosing constant (#11517): the
                 // type's own `MY::` binding, read by name so a nested closure
                 // captures it. `GetBareWord` would find the constant's term key.
@@ -473,6 +486,21 @@ impl Compiler {
             }
             Expr::Unary { op, expr, .. } => {
                 self.compile_expr_unary(op, expr);
+            }
+            // `^$x` / `^$o.m` / `^f()`: the prefix form numifies its bound
+            // (a Seq counts its items), which the infix `0..^$x` refuses.
+            Expr::Binary {
+                right,
+                op: crate::token_kind::TokenKind::DotDotCaret,
+                form: crate::ast::BinaryForm::CaretPrefix,
+                ..
+            } if matches!(
+                right.as_ref(),
+                Expr::Var(_) | Expr::MethodCall { .. } | Expr::Call { .. }
+            ) =>
+            {
+                self.compile_expr(right);
+                self.code.emit(OpCode::UptoRange);
             }
             Expr::Binary {
                 left, op, right, ..
@@ -625,15 +653,11 @@ impl Compiler {
                 });
                 self.code.emit(OpCode::MakeCapture(items.len() as u32));
             }
-            // Expression-level function call
-            // `.=`-on-topic marker (`$_ .= meth` / `.=meth`): compile the method
-            // result, then `TopicDotAssign` (assigns `$_` bypassing the
-            // whole-container read-only mark and writes through to a container
-            // topic source). See `parser::expr::postfix::dot_assign` / `topic_method_call`.
-            Expr::Call { name, args, .. }
-                if name.resolve() == "__mutsu_topic_dotassign" && args.len() == 1 =>
-            {
-                self.compile_expr(&args[0]);
+            // `$_ .= meth` / `.=meth`: compile the method result, then
+            // `TopicDotAssign` (assigns `$_` bypassing the whole-container
+            // read-only mark and writes through to a container topic source).
+            Expr::TopicDotAssign(call) => {
+                self.compile_expr(call);
                 let name_idx = self.code.add_constant(Value::str("_".to_string()));
                 self.code.emit(OpCode::TopicDotAssign(name_idx));
             }
@@ -1018,8 +1042,10 @@ impl Compiler {
             // Deferred heredoc interpolation
             Expr::HeredocInterpolation(content, _) => {
                 super::compile_inputs::mark_uncacheable("compile-time heredoc interpolation");
-                let resolved = crate::parser::interpolate_heredoc_content(content);
-                self.compile_expr(&resolved);
+                match crate::parser::interpolate_heredoc_content(content) {
+                    Ok(resolved) => self.compile_expr(&resolved),
+                    Err(error) => self.emit_deferred_error(error),
+                }
             }
             // String interpolation
             Expr::StringInterpolation(parts) => {
@@ -1049,7 +1075,6 @@ impl Compiler {
                 expr,
                 is_bind,
             } => {
-                let name = self.resolve_self_lexical(name);
                 // `($OUTER::x := $y)` stores to the binding `OUTER::` names
                 // (#10676, #10827; see `Stmt::Assign`).
                 let outer_target = self.outer_write_target(name, *is_bind);
@@ -1100,6 +1125,8 @@ impl Compiler {
                         if let Some(chain_idx) = self.lexical_import_chain_idx(Symbol::intern(name))
                         {
                             self.code.emit(OpCode::LexImportCall { chain_idx });
+                        } else {
+                            self.register_late_import_fallback(Symbol::intern(name));
                         }
                         self.code.emit(OpCode::GetCodeVar(name_idx))
                     }
@@ -1122,7 +1149,21 @@ impl Compiler {
                 arg,
                 adverb,
             } => {
-                self.compile_expr_exists(target, *negated, *delete, arg, adverb);
+                // `*.<a><b>:exists` is a WhateverCode over the whole subscript
+                // and its adverb; the priming scope the term planted sits
+                // around the subscript only, so move it out around the adverb.
+                if let Expr::WhateverCurry(inner) = target.as_ref() {
+                    let primed = Expr::WhateverCurry(Box::new(Expr::Exists {
+                        target: inner.clone(),
+                        negated: *negated,
+                        delete: *delete,
+                        arg: arg.clone(),
+                        adverb: *adverb,
+                    }));
+                    self.compile_expr(&primed);
+                } else {
+                    self.compile_expr_exists(target, *negated, *delete, arg, adverb);
+                }
             }
             Expr::ZenSlice(inner) => {
                 // Outside of :exists, a zen slice decontainerizes: `$a[]` on an
@@ -1352,6 +1393,7 @@ impl Compiler {
             Expr::Gather(body) if self.emit_block_placeholder_die(body) => {}
             Expr::Gather(_) => {
                 if let Expr::Gather(body) = expr {
+                    let body = &Self::lower_sunk_list_repeat(body);
                     let idx = self.code.add_stmt(Stmt::Block(body.clone()));
                     // A gather body pulls lazily after this frame moves on, so a
                     // captured-and-mutated lexical it reads must be cell-promoted
@@ -1392,6 +1434,13 @@ impl Compiler {
             Expr::DeitemizeForBind(inner) => {
                 self.compile_expr(inner);
                 self.code.emit(OpCode::DeitemizeForBind);
+            }
+            Expr::IndexBindValue(rhs) => {
+                // The VM takes the bound value and its source variables; the
+                // sources derive from the RHS.
+                self.compile_call_arg(rhs);
+                self.compile_call_arg(&crate::parser::bind_source_metadata_expr(rhs));
+                self.code.emit(OpCode::IndexBindValue);
             }
             Expr::PositionalPair(inner) => {
                 self.compile_expr(inner);

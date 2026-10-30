@@ -590,6 +590,9 @@ impl Interpreter {
         code: &crate::opcode::CompiledCode,
     ) -> Result<(), RuntimeError> {
         let (left, right) = self.pop_pair_operands_capturing(code);
+        // The key is a decontainerized `Mu $key` of `infix:<=>`, so a Proxy key
+        // is FETCHed once here (`($proxy => 1).key`, `%h = $proxy => 1`).
+        let left = self.pair_key_fetching_proxy(left)?;
         // A `gather` Seq key is read when the Pair lands in a hash or a string
         // (`%h = (gather { take "k" }) => 1` keys "k"); that read cannot pull
         // the deferred source itself, so it is pulled here, once.

@@ -302,7 +302,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
         package_body_block(r)?
     };
     let spans = crate::parser::stmt::sub::package_spans(name_span, r, rest, &body);
-    crate::parser::stmt::nested_block_methods::hoist(&mut body);
+    crate::rakuast::nested_methods::hoist(&mut body);
     // A `grammar G { also is Base; }` body carries its parent the same way a
     // `class` body does; without this extraction the bare `is(also, Base)`
     // infix expression would reach the runtime as "two terms in a row".
@@ -323,12 +323,10 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
     super::super::simple::register_user_type(&name);
     // `grammar G { ... }.parse($s)` is one expression; see `reject_trailing_postfix`.
     super::reject_trailing_postfix(rest)?;
-    let mut custom_traits = Vec::new();
-    if is_export && is_lexical {
-        // See `class_decl`: a lexical type keeps an internal marker instead of
-        // the synthetic export statement, which would make it block-local.
-        custom_traits.push(super::class_decl::export_type_marker(&export_tags));
-    }
+    let custom_traits = Vec::new();
+    // See `class_decl`: a lexical type records its export tags on the node instead
+    // of the synthetic export statement, which would make it block-local.
+    let lexical_export_tags = (is_export && is_lexical).then(|| export_tags.clone());
     routine_trait::attach(&mut body, written);
     let grammar_stmt = Stmt::ClassDecl {
         spans,
@@ -345,6 +343,9 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
         language_version: super::super::simple::current_language_version(),
         custom_traits,
         is_unit: false,
+        is_native: false,
+        export_tags: lexical_export_tags,
+        marks: Default::default(),
         implicit_grammar_parent,
         is_grammar: true,
         decl_id: crate::ast::next_class_decl_id(),

@@ -9,14 +9,15 @@ pub(crate) use type_qualify::qualify_program as qualify_type_names;
 // `expr` module (and its many `pub(in crate::parser)`-typed internals) public.
 pub(crate) use expr::lower_composition;
 pub(crate) use expr::{
-    contains_whatever, is_frozen_whatever, is_whatever, operator_call_operands,
-    should_wrap_whatevercode,
+    contains_whatever, contains_xx_with_bare_whatever, is_frozen_whatever, is_whatever,
+    operator_call_operands, should_wrap_whatevercode,
 };
+pub(crate) use stmt::assign::normalize_comma_list_items;
+pub(crate) use stmt::simple::{PREC_SEQUENCE, lookup_custom_infix_precedence};
 // `but`-mixing a plain value composes an anonymous role at RUNTIME, and it must
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
 pub(crate) use primary::ident::slipped_control_stmt;
-pub(crate) use primary::ident::supply_block;
 pub(crate) use primary::ident::{
     TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers,
 };
@@ -33,19 +34,16 @@ pub(crate) use primary::string::{decode_q_regex_quote, decode_qq_regex_quote};
 pub(crate) use primary::var::{
     fresh_anon_array_name, fresh_anon_state_name, is_identifier_spelling, is_pseudo_package,
 };
-pub(crate) use primary::{
-    ANON_COLONS_TRAIT, ANON_DECL_TRAIT, mark_anon_package_stmt, next_anon_class_name,
-    next_anon_grammar_name, next_anon_role_name, prepend_does_header,
-};
 pub(crate) use primary::{decimal_literal_value, numeric_literal_value};
-pub(crate) use stmt::class::{
-    DECLARE_HOW_TRAIT, EXPORT_TYPE_MARKER, LEADING_COLONS_TRAIT, declare_how_keyword,
-    declare_how_marker, export_type_marker, push_also_is_parent,
+pub(crate) use primary::{
+    mark_anon_package_stmt, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,
+    prepend_does_header,
 };
+pub(crate) use stmt::class::push_also_is_parent;
 pub(crate) use stmt::control::placeholder_loop_params;
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
 pub(crate) use stmt::decl::handle_specs_from_term;
-pub(crate) use stmt::simple::supersede_marker;
+pub(crate) use stmt::simple::superseded_declarator;
 pub(crate) use stmt::simple::{
     CanonicalScans, ExportedVar, canonical_export_scans, scanned_exported_types,
     scanned_exported_vars, scanned_exported_vars_complete, scanned_hook_type_keys,
@@ -94,8 +92,6 @@ pub(crate) mod p6_frame_state;
 pub(crate) use stmt::decl::typed_default_expr;
 mod parse_result;
 mod primary;
-pub(crate) use primary::container::finalize_array_sections;
-pub(crate) use primary::container::finalize_paren_sections;
 mod quote_shadow;
 pub(crate) mod sink_warn;
 mod stmt;
@@ -105,26 +101,21 @@ mod stmt;
 pub(crate) fn is_raku_identifier(input: &str) -> bool {
     stmt::parse_raku_ident(input).is_ok_and(|(rest, _)| rest.is_empty())
 }
-pub(crate) use expr::{atomic_elem_update, retarget_dotty_call};
+pub(crate) use expr::atomic_elem_update;
+pub(crate) use expr::precedence::build_compound_assign_target_expr;
 pub(crate) use outer_redecl::{find_scope_diagnostic, scope_diagnostic_error};
-pub(crate) use stmt::assign::{
-    DOTTY_ASSIGN_OP, autoviv_routine_compound_lhs, compound_assign_op_from_name,
-    compound_assigned_value_expr, zip_assign_call,
-};
+pub(crate) use parse_result::PError;
+pub(crate) use stmt::assign::DOTTY_ASSIGN_OP;
 pub(crate) use stmt::class::token_body::finalize_anon_declarator_pattern;
 pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws, role_type_param_names};
+pub(crate) use stmt::control::check_signature;
+pub(crate) use stmt::control::source_body::check as check_source_body;
 /// The default the parser plants for a typed scalar attribute with no
 /// initializer; the RakuAST lowering re-plants the same one.
 pub(crate) use stmt::decl::attribute_type_seed;
-pub(crate) use stmt::decl::build_sigilless_bind_stmt;
-pub(crate) use stmt::decl::destructure::desugar::lower_pending as lower_pending_declaration;
-pub(crate) use stmt::decl::destructure::desugar::pending as pending_declaration;
-pub(crate) use stmt::decl::destructure::desugar::signature_decl as signature_decl_expansion;
-pub(crate) use stmt::decl::wrap_with_will_phasers;
-pub(crate) use stmt::decl::{attribute_compound_assign, expand_attribute_compound_assign};
-pub(crate) use stmt::simple::is_user_declared_value_term;
+pub(crate) use stmt::decl::default_decl_expr;
+pub(crate) use stmt::simple::{is_user_declared_sub, is_user_declared_value_term};
 pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutable;
-pub(crate) use stmt::{conditional_declaration, topical_declaration};
 
 /// Parse a regex callable's argument list without exposing the parser's
 /// private diagnostic type to the source-level regex tree.
@@ -132,81 +123,6 @@ pub(crate) fn parse_regex_call_arg_list(input: &str) -> Option<(&str, Vec<crate:
     primary::parse_call_arg_list(input).ok()
 }
 
-/// Lower a compound assignment in expression position: the one lowering of
-/// the compound-assignment family (`stmt::assign::compound_lower`), for
-/// consumers that cannot name the parser's parse-error type.
-// Cost: O(n), n = size of the target and source.
-pub(crate) fn lower_compound_expression(
-    node: crate::ast::parsed::CompoundAssign,
-) -> Result<crate::ast::Expr, String> {
-    stmt::assign::lower_compound_expression(node).map_err(|error| error.to_string())
-}
-
-/// Lower `TARGET .= meth(args)` (`stmt::assign::compound_lower`): the one
-/// lowering of the `.=` assignment, for a hand-built tree. `is_term` names
-/// the barewords the tree declares as sigilless terms.
-// Cost: O(n), n = size of the target and the call.
-pub(crate) fn lower_dotty_assignment(
-    node: crate::ast::parsed::CompoundAssign,
-    as_statement: bool,
-    is_term: fn(&str) -> bool,
-) -> crate::ast::Expr {
-    stmt::assign::lower_dotty(node, as_statement, is_term)
-}
-
-/// [`lower_dotty_assignment`] written as a statement.
-// Cost: O(n), n = size of the target and the call.
-pub(crate) fn lower_dotty_statement(
-    node: crate::ast::parsed::CompoundAssign,
-    is_term: fn(&str) -> bool,
-) -> crate::ast::Stmt {
-    stmt::assign::lower_dotty_statement(node, is_term)
-}
-
-/// Whether `op` is the base infix of a compound assignment the compound
-/// lowering takes (`+` of `+=`).
-// Cost: O(k), k = number of compound operators.
-pub(crate) fn is_compound_assign_op(op: &str) -> bool {
-    stmt::assign::compound_assign_op_from_name(op).is_some()
-}
-
-/// Whether `op` is a set operator a compound assignment applies (`(|)` of
-/// `(|)=`, `∪` of `∪=`).
-// Cost: O(k), k = number of set operator spellings.
-pub(crate) fn is_set_compound_op(op: &str) -> bool {
-    stmt::assign::set_op_from_spelling(op).is_some()
-}
-
-/// [`lower_compound_expression`] for a compound assignment written as a
-/// statement.
-// Cost: O(n), n = size of the target and source.
-pub(crate) fn lower_compound_statement(
-    node: crate::ast::parsed::CompoundAssign,
-) -> Result<crate::ast::Stmt, String> {
-    stmt::assign::lower_compound_statement(node).map_err(|error| error.to_string())
-}
-
-/// Reuse the parser's proven compound-assignment expansion from consumers that
-/// cannot name the parser's private parse-error type (such as RakuAST lowering).
-pub(crate) fn expand_compound_assign_expr(
-    lhs: crate::ast::Expr,
-    op: &str,
-    rhs: crate::ast::Expr,
-) -> Result<crate::ast::Expr, String> {
-    let Some(op) = compound_assign_op_from_name(op) else {
-        // `%h<a> ∪= $set`: a set operator has no `CompoundAssignOp`.
-        return stmt::assign::set_op_from_spelling(op)
-            .map(|tok| stmt::assign::build_set_compound_assign_expr(lhs, tok, rhs))
-            .ok_or_else(|| format!("unknown compound operator: {op}"));
-    };
-    if let crate::ast::Expr::Var(name) = &lhs
-        && let Some(short) =
-            stmt::assign::short_circuit_compound_assign_expr(name, lhs.clone(), op, rhs.clone())
-    {
-        return Ok(short);
-    }
-    stmt::assign::build_compound_assign_expr(lhs, op, rhs).map_err(|error| error.to_string())
-}
 pub(crate) mod stmt_ending_brace;
 pub(crate) mod term_boundary;
 pub(crate) mod term_origins;
@@ -252,15 +168,12 @@ impl Drop for NestingGuard {
 }
 
 /// Prefix of the emitter parameter `supply { … }` lowers to (see
-/// `primary::ident::supply::supply_method_call`). It is what identifies a
+/// `rakuast::supply_lower::supply_method_call`). It is what identifies a
 /// supply-block body after parsing — both for the out-of-scope `whenever` check
 /// and for `CompiledCode::is_supply_block_body`.
 pub(crate) const SUPPLY_EMITTER_PREFIX: &str = "__mutsu_supply_emitter_";
 
-pub(crate) use stmt::nested_block_methods::{
-    NESTED_BLOCK_METHOD_TRAIT, hoist as hoist_nested_methods, unhoist as unhoist_nested_methods,
-};
-
+pub(crate) use primary::ident::anon_sub::invocant_param_def;
 pub(crate) use primary::var::is_known_word_infix;
 
 pub(crate) fn is_imported_function(name: &str) -> bool {
@@ -289,16 +202,17 @@ pub(crate) fn imported_value_term_names() -> Vec<String> {
 /// specifies as `qq`-quoted but that is not lexically a `"..."` literal — a
 /// heredoc body, an `s///` replacement — must route through here rather than
 /// grow its own partial interpolator.
-pub(crate) fn interpolate_qq_content(content: &str) -> crate::ast::Expr {
+pub(crate) fn interpolate_qq_content(content: &str) -> Result<crate::ast::Expr, RuntimeError> {
     primary::quote_adverbs::process_content_with_flags(
         content,
         &primary::quote_adverbs::QuoteFlags::qq_double(),
     )
+    .map_err(|e| render_parse_error(content, e))
 }
 
 /// Parse a heredoc body string as an interpolated (qq-style) string expression.
 /// Used by the compiler to defer heredoc interpolation to compile time.
-pub(crate) fn interpolate_heredoc_content(content: &str) -> crate::ast::Expr {
+pub(crate) fn interpolate_heredoc_content(content: &str) -> Result<crate::ast::Expr, RuntimeError> {
     interpolate_qq_content(content)
 }
 
@@ -344,7 +258,6 @@ pub(crate) fn canonical_name_colonpairs(source: &str, stem: String) -> (&str, St
 /// is the quote alone. `None` when `source` is not a sequence of colonpairs.
 // Cost: O(n), n = length of `source`.
 pub(crate) fn name_colonpair_exprs(source: &str) -> Option<Vec<crate::ast::Expr>> {
-    let _keep = crate::ast::spelled::keep_spelling(true);
     let mut rest = source;
     let mut pairs = Vec::new();
     while !rest.is_empty() {
@@ -433,9 +346,10 @@ pub use stmt::simple::{
 };
 
 pub(crate) use expr::precedence::{
-    assign_to_target_expr, single_target_list_lvalue_expr, unwrap_grouped_lvalue,
+    assign_to_target_expr, assignment_ro_expr, single_target_list_lvalue_expr,
 };
-pub(crate) use stmt::assign::named_sub_lvalue_assign_expr;
+pub(crate) use expr::wrap_finished_expr;
+pub(crate) use stmt::simple_expr_stmt::lvalue::method_lvalue_target_name;
 
 /// `expr`, with an assignment a `.AST` parse kept in its RakuAST shape
 /// lowered to the executable shape the parser builds otherwise. For a parser
@@ -458,17 +372,10 @@ pub(crate) fn lowered_assignment(expr: crate::ast::Expr) -> crate::ast::Expr {
     }
 }
 pub(crate) use expr::precedence::{literal_assign_ro_expr, literal_assign_ro_parts};
-pub(crate) use expr::precedence_meta_ops::lower_hyper_assignment as hyper_assignment_expr;
 pub(crate) use expr::precedence_meta_ops::negated_glyph_relation;
 pub(crate) use stmt::assign::written_assignment;
-pub(crate) use stmt::control::loop_pointy_clause;
-pub(crate) use stmt::control::repeat_param_clause;
-pub(crate) use stmt::control::{
-    ElseClause, IfChainClause, given_pointy_body, if_pointy_clause, lower_if_chain, unless_clause,
-    with_then_branch,
-};
 pub(crate) use stmt::simple::{fold_use_lib_path, use_lib_args};
-pub(crate) use stmt::simple_expr_stmt::lvalue::index_bind_expr;
+pub(crate) use stmt::simple_expr_stmt::lvalue::{bind_source_metadata_expr, index_bind_expr};
 /// Lower a deferred `Expr::Feed` node into its executable (sink-call) form.
 /// Re-exported for the compiler's `Expr::Feed` arm.
 pub(crate) use stmt::sub::is_builtin_param_trait;
@@ -496,7 +403,6 @@ pub(crate) fn set_current_language_version(version: &str) {
 use std::cell::RefCell;
 
 use crate::ast::Stmt;
-use crate::parser::parse_result::PError;
 use crate::value::RuntimeErrorCode;
 use crate::value::{RuntimeError, Value};
 
@@ -576,9 +482,9 @@ pub(crate) fn parse_nested_block_fragment(
             language_version: stmt::simple::current_language_version(),
         });
     });
-    // A `.AST` parse of the unit keeps the block's statements in their
-    // RakuAST shape too (ADR-10723 Stage 2): the conversion reads them.
-    let result = parse_fragment_keeping(input, crate::ast::spelled::keeping());
+    // The block's statements keep their RakuAST shape like the rest of the
+    // unit's (ADR-10723 Stage 2): the conversion reads them.
+    let result = parse_fragment_spelled(input);
     // `parse_program` consumes the slot; clear it in case it bailed out first.
     INHERITED_SCOPES.with(|slot| slot.borrow_mut().take());
     if unit_offset.is_some() {
@@ -617,14 +523,14 @@ fn apply_inherited_scopes() {
 /// clears the warning buffer up front, an unguarded nested parse also *dropped*
 /// the enclosing unit's real warnings, so they are saved and restored here.
 pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    parse_fragment_keeping(input, false)
+    let (stmts, finish) = parse_fragment_spelled(input)?;
+    Ok((crate::rakuast::frontend::round_trip_unit(stmts)?, finish))
 }
 
-/// [`parse_fragment`], keeping the source spelling when `keep_spelling` is set
-/// (see [`parse_program_spelled`]).
-fn parse_fragment_keeping(
+/// [`parse_fragment`] without the round trip: the spelled tree only the RakuAST
+/// conversion may consume (see [`parse_program_spelled`]).
+pub(crate) fn parse_fragment_spelled(
     input: &str,
-    keep_spelling: bool,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // See the matching call in `parse_program`.
     crate::opcode::note_dispatcher_mention(input);
@@ -643,7 +549,7 @@ fn parse_fragment_keeping(
     // `use` then turned every later undeclared type name into a gobbled block.
     let type_index_was_incomplete = !stmt::simple::type_index_is_complete();
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(true));
-    let result = parse_program_keeping(input, keep_spelling);
+    let result = parse_program_spelled(input);
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(false));
     if type_index_was_incomplete {
         stmt::simple::note_type_index_incomplete();
@@ -1065,26 +971,18 @@ pub(crate) fn split_finish_section(input: &str) -> (&str, Option<String>) {
 /// Parse a full program using the nom-based parser.
 /// Returns `(statements, Option<finish_content>)`.
 pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    parse_program_keeping(input, false)
+    let (stmts, finish) = parse_program_spelled(input)?;
+    Ok((crate::rakuast::frontend::round_trip_unit(stmts)?, finish))
 }
 
-/// [`parse_program`] for `.AST`: the terms that remember how they were spelled
-/// (`<a b  c>`) come back wrapped in `Expr::Spelled` (ADR-12199). Nothing but
-/// the RakuAST conversion may consume this tree: the compiler never sees a
-/// wrapper.
+/// [`parse_program`] without the round trip: the terms that remember how they
+/// were spelled (`<a b  c>`) come back wrapped in `Expr::Spelled` (ADR-12199).
+/// Nothing but the RakuAST conversion may consume this tree: the compiler never
+/// sees a wrapper.
 pub(crate) fn parse_program_spelled(
     input: &str,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    parse_program_keeping(input, true)
-}
-
-fn parse_program_keeping(
-    input: &str,
-    keep_spelling: bool,
-) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    // A parse nested inside this one (a module load) sets its own.
-    let _spelling = crate::ast::spelled::keep_spelling(keep_spelling);
-    let _origins = term_origins::begin(keep_spelling);
+    let _origins = term_origins::begin(true);
     // Re-entrant (a nested EVAL or module load parses from inside a running
     // program), which the claim-at-exit rule handles without a depth counter.
     let _region = crate::profile::enter(crate::profile::Region::Parse);
@@ -1130,19 +1028,9 @@ fn parse_program_keeping(
             // once every scope's bindings are known.
             stmt::simple::settle_core_type_fold();
             crate::whatever_curry::mark::mark_program(&mut stmts);
-            // A bare type name in a type position takes the package it is
-            // written in (ADR-12529 §2.1). `.AST` keeps the source spelling.
-            if !keep_spelling {
-                type_qualify::qualify_program(&mut stmts);
-            }
             // `use trace` hooks hold their statement's source offset until the
             // whole unit's statement attempts are known.
             stmt::trace::number_statements(&mut stmts);
-            // `nqp::p6stateinit()` and `nqp::p6takefirstflag()` read their frame,
-            // which only the whole tree can place (ADR-11505 §2.4, §2.5).
-            if !keep_spelling && p6_frame_state::mentions_op(source) {
-                p6_frame_state::lower_program(&mut stmts);
-            }
             let rest_trimmed = rest.trim();
             if !rest_trimmed.is_empty() {
                 let consumed = source.len() - rest.len();
@@ -1238,7 +1126,6 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     user_sub_names: &[String],
     user_type_names: &[String],
     user_value_term_names: &[String],
-    keep_spelling: bool,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // Set pre-seed operators before calling parse_program.
     // parse_program will call reset_user_subs, then we re-register after.
@@ -1258,7 +1145,7 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     // (EVAL / EVAL :check / throws-like code strings), so the final statement
     // is a return position, not sink context.
     set_eval_value_tail();
-    let result = parse_program_keeping(input, keep_spelling);
+    let result = parse_program_spelled(input);
     stmt::set_eval_operator_preseed(Vec::new());
     stmt::set_eval_operator_assoc_preseed(std::collections::HashMap::new());
     stmt::set_eval_user_sub_preseed(Vec::new());
@@ -1318,12 +1205,25 @@ pub(crate) fn parse_program_partial_with_operators(
 /// and by the analysis frontend, which wants the errors too: a document being
 /// edited is broken most of the time, and everything downstream of the first
 /// failure is still worth analysing (ADR-0065 S3).
+///
+/// The statements that parsed run through the RakuAST round trip like any
+/// unit's; a unit that does not round-trip yields no statements and its
+/// refusal among the errors.
 pub(crate) fn parse_program_recovering(
     input: &str,
 ) -> (Vec<Stmt>, Option<String>, Vec<RuntimeError>) {
-    // A best-effort scan of another unit (a module's exports, an analysis): its
-    // statements are never converted to RakuAST.
-    let _spelling = crate::ast::spelled::keep_spelling(false);
+    let (stmts, finish_content, mut errors) = parse_program_recovering_spelled(input);
+    match crate::rakuast::frontend::round_trip_unit(stmts) {
+        Ok(lowered) => (lowered, finish_content, errors),
+        Err(refusal) => {
+            errors.push(refusal);
+            (Vec::new(), finish_content, errors)
+        }
+    }
+}
+
+fn parse_program_recovering_spelled(input: &str) -> (Vec<Stmt>, Option<String>, Vec<RuntimeError>) {
+    let _origins = term_origins::begin(true);
     let memo_enabled = parse_memo_enabled();
     if memo_enabled {
         expr::reset_expression_memo();
@@ -1371,6 +1271,46 @@ pub(crate) fn parse_program_recovering(
 pub(crate) fn parse_program_partial(input: &str) -> (Vec<Stmt>, Option<String>) {
     let (stmts, finish_content, _errors) = parse_program_recovering(input);
     (stmts, finish_content)
+}
+
+/// [`parse_program_partial`] without the round trip, for a scan made in the
+/// middle of another unit's parse (a `use`d module's declarations): the
+/// round trip would run the lowering inside that parse, and the scan reads the
+/// declarations off the parser's own tree.
+pub(crate) fn parse_program_partial_spelled(input: &str) -> (Vec<Stmt>, Option<String>) {
+    let (stmts, finish_content, _errors) = parse_program_recovering_spelled(input);
+    (stmts, finish_content)
+}
+
+/// Lowering of parser results for the tests that assert the executable shape
+/// (the tree the compiler sees) of a construct the parser keeps in its RakuAST
+/// shape.
+#[cfg(test)]
+pub(crate) mod test_lower {
+    use crate::ast::{Expr, Stmt};
+
+    // Cost: O(n), n = size of the statements.
+    pub(crate) fn stmts(stmts: Vec<Stmt>) -> Vec<Stmt> {
+        crate::rakuast::frontend::round_trip_unit(stmts).expect("the statements round-trip")
+    }
+
+    // Cost: O(n), n = size of the statement.
+    pub(crate) fn stmt(stmt: Stmt) -> Stmt {
+        let mut lowered: Vec<Stmt> = stmts(vec![stmt])
+            .into_iter()
+            .filter(|s| !matches!(s, Stmt::SetLine(..)))
+            .collect();
+        assert_eq!(lowered.len(), 1, "one statement lowers to one: {lowered:?}");
+        lowered.remove(0)
+    }
+
+    // Cost: O(n), n = size of the expression.
+    pub(crate) fn expr(expr: Expr) -> Expr {
+        match stmt(Stmt::Expr(expr)) {
+            Stmt::Expr(expr) => expr,
+            other => panic!("an expression lowers to an expression statement: {other:?}"),
+        }
+    }
 }
 
 #[cfg(test)]

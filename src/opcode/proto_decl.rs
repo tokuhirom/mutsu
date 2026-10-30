@@ -7,8 +7,11 @@ impl CompiledCode {
         &mut self,
         stmt: &Stmt,
         trait_args: Vec<Option<DeclTraitArg>>,
+        pass: crate::ast::DeclPass,
     ) -> u32 {
         let Stmt::ProtoDecl {
+            is_hidden_from_backtrace: _,
+            is_hoisted_copy: _,
             name,
             params,
             param_defs,
@@ -33,6 +36,7 @@ impl CompiledCode {
             is_export: *is_export,
             export_tags: export_tags.clone(),
             custom_traits: custom_traits.clone(),
+            pass,
             trait_args,
             is_method: *is_method,
             is_our: *is_our,

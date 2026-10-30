@@ -65,7 +65,11 @@ pub(super) fn empty_node(node: &RakuAstNode, field: &str, class: RakuAstClass) -
     Value::rakuast(Box::new(RakuAstNode {
         class,
         fields,
-        origin: super::NodeOrigin(node.origin.1.get(field).cloned(), EmptyOrigins::default()),
+        origin: super::NodeOrigin(
+            node.origin.1.get(field).cloned(),
+            EmptyOrigins::default(),
+            None,
+        ),
     }))
 }
 

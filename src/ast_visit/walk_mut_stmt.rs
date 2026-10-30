@@ -20,6 +20,7 @@ pub(crate) fn walk_stmts_mut<V: VisitMut + ?Sized>(v: &mut V, body: &mut [Stmt])
 pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
     match s {
         Stmt::VarDecl {
+            marks: _,
             anonymous: _,
             name: _,
             expr,
@@ -30,6 +31,9 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             is_export: _,
             export_tags: _,
             custom_traits,
+            has_initializer: _,
+            constant: _,
+            bind: _,
             where_constraint,
         } => {
             v.visit_expr_mut(expr);
@@ -42,13 +46,13 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
         // copies as the parser wrote them, which is the source form.
         Stmt::Ast(node) => super::walk_parsed_mut(v, node),
         Stmt::MarkReadonly(_name, _) => {}
-        Stmt::MarkBind
-        | Stmt::Proceed
+        Stmt::Proceed
         | Stmt::Succeed
         | Stmt::ReactDone
         | Stmt::SupplyBodyDone
         | Stmt::SetLine(..)
         | Stmt::BeginPrologueEnd
+        | Stmt::RunCheckCode
         | Stmt::Trace { .. } => {}
         // A copy of declarations that stay in the tree, where they are walked.
         Stmt::NestedTypeShells(_) | Stmt::UndeclaredRoutine(_) => {}
@@ -67,7 +71,6 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             closure,
             routines: _,
         } => v.visit_expr_mut(closure),
-        Stmt::MarkSigillessReadonly(_name) | Stmt::MarkSigilless(_name) => {}
         Stmt::Assign {
             name: _,
             expr,
@@ -336,12 +339,14 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             version: _,
             is_export: _,
             export_tags: _,
+            custom_traits,
             is_my: _,
             decl_id: _,
         } => {
             if let Some(e) = predicate {
                 v.visit_expr_mut(e);
             }
+            traits_mut(v, custom_traits);
         }
         Stmt::Phaser {
             spans: _,
@@ -349,8 +354,11 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             body,
             condition: _,
             end_index: _,
+            bare: _,
         } => v.visit_stmts_mut(body),
         Stmt::ProtoDecl {
+            is_hidden_from_backtrace: _,
+            is_hoisted_copy: _,
             name: _,
             params: _,
             param_defs,
@@ -387,6 +395,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             method_args,
             value,
             is_attribute: _,
+            type_invocant: _,
         } => {
             exprs_mut(v, method_args);
             v.visit_expr_mut(value);

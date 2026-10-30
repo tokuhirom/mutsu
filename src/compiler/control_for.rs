@@ -74,6 +74,18 @@ impl Compiler {
             collect,
         } = parts;
 
+        // A loop parameter spelled `$self` is the user lexical (ADR-0061).
+        let self_lexical = |p: &String| {
+            if p == "self" {
+                crate::env::LEX_SELF.to_string()
+            } else {
+                p.clone()
+            }
+        };
+        let lex_param = param.as_ref().map(self_lexical);
+        let lex_params: Vec<String> = params.iter().map(self_lexical).collect();
+        let (param, params) = (&lex_param, lex_params.as_slice());
+
         // `&?BLOCK` / `.leave` in the body need the loop's own block as a
         // callable value. Build it up-front and stash it in a fresh local;
         // `ForLoopSpec::block_callable_local` hands it to the VM.
@@ -145,17 +157,6 @@ impl Compiler {
         let bind_stmts =
             Self::build_for_bind_stmts(param, param_def, param_idx, params, params_def, rw_block);
 
-        // ADR-0061: a loop parameter spelled `$self` is a `ParamDef` named
-        // `self` and binds the plain key, exactly like a routine's `$self`
-        // parameter — so `$self` in the body must resolve to it, not to the
-        // reserved lexical key. The loop body compiles inline in THIS compiler,
-        // so the flag is scoped by hand (restored at the end) instead of being
-        // seeded on a child compiler.
-        let saved_self_is_signature_param = self.self_is_signature_param;
-        if param.as_deref() == Some("self") || params.iter().any(|p| p == "self") {
-            self.self_is_signature_param = true;
-        }
-
         // A sigilless raw binding (`-> \v`) aliases the source element directly;
         // in Raku it is writable and modifications propagate back to the source
         // container (`for @a -> \v { v = 99 }` mutates @a, and `for %h.kv -> \k,
@@ -174,13 +175,25 @@ impl Compiler {
             || params_def
                 .iter()
                 .any(|def| def.traits.iter().any(|t| t == "rw"));
-        // `is copy` also makes the param writable (but without writeback).
+        // `is copy` also makes the param writable (but without writeback); so
+        // does `is raw`, which aliases whatever container the element is (a
+        // Proxy element runs its STORE; a plain value stays refused when the
+        // alias is assigned).
         let has_copy = param_def
             .as_ref()
             .is_some_and(|def| def.traits.iter().any(|t| t == "copy"))
             || params_def
                 .iter()
                 .any(|def| def.traits.iter().any(|t| t == "copy"));
+        // `is raw` aliases the element's own container: writable like `is rw`
+        // (a Proxy element runs its STORE) but it neither copies the element nor
+        // writes back, and a value element is not refused.
+        let has_raw = param_def
+            .as_ref()
+            .is_some_and(|def| def.traits.iter().any(|t| t == "raw"))
+            || params_def
+                .iter()
+                .any(|def| def.traits.iter().any(|t| t == "raw"));
 
         // Statements that bind the loop parameters (`-> \a, @b, %c`) and mark
         // them read-only. They must run — and the params must be bound —
@@ -211,7 +224,10 @@ impl Compiler {
             if !rw_block && !params.is_empty() {
                 for (i, p) in params.iter().enumerate() {
                     let per_param_writable = params_def.get(i).is_some_and(|d| {
-                        d.sigilless || d.traits.iter().any(|t| t == "rw" || t == "copy")
+                        d.sigilless
+                            || d.traits
+                                .iter()
+                                .any(|t| t == "rw" || t == "raw" || t == "copy")
                     }) || (params_def.get(i).is_none()
                         && p.starts_with('\\'));
                     if !p.starts_with('@') && !p.starts_with('%') && !per_param_writable {
@@ -474,7 +490,7 @@ impl Compiler {
                 collect,
                 threaded: matches!(mode, crate::ast::ForMode::Race | crate::ast::ForMode::Hyper),
                 // is_rw: param is writable (don't mark readonly)
-                is_rw: has_rw || has_copy,
+                is_rw: has_rw || has_copy || has_raw,
                 // do_writeback: actually write back modifications to the source
                 do_writeback: has_rw && !has_copy,
                 rw_param_names,
@@ -529,6 +545,7 @@ impl Compiler {
                 body_declares_routines: Self::stmts_declare_routines(&loop_body),
                 source_items_are_bare: self.receiver_provably_yields_bare_items(iterable),
                 param_sigilless: param_def.as_ref().is_some_and(|d| d.sigilless),
+                param_raw: has_raw && !has_rw && !has_copy,
                 topic_alias_unobservable: super::for_topic_alias::topic_alias_unobservable(
                     &loop_body,
                 ),
@@ -704,6 +721,5 @@ impl Compiler {
         if param.is_some() {
             self.code.emit(OpCode::RestoreForParam);
         }
-        self.self_is_signature_param = saved_self_is_signature_param;
     }
 }

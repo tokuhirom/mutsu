@@ -67,6 +67,21 @@ impl Interpreter {
             } => name.resolve(),
             _ => return None,
         };
+        // `self.Range::new(...)` from a user subclass of Range: the native
+        // range is carried under the Range payload attribute, as the
+        // subclass's own `.new` builds it.
+        if qualifier == "Range"
+            && class_name != "Range"
+            && built.is_range()
+            && self.class_mro(&class_name).iter().any(|c| c == "Range")
+        {
+            let mut attrs = HashMap::new();
+            attrs.insert(
+                crate::builtins::native_base::RANGE_PAYLOAD.to_string(),
+                built.clone(),
+            );
+            return Some(Ok(Value::make_instance(Symbol::intern(&class_name), attrs)));
+        }
         let backing = self.native_scalar_backing_parent(&class_name)?;
         if backing != qualifier {
             return None;
@@ -771,7 +786,13 @@ impl Interpreter {
         // fallback is wrong here): build the ancestor via its own native
         // constructor logic, then bless the result as the RECEIVER's type.
         if actual_method == "new" && qualifier != inst_cn_str {
-            let built = self.dispatch_new(Value::package(Symbol::intern(qualifier)), args.clone());
+            // `Range`'s constructor is not a native `new` row: build it the
+            // way a Range subclass's own `.new` does.
+            let built = if qualifier == "Range" {
+                Self::range_new_late(&args)
+            } else {
+                self.dispatch_new(Value::package(Symbol::intern(qualifier)), args.clone())
+            };
             match built {
                 Ok(built_val) => {
                     if let ValueView::Instance {
@@ -1282,8 +1303,13 @@ impl Interpreter {
             // exactly the `Mu::new` recursion hazard noted above, just for an
             // ancestor other than `Mu`.
             if actual_method == "new" && qualifier != pkg_name {
-                let built =
-                    self.dispatch_new(Value::package(Symbol::intern(qualifier)), args.clone());
+                // See the instance form: `Range`'s constructor is not a native
+                // `new` row.
+                let built = if qualifier == "Range" {
+                    Self::range_new_late(&args)
+                } else {
+                    self.dispatch_new(Value::package(Symbol::intern(qualifier)), args.clone())
+                };
                 match built {
                     Ok(built_val) => {
                         if let ValueView::Instance { attributes, id, .. } = built_val.view() {
@@ -1375,7 +1401,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let ValueView::Proxy {
-            subclass: Some((subclass_name, subclass_attrs)),
+            subclass: Some((_, subclass_attrs)),
             ..
         } = target.view()
         else {
@@ -1400,11 +1426,6 @@ impl Interpreter {
                 }));
             }
         }
-        // Handle .raku on Proxy subclass
-        if method == "raku" || method == "Str" || method == "gist" {
-            return Some(Ok(Value::str(format!("{}()", subclass_name.resolve()))));
-        }
-
         None
     }
 
@@ -1436,6 +1457,8 @@ impl Interpreter {
             Ok(v) => v,
             Err(e) => return Some(Err(e)),
         };
-        Some(self.call_method_with_values(fetched, method, args))
+        // A FETCH may answer the rebound lexical's binding cell; the method is
+        // called on what the cell holds.
+        Some(self.call_method_with_values(fetched.deref_container(), method, args))
     }
 }

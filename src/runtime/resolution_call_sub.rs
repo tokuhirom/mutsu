@@ -50,9 +50,8 @@ impl Interpreter {
         let is_bare_our = |stmt: &Stmt| {
             matches!(
                 stmt,
-                Stmt::VarDecl { is_our: true, expr, custom_traits, .. }
+                Stmt::VarDecl { is_our: true, expr, has_initializer: false, .. }
                     if crate::compiler::Compiler::is_synthesized_decl_default(expr)
-                        && !custom_traits.iter().any(|(n, _)| n == "__has_initializer")
             )
         };
         if !body.iter().any(is_bare_our) {
@@ -292,6 +291,61 @@ impl Interpreter {
         Value::sub_value(crate::gc::Gc::new(next))
     }
 
+    /// A Junction argument that no candidate of a captured family takes as a
+    /// whole is autothreaded, one call of the family per eigenstate -- as a
+    /// by-name call of a registry multi threads it. `None` when no argument
+    /// is a Junction, or some candidate accepts it (`Mu`, `Junction`, a
+    /// slurpy).
+    // Cost: O(c * p) to decide, c = candidates, p = parameters; then one
+    // dispatch per eigenstate of the threaded Junction.
+    fn autothread_captured_candidates(
+        &mut self,
+        func: &Value,
+        candidates: &[Value],
+        family_name: Option<&str>,
+        args: &[Value],
+    ) -> Result<Option<Value>, RuntimeError> {
+        let junction_indices: Vec<usize> = args
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| Self::extract_junction_from_arg(v).is_some())
+            .map(|(i, _)| i)
+            .collect();
+        if junction_indices.is_empty() {
+            return Ok(None);
+        }
+        let mut seen_candidate = false;
+        for candidate in candidates {
+            let ValueView::Sub(data) = candidate.view() else {
+                continue;
+            };
+            seen_candidate = true;
+            if self
+                .autothread_indices_for_params(args, &junction_indices, &data.param_defs)
+                .is_empty()
+            {
+                return Ok(None);
+            }
+        }
+        if !seen_candidate {
+            return Ok(None);
+        }
+        let idx = self.pick_autothread_junction_index(args, &junction_indices);
+        let Some((kind, values, pair_key)) = Self::extract_junction_from_arg(&args[idx]) else {
+            return Ok(None);
+        };
+        let mut results = Vec::with_capacity(values.len());
+        for eigenstate in values.iter() {
+            let mut threaded = args.to_vec();
+            threaded[idx] = match &pair_key {
+                Some(key) => Value::pair(key.clone(), eigenstate.clone()),
+                None => eigenstate.clone(),
+            };
+            results.push(self.call_captured_candidates(func, candidates, family_name, threaded)?);
+        }
+        Ok(Some(Value::junction(kind, results)))
+    }
+
     /// Dispatch `call_args` over the candidates `candidates` of the
     /// captured-candidate dispatcher `func` (family `family_name`), ranked as
     /// a by-name call ranks them (#12474), without resolving the family by
@@ -305,6 +359,11 @@ impl Interpreter {
         family_name: Option<&str>,
         call_args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if let Some(threaded) =
+            self.autothread_captured_candidates(func, candidates, family_name, &call_args)?
+        {
+            return Ok(threaded);
+        }
         if let Some((candidate, remaining)) = self.pick_captured_multi_candidate(
             family_name.unwrap_or(""),
             candidates,
@@ -601,6 +660,16 @@ impl Interpreter {
                 {
                     let mut args = args;
                     let invocant = args.remove(0);
+                    // A role mixed into a native value (`my %h does R`, whose
+                    // `R` overrides `AT-KEY`): the method object names the
+                    // core type's own method, so it runs on the native base,
+                    // not through the override that called it (WriteOnceHash's
+                    // `my &AT-KEY := ::?CLASS.^find_method('AT-KEY')`).
+                    if matches!(invocant.view(), ValueView::Mixin(..))
+                        && let Some(result) = self.mixin_base_native_entry(&invocant, &method, &args)
+                    {
+                        return result;
+                    }
                     return match invocant.view() {
                         ValueView::Package(_) if method == "new" => {
                             self.dispatch_native_new(invocant, args)
@@ -792,6 +861,15 @@ impl Interpreter {
                 .cloned()
             {
                 return self.try_compiled_method_or_interpret(callee, "CALL-ME", call_args);
+            }
+            // A CORE routine value (`&CORE::name`) runs the built-in, never a
+            // same-named declaration of the program.
+            if let Some(ValueView::Str(core_name)) = data
+                .env
+                .get(crate::meta_ns::CORE_ROUTINE_KEY)
+                .map(Value::view)
+            {
+                return self.call_core_routine(&core_name, call_args);
             }
             // Routine wrapper from .assuming() on a multi-dispatch sub
             if let Some(ValueView::Str(routine_name)) =
@@ -1061,20 +1139,6 @@ impl Interpreter {
                     new_env.insert_sym(*k, v.clone());
                     continue;
                 }
-                // `self` is LEXICAL in Raku: a block has no invocant of its own,
-                // so `self`/`$.attr` inside it resolves to the enclosing method's
-                // invocant — the one this closure captured. The merge_all
-                // don't-overwrite below made it *dynamic* instead: a natively
-                // invoked callback (a `whenever` body dispatched from a supplier
-                // tap or the in-process connect path) ran against whatever `self`
-                // the caller env last leaked — e.g. Cro::TCP::Listener.incoming's
-                // whenever body read `$.nodelay` off a Cro::TCP::Replier. Mirrors
-                // the VM closure dispatch's force-install; a method's own invocant
-                // is bound from its args after this merge, so it still wins.
-                if k.with_str(|s| s == "self") {
-                    new_env.insert_sym(*k, v.clone());
-                    continue;
-                }
                 // Caller-priority: a `Proxy` FETCH body (and the other
                 // native-invoked callbacks that pass `merge_all`) must see the
                 // CURRENT value of a captured lexical its STORE twin mutates
@@ -1108,17 +1172,6 @@ impl Interpreter {
                     continue;
                 }
                 new_env.insert_sym(*k, v.clone());
-            }
-            // `self` may live in a PARENT tier of the captured env: the loop
-            // above iterates the own tier only (`Env::iter` does not walk the
-            // chain, unlike `get`), so the lexical-self install in the loop
-            // never fires for a closure captured under a scoped overlay — a
-            // supply block created in `Sink.sinker` and driven from another
-            // object's method read `$!attr` off that other object. Resolve
-            // through the tier-walking get and force-install (self is lexical;
-            // a method's own invocant is bound from its args after this).
-            if let Some(captured_self) = data.env.get("self").cloned() {
-                new_env.insert("self".to_string(), captured_self);
             }
             self.env = new_env.clone();
             // Check for empty signature: a pointy block `-> { }` or sub with no
@@ -1193,6 +1246,7 @@ impl Interpreter {
             }
             // &?BLOCK: weak self-reference to break reference cycles
             let block_arc = crate::gc::Gc::new(crate::value::SubData {
+                fixtures: None,
                 package: data.package,
                 name: data.name,
                 params: data.params.clone(),
@@ -1279,6 +1333,8 @@ impl Interpreter {
             };
             self.record_profile_routine_frame(&frame);
             self.routine_stack.push(frame);
+            self.attach_closure_fixtures(&data);
+            self.adopt_function_invocant(&data.param_defs, &data.params, &call_args);
             self.block_stack
                 .push(crate::runtime::CodeFrame::Ready(block_sub));
             let return_spec = data

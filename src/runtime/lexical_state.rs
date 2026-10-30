@@ -396,7 +396,7 @@ pub(crate) struct LexicalState {
     /// name-keyed light-call caches must be bypassed for it (the slow path's
     /// `lexical_override` check resolves the correct callable). Populated at sub
     /// registration; checked cheaply (guarded by `is_empty()`) on each call.
-    pub(crate) amp_param_shadowed_names: std::collections::HashSet<Symbol>,
+    pub(crate) amp_param_shadowed_names: rustc_hash::FxHashSet<Symbol>,
     /// Frame-lexical routines (ADR-0113) whose definition this interpreter
     /// has derived, keyed by the compile-time identity both their
     /// declaration and their call sites carry. A declaration derives its
@@ -484,7 +484,7 @@ impl LexicalState {
             readonly_rw_tail: None,
             state_scope_id: Box::new(std::cell::Cell::new(None)),
             pending_nested_state_scope: None,
-            amp_param_shadowed_names: std::collections::HashSet::new(),
+            amp_param_shadowed_names: Default::default(),
             frame_lexical_routines: Default::default(),
             frame_lexical_closure_bodies: Default::default(),
             block_declared_vars: crate::runtime::ScopeStack::new(),
@@ -506,9 +506,13 @@ impl LexicalState {
             nested_method_captures: Default::default(),
             composed_nested_method_captures: self.composed_nested_method_captures.clone(),
             nested_capture_cell_names: self.nested_capture_cell_names.clone(),
-            our_vars: rustc_hash::FxHashMap::default(),
-            our_var_unqualified: rustc_hash::FxHashSet::default(),
-            our_term_keys: rustc_hash::FxHashSet::default(),
+            // A package variable the parent persisted (`$GLOBAL::x = ...` made
+            // inside a sub, which no env keeps once the frame returns) is
+            // visible to the worker as of the spawn. Containers keep sharing
+            // their `Gc` with the parent.
+            our_vars: self.our_vars.clone(),
+            our_var_unqualified: self.our_var_unqualified.clone(),
+            our_term_keys: self.our_term_keys.clone(),
             // ADR-11318: one `PROCESS::` stash for the whole lineage.
             process_dynamics: self.process_dynamics.clone(),
             hll_syms: rustc_hash::FxHashMap::default(),
@@ -554,7 +558,7 @@ impl LexicalState {
             readonly_rw_tail: None,
             state_scope_id: Box::new(std::cell::Cell::new(None)),
             pending_nested_state_scope: None,
-            amp_param_shadowed_names: std::collections::HashSet::new(),
+            amp_param_shadowed_names: Default::default(),
             frame_lexical_routines: Arc::clone(&self.frame_lexical_routines),
             frame_lexical_closure_bodies: Arc::clone(&self.frame_lexical_closure_bodies),
             block_declared_vars: crate::runtime::ScopeStack::new(),

@@ -19,11 +19,12 @@ fn adverb_not_allowed_error(spelled: &str) -> PError {
     PError::fatal_with_exception(message, Box::new(exception))
 }
 
-use super::meta_ops::{
+use super::meta_ops::{starts_with_sequence_op, try_inline_modifier, try_parse_sequence_in_paren};
+use crate::rakuast::list_infix::{
     finalize_paren_list, maybe_curry_xz_metaop, normalize_chained_zip_meta,
-    normalize_sequence_waypoints, starts_with_sequence_op, try_inline_modifier,
-    try_parse_sequence_in_paren,
+    normalize_sequence_waypoints,
 };
+use crate::rakuast::sections::lower_paren_sections;
 
 /// Parse a parenthesized expression or list.
 pub(crate) fn paren_expr(input: &str) -> PResult<'_, Expr> {
@@ -72,6 +73,19 @@ fn mark_parenthesized(expr: Expr) -> Expr {
         }
         other => Expr::Grouped(Box::new(other)),
     }
+}
+
+/// The `)` that closes a parenthesized statement carrying a modifier; the
+/// statement may end with its own `;` first (`(|(1, 2) if $x;)`).
+// Cost: O(1).
+fn close_after_modified_statement(input: &str) -> Result<&str, PError> {
+    let (rest, _) = ws(input)?;
+    let rest = match rest.strip_prefix(';') {
+        Some(after) if !after.starts_with(';') => ws(after)?.0,
+        _ => rest,
+    };
+    let (rest, _) = parse_char(rest, ')')?;
+    Ok(rest)
 }
 
 fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
@@ -238,8 +252,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
     // Check for inline statement modifier: ($_ with data), (expr if cond), etc.
     if let Some(result) = try_inline_modifier(input, first.clone()) {
         let (rest, modified_expr) = result?;
-        let (rest, _) = ws(rest)?;
-        let (rest, _) = parse_char(rest, ')')?;
+        let rest = close_after_modified_statement(rest)?;
         return Ok((rest, modified_expr));
     }
     // Check for sequence operator after single item: (1 ... 5)
@@ -330,8 +343,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
             && let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone()))
         {
             let (rest, modified_expr) = result?;
-            let (rest, _) = ws(rest)?;
-            let (rest, _) = parse_char(rest, ')')?;
+            let rest = close_after_modified_statement(rest)?;
             return Ok((rest, modified_expr));
         }
         let sep = if input.starts_with(',') {
@@ -351,8 +363,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
             && let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone()))
         {
             let (rest, modified_expr) = result?;
-            let (rest, _) = ws(rest)?;
-            let (rest, _) = parse_char(rest, ')')?;
+            let rest = close_after_modified_statement(rest)?;
             return Ok((rest, modified_expr));
         }
         if let Ok((input, _)) = parse_char(input, ')') {
@@ -378,6 +389,10 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
 /// non-empty section becomes one element: a multi-item section is a sub-list,
 /// a single-item section is the bare item. A single overall section (e.g. a
 /// trailing `;`: `(1,2,3;)`) is NOT wrapped, matching Raku.
+///
+/// The parse keeps the sections as written (`Spelling::ParenSections`);
+/// [`crate::rakuast::sections::lower_paren_sections`] is the executable shape alone.
+// Cost: O(n), n = size of the sections.
 pub(crate) fn finalize_paren_sections(
     mut sections: Vec<Vec<Expr>>,
     current: Vec<Expr>,
@@ -389,28 +404,10 @@ pub(crate) fn finalize_paren_sections(
     if !current.is_empty() {
         sections.push(current);
     }
-    let source = crate::ast::spelled::keeping().then(|| sections.clone());
-    let result = match sections.len() {
-        0 => Expr::ArrayLiteral(Vec::new()),
-        1 => build_paren_section(sections.into_iter().next().unwrap()),
-        _ => Expr::ArrayLiteral(sections.into_iter().map(build_paren_section).collect()),
-    };
-    match source {
-        Some(sections) => Expr::spelled(result, || {
-            crate::ast::spelled::Spelling::ParenSections(sections)
-        }),
-        None => result,
-    }
-}
-
-/// Render one semicolon-section: a single item stays bare; multiple items form
-/// a sub-list (via `finalize_paren_list`, so meta-ops etc. still lift).
-fn build_paren_section(items: Vec<Expr>) -> Expr {
-    if items.len() == 1 {
-        items.into_iter().next().unwrap()
-    } else {
-        finalize_paren_list(items)
-    }
+    let source = sections.clone();
+    Expr::spelled(lower_paren_sections(sections, Vec::new(), true), || {
+        crate::ast::spelled::Spelling::ParenSections(source)
+    })
 }
 
 /// Check if an expression is a colonpair (represented as a FatArrow binary expression).

@@ -159,6 +159,21 @@ impl<'ast> Visit<'ast> for HasBareWord {
     }
 }
 
+/// The module a `use` below the unit's top level binds in a lexical import
+/// set: every module a `use` loads, `Test` included (a block's `use Test`
+/// binds its routines in the block, not in the registry), but no pragma and
+/// no foreign-language `:from` import.
+// Cost: O(t), t = tags.
+pub(crate) fn lexically_importable_module_name<'a>(
+    module: &'a str,
+    tags: &[String],
+) -> Option<&'a str> {
+    if tags.iter().any(|t| t == "from") || is_pragma_like(module) {
+        return None;
+    }
+    Some(module)
+}
+
 pub(crate) fn preloadable_module_name<'a>(
     module: &'a str,
     tags: &[String],
@@ -177,13 +192,16 @@ pub(crate) fn preloadable_module_name<'a>(
     Some(module)
 }
 
-/// A `use` of something that loads no compunit of its own. The same rule the
-/// parser's module scan uses (`module_exports::import_is_pragma_like`): a
-/// lowercase-initial name is a pragma, plus the handful of uppercase ones that
-/// are built into the VM.
+/// A `use` of something that loads no compunit of its own: the pragmas mutsu
+/// applies itself (`crate::runtime::begin_prologue::is_known_pragma_name`,
+/// `lib`) and the handful of uppercase ones built into the VM. Any other
+/// lowercase name is an ordinary module that happens to be spelled like a
+/// pragma (`use has-word`, `use vars <$x>`): its imports are lexical to the
+/// `use`, like any module's, so an `EVAL` in the importing unit's routines
+/// still sees them.
 fn is_pragma_like(module: &str) -> bool {
     if module.starts_with(|c: char| !c.is_ascii_uppercase()) {
-        return true;
+        return module == "lib" || crate::runtime::begin_prologue::is_known_pragma_name(module);
     }
     matches!(
         module,

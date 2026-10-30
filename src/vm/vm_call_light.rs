@@ -252,6 +252,10 @@ impl Interpreter {
                     too_many,
                 );
                 self.stack.truncate(args_base);
+                // A slot-only parameter that was not mirrored into `env` is not recorded
+                // here: a reader of this frame by name is reached through
+                // `push_caller_env`, which copies the live frame's slot-only locals,
+                // parameters included, when the call is made (#15048).
                 return Err(err);
             }
         }
@@ -1181,59 +1185,14 @@ impl Interpreter {
         // correct once such a call does arrive.
         self.current_unit = saved_unit;
 
-        // A definite constant return spec (`--> Nil`, `--> True`, `--> 42`,
-        // #9074) is not a type check: mirror `finalize_return_with_spec`'s
-        // definite arm. A `fail` bypasses it; a bare `return` and a natural
-        // completion yield the constant (the latter after sinking the body's
-        // value, so a trailing lazy `.map` still runs); a `.return` with a
-        // non-Nil value is `X::AdHoc`.
-        let definite_value = if let Some(konst) = &cf.return_definite_const
-            && result.is_ok()
-            && !fail_bypass
-        {
-            match &explicit_return {
-                // Only `27.return` checks the pinned value; a `return 27`
-                // from a nested block returns its own argument (rakudo's
-                // `return` sub never checks), see `finalize_return_with_spec`.
-                Some(v) if !v.is_nil() && explicit_from_method => {
-                    let spec = cf.return_type.as_deref().unwrap_or("Nil");
-                    return Err(self.malformed_return_value_error(v, spec));
-                }
-                Some(v) if !v.is_nil() => None,
-                Some(_) => Some(konst.clone()),
-                None => {
-                    self.sink_for_definite_return(&ret_val)?;
-                    Some(konst.clone())
-                }
-            }
-        } else {
-            None
-        };
-
-        // Return type check (if specified). Allows type objects, Nil, and Failure through.
-        if result.is_ok()
-            && cf.return_definite_const.is_none()
-            && let Some(ref rt) = cf.return_type
-        {
-            let check_val = explicit_return.as_ref().unwrap_or(&ret_val);
-            let passed = match cf.return_fast_type {
-                Some(crate::opcode::FastParamCheck::Fast { kind, name_sym }) => {
-                    self.light_return_check(check_val, kind, name_sym)
-                }
-                _ if rt == "UInt" => self.light_return_check(
-                    check_val,
-                    crate::opcode::FastParamType::UInt,
-                    crate::symbol::Symbol::intern(rt),
-                ),
-                _ => Self::light_return_type_check(check_val, rt),
-            };
-            if !passed {
-                // The SAME typed `X::TypeCheck::Return` the general return-value
-                // path raises. A bare `RuntimeError` here was invisible to
-                // `throws-like ..., X::TypeCheck::Return` (#7573).
-                return Err(self.throw_type_check_return(rt, check_val));
-            }
-        }
+        let definite_value = self.light_finish_return(
+            cf,
+            result.is_ok(),
+            &explicit_return,
+            &ret_val,
+            fail_bypass,
+            explicit_from_method,
+        )?;
 
         // Slice F (env<->locals coherence): record the captured-outer variables
         // this body writes so the call-site op writes their new env values straight
@@ -1270,6 +1229,77 @@ impl Interpreter {
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// What a light call does with its body's outcome before returning: a
+    /// definite constant return spec (`--> Nil`, `--> True`) answers its
+    /// constant (`Some`), and a declared fast return type is checked against
+    /// the value (`X::TypeCheck::Return` on a mismatch). Shared by the
+    /// positional-light and named-light paths so they cannot drift.
+    // Cost: O(1) for a fast return type or a constant spec.
+    pub(super) fn light_finish_return(
+        &mut self,
+        cf: &CompiledFunction,
+        result_ok: bool,
+        explicit_return: &Option<Value>,
+        ret_val: &Value,
+        fail_bypass: bool,
+        explicit_from_method: bool,
+    ) -> Result<Option<Value>, RuntimeError> {
+        // A definite constant return spec (`--> Nil`, `--> True`, `--> 42`,
+        // #9074) is not a type check: mirror `finalize_return_with_spec`'s
+        // definite arm. A `fail` bypasses it; a bare `return` and a natural
+        // completion yield the constant (the latter after sinking the body's
+        // value, so a trailing lazy `.map` still runs); a `.return` with a
+        // non-Nil value is `X::AdHoc`.
+        let definite_value = if let Some(konst) = &cf.return_definite_const
+            && result_ok
+            && !fail_bypass
+        {
+            match explicit_return {
+                // Only `27.return` checks the pinned value; a `return 27`
+                // from a nested block returns its own argument (rakudo's
+                // `return` sub never checks), see `finalize_return_with_spec`.
+                Some(v) if !v.is_nil() && explicit_from_method => {
+                    let spec = cf.return_type.as_deref().unwrap_or("Nil");
+                    return Err(self.malformed_return_value_error(v, spec));
+                }
+                Some(v) if !v.is_nil() => None,
+                Some(_) => Some(konst.clone()),
+                None => {
+                    self.sink_for_definite_return(ret_val)?;
+                    Some(konst.clone())
+                }
+            }
+        } else {
+            None
+        };
+
+        // Return type check (if specified). Allows type objects, Nil, and Failure through.
+        if result_ok
+            && cf.return_definite_const.is_none()
+            && let Some(ref rt) = cf.return_type
+        {
+            let check_val = explicit_return.as_ref().unwrap_or(ret_val);
+            let passed = match cf.return_fast_type {
+                Some(crate::opcode::FastParamCheck::Fast { kind, name_sym }) => {
+                    self.light_return_check(check_val, kind, name_sym)
+                }
+                _ if rt == "UInt" => self.light_return_check(
+                    check_val,
+                    crate::opcode::FastParamType::UInt,
+                    crate::symbol::Symbol::intern(rt),
+                ),
+                _ => Self::light_return_type_check(check_val, rt),
+            };
+            if !passed {
+                // The SAME typed `X::TypeCheck::Return` the general return-value
+                // path raises. A bare `RuntimeError` here was invisible to
+                // `throws-like ..., X::TypeCheck::Return` (#7573).
+                return Err(self.throw_type_check_return(rt, check_val));
+            }
+        }
+        Ok(definite_value)
     }
 
     /// Check if a type name is one of the basic types that fast_type_check handles.
@@ -1410,7 +1440,8 @@ impl Interpreter {
         }
         // Type objects (Package values) that match the return type pass
         if let ValueView::Package(sym) = val.view() {
-            return sym.resolve() == type_name;
+            let sym = sym.resolve();
+            return sym == type_name || type_name == "Mu" || (type_name == "Any" && sym != "Mu");
         }
         Self::fast_type_check(val, type_name)
     }
@@ -1453,7 +1484,17 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => {
                 class_name.resolve() == "Failure" || kind == T::Wild
             }
-            ValueView::Package(sym) => sym == name_sym,
+            // A returned type object satisfies the return type it is named
+            // after; `Mu` takes every one (`sub f(Mu $n --> Mu) {
+            // $n.parent }` returning a `Bt` type object, Selkie's
+            // `next-ancestor`) and `Any` every one but `Mu` itself.
+            ValueView::Package(sym) => {
+                sym == name_sym
+                    || match kind {
+                        T::Wild => name_sym.with_str(|n| n == "Mu") || sym.with_str(|s| s != "Mu"),
+                        _ => false,
+                    }
+            }
             ValueView::Mixin(..) => name_sym.with_str(|n| val.isa_check(n)),
             ValueView::Int(_) | ValueView::BigInt(_) => matches!(kind, T::Int | T::Wild),
             ValueView::Str(_) => matches!(kind, T::Str | T::Wild),

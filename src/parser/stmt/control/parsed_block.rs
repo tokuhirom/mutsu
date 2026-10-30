@@ -52,18 +52,14 @@ pub(crate) fn block_spans(start: &str, brace: &str, rest: &str, body: &[Stmt]) -
     }
 }
 
-/// The statement a `for` loop becomes: the loop itself, which already keeps
-/// what the source wrote, or, for a parse the RakuAST conversion reads, the
-/// loop with the positions of its block (ADR-10723 Stage 2).
+/// The statement a `for` loop becomes: the loop itself, with the positions of
+/// its block, for the RakuAST conversion (ADR-10723 Stage 2).
 // Cost: O(1).
 pub(crate) fn finish_for(stmt: Stmt, block: BlockSpans) -> Stmt {
-    if crate::ast::spelled::keeping() {
-        return Stmt::Ast(Box::new(ParsedStmt::For {
-            stmt: Box::new(stmt),
-            block,
-        }));
-    }
-    stmt
+    Stmt::Ast(Box::new(ParsedStmt::For {
+        stmt: Box::new(stmt),
+        block,
+    }))
 }
 
 /// The range of a block's statements (see
@@ -94,16 +90,12 @@ fn statement_list_span(body: &[Stmt], blockoid: SrcSpan) -> SrcSpan {
 }
 
 /// The statement a construct the parser built becomes: kept in its RakuAST
-/// shape for a parse the RakuAST conversion reads, lowered where it is built
-/// for every other parse. The kept node is lowered once as well, so the same
-/// source raises the same compile-time errors either way.
-// Cost: O(n), n = size of the construct (twice when the node is kept).
+/// shape for the conversion. The node is lowered once here as well, so the
+/// compile-time errors of the construct are raised at parse time.
+// Cost: O(n), n = size of the construct (twice).
 pub(crate) fn finish(node: ParsedStmt) -> Result<Stmt, crate::value::RuntimeError> {
-    if crate::ast::spelled::keeping() {
-        crate::rakuast::lower_parsed_stmt(node.clone())?;
-        return Ok(Stmt::Ast(Box::new(node)));
-    }
-    crate::rakuast::lower_parsed_stmt(node)
+    crate::rakuast::lower_parsed_stmt(node.clone())?;
+    Ok(Stmt::Ast(Box::new(node)))
 }
 
 /// [`finish`] for a node whose lowering cannot fail.

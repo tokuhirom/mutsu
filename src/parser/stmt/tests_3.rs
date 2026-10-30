@@ -1,5 +1,6 @@
 //! Unit tests for `stmt` parsing (split out of mod.rs, part 3).
 
+use super::lowered_program as program;
 use super::*;
 use crate::ast::Expr;
 use crate::value::{Value, ValueView};
@@ -243,10 +244,16 @@ fn parse_role_decl_does_clause_captures_bracket_exprs() {
 /// `does` name is a typo.
 #[test]
 fn parse_role_decl_records_whether_a_parent_came_from_is() {
-    for (src, expected) in [("role R2 is R1 { }", true), ("role R2 does R1 { }", false)] {
+    for (src, expected) in [
+        ("role R1 { }; role R2 is R1 { }", true),
+        ("role R1 { }; role R2 does R1 { }", false),
+    ] {
         let (rest, stmts) = program(src).unwrap();
         assert_eq!(rest, "");
-        let Stmt::RoleDecl { body, .. } = &stmts[0] else {
+        let Some(Stmt::RoleDecl { body, .. }) = stmts
+            .iter()
+            .find(|s| matches!(s, Stmt::RoleDecl { name, .. } if name == "R2"))
+        else {
             panic!("expected RoleDecl for {src}");
         };
         let Stmt::DoesDecl { name, from_is, .. } = &body[0] else {
@@ -371,13 +378,15 @@ fn assign_stmt_reports_missing_method_name_for_mutating_call() {
 #[test]
 fn assign_stmt_parses_zip_compound_assign() {
     let (rest, stmt) = assign::assign_stmt("$a Z+= 2;").unwrap();
+    let stmt = crate::parser::test_lower::stmt(stmt);
     assert_eq!(rest, ";");
-    assert!(matches!(stmt, Stmt::Assign { .. }));
+    assert!(matches!(stmt, Stmt::Expr(Expr::MetaOp { .. })), "{stmt:?}");
 }
 
 #[test]
 fn assign_stmt_parses_comma_compound_assign() {
     let (rest, stmt) = assign::assign_stmt("%h ,= 1;").unwrap();
+    let stmt = crate::parser::test_lower::stmt(stmt);
     assert_eq!(rest, ";");
     assert!(matches!(stmt, Stmt::Assign { .. }));
 }
@@ -387,6 +396,7 @@ fn assign_stmt_scalar_item_assignment_stops_at_comma() {
     // `$x = 1, 2` is `($x = 1), 2`: only the first element is assigned, and
     // the rest become a sink-context comma list.
     let (rest, stmt) = assign::assign_stmt("$x = 1, 2;").unwrap();
+    let stmt = crate::parser::test_lower::stmt(stmt);
     assert_eq!(rest, ";");
     match stmt {
         Stmt::Expr(Expr::ArrayLiteral(items)) => {
@@ -406,6 +416,7 @@ fn assign_stmt_scalar_item_assignment_stops_at_comma() {
 fn assign_stmt_scalar_plain_assignment_has_no_comma() {
     // Without a trailing comma the assignment is a plain `Stmt::Assign`.
     let (rest, stmt) = assign::assign_stmt("$x = 1;").unwrap();
+    let stmt = crate::parser::test_lower::stmt(stmt);
     assert_eq!(rest, ";");
     assert!(matches!(
         stmt,
@@ -418,6 +429,7 @@ fn assign_stmt_scalar_plain_assignment_has_no_comma() {
 fn assign_stmt_array_list_assignment_absorbs_comma() {
     // `@a = 1, 2` keeps the comma-absorbing RHS (list assignment).
     let (rest, stmt) = assign::assign_stmt("@a = 1, 2;").unwrap();
+    let stmt = crate::parser::test_lower::stmt(stmt);
     assert_eq!(rest, ";");
     assert!(matches!(
         stmt,

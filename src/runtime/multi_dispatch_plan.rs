@@ -257,14 +257,20 @@ impl Interpreter {
         let mut entries: Vec<PlanEntry> = candidates
             .into_iter()
             .map(|(_, def)| PlanEntry {
-                key: self.candidate_rank_key(&def, args),
+                // The candidate's parameter types are named in the scope that
+                // declared it: a module-private `my constant` type is not
+                // visible from the caller (#15087).
+                key: self.with_candidate_scope(&def, |this| this.candidate_rank_key(&def, args)),
                 reads_value: self.candidate_rank_reads_value(&def),
                 def,
             })
             .collect();
-        multi_rank::assign_tiers(&mut entries, |entry| &mut entry.key, &|x, y| {
-            self.nominal_type_conforms(x, y)
-        });
+        {
+            let _scope = self.conformance_scope();
+            multi_rank::assign_tiers(&mut entries, |entry| &mut entry.key, &|x, y| {
+                self.nominal_type_conforms(x, y)
+            });
+        }
         entries
     }
 
@@ -312,7 +318,9 @@ impl Interpreter {
                 continue;
             }
             let key = if entry.reads_value {
-                self.candidate_rank_key(&entry.def, args)
+                self.with_candidate_scope(&entry.def, |this| {
+                    this.candidate_rank_key(&entry.def, args)
+                })
             } else {
                 entry.key
             };
@@ -323,6 +331,7 @@ impl Interpreter {
         }
         // A key re-ranked against this call's values needs its tier again.
         if stage.iter().any(|entry| entry.reads_value) {
+            let _scope = self.conformance_scope();
             multi_rank::assign_tiers(&mut ranked, |(key, _)| key, &|x, y| {
                 self.nominal_type_conforms(x, y)
             });

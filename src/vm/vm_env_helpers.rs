@@ -47,6 +47,21 @@ impl Interpreter {
         }
     }
 
+    /// [`Interpreter::push_caller_env`] for a call that has already opened its
+    /// call frame: the calling frame is the one that frame recorded.
+    pub(super) fn push_caller_env_in_call_frame(&mut self) {
+        let caller = self.call_frames.last().and_then(|frame| {
+            frame
+                .saved_locals_base
+                .as_ref()
+                .map(|base| (frame.caller_code, base.base()))
+        });
+        match caller {
+            Some((code, base)) => self.push_caller_env_of_frame(code, base),
+            None => self.push_caller_env(),
+        }
+    }
+
     /// Save the current env, locals, stack depth, and readonly vars into a new
     /// call frame.
     pub(super) fn push_call_frame(&mut self) {
@@ -316,7 +331,7 @@ impl Interpreter {
         // declaring scope is the invocant's class (`self`), so probe its
         // package chain too (`unit class EnumC; our enum HF <… Lists>;
         // method new(:$h = Lists)` reads `Lists` as `EnumC::Lists`).
-        let self_value = self.env_self_value();
+        let self_value = self.frame_invocant();
         let invocant_class = match self_value.as_ref().map(|v| v.view()) {
             Some(ValueView::Instance { class_name, .. }) => Some(class_name),
             Some(ValueView::Package(p)) => Some(p),
@@ -1608,6 +1623,13 @@ impl Interpreter {
         {
             return Some(v);
         }
+        // The fixed per-call names are the frame record's alone (ADR-14843).
+        if sym == crate::symbol::wk::self_() {
+            return self.frame_invocant();
+        }
+        if sym == crate::symbol::wk::class_decl() || sym == crate::symbol::wk::role_decl() {
+            return self.frame_fixture_value(sym);
+        }
         // A process-level dynamic written at run time (`$PROCESS::OUT = ...`,
         // possibly by another thread) lives only in the process stash, and a
         // read reaching the process binding must see it (ADR-11318). Asked
@@ -1939,6 +1961,15 @@ impl Interpreter {
                 return;
             }
         }
+        // No thread publishes this write: it is the one-Symbol env insert
+        // `set_shared_var_sym` ends in, without its `value` clone and key probes.
+        if let Some(sym) = sym
+            && !self.threads.shared_vars_active
+        {
+            crate::env::note_env_key(name);
+            self.env_mut().insert_sym(sym, value);
+            return;
+        }
         loan_env!(self, set_shared_var_sym(name, sym, value));
     }
 
@@ -1964,6 +1995,20 @@ impl Interpreter {
         value: Value,
         fresh_binding: bool,
     ) {
+        // The frame record owns `self`, `?CLASS` and `?ROLE`: a by-name store
+        // of one reaches the record, never an env key (ADR-14843). A `self`
+        // with no record to take it is a non-method routine's own `$self`
+        // parameter, which keeps its env binding.
+        match name {
+            "self" => {
+                if let Some(slot) = self.frame_invocant_mut() {
+                    *slot = value;
+                    return;
+                }
+            }
+            "?CLASS" | "?ROLE" => return,
+            _ => {}
+        }
         // Write companion of the redirect in `get_env_with_main_alias`: the
         // compunit's own cell is this name's only home while one of its routines
         // is running, so the write must not land on the loading scope's env key.
@@ -3170,8 +3215,15 @@ impl Interpreter {
         if slot_val.is_nil() {
             return;
         }
+        // A same-variant mirror is only current when it is the slot's own
+        // container: a loop body's `my $h = %(...)` makes a fresh Hash each
+        // iteration while the mirror still holds the previous iteration's.
         let stale = match self.env().get(var_name) {
-            Some(mirror) => !mirror.same_variant(&slot_val),
+            Some(mirror) => {
+                !mirror.same_variant(&slot_val)
+                    || (matches!(slot_val.view(), ValueView::Hash(_) | ValueView::Array(..))
+                        && !crate::value::identity::values_identical(mirror, &slot_val))
+            }
             None => true,
         };
         if stale {

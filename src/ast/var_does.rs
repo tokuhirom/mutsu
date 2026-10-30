@@ -15,11 +15,18 @@ use crate::token_kind::TokenKind;
 /// `name` is the declared variable as the parser spells it (`x`, `@a`, `%h`).
 // Cost: O(1).
 pub(crate) fn expand(name: &str, decl: Stmt, op: &str, role: Expr, init: Option<Stmt>) -> Stmt {
+    // A container's initializer is its `STORE` with `:INITIALIZE`; the mark
+    // tells the compiler that the assignment after this `does` is that one.
+    let form = if op == "does" && init.is_some() && name.starts_with(['@', '%']) {
+        crate::ast::BinaryForm::DoesDeclInit
+    } else {
+        Default::default()
+    };
     let mixin = Expr::Binary {
         left: Box::new(Expr::Var(name.to_string())),
         op: TokenKind::Ident(op.to_string()),
         right: Box::new(role),
-        form: Default::default(),
+        form,
     };
     let mut stmts = vec![decl, Stmt::Expr(mixin)];
     stmts.extend(init);

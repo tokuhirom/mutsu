@@ -37,6 +37,14 @@ pub(crate) trait EqvInstanceHook {
     fn mixin_eqv(&mut self, _a: &Value, _b: &Value) -> Option<bool> {
         None
     }
+
+    /// Whether two attribute values the structural walk found different are
+    /// still `eqv` the way Rakudo's default `.raku` sees them: that rendering
+    /// reads each attribute by its `.raku`, so two distinct type objects that
+    /// share a name are the same there. `None` when the hook cannot decide.
+    fn attribute_value_eqv(&mut self, _a: &Value, _b: &Value) -> Option<bool> {
+        None
+    }
 }
 
 /// The interpreter-free hook: every attribute slot takes part.
@@ -641,7 +649,10 @@ impl Value {
                         b_entries
                             .iter()
                             .find(|(other_key, _)| other_key == key)
-                            .is_some_and(|(_, other)| value.eqv_inner(other, seen))
+                            .is_some_and(|(_, other)| {
+                                value.eqv_inner(other, seen)
+                                    || seen.hook.attribute_value_eqv(value, other) == Some(true)
+                            })
                     })
             }
             // The Nil value IS the Nil type object: a `Package("Nil")` obtained

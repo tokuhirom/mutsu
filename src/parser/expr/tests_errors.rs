@@ -12,6 +12,7 @@ fn comparison_requires_rhs_expression() {
 #[test]
 fn parse_strict_not_equal_operator() {
     let (rest, expr) = expression("1 !=== 2").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     match expr {
         Expr::Unary {
@@ -32,6 +33,7 @@ fn parse_strict_not_equal_operator() {
 #[test]
 fn parse_negated_comparison_meta_operators() {
     let (rest, expr) = expression("2 !== 3").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     match expr {
         Expr::Unary {
@@ -49,6 +51,7 @@ fn parse_negated_comparison_meta_operators() {
     }
 
     let (rest, expr) = expression("$a !eq $b").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     match expr {
         Expr::Unary {
@@ -69,6 +72,7 @@ fn parse_negated_comparison_meta_operators() {
 #[test]
 fn parse_container_not_equal_operator() {
     let (rest, expr) = expression("$a !=:= $b").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     match expr {
         Expr::Unary {
@@ -286,9 +290,8 @@ fn parse_subscript_adverb_does_not_become_call_adverb() {
         Expr::Call { name, args, .. } => {
             assert_eq!(name, "say");
             assert_eq!(args.len(), 1);
-            assert!(
-                matches!(args[0], Expr::Call { ref name, .. } if name == "__mutsu_subscript_adverb")
-            );
+            assert!(matches!(&args[0], Expr::Ast(node)
+                if matches!(node.as_ref(), crate::ast::parsed::ParsedExpr::SubscriptAdverbs(_))));
         }
         _ => panic!("expected call expression"),
     }
@@ -302,9 +305,8 @@ fn parse_hash_subscript_adverb_does_not_become_call_adverb() {
         Expr::Call { name, args, .. } => {
             assert_eq!(name, "say");
             assert_eq!(args.len(), 1);
-            assert!(
-                matches!(args[0], Expr::Call { ref name, .. } if name == "__mutsu_subscript_adverb")
-            );
+            assert!(matches!(&args[0], Expr::Ast(node)
+                if matches!(node.as_ref(), crate::ast::parsed::ParsedExpr::SubscriptAdverbs(_))));
         }
         _ => panic!("expected call expression"),
     }

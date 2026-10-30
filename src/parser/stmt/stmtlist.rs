@@ -323,20 +323,18 @@ pub(crate) fn stmt_list_with_mode(
         let r = consume_semicolons(r);
         trace::empty_statements(separators, r, open_terminator);
         // A `.AST` parse keeps each `;` that ends no statement (`Statement::Empty`).
-        if crate::ast::spelled::keeping() {
-            for tail in trace::empty_statement_tails(separators, r, open_terminator) {
-                let at = crate::parser::primary::source_offset(tail);
-                let empty = crate::ast::Expr::spelled(
-                    crate::ast::Expr::Literal(crate::value::Value::NIL),
-                    || crate::ast::spelled::Spelling::EmptyStatement,
-                );
-                stmts.push(Stmt::Expr(match at {
-                    Some(at) => crate::ast::Expr::spelled(empty, || {
-                        crate::ast::spelled::Spelling::Origin(crate::ast::SrcSpan::new(at, at))
-                    }),
-                    None => empty,
-                }));
-            }
+        for tail in trace::empty_statement_tails(separators, r, open_terminator) {
+            let at = crate::parser::primary::source_offset(tail);
+            let empty = crate::ast::Expr::spelled(
+                crate::ast::Expr::Literal(crate::value::Value::NIL),
+                || crate::ast::spelled::Spelling::EmptyStatement,
+            );
+            stmts.push(Stmt::Expr(match at {
+                Some(at) => crate::ast::Expr::spelled(empty, || {
+                    crate::ast::spelled::Spelling::Origin(crate::ast::SrcSpan::new(at, at))
+                }),
+                None => empty,
+            }));
         }
         let (r, _) = ws_bol(r)?;
         // End of block or input
@@ -398,16 +396,20 @@ pub(crate) fn stmt_list_with_mode(
         // the compiler keeps their package context for the rest of the scope.)
         if allow_mainline_capture && starts_unit_class_role_grammar(r) {
             let (after_decl, decl0) = class::unit_module_stmt(r)?;
-            // `unit class Foo:ver(...)` comes back as a non-lexical
-            // `SyntheticBlock` of `:ver`/`:auth`/`:api` metadata setters with the
-            // declaration itself last. Work on the declaration and re-emit the
-            // setters ahead of it.
-            let (mut meta_stmts, mut decl) = match decl0 {
-                Stmt::SyntheticBlock(mut inner) => {
-                    let decl = inner.pop().expect("declaration is the last element");
-                    (inner, decl)
+            // `unit class Foo:ver(...)` comes back with the typed header node
+            // around the declaration; it is put back around the finished one.
+            let (mut meta_stmts, mut decl, header) = match decl0 {
+                Stmt::Ast(node)
+                    if matches!(*node, crate::ast::parsed::ParsedStmt::PackageHeader { .. }) =>
+                {
+                    let crate::ast::parsed::ParsedStmt::PackageHeader { decl, name, header } =
+                        *node
+                    else {
+                        unreachable!("matched a PackageHeader above");
+                    };
+                    (Vec::new(), *decl, Some((name, header)))
                 }
-                other => (Vec::new(), other),
+                other => (Vec::new(), other, None),
             };
             let (tail_rest, mut tail_stmts) = stmt_list_with_mode(after_decl, false, emit_setline)?;
             match &mut decl {
@@ -462,7 +464,7 @@ pub(crate) fn stmt_list_with_mode(
                     }
                     // A method declared in a nested block of the body is the
                     // class's too, as in the block form (`package_body_block`).
-                    super::nested_block_methods::hoist(&mut tail_stmts);
+                    crate::rakuast::nested_methods::hoist(&mut tail_stmts);
                     // The declarator's record of its written header traits, if
                     // it kept one, still leads the body.
                     tail_stmts.splice(0..0, std::mem::take(body));
@@ -521,14 +523,19 @@ pub(crate) fn stmt_list_with_mode(
                     // absorbed compilation-unit statements after them, rather
                     // than replacing the body wholesale and dropping the
                     // parent-role composition.
-                    super::nested_block_methods::hoist(&mut tail_stmts);
+                    crate::rakuast::nested_methods::hoist(&mut tail_stmts);
                     body.append(&mut tail_stmts);
                 }
                 _ => {}
             }
             crate::parser::decl_doc::attach_unit_stmt(r, &decl);
             stmts.append(&mut meta_stmts);
-            stmts.push(decl);
+            stmts.push(match header {
+                Some((name, header)) => {
+                    super::control::parsed_block::finish_package_header(decl, &name, header)
+                }
+                None => decl,
+            });
             return Ok((tail_rest, stmts));
         }
         // Emit source line info for deprecation tracking and error reporting.

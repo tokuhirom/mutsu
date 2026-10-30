@@ -10,8 +10,8 @@ pub(crate) use container::angle_list;
 pub(in crate::parser) mod ident;
 pub(in crate::parser) mod misc;
 pub(crate) use misc::{
-    ANON_COLONS_TRAIT, ANON_DECL_TRAIT, mark_anon_package_stmt, next_anon_class_name,
-    next_anon_grammar_name, next_anon_role_name, prepend_does_header,
+    mark_anon_package_stmt, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,
+    prepend_does_header,
 };
 pub(in crate::parser) mod fragment_attempts;
 mod hexfloat;
@@ -762,7 +762,7 @@ pub(in crate::parser) use regex::parse_call_arg_list;
 // Cost: O(1) when the parse keeps no origins, O(n) otherwise, n = size of
 // `expr`.
 pub(in crate::parser) fn note_origin(input: &str, rest: &str, expr: &Expr) {
-    if crate::ast::spelled::keeping() && crate::parser::term_origins::is_new(input, rest, expr) {
+    if crate::parser::term_origins::is_new(input, rest, expr) {
         crate::parser::term_origins::note(expr, term_span(input, rest));
     }
 }
@@ -973,6 +973,7 @@ mod tests {
     #[test]
     fn parse_angle_single() {
         let (rest, expr) = primary("<hello>").unwrap();
+        let expr = crate::parser::test_lower::expr(expr);
         assert_eq!(rest, "");
         assert!(
             matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(s) if s.as_str() == "hello"))
@@ -982,6 +983,7 @@ mod tests {
     #[test]
     fn parse_angle_list() {
         let (rest, expr) = primary("<a b c>").unwrap();
+        let expr = crate::parser::test_lower::expr(expr);
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::ArrayLiteral(ref items) if items.len() == 3));
     }
@@ -1221,6 +1223,7 @@ mod tests {
     fn parse_big_q_to_heredoc() {
         let src = "Q:to/END/\nhello\nEND\n";
         let (rest, expr) = primary(src).unwrap();
+        let expr = crate::parser::test_lower::expr(expr);
         assert_eq!(rest, "");
         assert!(
             matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(s) if s.as_str() == "hello\n"))
@@ -1231,6 +1234,7 @@ mod tests {
     fn parse_big_q_to_angle_heredoc() {
         let src = "Q:to<--END-->;\nhello\n--END--\n";
         let (rest, expr) = primary(src).unwrap();
+        let expr = crate::parser::test_lower::expr(expr);
         assert_eq!(rest, ";\n");
         assert!(
             matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(s) if s.as_str() == "hello\n"))
@@ -1241,6 +1245,7 @@ mod tests {
     fn parse_big_q_to_heredoc_with_indented_terminator() {
         let src = "Q:to/END/\nhello\n    END\n";
         let (rest, expr) = primary(src).unwrap();
+        let expr = crate::parser::test_lower::expr(expr);
         assert_eq!(rest, "");
         assert!(
             matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(s) if s.as_str() == "hello\n"))
@@ -1251,6 +1256,7 @@ mod tests {
     fn parse_q_to_heredoc_with_space_before_delimiter() {
         let src = "q:to /END/;\nhello\nEND\n";
         let (rest, expr) = primary(src).unwrap();
+        let expr = crate::parser::test_lower::expr(expr);
         assert_eq!(rest, ";\n");
         assert!(
             matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(s) if s.as_str() == "hello\n"))
@@ -1541,6 +1547,7 @@ mod tests {
     #[test]
     fn primary_reduction_call_style_with_parenthesized_argument() {
         let (rest, expr) = primary("is([+](^20 .grep: *.is-prime), 77)").unwrap();
+        let expr = crate::parser::test_lower::expr(expr);
         assert_eq!(rest, "");
         match expr {
             Expr::Call { name, args, .. } => {

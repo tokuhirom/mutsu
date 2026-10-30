@@ -271,11 +271,29 @@ pub(crate) fn which_of(target: &Value) -> Value {
         // (`[1,2].WHICH eq [3,4,5].WHICH` was True). See
         // `crate::value::which_id`.
         // Cost: O(1) (a per-container id, no element walk).
-        ValueView::Array(items, ..) => {
-            format!("Array|{}", items.which_id.get())
+        // A List is its own type (`(1, 2).WHICH` is `List|N`).
+        ValueView::Array(items, kind) => {
+            let name = if matches!(
+                kind,
+                crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
+            ) {
+                "List"
+            } else {
+                "Array"
+            };
+            format!("{}|{}", name, items.which_id.get())
         }
         ValueView::Hash(map) => {
             format!("Hash|{}", map.which_id.get())
+        }
+        // A `but`-mixed object keeps the identity of the object it wraps under
+        // the mixin's own type name (`G+{R}|<id>`, rakudo's format).
+        ValueView::Mixin(inner, _) => {
+            let inner_which = which_of(inner).to_string_value();
+            let id = inner_which
+                .split_once('|')
+                .map_or(inner_which.as_str(), |(_, id)| id);
+            format!("{}|{}", crate::value::types::what_type_name(target), id)
         }
         // A Pair whose contents are themselves value-identified is
         // value-identified too, from the key's and value's own `.WHICH`

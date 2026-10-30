@@ -1,5 +1,6 @@
 //! Unit tests for `stmt` parsing (split out of mod.rs, part 1).
 
+use super::lowered_program as program;
 use super::*;
 use crate::ast::{CallArg, Expr};
 use crate::token_kind::TokenKind;
@@ -349,21 +350,21 @@ fn parse_parenthesized_assign_lvalue_stmt() {
     let (rest, stmts) = program("($x = $y) = 5;").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
+    // The callable-lvalue assignment: the inner assignment and the stored value.
     match &stmts[0] {
-        Stmt::Block(stmts) => {
-            assert_eq!(stmts.len(), 2);
+        Stmt::Expr(Expr::Call { name, args, .. })
+            if name.resolve().as_str() == "__mutsu_assign_callable_lvalue" =>
+        {
             assert!(matches!(
-                &stmts[0],
-                Stmt::Expr(Expr::AssignExpr { name, expr, .. })
+                &args[0],
+                Expr::AssignExpr { name, expr, .. }
                     if name == "x" && matches!(expr.as_ref(), Expr::Var(n) if n == "y")
             ));
-            assert!(matches!(
-                &stmts[1],
-                Stmt::Assign { name, expr, .. }
-                    if name == "x" && matches!(expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(5)))
-            ));
+            assert!(
+                matches!(&args[2], Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(5)))
+            );
         }
-        other => panic!("expected block stmt, got {:?}", other),
+        other => panic!("expected the callable-lvalue assignment, got {:?}", other),
     }
 }
 

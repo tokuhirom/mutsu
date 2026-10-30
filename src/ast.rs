@@ -106,6 +106,62 @@ pub(crate) enum SubScope {
     Anon,
 }
 
+/// The sigil a `constant` declaration was written with (ADR-10723 Stage 2:
+/// a field of `Stmt::VarDecl`, not the `__constant` / `__constant_sigil`
+/// marker traits). The declaration's `name` strips a `$`, so a scalar
+/// `constant $x` and a sigilless `constant x` would otherwise collide.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    bincode::Encode,
+    bincode::Decode,
+)]
+pub(crate) enum ConstantSigil {
+    /// `constant x`: a term, stored in the term namespace.
+    Term,
+    /// `constant $x`.
+    Scalar,
+    /// `constant @x`.
+    Array,
+    /// `constant %x`.
+    Hash,
+    /// `constant &x`.
+    Code,
+}
+
+impl ConstantSigil {
+    /// The sigil of the source spelling, empty for a term.
+    // Cost: O(1).
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Term => "",
+            Self::Scalar => "$",
+            Self::Array => "@",
+            Self::Hash => "%",
+            Self::Code => "&",
+        }
+    }
+
+    /// The constant a sigil byte of the source spelling declares; any
+    /// non-sigil byte is a term.
+    // Cost: O(1).
+    pub(crate) fn from_sigil(sigil: u8) -> Self {
+        match sigil {
+            b'$' => Self::Scalar,
+            b'@' => Self::Array,
+            b'%' => Self::Hash,
+            b'&' => Self::Code,
+            _ => Self::Term,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum HandleSpec {
     /// Forward a method by name (same name on both sides).
@@ -371,12 +427,8 @@ pub(crate) const BRACKETS_PARAM: &str = "@";
 /// True when a *signature* declares a parameter the source spelled `$self`,
 /// including one nested in a destructuring sub-signature (`sub f([$self, $x])`).
 ///
-/// The single oracle both halves of ADR-0061 consult: the compiler's
-/// `self_is_signature_param` flag and the runtime's binding-time mirror. Keeping
-/// them on one function is what stops the two from disagreeing — a compiler that
-/// thinks `$self` means the parameter while the binder thinks it means the
-/// reserved lexical key is exactly the silent mis-binding the ADR set out to
-/// avoid.
+/// Such a parameter is stored under the reserved
+/// [`crate::env::LEX_SELF`] key ([`ParamDef::storage_name`], ADR-0061).
 pub(crate) fn signature_declares_self_lexical(param_defs: &[ParamDef]) -> bool {
     param_defs.iter().any(|pd| {
         pd.declares_self_lexical()
@@ -609,6 +661,9 @@ impl ParamDef {
     pub(crate) fn storage_name(&self) -> std::borrow::Cow<'_, str> {
         if self.sigilless && !self.name.is_empty() {
             std::borrow::Cow::Owned(crate::term_names::term_key(&self.name))
+        } else if self.declares_self_lexical() {
+            // `$self` is a user lexical, never the `self` term (ADR-0061).
+            std::borrow::Cow::Borrowed(crate::env::LEX_SELF)
         } else {
             std::borrow::Cow::Borrowed(&self.name)
         }
@@ -1144,12 +1199,25 @@ fn declarator_sub() -> RoutineDeclarator {
     RoutineDeclarator::Sub
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    bincode::Encode,
+    bincode::Decode,
+)]
 pub(crate) enum RoutineDeclarator {
     /// A placeholder block (`{ $^a }`) or a compiler/runtime closure.
     Block,
     /// `sub ($x) { }`, `anon Str sub { }`, one candidate of an anonymous
     /// `multi sub`.
+    #[default]
     Sub,
     /// A `method (...) { }` literal, including its `anon` and `my` spellings.
     Method,
@@ -1172,39 +1240,6 @@ impl RoutineDeclarator {
         )
     }
 
-    /// The `custom_traits` marker this declarator leaves on the declaration
-    /// the compiler pools, so the closure-building opcode knows which
-    /// `__mutsu_callable_type` to install in the captured environment.
-    /// `Block` and `Sub` need none: each is what its compile path already
-    /// produces.
-    pub(crate) fn literal_marker(self) -> Option<&'static str> {
-        match self {
-            RoutineDeclarator::Method => Some(METHOD_LITERAL_MARKER),
-            RoutineDeclarator::Submethod => Some(SUBMETHOD_LITERAL_MARKER),
-            RoutineDeclarator::Block | RoutineDeclarator::PointyBlock | RoutineDeclarator::Sub => {
-                None
-            }
-        }
-    }
-
-    /// Recover the declarator from the markers [`RoutineDeclarator::literal_marker`]
-    /// left on a pooled declaration's `custom_traits`. `Sub` when no marker is
-    /// present, which is what an unmarked routine declaration is.
-    ///
-    /// Both routine paths read the markers through this: the closure-building
-    /// opcode for a `method (...) { }` literal, and `register_sub` for a named
-    /// `my method foo` / `my submethod foo` declaration.
-    pub(crate) fn from_markers<'a>(markers: impl IntoIterator<Item = &'a str>) -> Self {
-        for marker in markers {
-            match marker {
-                METHOD_LITERAL_MARKER => return RoutineDeclarator::Method,
-                SUBMETHOD_LITERAL_MARKER => return RoutineDeclarator::Submethod,
-                _ => {}
-            }
-        }
-        RoutineDeclarator::Sub
-    }
-
     /// The `__mutsu_callable_type` this declarator installs, which is what
     /// `.^name` / `.WHAT` report (see `value::types_isa`). `None` for the two
     /// spellings whose compile path already produces the right type.
@@ -1219,31 +1254,36 @@ impl RoutineDeclarator {
     }
 }
 
-/// See [`RoutineDeclarator::literal_marker`]. Spelled out rather than built
-/// from the type name: these are declaration markers, not the `__mutsu_<ns>::`
-/// environment keys `MetaNs` owns.
-pub(crate) const METHOD_LITERAL_MARKER: &str = "__method_literal";
-/// See [`RoutineDeclarator::literal_marker`].
-pub(crate) const SUBMETHOD_LITERAL_MARKER: &str = "__submethod_literal";
 /// Marks the pooled copy of a `multi` declaration that a `multi` term in
 /// expression position evaluates to (`my $t := multi foo(...) { ... }`): the
 /// closure built from it is that candidate, so it answers `.multi` True and
 /// `.dispatcher` with the multi it joined.
 pub(crate) const MULTI_CANDIDATE_VALUE_MARKER: &str = "__multi_candidate_value";
-/// Marks a routine declaration the compiler found in a lexical scope nested
-/// in its unit's or routine's own (an `if` body, a bare block): registering it
-/// may shadow an outer `&name` binding instead of redeclaring it (#13855).
-pub(crate) const NESTED_SCOPE_DECL_MARKER: &str = "__nested_scope";
-/// The `custom_traits` entry keeping the argument of a variable's
-/// `is dynamic(ARG)` for the RakuAST view; the trait itself is the
-/// declaration's `is_dynamic` flag, and the compiler skips the entry.
-pub(crate) const DYNAMIC_TRAIT_ARGUMENT: &str = "__dynamic_argument";
-/// The `custom_traits` entry keeping, in a `.AST` parse, the colonpairs of a
-/// declared variable's extended name as written (`:foo<g h>` of
-/// `my $today:foo<g h>`): the name itself is canonical (`today:foo<g h>`),
-/// but RakuAST keeps each colonpair as a node, spelled as the source spelled
-/// it. The compiler skips the entry.
-pub(crate) const NAME_COLONPAIRS: &str = "__name_colonpairs";
+/// Which registration a declaration plan is built for, as the compiler knows
+/// it when it lowers the declaration: the plan carries the answer, the
+/// declaration's own traits stay what the source wrote.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, bincode::Encode, bincode::Decode)]
+pub(crate) struct DeclPass {
+    /// The hoist-pass copy of a declaration (a stripped early registration;
+    /// the in-sequence one validates and resolves for real). A type shell is
+    /// the declaration-only forward reference of a class or role.
+    pub(crate) hoisted: bool,
+    /// A type shell of a declaration nested in code (`Stmt::NestedTypeShells`),
+    /// the compile-time composition; implies `hoisted`.
+    pub(crate) hoisted_nested: bool,
+    /// A declaration in the body of a routine or closure (the hoist pass and
+    /// the in-sequence registration both say so): it shadows an outer routine
+    /// of the same name instead of redeclaring it.
+    pub(crate) lexical_hoist: bool,
+    /// A routine declaration the compiler found in a lexical scope nested in
+    /// its unit's or routine's own (an `if` body, a bare block): registering
+    /// it may shadow an outer `&name` binding instead of redeclaring it
+    /// (#13855).
+    pub(crate) nested_scope: bool,
+    /// The declarator a `my method` / `my submethod` declaration lowered to a
+    /// routine plan was written with (`Sub` for every ordinary routine).
+    pub(crate) declarator: RoutineDeclarator,
+}
 
 /// The source spelling of an [`Expr::Hash`] literal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -1278,6 +1318,10 @@ pub(crate) enum BinaryForm {
     ColonPairNumber,
     /// `^EXPR`, the prefix spelling of the range `0 ..^ EXPR`.
     CaretPrefix,
+    /// The `%h does R` of `my %h does R = init`: the declaration's own
+    /// initializer assignment follows, so the role's `STORE` receives it with
+    /// `:INITIALIZE`. Spelled like [`BinaryForm::Infix`] everywhere else.
+    DoesDeclInit,
 }
 
 /// The brackets of an associative [`Expr::Index`] (see its `spelling` field).
@@ -1358,6 +1402,17 @@ pub(crate) enum Expr {
     /// [`parsed`]). Every other parse lowers it where it is built, so the
     /// compiler never sees one.
     Ast(Box<parsed::ParsedExpr>),
+    /// The value an indexed bind (`@a[i] := v`, `%h<k> := v`) stores through
+    /// [`Expr::IndexAssign`]: the bound right-hand side, marked so the compiler
+    /// takes bind (not assign) semantics. The source-variable metadata the VM
+    /// needs is derived from the right-hand side when it is compiled.
+    IndexBindValue(Box<Expr>),
+    /// The `.=` metaop on the topic (`$_ .= meth`, `.=meth`): the method call
+    /// whose result is assigned back to `$_` (`OpCode::TopicDotAssign`), which
+    /// can reassign a read-only whole-container topic (`given @a { .=uc }`,
+    /// writing through to `@a`) while a plain `$_ = ...` keeps throwing
+    /// X::Assignment::RO.
+    TopicDotAssign(Box<Expr>),
     /// The current pointy `given`/`with` topic used by its synthetic binding.
     GivenPointyTopic,
     Literal(Value),
@@ -2275,6 +2330,19 @@ pub(crate) enum Stmt {
         export_tags: Vec<String>,
         /// Custom variable `is` traits as `(trait_name, optional_arg_expr)`.
         custom_traits: Vec<(String, Option<Expr>)>,
+        /// True when the declaration carries an explicit initializer
+        /// (`my T $x = ...`, a `for`/`loop` binding's seed, ...). It is a
+        /// field of the declaration, not a `custom_traits` entry, so that list
+        /// holds only the traits the program wrote.
+        has_initializer: bool,
+        /// `Some` for a `constant` declaration, with the sigil it was written
+        /// with (a field of the declaration, not a `custom_traits` entry).
+        constant: Option<ConstantSigil>,
+        /// `Some` for a binding declaration (`my $x := …`, `my &f := …`).
+        bind: Option<bind_decl::BindKind>,
+        /// How the parser desugared the declaration and what it wrote that the
+        /// canonical tree drops (`my @a[3]`, `%h{Str}`, `is dynamic(ARG)`).
+        marks: var_marks::VarMarks,
         /// Optional `where` constraint expression for inline subset typing
         where_constraint: Option<Box<Expr>>,
     },
@@ -2282,15 +2350,13 @@ pub(crate) enum Stmt {
     /// The [`ReadonlyKind`] records *why* it is readonly, which decides the
     /// exception Rakudo reports for an assignment through it.
     MarkReadonly(String, ReadonlyKind),
-    /// Flag that the next VarDecl in this SyntheticBlock uses `:=` binding.
-    MarkBind,
     /// The site of a `method` declared in a nested block of a package body
     /// (`class C { do { sub helper { }; method m { helper() } } }`).
     ///
     /// A `method` declarator is has-scoped: it installs the method in the
     /// package wherever it lexically sits, while its body closes over the
     /// block's lexicals. The parser therefore hoists the declaration itself to
-    /// the package body (carrying the `__nested_block_method` trait with the
+    /// the package body (carrying `nested_capture_index`, the
     /// same `index`) and leaves this marker in the block. When the block runs,
     /// `closure` -- an anonymous method with the declaration's signature and
     /// body -- is built only for the lexical capture the ordinary closure
@@ -2299,7 +2365,7 @@ pub(crate) enum Stmt {
     /// `proto`s the enclosing blocks declare: they live in the routine
     /// registry, not in the closure env, and the registry forgets them when
     /// the block exits, so they are resolved into the capture as `&name`
-    /// while it is live. See `parser::stmt::nested_block_methods`.
+    /// while it is live. See `rakuast::nested_methods`.
     NestedMethodCapture {
         index: u32,
         /// The `index` of the first method hoisted from the same statement
@@ -2331,15 +2397,9 @@ pub(crate) enum Stmt {
     /// undeclared-routine guards (ADR-0134). An error raised before this
     /// point is a compile-time failure, which skips the END phasers (#10977).
     BeginPrologueEnd,
-    /// Flag that the next slice assignment is a HYPER one (`%h<a b c> »=» 7`).
-    ///
-    /// Mark a sigilless variable as readonly via `__mutsu_sigilless_readonly::NAME` env key.
-    MarkSigillessReadonly(String),
-    /// Register a sigilless variable name in the compiler's `sigilless_locals`
-    /// (so a bare-word read resolves to its local slot) WITHOUT marking it
-    /// readonly. Used for a *typed* sigilless bind (`my Int \d := 7`), which keeps
-    /// the container's mutability but must still read from the slot, not `env`.
-    MarkSigilless(String),
+    /// Runs the closures `$*CU.add-check-code` queued on the main unit, after
+    /// its CHECK phasers and before INIT.
+    RunCheckCode,
     Assign {
         name: String,
         expr: Expr,
@@ -2374,6 +2434,9 @@ pub(crate) enum Stmt {
         scope: SubScope,
         /// Custom `is` traits (non-builtin trait names like `me'd`) with optional argument expression
         custom_traits: Vec<(String, Option<Expr>)>,
+        /// `is hidden-from-backtrace`, a field of the declaration so that it is
+        /// not a `custom_traits` entry a user `trait_mod:<is>` could see.
+        is_hidden_from_backtrace: bool,
         /// Where the name, signature and block were written (ADR-10723
         /// Stage 2); `None` for a declaration nobody wrote.
         #[serde(default)]
@@ -2770,6 +2833,19 @@ pub(crate) enum Stmt {
         custom_traits: Vec<(String, Option<Expr>)>,
         /// Whether this class was declared with `unit class` (file-scoped body)
         is_unit: bool,
+        /// Declared with the `native` declarator (`native long is Int is ctype<long> { }`):
+        /// a package declarator peer to `class`, which alone may carry the native-type traits.
+        #[serde(default)]
+        is_native: bool,
+        /// The export tags of an `is export` class whose export has no statement of
+        /// its own: a lexical `my class ... is export`, or `unit class A::B::C is export`
+        /// (published under its short name). A module loader or a role body that cannot
+        /// see an export statement reads them from here.
+        #[serde(default)]
+        export_tags: Option<Vec<String>>,
+        /// How the declaration was written, where the written form is not a trait.
+        #[serde(default)]
+        marks: PackageMarks,
         /// Whether the trailing `Grammar` entry in `parents` was supplied
         /// implicitly, because a `grammar` declarator carried no `is` clause.
         /// A later `also is Parent` in the body replaces it rather than adding a
@@ -2944,10 +3020,18 @@ pub(crate) enum Stmt {
         handles: Vec<HandleSpec>,
         /// Custom `is` traits (non-builtin trait names) with optional argument expression
         custom_traits: Vec<(String, Option<Expr>)>,
+        /// `is hidden-from-backtrace`, a field of the declaration so that it is
+        /// not a `custom_traits` entry a user `trait_mod:<is>` could see.
+        is_hidden_from_backtrace: bool,
         /// `is export` on the method: when a class/role is imported, exported
         /// methods are made available as their sub-form (e.g. operator subs).
         is_export: bool,
         export_tags: Vec<String>,
+        /// For a method hoisted out of a nested block of the package body, the
+        /// per-body index its in-block `Stmt::NestedMethodCapture` files the
+        /// block's lexical capture under.
+        #[serde(default)]
+        nested_capture_index: Option<u32>,
         /// Where the name, signature and block were written (ADR-10723
         /// Stage 2); `None` for a declaration nobody wrote.
         #[serde(default)]
@@ -2962,6 +3046,9 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
         /// Whether this role was declared with `is rw` or `also is rw`
         is_rw: bool,
+        /// True for a `my role`: lexically scoped, installed in no package
+        /// stash (the field `ClassDecl::is_lexical` is for a class).
+        is_lexical: bool,
         /// Language version active when this role was declared (e.g., "6.c", "6.d", "6.e")
         language_version: String,
         /// Custom `is` traits with optional arguments, dispatched via `trait_mod:<is>`
@@ -2976,6 +3063,9 @@ pub(crate) enum Stmt {
         /// for a declaration nobody wrote.
         #[serde(default)]
         spans: Option<Box<parsed::PackageSpans>>,
+        /// How the declaration was written, where the written form is not a trait.
+        #[serde(default)]
+        marks: PackageMarks,
     },
     DoesDecl {
         name: Symbol,
@@ -3032,6 +3122,11 @@ pub(crate) enum Stmt {
         version: String,
         is_export: bool,
         export_tags: Vec<String>,
+        /// Non-builtin `is` traits (`subset S is foo of T`), each handed to a
+        /// user `trait_mod:<is>` with the subset's type object after it is
+        /// registered. `is export` is a field of the declaration instead.
+        #[serde(default)]
+        custom_traits: Vec<(String, Option<Expr>)>,
         /// `my subset F ...` — lexically scoped: NOT reachable (nor
         /// registered) under the enclosing package's qualified name.
         is_my: bool,
@@ -3078,6 +3173,11 @@ pub(crate) enum Stmt {
         /// for a statement-form phaser or one nobody wrote.
         #[serde(default)]
         spans: Option<Box<parsed::BlockSpans>>,
+        /// Written over a bare statement (`NEXT $x++`) rather than a block:
+        /// `body` is that one statement, and a `FIRST`/`NEXT`/`LAST` of this
+        /// form shares the enclosing block's lexical scope.
+        #[serde(default)]
+        bare: bool,
     },
     ProtoDecl {
         name: Symbol,
@@ -3099,6 +3199,12 @@ pub(crate) enum Stmt {
         /// do, and that needs the argument.
         #[serde(default)]
         trait_args: Vec<(String, Option<Expr>)>,
+        /// `is hidden-from-backtrace` on a `proto method`.
+        is_hidden_from_backtrace: bool,
+        /// A copy of a nested-block `proto method` appended to the package body
+        /// (`rakuast::nested_methods`); the written one stays in place.
+        #[serde(default)]
+        is_hoisted_copy: bool,
         /// True when declared as `proto method`/`proto submethod` (inside a
         /// class/role body). Such a proto registers a method-level proto body
         /// whose `{*}` dispatches to the matching multi method candidate,
@@ -3133,6 +3239,11 @@ pub(crate) enum Stmt {
         /// call (`self.x`). Both save the same `self` slot at runtime.
         #[serde(default)]
         is_attribute: bool,
+        /// The invocant is a type object (`temp Type.^meta = v`), not a
+        /// variable: `var_name` is then the type's name and the old value is
+        /// restored by a write-back rather than by a variable snapshot.
+        #[serde(default)]
+        type_invocant: bool,
     },
     /// A construct the parser built in its RakuAST shape, kept only by a parse
     /// whose tree the RakuAST conversion reads (ADR-10723 Stage 2,
@@ -3238,6 +3349,7 @@ pub(crate) fn expand_take_logical_tail(value: Expr, op: TokenKind, right: Expr) 
     let variable = Expr::Var(name.clone());
     Stmt::SyntheticBlock(vec![
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name,
             expr: value,
@@ -3248,6 +3360,9 @@ pub(crate) fn expand_take_logical_tail(value: Expr, op: TokenKind, right: Expr) 
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         },
         Stmt::Take(variable.clone(), false),
@@ -3301,6 +3416,7 @@ pub(crate) mod stub;
 pub(crate) mod subscript_adverb;
 pub(crate) mod temporize;
 pub(crate) mod var_does;
+pub(crate) mod var_marks;
 pub(crate) mod var_will;
 mod where_match;
 pub(crate) use signature_decl::{
@@ -3315,7 +3431,7 @@ mod tail;
 mod virtual_call;
 
 pub(crate) use body_local_names::{collect_all_my_decl_names, collect_routine_body_local_names};
-pub(crate) use lvalue::{LvaluePeel, LvalueRoot};
+pub(crate) use lvalue::{LvaluePeel, LvalueRoot, decl_target_var_name};
 pub(crate) use placeholder_kind::ArgSupply;
 pub(crate) use placeholders::{
     collect_placeholders, collect_placeholders_shallow, collect_unattached_placeholders,
@@ -3694,6 +3810,7 @@ mod env_only_decl_tests {
 
     fn vardecl(name: &str) -> Stmt {
         Stmt::VarDecl {
+            marks: Default::default(),
             name: name.to_string(),
             anonymous: false,
             expr: Expr::Literal(crate::value::Value::NIL),
@@ -3704,6 +3821,9 @@ mod env_only_decl_tests {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         }
     }
@@ -3834,7 +3954,7 @@ mod expr_size_guard {
 /// The prefix a user variable trait named like a parser marker (`my $x is __x`)
 /// carries in [`Stmt::VarDecl`]'s `custom_traits`.
 ///
-/// The parser files its own markers (`__has_initializer`, `__scalar_bind`, ...)
+/// The parser files its own markers (`__scalar_bind`, ...)
 /// in the same list under a `__` prefix and every consumer filters on it, so a
 /// user trait that happens to start with `__` would be dropped as one. A
 /// character no identifier holds keeps the two namespaces apart, as
@@ -3857,4 +3977,29 @@ pub(crate) fn escape_user_trait(name: &str) -> std::borrow::Cow<'_, str> {
 // Cost: O(1).
 pub(crate) fn unescape_user_trait(name: &str) -> &str {
     name.strip_prefix(USER_TRAIT_ESCAPE).unwrap_or(name)
+}
+
+/// How a `class` / `role` / `grammar` declaration was written, where the written
+/// form is not a trait: the RakuAST layer renders these, nothing dispatches them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct PackageMarks {
+    /// `anon class Name`: built but not installed under its name.
+    pub anon: bool,
+    /// Written with the empty name `::` (`class ::`).
+    pub colons: bool,
+    /// Written `class ::Name`: the name's leading empty part.
+    pub leading_colons: bool,
+    /// The keyword a registered `EXPORTHOW::DECLARE` declarator (`monitor Name { }`), or
+    /// a built-in one whose HOW `EXPORTHOW::SUPERSEDE` replaced, declared the package
+    /// with: registration resolves the HOW from it, and the RakuAST layer renders it
+    /// as the package's `parsed-declarator`.
+    pub declarator: Option<String>,
+    /// The name as written when the compiler package-qualified a compound
+    /// declaration name (`class M::R` inside a package): the spelling the
+    /// declaration also binds in its scope.
+    pub source_compound_name: Option<String>,
+    /// For each parent the compiler package-qualified, `(qualified, written)`:
+    /// when the name is a trait instead (`is foo`) it is dispatched as written
+    /// (#11349).
+    pub parent_spellings: Vec<(String, String)>,
 }

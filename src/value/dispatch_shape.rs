@@ -309,13 +309,23 @@ pub(crate) enum DispatchShape {
     RakuAstOrigin,
     /// `RakuAST::Origin::Source` (opaque).
     RakuAstOriginSource,
+    /// `RakuAST::Origin::Match` (opaque).
+    RakuAstOriginMatch,
+    /// `RakuAST::Declaration::External::Setting` (opaque).
+    RakuAstDeclarationExternalSetting,
+    /// `RakuAST::Declaration::External::Constant` (opaque).
+    RakuAstDeclarationExternalConstant,
+    /// `RakuAST::Declaration::Import` (opaque).
+    RakuAstDeclarationImport,
+    /// `RakuAST::Declaration::LexicalPackage` (opaque).
+    RakuAstDeclarationLexicalPackage,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into seven bits of a byte (the eighth marks a type object) and the
     /// table keeps a bit of a `u128` per shape, so this stays under 128.
-    pub(crate) const ALL: [DispatchShape; 99] = [
+    pub(crate) const ALL: [DispatchShape; 104] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -411,6 +421,11 @@ impl DispatchShape {
         DispatchShape::RakuAstNode,
         DispatchShape::RakuAstOrigin,
         DispatchShape::RakuAstOriginSource,
+        DispatchShape::RakuAstOriginMatch,
+        DispatchShape::RakuAstDeclarationExternalSetting,
+        DispatchShape::RakuAstDeclarationExternalConstant,
+        DispatchShape::RakuAstDeclarationImport,
+        DispatchShape::RakuAstDeclarationLexicalPackage,
         DispatchShape::Iterator,
         DispatchShape::PredictiveIterator,
         DispatchShape::Stash,

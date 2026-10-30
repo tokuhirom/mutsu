@@ -160,16 +160,14 @@ impl Interpreter {
         // role/augment deferred-body execution in
         // `registration_class_compose_body.rs`/`registration_class_augment.rs`.
         let saved_topic = self.env.get("_").cloned();
-        // `$?CLASS` names this class only inside its body (ADR-12529): the
-        // binding below is undone when the body finishes, as the topic is.
-        let saved_class_var = self.env.get("?CLASS").cloned();
         self.set_current_package(name.to_string());
         // An enum key declared in a class body is lexical to that class.  In
         // particular, two classes may each declare an `Error` member without
         // poisoning either class's bare `Error` term.
         self.push_enum_scope();
-        self.env
-            .insert("?CLASS".to_string(), Value::package(Symbol::intern(name)));
+        // `$?CLASS` names this class only inside its body (ADR-12529): its
+        // frame record is undone when the body finishes (ADR-14843).
+        let fixtures_mark = self.begin_class_scope(Symbol::intern(name));
         // The set of attributes valid for $!attr access: names declared
         // directly in this class body (precomputed by the compiler at plan
         // lowering, ADR-0019 D2a — `own_attribute_names` already covers the
@@ -248,7 +246,7 @@ impl Interpreter {
         // `t/nested-trusts-decl-qualifies-sibling-class-names.t`) left the
         // `self.set_current_package(name.to_string())` from the top of this
         // function permanently in effect: `exec_register_decl_op` swallows
-        // the error for a `__hoisted` shell and carries on, but the
+        // the error for a hoisted shell and carries on, but the
         // interpreter's runtime package stayed wrongly set to this class for
         // the rest of the compilation unit, silently mis-qualifying every
         // class registered afterward (`Plain` inside `Outer.new()!Inner::secret()`'s
@@ -443,6 +441,7 @@ impl Interpreter {
             // above: an aborted class body also rolls back any lexical env
             // mutations the partial walk made, not just the package.
             self.env = cx.saved_env.clone();
+            self.end_scoped_fixtures(fixtures_mark);
             return Err(e);
         }
         // Restore the borrowed topic (see `saved_topic` above) now that the
@@ -452,10 +451,7 @@ impl Interpreter {
             Some(topic) => self.env.insert("_".to_string(), topic),
             None => self.env.remove("_"),
         };
-        match saved_class_var {
-            Some(class) => self.env.insert("?CLASS".to_string(), class),
-            None => self.env.remove("?CLASS"),
-        };
+        self.end_scoped_fixtures(fixtures_mark);
         Ok(cx.class_def)
     }
 
@@ -569,7 +565,7 @@ impl Interpreter {
             self.registry_mut().set_user_methods(
                 Symbol::intern(cx.name),
                 Symbol::intern(&alias),
-                overloads,
+                overloads.to_vec(),
             );
         }
         // Also execute the statement so the code variable is set
@@ -619,6 +615,7 @@ impl Interpreter {
             is_export,
             export_tags,
             trait_args,
+            is_hidden_from_backtrace,
             is_method: true,
             ..
         } = stmt
@@ -682,10 +679,7 @@ impl Interpreter {
             self.registry_mut()
                 .set_proto_compiled(owner, &method_name, compiled);
         }
-        if trait_args
-            .iter()
-            .any(|(name, _)| name == "__hidden_from_backtrace")
-        {
+        if *is_hidden_from_backtrace {
             self.registry_mut()
                 .mark_proto_method_hidden(owner, &method_name);
         }

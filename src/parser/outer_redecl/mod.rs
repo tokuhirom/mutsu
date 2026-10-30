@@ -51,8 +51,6 @@ use crate::ast::{ParamDef, Stmt};
 use crate::ast_visit::VisitMut;
 use std::collections::HashSet;
 
-pub(crate) use crate::ast::method_assign_decl::METHOD_ASSIGN_DECL_TRAIT;
-
 /// A single lexical scope: names declared here so far, and names referenced here
 /// that resolved to an enclosing scope (before any local redeclaration).
 struct Scope {
@@ -214,8 +212,8 @@ fn normalized(sigil: char, base: &str) -> Option<String> {
 /// self-referencing initializer, or `None` if there is no such offense.
 ///
 /// Also marks each declaration whose initializer reads the new binding (see
-/// [`Initializing::sees_self`]) with the internal `__init_sees_self` trait, so
-/// the compiler resolves those reads to it.
+/// [`Initializing::sees_self`]) with `VarMarks::init_sees_self`, so the
+/// compiler resolves those reads to it.
 // Cost: O(n * d), n = size of the program's tree, d = lexical scope depth.
 pub(crate) fn find_scope_diagnostic(stmts: &mut [Stmt]) -> Option<ScopeDiagnostic> {
     let mut ctx = Ctx {
@@ -238,21 +236,18 @@ fn param_keys(params: &[String], param_defs: &[ParamDef]) -> Vec<String> {
 /// Walks a statement list in order, so each declaration is registered before
 /// the statements after it are examined.
 fn walk_list(stmts: &mut [Stmt], ctx: &mut Ctx) {
-    for i in 0..stmts.len() {
-        // `my \x = ...` lowers to a `VarDecl` of `x` followed by a sigilless
-        // marker. The sigilless `x` is a different symbol from `$x`, so the
+    for stmt in stmts.iter_mut() {
+        // `my \x = ...` lowers to a `VarDecl` of `x` marked as a sigilless
+        // term. The sigilless `x` is a different symbol from `$x`, so the
         // initializer may freely read `$x`.
-        let sigilless = match (&stmts[i], stmts.get(i + 1)) {
-            (
-                Stmt::VarDecl { name, .. },
-                Some(Stmt::MarkSigilless(n) | Stmt::MarkSigillessReadonly(n)),
-            ) => n == name,
-            _ => false,
-        };
+        let sigilless = matches!(
+            stmt,
+            Stmt::VarDecl { marks, .. } if marks.term != crate::ast::var_marks::TermMark::No
+        );
         if sigilless {
-            walk_var_decl(&mut stmts[i], false, ctx);
+            walk_var_decl(stmt, false, ctx);
         } else {
-            ctx.visit_stmt_mut(&mut stmts[i]);
+            ctx.visit_stmt_mut(stmt);
         }
     }
 }
@@ -283,6 +278,10 @@ fn walk_var_decl(stmt: &mut Stmt, check_self: bool, ctx: &mut Ctx) {
         is_export: _,
         export_tags: _,
         custom_traits,
+        has_initializer: _,
+        constant: _,
+        bind: _,
+        marks,
         where_constraint,
     } = stmt
     else {
@@ -313,10 +312,7 @@ fn walk_var_decl(stmt: &mut Stmt, check_self: bool, ctx: &mut Ctx) {
     // *after* declaring (a self-reference is then local, not outer) -- and a
     // direct self-reference there is `X::Syntax::Variable::Initializer`.
     let (sigil, bare) = split_sigil(name);
-    let check_self = check_self
-        && !custom_traits
-            .iter()
-            .any(|(t, _)| t == METHOD_ASSIGN_DECL_TRAIT);
+    let check_self = check_self && !marks.method_assign_decl;
     let armed_key = if check_self {
         key.or_else(|| dynamic_key(sigil, bare))
     } else {
@@ -339,6 +335,6 @@ fn walk_var_decl(stmt: &mut Stmt, check_self: bool, ctx: &mut Ctx) {
         && let Some(init) = ctx.initializing.pop()
         && init.sees_self
     {
-        custom_traits.push(("__init_sees_self".to_string(), None));
+        marks.init_sees_self = true;
     }
 }

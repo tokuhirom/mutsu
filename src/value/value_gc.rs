@@ -18,6 +18,7 @@
 //! variant (`Int`/`Str`/`Bool`/`Nil`/`Range`/`Version`/`Routine`/... and
 //! `WeakSub`, a WEAK edge) cannot reach a live `Gc` node and is a no-op.
 
+use super::AttrMap;
 use super::ValueView;
 use std::sync::{Arc, Condvar, Mutex};
 
@@ -385,6 +386,10 @@ impl Trace for SubData {
                 v.gc_trace(visit);
             }
         }
+        // The creating method's invocant, held by the closure's record.
+        if let Some(Some(invocant)) = self.fixtures.as_ref().map(|f| f.invocant.as_ref()) {
+            invocant.gc_trace(visit);
+        }
         for v in &self.assumed_positional {
             v.gc_trace(visit);
         }
@@ -404,6 +409,9 @@ impl Trace for SubData {
         }
         if self.env.gc_capture_merged().is_some() {
             self.env.drop_capture_merged();
+        }
+        if let Some(fixtures) = self.fixtures.as_mut() {
+            fixtures.invocant = None;
         }
         self.assumed_positional.clear();
         self.assumed_named.clear();
@@ -591,7 +599,13 @@ impl Trace for MixinOverrides {
 
     fn drop_gc_edges(&mut self) {
         self.overrides_mut().clear();
-        self.attributes().clear_gc_edges();
+        // Swap the role cell for a fresh empty one instead of clearing it in
+        // place. A `DESTROY` snapshot (`finalize_white`) can keep this node
+        // alive past the reclaim, and its `attributes` handle is then dropped
+        // outside the collect window against a count trial deletion already
+        // took to zero (the reclaimed cell is freed with the garbage), which
+        // underflowed `Gc::drop` (#15441). The old handle drops inertly here.
+        self.attributes = crate::gc::Gc::new(InstanceAttrs::role_storage(AttrMap::new()));
     }
 }
 
@@ -841,6 +855,7 @@ mod tests {
     /// Build a minimal `SubData` capturing `env`, for the shared-env trace tests.
     fn sub_capturing(env: crate::env::Env, id: u64) -> SubData {
         SubData {
+            fixtures: None,
             package: crate::symbol::Symbol::intern("GLOBAL"),
             name: crate::symbol::Symbol::intern("__gc_test__"),
             params: crate::value::empty_params(),

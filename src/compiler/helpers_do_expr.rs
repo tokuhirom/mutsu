@@ -263,6 +263,75 @@ impl Compiler {
         self.compile_expr(&gather_expr);
     }
 
+    /// A gather body is sunk, so a top-level `EXPR xx N` (N possibly `*`, held
+    /// in a variable) runs EXPR N times, suspending at each `take` inside it.
+    /// The native `xx` adaptor calls EXPR from Rust, which cannot suspend the
+    /// gather coroutine; the same sink is a plain `for ^N { EXPR }` here, which
+    /// the VM can.
+    pub(super) fn lower_sunk_list_repeat(body: &[Stmt]) -> Vec<Stmt> {
+        use crate::token_kind::TokenKind;
+        body.iter()
+            .map(|stmt| match stmt {
+                // Only a count that is cheap and side-effect free to name twice (a
+                // `*`, a number, a variable): the count is tested for `Whatever`
+                // and then used. Any other count keeps the native repeat.
+                Stmt::Expr(Expr::Binary {
+                    left,
+                    op: TokenKind::Ident(name),
+                    right,
+                    ..
+                }) if name == "xx"
+                    && matches!(
+                        right.peel_parens(),
+                        Expr::Whatever | Expr::Literal(_) | Expr::Var(_)
+                    ) =>
+                {
+                    let range = |end: Expr, op: TokenKind| {
+                        Expr::Grouped(Box::new(Expr::Binary {
+                            left: Box::new(Expr::Literal(Value::int(0))),
+                            op,
+                            right: Box::new(end),
+                            form: crate::ast::BinaryForm::Infix,
+                        }))
+                    };
+                    // `* xx` and a variable holding `*` repeat without end; `^N`
+                    // would numify the Whatever.
+                    let iterable = if matches!(right.peel_parens(), Expr::Whatever) {
+                        range(Expr::Whatever, TokenKind::DotDot)
+                    } else if matches!(right.peel_parens(), Expr::Literal(_)) {
+                        range((**right).clone(), TokenKind::DotDotCaret)
+                    } else {
+                        Expr::Ternary {
+                            cond: Box::new(Expr::Grouped(Box::new(Expr::Binary {
+                                left: right.clone(),
+                                op: TokenKind::SmartMatch,
+                                right: Box::new(Expr::BareWord("Whatever".to_string())),
+                                form: crate::ast::BinaryForm::Infix,
+                            }))),
+                            then_expr: Box::new(range(Expr::Whatever, TokenKind::DotDot)),
+                            else_expr: Box::new(range((**right).clone(), TokenKind::DotDotCaret)),
+                        }
+                    };
+                    Stmt::For {
+                        iterable,
+                        param: None,
+                        param_def: Box::new(None),
+                        params: Vec::new(),
+                        params_def: Vec::new(),
+                        body: vec![Stmt::Expr((**left).clone())],
+                        label: None,
+                        mode: crate::ast::ForMode::Normal,
+                        rw_block: false,
+                        explicit_zero_params: false,
+                        is_statement_modifier: false,
+                        uses_block_magic: false,
+                    }
+                }
+                other => other.clone(),
+            })
+            .collect()
+    }
+
     pub(super) fn do_if_branch_supported(stmts: &[Stmt]) -> bool {
         if Self::has_phasers(stmts) {
             return false;

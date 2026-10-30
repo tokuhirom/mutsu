@@ -289,8 +289,10 @@ impl Compiler {
                 let mut left_operand = Some(current);
                 for operand in operands.into_iter().rev() {
                     self.compile_expr(operand);
-                    self.note_numeric_operands(&opcode, left_operand.take(), operand);
+                    // The lexical-import marker (if any) comes first: the names
+                    // are keyed by the index of the op itself.
                     self.emit_lex_import_builtin_op(&opcode);
+                    self.note_numeric_operands(&opcode, left_operand.take(), operand);
                     self.code.emit(opcode.clone());
                 }
                 return;
@@ -961,6 +963,17 @@ impl Compiler {
                     let slot = self.local_map.get(&name).copied();
                     let name_idx = self.code.add_constant(Value::str(name));
                     self.code.emit(OpCode::DoesVar(name_idx, slot, is_bareword));
+                    // `my %h does R = init`: the initializer's store (the very
+                    // next one) hands the role's `STORE` `:INITIALIZE`.
+                    if matches!(
+                        expr,
+                        Expr::Binary {
+                            form: crate::ast::BinaryForm::DoesDeclInit,
+                            ..
+                        }
+                    ) {
+                        self.code.emit(OpCode::MarkExplicitInitializerContext);
+                    }
                     return;
                 }
             }
@@ -996,8 +1009,8 @@ impl Compiler {
                 self.emit_lex_import_builtin_compound(op);
                 self.code.emit(OpCode::NativeIntArithmetic { op, unsigned });
             } else {
-                self.note_numeric_operands(&opcode, Some(left), right);
                 self.emit_lex_import_builtin_op(&opcode);
+                self.note_numeric_operands(&opcode, Some(left), right);
                 self.code.emit(opcode);
             }
         } else if let TokenKind::Ident(name) = op
@@ -1215,7 +1228,7 @@ impl Compiler {
 
     /// Whether `expr` is an expression-position `my $ = ...` with no type,
     /// user trait or `state`: the anonymous scalar whose container a Pair
-    /// keeps. Internal `__` markers (`__has_initializer`) do not count.
+    /// keeps. Internal `__` markers do not count.
     // Cost: O(1).
     fn is_untyped_anon_scalar_decl(expr: &Expr) -> bool {
         let Expr::DoStmt(stmt) = expr else {

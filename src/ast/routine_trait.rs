@@ -40,22 +40,16 @@ pub(crate) enum TraitArgument {
     Operator(String),
 }
 
-/// Add a trait the parser has just read to the record being built, when a parse
-/// that keeps spellings asked for one; the trait is not even built otherwise.
+/// Add a trait the parser has just read to the record being built.
 // Cost: O(1) plus building the trait.
 pub(crate) fn note(written: &mut Vec<RoutineTrait>, make: impl FnOnce() -> RoutineTrait) {
-    if super::spelled::keeping() {
-        written.push(make());
-    }
+    written.push(make());
 }
 
-/// The record is compiler-inert. Ordinary parses build none; the `.AST`
-/// parser keeps it.
+/// The record is compiler-inert: only the RakuAST conversion reads it.
 // Cost: O(n), n = statements in the body (moving the existing statements).
 pub(crate) fn attach(body: &mut Vec<Stmt>, traits: Vec<RoutineTrait>) {
-    if super::spelled::keeping() {
-        retain(body, traits);
-    }
+    retain(body, traits);
 }
 
 /// [`attach`] for the RakuAST lowering, which keeps the record whichever way
@@ -65,6 +59,18 @@ pub(crate) fn retain(body: &mut Vec<Stmt>, traits: Vec<RoutineTrait>) {
     if !traits.is_empty() {
         body.insert(0, Stmt::Ast(Box::new(ParsedStmt::RoutineTraits(traits))));
     }
+}
+
+/// Whether a routine's return type was written as a `returns` / `of` trait
+/// rather than a `-->` arrow: an undeclared one is `X::InvalidType`, while an
+/// undeclared `-->` type is `X::Undeclared`.
+// Cost: O(n), n = statements in the body.
+pub(crate) fn return_type_is_trait(body: &[Stmt]) -> bool {
+    get(body).is_some_and(|traits| {
+        traits
+            .iter()
+            .any(|item| matches!(item, RoutineTrait::Returns(_) | RoutineTrait::Of(_)))
+    })
 }
 
 // Cost: O(n), n = statements in the body.

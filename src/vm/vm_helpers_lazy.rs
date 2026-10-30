@@ -466,12 +466,11 @@ impl Interpreter {
             self.reify_closure_seq_endpoint(arg)?;
             match arg.view() {
                 ValueView::Pair(_, v) | ValueView::ValuePair(_, v) => {
-                    let v = v.clone();
-                    self.reify_map_grep_seq(&v)?;
+                    self.reify_map_grep_seq(v)?;
                     // A named argument's gather fills what it is bound to
                     // (`C.new(c => gather {...})`, ADR-11678).
-                    self.reify_gather_seq(&v)?;
-                    self.reify_closure_seq_endpoint(&v)?;
+                    self.reify_gather_seq(v)?;
+                    self.reify_closure_seq_endpoint(v)?;
                 }
                 _ => {}
             }
@@ -1245,6 +1244,22 @@ impl Interpreter {
         }
     }
 
+    /// A gather body runs in the dynamic scope of whoever pulls it, not of
+    /// whoever created it: the dynamic variables (`$*DB`) the pulling frame
+    /// sees replace the captured ones in the body's env (#15112).
+    // Cost: O(e), e = entries of the pulling frame's env (a flatten and one scan).
+    pub(crate) fn inherit_puller_dynamics(&mut self, puller: &crate::env::Env) {
+        for (key, value) in puller.flattened().iter() {
+            // `$*x` is keyed `*x`; the other sigils keep theirs (`&*x`).
+            if key.with_str(|name| {
+                name.starts_with('*')
+                    || name.starts_with(['&', '@', '%']) && name[1..].starts_with('*')
+            }) {
+                self.env_mut().insert_sym(*key, value.clone());
+            }
+        }
+    }
+
     /// Force a LazyList by running its compiled bytecode in the Interpreter.
     /// Falls back to interpreter if no compiled code is available.
     pub(crate) fn force_lazy_list_vm(
@@ -1277,7 +1292,7 @@ impl Interpreter {
         // `current_package` at run time — restore it to the package the
         // gather was WRITTEN in, not the consuming caller's (see
         // `exec_make_gather_op`'s capture).
-        let saved_package = self.enter_gather_package(&list.env);
+        let gather_scope = self.enter_gather_scope(list);
         // A lazy gather body runs in its own captured env, not the forcing
         // frame's, so it blocks the inline CATCH chain (ADR-0072).
         // The body runs inside the list's iteration, which is a method call
@@ -1285,9 +1300,7 @@ impl Interpreter {
         let mut r = self.with_catch_marker(|this| {
             this.in_method_call(|this| this.force_lazy_list_vm_inner(list))
         });
-        if let Some(pkg) = saved_package {
-            self.set_current_package(pkg);
-        }
+        self.leave_gather_scope(gather_scope);
         if let Some(unit) = saved_unit {
             self.current_unit = unit;
         }
@@ -1531,7 +1544,9 @@ impl Interpreter {
         // own writes land in a fresh born-owned overlay (no fork of `list.env`).
         // The merge below iterates the overlay (overlay-only) = the body's writes.
         // See docs/vm-dual-store.md (Slice 6).
+        let puller = self.env().clone();
         *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
+        self.inherit_puller_dynamics(&puller);
 
         // Push gather items collector
         let saved_gather_len = self.gather_items_len();

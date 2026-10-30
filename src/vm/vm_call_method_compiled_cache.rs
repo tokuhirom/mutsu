@@ -7,6 +7,11 @@ use crate::vm::vm_method_call_attrs::CallAttrs;
 /// absent" in distinct cache buckets.
 const CALLSITE_LINE_MARKER_KEY: &str = "__mutsu_test_callsite_line";
 
+/// Reserved key marking a named argument in a multi cache key. It is followed
+/// by the argument's name and then by the key of its value, so a named
+/// argument can never be read as a positional one.
+const NAMED_ARG_KEY: &str = "__mutsu_named_arg__";
+
 /// Cache-key marker appended after an argument's type key when that argument is
 /// not concrete (`value_is_concrete` is false -- the bit a smiley tests). A `:D`/`:U` smiley candidate set
 /// dispatches on exactly that bit on top of the type, so a key that carries it
@@ -64,6 +69,7 @@ mod key_syms {
 
     key_sym! {
         callsite_line_marker => super::CALLSITE_LINE_MARKER_KEY;
+        named_arg => super::NAMED_ARG_KEY;
         undefined_arg => super::UNDEFINED_ARG_KEY;
         declared_type => super::DECLARED_TYPE_KEY;
         literal_native => super::LITERAL_NATIVE_KEY;
@@ -73,6 +79,20 @@ mod key_syms {
         native_num => "num";
         native_str => "str";
     }
+}
+
+/// Whether a named (`Pair`) argument may be keyed by
+/// [`Interpreter::multi_arg_type_keys_impl`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NamedArgs {
+    /// Refuse the whole call: no key (the function-side caches).
+    Refuse,
+    /// Key a top-level named argument by name and value key.
+    Key,
+    /// Keying the value of a named argument: positional rules, no call-site
+    /// literal mask (that mask indexes the call's own positionals), and no
+    /// nested named argument.
+    KeyedValue,
 }
 
 impl Interpreter {
@@ -139,6 +159,40 @@ impl Interpreter {
         args: &[Value],
         keys: &mut Vec<crate::symbol::Symbol>,
     ) -> bool {
+        self.multi_arg_type_keys_impl(args, keys, NamedArgs::Refuse)
+    }
+
+    /// [`Self::multi_arg_type_keys_into`] for a call whose named arguments are
+    /// keyed by name and value type ([`NamedArgs::Key`]) instead of refusing
+    /// the call: the plain-method lane's key.
+    // Cost: O(a), a = arguments (one type-key intern each).
+    pub(crate) fn multi_arg_type_keys_into_with_named(
+        &mut self,
+        args: &[Value],
+        keys: &mut Vec<crate::symbol::Symbol>,
+    ) -> bool {
+        self.multi_arg_type_keys_impl(args, keys, NamedArgs::Key)
+    }
+
+    /// [`Self::multi_arg_type_keys`] for a METHOD candidate set, which keys a
+    /// named argument by its name and its value's type key instead of
+    /// refusing the whole call (see [`NamedArgs::Key`]).
+    // Cost: O(a), a = arguments (one type-key intern each).
+    pub(crate) fn multi_arg_type_keys_with_named(
+        &mut self,
+        args: &[Value],
+    ) -> Option<Vec<crate::symbol::Symbol>> {
+        let mut keys = Vec::with_capacity(args.len() + 2);
+        self.multi_arg_type_keys_impl(args, &mut keys, NamedArgs::Key)
+            .then_some(keys)
+    }
+
+    fn multi_arg_type_keys_impl(
+        &mut self,
+        args: &[Value],
+        keys: &mut Vec<crate::symbol::Symbol>,
+        named: NamedArgs,
+    ) -> bool {
         for (pos_idx, raw) in args.iter().enumerate() {
             // A `VarRef` (a variable passed as an argument) dispatches on the
             // *source variable's declared type* as well as on the value's own
@@ -156,7 +210,12 @@ impl Interpreter {
             // — meant every assertion that passes a *variable*
             // (`is $got, $expected, "..."`, `is-deeply @a, @b, "..."`, i.e. most
             // of roast) re-ran the whole candidate walk on every call.
-            let a = match raw.view() {
+            //
+            // The unwrapped views are only built when the argument is a
+            // `VarRef` / `ContainerRef`: cloning every argument just to look at
+            // it made a named-argument `Pair` take a refcount round trip that
+            // lands in the GC candidate buffer on drop.
+            let unwrapped: Option<Value> = match raw.view() {
                 ValueView::VarRef { name, value, .. } => {
                     // The symbol is at hand and the env's own `Str` is borrowed,
                     // so a typed variable argument costs no re-intern of its
@@ -167,10 +226,11 @@ impl Interpreter {
                         keys.push(key_syms::declared_type());
                         keys.push(crate::symbol::Symbol::intern(tc.as_str()));
                     }
-                    value.clone()
+                    Some(value.clone())
                 }
-                _ => raw.clone(),
+                _ => None,
             };
+            let a: &Value = unwrapped.as_ref().unwrap_or(raw);
             // A `ContainerRef` argument (a variable boxed into a shared cell,
             // e.g. one a closure captured) type-checks by its CONTENTS
             // (`args_match_param_types_inner`), exactly like the plain value,
@@ -181,18 +241,15 @@ impl Interpreter {
             // Refusing to key it made a Text::CSV field push (`$!csv-row.push:
             // $f` with `$f` captured by the parser's `keep` closure) re-run the
             // whole candidate walk on every call (#9494).
-            let a = if a.is_container_ref() {
-                a.deref_container()
-            } else {
-                a
-            };
-            let a = &a;
+            let contents: Option<Value> = a.is_container_ref().then(|| a.deref_container());
+            let a: &Value = contents.as_ref().unwrap_or(a);
             // The call-site mask also describes declared-native variables.
             // A light frame may omit their env type record, leaving a VarRef
             // with no declared constraint; its native bit must still differ
             // from an untyped VarRef's key, or either can reuse the other's
             // winner (#13776). Key the mask after unwrapping every argument.
             if pos_idx < 32
+                && named != NamedArgs::KeyedValue
                 && self.literal_native_args & (1 << pos_idx) != 0
                 && let Some(native) = match a.view() {
                     ValueView::Int(_) => Some(key_syms::native_int()),
@@ -260,6 +317,31 @@ impl Interpreter {
                 _ if Self::is_callsite_line_marker(a) => {
                     key_syms::callsite_line_marker()
                 }
+                // A named argument (`:$merge-clones`, `key => $c` in call
+                // position) selects candidates by its NAME (which named
+                // parameter or slurpy takes it) and by its value's type and
+                // definedness against that parameter's constraint. Both are in
+                // the key: the marker, the name, then the value's own key. Any
+                // other thing a named parameter could look at (`where`, a
+                // literal, a subset, a coercion, `is rw`, a sub-signature) makes
+                // the candidate set value-dependent, which
+                // `method_candidate_shape` already refuses wholesale. A value
+                // that is itself a pair is not keyed.
+                ValueView::Pair(name, value) if named == NamedArgs::Key => {
+                    if matches!(value.view(), ValueView::Pair(..) | ValueView::ValuePair(..)) {
+                        return false;
+                    }
+                    keys.push(key_syms::named_arg());
+                    keys.push(crate::symbol::Symbol::intern(name.as_str()));
+                    if !self.multi_arg_type_keys_impl(
+                        std::slice::from_ref(value),
+                        keys,
+                        NamedArgs::KeyedValue,
+                    ) {
+                        return false;
+                    }
+                    continue;
+                }
                 ValueView::Junction { .. }
                 | ValueView::Mixin(..)
                 | ValueView::Scalar(_)
@@ -274,19 +356,27 @@ impl Interpreter {
                 // unwrap above produces; refuse it rather than guess.
                 | ValueView::VarRef { .. } => return false,
                 _ => {
-                    let name = crate::runtime::utils::value_type_name(a);
-                    // ADR-0019 E1a shadow probe (zero behavior change): see
-                    // `todo/deep/adr0019-e1-typeid-receiver-owner.md`.
-                    self.shadow_check_owner("multi_arg_type_keys", a, name);
                     // The scalar types every numeric/string call passes are
-                    // interned once per process, not hashed per argument.
+                    // interned once per process, not hashed per argument, and
+                    // their name is not even derived.
                     let wk = crate::type_id::well_known_types();
-                    match a.view() {
-                        ValueView::Int(_) | ValueView::BigInt(_) => wk.int.symbol(),
-                        ValueView::Num(_) => wk.num.symbol(),
-                        ValueView::Str(_) => wk.str_.symbol(),
-                        ValueView::Bool(_) => wk.bool_.symbol(),
-                        _ => crate::symbol::Symbol::intern(name),
+                    let scalar = match a.view() {
+                        ValueView::Int(_) | ValueView::BigInt(_) => Some(wk.int.symbol()),
+                        ValueView::Num(_) => Some(wk.num.symbol()),
+                        ValueView::Str(_) => Some(wk.str_.symbol()),
+                        ValueView::Bool(_) => Some(wk.bool_.symbol()),
+                        _ => None,
+                    };
+                    // ADR-0019 E1a shadow probe (zero behavior change): see
+                    // `todo/deep/adr0019-e1-typeid-receiver-owner.md`. Only
+                    // asked when the stats it feeds are on.
+                    match scalar {
+                        Some(sym) if !crate::vm::vm_stats::enabled() => sym,
+                        _ => {
+                            let name = crate::runtime::utils::value_type_name(a);
+                            self.shadow_check_owner("multi_arg_type_keys", a, name);
+                            scalar.unwrap_or_else(|| crate::symbol::Symbol::intern(name))
+                        }
                     }
                 }
             };
@@ -434,7 +524,7 @@ impl Interpreter {
                 if def.is_multi {
                     any_multi = true;
                 }
-                for pd in &def.param_defs {
+                for pd in def.param_defs.iter() {
                     if pd.where_constraint.is_some() || pd.literal_value.is_some() {
                         value_dependent = true;
                         break 'outer;
@@ -651,7 +741,7 @@ impl Interpreter {
             return hit;
         }
         // 3. Sound multi-method resolution cache (type+arity deterministic).
-        if let Some(mut arg_keys) = self.multi_arg_type_keys(args)
+        if let Some(mut arg_keys) = self.multi_arg_type_keys_with_named(args)
             && self.multi_dispatch_type_cacheable(class_sym, method_sym, cn, method)
         {
             // The INVOCANT's definedness is part of the dispatch too: an
@@ -720,7 +810,7 @@ impl Interpreter {
         self.refresh_method_caches_for_generation();
         let class_sym = crate::symbol::Symbol::intern(class_name);
         let method_sym = crate::symbol::Symbol::intern(method);
-        if let Some(mut arg_keys) = self.multi_arg_type_keys(args)
+        if let Some(mut arg_keys) = self.multi_arg_type_keys_with_named(args)
             && self.multi_dispatch_type_cacheable(class_sym, method_sym, class_name, method)
         {
             arg_keys.insert(0, boundary_owner);

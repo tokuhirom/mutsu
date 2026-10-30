@@ -98,7 +98,7 @@ If there is no record at all, that is fine — the corpus sweep is partial (see
 
 Agents run in parallel and a distribution has no issue of its own to carry a
 claim, so the claim goes on the **lock board**,
-[#12725](https://github.com/tokuhirom/mutsu/issues/12725) (the single open issue
+[#15044](https://github.com/tokuhirom/mutsu/issues/15044) (the single open issue
 labelled `ecosystem:lock`). This holds however you arrived at the distribution —
 a user naming it does not make it unclaimed.
 
@@ -214,6 +214,20 @@ interpreters' output, the distribution and test file it came from, and why it is
 per finding, **filed in `tokuhirom/mutsu`** — the issue records a gap in *mutsu*, so it belongs in
 mutsu's tracker even when the reduction is quoted verbatim from someone else's distribution. Never
 open it, or a comment on it, anywhere else.
+
+**Link the issue to the distributions it blocks** with one marker line in the body, spelled as
+the ledger spells them (`::`, comma-separated):
+
+```
+eco-dist: String::Utils, Foo::Bar
+```
+
+That line is what puts the distribution under "Waiting on an issue" on the ecosystem dashboard
+(`scripts/ecosystem-dashboard.py`, [`ecosystem-dist-queue`](../ecosystem-dist-queue/SKILL.md)) and
+what makes the next agent pass it. An issue filed without it is invisible to the queue, so the
+dashboard lists it under "Needs attention" until someone adds the line. When you add your
+distribution to an issue that already tracks the cause, append it to that issue's marker line
+(edit the body; a comment is not read).
 
 Then say so in the PR: the distribution's remaining red files each name their issue number. A
 distribution that goes from `red` to `partial` with the residue filed is a good outcome. What is

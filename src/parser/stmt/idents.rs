@@ -149,8 +149,8 @@ pub(crate) fn qualified_ident(input: &str) -> PResult<'_, String> {
 /// `constant $self`, `my ($self, $x)`), where the parsed name becomes an env
 /// key directly. Do NOT use it for signature parameters: a `ParamDef` keeps its
 /// sigil-less `name` for introspection (`.signature.params[0].name` re-adds the
-/// sigil), and the compiler maps `$self` back onto such a parameter through
-/// `Compiler::self_is_signature_param`.
+/// sigil), and `ParamDef::storage_name` maps such a `$self` parameter onto the
+/// reserved lexical key.
 pub(crate) fn lexical_var_name(input: &str) -> PResult<'_, String> {
     let (rest, name) = var_name(input)?;
     if input.starts_with('$') && name == "self" {

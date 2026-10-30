@@ -116,6 +116,7 @@ impl Interpreter {
         let saved_env = self.env.clone();
         let saved_len = self.async_state.gather_items.len();
         self.env = list.env.clone();
+        self.inherit_puller_dynamics(&saved_env);
         self.async_state.gather_items.push(Vec::new());
         self.async_state.gather_take_limits.push(None);
         // The gather body is a lexical block: a `sub` declared inside it shadows
@@ -166,6 +167,7 @@ impl Interpreter {
         let saved_env = self.env.clone();
         let saved_len = self.async_state.gather_items.len();
         self.env = list.env.clone();
+        self.inherit_puller_dynamics(&saved_env);
         self.async_state.gather_items.push(Vec::new());
         self.async_state.gather_take_limits.push(Some(needed_len));
         self.async_state.gather_suspend_pending = false;
@@ -173,13 +175,11 @@ impl Interpreter {
         let pushed_samewith = self.push_captured_samewith_context(&list.env);
         // See `force_lazy_list_bridge`: restore the package the gather was
         // WRITTEN in for a bare call in the body.
-        let saved_package = self.enter_gather_package(&list.env);
+        let gather_scope = self.enter_gather_scope(list);
         // A lazy gather body runs in its own captured env, not the forcing
         // frame's, so it blocks the inline CATCH chain (ADR-0072).
         let run_res = self.with_catch_marker(|this| this.run_gather_body(list));
-        if let Some(pkg) = saved_package {
-            self.set_current_package(pkg);
-        }
+        self.leave_gather_scope(gather_scope);
         self.pop_captured_samewith_context(pushed_samewith);
         // Clear the deferred-suspension flag on exit — see the matching clear
         // in force_lazy_list_vm_n_inner.
@@ -219,13 +219,11 @@ impl Interpreter {
         // for the compiled-bytecode force path. `.gist`/`.Str`/other
         // method-dispatch forcing routes through this tree-walk bridge
         // instead, so it needs its own copy of the restore.
-        let saved_package = self.enter_gather_package(&list.env);
+        let gather_scope = self.enter_gather_scope(list);
         // A lazy gather body runs in its own captured env, not the forcing
         // frame's, so it blocks the inline CATCH chain (ADR-0072).
         let mut r = self.with_catch_marker(|this| this.force_lazy_list(list));
-        if let Some(pkg) = saved_package {
-            self.set_current_package(pkg);
-        }
+        self.leave_gather_scope(gather_scope);
         // Same fix as `force_lazy_list_vm`: a `return` inside the gather
         // body targets whatever routine WROTE the gather (captured in
         // `list.env`'s `__mutsu_callable_id`, the same key an ordinary

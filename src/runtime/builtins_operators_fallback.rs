@@ -29,6 +29,25 @@ fn is_dead_end_self_referential_routine(v: &Value, name: &str) -> bool {
 }
 
 impl Interpreter {
+    /// Call what a top-level `use` BELOW the running call imports under `name`
+    /// (see [`Self::unit_late_import`]); `None` when it binds nothing.
+    // Cost: O(c + s) in the lookup, c = the code's import chains, s = sets in
+    // its fallback chains; plus the call.
+    fn call_unit_late_import(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        match self.unit_late_import(name)? {
+            crate::runtime::lexical_imports::LexicalImport::Code(value) => {
+                Some(self.eval_call_on_value(value, args.to_vec()))
+            }
+            crate::runtime::lexical_imports::LexicalImport::Routine(def) => {
+                Some(self.call_routine_def(&def, args.to_vec()))
+            }
+        }
+    }
+
     pub(crate) fn call_function_fallback(
         &mut self,
         name: &str,
@@ -344,6 +363,53 @@ impl Interpreter {
                 return Ok(Value::package(Symbol::intern(&format!("{name}({source})"))));
             }
         }
+        // Invoking a *subset* type object coerces, as invoking its base does,
+        // then checks the subset's `where`: `subset Short of Int where * < 100;
+        // Short("50")` is `50` (XML::Class deserialises a subset-typed
+        // attribute through `$type($text)`). A value outside the subset is
+        // X::Coerce::Impossible.
+        if args.len() == 1
+            && self.is_subset_type_name(name)
+            && !matches!(
+                args[0].view(),
+                ValueView::Package(_) | ValueView::ParametricRole { .. } | ValueView::Nil
+            )
+        {
+            let base = self.resolve_subset_base_type(name);
+            if base != name {
+                // The coercion protocol: `Int("50")` is `"50".Int`.
+                let coerced = if self.type_matches_value(&base, &args[0]) {
+                    args[0].clone()
+                } else if base.contains('[') {
+                    // A parameterized refinee (`subset Names of Array[Name]`)
+                    // has no method of its own name to call: it coerces as
+                    // `Array[Name](value)` does.
+                    self.try_coerce_value_for_constraint(&format!("{base}()"), args[0].clone())?
+                } else {
+                    self.call_method_with_values(args[0].clone(), &base, vec![])?
+                };
+                if self.type_matches_value(name, &coerced) {
+                    return Ok(coerced);
+                }
+                let source_type = crate::runtime::types::diagnostic_type_name(&args[0]);
+                let display_name = crate::value::user_facing_type_name(name);
+                let msg = format!(
+                    "Impossible coercion from '{source_type}' into '{display_name}': \
+                     the coerced value does not satisfy the subset"
+                );
+                return Err(RuntimeError::typed(
+                    "X::Coerce::Impossible",
+                    ValueMap::from_iter([
+                        (
+                            "target-type".to_string(),
+                            Value::str(display_name.to_string()),
+                        ),
+                        ("from-type".to_string(), Value::str(source_type)),
+                        ("message".to_string(), Value::str(msg)),
+                    ]),
+                ));
+            }
+        }
         // `zip` over an unbounded column (an infinite Range, a lazy list):
         // pull the rows instead of materializing it (#9159). An all-finite
         // `zip` keeps the native implementation below.
@@ -535,6 +601,15 @@ impl Interpreter {
             return self.call_method_with_values(callable, "CALL-ME", args.to_vec());
         }
         if let Some((proto_name, proto_def)) = self.resolve_proto_function_with_alias(name) {
+            // A `{*}`-only proto whose candidates were never registered under
+            // this spelling (`Red::Database`'s `proto database`, whose multis
+            // live in the module's own scope) is no routine the call can reach:
+            // a `use` BELOW the call that imports the name answers it (#15246).
+            if self.is_candidate_less_proto(&proto_name)
+                && let Some(result) = self.call_unit_late_import(name, args)
+            {
+                return result;
+            }
             return self.call_proto_function(&proto_name, &proto_def, args);
         }
         // Check wrap chain for named function calls
@@ -1295,6 +1370,12 @@ impl Interpreter {
         // alias (a lazy `map` callback, #14385).
         if let Some(sub_val) = self.unit_hook_routine(name) {
             return self.eval_call_on_value(sub_val, args.to_vec());
+        }
+
+        // A routine a top-level `use` BELOW this call imports: Raku binds the
+        // `use` at compile time, so a name nothing else resolved still means it.
+        if let Some(result) = self.call_unit_late_import(name, args) {
+            return result;
         }
 
         // A CORE term constant called as a routine is `X::Undeclared` naming

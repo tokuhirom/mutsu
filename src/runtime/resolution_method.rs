@@ -25,6 +25,35 @@ impl Interpreter {
         role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
         invocant: Option<&Value>,
     ) -> bool {
+        // Candidate matching evaluates user code (a `where` constraint, a
+        // default) before the method frame exists, so `self` -- and hence
+        // `$.attr` -- is a scoped frame record for the window, not an env key
+        // (ADR-14843).
+        let fixtures_mark = invocant.map(|inv| self.begin_scoped_invocant(inv.clone()));
+        // The candidate's `where` clauses and defaults were compiled in the unit
+        // that declared it (a role method composed into a class of another
+        // file keeps the role's module), whoever is calling.
+        let verdict = match def.source_file.as_deref() {
+            Some(file) => self.with_candidate_unit(file, |this| {
+                this.method_args_match_in_window(class_name, def, arg_values, role_bindings, invocant)
+            }),
+            None => self
+                .method_args_match_in_window(class_name, def, arg_values, role_bindings, invocant),
+        };
+        if let Some(mark) = fixtures_mark {
+            self.end_scoped_fixtures(mark);
+        }
+        verdict
+    }
+
+    fn method_args_match_in_window(
+        &mut self,
+        class_name: &str,
+        def: &MethodDef,
+        arg_values: &[Value],
+        role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
+        invocant: Option<&Value>,
+    ) -> bool {
         // Candidate matching is a *speculative* window: everything it binds
         // (role type params, the method's captured lexical scope, `self`, type
         // captures) is rolled back when it ends, and it can run for every
@@ -109,10 +138,7 @@ impl Interpreter {
         // could not be told apart from its sibling and the first candidate
         // declared always won. The whole block runs inside the
         // `saved_env`/restore window, so this binding is scoped to the match.
-        if let Some(inv) = invocant {
-            self.env.insert("self".to_string(), inv.clone());
-        }
-        for pd in &def.param_defs {
+        for pd in def.param_defs.iter() {
             if !pd.is_invocant {
                 continue;
             }
@@ -144,6 +170,25 @@ impl Interpreter {
                         return false;
                     }
                 }
+            }
+            // `multi method m($self where { ... }:)`: the invocant's own `where`.
+            // The clause was compiled in the method's declaring compunit, so
+            // a type that unit imported (`Json`) must resolve here too.
+            if let Some(inv) = invocant
+                && pd.where_constraint.is_some()
+                && !(match def.source_file.as_deref() {
+                    Some(file) => self.with_candidate_unit(file, |this| {
+                        this.invocant_where_accepts(pd, inv, Some(Symbol::intern(class_name)))
+                    }),
+                    None => {
+                        self.invocant_where_accepts(pd, inv, Some(Symbol::intern(class_name)))
+                    }
+                })
+            {
+                self.restore_env_preserving_dynamics(saved_env);
+                self.set_current_package(saved_package);
+                self.pending_call_arg_sources = saved_arg_sources;
+                return false;
             }
         }
         // The `where` clauses and defaults of the signature were compiled in
@@ -353,7 +398,7 @@ impl Interpreter {
                         return Some((*cn, only.clone()));
                     }
                 }
-                for def in overloads {
+                for def in overloads.iter() {
                     if def.is_private {
                         continue;
                     }
@@ -367,7 +412,7 @@ impl Interpreter {
                     }
                     let args_match = self.method_args_match_for_invocant(
                         class_name,
-                        &def,
+                        def,
                         arg_values,
                         role_bindings.as_ref(),
                         invocant,
@@ -377,11 +422,11 @@ impl Interpreter {
                             // Non-multi: return the first match immediately,
                             // but only if no multi candidates were already
                             // collected from a child class in the MRO.
-                            return Some((*cn, def));
+                            return Some((*cn, def.clone()));
                         }
-                        all_matches.push((*cn, def));
+                        all_matches.push((*cn, def.clone()));
                     } else if def.is_multi {
-                        rivals.push((*cn, def));
+                        rivals.push((*cn, def.clone()));
                     }
                 }
                 // A non-multi submethod on an ancestor blocks the MRO search
@@ -481,7 +526,7 @@ impl Interpreter {
                 .get_method_overloads_with_role_fallback(cn.as_str(), method_name);
             if let Some(overloads) = overloads {
                 let is_ancestor = cn.as_str() != class_name;
-                for def in overloads {
+                for def in overloads.iter() {
                     if def.is_private {
                         continue;
                     }
@@ -491,12 +536,12 @@ impl Interpreter {
                     }
                     if self.method_args_match_for_invocant(
                         class_name,
-                        &def,
+                        def,
                         arg_values,
                         role_bindings.as_ref(),
                         None,
                     ) {
-                        matches.push((*cn, def));
+                        matches.push((*cn, def.clone()));
                     }
                 }
             }

@@ -82,6 +82,15 @@ impl Compiler {
         self.code.patch_body_end(idx);
     }
 
+    /// Whether a bare block must run as a real phaser block scope
+    /// (`BlockScope`): it has `ENTER`/`LEAVE`/... phasers and no `CATCH` or
+    /// `CONTROL`. A block with both is an implicit `try` region whose body is
+    /// the phaser scope (`compile_try_region`), so it takes that path instead.
+    // Cost: O(s), s = the block's statements.
+    pub(super) fn needs_phaser_block_scope(stmts: &[Stmt]) -> bool {
+        Self::has_block_enter_leave_phasers(stmts) && !Self::has_catch_or_control(stmts)
+    }
+
     pub(super) fn has_block_enter_leave_phasers(stmts: &[Stmt]) -> bool {
         stmts.iter().any(|s| {
             matches!(
@@ -130,13 +139,14 @@ impl Compiler {
     }
 
     /// The body of a FIRST/NEXT/LAST phaser as a single statement. A
-    /// statement-form phaser (parsed as `[SyntheticBlock([stmt])]`) shares the
+    /// statement-form (`bare`) phaser shares the
     /// enclosing block's lexical scope, so it is spliced in scope-less; a
     /// block-form phaser gets its own `Stmt::Block` scope.
-    fn loop_phaser_body(body: &[Stmt]) -> Stmt {
-        match body {
-            [stmt @ Stmt::SyntheticBlock(_)] => stmt.clone(),
-            _ => Stmt::Block(body.to_vec()),
+    fn loop_phaser_body(body: &[Stmt], bare: bool) -> Stmt {
+        if bare {
+            Stmt::SyntheticBlock(body.to_vec())
+        } else {
+            Stmt::Block(body.to_vec())
         }
     }
 
@@ -186,15 +196,18 @@ impl Compiler {
             body
         };
         for stmt in body {
-            if let Stmt::Phaser { kind, body, .. } = stmt {
+            if let Stmt::Phaser {
+                kind, body, bare, ..
+            } = stmt
+            {
                 match kind {
                     PhaserKind::Enter => enter_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Leave => leave_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Keep => keep_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Undo => undo_ph.push(Stmt::Block(body.clone())),
-                    PhaserKind::First => first_ph.push(Self::loop_phaser_body(body)),
-                    PhaserKind::Next => next_ph.push(Self::loop_phaser_body(body)),
-                    PhaserKind::Last => last_ph.push(Self::loop_phaser_body(body)),
+                    PhaserKind::First => first_ph.push(Self::loop_phaser_body(body, *bare)),
+                    PhaserKind::Next => next_ph.push(Self::loop_phaser_body(body, *bare)),
+                    PhaserKind::Last => last_ph.push(Self::loop_phaser_body(body, *bare)),
                     PhaserKind::Pre => pre_ph.push(stmt.clone()),
                     PhaserKind::Post => post_ph.push(stmt.clone()),
                     _ => body_main.push(stmt.clone()),
@@ -256,6 +269,7 @@ impl Compiler {
 
         let mut pre = vec![
             Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: first_var.clone(),
                 expr: Expr::Literal(Value::TRUE),
@@ -266,9 +280,13 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             },
             Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: ran_var.clone(),
                 expr: Expr::Literal(Value::FALSE),
@@ -279,11 +297,15 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             },
         ];
         if let Some(result_var) = result_var.clone() {
             pre.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: result_var,
                 expr: Expr::Literal(Value::NIL),
@@ -294,11 +316,15 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
         if let Some(last_topic_var) = last_topic_var.clone() {
             pre.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: last_topic_var,
                 expr: Expr::Literal(Value::NIL),
@@ -309,11 +335,15 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
         if let Some(value_var) = value_var.clone() {
             pre.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: value_var,
                 expr: Expr::Literal(Value::NIL),
@@ -324,11 +354,15 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
         if let Some(post_topic_var) = post_topic_var.clone() {
             pre.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: post_topic_var,
                 expr: Expr::Literal(Value::NIL),
@@ -339,6 +373,9 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
@@ -417,6 +454,7 @@ impl Compiler {
         // Declare temp variables for extracted ENTER phaser expressions
         for var_name in &enter_expr_vars {
             pre.push(Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: var_name.clone(),
                 expr: Expr::Literal(Value::NIL),
@@ -427,6 +465,9 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             });
         }
@@ -472,6 +513,24 @@ impl Compiler {
                         loop_body.push(Stmt::Assign {
                             name: cap_var,
                             expr: Expr::Literal(Value::TRUE),
+                            op: AssignOp::Assign,
+                            target_is_sigilless: false,
+                        });
+                    }
+                    // A trailing assignment (`$n += 1`, `$x = 5`) evaluates to the
+                    // assigned container, so the body's value is the variable's
+                    // post-assignment value, not an undefined `Nil`.
+                    Stmt::Assign { name, .. } | Stmt::VarDecl { name, .. } => {
+                        loop_body.push(last.clone());
+                        // An aggregate target is a defined container, not a value to read back.
+                        let value = if name.starts_with(['@', '%']) {
+                            Expr::Literal(Value::TRUE)
+                        } else {
+                            Expr::Var(name.clone())
+                        };
+                        loop_body.push(Stmt::Assign {
+                            name: cap_var,
+                            expr: value,
                             op: AssignOp::Assign,
                             target_is_sigilless: false,
                         });
@@ -539,7 +598,16 @@ impl Compiler {
             && (!keep_ph.is_empty() || !undo_ph.is_empty())
         {
             loop_body.push(Stmt::If {
-                cond: Expr::Var(result_var),
+                // KEEP vs UNDO is decided by definedness, not truthiness: a
+                // falsy-but-defined value (`0`, `""`) still runs KEEP.
+                cond: Expr::MethodCall {
+                    target: Box::new(Expr::Var(result_var)),
+                    name: crate::symbol::Symbol::intern("defined"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                    sugar: false,
+                },
                 then_branch: keep_ph,
                 else_branch: undo_ph,
                 binding_var: None,
@@ -637,6 +705,7 @@ impl Compiler {
             };
             let init = init.clone();
             let body = vec![Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 name: var_name,
                 expr: init,
@@ -647,6 +716,9 @@ impl Compiler {
                 is_export: false,
                 export_tags: Vec::new(),
                 custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: None,
             }];
             hoisted.push(Stmt::Phaser {
@@ -655,6 +727,7 @@ impl Compiler {
                 body,
                 condition: None,
                 end_index: None,
+                bare: false,
             });
         }
         hoisted.extend(rest);

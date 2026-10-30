@@ -115,6 +115,7 @@ fn parse_ternary_allows_parenthesized_assignment_branches() {
 #[test]
 fn parse_parenthesized_compound_assign_as_lvalue_expression() {
     let (rest, expr) = expression("($x += 2) *= 3").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     // The written operator is kept as a marker; the nested assignment the
     // compiler runs is its expansion.
@@ -133,6 +134,7 @@ fn parse_parenthesized_compound_assign_as_lvalue_expression() {
 #[test]
 fn parse_parenthesized_metaassign_chain_as_lvalue_expression() {
     let (rest, expr) = expression("(@a ||= 42) += 10").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     // The written operator is kept as a marker; the nested assignment the
     // compiler runs is its expansion.

@@ -124,6 +124,7 @@ fn parse_hyper_prefix_slip_right_on_angle_list() {
 #[test]
 fn parse_slip_prefix_with_space_before_french_quote_list() {
     let (rest, expr) = expression("| «echo test»").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     assert!(matches!(
         expr,
@@ -179,16 +180,16 @@ fn parse_prefix_boolify_codevar_method_call() {
 fn parse_hyper_prefix_metaop_negate() {
     let (rest, expr) = expression("-« ([1, 2], 3)").unwrap();
     assert_eq!(rest, "");
-    match expr {
-        Expr::Call { name, args, .. } => {
-            assert_eq!(name, "__mutsu_hyper_prefix");
-            assert_eq!(args.len(), 2);
-            assert!(
-                matches!(&args[0], Expr::Literal(lit) if matches!(lit.view(), crate::value::ValueView::Str(s) if s.as_str() == "-"))
-            );
-        }
-        _ => panic!("expected hyper prefix metaop call"),
-    }
+    assert!(
+        matches!(
+            &expr,
+            Expr::Ast(node) if matches!(
+                node.as_ref(),
+                crate::ast::parsed::ParsedExpr::HyperPrefix(prefix) if prefix.symbol == "-"
+            )
+        ),
+        "expected a hyper prefix node, got {expr:?}"
+    );
 }
 
 #[test]
@@ -349,6 +350,7 @@ fn parse_reverse_metaop_oror() {
 #[test]
 fn parse_reverse_meta_compound_assign_rhs_target() {
     let (rest, expr) = expression("10 R+= ($a ||= 42)").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     // `$a ||= 42` desugars to a short-circuit ternary (see
     // `short_circuit_compound_assign_expr`), so the reverse metaop distributes
@@ -368,6 +370,7 @@ fn parse_reverse_meta_compound_assign_rhs_target() {
 #[test]
 fn parse_reverse_meta_compound_assign_non_lvalue_target() {
     let (rest, expr) = expression("($a ||= 42) R+= 10").unwrap();
+    let expr = crate::parser::test_lower::expr(expr);
     assert_eq!(rest, "");
     assert!(matches!(
         &expr,

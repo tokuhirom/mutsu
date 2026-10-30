@@ -617,12 +617,12 @@ pub(crate) fn gist_value(value: &Value) -> String {
         // An `is Array` subclass instance gists as its backing array elements
         // (`Vector.new(1,2,3).gist` → `[1 2 3]`), not the generic `Class.new`.
         ValueView::Instance { attributes, .. }
-            if attributes.contains_key("__mutsu_array_storage") =>
+            if attributes.contains_key(crate::symbol::wk::array_storage()) =>
         {
             gist_value(
                 &attributes
                     .as_map()
-                    .get("__mutsu_array_storage")
+                    .get(crate::symbol::wk::array_storage())
                     .cloned()
                     .unwrap_or_else(|| crate::value::Value::real_array(Vec::new())),
             )
@@ -634,10 +634,10 @@ pub(crate) fn gist_value(value: &Value) -> String {
             class_name,
             attributes,
             ..
-        } if attributes.contains_key("__mutsu_hash_storage") => {
+        } if attributes.contains_key(crate::symbol::wk::hash_storage()) => {
             let storage = attributes
                 .as_map()
-                .get("__mutsu_hash_storage")
+                .get(crate::symbol::wk::hash_storage())
                 .cloned()
                 .unwrap_or_else(|| crate::value::Value::hash(ValueMap::default()));
             // An `is Map` subclass names itself (`V3.new((a => 1))`).
@@ -655,10 +655,10 @@ pub(crate) fn gist_value(value: &Value) -> String {
             class_name,
             attributes,
             ..
-        } if attributes.contains_key("__baggy_data__") => {
+        } if attributes.contains_key(crate::symbol::wk::baggy_data()) => {
             let storage = attributes
                 .as_map()
-                .get("__baggy_data__")
+                .get(crate::symbol::wk::baggy_data())
                 .cloned()
                 .unwrap_or(crate::value::Value::NIL);
             let name = class_name.resolve();

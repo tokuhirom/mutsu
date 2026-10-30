@@ -275,15 +275,20 @@ impl Interpreter {
         &mut self,
         class_name: &str,
         method_name: &str,
-    ) -> Option<(String, FunctionDef)> {
+    ) -> Option<(String, Arc<FunctionDef>)> {
         if !self.registry().has_proto_methods {
             return None;
         }
+        let method_sym = Symbol::intern(method_name);
+        let registry = self.registry();
+        if !registry.has_proto_method_named(method_sym) {
+            return None;
+        }
         let mro = self.class_mro(class_name);
-        mro.iter().map(|s| s.resolve()).find_map(|cn| {
-            self.registry()
-                .method_entry_proto(&cn, method_name)
-                .map(|f| (cn, f))
+        mro.iter().find_map(|owner| {
+            registry
+                .method_entry_proto_sym(*owner, method_sym)
+                .map(|f| (owner.resolve(), f))
         })
     }
 
@@ -297,18 +302,49 @@ impl Interpreter {
         owner_class: &str,
         method_name: &str,
         args: Vec<Value>,
-        proto: FunctionDef,
+        proto: Arc<FunctionDef>,
     ) -> Result<Value, RuntimeError> {
         // A `{*}`-only proto never binds its own signature: Rakudo hands the
         // arguments straight to the candidates, so a call only a candidate
         // accepts is not rejected by the proto's parameter types (#13250).
         let only_star = super::dispatch_proto_rewrite::is_only_star_block(&proto.body);
+        // Such a proto has no body of its own to run, so, as in rakudo's
+        // onlystar dispatch, `{*}` goes straight to the winning candidate: no
+        // proto frame, proto-body bytecode or proto signature binding. A
+        // scalar `is rw`/`is raw` proto parameter still needs the proto body's
+        // slot to rebuild the redispatch arguments (`proto_rw_redispatch_args`).
+        // Cost: O(1) plus the candidate dispatch.
+        if only_star
+            && !proto
+                .param_defs
+                .iter()
+                .any(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"))
+        {
+            let call_arg_sources = self.take_pending_call_arg_sources();
+            self.push_proto_dispatch_frame(
+                method_name.to_string(),
+                args,
+                Some(ProtoMethodCtx {
+                    invocant,
+                    call_arg_sources,
+                }),
+            );
+            let Some(frame) = self.dispatch.proto_dispatch_stack.last().cloned() else {
+                return Err(RuntimeError::new("proto dispatch frame was not pushed"));
+            };
+            // `current_code` names the caller's bytecode here, not a proto body.
+            let saved_code = std::mem::replace(&mut self.current_code, 0);
+            let result = self.in_method_call(|interp| interp.dispatch_proto_frame(frame));
+            self.current_code = saved_code;
+            self.pop_proto_dispatch_frame();
+            return result;
+        }
         let mut method_def = MethodDef {
             value_prototype: None,
             syms: Default::default(),
             lexical_package: proto.package,
-            params: if only_star { Vec::new() } else { proto.params.clone() },
-            param_defs: if only_star { Vec::new() } else { proto.param_defs.clone() },
+            params: (if only_star { Vec::new() } else { proto.params.clone() }).into(),
+            param_defs: (if only_star { Vec::new() } else { proto.param_defs.clone() }).into(),
             // A `{*}`-only body is the routine-level onlystar: the bare `*`
             // in it is the dispatch (the onlystar *term* in a longer body is
             // parsed into the dispatch call already, #10746).
@@ -338,7 +374,7 @@ impl Interpreter {
                     .registry()
                     .method_entry_proto_hidden(owner_class, method_name),
             captured_env: None,
-            source_file: proto.source_file,
+            source_file: proto.source_file.clone(),
             role_param_bindings: None,
             nested_capture_index: None,
             captured_readonly: None,
@@ -426,6 +462,12 @@ impl Interpreter {
             // it here would risk double-running that constructor's proto
             // body instead of leaving it to the dedicated leg.
             ValueView::Package(name) if method != "new" => name.resolve(),
+            // A mixed-in type object (`Class.^mixin(R)`, a deparser
+            // specialised by a role) keeps its class's `proto method` body.
+            ValueView::Mixin(inner, _) if method != "new" => match inner.view() {
+                ValueView::Package(name) => name.resolve(),
+                _ => return None,
+            },
             _ => return None,
         };
         let (owner, proto) = self.lookup_proto_method(&cn, method)?;
@@ -448,49 +490,23 @@ impl Interpreter {
         // This is ungated: it is a precise subset of the blanket reconcile (so it
         // never changes a correct result) and it fixes the latent default-build
         // bug rather than merely the double-OFF measurement surface.
-        let proto_pre_env: std::collections::HashMap<Symbol, Value> = self
-            .env
-            .iter()
-            .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
-            .map(|(k, v)| (*k, v.clone()))
-            .collect();
-        // The nested proto dispatch rebinds `env["self"]` to its own invocant and
-        // does not restore the enclosing method's `self` afterward (unlike the
-        // normal method-call path). When a plain method delegates to an attribute
-        // whose class declares a cross-module `proto method` (HTTP::Message.field
-        // -> HTTP::Header.field), the enclosing method's `self` is left holding the
-        // proto's invocant / a stale type object, and the method-return writeback
-        // then commits that back to the caller's variable — turning it into `Any`.
-        // Save and restore the enclosing invocant across the proto dispatch.
-        let saved_self = self.env.get("self").cloned();
+        let pre_env = ProtoPreEnv::capture(&self.env);
         let result =
             self.run_proto_method(target.clone(), &cn, &owner, method, args.to_vec(), proto);
-        match saved_self {
-            Some(v) => {
-                self.env.insert("self".to_string(), v);
-            }
-            None => {
-                self.env.remove("self");
-            }
-        }
-        let changed: Vec<String> = self
-            .env
-            .iter()
-            .filter(|(k, v)| {
-                let kn = k.resolve();
-                // `self`/`$_` are the callee's invocant and topic, never a caller
-                // lexical to write back. The nested proto dispatch can leave the
-                // enclosing method's `self` slot holding a type object (a
-                // writeback-safe `Package`); recording it here would clobber the
-                // enclosing invocant on return — a plain method that merely
-                // delegates to an attribute's cross-module `proto method` would
-                // turn its own `self` into `Any` (HTTP::Message.field ->
-                // HTTP::Header.field). Exclude the invocant explicitly.
-                kn != "_"
-                    && kn != "$_"
-                    && kn != "self"
-                    && !kn.starts_with("__mutsu_")
-                    && Self::is_writeback_safe_scalar(v)
+        let changed: Vec<String> = if pre_env.unchanged(&self.env) {
+            Vec::new()
+        } else {
+            self.env
+                .iter()
+                .filter(|(k, v)| {
+                    // `self`/`$_` are the callee's invocant and topic, never a caller
+                    // lexical to write back. The nested proto dispatch can leave the
+                    // enclosing method's `self` slot holding a type object (a
+                    // writeback-safe `Package`); recording it here would clobber the
+                    // enclosing invocant on return — a plain method that merely
+                    // delegates to an attribute's cross-module `proto method` would
+                    // turn its own `self` into `Any` (HTTP::Message.field ->
+                    // HTTP::Header.field). Exclude the invocant explicitly.
                     // Only a name that ALREADY existed as a writeback-safe scalar
                     // before the proto dispatch and whose value the dispatch
                     // changed is a genuine caller-lexical mutation to propagate.
@@ -500,13 +516,68 @@ impl Interpreter {
                     // even the caller's own instance var reset to a type object.
                     // Recording those clobbers the caller (`unwrap_or(true)` turned
                     // `$o` into `Any`). Require a real pre-existing scalar.
-                    && proto_pre_env.get(*k).map(|p| p != *v).unwrap_or(false)
-            })
-            .map(|(k, _)| k.resolve())
-            .collect();
+                    pre_env.get(**k).is_some_and(|p| p != *v) && {
+                        let kn = k.resolve();
+                        kn != "_"
+                            && kn != "$_"
+                            && kn != "self"
+                            && !kn.starts_with("__mutsu_")
+                            && Self::is_writeback_safe_scalar(v)
+                    }
+                })
+                .map(|(k, _)| k.resolve())
+                .collect()
+        };
         for n in changed {
             self.record_caller_var_writeback(&n);
         }
         Some(result)
+    }
+}
+
+/// The writeback-safe caller scalars as they were before a proto dispatch, so
+/// the dispatch's changes to them can be told from internal leakage.
+///
+/// Capturing is O(1) when the overlay can be pinned ([`Env::pin_overlay`]):
+/// the dispatch then either leaves the overlay untouched, proven by pointer
+/// equality, so nothing is compared at all, or copies it on its first write
+/// and the pinned tier is the "before" picture. Only an env that cannot be
+/// pinned (a flat env over a capture fallback) pays for a snapshot.
+enum ProtoPreEnv {
+    Pinned(crate::env::OverlayPin),
+    Snapshot(std::collections::HashMap<Symbol, Value>),
+}
+
+impl ProtoPreEnv {
+    // Cost: O(1) pinned; O(e) for the snapshot fallback, e = env entries.
+    fn capture(env: &crate::env::Env) -> Self {
+        match env.pin_overlay() {
+            Some(pin) => Self::Pinned(pin),
+            None => Self::Snapshot(
+                env.iter()
+                    .filter(|(_, v)| Interpreter::is_writeback_safe_scalar(v))
+                    .map(|(k, v)| (*k, v.clone()))
+                    .collect(),
+            ),
+        }
+    }
+
+    // Cost: O(1).
+    fn unchanged(&self, env: &crate::env::Env) -> bool {
+        match self {
+            Self::Pinned(pin) => env.overlay_unchanged_since(pin),
+            Self::Snapshot(_) => false,
+        }
+    }
+
+    /// The pre-dispatch value of `key`, only when it was a writeback-safe scalar.
+    // Cost: O(1).
+    fn get(&self, key: Symbol) -> Option<&Value> {
+        match self {
+            Self::Pinned(pin) => pin
+                .get(key)
+                .filter(|v| Interpreter::is_writeback_safe_scalar(v)),
+            Self::Snapshot(map) => map.get(&key),
+        }
     }
 }

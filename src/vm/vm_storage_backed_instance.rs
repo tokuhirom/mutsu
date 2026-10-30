@@ -10,8 +10,8 @@ impl Interpreter {
     // Cost: O(1).
     pub(super) fn is_storage_backed_instance(v: &Value) -> bool {
         matches!(v.view(), ValueView::Instance { attributes, .. }
-            if attributes.contains_key("__mutsu_hash_storage")
-                || attributes.contains_key("__mutsu_array_storage"))
+            if attributes.contains_key(crate::symbol::wk::hash_storage())
+                || attributes.contains_key(crate::symbol::wk::array_storage()))
     }
 
     /// Store `val` at `key` of an `is Hash` / `is Array` subclass instance's
@@ -36,7 +36,7 @@ impl Interpreter {
             let Ok(i) = key.parse::<usize>() else {
                 return false;
             };
-            if !attributes.contains_key("__mutsu_array_storage") {
+            if !attributes.contains_key(crate::symbol::wk::array_storage()) {
                 return false;
             }
             attributes.with_attr_mut("__mutsu_array_storage", |storage| {
@@ -54,7 +54,7 @@ impl Interpreter {
             });
             return true;
         }
-        if !attributes.contains_key("__mutsu_hash_storage") {
+        if !attributes.contains_key(crate::symbol::wk::hash_storage()) {
             return false;
         }
         attributes.with_attr_mut("__mutsu_hash_storage", |storage| {

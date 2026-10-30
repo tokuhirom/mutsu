@@ -65,9 +65,9 @@ impl Interpreter {
         matches!(
             invocant.view(),
             ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_array_storage")
-                    || attributes.contains_key("__mutsu_hash_storage")
-                    || attributes.contains_key("__baggy_data__")
+                if attributes.contains_key(crate::symbol::wk::array_storage())
+                    || attributes.contains_key(crate::symbol::wk::hash_storage())
+                    || attributes.contains_key(crate::symbol::wk::baggy_data())
         )
     }
 

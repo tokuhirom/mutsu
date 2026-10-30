@@ -154,6 +154,9 @@ impl Interpreter {
     pub(super) fn place_env_get(&self, place: StorePlace, name: &str) -> Option<&Value> {
         match place {
             StorePlace::Slot { slot } => self.locals.get(slot),
+            StorePlace::Named if name == "self" => {
+                self.frame_invocant_ref().or_else(|| self.env().get(name))
+            }
             StorePlace::Named => self.env().get(name),
         }
     }
@@ -164,6 +167,9 @@ impl Interpreter {
     pub(super) fn place_env_bound(&self, place: StorePlace, name: &str) -> bool {
         match place {
             StorePlace::Slot { .. } => true,
+            StorePlace::Named if name == "self" => {
+                self.frame_invocant_ref().is_some() || self.env().contains_key(name)
+            }
             StorePlace::Named => self.env().contains_key(name),
         }
     }
@@ -190,6 +196,9 @@ impl Interpreter {
     ) -> Option<&mut Value> {
         match place {
             StorePlace::Slot { slot } => self.locals.get_mut(slot),
+            StorePlace::Named if name == "self" && self.frame_invocant_ref().is_some() => {
+                self.frame_invocant_mut()
+            }
             StorePlace::Named => self.env_mut().get_mut(name),
         }
     }
@@ -201,7 +210,10 @@ impl Interpreter {
         if let StorePlace::Slot { slot } = place {
             self.locals[slot] = value.clone();
         }
-        self.env_mut().insert(name.to_string(), value);
+        // `self` is the frame record's (ADR-14843).
+        if !self.store_invocant_by_name(name, &value) {
+            self.env_mut().insert(name.to_string(), value);
+        }
     }
 
     /// Replace the store's target with `value` through the write precedence
@@ -232,6 +244,16 @@ impl Interpreter {
                 // borrows while the returned reference is held; a descended
                 // pointer points into a cell the slot keeps alive (see
                 // `descend_container_ref`).
+                let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
+                // SAFETY: `descended` was derived from `root` just above.
+                Some(unsafe { &mut *descended })
+            }
+            StorePlace::Named if name == "self" && self.frame_invocant_ref().is_some() => {
+                let root = self.frame_invocant_mut()? as *mut Value;
+                // SAFETY: `root` points into the routine stack's record,
+                // which nothing else borrows while the returned reference is
+                // held; a descended pointer points into a cell the record's
+                // value keeps alive (see `descend_container_ref`).
                 let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
                 // SAFETY: `descended` was derived from `root` just above.
                 Some(unsafe { &mut *descended })

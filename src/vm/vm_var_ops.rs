@@ -194,7 +194,10 @@ impl Interpreter {
         for method in method_order {
             match self.try_compiled_method_or_interpret(instance.clone(), method, vec![idx.clone()])
             {
-                Ok(value) => return Ok(value.truthy()),
+                // `:exists` asks the answer for its `Bool`, so a user
+                // `EXISTS-KEY` returning an object runs that object's own `Bool`
+                // (Red's AST node throws `CX::Red::Bool` from it).
+                Ok(value) => return self.eval_truthy_result(&value),
                 Err(err) if Self::is_method_not_found(&err) => continue,
                 Err(err) => return Err(err),
             }
@@ -411,7 +414,10 @@ impl Interpreter {
             if info.value_type.is_empty() {
                 return Value::package(crate::symbol::wk::any());
             }
-            Value::package(Symbol::intern(&info.value_type))
+            // A coercion-typed element (`my P() %h`) defaults to the TARGET type
+            // object, as a `my P() $x` does: `%h<a>.new` is `P.new`.
+            let nominal = self.nominal_type_object_name_for_constraint(&info.value_type);
+            Value::package(Symbol::intern(&nominal))
         } else if matches!(target.view(), ValueView::Hash(_))
             || matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array())
         {

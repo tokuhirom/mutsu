@@ -44,6 +44,10 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
             is_export: s.has_export_trait,
             export_tags: s.export_tags,
             custom_traits: s.custom_traits,
+            marks: s.marks,
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: s.where_constraint,
         };
         let stmt = Stmt::Expr(Expr::Feed {
@@ -134,6 +138,10 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 is_export: s.has_export_trait,
                 export_tags: s.export_tags.clone(),
                 custom_traits: s.custom_traits.clone(),
+                marks: s.marks.clone(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: s.where_constraint.clone(),
             };
             let (r3, tail_expr) =
@@ -187,6 +195,10 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 is_export: s.has_export_trait,
                 export_tags: s.export_tags.clone(),
                 custom_traits: s.custom_traits.clone(),
+                marks: s.marks.clone(),
+                has_initializer: false,
+                constant: None,
+                bind: None,
                 where_constraint: s.where_constraint.clone(),
             };
             let block = crate::parser::stmt::word_logical_split::tail_stmt(decl, call_expr);
@@ -227,6 +239,10 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         is_export: s.has_export_trait,
         export_tags: s.export_tags,
         custom_traits: s.custom_traits,
+        marks: s.marks,
+        has_initializer: false,
+        constant: None,
+        bind: None,
         where_constraint: s.where_constraint.clone(),
     };
     // A bare declaration may carry a `does`/`but` role mixin applied to the
@@ -363,6 +379,10 @@ fn handle_compound_assign(stripped: &str, s: MyDeclState, op: DeclCompoundOp) ->
         is_export: s.has_export_trait,
         export_tags: s.export_tags.clone(),
         custom_traits: s.custom_traits.clone(),
+        marks: s.marks.clone(),
+        has_initializer: false,
+        constant: None,
+        bind: None,
         where_constraint: s.where_constraint.clone(),
     };
     let stmt = match op {
@@ -493,13 +513,11 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                     is_dynamic: s.has_dynamic_trait,
                     is_export: s.has_export_trait,
                     export_tags: s.export_tags.clone(),
-                    custom_traits: {
-                        let mut traits = s.custom_traits.clone();
-                        if !traits.iter().any(|(name, _)| name == "__has_initializer") {
-                            traits.push(("__has_initializer".to_string(), None));
-                        }
-                        traits
-                    },
+                    custom_traits: s.custom_traits.clone(),
+                    marks: s.marks.clone(),
+                    has_initializer: true,
+                    constant: None,
+                    bind: None,
                     where_constraint: s.where_constraint.clone(),
                 }))),
                 right,
@@ -528,16 +546,9 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     // `(my @a = SOURCE) ==> SINK`. Relocate the declaration to wrap the feed's
     // textually-left operand, then run the whole feed as the statement value.
     if matches!(expr, Expr::Feed { .. }) {
-        let mut custom_traits = s.custom_traits.clone();
-        if !custom_traits
-            .iter()
-            .any(|(name, _)| name == "__has_initializer")
-        {
-            custom_traits.push(("__has_initializer".to_string(), None));
-        }
-        if s.shape_dims.is_some() {
-            custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
-        }
+        let custom_traits = s.custom_traits.clone();
+        let mut marks = s.marks.clone();
+        marks.shaped = s.shape_dims.is_some();
         let mut feed = expr;
         {
             let slot = crate::parser::feed_leftmost_operand_mut(&mut feed);
@@ -556,6 +567,10 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 is_export: s.has_export_trait,
                 export_tags: s.export_tags.clone(),
                 custom_traits,
+                marks,
+                has_initializer: true,
+                constant: None,
+                bind: None,
                 where_constraint: s.where_constraint.clone(),
             }));
         }
@@ -575,19 +590,12 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     } else {
         expr
     };
-    let mut custom_traits = s.custom_traits.clone();
-    if !custom_traits
-        .iter()
-        .any(|(name, _)| name == "__has_initializer")
-    {
-        custom_traits.push(("__has_initializer".to_string(), None));
-    }
+    let custom_traits = s.custom_traits.clone();
     // A shaped declaration (`my @a[5] = ...`) keeps its declared shape; mark it so
     // SetLocal does not strip the shape the way a value-copy (`my @u = @shaped`)
     // does.
-    if is_shaped_decl {
-        custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
-    }
+    let mut marks = s.marks.clone();
+    marks.shaped = is_shaped_decl;
     let base_stmt = Stmt::VarDecl {
         anonymous: s.anonymous,
         name: s.name.clone(),
@@ -599,6 +607,10 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         is_export: s.has_export_trait,
         export_tags: s.export_tags.clone(),
         custom_traits,
+        marks,
+        has_initializer: true,
+        constant: None,
+        bind: None,
         where_constraint: s.where_constraint.clone(),
     };
     if let Some(stmt) = rewrite_decl_assignment_or_chain(expr.clone(), base_stmt) {
@@ -622,16 +634,9 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         }
         return Ok((rest, stmt));
     }
-    let mut custom_traits = s.custom_traits.clone();
-    if !custom_traits
-        .iter()
-        .any(|(name, _)| name == "__has_initializer")
-    {
-        custom_traits.push(("__has_initializer".to_string(), None));
-    }
-    if is_shaped_decl {
-        custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
-    }
+    let custom_traits = s.custom_traits.clone();
+    let mut marks = s.marks.clone();
+    marks.shaped = is_shaped_decl;
     let stmt = Stmt::VarDecl {
         anonymous: s.anonymous,
         name: s.name.clone(),
@@ -643,6 +648,10 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         is_export: s.has_export_trait,
         export_tags: s.export_tags.clone(),
         custom_traits,
+        marks,
+        has_initializer: true,
+        constant: None,
+        bind: None,
         where_constraint: s.where_constraint.clone(),
     };
     let stmt = will_decl(stmt, &var_name_for_leave, s.will_phasers.clone());
@@ -727,24 +736,15 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         }
         _ => target_expr,
     };
-    let mut custom_traits = s.custom_traits.clone();
-    if !matches!(target_expr, Expr::BareWord(_)) {
-        custom_traits.push((
-            crate::parser::outer_redecl::METHOD_ASSIGN_DECL_TRAIT.to_string(),
-            None,
-        ));
-    }
+    let custom_traits = s.custom_traits.clone();
+    let mut marks = s.marks.clone();
+    marks.method_assign_decl = !matches!(target_expr, Expr::BareWord(_));
     // A typed call (`my Foo $u .= new`) is a real initializer, not the
     // declaration's default value: the RakuAST boundary must render it (it
     // rendered a bare `my Foo $u` before). The untyped form already carries
-    // `METHOD_ASSIGN_DECL_TRAIT`; a shaped one (`my @c[2;2] .= new(...)`) keeps
+    // `VarMarks::method_assign_decl`; a shaped one (`my @c[2;2] .= new(...)`) keeps
     // the unmarked shape so the compiler builds the shaped container first.
-    if matches!(target_expr, Expr::BareWord(_))
-        && s.shape_dims.is_none()
-        && !custom_traits.iter().any(|(n, _)| n == "__has_initializer")
-    {
-        custom_traits.push(("__has_initializer".to_string(), None));
-    }
+    let has_initializer = matches!(target_expr, Expr::BareWord(_)) && s.shape_dims.is_none();
     let source_callee = dynamic_name.clone();
     let source_args = args.clone();
     let expr = match dynamic_name {
@@ -793,6 +793,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                     is_export: s.has_export_trait,
                     export_tags: s.export_tags,
                     custom_traits: s.custom_traits,
+                    marks: s.marks,
                     where_constraint: s.where_constraint,
                     method: Symbol::intern(&method_name),
                     callee: source_callee.map(Box::new),
@@ -835,6 +836,10 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             is_export: s.has_export_trait,
             export_tags: s.export_tags.clone(),
             custom_traits,
+            marks,
+            has_initializer,
+            constant: None,
+            bind: None,
             where_constraint: s.where_constraint.clone(),
         };
         match chain.clone() {
@@ -907,7 +912,9 @@ fn sunk_list(mut stmts: Vec<Stmt>) -> Stmt {
         || stmts.len() < 2
         || !stmts[1..].iter().all(|s| matches!(s, Stmt::Expr(_)))
     {
-        return Stmt::SyntheticBlock(stmts);
+        return crate::parser::stmt::control::parsed_block::finish_total(
+            crate::ast::parsed::ParsedStmt::CommaDecls(stmts),
+        );
     }
     let items = stmts
         .drain(1..)
@@ -960,6 +967,12 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         && name.resolve() == "hash"
         && args.is_empty()
         && let Expr::Var(var_name) = target.as_ref()
+        // TODO: `my %args := %$args` (the scalar and the hash share a name)
+        // keeps the `.hash` copy: the rewritten `HashVar(args)` is spelled like
+        // the hash being declared, so the declaration scan would take it for
+        // `my %args := %args` ("initialize itself"). The right fix is a
+        // distinct node for the scalar deref, which also lets this bind alias.
+        && bound_name.get(1..) != Some(var_name.as_str())
     {
         expr = Expr::HashVar(var_name.clone());
     }
@@ -986,11 +999,8 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         let ex = Value::make_instance(Symbol::intern("X::Bind::NativeType"), attrs);
         return Err(PError::fatal_with_exception(msg, Box::new(ex)));
     }
-    let mut custom_traits = s.custom_traits.clone();
-    if is_scalar_bind {
-        custom_traits.push((crate::ast::bind_decl::SCALAR_BIND.to_string(), None));
-    }
-    // The bookkeeping around the declaration (`MarkBind`, `MarkReadonly`, the
+    let custom_traits = s.custom_traits.clone();
+    // The bookkeeping around the declaration (`VarMarks::bound`, `MarkReadonly`, the
     // bound-array records) is added by the lowering of the node
     // (`ast::bind_decl::expand`), shared with the RakuAST lowerer.
     let stmt = crate::parser::stmt::control::parsed_block::finish(
@@ -1005,6 +1015,10 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             is_export: s.has_export_trait,
             export_tags: s.export_tags.clone(),
             custom_traits,
+            marks: s.marks.clone(),
+            has_initializer: false,
+            constant: None,
+            bind: is_scalar_bind.then_some(crate::ast::bind_decl::BindKind::Scalar),
             where_constraint: s.where_constraint.clone(),
         })),
     )

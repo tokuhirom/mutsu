@@ -167,7 +167,10 @@ mod vm_call_method_compiled_direct;
 mod vm_call_method_compiled_interpret;
 mod vm_call_method_compiled_io;
 pub(crate) use vm_call_method_compiled_io::note_io_handle_user_method_declared;
+mod vm_attr_global_site;
+use vm_attr_global_site::GlobalAttrSite;
 mod vm_attr_site;
+mod vm_attr_store_lane;
 mod vm_attr_type_constraint;
 mod vm_bareword_site;
 mod vm_method_site_lane;
@@ -346,6 +349,7 @@ mod vm_role_capture_propagate;
 mod vm_shaped_receiver;
 mod vm_shared_array_lane;
 mod vm_slot_type_constraint;
+mod vm_user_iterator_lazy;
 pub(crate) use vm_slot_type_constraint::StoreDecl;
 mod vm_store_place;
 pub(crate) use vm_store_place::StorePlace;
@@ -481,6 +485,10 @@ pub(crate) struct ControlHandlerEntry {
     /// writes its changes straight back into them (`enter_installing_frame`).
     pub installing_base: usize,
     pub installing_call_depth: usize,
+    /// The installing frame's fixture record (`self`, `?CLASS`, `?ROLE`): an
+    /// inline run at a deeper raise site pushes it, so the handler body reads
+    /// its own frame's invocant, not the raise site's (ADR-14843).
+    pub installing_fixtures: Option<crate::value::frame_fixtures::FrameFixtures>,
 }
 
 /// Self-contained bytecode for running a CONTROL handler inline. The `code` is

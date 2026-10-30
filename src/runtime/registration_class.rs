@@ -149,8 +149,8 @@ pub(super) fn make_delegation_method(attr_var_name: &str, target_method: &str) -
         value_prototype: None,
         syms: Default::default(),
         lexical_package: crate::symbol::wk::global_package(),
-        params: vec!["@_".to_string(), "%_".to_string()],
-        param_defs: vec![delegation_slurpy_param(), delegation_double_slurpy_param()],
+        params: (vec!["@_".to_string(), "%_".to_string()]).into(),
+        param_defs: (vec![delegation_slurpy_param(), delegation_double_slurpy_param()]).into(),
         body: std::sync::Arc::new(Vec::new()),
         is_rw: false,
         is_raw: false,
@@ -305,7 +305,7 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// synthesis, `augment class`) — those keep the on-the-fly
     /// `run_block_raw` path unconditionally, same as an empty body.
     pub(crate) body_plan: &'a [crate::opcode::ClassBodyOp],
-    /// True for a `__hoisted` forward-reference shell's throwaway
+    /// True for a hoisted forward-reference shell's throwaway
     /// registration (`hoist_type_decl_shells`): the shell composes roles
     /// too (so a forward reference sees role-provided methods), but its
     /// registration is superseded at runtime by the real, source-position
@@ -326,7 +326,7 @@ pub(crate) struct ClassDeclModifiers<'a> {
     pub(crate) is_hoisted_shell: HoistedShell,
 }
 
-/// Which kind of `__hoisted` declaration-only shell a class registration is,
+/// Which kind of hoisted declaration-only shell a class registration is,
 /// if any (see [`ClassDeclModifiers::is_hoisted_shell`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HoistedShell {
@@ -397,7 +397,10 @@ pub(super) fn should_treat_role_arg_as_type_expr(input: &str) -> bool {
 }
 
 /// Whether `name` is the storage key of a type that shares its name with an
-/// earlier one: the bare name, a NUL, then digits (`Foo\0123`).
+/// earlier one: the bare name, a NUL, then digits (`Foo\0123`). The bare name
+/// is whatever `new_type(:name)` was given (`typed_child_untyped-parent` has a
+/// hyphen), so only the NUL-and-digits suffix, which source text cannot hold,
+/// identifies the key.
 // Cost: O(|name|).
 fn is_site_keyed_type_name(name: &str) -> bool {
     let Some((bare, id)) = name.split_once('\u{0}') else {
@@ -406,7 +409,6 @@ fn is_site_keyed_type_name(name: &str) -> bool {
     !id.is_empty()
         && id.bytes().all(|b| b.is_ascii_digit())
         && !bare.is_empty()
-        && looks_like_type_arg_expr(bare)
 }
 
 /// Substitute type parameters in a method definition.
@@ -460,7 +462,8 @@ pub(super) fn substitute_type_params_in_method(
         .param_defs
         .iter()
         .map(|pd| substitute_param_def(pd, type_subs))
-        .collect();
+        .collect::<Vec<_>>()
+        .into();
     MethodDef {
         value_prototype: method.value_prototype.clone(),
         syms: Default::default(),
@@ -553,7 +556,8 @@ pub(super) fn resolve_role_pseudo_types_in_method(
         .param_defs
         .iter()
         .map(|pd| resolve_param_def(pd, class_name, role_name))
-        .collect();
+        .collect::<Vec<_>>()
+        .into();
     // The rebuilt `param_defs` must not keep a name cache filled from the old.
     method.syms = Default::default();
     method.return_type = method

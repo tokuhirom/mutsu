@@ -1,12 +1,10 @@
 mod args;
 pub(crate) mod assign;
 pub(super) mod class;
-pub(in crate::parser) mod control;
+pub(crate) mod control;
 pub(crate) mod decl;
 mod idents;
 pub(super) mod modifier;
-mod modifier_decl_split;
-pub(crate) use modifier_decl_split::{conditional_declaration, topical_declaration};
 mod modifier_tail;
 mod pub_shims;
 pub(super) mod simple;
@@ -40,7 +38,6 @@ use assign::{
     try_parse_assign_expr,
 };
 use class::class_decl_body;
-pub(crate) mod nested_block_methods;
 use modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
 use sub::{
     expr_position_method_decl, method_decl_body, method_decl_body_my, parse_param_list,
@@ -383,6 +380,15 @@ pub(super) fn program(input: &str) -> PResult<'_, Vec<Stmt>> {
     // Enable SetLine emission so that source line tracking works for
     // backtraces and $?LINE at the top level.
     stmtlist::stmt_list_with_mode(input, true, true)
+}
+
+/// [`program`] as the unit runs: through the RakuAST round trip, which is the
+/// tree the compiler sees. For the tests that assert the executable shape.
+#[cfg(test)]
+pub(super) fn lowered_program(input: &str) -> PResult<'_, Vec<Stmt>> {
+    let (rest, stmts) = program(input)?;
+    let stmts = crate::rakuast::frontend::round_trip_unit(stmts).map_err(PError::from_typed)?;
+    Ok((rest, stmts))
 }
 
 #[cfg(test)]

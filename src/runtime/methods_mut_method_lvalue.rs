@@ -1169,11 +1169,20 @@ impl Interpreter {
             // aggregate IS a container, so this is a list assignment into it,
             // exactly as for a routine-call result.
             ValueView::Package(_) => {
+                let was_lvalue = self.in_lvalue_assignment;
+                self.in_lvalue_assignment = true;
                 let saved_sources = self.take_pending_call_arg_sources();
                 let result =
                     self.call_method_with_values(target.clone(), method, method_args.clone());
                 self.set_pending_call_arg_sources(saved_sources);
+                self.in_lvalue_assignment = was_lvalue;
                 let result = result?;
+                // An `is rw` accessor on a type object hands back a Proxy
+                // (Red's `Model.column ~= "x"` inside `.map(*.column ...)`):
+                // assign through it before treating the result as an aggregate.
+                if let Some(assigned) = self.assign_lvalue_container(&result, value.clone()) {
+                    return assigned;
+                }
                 if let Some(stored) = self.store_into_aggregate_lvalue(&result, value.clone()) {
                     return Ok(stored);
                 }
@@ -1187,6 +1196,29 @@ impl Interpreter {
             // the role that returns an lvalue (`self.AT-KEY($k) = v` where
             // AT-KEY hands back a Proxy) is assigned through what it returns.
             ValueView::Mixin(..) => {
+                let was_lvalue = self.in_lvalue_assignment;
+                self.in_lvalue_assignment = true;
+                let saved_sources = self.take_pending_call_arg_sources();
+                let result = self.call_method_with_values(target.clone(), method, method_args);
+                self.set_pending_call_arg_sources(saved_sources);
+                self.in_lvalue_assignment = was_lvalue;
+                let result = result?;
+                if let Some(assigned) = self.assign_lvalue_container(&result, value.clone()) {
+                    return assigned;
+                }
+                if let Some(stored) = self.store_into_aggregate_lvalue(&result, value) {
+                    return Ok(stored);
+                }
+                return Err(RuntimeError::new(format!(
+                    "X::Assignment::RO: cannot assign through .{} on non-instance",
+                    method
+                )));
+            }
+            // A builtin value (`Array`, `Hash`, a `Seq`/`LazyList`, ...) asked for
+            // an element (`$list.AT-POS(0) = v`): the call answers the element's
+            // own container, assigned through exactly as for a type object above.
+            // Any other method on a builtin value is not an lvalue.
+            _ if matches!(method, "AT-POS" | "AT-KEY") && method_args.len() == 1 => {
                 let was_lvalue = self.in_lvalue_assignment;
                 self.in_lvalue_assignment = true;
                 let saved_sources = self.take_pending_call_arg_sources();
@@ -1540,7 +1572,7 @@ impl Interpreter {
                     // preserves destination metadata, so tagging only the incoming
                     // value would lose the declaration when the destination is
                     // still plain (`has CSV::Field @.fields` is one example).
-                    let existing = if self.container_type_metadata(&existing).is_none()
+                    let existing = if !self.has_container_type_metadata(&existing)
                         && let Some(tc) =
                             self.get_attr_type_constraint(&class_name.resolve(), method)
                         && !matches!(tc.as_str(), "Mu" | "Any")
@@ -1577,10 +1609,10 @@ impl Interpreter {
                 // instance is reachable through other aliases.
                 attributes.commit_attrs(updated);
                 if let Some(var_name) = target_var {
-                    self.env.insert_through(
-                        var_name.to_string(),
-                        Value::instance_sharing_cell(&attributes, class_name, target_id),
-                    );
+                    let shared = Value::instance_sharing_cell(&attributes, class_name, target_id);
+                    if !self.store_invocant_by_name(var_name, &shared) {
+                        self.env.insert_through(var_name.to_string(), shared);
+                    }
                     // Also update attribute env variables so compiled method
                     // writeback picks up the change (e.g. $.cnt += 4 inside a method)
                     self.env
@@ -1836,7 +1868,7 @@ impl Interpreter {
         // `method z() is rw { self[2] }` on an `is Array` subclass — assign into
         // the invocant's backing array storage element. The index is a literal
         // or a positional parameter of the method.
-        if attributes.contains_key("__mutsu_array_storage")
+        if attributes.contains_key(crate::symbol::wk::array_storage())
             && let Some((index_expr, is_pos)) = Self::rw_method_self_index_target(&method_def.body)
         {
             let idx_val = match &index_expr {
@@ -2024,9 +2056,9 @@ impl Interpreter {
             saved.push((key.clone(), this.env.get(&key).cloned()));
             this.env.insert(key, val);
         };
-        bind(self, "self".to_string(), target.clone());
+        let fixtures_mark = self.begin_scoped_invocant(target.clone());
         let mut ai = 0;
-        for pd in &method_def.param_defs {
+        for pd in method_def.param_defs.iter() {
             if pd.is_invocant || pd.named || pd.slurpy {
                 continue;
             }
@@ -2075,6 +2107,7 @@ impl Interpreter {
             )
         })();
         restore(self, saved);
+        self.end_scoped_fixtures(fixtures_mark);
         Ok(Some(recur?))
     }
 }

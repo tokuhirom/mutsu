@@ -19,6 +19,7 @@ impl Interpreter {
             is_export,
             export_tags,
             custom_traits,
+            pass,
             is_method,
             is_our,
             legacy_body: body,
@@ -44,7 +45,7 @@ impl Interpreter {
             // Marked by the compiler when this `proto` is declared directly in a
             // routine/closure body, where it lexically shadows an outer routine
             // of the same name instead of redeclaring it.
-            let is_lexical_hoist = custom_traits.iter().any(|t| t == "__lexical_hoist");
+            let is_lexical_hoist = pass.lexical_hoist;
             self.register_proto_decl(
                 &name_str,
                 params,

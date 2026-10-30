@@ -202,6 +202,27 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
     row!(
         "Metamodel::CoercionHOW",
+        "nominal_target",
+        1,
+        true,
+        |interp, _target, args, _named| Some(interp.mop_nominalize(args.to_vec()))
+    ),
+    row!(
+        "Metamodel::CoercionHOW",
+        "target_type",
+        1,
+        true,
+        |interp, _target, args, _named| Some(interp.mop_coercion_part(args.to_vec(), false))
+    ),
+    row!(
+        "Metamodel::CoercionHOW",
+        "constraint_type",
+        1,
+        true,
+        |interp, _target, args, _named| Some(interp.mop_coercion_part(args.to_vec(), true))
+    ),
+    row!(
+        "Metamodel::CoercionHOW",
         "nominalize",
         1,
         true,
@@ -408,6 +429,13 @@ pub(super) static ROWS: &[MethodRow] = &[
             .then(|| interp.mop_candidates(args.to_vec()))
     ),
     row!(
+        "Metamodel::ParametricRoleGroupHOW",
+        "parameterize",
+        2,
+        true,
+        |interp, _target, args, _named| Some(interp.mop_parameterize(args.to_vec()))
+    ),
+    row!(
         "Metamodel::ClassHOW",
         "concretization",
         2,
@@ -434,6 +462,13 @@ pub(super) static ROWS: &[MethodRow] = &[
         1,
         true,
         |interp, _target, args, _named| Some(interp.mop_language_revision(args.to_vec()))
+    ),
+    row!(
+        "Metamodel::ClassHOW",
+        "set_language_revision",
+        2,
+        false,
+        |interp, _target, args, _named| Some(interp.mop_set_language_revision(args.to_vec()))
     ),
     row!(
         "Metamodel::ClassHOW",

@@ -34,6 +34,11 @@ pub(crate) struct OwnFamilies {
     protos: Vec<(Symbol, Arc<FunctionDef>)>,
     /// The keys of `protos` that were also in the proto-name set.
     proto_subs: Vec<String>,
+    /// The `GLOBAL::` candidates the module's body added on top of what it
+    /// started with: what its own `use` statements imported (NativeLibs' `use
+    /// NativeCall` brings the `trait_mod:<is>` candidates its `sub EXPORT`
+    /// introspects). Only kept for a module with a `sub EXPORT`.
+    imported: Vec<(Symbol, Arc<FunctionDef>)>,
 }
 
 /// What [`Interpreter::reinstate_own_families`] added, to take out again.
@@ -55,11 +60,30 @@ impl Interpreter {
     /// and must see its own family again ([`Self::reinstate_own_families`]).
     // Cost: O(r + p), r = registered functions, p = registered protos; once per
     // module load.
-    pub(crate) fn remember_own_families(&mut self, module: &str, source_path: &str) {
+    pub(crate) fn remember_own_families(
+        &mut self,
+        module: &str,
+        source_path: &str,
+        before_body: &Arc<crate::runtime::function_table::FunctionTable>,
+    ) {
         let decl_unit = self.unit_of_source(Some(source_path));
         let mut own = OwnFamilies::default();
         {
             let registry = self.registry();
+            // The hook of a module with a `sub EXPORT` reads its own imports
+            // too, and the next importer's scope holds none of them.
+            if !self.export_routine_candidates().is_empty() {
+                own.imported = registry
+                    .functions
+                    .iter()
+                    .filter(|(key, def)| {
+                        key.as_str().starts_with("GLOBAL::")
+                            && !Self::is_export_routine_key(key.as_str())
+                            && !before_body.get(*key).is_some_and(|old| Arc::ptr_eq(old, def))
+                    })
+                    .map(|(key, def)| (*key, def.clone()))
+                    .collect();
+            }
             let scoped = |base: &str| {
                 Symbol::lookup(base)
                     .and_then(|name| self.module.operator_import_units.get(&name))
@@ -92,7 +116,7 @@ impl Interpreter {
                 }
             }
         }
-        if own.functions.is_empty() && own.protos.is_empty() {
+        if own.functions.is_empty() && own.protos.is_empty() && own.imported.is_empty() {
             return;
         }
         self.module.module_own_families.insert(module.to_string(), own);
@@ -110,6 +134,12 @@ impl Interpreter {
             return added;
         };
         for (key, def) in own.functions {
+            if !self.registry().functions.contains_key(&key) {
+                self.registry_mut().functions_mut().insert(key, def);
+                added.functions.push(key);
+            }
+        }
+        for (key, def) in own.imported {
             if !self.registry().functions.contains_key(&key) {
                 self.registry_mut().functions_mut().insert(key, def);
                 added.functions.push(key);

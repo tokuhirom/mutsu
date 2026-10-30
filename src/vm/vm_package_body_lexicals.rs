@@ -22,13 +22,17 @@ impl Interpreter {
     /// `package`'s static store into the env. `$?CLASS` (named for a class
     /// body) is bound to the class itself.
     // Cost: O(k), k = lexicals named.
-    pub(super) fn bind_package_body_lexicals(&mut self, package: &str, lexicals: &str) {
+    pub(super) fn bind_package_body_lexicals(
+        &mut self,
+        package: &str,
+        lexicals: &str,
+    ) -> Option<usize> {
         let store = self.lexicals.package_lexicals.get(package);
         let values: Vec<(&str, Value)> = lexicals
             .split('\n')
             .filter_map(|name| {
                 if name == CLASS_LEXICAL {
-                    return Some((name, Value::package(Symbol::intern(package))));
+                    return None;
                 }
                 store?.get(name).map(|value| (name, value.clone()))
             })
@@ -36,6 +40,12 @@ impl Interpreter {
         for (name, value) in values {
             self.env_mut().insert(name.to_string(), value);
         }
+        // `$?CLASS` is the class's frame record while the body runs
+        // (ADR-14843); the caller closes the scope.
+        lexicals
+            .split('\n')
+            .any(|name| name == CLASS_LEXICAL)
+            .then(|| self.begin_class_scope(Symbol::intern(package)))
     }
 
     /// Write each of `lexicals` the store holds back to it, then put back
@@ -48,6 +58,9 @@ impl Interpreter {
         saved_env: &crate::env::Env,
     ) {
         for name in lexicals.split('\n') {
+            if name == CLASS_LEXICAL {
+                continue;
+            }
             // Only a name the store holds was bound from it; anything else
             // under the name belongs to the enclosing scope.
             if self

@@ -228,65 +228,6 @@ pub(crate) fn push_export_tags(after_export: &str, export_tags: &mut Vec<String>
     }
 }
 
-/// The `__mutsu_export_type` marker a lexical `my class ... is export` carries
-/// in its `custom_traits`; the argument lists the export tags so a consumer
-/// that cannot see an export statement (a role body) can still publish it.
-pub(crate) const EXPORT_TYPE_MARKER: &str = "__mutsu_export_type";
-
-/// The `custom_traits` marker of a class declared as `class ::Name { }`. The
-/// leading `::` does not change the declaration; the marker only lets the
-/// RakuAST conversion render the name with its leading empty part, as rakudo
-/// does. Internal (`__`-prefixed), so never dispatched as a trait.
-pub(crate) const LEADING_COLONS_TRAIT: &str = "__leading_colons";
-
-/// The `custom_traits` marker of a declaration written with a declarator a
-/// `use`d module registered through `EXPORTHOW::DECLARE` (`monitor Name { }`).
-/// Its argument is the keyword; registration resolves the HOW from it, and the
-/// RakuAST layer renders it as the package's `parsed-declarator`.
-pub(crate) const DECLARE_HOW_TRAIT: &str = "__mutsu_declare_how";
-
-/// The [`DECLARE_HOW_TRAIT`] entry for the declarator keyword `kw`.
-// Cost: O(1).
-pub(crate) fn declare_how_marker(kw: String) -> (String, Option<Expr>) {
-    (
-        DECLARE_HOW_TRAIT.to_string(),
-        Some(Expr::Literal(Value::str(kw))),
-    )
-}
-
-/// The declarator keyword a [`DECLARE_HOW_TRAIT`] entry in `custom_traits`
-/// names, if there is one.
-// Cost: O(t), t = number of custom traits.
-pub(crate) fn declare_how_keyword(custom_traits: &[(String, Option<Expr>)]) -> Option<String> {
-    custom_traits.iter().find_map(|(name, arg)| match arg {
-        Some(Expr::Literal(kw)) if name == DECLARE_HOW_TRAIT => Some(kw.to_string_value()),
-        _ => None,
-    })
-}
-
-pub(crate) fn export_type_marker(tags: &[String]) -> (String, Option<Expr>) {
-    let tags = tags
-        .iter()
-        .map(|t| Expr::Literal(Value::str(t.clone())))
-        .collect();
-    (
-        EXPORT_TYPE_MARKER.to_string(),
-        Some(Expr::ArrayLiteral(tags)),
-    )
-}
-
-pub(crate) fn meta_setter_stmt(type_name: &str, key: &str, value: Expr) -> Stmt {
-    Stmt::Expr(Expr::Call {
-        name: Symbol::intern("__MUTSU_SET_META__"),
-        args: vec![
-            Expr::Literal(Value::str(type_name.to_string())),
-            Expr::Literal(Value::str(key.to_string())),
-            value,
-        ],
-        listop: false,
-    })
-}
-
 /// A `.` on the SAME LINE as a type declaration's closing brace is a **postfix
 /// on the type object** — `class It { ... }.new` builds an instance — not a new
 /// `$_.method` statement. Raku agrees even across a space: it parses
@@ -312,13 +253,13 @@ pub(crate) fn reject_trailing_postfix(rest: &str) -> Result<(), PError> {
 /// Tag a declaration written with the built-in declarator `keyword` with the
 /// HOW marker when a `use`d module's `EXPORTHOW::SUPERSEDE` replaced it.
 pub(crate) fn apply_supersede(stmt: &mut Stmt, keyword: &str) {
-    let Some(marker) = super::super::simple::supersede_marker(keyword) else {
+    let Some(declarator) = super::super::simple::superseded_declarator(keyword) else {
         return;
     };
-    if let Some(Stmt::ClassDecl { custom_traits, .. } | Stmt::RoleDecl { custom_traits, .. }) =
+    if let Some(Stmt::ClassDecl { marks, .. } | Stmt::RoleDecl { marks, .. }) =
         crate::ast::package_header::declaration_mut(stmt)
     {
-        custom_traits.push(marker);
+        marks.declarator = Some(declarator);
     }
 }
 
@@ -335,15 +276,13 @@ pub(crate) fn class_decl(input: &str) -> PResult<'_, Stmt> {
 /// Parse `native` declaration: a package declarator peer to `class`/`role`,
 /// used by rakudo's `NativeCall::Types` to define native scalar types
 /// (`native long is Int is ctype<long> is repr<P6int> { }`). Parses exactly
-/// like `class`; the resulting ClassDecl carries a `__mutsu_native_decl`
-/// marker trait so a `native`-declared type can be told apart from an
-/// ordinary class if that ever matters.
+/// like `class`; the resulting ClassDecl has `is_native` set.
 pub(crate) fn native_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("native", input).ok_or_else(|| PError::expected("native declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, mut stmt) = class_decl_body(rest, false)?;
-    if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
-        custom_traits.push(("__mutsu_native_decl".to_string(), None));
+    if let Stmt::ClassDecl { is_native, .. } = &mut stmt {
+        *is_native = true;
     }
     reject_trailing_postfix(rest)?;
     Ok((rest, stmt))
@@ -369,10 +308,10 @@ pub(crate) fn declare_decl(input: &str) -> PResult<'_, Stmt> {
         }
         let (rest, _) = ws1(rest)?;
         let (rest, mut stmt) = class_decl_body(rest, false)?;
-        if let Some(Stmt::ClassDecl { custom_traits, .. }) =
+        if let Some(Stmt::ClassDecl { marks, .. }) =
             crate::ast::package_header::declaration_mut(&mut stmt)
         {
-            custom_traits.push(declare_how_marker(kw));
+            marks.declarator = Some(kw);
         }
         return Ok((rest, stmt));
     }
@@ -404,10 +343,10 @@ pub(crate) fn declare_term_decl(input: &str) -> PResult<'_, Stmt> {
             continue;
         }
         let (rest, mut stmt) = class_decl_body_opt(rest, is_lexical, true)?;
-        if let Some(Stmt::ClassDecl { custom_traits, .. }) =
+        if let Some(Stmt::ClassDecl { marks, .. }) =
             crate::ast::package_header::declaration_mut(&mut stmt)
         {
-            custom_traits.push(declare_how_marker(kw));
+            marks.declarator = Some(kw);
         }
         return Ok((rest, stmt));
     }
@@ -547,7 +486,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         r = r2;
     }
     let (rest, mut body) = package_body_block(r)?;
-    crate::parser::stmt::nested_block_methods::hoist(&mut body);
+    crate::rakuast::nested_methods::hoist(&mut body);
     reject_no_self_in_subs(&body)?;
     reject_no_self_in_attr_where(&body)?;
     reject_no_twigil_attr_at_body_level(&body)?;
@@ -566,6 +505,9 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         language_version: super::super::simple::current_language_version(),
         custom_traits: Vec::new(),
         is_unit: false,
+        is_native: false,
+        export_tags: None,
+        marks: Default::default(),
         implicit_grammar_parent: false,
         is_grammar: false,
         decl_id: crate::ast::next_class_decl_id(),
@@ -632,9 +574,6 @@ pub(crate) fn class_decl_body_opt(
     let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
     // The header traits as written, for a parse that keeps spellings.
     let mut written: Vec<RoutineTrait> = Vec::new();
-    if leading_colons {
-        custom_traits.push((LEADING_COLONS_TRAIT.to_string(), None));
-    }
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
     let mut r = rest;
@@ -844,7 +783,7 @@ pub(crate) fn class_decl_body_opt(
         package_body_block(r)?
     };
     let spans = crate::parser::stmt::sub::package_spans(name_span, r, rest, &body);
-    crate::parser::stmt::nested_block_methods::hoist(&mut body);
+    crate::rakuast::nested_methods::hoist(&mut body);
     reject_no_self_in_subs(&body)?;
     reject_no_self_in_attr_where(&body)?;
     reject_no_twigil_attr_at_body_level(&body)?;
@@ -923,6 +862,12 @@ pub(crate) fn class_decl_body_opt(
         language_version: super::super::simple::current_language_version(),
         custom_traits,
         is_unit: false,
+        is_native: false,
+        export_tags: None,
+        marks: crate::ast::PackageMarks {
+            leading_colons,
+            ..Default::default()
+        },
         implicit_grammar_parent: false,
         is_grammar: false,
         decl_id: crate::ast::next_class_decl_id(),
@@ -934,8 +879,11 @@ pub(crate) fn class_decl_body_opt(
         // the synthetic block would make the class itself block-local. Keep an
         // internal marker on the declaration instead so module loading can
         // distinguish an exported lexical type from a private one.
-        if let Stmt::ClassDecl { custom_traits, .. } = &mut class_stmt {
-            custom_traits.push(export_type_marker(&export_tags));
+        if let Stmt::ClassDecl {
+            export_tags: tags, ..
+        } = &mut class_stmt
+        {
+            *tags = Some(export_tags.clone());
         }
     }
     let adverbs = traits

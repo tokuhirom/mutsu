@@ -89,6 +89,13 @@ impl Interpreter {
         {
             return true;
         }
+        // A built-in meta-object does the metaroles Rakudo composes into its
+        // class (`$type.HOW ~~ Metamodel::Naming`).
+        if constraint.contains("Metamodel::")
+            && super::metamodel_how_roles::how_does_metarole(value_type, constraint)
+        {
+            return true;
+        }
         // Native type aliases: num -> Num, int -> Int, str -> Str
         if constraint == "num" && value_type == "Num" {
             return true;

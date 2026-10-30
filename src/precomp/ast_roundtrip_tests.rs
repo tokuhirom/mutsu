@@ -8,10 +8,7 @@ use std::hash::{Hash, Hasher};
 fn parse_module(src: &str) -> Vec<crate::ast::Stmt> {
     let session = crate::compiler::compile_session::content_parse_session_id(0x5eed, 0);
     crate::anon_names::with_content_unit(session, || {
-        crate::parse_dispatch::parse_compilation_unit_of(
-            src,
-            crate::rakuast::frontend::Unit::Module,
-        )
+        crate::parse_dispatch::parse_compilation_unit_of(src)
     })
     .expect("module parses")
     .0

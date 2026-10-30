@@ -83,11 +83,11 @@ impl Interpreter {
             .last()
             .map(|f| f.invocant.clone())
             .or_else(|| ctx.invocant.clone())
-            .or_else(|| self.env_self_value())?;
+            .or_else(|| self.frame_invocant())?;
         let crate::value::ValueView::Instance { attributes, .. } = invocant.view() else {
             return None;
         };
-        if !attributes.contains_key("__baggy_data__") {
+        if !attributes.contains_key(crate::symbol::wk::baggy_data()) {
             return None;
         }
         self.container_element_proxy_base()

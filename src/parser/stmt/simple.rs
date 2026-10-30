@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::AtomicUsize;
 
 use super::super::add_parse_warning;
 use super::super::expr::expression;
@@ -46,12 +45,12 @@ pub(crate) use lib_paths::{fold_use_lib_path, parser_source_file, use_lib_args};
 // `pub(crate)` re-exports.
 pub(crate) use compile_consts::is_imported_function;
 pub(crate) use l10n::{
-    L10nVocabulary, l10n_adverb_alias, l10n_alias, l10n_canonical_keyword, l10n_match_adverb,
-    l10n_match_infix, l10n_match_keyword, l10n_named_alias, set_l10n_preseed, set_l10n_vocabulary,
+    L10nVocabulary, l10n_adverb_alias, l10n_alias, l10n_canonical_keyword, l10n_match_infix,
+    l10n_match_keyword, l10n_named_alias, set_l10n_preseed, set_l10n_vocabulary,
 };
 pub(crate) use registry::{
     DeclareKeyword, declare_keyword_is_role, declare_keyword_names, register_declare_keyword,
-    register_supersede_keyword, supersede_marker,
+    register_supersede_keyword, superseded_declarator,
 };
 pub(crate) use registry::{ExportHowError, take_exporthow_error};
 pub(crate) use registry::{
@@ -98,10 +97,9 @@ pub(in crate::parser) use module_exports::{
 /// Crate-wide for the compiler's `is_definite_return_spec` too: an imported
 /// `constant` may be a type alias the parser cannot see through (#11706).
 pub(crate) use pragma_preseed::is_imported_value_term;
-pub(crate) use pragma_preseed::term_keywords_shadowable;
 pub(in crate::parser) use pragma_preseed::{
     cached_type_names, current_attributes_pragma, imported_value_term_names,
-    is_user_declared_enum_type, is_user_declared_sub, note_import_export_hook, push_package_path,
+    is_user_declared_enum_type, note_import_export_hook, push_package_path,
     register_imported_enum_type, register_imported_enum_value, register_imported_type,
     register_imported_value_term, register_user_enum_type, register_user_enum_value,
     register_user_type, register_user_type_verbatim, reset_package_path, set_attributes_pragma,
@@ -116,12 +114,13 @@ pub(in crate::parser) use pragma_preseed::{
 /// constraint rather than a definite return value, independent of runtime
 /// sub-hoisting order (#8657).
 pub(crate) use pragma_preseed::{is_user_declared_enum_value, is_user_declared_type};
+pub(crate) use pragma_preseed::{is_user_declared_sub, term_keywords_shadowable};
+pub(crate) use registry::lookup_custom_infix_precedence;
 pub(in crate::parser) use registry::{
-    declare_keywords_snapshot, declared_loop_label_value, is_declared_loop_label,
-    lookup_custom_infix_precedence, lookup_op_prec, lookup_postfix_precedence,
-    lookup_prefix_precedence, lookup_user_infix_assoc, register_loop_label, register_op_prec,
-    register_op_precedence, register_user_infix_assoc, register_user_sub,
-    register_user_test_assertion_sub, reset_user_subs, resolve_op_precedence,
+    declare_keywords_snapshot, declared_loop_label_value, is_declared_loop_label, lookup_op_prec,
+    lookup_postfix_precedence, lookup_prefix_precedence, lookup_user_infix_assoc,
+    register_loop_label, register_op_prec, register_op_precedence, register_user_infix_assoc,
+    register_user_sub, register_user_test_assertion_sub, reset_user_subs, resolve_op_precedence,
     restore_declare_keywords, set_eval_language_version_preseed,
 };
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
@@ -372,11 +371,9 @@ pub(crate) fn eval_preseed_active() -> bool {
         || EVAL_LANGUAGE_VERSION_PRESEED.with(|p| p.borrow().is_some())
 }
 
-pub(in crate::parser) static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
-
 /// Numeric precedence levels for built-in operator categories.
 /// Higher values mean tighter binding.
-pub(in crate::parser) const PREC_SEQUENCE: i32 = 10;
+pub(crate) const PREC_SEQUENCE: i32 = 10;
 /// `||` `^^` `//` and `&&`: looser than structural/comparison, tighter than the
 /// list-infix level. A user operator declared `is equiv(&infix:<||>)` lands here.
 pub(in crate::parser) const PREC_OR_OR: i32 = 12;
@@ -511,6 +508,7 @@ sub helper() { }
     #[test]
     fn statement_keeps_array_meta_assign_as_assignment() {
         let (_, stmt) = statement("@a [X+]= @b;").unwrap();
+        let stmt = crate::parser::test_lower::stmt(stmt);
         match stmt {
             Stmt::Assign { name, expr, .. } => {
                 assert_eq!(name, "@a");

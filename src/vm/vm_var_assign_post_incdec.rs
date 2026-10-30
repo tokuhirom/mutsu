@@ -572,12 +572,12 @@ impl Interpreter {
         // instance would otherwise read Nil and lose the write.)
         if let Some(cont) = container.clone()
             && let ValueView::Instance { attributes, .. } = cont.view()
-            && attributes.contains_key("__mutsu_array_storage")
+            && attributes.contains_key(crate::symbol::wk::array_storage())
             && let Ok(i) = key.parse::<usize>()
         {
             let storage = attributes
                 .as_map()
-                .get("__mutsu_array_storage")
+                .get(crate::symbol::wk::array_storage())
                 .cloned()
                 .unwrap_or_else(|| Value::real_array(Vec::new()));
             let old = match storage.view() {
@@ -712,11 +712,11 @@ impl Interpreter {
         // key in place, mirroring the Array-storage block above.
         if let Some(cont) = container.clone()
             && let ValueView::Instance { attributes, .. } = cont.view()
-            && attributes.contains_key("__mutsu_hash_storage")
+            && attributes.contains_key(crate::symbol::wk::hash_storage())
         {
             let storage = attributes
                 .as_map()
-                .get("__mutsu_hash_storage")
+                .get(crate::symbol::wk::hash_storage())
                 .cloned()
                 .unwrap_or_else(|| Value::hash(ValueMap::default()));
             let old = match storage.view() {

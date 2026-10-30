@@ -41,16 +41,14 @@ impl Interpreter {
             });
         // See `force_lazy_list_vm`: restore the package the gather was
         // WRITTEN in for the duration of this (possibly resumed) pull.
-        let saved_package = self.enter_gather_package(&list.env);
+        let gather_scope = self.enter_gather_scope(list);
         // A lazy gather body runs in its own captured env, not the forcing
         // frame's, so it blocks the inline CATCH chain (ADR-0072).
         // A method call, as in `force_lazy_list_vm` (#10746).
         let r = self.with_catch_marker(|this| {
             this.in_method_call(|this| this.force_lazy_list_vm_window_inner(list, from, needed))
         });
-        if let Some(pkg) = saved_package {
-            self.set_current_package(pkg);
-        }
+        self.leave_gather_scope(gather_scope);
         if let Some(unit) = saved_unit {
             self.current_unit = unit;
         }

@@ -72,7 +72,7 @@ impl Interpreter {
         }
         let return_spec = cf.return_type.clone();
 
-        loan_env!(self, push_caller_env());
+        loan_env!(self, push_caller_env_in_call_frame());
 
         // The frame's code object for callframe().code / &?ROUTINE, recorded
         // lazily: the `Sub` (and the flatten of the caller env its full
@@ -303,8 +303,11 @@ impl Interpreter {
         // body loop below -- rather than the manual
         // `unmask_thread_redeclared_params` call this replaced, which a panic
         // unwind would skip entirely.
-        let thread_param_mask_guard =
-            crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(self, cf.param_defs.iter());
+        let thread_param_mask_guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
+            self,
+            cf.param_defs.iter(),
+            &cf.code.locals,
+        );
         self.prepare_definite_return_slot(return_spec.as_deref());
 
         // Raku: $! is scoped per routine — fresh Nil on entry.
@@ -342,6 +345,14 @@ impl Interpreter {
                     self.locals[i] = val.clone();
                 }
             }
+        }
+        // A method run as a function (`my method`/`sub` with a leading implicit
+        // `self`) has its invocant in the frame's record, not in an env key.
+        let adopted = self.adopt_function_invocant(&cf.param_defs, &cf.params, &args);
+        if let Some(invocant) = adopted
+            && let Some(&slot) = cf.code.local_slots_of(crate::symbol::wk::self_()).first()
+        {
+            self.locals[slot as usize] = invocant;
         }
         // #8452: a plain `sub` nested directly in a method body may bind an
         // attributive parameter (`sub s($!t) { ... }`) — Raku's rule is
@@ -750,6 +761,10 @@ impl Interpreter {
             // writeback merge.
             for (target, val) in &sigilless_writebacks {
                 if target == "_" || target == "@_" || target == "%_" {
+                    continue;
+                }
+                // The record's names are no caller variables (ADR-14843).
+                if matches!(target.as_str(), "?CLASS" | "?ROLE") {
                     continue;
                 }
                 // A sigilless param aliasing an `@`/`%` variable stores through

@@ -23,6 +23,9 @@ pub(crate) fn is_assignment_expr(expr: &Expr) -> bool {
             crate::ast::parsed::ParsedExpr::Supply(_)
             | crate::ast::parsed::ParsedExpr::StartBody(_)
             | crate::ast::parsed::ParsedExpr::HyperAssign(_)
+            | crate::ast::parsed::ParsedExpr::HyperPrefix(_)
+            | crate::ast::parsed::ParsedExpr::AtomicVar(_)
+            | crate::ast::parsed::ParsedExpr::SubscriptAdverbs(_)
             | crate::ast::parsed::ParsedExpr::InlineSubset(_) => false,
         },
         _ => false,
@@ -268,13 +271,11 @@ pub(crate) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((r2, crate::parser::expr::wrap_finished_expr(compound)));
         }
     }
-    if let Some((after_op, set_tok, spelling)) =
-        crate::parser::stmt::assign::parse_set_compound_assign_op(r)
+    if let Some((after_op, spelling)) = crate::parser::stmt::assign::parse_set_compound_assign_op(r)
     {
         let (after_ws, _) = ws(after_op)?;
         if let Ok((r2, rhs)) = call_arg_ternary_expr(after_ws) {
-            let compound =
-                crate::parser::stmt::assign::written_set_assignment(expr, spelling, set_tok, rhs);
+            let compound = crate::parser::stmt::assign::written_set_assignment(expr, spelling, rhs);
             return Ok((r2, crate::parser::expr::wrap_finished_expr(compound)));
         }
     }

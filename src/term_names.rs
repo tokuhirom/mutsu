@@ -36,9 +36,8 @@
 //! `docs/adr/12441-sigilless-bindings-live-in-the-term-namespace.md`):
 //! `sub f(\t, $t)` binds two variables, `\t` and `t`.
 
-use crate::ast::Expr;
+use crate::ast::ConstantSigil;
 use crate::symbol::Symbol;
-use crate::value::ValueView;
 
 /// The prefix a sigil-less constant's storage key carries.
 pub(crate) const TERM_PREFIX: char = '\\';
@@ -94,41 +93,27 @@ pub(crate) fn term_spelling(key: &str) -> Option<&str> {
         .filter(|rest| !rest.is_empty())
 }
 
-/// Whether a `VarDecl` named `name` with `custom_traits` declares a
+/// Whether a `VarDecl` named `name` declared as `constant` is a
 /// sigil-less constant (`constant b`, `my constant b`, `our constant b`),
 /// the declaration stored in the term namespace. A `constant $b` is a
 /// scalar — the parser strips its `$` too, but records it in
-/// `__constant_sigil` — and `@`/`%`/`&` constants keep their sigil in the
-/// name, so none of those are terms.
-// Cost: O(t), t = custom traits on the declaration.
-pub(crate) fn is_term_constant_decl(name: &str, custom_traits: &[(String, Option<Expr>)]) -> bool {
-    if name.is_empty()
-        || name.starts_with(['$', '@', '%', '&', '*', '!', '.', '?', '^', '='])
-        || !custom_traits.iter().any(|(t, _)| t == "__constant")
-        || crate::qualified::is_qualified(Symbol::intern(name))
-    {
-        return false;
-    }
-    let sigil = custom_traits
-        .iter()
-        .find(|(t, _)| t == "__constant_sigil")
-        .and_then(|(_, e)| match e {
-            Some(Expr::Literal(lit)) => match lit.view() {
-                ValueView::Str(s) => Some(s.is_empty()),
-                _ => None,
-            },
-            _ => None,
-        });
-    sigil.unwrap_or(true)
+/// [`ConstantSigil::Scalar`] — and `@`/`%`/`&` constants keep their sigil in
+/// the name, so none of those are terms.
+// Cost: O(|name|).
+pub(crate) fn is_term_constant_decl(name: &str, constant: Option<ConstantSigil>) -> bool {
+    constant == Some(ConstantSigil::Term)
+        && !name.is_empty()
+        && !name.starts_with(['$', '@', '%', '&', '*', '!', '.', '?', '^', '='])
+        && !crate::qualified::is_qualified(Symbol::intern(name))
 }
 
 /// The storage key of a `VarDecl` named `name`: its term key for a sigil-less
 /// constant, `name` itself for every other declaration. Every compile path
 /// that reads a just-declared variable back BY its declaration's name (a
 /// block's tail value, a declaration used as an argument) goes through here.
-// Cost: O(t + |name|), t = custom traits on the declaration.
-pub(crate) fn decl_storage_name(name: &str, custom_traits: &[(String, Option<Expr>)]) -> String {
-    if is_term_constant_decl(name, custom_traits) {
+// Cost: O(|name|).
+pub(crate) fn decl_storage_name(name: &str, constant: Option<ConstantSigil>) -> String {
+    if is_term_constant_decl(name, constant) {
         term_key(name)
     } else {
         name.to_string()
@@ -136,14 +121,20 @@ pub(crate) fn decl_storage_name(name: &str, custom_traits: &[(String, Option<Exp
 }
 
 /// [`decl_storage_name`] for a statement, or `None` when it is not a `VarDecl`.
-// Cost: O(t + |name|), t = custom traits on the declaration.
+// Cost: O(|name|).
 pub(crate) fn stmt_decl_storage_name(stmt: &crate::ast::Stmt) -> Option<String> {
     match stmt {
-        crate::ast::Stmt::VarDecl {
-            name,
-            custom_traits,
-            ..
-        } => Some(decl_storage_name(name, custom_traits)),
+        // A sigilless term declaration (`my \x`) is stored under its term key
+        // (ADR-12441).
+        crate::ast::Stmt::VarDecl { name, marks, .. }
+            if marks.term != crate::ast::var_marks::TermMark::No
+                && !name.starts_with(['$', '@', '%', '&', '\\']) =>
+        {
+            Some(term_key(name))
+        }
+        crate::ast::Stmt::VarDecl { name, constant, .. } => {
+            Some(decl_storage_name(name, *constant))
+        }
         _ => None,
     }
 }

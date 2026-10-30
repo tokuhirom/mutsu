@@ -1059,6 +1059,15 @@ impl SeqBody {
         matches!(state.source, SeqSource::Reified) && !state.lazy
     }
 
+    /// Whether this body already holds all its elements and is not lazy,
+    /// whether or not they are live element containers (an element producer's
+    /// `Seq` over an array's cells): a copy of the values needs no pulling.
+    // Cost: O(1), one lock read.
+    pub(crate) fn holds_eager_elements(&self) -> bool {
+        let state = self.lock_state();
+        matches!(state.source, SeqSource::Reified) && !state.lazy
+    }
+
     pub(crate) fn needs_touch(&self) -> bool {
         let state = self.lock_state();
         !(matches!(state.source, SeqSource::Reified) && (state.retained || state.cache_requested))

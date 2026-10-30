@@ -44,7 +44,39 @@ impl Interpreter {
         // `call_method_with_values`, like `try_any_list_view_method`.
         if let ValueView::Instance { class_name, .. } = val.view() {
             let cn = class_name.resolve();
-            if self.has_user_method(&cn, "list") && !self.has_user_method(&cn, "Slip") {
+            // A `Range`/`Seq`/`List` subclass with its own `iterator` (and no
+            // `list`/`Slip`) slips what that iterator yields: a lazy iterator rides the Slip as one lazy
+            // list (as an unbounded Range does below) instead of being drained,
+            // so `|$naturals` of a never-ending `Range` subclass does not hang.
+            if crate::builtins::native_base::has_iterable_payload(&val)
+                && self.has_user_method(&cn, "iterator")
+                && !self.has_user_method(&cn, "list")
+                && !self.has_user_method(&cn, "Slip")
+            {
+                let iterator =
+                    self.try_compiled_method_or_interpret(val.clone(), "iterator", Vec::new())?;
+                if self.is_lazy_user_iterator(&iterator)? {
+                    self.stack
+                        .push(Value::slip(vec![Self::lazy_list_over_user_iterator(
+                            iterator,
+                        )]));
+                } else {
+                    let (items, _) = self.drive_iterator_value_items(iterator)?;
+                    self.stack.push(Value::slip(
+                        items
+                            .into_iter()
+                            .map(Self::containerize_pair_item)
+                            .collect(),
+                    ));
+                }
+                return Ok(());
+            }
+            // A `Seq` or `Range` subclass slips the elements of the value it
+            // carries (its inherited `list`).
+            if (self.has_user_method(&cn, "list")
+                || crate::builtins::native_base::has_iterable_payload(&val))
+                && !self.has_user_method(&cn, "Slip")
+            {
                 let list = self.call_method_with_values(val.clone(), "list", Vec::new())?;
                 if !matches!(list.view(), ValueView::Instance { .. }) {
                     self.stack.push(list);
@@ -73,8 +105,8 @@ impl Interpreter {
             && let Some(storage) = {
                 let attrs = attributes.as_map();
                 attrs
-                    .get("__mutsu_hash_storage")
-                    .or_else(|| attrs.get("__mutsu_array_storage"))
+                    .get(crate::symbol::wk::hash_storage())
+                    .or_else(|| attrs.get(crate::symbol::wk::array_storage()))
                     .cloned()
             }
         {
@@ -266,11 +298,11 @@ impl Interpreter {
             // when the class overrides `iterator` -- measured: the override
             // does NOT reach `|`, only the Iterable-protocol methods.
             ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_array_storage") =>
+                if attributes.contains_key(crate::symbol::wk::array_storage()) =>
             {
                 let storage = attributes
                     .as_map()
-                    .get("__mutsu_array_storage")
+                    .get(crate::symbol::wk::array_storage())
                     .cloned()
                     .unwrap_or_else(|| Value::real_array(Vec::new()));
                 crate::runtime::utils::value_to_list(&storage)
@@ -315,6 +347,8 @@ impl Interpreter {
         Value::truth(!self.eval_truthy(val))
     }
 
+    // Cost: O(1) for most values; O(1) amortized more for an instance whose
+    // type declares `^find_method` (the user metamethod runs).
     pub(super) fn exec_bool_coerce_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
         let out = match val.view() {
@@ -324,6 +358,13 @@ impl Interpreter {
                 // The IMPLICIT topic of a bare regex coerces quietly -- see
                 // `quiet_topic_for_regex_match`.
                 Value::truth(self.regex_bool(&val, true))
+            }
+            // A type with a user `^find_method` answers `.Bool` itself, as
+            // `?$obj` is `$obj.Bool` (Object::Trampoline).
+            ValueView::Instance { .. }
+                if let Some(r) = self.try_user_find_method_dispatch(&val, "Bool", &[]) =>
+            {
+                Value::truth(self.eval_truthy_result(&r?)?)
             }
             _ => {
                 // Boolifying a Failure marks it as handled
@@ -531,7 +572,7 @@ impl Interpreter {
             || crate::builtins::methods_0arg::temporal::carries_formatter(&v)
         {
             let r = self.try_compiled_method_or_interpret(v, "Stringy", Vec::new())?;
-            return Ok(Value::str(r.to_string_value()));
+            return Ok(Value::str(crate::runtime::unbox_str_answer(&r)?));
         }
         // A subclass of `Array`/`Hash`/a QuantHash stringifies its backing
         // storage through the `Str` its built-in ancestor declares (#14016);
@@ -552,7 +593,7 @@ impl Interpreter {
                 ))
         {
             let r = self.try_compiled_method_or_interpret(v, "Str", Vec::new())?;
-            return Ok(Value::str(r.to_string_value()));
+            return Ok(Value::str(crate::runtime::unbox_str_answer(&r)?));
         }
         // A bare type object without a user stringifier warns and resumes with
         // the empty string, matching Rakudo (`"a" ~ Int`, `Int eq "x"`). An

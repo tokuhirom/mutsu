@@ -56,6 +56,10 @@ pub(super) struct ModuleDecls {
     /// Whether the module calls `.define_slang` (an L10N distribution's
     /// generated EXPORT hook).
     pub(super) defines_slang: bool,
+    /// Whether an `EXPORT` hook binds `LEXICAL::<EXPORTHOW>`: the declarators
+    /// it publishes depend on the `use` arguments, so the importer's parse has
+    /// to run the hook to learn them (annotations' `annotation`).
+    pub(super) binds_lexical_exporthow: bool,
     /// Whether the module binds into an export stash under a key that is not
     /// a literal (`dynamic_stash.rs`, #9500).
     pub(super) dynamic_export_stash: bool,
@@ -233,7 +237,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                 name,
                 is_lexical,
                 is_unit,
-                custom_traits,
+                export_tags,
                 ..
             } => {
                 let name = name.resolve();
@@ -246,9 +250,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                 // `is export` reaches the importer from any depth, a lexical
                 // `my class` in a routine or block included, and under the
                 // class's short name (`class A::B::C is export` imports `C`).
-                let exported = custom_traits
-                    .iter()
-                    .any(|(t, _)| t == crate::parser::EXPORT_TYPE_MARKER);
+                let exported = export_tags.is_some();
                 if exported && let Some((_, short)) = name.rsplit_once("::") {
                     self.out.type_names.push(short.to_string());
                 }
@@ -261,14 +263,14 @@ impl<'ast> Visit<'ast> for DeclScan {
                 name,
                 is_export,
                 export_tags,
-                custom_traits,
+                is_lexical,
                 ..
             } => {
                 let name = name.resolve();
                 if name.starts_with("__ANON_") {
                     return self.enter_package(stmt, self.prefix.clone(), false, String::new());
                 }
-                if *is_export && !custom_traits.iter().any(|(t, _)| t == "__my_scoped") {
+                if *is_export && !*is_lexical {
                     self.export_type(&name, export_tags);
                 }
                 let composed = package_type_name(&self.prefix, &name);
@@ -349,6 +351,34 @@ impl<'ast> Visit<'ast> for DeclScan {
                 if self.spine || *is_export {
                     self.collect_enum_values(variants, *is_export, export_tags);
                 }
+                // An exported enum's values are terms the importer's block
+                // declares itself (ADR-8751), like an exported constant.
+                if *is_export && self.spine {
+                    let package = if self.prefix.is_empty() {
+                        "GLOBAL".to_string()
+                    } else {
+                        self.prefix.clone()
+                    };
+                    let tags = if export_tags.is_empty() {
+                        vec!["DEFAULT".to_string()]
+                    } else {
+                        export_tags.clone()
+                    };
+                    for value in crate::parser::enum_value_names(variants)
+                        .into_iter()
+                        .filter(|value| !value.is_empty())
+                    {
+                        self.out
+                            .exported_vars
+                            .push(super::exported_vars::ExportedVar {
+                                name: value,
+                                package: package.clone(),
+                                tags: tags.clone(),
+                                term: true,
+                                hook: false,
+                            });
+                    }
+                }
                 // An `our` enum's values are also installed in the enclosing
                 // package, so `Pkg::Value` resolves globally, export or not
                 // (`package WS::Msg { enum Opcode is export (:Ping(9)) }` makes
@@ -378,14 +408,14 @@ impl<'ast> Visit<'ast> for DeclScan {
                 is_export,
                 is_our,
                 export_tags,
-                custom_traits,
+                constant,
                 ..
             } => {
                 // An exported variable is the package variable of the package
                 // it is declared in; an exported constant may be `my`-scoped.
                 // Only one on the package spine is known to be declared when
                 // the module loads.
-                let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
+                let is_constant = constant.is_some();
                 if *is_our && is_export_stash_package(&self.package) && !name.starts_with('&') {
                     self.out.unlisted_exported_vars = true;
                 }
@@ -417,14 +447,12 @@ impl<'ast> Visit<'ast> for DeclScan {
                             name: name.clone(),
                             package,
                             tags: export_tags.clone(),
-                            term: crate::term_names::is_term_constant_decl(name, custom_traits),
+                            term: crate::term_names::is_term_constant_decl(name, *constant),
                             hook: false,
                         });
                 }
                 // Sigiled constants (`constant $x = 1`) are not barewords.
-                if custom_traits.iter().any(|(t, _)| t == "__constant")
-                    && !name.is_empty()
-                    && !name.starts_with(['$', '@', '%', '&'])
+                if constant.is_some() && !name.is_empty() && !name.starts_with(['$', '@', '%', '&'])
                 {
                     if self.spine || *is_export {
                         self.out.constant_names.push(name.clone());
@@ -516,10 +544,10 @@ impl<'ast> Visit<'ast> for DeclScan {
                 self.off_spine(|v| walk_stmt(v, stmt));
             }
             // A traited or adverbed declarator (`class Foo is export { }`,
-            // `module Foo:auth<x> { }`) is wrapped in a bare or synthetic
+            // `module Foo:auth<x> { }`) is wrapped in a bare
             // block together with its metadata statements. The wrapper opens
             // no package, so it stays on the spine with the same paths.
-            Stmt::Block(_) | Stmt::SyntheticBlock(_) => {
+            Stmt::Block(_) => {
                 if let Some((decl, header)) = crate::ast::package_header::unwrap(stmt) {
                     self.header_exports(decl, &header);
                 }
@@ -571,10 +599,12 @@ fn literal_marked_name(name: &str) -> String {
         let literal = marked
             .strip_prefix('(')
             .and_then(|m| m.strip_suffix(')'))
-            .and_then(|content| crate::parser::parse_fragment(content).ok())
+            .and_then(|content| crate::parser::parse_fragment_spelled(content).ok())
             .and_then(|(stmts, _)| match stmts.as_slice() {
-                [Stmt::Expr(Expr::Literal(v))]
-                | [Stmt::SetLine(..), Stmt::Expr(Expr::Literal(v))] => Some(v.to_string_value()),
+                [Stmt::Expr(e)] | [Stmt::SetLine(..), Stmt::Expr(e)] => match e.peel_parens() {
+                    Expr::Literal(v) => Some(v.to_string_value()),
+                    _ => None,
+                },
                 _ => None,
             });
         let Some(text) = literal else {

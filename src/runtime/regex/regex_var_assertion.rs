@@ -46,7 +46,7 @@ impl Interpreter {
             return VarInterpTarget::End(None);
         }
         let text = if is_regex {
-            Self::regex_alternation_sources(&val).swap_remove(0)
+            Self::regex_alternation_sources(&val, false).swap_remove(0)
         } else {
             val.to_string_value()
         };

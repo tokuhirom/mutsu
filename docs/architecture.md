@@ -8,9 +8,16 @@ ADRs under [`adr/`](adr/).
 
 ## Execution pipeline
 
-Source → **Parser** (`parser/`) → **Compiler** (`compiler/`) → **VM** (`vm/`) → Output
+Source → **Parser** (`parser/`) → **RakuAST** → `lower` (`rakuast/`) → **Compiler** (`compiler/`) → **VM** (`vm/`) → Output
 
 The parser is in `src/parser/` and is used unconditionally.
+
+Since ADR-10723 Stage 3 the frontend runs every compilation unit (the main program, each `EVAL`
+string and each `use`d or `require`d module) as `parse → RakuAST → lower`
+(`src/rakuast/frontend.rs`) before compiling it; there is no opt-out. `MUTSU_RAKUAST=convert`
+disables the parsed-leaf passthrough so every node goes through `convert` and `lower` (the test
+level behind `scripts/rakuast-frontend.sh check`). The precompilation cache key includes the
+frontend level, so caches written under different levels are never mixed.
 
 `parse_dispatch.rs` provides `parse_source()` used by parsing call sites and currently delegates directly to `parser::parse_program()`.
 

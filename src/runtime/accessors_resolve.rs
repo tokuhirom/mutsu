@@ -3,6 +3,8 @@ use super::*;
 use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
+use crate::meta_ns::CORE_ROUTINE_KEY;
+
 impl Interpreter {
     /// Compile a single method/submethod body to bytecode in place if it is not
     /// already compiled. Shared by the bulk registration pass and the on-demand
@@ -283,6 +285,9 @@ impl Interpreter {
         // rejecting 0-arity callables), stabilize the id, and share the def's
         // composition cell (ADR-11827: this rebuild IS the routine, so a
         // `does` on it is seen by every other value of it).
+        // A routine declared in a method closes over the method's `self`,
+        // `?CLASS` and `?ROLE` (ADR-14843): its call continues the record.
+        data.fixtures = self.capture_fixtures();
         data.routine_cell = def.routine_cell.clone();
         data.empty_sig = empty_sig;
         if let Some(id) = stable_id {
@@ -416,6 +421,7 @@ impl Interpreter {
         // The caller's callable kind belongs to its frame, not to the routine
         // being resolved. Stamp each candidate from its own declarator below.
         base_env.remove("__mutsu_callable_type");
+        base_env.remove_sym(crate::symbol::wk::multi_is_default());
         let candidate_subs: Vec<Value> = candidates
             .iter()
             .map(|cand| {
@@ -426,7 +432,19 @@ impl Interpreter {
                 if let Some(kind) = cand.declarator.callable_type() {
                     env.insert("__mutsu_callable_type".to_string(), Value::str_from(kind));
                 }
-                Value::make_sub_for_routine(
+                if cand.is_default {
+                    env.insert_sym(crate::symbol::wk::multi_is_default(), Value::TRUE);
+                }
+                // The candidate's return spec is its own (the dispatcher's
+                // `base_env` is a capture of the running frame).
+                env.remove_sym(crate::symbol::well_known::return_type());
+                if let Some(return_type) = &cand.return_type {
+                    env.insert(
+                        "__mutsu_return_type".to_string(),
+                        Value::str(return_type.clone()),
+                    );
+                }
+                self.with_captured_fixtures(Value::make_sub_for_routine(
                     cand.package,
                     cand.name,
                     cand.params.clone(),
@@ -435,7 +453,7 @@ impl Interpreter {
                     cand.is_rw,
                     env,
                     cand.compiled_fn().cloned(),
-                )
+                ))
             })
             .collect();
         let mut dispatcher_env = base_env;
@@ -483,7 +501,30 @@ impl Interpreter {
         // `multi pretty-json(Cool:D)` calling the imported `to-json` it also
         // exports over): `callable_declared_in_unit_of` needs a `source_file`.
         let unit_file = candidates.first().and_then(|c| c.source_file.as_deref());
-        Self::sub_with_source_file(dispatcher, unit_file)
+        self.with_captured_fixtures(Self::sub_with_source_file(dispatcher, unit_file))
+    }
+
+    /// `value` (a code object built here from a declaration) closes over the
+    /// running frame's `self`, `?CLASS` and `?ROLE` (ADR-14843), as
+    /// [`Self::sub_value_from_function_def`] does for a single routine: a
+    /// `multi sub` declared in a method keeps the method's invocant when its
+    /// `&name` outlives the call.
+    // Cost: O(1) (one record clone); O(d) for a shared `SubData`, d = its size.
+    fn with_captured_fixtures(&self, value: Value) -> Value {
+        let ValueView::Sub(data) = value.view() else {
+            return value;
+        };
+        if data.fixtures.is_some() {
+            return value;
+        }
+        let fixtures = self.capture_fixtures();
+        if fixtures.is_none() {
+            return value;
+        }
+        let mut data = data.clone();
+        drop(value);
+        data.make_mut().fixtures = fixtures;
+        Value::sub_value(data)
     }
 
     /// The registration clone id for a named routine `package::name`, i.e. the
@@ -544,6 +585,45 @@ impl Interpreter {
         )
     }
 
+    /// A code value for the routine `name` of the CORE setting
+    /// (`&CORE::name`, `CORE::<&name>`): calling it runs the built-in routine
+    /// and never a same-named routine the program or an import declared
+    /// (`call_core_routine`).
+    // Cost: O(e), e = the frame env the Sub captures.
+    fn core_routine_sub(&self, name: &str) -> Value {
+        let mut env = self.env.clone();
+        env.insert(
+            CORE_ROUTINE_KEY.to_string(),
+            Value::str(name.to_string()),
+        );
+        // A call carrier (`sub_is_call_carrier`): the body is empty, the call
+        // goes through `call_sub_value`, which reads `CORE_ROUTINE_KEY` first.
+        env.insert(
+            "__mutsu_routine_name".to_string(),
+            Value::str(name.to_string()),
+        );
+        Value::make_sub(
+            Symbol::intern("GLOBAL"),
+            Symbol::intern(name),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            false,
+            env,
+        )
+    }
+
+    /// Whether the program or an import declares a routine `name` the CORE
+    /// routine of that name would be hidden by (a `sub abs`, a `multi
+    /// infix:<eqv>`).
+    // Cost: O(1) hashed probes.
+    fn user_declares_routine(&self, name: &str) -> bool {
+        self.has_proto(name)
+            || self.has_multi_candidates_unindexed(name)
+            || self.resolve_function(name).is_some()
+            || self.env.get(&format!("&{name}")).is_some()
+    }
+
     /// Build a first-class Sub for a native routine that has no registry
     /// FunctionDef. Native functions normally enter through name dispatch, but
     /// Raku exposes the same routines as code values (`&sleep`,
@@ -596,6 +676,13 @@ impl Interpreter {
                 || normalized_name.starts_with("postcircumfix:<"))
             && normalized_name.ends_with('>')
         {
+            // `&CORE::infix:<op>` names the core operator, whatever the program
+            // declared under the same name.
+            if matches!(Self::leading_pseudo_packages(name).1, Some("CORE" | "SETTING"))
+                && self.user_declares_routine(&normalized_name)
+            {
+                return self.core_routine_sub(&normalized_name);
+            }
             // A concrete operator sub bound in env — a `my &infix:<op>` binding or
             // one installed by a custom `sub EXPORT` (`Map.new: '&infix:<op>' =>
             // &infix:<op>`) — must win over the by-name GLOBAL routine ref.
@@ -707,6 +794,14 @@ impl Interpreter {
         // user-defined overrides.
         // When pseudo-package qualifiers are present (e.g. SETTING::), resolve
         // to the builtin directly, bypassing user-defined overrides.
+        if has_packages
+            && core_visible
+            && Self::is_builtin_function(lookup_name)
+            && matches!(Self::leading_pseudo_packages(name).1, Some("CORE" | "SETTING"))
+            && self.user_declares_routine(lookup_name)
+        {
+            return self.core_routine_sub(lookup_name);
+        }
         if has_packages && core_visible && Self::is_builtin_function(lookup_name) {
             return Value::routine_parts(
                 Symbol::intern("GLOBAL"),
@@ -804,6 +899,33 @@ impl Interpreter {
                     None
                 }
             });
+        // A class body's `my method` shadows a same-named routine registered
+        // globally: `&STORE` inside the class's `method new` is the class's own
+        // `my method STORE`, not a `sub STORE` declared elsewhere. Only a
+        // method sees it: the key sits in the
+        // body's env, which the unit's plain subs share.
+        if !has_packages
+            && self.inside_routine()
+            && self.routine_stack.last().is_some_and(|f| f.is_method)
+            && let Some(sub_val) = self
+                .env
+                .get(&format!("{}{lookup_name}", crate::env::CLASS_LEXICAL_METHOD_PREFIX))
+        {
+            return sub_val.clone();
+        }
+        // A routine lexical to a scope that has since exited (a class body's
+        // `my method`) is still carried by the closure env under its reserved
+        // key, for the routines (methods) that close over that scope; code
+        // outside any routine does not see a block's `sub` after it ends.
+        if def.is_none()
+            && !has_packages
+            && self.inside_routine()
+            && let Some(sub_val) = self
+                .env
+                .get(&format!("{}{lookup_name}", crate::env::BLOCK_LEXICAL_SUB_PREFIX))
+        {
+            return sub_val.clone();
+        }
         if def.is_none() && core_visible {
             match lookup_name {
                 "sleep" | "sleep-timer" | "now" | "time" => {

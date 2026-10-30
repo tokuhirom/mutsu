@@ -42,12 +42,6 @@ const TAKEFIRSTFLAG_OP: &str = "nqp::p6takefirstflag";
 const SEEN_VAR: &str = "__P6STATEINIT_SEEN__";
 const FLAG_VAR: &str = "__P6STATEINIT__";
 
-/// Whether `source` mentions an op this pass lowers.
-// Cost: O(n), n = bytes of the source.
-pub(crate) fn mentions_op(source: &str) -> bool {
-    source.contains("p6stateinit") || source.contains("p6takefirstflag")
-}
-
 /// Lower every frame-reading op of a parsed unit.
 // Cost: O(n), n = AST nodes of the unit.
 pub(crate) fn lower_program(stmts: &mut Vec<Stmt>) {
@@ -144,7 +138,8 @@ fn no_user_args(args: &[Expr]) -> bool {
 }
 
 fn hidden_decls() -> [Stmt; 2] {
-    let decl = |name: &str, expr: Expr, is_state: bool, custom_traits| Stmt::VarDecl {
+    let decl = |name: &str, expr: Expr, is_state: bool, has_initializer| Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name: name.to_string(),
         expr,
@@ -154,7 +149,10 @@ fn hidden_decls() -> [Stmt; 2] {
         is_dynamic: false,
         is_export: false,
         export_tags: Vec::new(),
-        custom_traits,
+        custom_traits: Vec::new(),
+        has_initializer,
+        constant: None,
+        bind: None,
         where_constraint: None,
     };
     let first_run = Expr::Ternary {
@@ -167,13 +165,8 @@ fn hidden_decls() -> [Stmt; 2] {
         }))),
     };
     [
-        decl(SEEN_VAR, Expr::Literal(Value::NIL), true, Vec::new()),
-        decl(
-            FLAG_VAR,
-            first_run,
-            false,
-            vec![("__has_initializer".to_string(), None)],
-        ),
+        decl(SEEN_VAR, Expr::Literal(Value::NIL), true, false),
+        decl(FLAG_VAR, first_run, false, true),
     ]
 }
 

@@ -14,6 +14,7 @@ impl std::fmt::Debug for LazyList {
 impl Clone for LazyList {
     fn clone(&self) -> Self {
         Self {
+            fixtures: None,
             body: self.body.clone(),
             env: self.env.clone(),
             cache: Mutex::new(self.cache.lock().unwrap().clone()),
@@ -53,6 +54,7 @@ impl Clone for LazyList {
             cached_no_sink: self.cached_no_sink,
             deleted_indices: Default::default(),
             descriptor: self.descriptor.clone(),
+            generator_origin: self.generator_origin.clone(),
             itemized: self.itemized,
         }
     }
@@ -171,7 +173,16 @@ impl LazyList {
     /// to the end of the cat's handles — so it must materialize and render its
     /// elements (and compare structurally under `is-deeply`).
     pub(crate) fn renders_lazy_placeholder(&self) -> bool {
-        self.is_genuinely_lazy() && self.cat_pull.is_none()
+        self.is_genuinely_lazy() && !self.is_finite_cat_pull()
+    }
+
+    /// A `cat_pull` list that reads to the end of a finite source (a
+    /// `CatHandle`'s handles, a `Channel`'s close), unlike a user iterator.
+    pub(crate) fn is_finite_cat_pull(&self) -> bool {
+        self.cat_pull.as_ref().is_some_and(|spec| {
+            spec.lock().unwrap_or_else(|e| e.into_inner()).mode
+                != crate::value::CatPullMode::UserIterator
+        })
     }
 
     /// Whether this list is backed by a live `IO::CatHandle` iterator.
@@ -341,7 +352,7 @@ impl LazyList {
             ValueView::LazyList(ll) => {
                 if ll.lazy_pipe.is_some() {
                     ll.pipe_bottoms_out_finite()
-                } else if ll.cat_pull.is_some() {
+                } else if ll.is_finite_cat_pull() {
                     // `IO::CatHandle.lines` / `.handles` pull incrementally but
                     // always terminate at the end of the cat's finite handle
                     // list. A map/grep pipe above one is therefore safe for

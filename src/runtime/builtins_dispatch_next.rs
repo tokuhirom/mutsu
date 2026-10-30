@@ -493,6 +493,22 @@ impl Interpreter {
     /// MRO, but mutsu implements it natively (`bless`), so it never appears
     /// among the `MethodDef` candidates. `push_method_dispatch_frame`'s
     /// `new_base_override` is what guarantees the frame this leg exhausts.
+    /// Whether `invocant` is a type object whose class derives from `Range`,
+    /// `Pair` or `Seq`, the core types whose constructor a subclass's `new` defers
+    /// to instead of `Mu.new` (`dispatch_native_new` builds their payload).
+    // Cost: O(m), m = the class's MRO length.
+    fn package_has_native_ctor_base(&self, invocant: &Value) -> bool {
+        let ValueView::Package(name) = invocant.view() else {
+            return false;
+        };
+        let name = name.resolve();
+        !matches!(name.as_str(), "Range" | "Pair" | "Seq")
+            && self
+                .mro_readonly(&name)
+                .iter()
+                .any(|c| matches!(c.as_str(), "Range" | "Pair" | "Seq"))
+    }
+
     pub(super) fn native_mu_base(
         &mut self,
         frame_invocant: &Value,
@@ -500,7 +516,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let invocant = self
-            .env_self_value()
+            .frame_invocant()
             .unwrap_or_else(|| frame_invocant.clone());
         match method_name {
             "BUILDALL" | "POPULATE" => crate::builtins::method_table::invoke_base(
@@ -517,6 +533,12 @@ impl Interpreter {
                     method_name,
                     std::slice::from_ref(&invocant),
                 )
+            }
+            // A user `new` deferring on a type object reaches the base
+            // constructor of its native ancestor (`class R is Range`'s
+            // `nextwith $min, $max`), which is not a `Mu.new` call.
+            "new" if self.package_has_native_ctor_base(&invocant) => {
+                Some(self.dispatch_native_new(invocant, args.to_vec()))
             }
             "clone" | "new" => {
                 let mut full = vec![invocant];
@@ -689,7 +711,7 @@ impl Interpreter {
     /// The builtin of a `Mixin`'s native inner value, the last candidate behind
     /// a role's method (`DeferralEntry::Native`). `None` when the inner value
     /// is a user `Instance`, whose MRO is all `MethodDef`s.
-    fn mixin_base_native_entry(
+    pub(crate) fn mixin_base_native_entry(
         &mut self,
         invocant: &Value,
         method_name: &str,
@@ -1313,6 +1335,7 @@ impl Interpreter {
                 came_from_wrapper,
                 frame_wrap_arg_sources,
             ) = {
+                let record_invocant = self.frame_invocant();
                 let frame = &mut self.dispatch.method_dispatch_stack[frame_idx];
                 let entry = frame.remaining.first().cloned().expect(
                     "ADR-0019 E9b-2: the match above only falls through here for a Candidate",
@@ -1360,12 +1383,8 @@ impl Interpreter {
                 let base_invocant = if came_from_wrapper {
                     frame.invocant.clone()
                 } else {
-                    // The dispatch frame's own invocant is the fallback, so a
-                    // frame without an env `self` needs no record lookup.
-                    self.env
-                        .get_sym(crate::symbol::wk::self_())
-                        .cloned()
-                        .unwrap_or_else(|| frame.invocant.clone())
+                    // The dispatch frame's own invocant is the fallback.
+                    record_invocant.unwrap_or_else(|| frame.invocant.clone())
                 };
                 // `callwith`'s args are invocant-INCLUSIVE (element 0 is the
                 // new SELF) exactly when the caller is a wrapper block —
@@ -1774,7 +1793,7 @@ impl Interpreter {
                     .samewith_context_stack
                     .last()
                     .is_some_and(|ctx| ctx.name == "new");
-            if in_new && let Some(invocant) = self.env_self_value() {
+            if in_new && let Some(invocant) = self.frame_invocant() {
                 let call_args = match override_args {
                     Some(args) => args,
                     None => self

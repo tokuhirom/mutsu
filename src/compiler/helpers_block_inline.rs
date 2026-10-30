@@ -1,4 +1,5 @@
 use super::*;
+use crate::ast::var_marks::TermMark;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
@@ -87,7 +88,7 @@ impl Compiler {
             Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
                 // A tail block with ENTER/LEAVE/... phasers must run them through a
                 // real `BlockScope` rather than being inlined (which drops them).
-                if Self::has_block_enter_leave_phasers(inner) {
+                if Self::needs_phaser_block_scope(inner) {
                     // Only a genuine `{ ... }` is a lexical scope for the
                     // `X::Dynamic::Postdeclaration` bookkeeping.
                     let saved =
@@ -152,7 +153,7 @@ impl Compiler {
                 // HTTP::Tiny header-continuation parser is one example).
                 if matches!(op, AssignOp::Bind) {
                     self.compile_stmt(stmt);
-                    let effective_name = self.resolve_self_lexical(name);
+                    let effective_name = name;
                     if let Some(&slot) = self.local_map.get(effective_name) {
                         self.code.emit(OpCode::GetLocal(slot));
                     } else {
@@ -277,9 +278,6 @@ impl Compiler {
             self.pop_dynamic_scope_lexical(saved);
             return;
         }
-        let has_mark_bind = stmts.iter().any(|s| matches!(s, Stmt::MarkBind));
-        // See the matching flag in `compile_stmt`'s `Stmt::SyntheticBlock` arm.
-        let has_mark_sigilless = stmts.iter().any(|s| matches!(s, Stmt::MarkSigilless(_)));
         // Names marked readonly by a preceding `MarkReadonly` statement. A `:=`
         // scalar bind to a readonly RHS (`my $x := 42`) is lowered to
         // `[MarkReadonly(x), VarDecl{__scalar_bind}]`; when that VarDecl is in
@@ -298,31 +296,10 @@ impl Compiler {
         self.note_block_lexsubs(stmts);
         // Hoist `my TYPE $var;` type constraints (see `hoist_typed_var_decls`).
         self.hoist_typed_var_decls(stmts);
-        // Register sigilless names BEFORE compiling their VarDecl (mirroring
-        // the `Stmt::SyntheticBlock` arm of `compile_stmt`): the marker
-        // statement comes AFTER the decl, but the decl must already know the
-        // name is sigilless so its store binds the value itself instead of
-        // itemizing it into a scalar container. This value-position path is
-        // how `if my \r = @rows { r.Array }` compiles its condition
-        // (`DoStmt(SyntheticBlock([VarDecl, MarkSigillessReadonly]))`) —
-        // without the pre-pass, `r` became `$[...]` and `r.Array` nested.
-        let term_names = Self::sigilless_mark_names(stmts);
-        for name in &term_names {
-            self.sigilless_locals.insert((*name).to_string());
-        }
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last {
                 match stmt {
-                    // MarkSigillessReadonly at block-final position: compile
-                    // the mark statement, then load the variable's value so
-                    // `my \x = 42` used in expression context returns 42.
-                    Stmt::MarkSigillessReadonly(name) | Stmt::MarkSigilless(name) => {
-                        self.compile_stmt(stmt);
-                        self.compile_expr(&Expr::BareWord(name.clone()));
-                        self.pop_dynamic_scope_lexical(saved);
-                        return;
-                    }
                     Stmt::Expr(expr) => {
                         self.with_stmt_root(|c| c.compile_expr(expr));
                         // Don't emit Pop — leave value on stack as block's return value
@@ -336,7 +313,7 @@ impl Compiler {
                         // real `BlockScope` (inlining would silently drop them);
                         // `result_on_stack` keeps its value on the stack, matching
                         // the inline path.
-                        if Self::has_block_enter_leave_phasers(inner) {
+                        if Self::needs_phaser_block_scope(inner) {
                             if matches!(stmt, Stmt::Block(_)) {
                                 self.compile_phaser_block_literal_inline(inner);
                             } else {
@@ -427,16 +404,25 @@ impl Compiler {
                     // expression-position path already applies the traits and
                     // reads the container back, so route the declaration
                     // through it rather than growing a second copy of the rule.
+                    // A sigilless term declaration (`my \x = 42` as a value) is the
+                    // value of the term it declares.
+                    Stmt::VarDecl { name, marks, .. } if marks.term != TermMark::No => {
+                        self.compile_stmt(stmt);
+                        self.compile_expr(&Expr::BareWord(name.clone()));
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
                     Stmt::VarDecl {
                         name,
                         custom_traits,
+                        constant,
                         ..
                     } if custom_traits.iter().any(|(t, _)| !t.starts_with("__"))
                         // A sigil-less constant's term-namespace storage
                         // (#9962) is likewise set up by that path only.
                         || crate::runtime::term_names::is_term_constant_decl(
                             name,
-                            custom_traits,
+                            *constant,
                         ) =>
                     {
                         self.compile_expr_do_stmt(stmt);
@@ -453,11 +439,9 @@ impl Compiler {
                     // the declaration through the statement compile (which
                     // emits the `WrapVarRef` + `MarkBindContext` bind) and read
                     // the bound variable back as the block's value.
-                    Stmt::VarDecl { name, .. }
-                        if has_mark_bind && !name.starts_with(['@', '%']) =>
+                    Stmt::VarDecl { name, marks, .. }
+                        if marks.bound && !name.starts_with(['@', '%']) =>
                     {
-                        self.bind_vardecl = true;
-                        self.sigilless_bind_vardecl = has_mark_sigilless;
                         self.compile_stmt(stmt);
                         self.emit_get_named_var(name);
                         self.pop_dynamic_scope_lexical(saved);
@@ -471,6 +455,10 @@ impl Compiler {
                         is_dynamic: ast_is_dynamic,
                         type_constraint,
                         custom_traits,
+                        has_initializer,
+                        constant,
+                        bind,
+                        marks,
                         ..
                     } => {
                         // my $x = expr in block-final position: declare and return value
@@ -490,7 +478,7 @@ impl Compiler {
                                 name,
                                 *is_our,
                                 type_constraint.as_deref(),
-                                custom_traits,
+                                *constant,
                             )
                             .map(Some);
                         let type_constraint =
@@ -505,7 +493,7 @@ impl Compiler {
                             local_slot: None,
                             reset: if !*is_state
                                 && !*is_our
-                                && !custom_traits.iter().any(|(t, _)| t == "__constant")
+                                && !constant.is_some()
                                 && !name.starts_with('@')
                                 && !name.starts_with('%')
                             {
@@ -526,7 +514,7 @@ impl Compiler {
                             self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                             self.local_types.insert(name.clone(), tc.clone());
                         }
-                        if has_mark_bind && (name.starts_with('@') || name.starts_with('%')) {
+                        if marks.bound && (name.starts_with('@') || name.starts_with('%')) {
                             // Bind context for @/% variables (e.g. `my %h := :{ }`):
                             // use SetLocal with MarkBindContext and MarkVarDeclContext
                             // to avoid the readonly check that SetGlobal performs.
@@ -542,6 +530,8 @@ impl Compiler {
                                 expr,
                                 type_constraint.as_deref(),
                                 custom_traits,
+                                *bind,
+                                *has_initializer,
                             ) {
                                 // Block-final uninitialized untyped scalar:
                                 // seed and yield the Any type object
@@ -564,7 +554,7 @@ impl Compiler {
                                 let display_name = format!("${}", name);
                                 let var_name_idx = self.code.add_constant(Value::str(display_name));
                                 let is_bind =
-                                    custom_traits.iter().any(|(t, _)| t == "__scalar_bind");
+                                    *bind == Some(crate::ast::bind_decl::BindKind::Scalar);
                                 if is_bind {
                                     self.code
                                         .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
@@ -587,7 +577,7 @@ impl Compiler {
                                 // declaration path so the readonly check is
                                 // bypassed for this declaration's own initializer,
                                 // mirroring the @/% bind path above.
-                                if custom_traits.iter().any(|(t, _)| t == "__scalar_bind") {
+                                if *bind == Some(crate::ast::bind_decl::BindKind::Scalar) {
                                     self.code.emit(OpCode::MarkScalarBindContext);
                                 }
                                 self.code.emit(OpCode::MarkVarDeclContext);
@@ -635,7 +625,7 @@ impl Compiler {
                         // inlining or the alias becomes a detached snapshot.
                         if matches!(op, AssignOp::Bind) {
                             self.compile_stmt(stmt);
-                            let effective_name = self.resolve_self_lexical(name);
+                            let effective_name = name;
                             if let Some(&slot) = self.local_map.get(effective_name) {
                                 self.code.emit(OpCode::GetLocal(slot));
                             } else {
@@ -692,14 +682,7 @@ impl Compiler {
                     _ => {}
                 }
             }
-            if has_mark_bind && matches!(stmt, Stmt::VarDecl { .. }) {
-                self.bind_vardecl = true;
-                self.sigilless_bind_vardecl = has_mark_sigilless;
-            }
-            self.decl_is_term =
-                matches!(stmt, Stmt::VarDecl { name, .. } if term_names.contains(&name.as_str()));
             self.compile_stmt(stmt);
-            self.decl_is_term = false;
             // ADR-0052: a `given`/`when`/`default` statement nets one stack
             // value. A non-last one must be popped, or it would shadow the
             // block's real tail value (the stack top wins). The last one is
@@ -861,7 +844,10 @@ impl<'ast> crate::ast_visit::Visit<'ast> for HeredocScopeScan<'_> {
         match expr {
             Expr::HeredocInterpolation(content, true) => {
                 super::compile_inputs::mark_uncacheable("compile-time heredoc interpolation");
-                let resolved = crate::parser::interpolate_heredoc_content(content);
+                // A body the `qq` grammar rejects is reported where it compiles.
+                let Ok(resolved) = crate::parser::interpolate_heredoc_content(content) else {
+                    return;
+                };
                 let mut vars = UndeclaredHeredocVar {
                     sub_locals: self.block_locals,
                     outer_map: self.outer_map,

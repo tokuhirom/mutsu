@@ -1,4 +1,4 @@
-use crate::ast::{AssignOp, Expr, Stmt};
+use crate::ast::{Expr, Stmt};
 use crate::parser::expr::expression;
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{
@@ -11,28 +11,10 @@ use crate::parser::stmt::simple::add_xor_sink_warnings;
 use crate::parser::term_boundary::{is_pure_value_expr, starts_with_unambiguous_term};
 use crate::symbol::Symbol;
 
-use super::lvalue::callable_lvalue_assign_expr;
 use super::predicates::{
     is_literal_expr, is_pseudo_package, starts_with_postfix_ambiguous_term, starts_with_term_token,
 };
-/// The statement `.=` on the topic (`$_ .= meth`, `.= meth`), tagged with its
-/// source-level shape. It routes through the `__mutsu_topic_dotassign` marker
-/// (compiled to `TopicDotAssign`) so it can reassign a read-only
-/// whole-container topic (`given @a { .=uc }`, writing through to `@a`) while a
-/// plain `$_ = ...` keeps throwing X::Assignment::RO.
-pub(crate) fn topic_dot_assign(method_call: Expr) -> Expr {
-    let expanded = Expr::Call {
-        name: Symbol::intern("__mutsu_topic_dotassign"),
-        args: vec![method_call.clone()],
-        listop: false,
-    };
-    crate::parser::stmt::assign::dotty_assign_marker(
-        Expr::Var("_".to_string()),
-        method_call,
-        expanded,
-    )
-}
-
+use crate::rakuast::callable_lvalue_assign_expr;
 /// Parse an expression statement (fallback).
 pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // Topic mutating method call: .=method(args)
@@ -62,7 +44,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 (rest, Vec::new())
             }
         };
-        // The `.=` metaop on the topic. Route through the `__mutsu_topic_dotassign`
+        // The `.=` metaop on the topic. Build an `Expr::TopicDotAssign`
         // marker (compiled to `TopicDotAssign`) so it can reassign a read-only
         // whole-container topic (`given @a { .=uc }`, writing through to `@a`)
         // while a plain `$_ = ...` keeps throwing X::Assignment::RO.
@@ -75,7 +57,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             sugar: false,
         };
         let stmt = Stmt::Expr(crate::parser::stmt::assign::written_topic_dotty_assignment(
-            call, true,
+            call,
         ));
         return parse_statement_modifier(rest, stmt);
     }
@@ -259,7 +241,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::Index { .. } => {
                 let call = make_rhs(expr.clone());
                 let stmt = Stmt::Expr(crate::parser::stmt::assign::written_dotty_assignment(
-                    expr, call, true,
+                    expr, call,
                 ));
                 return parse_statement_modifier(r, stmt);
             }
@@ -391,7 +373,9 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         if matches!(
             expr,
             Expr::MethodCall { .. } | Expr::Call { .. } | Expr::CallOn { .. }
-        ) {
+        ) || matches!(&expr, Expr::Ast(node)
+            if matches!(node.as_ref(), crate::ast::parsed::ParsedExpr::SubscriptAdverbs(_)))
+        {
             let stmt = crate::parser::stmt::assign::written_assignment_stmt(expr, rhs);
             return parse_statement_modifier(r, stmt);
         }
@@ -554,35 +538,6 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)])
         };
         return parse_statement_modifier(r, stmt);
-    }
-
-    // Check for assignment after parenthesized assign expression: ($x = $y) = 5
-    if let Expr::AssignExpr { ref name, .. } = expr
-        && rest.starts_with('=')
-        && !rest.starts_with("==")
-        && !rest.starts_with("=>")
-    {
-        let var_name = name.clone();
-        let r = &rest[1..];
-        let (r, _) = ws(r)?;
-        let (r, rhs) = parse_assign_expr_or_comma(r).map_err(|err| PError {
-            messages: merge_expected_messages(
-                "expected right-hand expression after '='",
-                &err.messages,
-            ),
-            remaining_len: err.remaining_len.or(Some(r.len())),
-            exception: None,
-        })?;
-        let stmts = vec![
-            Stmt::Expr(expr),
-            Stmt::Assign {
-                name: var_name,
-                expr: rhs,
-                op: AssignOp::Assign,
-                target_is_sigilless: false,
-            },
-        ];
-        return parse_statement_modifier(r, Stmt::Block(stmts));
     }
 
     // Check for comma-separated expressions (e.g., "1,2, until $++")

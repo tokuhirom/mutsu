@@ -232,6 +232,18 @@ fn mark_expr_after_plant(expr: &mut Expr) {
             crate::ast::parsed::ParsedExpr::InlineSubset(declaration) => {
                 super::stmt::mark_stmt(declaration)
             }
+            crate::ast::parsed::ParsedExpr::HyperPrefix(p) => mark_expr(&mut p.operand),
+            crate::ast::parsed::ParsedExpr::SubscriptAdverbs(s) => {
+                mark_expr(&mut s.subscript);
+                for pair in &mut s.pairs {
+                    mark_expr(pair);
+                }
+            }
+            crate::ast::parsed::ParsedExpr::AtomicVar(a) => {
+                if let crate::ast::parsed::AtomicVar::Store { value, .. } = a {
+                    mark_expr(value);
+                }
+            }
         },
         // A source-preserving compound assignment has three views of its
         // children: the source target/RHS used by RakuAST and the expanded
@@ -351,6 +363,8 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         | Expr::Eager(inner)
         | Expr::Itemize(inner)
         | Expr::DeitemizeForBind(inner)
+        | Expr::IndexBindValue(inner)
+        | Expr::TopicDotAssign(inner)
         | Expr::IndirectTypeLookup(inner)
         | Expr::IndirectTypeLookupTail { head: inner, .. } => mark_expr(inner),
         Expr::IndirectCodeLookup { package, .. } => mark_expr(package),

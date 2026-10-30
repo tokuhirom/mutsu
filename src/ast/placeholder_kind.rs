@@ -160,7 +160,6 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
             | ParsedStmt::SigillessDecl(_)
             | ParsedStmt::PackageHeader { .. }
             | ParsedStmt::TempDecl(_)
-            | ParsedStmt::BarePhaser(_)
             | ParsedStmt::CommaDecls(_)
             | ParsedStmt::TakeLogicalTail { .. }
             | ParsedStmt::DoneValue(_)
@@ -173,8 +172,7 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
             | ParsedStmt::MethodAssignDecl(_)
             | ParsedStmt::SignatureBind { .. }
             | ParsedStmt::SignatureDecl(_)
-            | ParsedStmt::Temporize(_)
-            | ParsedStmt::AttributeModifier { .. } => PlaceholderBodyKind::NoSignature,
+            | ParsedStmt::Temporize(_) => PlaceholderBodyKind::NoSignature,
             // A statement modifier introduces no block of its own.
             ParsedStmt::Modified(_) => PlaceholderBodyKind::Transparent,
             ParsedStmt::Loop(l) => match l.kind {

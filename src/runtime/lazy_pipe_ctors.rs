@@ -34,6 +34,7 @@ impl LazyList {
             _ => Default::default(),
         };
         Self {
+            fixtures: None,
             body: Vec::new(),
             env,
             cache: Mutex::new(Some(Vec::new())),
@@ -64,6 +65,7 @@ impl LazyList {
             cached_no_sink: false,
             deleted_indices: Default::default(),
             descriptor: None,
+            generator_origin: None,
             itemized: false,
         }
     }
@@ -82,6 +84,7 @@ impl LazyList {
             Value::TRUE,
         );
         Self {
+            fixtures: None,
             body: Vec::new(),
             env,
             cache: Mutex::new(Some(Vec::new())),
@@ -112,6 +115,7 @@ impl LazyList {
             cached_no_sink: false,
             deleted_indices: Default::default(),
             descriptor: None,
+            generator_origin: None,
             itemized: false,
         }
     }

@@ -20,6 +20,7 @@
 # Blank lines and lines whose first non-blank character is `#` are ignored.
 # Keep sorted by name.
 
+Gauge #15266 -- its first statement dies on `$*VM.version < v2022.04`, the MoarVM release coordinate; mutsu is not a MoarVM and will not report one, and the module is not handled until it supports mutsu (user decision 2026-10-29). `--only Gauge` still measures it for a re-check once the module changes.
 LibraryMake #12829 -- get-vars dispatches on $*VM.name (moar/jvm) and dies on anything else; mutsu reports 'mutsu' and will not report 'moar' (same principle as ADR-0104; user decision 2026-09-25, see uniprop).
 MoarVM::Bytecode #13511 -- its suite parses CORE.c.setting.moarvm found under $*EXECUTABLE.parent(3) (the running compiler's install tree); mutsu is not a MoarVM and ships no .moarvm files, so it can only pass by pointing at a rakudo install.
 MoarVM::Profile -- the MoarVM:: namespace is out of scope (user decision 2026-10-23): it reads MoarVM's own profiler output; mutsu is not a MoarVM.

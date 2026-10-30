@@ -1,23 +1,5 @@
 use crate::ast::{Expr, LvaluePeel, LvalueRoot, Stmt};
-use crate::symbol::Symbol;
 use crate::value::Value;
-
-/// Extract the writeback variable name from a declaration used in expression
-/// position as an lvalue-method target, e.g. `(my $o = $s).substr-rw(...) = ...`.
-/// Without this the assignment would target a detached value and the mutation
-/// would be lost. Handles both a bare `VarDecl` and the `SyntheticBlock`-wrapped
-/// declarations the parser produces for `:=` binds and readonly scalar binds.
-// Cost: O(s), s = statements of a SyntheticBlock.
-pub(crate) fn decl_target_var_name(stmt: &crate::ast::Stmt) -> Option<String> {
-    match stmt {
-        crate::ast::Stmt::VarDecl { name, .. } => Some(name.clone()),
-        crate::ast::Stmt::SyntheticBlock(inner) => inner.iter().find_map(|s| match s {
-            crate::ast::Stmt::VarDecl { name, .. } => Some(name.clone()),
-            _ => None,
-        }),
-        _ => None,
-    }
-}
 
 /// The variable a method-call lvalue (`$s.substr-rw(0, 1) = "x"`,
 /// `x.AT-KEY(k) = v` for a sigil-less `x`) writes the updated invocant back
@@ -30,14 +12,6 @@ pub(crate) fn method_lvalue_target_name(target: &Expr) -> Option<String> {
     target
         .lvalue_root(LvaluePeel::GROUPED | LvaluePeel::DECL | LvaluePeel::SIGILLESS)
         .map(LvalueRoot::into_spelled_key)
-}
-
-pub(super) fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, value: Expr) -> Expr {
-    Expr::Call {
-        name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-        args: vec![target, Expr::ArrayLiteral(call_args), value],
-        listop: false,
-    }
 }
 
 pub(super) fn bind_source_name(expr: &Expr) -> Option<String> {
@@ -62,18 +36,12 @@ pub(super) fn bind_source_name(expr: &Expr) -> Option<String> {
 }
 
 /// The value an indexed bind (`@a[i] := v`, `%h<k> := v`) stores through
-/// `IndexAssign`: the RHS wrapped in the `__mutsu_bind_index_value` marker, so
-/// the VM takes bind (not assign) semantics. A compound `*` RHS stays a
-/// WhateverCode, as for any finished value.
+/// `IndexAssign`: the RHS marked as a bind value, so the compiler takes bind
+/// (not assign) semantics. A compound `*` RHS stays a WhateverCode, as for any
+/// finished value.
 // Cost: O(n), n = size of the RHS.
 pub(crate) fn bind_index_value(rhs: Expr) -> Expr {
-    let rhs = crate::parser::expr::wrap_finished_expr(rhs);
-    let source_meta = bind_source_metadata_expr(&rhs);
-    Expr::Call {
-        name: Symbol::intern("__mutsu_bind_index_value"),
-        args: vec![rhs, source_meta],
-        listop: false,
-    }
+    Expr::IndexBindValue(Box::new(crate::parser::expr::wrap_finished_expr(rhs)))
 }
 
 /// `TARGET[INDEX] := RHS` (or `{…}` when not `is_positional`), the one shape

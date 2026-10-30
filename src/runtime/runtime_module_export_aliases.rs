@@ -114,7 +114,7 @@ impl Interpreter {
     // Cost: O(t), t = tags.
     fn export_tags_recorded(&self, package: &str, name: &str, tags: &[String]) -> bool {
         let module = &self.module;
-        let unit_mod = module.unit_module_loading_stack.last();
+        let unit_mod = self.declared_unit_module_here();
         let loading = module.module_load_stack.last();
         tags_recorded(&module.exported_subs, package, name, tags)
             && loading
@@ -266,7 +266,7 @@ impl Interpreter {
         // Mirror this export into the unit-module export table so that
         // `import_module` can validate tags for `unit module X` files whose
         // runtime package registration used "GLOBAL".
-        if let Some(unit_mod) = self.module.unit_module_loading_stack.last().cloned() {
+        if let Some(unit_mod) = self.declared_unit_module_here().cloned() {
             self.declare_export_namespaces(&unit_mod, tags);
             record_export_tags(
                 &mut self.module.unit_module_exported_subs,
@@ -286,7 +286,7 @@ impl Interpreter {
         // second metadata entry under that path when the declared unit package
         // is different, so `use Lingua::EN::Numbers :short` can validate the
         // export even though the file says `unit module Numbers`.
-        if self.module.unit_module_loading_stack.last().is_some()
+        if self.declared_unit_module_here().is_some()
             && let Some(module) = self.module.module_load_stack.last().cloned()
         {
             self.declare_export_namespaces(&module, tags);

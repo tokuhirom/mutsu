@@ -415,8 +415,8 @@ fn lower_trait_is(
             traits.is_built = Some(crate::ast::BuiltTrait::Yes);
             traits.order.push(AttrTrait::Built);
         }
-        ("built", Some(Expr::Literal(value))) if matches!(value.view(), ValueView::Bool(_)) => {
-            traits.is_built = Some(if value.truthy() {
+        ("built", Some(argument)) if bool_keyword(&argument).is_some() => {
+            traits.is_built = Some(if bool_keyword(&argument) == Some(true) {
                 crate::ast::BuiltTrait::Yes
             } else {
                 crate::ast::BuiltTrait::No
@@ -463,7 +463,25 @@ fn bind_adverb_expr() -> Expr {
     }
 }
 
+/// The Bool a bare `True`/`False` argument stands for. In a unit that imported
+/// through a run-time `sub EXPORT` hook the keyword lowers to
+/// `ShadowableTermKeyword` instead of a plain literal (#9047), and `is built(False)`
+/// is the same trait either way, as the parser's `has` path reads it by spelling.
 // Cost: O(1).
+fn bool_keyword(argument: &Expr) -> Option<bool> {
+    match argument {
+        Expr::Literal(value) => match value.view() {
+            ValueView::Bool(b) => Some(b),
+            _ => None,
+        },
+        Expr::ShadowableTermKeyword { value, .. } => match value.view() {
+            ValueView::Bool(b) => Some(b),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn is_bind_adverb(argument: &Expr) -> bool {
     let Expr::Binary {
         left,

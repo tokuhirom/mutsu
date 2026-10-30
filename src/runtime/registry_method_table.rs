@@ -299,7 +299,7 @@ impl Registry {
         let live = !defs.is_empty();
         let key = MethodEntryKey { owner, name };
         let entry = self.method_entries.entry(key).or_default();
-        entry.user_candidates = defs;
+        entry.user_candidates = defs.into();
         if !entry_is_live(entry) {
             self.method_entries.remove(&key);
         }
@@ -317,10 +317,11 @@ impl Registry {
         self.note_raw_invocant_methods(std::slice::from_ref(&def));
         note_user_find_method_row(name);
         let key = MethodEntryKey { owner, name };
-        let candidates = &mut self.method_entries
+        let candidates = self.method_entries
             .entry(key)
             .or_default()
-            .user_candidates;
+            .user_candidates
+            .make_mut();
         let index = candidates.len();
         candidates.push(def);
         self.reindex_user_method_name(owner, name, true);
@@ -343,7 +344,7 @@ impl Registry {
         let Some(entry) = self.method_entries.get_mut(&key) else {
             return;
         };
-        entry.user_candidates.retain(pred);
+        entry.user_candidates.make_mut().retain(pred);
         let live = !entry.user_candidates.is_empty();
         if !entry_is_live(entry) {
             self.method_entries.remove(&key);
@@ -371,7 +372,7 @@ impl Registry {
         for name in names {
             let key = MethodEntryKey { owner, name };
             if let Some(entry) = self.method_entries.get_mut(&key) {
-                entry.user_candidates.clear();
+                entry.user_candidates = Default::default();
                 if !entry_is_live(entry) {
                     self.method_entries.remove(&key);
                 }
@@ -411,7 +412,7 @@ impl Registry {
             .unwrap_or_default();
         for name in names {
             if let Some(entry) = self.method_entries.get_mut(&MethodEntryKey { owner, name }) {
-                for def in &mut entry.user_candidates {
+                for def in entry.user_candidates.make_mut().iter_mut() {
                     f(def);
                 }
             }
@@ -423,13 +424,13 @@ impl Registry {
     // Cost: O(1).
     pub(crate) fn user_methods(&self, owner: Symbol, name: Symbol) -> Option<&[MethodDef]> {
         let entry = self.method_entries.get(&MethodEntryKey { owner, name })?;
-        Some(&entry.user_candidates)
+        Some(entry.user_candidates.as_slice())
     }
 
     /// `owner`'s user candidates named `name`; the caller bumps the generation.
     pub(crate) fn user_methods_mut(&mut self, owner: Symbol, name: Symbol) -> Option<&mut [MethodDef]> {
         let entry = self.method_entries.get_mut(&MethodEntryKey { owner, name })?;
-        Some(&mut entry.user_candidates)
+        Some(entry.user_candidates.make_mut().as_mut_slice())
     }
 
     /// Snapshots every user-owned row `owner` currently has, for rollback
@@ -446,7 +447,7 @@ impl Registry {
             .filter_map(|name| {
                 self.method_entries
                     .get(&MethodEntryKey { owner, name: *name })
-                    .map(|entry| (*name, entry.user_candidates.clone()))
+                    .map(|entry| (*name, entry.user_candidates.to_vec()))
             })
             .collect()
     }

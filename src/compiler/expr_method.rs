@@ -626,6 +626,7 @@ impl Compiler {
     ) {
         let tmp = format!("__mutsu_nested_del_{}", self.code.constants.len());
         let bind_decl = Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name: tmp.clone(),
             expr: delete_target.clone(),
@@ -635,7 +636,10 @@ impl Compiler {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![("__scalar_bind".to_string(), None)],
+            custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: Some(crate::ast::bind_decl::BindKind::Scalar),
             where_constraint: None,
         };
         let delete_through = Expr::MethodCall {
@@ -652,8 +656,7 @@ impl Compiler {
             sugar: false,
         };
         self.compile_expr(&Expr::desugar_block(vec![
-            Stmt::MarkBind,
-            bind_decl,
+            crate::ast::var_marks::with_bound_mark(bind_decl),
             Stmt::Expr(delete_through),
         ]));
     }
@@ -1034,6 +1037,26 @@ impl Compiler {
                 target.clone()
             });
             call_args.extend(args.iter().cloned());
+            // A plain unqualified name is the call `f($x, args)` itself, so it
+            // takes the direct-call path (the positional light call, a resolved
+            // multi cache) instead of resolving `&f` at run time and binding
+            // through the general binder, ~12x the instructions of `f($x)`.
+            // `Expr::Call` already sends a visible `my &f` / enclosing lexical
+            // sub to the code-variable form, so those keep their meaning.
+            if let Expr::CodeVar(name) = name_expr
+                && !name.contains("::")
+                // An identifier only: `.&?BLOCK`, `.&*f` (a dynamic variable)
+                // and the like name something other than a declared routine.
+                && name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '\''))
+            {
+                self.compile_expr(&Expr::Call {
+                    name: Symbol::intern(name),
+                    args: call_args,
+                    listop: false,
+                });
+                return;
+            }
             self.compile_expr(&Expr::CallOn {
                 target: Box::new(name_expr.clone()),
                 args: call_args,

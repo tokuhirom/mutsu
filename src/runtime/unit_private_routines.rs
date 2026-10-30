@@ -94,6 +94,37 @@ impl Interpreter {
         self.invalidate_fn_resolution_for_keys([key]);
     }
 
+    /// Take the compunit-private copy of a role body's `sub` that a parametric
+    /// composition has re-declared in its own class out of the unit table
+    /// (#15100): the copy was made without the composition's value parameters,
+    /// and would otherwise be found before the class's own.
+    ///
+    /// The copy is kept as a plain entry of the role's own package
+    /// (`role_name`). A class or pun searches its own package first and never
+    /// reaches it, but a runtime mixin (`@a does R[:c(1)]`) runs the role's
+    /// methods in the role's package, where only this entry is in scope (Grid).
+    // TODO: the entry lacks the composition's value parameters; run a mixin's
+    // role methods where the composition's own re-declaration lives instead.
+    // Cost: O(1) average, plus the function-resolution invalidation.
+    pub(crate) fn unseclude_role_lexical_routine(
+        &mut self,
+        name: &str,
+        class: &str,
+        role_name: &str,
+        source_path: Option<&str>,
+    ) {
+        let unit = self.unit_of_source(source_path);
+        let removed = crate::runtime::cow_table_mut(&mut self.module.unit_private_routines)
+            .get_mut(&unit)
+            .and_then(|routines| routines.remove(&Symbol::intern(name)));
+        if let Some(def) = removed {
+            let class_key = Symbol::intern(crate::qualified::qualified_text(class, name).as_str());
+            let role_key = Symbol::intern(crate::qualified::qualified_text(role_name, name).as_str());
+            self.registry_mut().functions_mut().entry(role_key).or_insert(def);
+            self.invalidate_fn_resolution_for_keys([class_key, role_key]);
+        }
+    }
+
     /// Move the package-less top-level `my`-scoped routines the compunit at
     /// `source_path` just declared out of the shared registry and into that
     /// compunit's private table.

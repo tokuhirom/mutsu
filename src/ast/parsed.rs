@@ -62,9 +62,11 @@ pub(crate) enum ParsedStmt {
     /// `my $x will begin { ... }`: the declaration (a `Stmt::VarDecl`) and the
     /// `will PHASE BLOCK` traits as written (kind and body). `rakuast::lower`
     /// expands each into a phaser after the declaration
-    /// (`parser::wrap_with_will_phasers`).
+    /// (`rakuast::will_decl`).
     WillDecl {
         decl: Box<Stmt>,
+        /// The declared variable the phasers' `$_` is bound to.
+        name: String,
         phasers: Vec<(super::PhaserKind, Vec<Stmt>)>,
     },
     /// A declaration or assignment with a loose tail, `my $x = 1 and 2`: the
@@ -86,7 +88,7 @@ pub(crate) enum ParsedStmt {
     },
     /// A sigilless declaration, `my \x = 5` / `my Int \x := $s` /
     /// `my \x .= new`, as written. `rakuast::lower` adds the bookkeeping the
-    /// compiler needs (`parser::build_sigilless_bind_stmt`).
+    /// compiler needs (`rakuast::sigilless_lower::build_sigilless_bind_stmt`).
     SigillessDecl(Box<SigillessSource>),
     /// `temp my $x`: the declaration (a `Stmt::VarDecl`) under a `temp` prefix.
     /// `rakuast::lower` follows it with the save of the fresh variable
@@ -105,11 +107,6 @@ pub(crate) enum ParsedStmt {
     /// A statement with statement modifiers (`Statement::Expression`'s
     /// `condition-modifier` and `loop-modifier`).
     Modified(Modified),
-    /// A phaser written over a bare statement, `BEGIN say 1` (the
-    /// `Stmt::Phaser`); RakuAST keeps the statement as the prefix's child,
-    /// which the phaser's block-less body cannot tell from `BEGIN { say 1 }`.
-    /// It lowers to the phaser itself.
-    BarePhaser(Box<Stmt>),
     /// A named routine declared and called on the spot, `sub f($n) { ... }(21)`:
     /// the declaration (a `Stmt::SubDecl`) and the call arguments as written.
     /// `rakuast::lower` expands it into the declaration and a call of its name
@@ -151,17 +148,6 @@ pub(crate) enum ParsedStmt {
     /// `rakuast::lower` saves the variable and assigns inside the save
     /// (`ast::temporize::expand`).
     Temporize(Box<super::temporize::Temporized>),
-    /// `has $.x if COND` / `unless` / `with` / `without` / `when`: the
-    /// attribute declaration (a `Stmt::VarDecl` or a declaration list) and its
-    /// postfix modifier. The modifier cannot gate the declaration (attributes
-    /// install when the class is composed), so `rakuast::lower` expands it
-    /// into the declaration and a runtime-only test of the condition
-    /// (`ast::attribute_modifier::expand`).
-    AttributeModifier {
-        decl: Box<Stmt>,
-        condition: Expr,
-        kind: super::decl_modifier::DeclarationModifier,
-    },
     /// `has Type ($.a, $.b)`: one visible RakuAST signature declaration over
     /// the attribute declarations as written. `rakuast::lower` installs each
     /// listed attribute separately (a block of the declarations).
@@ -174,8 +160,8 @@ pub(crate) enum ParsedStmt {
     /// `my ($a, @b) = RHS` (also `:=`, `state`, `our`, a typed or nested
     /// group): the declaration as written. `rakuast::lower` expands it into
     /// ordinary declarations reading a staging temporary
-    /// (`parser::signature_decl_expansion`). The parser holds it unlowered
-    /// (see `parser::stmt::decl::destructure::desugar::pending`) until the
+    /// (`rakuast::signature_expand::signature_decl`). The parser holds it unlowered
+    /// (see `rakuast::signature_expand::pending`) until the
     /// statement modifiers and loose tails that read it have been parsed.
     SignatureDecl(Box<super::SignatureDecl>),
     /// `:(...) := RHS`: the signature literal and the right-hand side as
@@ -284,7 +270,7 @@ pub(crate) enum ParsedExpr {
     /// `supply { BODY }`: the body as written, before the expansion rewrites
     /// its `emit` / `done` onto the on-demand emitter
     /// (`StatementPrefix::Supply`). It lowers to that expansion
-    /// (`parser::supply_method_call`).
+    /// (`rakuast::supply_lower::supply_method_call`).
     Supply(Vec<Stmt>),
     /// The body of a `start { BODY }` whose placeholder Raku rejects, as
     /// written. It lowers to a do-block, so the compiler reports the
@@ -293,12 +279,62 @@ pub(crate) enum ParsedExpr {
     StartBody(Vec<Stmt>),
     /// `(LVALUES) »=» VALUE` over a literal list of lvalues (`ApplyInfix`
     /// over `Assignment` under a hyper meta-infix). It lowers to the
-    /// element-wise expansion (`parser::hyper_assignment_expr`).
+    /// element-wise expansion (`rakuast::hyper_assign::lower_hyper_assignment`).
     HyperAssign(HyperAssign),
     /// An inline `subset` used as a term, `subset :: of Int where * > 0`: the
     /// declaration as written. It lowers to the declaration followed by a
     /// read of its generated name (`ast::inline_subset_term::lower`).
     InlineSubset(Box<Stmt>),
+    /// `-« @a`, `++<< @a`: a hyper prefix operator and its operand as written
+    /// (`ApplyPrefix` over `MetaPrefix::Hyper`). It lowers to the runtime's
+    /// element-wise prefix call (`rakuast::lower_hyper_prefix`).
+    HyperPrefix(HyperPrefix),
+    /// `⚛$x` and `$x ⚛= VALUE`: the atomic fetch of, and plain store into, a
+    /// variable named by its storage name. They lower to the reserved calls
+    /// the runtime executes (`ast::atomic_op::lower_var`).
+    AtomicVar(AtomicVar),
+    /// A subscript with the adverbs written after it, `@a[0]:exists`,
+    /// `%h<a>:delete:k`, `@a[1]:foo` (`Postcircumfix::*Index` with its
+    /// `colonpairs`). It lowers through the postcircumfix lowering
+    /// (`rakuast::subscript_adverb::lower`).
+    SubscriptAdverbs(SubscriptAdverbs),
+}
+
+/// A subscript and the colonpairs written after it, in source order.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SubscriptAdverbs {
+    /// The subscript as written (`Index`, `MultiDimIndex`, or the `ZenSlice`
+    /// of `@a[]:exists`).
+    pub(crate) subscript: Expr,
+    /// Each adverb as the colonpair expression the source spells
+    /// (`Binary` over `=>`, with its [`super::BinaryForm`]).
+    pub(crate) pairs: Vec<Expr>,
+}
+
+impl SubscriptAdverbs {
+    /// Whether one of the adverbs is `:exists` (in any spelling).
+    // Cost: O(a), a = adverbs.
+    pub(crate) fn has_exists(&self) -> bool {
+        self.pairs
+            .iter()
+            .any(|pair| super::subscript_adverb::pair_key(pair).as_deref() == Some("exists"))
+    }
+}
+
+/// An atomic access of a variable by name.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum AtomicVar {
+    /// `⚛$x`.
+    Fetch { name: String },
+    /// `$x ⚛= VALUE`.
+    Store { name: String, value: Expr },
+}
+
+/// `OP« OPERAND`: the prefix symbol (`"-"`, `"++"`) and the operand.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct HyperPrefix {
+    pub(crate) symbol: String,
+    pub(crate) operand: Expr,
 }
 
 /// `(LVALUES) »=» VALUE`: the target, the value and the dwim flags as written.
@@ -392,8 +428,7 @@ pub(crate) struct Assign {
     pub(crate) source: Expr,
     /// Whether it is an item assignment (`Assignment.new(:item)`), decided
     /// from the target while the parser builds the node
-    /// ([`super::left_sigil`]). Only a keeping parse reads it, so any other
-    /// parse leaves it `false`.
+    /// ([`super::left_sigil`]).
     pub(crate) item: bool,
 }
 
@@ -406,9 +441,9 @@ impl Assign {
 
     /// The assignment `target = source` as the parser read it, the target
     /// starting at `at` when the expression before it may have left a sigil.
-    // Cost: O(n), n = size of the target (only a keeping parse reads the sigil).
+    // Cost: O(n), n = size of the target.
     pub(crate) fn written_at(at: Option<&str>, target: Expr, source: Expr) -> Self {
-        let item = super::spelled::keeping() && super::left_sigil::assignment_is_item(at, &target);
+        let item = super::left_sigil::assignment_is_item(at, &target);
         Self {
             target,
             source,
@@ -609,13 +644,10 @@ impl ParsedStmt {
     // Cost: O(1).
     pub(crate) fn inner_stmt(&self) -> Option<&Stmt> {
         match self {
-            ParsedStmt::For { stmt, .. }
-            | ParsedStmt::BindDecl(stmt)
-            | ParsedStmt::BarePhaser(stmt) => Some(stmt),
+            ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
             ParsedStmt::PackageHeader { decl, .. }
             | ParsedStmt::TempDecl(decl)
-            | ParsedStmt::ImmediateCall { decl, .. }
-            | ParsedStmt::AttributeModifier { decl, .. } => Some(decl),
+            | ParsedStmt::ImmediateCall { decl, .. } => Some(decl),
             _ => None,
         }
     }
@@ -645,13 +677,10 @@ impl ParsedStmt {
     // Cost: O(1).
     pub(crate) fn inner_stmt_mut(&mut self) -> Option<&mut Stmt> {
         match self {
-            ParsedStmt::For { stmt, .. }
-            | ParsedStmt::BindDecl(stmt)
-            | ParsedStmt::BarePhaser(stmt) => Some(stmt),
+            ParsedStmt::For { stmt, .. } | ParsedStmt::BindDecl(stmt) => Some(stmt),
             ParsedStmt::PackageHeader { decl, .. }
             | ParsedStmt::TempDecl(decl)
-            | ParsedStmt::ImmediateCall { decl, .. }
-            | ParsedStmt::AttributeModifier { decl, .. } => Some(decl),
+            | ParsedStmt::ImmediateCall { decl, .. } => Some(decl),
             _ => None,
         }
     }
@@ -671,7 +700,6 @@ impl ParsedStmt {
             ParsedStmt::For { .. }
             | ParsedStmt::BindDecl(_)
             | ParsedStmt::TempDecl(_)
-            | ParsedStmt::BarePhaser(_)
             | ParsedStmt::AttributeGroup(_)
             | ParsedStmt::AttributeColonArglist(_)
             | ParsedStmt::MethodAssignDecl(_)
@@ -685,7 +713,6 @@ impl ParsedStmt {
             ParsedStmt::InlineProtoUse { .. } => Vec::new(),
             ParsedStmt::CallAssignList { items, .. } => items.iter().collect(),
             ParsedStmt::ImmediateCall { args, .. } => args.iter().collect(),
-            ParsedStmt::AttributeModifier { condition, .. } => vec![condition],
             ParsedStmt::DoesDecl { role, init, .. } => std::iter::once(role).chain(init).collect(),
             ParsedStmt::WillDecl { .. } => Vec::new(),
             ParsedStmt::DeclTail { tail, .. } => vec![tail],
@@ -722,9 +749,7 @@ impl ParsedStmt {
             | ParsedStmt::SigillessDecl(_)
             | ParsedStmt::PackageHeader { .. }
             | ParsedStmt::TempDecl(_)
-            | ParsedStmt::BarePhaser(_)
             | ParsedStmt::ImmediateCall { .. }
-            | ParsedStmt::AttributeModifier { .. }
             | ParsedStmt::AttributeGroup(_)
             | ParsedStmt::AttributeColonArglist(_)
             | ParsedStmt::MethodAssignDecl(_)
@@ -811,12 +836,9 @@ impl ParsedStmt {
 
 impl ParsedExpr {
     /// The body of a `start { BODY }` the compiler must reject for its
-    /// placeholder: kept as written by a `.AST` parse, a do-block otherwise.
+    /// placeholder: kept as written, for the conversion.
     // Cost: O(1).
     pub(crate) fn start_body(body: Vec<Stmt>) -> Expr {
-        if super::spelled::keeping() {
-            return Expr::Ast(Box::new(ParsedExpr::StartBody(body)));
-        }
-        Expr::desugar_block(body)
+        Expr::Ast(Box::new(ParsedExpr::StartBody(body)))
     }
 }

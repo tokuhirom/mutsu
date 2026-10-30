@@ -83,6 +83,7 @@ pub(super) fn lift_nested_exports(stmts: &mut Vec<Stmt>) {
                 body: copies,
                 condition: None,
                 end_index: None,
+                bare: false,
             },
         );
     }
@@ -178,8 +179,9 @@ impl<'ast> Visit<'ast> for ExportedDecls<'ast> {
             Stmt::VarDecl {
                 is_export: true,
                 custom_traits,
+                constant,
                 ..
-            } if custom_traits.iter().any(|(t, _)| t == "__constant") => {
+            } if constant.is_some() => {
                 self.found.push(stmt);
             }
             Stmt::EnumDecl {
@@ -188,12 +190,9 @@ impl<'ast> Visit<'ast> for ExportedDecls<'ast> {
             Stmt::ClassDecl {
                 is_lexical: true,
                 name_expr: None,
-                custom_traits,
+                export_tags: Some(_),
                 ..
-            } if custom_traits
-                .iter()
-                .any(|(t, _)| t == "__mutsu_export_type") =>
-            {
+            } => {
                 self.found.push(stmt);
             }
             // Another package's body, or code that already runs at BEGIN time.

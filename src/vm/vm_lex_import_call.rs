@@ -41,8 +41,8 @@ impl Interpreter {
         let Some(chain) = code.lexical_import_chains.get(chain_idx as usize) else {
             return Ok(false);
         };
-        let Some(target) = self.lexical_import_operator_binding(chain, code.const_sym(name_idx))
-        else {
+        let name = code.const_sym(name_idx);
+        let Some(target) = self.lexical_import_operator_binding(chain, name) else {
             return Ok(false);
         };
         let Some((arity, arg_sources_idx, bare_args)) = call else {
@@ -118,9 +118,34 @@ impl Interpreter {
         let Some(chain) = code.lexical_import_chains.get(chain_idx as usize) else {
             return Ok(false);
         };
+        // The operands the `InfixFunc` at `ip + 1` takes: more than two for a
+        // list-associative chain (`1 op 2 op 3`), which a `chain` operator
+        // (pairwise comparison) leaves to the generic path.
+        let arity = match code.ops.get(ip + 1) {
+            Some(OpCode::InfixFunc { right_arity, .. }) => *right_arity + 1,
+            _ => 2,
+        };
+        if arity > 2
+            && self
+                .infix_associativity(Self::const_str(code, name_idx))
+                .is_some_and(|assoc| assoc == "chain")
+        {
+            return Ok(false);
+        }
         let Some(target) = self.lexical_import_binding(chain, code.const_sym(name_idx)) else {
             return Ok(false);
         };
+        // A chain over a multi family (a dispatcher value) is resolved by the
+        // generic multi-operand path, which ranks the family's candidates for
+        // the whole operand list.
+        if arity > 2
+            && matches!(
+                target,
+                crate::runtime::lexical_imports::LexicalImport::Code(_)
+            )
+        {
+            return Ok(false);
+        }
         let call_ip = ip + 1;
         self.sync_source_line(code, call_ip);
         let binding = match target {
@@ -131,7 +156,7 @@ impl Interpreter {
                 CodeVarBinding::Routine(def)
             }
         };
-        self.exec_call_on_code_var_op(code, name_idx, 2, None, false, binding, compiled_fns)
+        self.exec_call_on_code_var_op(code, name_idx, arity, None, false, binding, compiled_fns)
             .inspect_err(|e| self.record_call_resume_point(code, call_ip, e))?;
         Ok(true)
     }

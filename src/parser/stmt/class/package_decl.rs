@@ -4,7 +4,7 @@ use crate::ast::Stmt;
 use crate::symbol::Symbol;
 use crate::value::Value;
 
-use super::package_unit_meta::{decl_adverb_meta_stmts, with_meta_stmts};
+use super::package_unit_meta::{header_adverbs, with_header};
 use crate::parser::helpers::{parse_trait_angle_arg, skip_balanced_parens, ws, ws1};
 use crate::parser::parse_result::{PError, PResult, opt_char};
 use crate::parser::stmt::{keyword, qualified_ident};
@@ -51,7 +51,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         // Optional type adverbs (:ver<...>, :auth<...>, :api<...>)
         let (r, traits) = parse_declarator_traits(r)?;
         let (r, _) = ws(r)?;
-        let meta_stmts = decl_adverb_meta_stmts(&name, traits);
+        let header = header_adverbs(traits);
         // Parse `is Parent` and `does Role` clauses before the semicolon
         let mut parents = Vec::new();
         let mut does_parents = Vec::new();
@@ -61,6 +61,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let mut parent_args: Vec<(String, Vec<crate::ast::Expr>)> = Vec::new();
         let mut is_repr: Option<String> = None;
         let mut custom_traits: Vec<(String, Option<crate::ast::Expr>)> = Vec::new();
+        let mut export_tags: Option<Vec<String>> = None;
         // The header traits as written, for a parse that keeps spellings.
         let mut written: Vec<crate::ast::routine_trait::RoutineTrait> = Vec::new();
         let mut r = r;
@@ -150,7 +151,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 if parent == "export" && name.contains("::") {
                     let mut tags = Vec::new();
                     super::class_decl::push_export_tags(r2, &mut tags);
-                    custom_traits.push(super::class_decl::export_type_marker(&tags));
+                    export_tags = Some(tags);
                 }
                 // A header trait the declaration has no field for: kept in the
                 // record with its written argument, which the parser then skips.
@@ -218,19 +219,17 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = opt_char(r, ';');
         let mut body: Vec<Stmt> = Vec::new();
         crate::ast::routine_trait::attach(&mut body, written);
-        if let Some(kw) = declare_how {
-            custom_traits.push(crate::parser::declare_how_marker(kw));
-        } else if let Some(marker) = super::super::simple::supersede_marker("class") {
-            custom_traits.push(marker);
-        }
+        let declarator =
+            declare_how.or_else(|| super::super::simple::superseded_declarator("class"));
         // `stmt_list` parses the rest of a `unit class` as this declaration's
         // body. Register the type before returning so body methods can use the
         // fully-qualified name in a `when` matcher.
         super::super::simple::register_user_type(&name);
         return Ok((
             r,
-            with_meta_stmts(
-                meta_stmts,
+            with_header(
+                header,
+                &name,
                 Stmt::ClassDecl {
                     spans: Default::default(),
                     name: Symbol::intern(&name),
@@ -246,6 +245,12 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     language_version: super::super::simple::current_language_version(),
                     custom_traits,
                     is_unit: true,
+                    is_native: false,
+                    export_tags,
+                    marks: crate::ast::PackageMarks {
+                        declarator,
+                        ..Default::default()
+                    },
                     implicit_grammar_parent: false,
                     is_grammar: false,
                     decl_id: crate::ast::next_class_decl_id(),
@@ -280,7 +285,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         // Optional type adverbs (:ver<...>, :auth<...>, :api<...>).
         let (r2, adverbs) = parse_declarator_traits(r)?;
         let (r2, _) = ws(r2)?;
-        let meta_stmts = decl_adverb_meta_stmts(&name, adverbs);
+        let header = header_adverbs(adverbs);
         r = r2;
         // The signature may also FOLLOW the adverbs — the order Raku itself uses:
         // `unit role Algorithm::Treap:ver<0.10.3>:auth<zef:titsuki>[::KeyT];`.
@@ -418,15 +423,16 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             );
         }
         crate::ast::routine_trait::attach(&mut body, written);
-        if role_kw != "role" {
-            custom_traits.push(crate::parser::declare_how_marker(role_kw));
-        } else if let Some(marker) = super::super::simple::supersede_marker("role") {
-            custom_traits.push(marker);
-        }
+        let declarator = if role_kw != "role" {
+            Some(role_kw)
+        } else {
+            super::super::simple::superseded_declarator("role")
+        };
         return Ok((
             r,
-            with_meta_stmts(
-                meta_stmts,
+            with_header(
+                header,
+                &name,
                 Stmt::RoleDecl {
                     spans: Default::default(),
                     name: Symbol::intern(&name),
@@ -436,9 +442,14 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     export_tags,
                     body,
                     is_rw: role_is_rw,
+                    is_lexical: false,
                     language_version: super::super::simple::current_language_version(),
                     custom_traits,
                     decl_id: crate::ast::next_class_decl_id(),
+                    marks: crate::ast::PackageMarks {
+                        declarator,
+                        ..Default::default()
+                    },
                 },
             ),
         ));
@@ -455,7 +466,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         // the `is Bar` parent from being parsed (parent silently dropped).
         let (r, traits) = parse_declarator_traits(r)?;
         let (r, _) = ws(r)?;
-        let meta_stmts = decl_adverb_meta_stmts(&name, traits);
+        let header = header_adverbs(traits);
         let mut r = r;
         let mut parents = Vec::new();
         let mut does_parents = Vec::new();
@@ -519,8 +530,9 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         crate::ast::routine_trait::attach(&mut body, written);
         return Ok((
             r,
-            with_meta_stmts(
-                meta_stmts,
+            with_header(
+                header,
+                &name,
                 Stmt::ClassDecl {
                     spans: Default::default(),
                     name: Symbol::intern(&name),
@@ -536,6 +548,9 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     language_version: super::super::simple::current_language_version(),
                     custom_traits: Vec::new(),
                     is_unit: true,
+                    is_native: false,
+                    export_tags: None,
+                    marks: Default::default(),
                     implicit_grammar_parent,
                     is_grammar: true,
                     decl_id: crate::ast::next_class_decl_id(),

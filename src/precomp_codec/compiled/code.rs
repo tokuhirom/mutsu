@@ -130,6 +130,7 @@ impl Encode for CompiledCode {
             outer_code_var_names,
             eval_scope_names,
             unscoped_amp_reads,
+            bound_amp_reads,
             needs_cell_free_vars,
             has_calls,
             has_once,
@@ -291,6 +292,7 @@ impl Encode for CompiledCode {
         encode_string_set(outer_code_var_names, encoder)?;
         encode_string_set(eval_scope_names, encoder)?;
         unscoped_amp_reads.encode(encoder)?;
+        bound_amp_reads.encode(encoder)?;
         needs_cell_free_vars.encode(encoder)?;
         has_calls.encode(encoder)?;
         has_once.encode(encoder)?;
@@ -440,6 +442,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             outer_code_var_names: decode_set(decoder)?,
             eval_scope_names: decode_set(decoder)?,
             unscoped_amp_reads: Decode::decode(decoder)?,
+            bound_amp_reads: Decode::decode(decoder)?,
             needs_cell_free_vars: Decode::decode(decoder)?,
             has_calls: Decode::decode(decoder)?,
             has_once: Decode::decode(decoder)?,

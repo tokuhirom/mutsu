@@ -11,6 +11,8 @@ const DEFAULT_TAG: &str = "DEFAULT";
 pub(super) struct IsTraits {
     pub(super) is_rw: bool,
     pub(super) is_raw: bool,
+    /// `is hidden-from-backtrace`.
+    pub(super) is_hidden_from_backtrace: bool,
     /// `is export`'s tags; empty when not exported.
     pub(super) export_tags: Vec<String>,
     /// `is assoc<left>`'s value.
@@ -50,6 +52,9 @@ impl IsTraits {
             }
             ("rw", None) if t.fields.len() == 1 => self.is_rw = true,
             ("raw", None) if t.fields.len() == 1 => self.is_raw = true,
+            ("hidden-from-backtrace", None) if t.fields.len() == 1 => {
+                self.is_hidden_from_backtrace = true
+            }
             // These parser-recognized annotations have no execution field.
             // Their spelling remains in the routine source record.
             ("nodal" | "pure" | "readonly", None) if t.fields.len() == 1 => {}
@@ -82,7 +87,10 @@ fn is_operator_reference(reference: &str) -> bool {
                 && category.chars().all(|c| c.is_ascii_alphabetic())
                 && op.ends_with('>')
                 && !op[..op.len() - 1].is_empty()
-                && !op[..op.len() - 1].contains(['<', '>', ' '])
+                && !op[..op.len() - 1].contains(['<', '>'])
+                // Only a bracketing operator's name holds a space
+                // (`&postcircumfix:<[ ]>`); `<a b>` is not an operator.
+                && (!op.contains(' ') || category.ends_with("circumfix"))
         })
     })
 }

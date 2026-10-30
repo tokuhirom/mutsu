@@ -5,16 +5,12 @@ use super::super::parse_statement_modifier;
 use super::super::{ident, keyword};
 use super::helpers::register_term_symbol_from_decl_name;
 use super::parse_decl_type_constraint;
+use crate::ast::parsed::ParsedStmt;
 use crate::ast::{Expr, Stmt};
-use crate::value::Value;
 
-mod bind_arity;
-mod binding_result;
 mod elements;
-mod named;
-use elements::{collect_nested_group_vars, parse_element_traits};
-pub(crate) mod desugar;
 use crate::parser::stmt::assign::parse_comma_or_expr_no_word_logical;
+use elements::{collect_nested_group_vars, parse_element_traits};
 
 use crate::ast::{SignatureDecl, SignatureGroup, SignatureInit, SignatureVar as DestructureVar};
 
@@ -377,13 +373,13 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
         has_nested_group,
         init: None,
     };
-    let stmt = desugar::pending(decl).map_err(PError::from_typed)?;
+    let stmt = crate::rakuast::signature_expand::pending(decl).map_err(PError::from_typed)?;
     match tail {
         Some(tail) => Ok((
             rest,
             crate::parser::stmt::word_logical_split::tail_stmt(stmt, tail),
         )),
-        None => Ok((rest, desugar::settle(stmt).map_err(PError::from_typed)?)),
+        None => Ok((rest, settle(stmt).map_err(PError::from_typed)?)),
     }
 }
 
@@ -440,7 +436,7 @@ fn parse_destructuring_with_rhs(
         // before parsing the tail destroys the source form and prevents the
         // frontend from retaining the signature contracts.
         let seed = Expr::DoStmt(Box::new(
-            desugar::settle(desugar::pending(decl).map_err(PError::from_typed)?)
+            settle(crate::rakuast::signature_expand::pending(decl).map_err(PError::from_typed)?)
                 .map_err(PError::from_typed)?,
         ));
         let (r, tail) = crate::parser::expr::word_logical_tail_pub(r, seed)?;
@@ -452,22 +448,25 @@ fn parse_destructuring_with_rhs(
             parse_statement_modifier(r_ws, stmt)
         };
     }
-    let block = desugar::pending(decl).map_err(PError::from_typed)?;
+    let block = crate::rakuast::signature_expand::pending(decl).map_err(PError::from_typed)?;
     if has_following_block {
         // In `if my ($a, $b) = f() { ... }`, the braced block belongs to the
         // surrounding conditional, not to this declaration's modifier parser.
-        Ok((rest, desugar::settle(block).map_err(PError::from_typed)?))
+        Ok((rest, settle(block).map_err(PError::from_typed)?))
     } else {
         parse_statement_modifier(rest, block)
     }
 }
 
-/// Return the default expression for a native type, or Nil for non-native types.
-fn native_type_default(tc: &Option<String>) -> Expr {
-    match tc.as_deref() {
-        Some(t) if crate::native_types::is_native_int_type(t) => Expr::Literal(Value::int(0)),
-        Some("num" | "num32" | "num64") => Expr::Literal(Value::num(0.0)),
-        Some("str") => Expr::Literal(Value::str(String::new())),
-        _ => Expr::Literal(Value::NIL),
+/// A statement from [`pending`](crate::rakuast::signature_expand::pending) becomes what the parse produces for it: the
+/// lowered expansion, or, for a parse that keeps the written nodes, the node
+/// once its lowering has been checked. Any other statement is returned as is.
+// Cost: O(n), n = size of the declaration.
+pub(in crate::parser::stmt) fn settle(stmt: Stmt) -> Result<Stmt, crate::value::RuntimeError> {
+    match stmt {
+        Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::SignatureDecl(_)) => {
+            super::super::control::parsed_block::finish(*node)
+        }
+        other => Ok(other),
     }
 }

@@ -1,0 +1,9 @@
+{
+    "name": "InstQual::Hash",
+    "version": "0.1.0",
+    "auth": "zef:test",
+    "api": "0",
+    "provides": {
+        "InstQual::Hash": { "lib/InstQual/Hash.rakumod": { "file": "instqual-hash" } }
+    }
+}

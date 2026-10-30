@@ -84,11 +84,9 @@ pub(crate) fn folded_invocant<'a>(
             expr,
             type_constraint: None,
             custom_traits,
+            bind: Some(crate::ast::bind_decl::BindKind::Scalar),
             ..
-        }) if is_self(expr)
-            && custom_traits.len() == 1
-            && custom_traits[0].0 == "__scalar_bind" =>
-        {
+        }) if is_self(expr) && custom_traits.is_empty() => {
             let name = if name == crate::env::LEX_SELF {
                 "self".to_string()
             } else {
@@ -96,21 +94,19 @@ pub(crate) fn folded_invocant<'a>(
             };
             (Some((name, false)), &body[1..])
         }
-        Some(Stmt::SyntheticBlock(inner)) => match inner.as_slice() {
-            [
-                Stmt::VarDecl {
-                    name,
-                    expr,
-                    type_constraint: None,
-                    custom_traits,
-                    ..
-                },
-                Stmt::MarkSigillessReadonly(marked),
-            ] if is_self(expr) && custom_traits.is_empty() && name == marked => {
-                (Some((name.clone(), true)), &body[1..])
-            }
-            _ => (None, body),
-        },
+        Some(Stmt::VarDecl {
+            name,
+            expr,
+            type_constraint: None,
+            custom_traits,
+            marks,
+            ..
+        }) if is_self(expr)
+            && custom_traits.is_empty()
+            && marks.term == crate::ast::var_marks::TermMark::Readonly =>
+        {
+            (Some((name.clone(), true)), &body[1..])
+        }
         _ => (None, body),
     };
     Some(FoldedInvocant {
@@ -239,8 +235,8 @@ pub(crate) fn method_literal_params(
 ///
 /// A **sigilless** invocant (`method (\SELF: |)`, OO::Monitors' wrapper
 /// idiom) is declared like `my \SELF := self`: it carries the
-/// `MarkSigillessReadonly` marker that tells the compiler the bare word reads
-/// the local slot. Without it `SELF` compiled to a bare-word lookup, which
+/// [`TermMark::Readonly`](crate::ast::var_marks::TermMark::Readonly) mark that
+/// tells the compiler the bare word reads the local slot. Without it `SELF` compiled to a bare-word lookup, which
 /// only found the binding when the dual env store happened to be synced, so
 /// the invocant read as `(Any)` in a program that loaded no module.
 pub(crate) fn bind_invocant_aliases(expr: Expr, aliases: &[(String, bool)]) -> Expr {
@@ -265,13 +261,14 @@ pub(crate) fn bind_invocant_aliases(expr: Expr, aliases: &[(String, bool)]) -> E
         .iter()
         .map(|(name, sigilless)| {
             if *sigilless {
-                return crate::parser::stmt::control::simple_pointy_bind(
+                return crate::rakuast::pointy_bind::simple_pointy_bind(
                     name,
                     &Expr::BareWord("self".to_string()),
                     true,
                 );
             }
             crate::ast::Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous: false,
                 // `$self` binds the reserved lexical key, not the invocant's
                 // own (ADR-0061); every other alias keeps its sigil-less name.
@@ -287,7 +284,10 @@ pub(crate) fn bind_invocant_aliases(expr: Expr, aliases: &[(String, bool)]) -> E
                 is_dynamic: false,
                 is_export: false,
                 export_tags: Vec::new(),
-                custom_traits: vec![("__scalar_bind".to_string(), None)],
+                custom_traits: Vec::new(),
+                has_initializer: false,
+                constant: None,
+                bind: Some(crate::ast::bind_decl::BindKind::Scalar),
                 where_constraint: None,
             }
         })

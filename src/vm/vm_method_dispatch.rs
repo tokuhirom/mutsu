@@ -267,11 +267,16 @@ impl Interpreter {
             // `:$x`, attributive `:$!x`/`:@!a`/`:%!h` via the live attribute
             // cell). Everything else named-shaped bails via this predicate.
             let base_is_instance = matches!(base.view(), ValueView::Instance { .. });
-            let named_params_fast_ok = method_def.param_defs.iter().all(|pd| {
+            let named_params_fast_ok = method_def.param_defs.iter().enumerate().all(|(idx, pd)| {
                 if pd.is_invocant || !pd.named {
                     return true;
                 }
-                Self::named_param_fast_eligible(pd, &args, base_is_instance)
+                Self::named_param_fast_eligible(
+                    pd,
+                    &args,
+                    base_is_instance,
+                    method_def.named_fast(idx),
+                )
             });
             // A named `@`/`%`-container argument bound to a plain named scalar
             // param shares the caller's container (slow-path ContainerRef
@@ -436,7 +441,7 @@ impl Interpreter {
         // so the pushed entry captures the caller's (unoverlaid) env.
         let pushed_caller = cc.uses_callframe;
         if pushed_caller {
-            self.push_caller_env();
+            self.push_caller_env_in_call_frame();
         }
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
@@ -494,22 +499,6 @@ impl Interpreter {
                 .cloned()
         };
 
-        // Set ::?CLASS / ::?ROLE. Symbol-keyed via the well-known accessors
-        // (as the fast path already does): a `String` allocation plus a
-        // re-intern of two fixed key names on every method call otherwise.
-        // `owner_sym` is reused by the routine frame push below.
-        // `owner_sym` was interned for the method-class frame push above.
-        self.env_mut()
-            .insert_sym(crate::symbol::wk::class_decl(), Value::package(owner_sym));
-        if let Some(role_name) = &role_context {
-            self.env_mut().insert_sym(
-                crate::symbol::wk::role_decl(),
-                Value::package(crate::symbol::Symbol::intern(role_name)),
-            );
-        } else {
-            self.env_mut().remove_sym(crate::symbol::wk::role_decl());
-        }
-
         // Set current_package so class-scoped subs are found during method execution.
         // Only change package if the class has subs declared in its body.
         //
@@ -531,18 +520,6 @@ impl Interpreter {
         if let Some(package) = self.method_body_package(owner_class, owner_sym, method_def) {
             self.set_current_package_sym(package);
         }
-
-        // Set self and __ANON_STATE# (used by `$.foo` desugaring inside methods).
-        // Symbol-keyed: these fixed per-call keys are pre-interned well-known
-        // symbols (`symbol::wk`), so a method entry no longer allocates a
-        // `String` per key just to hand it to `Symbol::intern`. None of them is
-        // a `note_env_key`-tracked metadata name (a `^` placeholder or one of
-        // the binding metadata families), so skipping that latch — which
-        // `insert_sym` does not run — is sound here.
-        self.env_mut()
-            .insert_sym(crate::symbol::wk::self_(), base.clone());
-        self.env_mut()
-            .insert_sym(crate::symbol::wk::anon_state(), base.clone());
 
         // In Raku, methods do NOT set $_ to the invocant by default.
         // $_ in a method body is Any unless the invocant is explicitly named $_
@@ -598,7 +575,10 @@ impl Interpreter {
         }
         if let Some(bindings) = method_def.role_param_bindings.as_deref() {
             for (name, value) in bindings {
-                self.env_mut().insert(name.clone(), value.clone());
+                // `::?CLASS` is the frame record's (below), not an env key.
+                if name != "?CLASS" {
+                    self.env_mut().insert(name.clone(), value.clone());
+                }
             }
         }
         // A method can carry its defining lexical environment either from an
@@ -638,13 +618,15 @@ impl Interpreter {
         // capture metadata otherwise supplies a same-named nil entry.
         if let Some(bindings) = method_def.role_param_bindings.as_deref() {
             for (name, value) in bindings {
-                self.env_mut().insert(name.clone(), value.clone());
+                // `::?CLASS` is the frame record's (below), not an env key.
+                if name != "?CLASS" {
+                    self.env_mut().insert(name.clone(), value.clone());
+                }
             }
         }
 
         // Skip invocant param, bind remaining
-        let mut bind_params = Vec::new();
-        let mut bind_param_defs = Vec::new();
+        let mut skipped_invocant = false;
         for (idx, param_name) in method_def.params.iter().enumerate() {
             let is_invocant = method_def
                 .param_defs
@@ -652,6 +634,7 @@ impl Interpreter {
                 .map(|pd| pd.is_invocant)
                 .unwrap_or(false);
             if is_invocant {
+                skipped_invocant = true;
                 if let Some(pd) = method_def.param_defs.get(idx) {
                     // `method m(::T Foo:D: ...)` captures the invocant's type
                     // AND constrains it, so the capture is bound first and the
@@ -694,7 +677,6 @@ impl Interpreter {
                             }
                             if self.type_matches_value(expected, &candidate) {
                                 base = candidate;
-                                self.env_mut().insert("self".to_string(), base.clone());
                             }
                         } else if !self.type_matches_value(constraint, &base)
                             && let Ok(coerced) = loan_env!(
@@ -703,7 +685,6 @@ impl Interpreter {
                             )
                         {
                             base = coerced;
-                            self.env_mut().insert("self".to_string(), base.clone());
                         }
                         if !self.type_matches_value(expected, &base) {
                             self.restore_var_bindings(saved_var_bindings);
@@ -766,7 +747,9 @@ impl Interpreter {
                     .get(idx)
                     .filter(|pd| pd.name == *param_name)
                     .map_or_else(|| param_name.clone(), |pd| pd.storage_name().into_owned());
-                self.env_mut().insert(storage_name.clone(), invocant_value);
+                if !is_fixed_frame_name(&storage_name) {
+                    self.env_mut().insert(storage_name.clone(), invocant_value);
+                }
                 if method_def
                     .param_defs
                     .get(idx)
@@ -796,11 +779,41 @@ impl Interpreter {
                 }
                 continue;
             }
-            bind_params.push(param_name.clone());
-            if let Some(pd) = method_def.param_defs.get(idx) {
-                bind_param_defs.push(pd.clone());
-            }
         }
+        // Without an explicit invocant parameter (the common case) the
+        // signature is bound as declared: borrow it instead of cloning every
+        // parameter name and `ParamDef` on each call.
+        let (bind_params, bind_param_defs): (
+            std::borrow::Cow<'_, [String]>,
+            std::borrow::Cow<'_, [crate::ast::ParamDef]>,
+        ) = if skipped_invocant {
+            let is_invocant = |idx: usize| {
+                method_def
+                    .param_defs
+                    .get(idx)
+                    .is_some_and(|pd| pd.is_invocant)
+            };
+            let params: Vec<String> = method_def
+                .params
+                .iter()
+                .enumerate()
+                .filter(|(idx, _)| !is_invocant(*idx))
+                .map(|(_, name)| name.clone())
+                .collect();
+            let defs: Vec<crate::ast::ParamDef> = (0..method_def.params.len())
+                .filter(|idx| !is_invocant(*idx))
+                .filter_map(|idx| method_def.param_defs.get(idx).cloned())
+                .collect();
+            (params.into(), defs.into())
+        } else {
+            (
+                std::borrow::Cow::Borrowed(&method_def.params[..]),
+                std::borrow::Cow::Borrowed(
+                    &method_def.param_defs
+                        [..method_def.params.len().min(method_def.param_defs.len())],
+                ),
+            )
+        };
 
         // Bind attributes
         for (attr_name, attr_val) in attributes {
@@ -901,8 +914,16 @@ impl Interpreter {
             method_def.is_hidden_from_backtrace,
             method_callable_id,
             crate::runtime::routine_stack::FrameFixtures {
-                invocant: base.clone(),
-                class: owner_sym,
+                invocant: Some(base.clone()),
+                // A role method composed into a mixin sees the mixin type as
+                // `::?CLASS` (the binding `dispatch_mixin_method_call` stages).
+                class: Some(
+                    method_def
+                        .role_param_bindings
+                        .as_deref()
+                        .and_then(|b| b.iter().find(|(n, _)| n == "?CLASS"))
+                        .map_or_else(|| Value::package(owner_sym), |(_, v)| v.clone()),
+                ),
                 role: role_context.as_deref().map(crate::symbol::Symbol::intern),
             },
         );
@@ -955,8 +976,11 @@ impl Interpreter {
         // the mask on drop -- including on a Rust panic unwind through the
         // body below -- rather than the manual `unmask_thread_redeclared_params`
         // call this replaced, which a panic unwind would skip entirely.
-        let thread_param_mask_guard =
-            crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(self, bind_param_defs.iter());
+        let thread_param_mask_guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
+            self,
+            bind_param_defs.iter(),
+            &cc.locals,
+        );
 
         // Initialize locals from env. The parameters are bound, so a linked
         // frame is marked first: a local is never a caller's variable, and
@@ -973,6 +997,14 @@ impl Interpreter {
         for (i, local_name) in cc.locals.iter().enumerate() {
             if let Some(val) = self.env().get(local_name) {
                 self.locals[i] = val.clone();
+            }
+        }
+        // The fixed names are the frame record's, not env keys (ADR-14843).
+        for (i, local_name) in cc.locals.iter().enumerate() {
+            if matches!(local_name.as_str(), "self" | "?CLASS" | "?ROLE")
+                && let Some(val) = self.frame_fixture_value(Symbol::intern(local_name))
+            {
+                self.locals[i] = val;
             }
         }
         // Phase 3 Stage 2c (i): an attributive parameter (`method m($!x)` /
@@ -1197,7 +1229,8 @@ impl Interpreter {
         } else {
             // Sync locals back to env
             for (i, local_name) in cc.locals.iter().enumerate() {
-                if !local_name.is_empty() {
+                // The frame's record answers the fixed names (ADR-14843).
+                if !local_name.is_empty() && !is_fixed_frame_name(local_name) {
                     {
                         let __v = self.locals[i].clone();
                         self.env_mut().insert(local_name.clone(), __v);
@@ -1226,8 +1259,10 @@ impl Interpreter {
                     s,
                     "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_" | "@_" | "%_"
                 ) || method_def.params.iter().any(|p| p == s)
+                    || bound_by_sub_signature(&method_def.param_defs, s)
                     || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                     || cc.env_only_decls.iter().any(|n| n == s)
+                    || dynamic_decl_local(&cc.locals, s)
                     // A composed role's type parameter (`T` of `role R[::T]` /
                     // `role R[$T]`) is bound into the callee env for this
                     // call only. Merging it back would clobber the caller's
@@ -1742,22 +1777,32 @@ impl Interpreter {
         // the rest are inherited copies, which the overlay-only rule above
         // already excludes. See `merge_method_env`.
         let env = self.env();
-        let overlay: Box<dyn Iterator<Item = (&Symbol, &Value)> + '_> = match env.frame_writes() {
-            Some(log) => Box::new(
-                log.iter()
-                    .filter_map(|k| env.overlay_get_sym(*k).map(|v| (k, v))),
-            ),
-            None => Box::new(env.overlay_iter()),
-        };
-        for (sym, v) in overlay {
+        // One visitor over either overlay shape: a boxed iterator here cost a
+        // heap allocation on every method exit, for an overlay that almost
+        // never holds a ContainerRef.
+        let mut visit = |sym: &Symbol, v: &Value| {
             if !v.is_container_ref() {
-                continue;
+                return;
             }
             let name = sym.as_str();
             if code.locals.iter().any(|n| n == name) {
-                continue;
+                return;
             }
             refs.push((name, v.clone()));
+        };
+        match env.frame_writes() {
+            Some(log) => {
+                for k in log.iter() {
+                    if let Some(v) = env.overlay_get_sym(*k) {
+                        visit(k, v);
+                    }
+                }
+            }
+            None => {
+                for (k, v) in env.overlay_iter() {
+                    visit(k, v);
+                }
+            }
         }
         refs
     }
@@ -1859,6 +1904,10 @@ impl Interpreter {
         param_values: &super::vm_param_values::ParamValues<'_>,
     ) {
         for (param_name, param_sym, param_val) in param_values.iter() {
+            // The invocant parameter is the frame record's (ADR-14843).
+            if param_sym.is_frame_fixture() {
+                continue;
+            }
             crate::env::note_env_key(param_name);
             env.insert_sym(*param_sym, param_val.clone());
         }
@@ -1965,7 +2014,7 @@ impl Interpreter {
         // captures the caller's (unoverlaid) env.
         let pushed_caller = cc.uses_callframe;
         if pushed_caller {
-            self.push_caller_env();
+            self.push_caller_env_in_call_frame();
         }
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller so the `self`/`?CLASS`/param/attr
@@ -2095,12 +2144,18 @@ impl Interpreter {
             if let Some(pd) = pd.filter(|pd| pd.named) {
                 // Simple named/attributive param (gate: `named_param_fast_eligible`).
                 let bound = Self::named_param_fast_match_key(pd).and_then(|key| {
-                    args.iter()
-                        .rev()
-                        .find_map(|a| match a.unwrap_varref().view() {
+                    args.iter().rev().find_map(|a| {
+                        let a = a.unwrap_varref();
+                        // The tag test spares the positional arguments a
+                        // full `view()` decode.
+                        if !a.is_string_pair_value() {
+                            return None;
+                        }
+                        match a.view() {
                             ValueView::Pair(k, v) if k.as_str() == key => Some(v.clone()),
                             _ => None,
-                        })
+                        }
+                    })
                 });
                 let val = match bound {
                     // `@`-sigiled (attributive) named param: re-home a List
@@ -2119,7 +2174,13 @@ impl Interpreter {
                     // default. For an attributive param this overwrites the
                     // attribute — the slow path and rakudo both do (pinned by
                     // t/tweak-named-fast-path.t).
-                    None => Self::missing_optional_param_value(pd),
+                    None => match method_def
+                        .named_fast(idx)
+                        .and_then(|plan| plan.fill.clone())
+                    {
+                        Some(default) => default,
+                        None => Self::missing_optional_param_value(pd),
+                    },
                 };
                 // `:$!x` binds by assignment: an explicit Nil stores the
                 // attribute's container default (`BUILD(:$!x)` with
@@ -2361,81 +2422,16 @@ impl Interpreter {
         // unrelated CALLER lexical sharing the name does not — the statics are the
         // class's own lexicals and the method body is inside their scope.
         self.inject_class_body_statics(owner_class);
-        // ADR-14633 slices 2-3 (ADR-14792): the frame's record (pushed below
-        // with the routine frame) answers `self`, `__ANON_STATE#`, `?CLASS`
-        // and `?ROLE`, so the frame writes none of the four keys -- unless an
-        // env key of one of those names is visible from here (a caller that
-        // still writes its keys, a class body, a closure's lexical `self`):
-        // an env-first reader would find that key instead of this call's, so
-        // this frame shadows it exactly as before. A closure created in the
-        // frame takes the names it reads from the record into its capture
-        // (`materialize_frame_self_into_capture`).
-        // A body that declares a routine, class or role captures the env its
-        // declaration runs in by another path than a closure creation (a
-        // named `sub` called after the method returned reads `self` from it),
-        // so such a method keeps writing its keys.
-        let declares_scopes = !cc.sub_decl_plans.is_empty()
-            || !cc.decl_plans.is_empty()
-            || !cc.class_decl_plans.is_empty()
-            || !cc.role_decl_plans.is_empty();
-        let shadows_visible_key = declares_scopes || {
-            let env = self.env();
-            env.contains_key_sym(crate::symbol::wk::self_())
-                || env.contains_key_sym(crate::symbol::wk::class_decl())
-                || env.contains_key_sym(crate::symbol::wk::role_decl())
-        };
+        // ADR-14843: the frame's record (pushed below with the routine frame) is
+        // the only home of `self`, `__ANON_STATE#`, `?CLASS` and `?ROLE`; the
+        // frame writes none of the four keys.
         if skip_env_setup {
             let env = self.env_mut();
-            if shadows_visible_key {
-                // 3 fixed keys below (`self`, `__ANON_STATE#`, `?CLASS`) plus
-                // one per bound parameter -- see `Env::reserve`.
-                env.reserve(3 + param_values.len());
-                env.insert_sym(crate::symbol::wk::self_(), base.clone());
-                env.insert_sym(crate::symbol::wk::anon_state(), base.clone());
-                env.insert_sym(crate::symbol::wk::class_decl(), class_val.clone());
-                // `$_` is the rooted frame's own (`env::routine_owned`).
-                if let Some(ref role_name) = role_context {
-                    env.insert_sym(
-                        crate::symbol::wk::role_decl(),
-                        Value::package(crate::symbol::Symbol::intern(role_name)),
-                    );
-                } else {
-                    env.remove_sym(crate::symbol::wk::role_decl());
-                }
-            } else {
-                env.reserve(param_values.len());
-            }
+            env.reserve(param_values.len());
             Self::insert_fast_param_values(env, &param_values);
         } else {
-            // A body that assigns to `self` by name (a mutating call on an
-            // aggregate or mixin invocant) writes through the env binding of
-            // `self`, which is the invocant's live cell: without the key the
-            // write would bind a fresh name instead and the caller's variable
-            // would not see it. Only an object or type-object invocant, whose
-            // state lives behind its own shared cell, goes without the keys.
-            let keyless_invocant = matches!(
-                base.view(),
-                ValueView::Instance { .. } | ValueView::Package(_)
-            );
             let env = self.env_mut();
-            if shadows_visible_key || !keyless_invocant {
-                // 6 fixed keys below plus one per bound parameter -- see
-                // `Env::reserve`.
-                env.reserve(6 + param_values.len());
-                env.insert_sym(crate::symbol::wk::self_(), base.clone());
-                env.insert_sym(crate::symbol::wk::anon_state(), base.clone());
-                env.insert_sym(crate::symbol::wk::class_decl(), class_val.clone());
-                if let Some(ref role_name) = role_context {
-                    env.insert_sym(
-                        crate::symbol::wk::role_decl(),
-                        Value::package(crate::symbol::Symbol::intern(role_name)),
-                    );
-                } else {
-                    env.remove_sym(crate::symbol::wk::role_decl());
-                }
-            } else {
-                env.reserve(3 + param_values.len());
-            }
+            env.reserve(3 + param_values.len());
             // The rooted frame answers `$_` and `$!` (`env::routine_owned`).
             env.set_callable_id(method_callable_id as i64);
             // Array/hash attribute env copies are no longer materialized here:
@@ -2721,8 +2717,8 @@ impl Interpreter {
             method_def.is_hidden_from_backtrace,
             method_callable_id,
             crate::runtime::routine_stack::FrameFixtures {
-                invocant: base.clone(),
-                class: owner_sym,
+                invocant: Some(base.clone()),
+                class: Some(Value::package(owner_sym)),
                 role: role_context.as_deref().map(crate::symbol::Symbol::intern),
             },
         );
@@ -2862,16 +2858,27 @@ impl Interpreter {
 
         // Resolve a capture-valued `--> T` before the env teardown below (see
         // the slow path's note, #7984).
-        let effective_return_spec = method_def.return_type.as_deref().map(|spec| {
-            // A definite return (`--> Empty`, `--> Nil`, `--> 42`) names a
-            // value, never a type: resolving it first would turn the CORE term
-            // `Empty` into any loaded `Foo::Empty` class (#9530).
-            if self.is_definite_return_spec(spec) {
-                return spec.to_string();
-            }
-            let spec = loan_env!(self, resolved_type_capture_name(spec));
-            self.resolve_method_type_name(owner_class, &spec)
-        });
+        // A plain core return type (`--> Int`) that names itself for this
+        // owner is checked against the value directly, below; the spec is
+        // resolved only for a call that falls out of that lane.
+        let return_fast = method_def
+            .return_type
+            .as_deref()
+            .and_then(|spec| self.method_return_fast(owner_class, spec));
+        let effective_return_spec = method_def
+            .return_type
+            .as_deref()
+            .filter(|_| return_fast.is_none())
+            .map(|spec| {
+                // A definite return (`--> Empty`, `--> Nil`, `--> 42`) names a
+                // value, never a type: resolving it first would turn the CORE term
+                // `Empty` into any loaded `Foo::Empty` class (#9530).
+                if self.is_definite_return_spec(spec) {
+                    return spec.to_string();
+                }
+                let spec = loan_env!(self, resolved_type_capture_name(spec));
+                self.resolve_method_type_name(owner_class, &spec)
+            });
 
         // Sync state variables
         for (slot, key) in &cc.state_locals {
@@ -2962,12 +2969,14 @@ impl Interpreter {
                 let is_method_local = |s: &str| -> bool {
                     matches!(s, "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_")
                         || method_def.params.iter().any(|p| p == s)
+                        || bound_by_sub_signature(&method_def.param_defs, s)
                         || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                         // Env-only `my` declarations (no compiled slot, e.g.
                         // `if (my $file = ...)`) are frame state too — same
                         // exclusion as the primary merge path above (Text::CSV's
                         // `method csv` clobbered a same-named caller `$file`).
                         || cc.env_only_decls.iter().any(|n| n == s)
+                        || dynamic_decl_local(&cc.locals, s)
                         || class_body_static_names
                             .get(owner_class)
                             .is_some_and(|names| names.contains(s))
@@ -3037,8 +3046,13 @@ impl Interpreter {
             Err(e) => Err(e),
         };
 
-        let final_result =
-            self.finalize_method_result(cc, final_result, effective_return_spec.as_deref());
+        let final_result = self.finalize_method_result_fast(
+            cc,
+            final_result,
+            method_def.return_type.as_deref(),
+            effective_return_spec.as_deref(),
+            return_fast,
+        );
 
         // Restore the routine registry (removing this body's lexical routines)
         // unless an inner routine escaped via the return value, or a closure
@@ -3150,6 +3164,16 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
 /// form of the former per-call set build, which inserted all 6 twigil forms
 /// for every attribute key (skipping class-qualified `"C\0attr"` storage keys
 /// and `__mutsu_attr_alias::` metadata keys).
+/// A `my $*x` declared in the method frame is stored under both `*x` (its
+/// compiled local) and `$*x`; the `$*x` spelling is as frame-local as `*x`, so
+/// the merge must not hand the method's `my $*OUT` back to the caller (where
+/// `print` reads it by its `$*OUT` key).
+// Cost: O(l), l = compiled locals.
+fn dynamic_decl_local(locals: &[String], s: &str) -> bool {
+    s.strip_prefix('$')
+        .is_some_and(|bare| bare.starts_with('*') && locals.iter().any(|l| l == bare))
+}
+
 fn attr_twigil_local(attributes: &AttrMap, s: &str) -> bool {
     let bare = match s.as_bytes() {
         [b'@' | b'%', b'!' | b'.', ..] => &s[2..],
@@ -3189,6 +3213,23 @@ fn is_attr_twigil_shaped(s: &str) -> bool {
         s.as_bytes(),
         [b'@' | b'%', b'!' | b'.', ..] | [b'!' | b'.', ..]
     )
+}
+
+/// Whether `name` is bound by a parameter's sub-signature (`:mq(@)! ($media,)`):
+/// such a variable is as frame-local as the parameter itself.
+// Cost: O(p), p = parameters and sub-signature entries of the method.
+fn bound_by_sub_signature(param_defs: &[crate::ast::ParamDef], name: &str) -> bool {
+    param_defs.iter().any(|pd| {
+        [
+            pd.sub_signature.as_deref(),
+            pd.outer_sub_signature.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|sub| {
+            sub.iter().any(|p| p.storage_name() == name) || bound_by_sub_signature(sub, name)
+        })
+    })
 }
 
 /// The env keys every method frame writes for itself -- see the fixture
@@ -3407,6 +3448,12 @@ fn merge_method_env(
         saved.insert_sym(k, v);
     }
     (saved, wrote, changed_caller_locals, capture_writes)
+}
+
+/// The names a frame's record owns (`self`, `?CLASS`, `?ROLE`): no env key
+/// stores them (ADR-14843).
+fn is_fixed_frame_name(name: &str) -> bool {
+    matches!(name, "self" | "?CLASS" | "?ROLE")
 }
 
 #[cfg(test)]

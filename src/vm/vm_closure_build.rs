@@ -163,7 +163,12 @@ impl Interpreter {
             .as_ref()
             .filter(|cc| !cc.state_locals.is_empty())
             .map(|_| crate::value::state_scope_reaper::StateScopeGuard::new(id));
+        // The record of the method this closure is created in: its `self`,
+        // `?CLASS` and `?ROLE` are the creator's whichever method runs it
+        // later (ADR-14843).
+        let fixtures = self.capture_fixtures();
         Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
+            fixtures,
             package: self.lexical_closure_package_sym(),
             name: spec.name,
             empty_sig: spec.empty_sig,
@@ -233,8 +238,14 @@ impl Interpreter {
         };
         for name in ["/", "!"] {
             // A block that binds its own (`-> $/ { }`, `my $/`) does not
-            // share its scope's.
-            if !cc.locals.iter().any(|n| n == name) {
+            // share its scope's, and neither does one inside a routine whose
+            // `$/` is a parameter: that binding is readonly, so a match inside
+            // the block rebinds the block's own `$/` and leaves the routine's.
+            if !cc.locals.iter().any(|n| n == name)
+                && !code
+                    .param_locals
+                    .contains(&crate::symbol::Symbol::intern(name))
+            {
                 self.box_routine_owned_for_block(code, name);
             }
         }

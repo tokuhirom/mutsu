@@ -1,6 +1,6 @@
 # ADR-14792: Fixed frame names are looked up env-first, with the frame record as the fallback
 
-- **Status**: Proposed (2026-10-23). Amends the fixture rule and the slice order of
+- **Status**: Superseded by [ADR-14843](14843-fixed-frame-names-live-in-the-frame-record.md) (was Proposed, 2026-10-23). Amended the fixture rule and the slice order of
   [ADR-14633](14633-call-frame-materializes-no-name-keyed-env.md) §2.1 and §4; every other
   decision of ADR-14633 stands.
 - **Date**: 2026-10-23

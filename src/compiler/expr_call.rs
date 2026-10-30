@@ -764,6 +764,7 @@ impl Compiler {
             };
             let desugared = Expr::desugar_block(vec![
                 Stmt::VarDecl {
+                    marks: Default::default(),
                     anonymous: false,
                     name: tmp,
                     expr: (**left).clone(),
@@ -774,6 +775,9 @@ impl Compiler {
                     is_export: false,
                     export_tags: Vec::new(),
                     custom_traits: Vec::new(),
+                    has_initializer: false,
+                    constant: None,
+                    bind: None,
                     where_constraint: None,
                 },
                 Stmt::Expr(Expr::Ternary {
@@ -1938,6 +1942,7 @@ impl Compiler {
                     let seen_name = format!("__mutsu_cas_seen_{}", super::compile_session::mint());
                     let cas_expr = Expr::desugar_block(vec![
                         Stmt::VarDecl {
+                            marks: Default::default(),
                             anonymous: false,
                             name: seen_name.clone(),
                             expr: args[0].clone(),
@@ -1948,6 +1953,9 @@ impl Compiler {
                             is_export: false,
                             export_tags: Vec::new(),
                             custom_traits: Vec::new(),
+                            has_initializer: false,
+                            constant: None,
+                            bind: None,
                             where_constraint: None,
                         },
                         Stmt::If {
@@ -2181,6 +2189,8 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
                 if let Some(chain_idx) = self.lexical_import_chain_idx(*name) {
                     self.code.emit(OpCode::LexImportCall { chain_idx });
+                } else {
+                    self.register_late_import_fallback(*name);
                 }
                 self.code.emit(OpCode::CallFunc {
                     name_idx,
@@ -2218,6 +2228,9 @@ impl Compiler {
                 // arguments in-band: `LexImportCall` hands the stack to a code
                 // object, which takes the pairs as they are.
                 let lex_import_chain = self.lexical_import_chain_idx(*name);
+                if lex_import_chain.is_none() {
+                    self.register_late_import_fallback(*name);
+                }
                 // The listop form of the same rule the method form gets in
                 // `expr_method.rs`: `map { $_ = 5 }, 1, 2` binds the callback's
                 // implicit topic to a bare item, which raku refuses to assign

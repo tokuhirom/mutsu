@@ -27,6 +27,7 @@ use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::helpers::ws;
+pub(crate) use postfix::atomic_elem_update;
 pub(in crate::parser) use postfix::consumed_span;
 pub(in crate::parser) use postfix::is_angle_subscript_key_char;
 pub(in crate::parser) use postfix::is_atomic_elem_target;
@@ -38,8 +39,6 @@ pub(in crate::parser) use postfix::postfix_expr_continue;
 pub(in crate::parser) use postfix::without_pending_prefix;
 pub(in crate::parser) use postfix::{ParsedBracketIndex, parse_bracket_indices_inner};
 pub(in crate::parser) use postfix::{QuotedMethodName, parse_quoted_method_name};
-pub(crate) use postfix::{atomic_elem_update, wrap_dot_assign_with_terms};
-pub(crate) use postfix::{dot_assign_target, retarget_dotty_call};
 use precedence::ternary;
 
 // Re-exports for WhateverCode priming-scope detection (`whatever.rs`). These
@@ -48,8 +47,8 @@ use precedence::ternary;
 // out of the parser per ADR-0033) also calls them.
 use whatever::fat_arrow_curries;
 pub(crate) use whatever::{
-    contains_whatever, is_frozen_whatever, is_whatever, is_whatever_operand,
-    operator_call_operands, should_wrap_whatevercode,
+    contains_whatever, contains_xx_with_bare_whatever, is_frozen_whatever, is_whatever,
+    is_whatever_operand, operator_call_operands, should_wrap_whatevercode,
 };
 
 // Re-exports for WhateverCode-adjacent AST shaping that stays in the parser
@@ -407,7 +406,7 @@ pub(in crate::parser) fn item_level_expr(input: &str) -> PResult<'_, Expr> {
     precedence::item_expr(input, operators::ExprMode::Full)
 }
 
-pub(in crate::parser) fn wrap_finished_expr(expr: Expr) -> Expr {
+pub(crate) fn wrap_finished_expr(expr: Expr) -> Expr {
     let expr = wrap_composition_operands(expr);
     if !should_wrap_whatevercode(&expr) {
         return expr;
@@ -453,15 +452,14 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((r2, wrap_finished_expr(compound)));
         }
     }
-    if let Some((after_op, set_tok, spelling)) =
-        crate::parser::stmt::assign::parse_set_compound_assign_op(r)
+    if let Some((after_op, spelling)) = crate::parser::stmt::assign::parse_set_compound_assign_op(r)
     {
         let (after_ws, _) = ws(after_op)?;
         if let Ok((r2, rhs)) = precedence::ternary_mode(after_ws, operators::ExprMode::ListopArg) {
             return Ok((
                 r2,
                 wrap_finished_expr(crate::parser::stmt::assign::written_set_assignment(
-                    expr, spelling, set_tok, rhs,
+                    expr, spelling, rhs,
                 )),
             ));
         }
@@ -700,21 +698,16 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
             value: bind,
             is_positional,
             ..
-        } if is_bind_index_value(&bind) => {
-            let Expr::Call { name, mut args, .. } = *bind else {
-                unreachable!("is_bind_index_value checked the shape");
+        } if matches!(*bind, Expr::IndexBindValue(_)) => {
+            let Expr::IndexBindValue(rhs) = *bind else {
+                unreachable!("the guard checked the shape");
             };
-            let rhs = reassociate_fat_arrow_operand(args.remove(0), value);
-            let source_meta =
-                crate::parser::stmt::simple_expr_stmt::lvalue::bind_source_metadata_expr(&rhs);
             Expr::IndexAssign {
                 target,
                 index,
-                value: Box::new(Expr::Call {
-                    name,
-                    args: vec![rhs, source_meta],
-                    listop: false,
-                }),
+                value: Box::new(Expr::IndexBindValue(Box::new(
+                    reassociate_fat_arrow_operand(*rhs, value),
+                ))),
                 is_positional,
                 spelling: Default::default(),
             }
@@ -741,13 +734,8 @@ fn is_kept_variable_assign_node(node: &crate::ast::parsed::ParsedExpr) -> bool {
     )
 }
 
-fn is_bind_index_value(value: &Expr) -> bool {
-    matches!(value, Expr::Call { name, args, .. }
-        if name.resolve() == "__mutsu_bind_index_value" && args.len() == 2)
-}
-
 fn is_indexed_bind(expr: &Expr) -> bool {
-    matches!(expr, Expr::IndexAssign { value, .. } if is_bind_index_value(value))
+    matches!(expr, Expr::IndexAssign { value, .. } if matches!(**value, Expr::IndexBindValue(_)))
 }
 
 fn reassociated_fat_arrow_pair(left: Expr, value: Expr) -> Expr {

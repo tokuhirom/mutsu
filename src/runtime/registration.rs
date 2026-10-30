@@ -573,6 +573,14 @@ impl Interpreter {
                                 ),
                             ));
                         }
+                        // An inherited multi family (several candidates under one
+                        // name) satisfies a NON-MULTI stub by name, as one inherited
+                        // method does: rakudo only asks that `find_method` locates
+                        // something (PDF::Native's `COSType` stub `method delegate
+                        // {...}` against `_Node`'s `:D:`/`:U:` multi pair).
+                        if total > 1 && !required.is_multi {
+                            continue;
+                        }
                         if total > 1 {
                             return Err(RuntimeError::new(format!(
                                 "X::Role::Composition::Conflict: multiple inherited candidates for required method '{}'",
@@ -674,7 +682,7 @@ impl Interpreter {
         // An `our constant` in a class body lives under the class-scoped key,
         // so look under the calling package and under the lexical `self`'s
         // class (the calling package can be an enclosing class).
-        let self_value = self.env_self_value();
+        let self_value = self.frame_invocant();
         let self_class = match self_value.as_ref().map(Value::view) {
             Some(ValueView::Instance { class_name, .. }) => Some(class_name.resolve()),
             _ => None,
@@ -711,17 +719,27 @@ impl Interpreter {
         let Some(caller_class) = caller_class else {
             return false;
         };
-        canonical_owner == caller_class
-            || self
-                .registry()
-                .class_trusts
-                .get(canonical_owner)
-                .is_some_and(|trusted| {
-                    trusted.iter().any(|t| t == caller_class)
-                        || trusted.iter().any(|t| {
-                            self.resolve_private_class_name(canonical_owner, t) == caller_class
-                        })
-                })
+        if canonical_owner == caller_class {
+            return true;
+        }
+        let registry = self.registry();
+        let trusts_caller = |owner: &str, trusted: &Vec<String>| {
+            trusted.iter().any(|t| t == caller_class)
+                || trusted
+                    .iter()
+                    .any(|t| self.resolve_private_class_name(owner, t) == caller_class)
+        };
+        if let Some(trusted) = registry.class_trusts.get(canonical_owner) {
+            return trusts_caller(canonical_owner, trusted);
+        }
+        // A `my class` of a module file is also visible under its plain
+        // qualified name, which is what the call site resolves; its `trusts`
+        // list is keyed by the mangled storage name (`Foo\u{0}<decl-id>`).
+        registry.class_trusts.iter().any(|(owner, trusted)| {
+            owner.contains('\u{0}')
+                && crate::value::user_facing_type_name(owner) == canonical_owner
+                && trusts_caller(owner, trusted)
+        })
     }
 
     /// Resolve a qualified private call's source-written owner

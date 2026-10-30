@@ -33,6 +33,7 @@
 //! BEGINs nested inside a top-level statement, and value-form BEGINs, are
 //! lifted into the prologue by [`nested`] ahead of that statement.
 
+mod expr_type_decls;
 mod nested;
 mod nested_exports;
 mod package_body;
@@ -51,6 +52,8 @@ use use_if::{if_condition_check, next_if_condition_slot};
 /// BEGIN-time effect, the prologue is empty and `stmts` is
 /// untouched.
 pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<Stmt> {
+    // A class declared in term position is a BEGIN-time declaration too.
+    expr_type_decls::lift_expr_type_decls(stmts);
     // Lift the BEGINs nested in each top-level statement first (slice 2):
     // each lifted effect joins the prologue just ahead of its statement.
     if is_eval {
@@ -208,10 +211,10 @@ fn value_tail_begin(stmts: &mut [Stmt]) {
 /// `None` when `stmt` is not a constant declaration.
 // Cost: O(1).
 fn constant_read(stmt: &Stmt) -> Option<Stmt> {
-    let Stmt::VarDecl { name, custom_traits, .. } = stmt else {
+    let Stmt::VarDecl { name, constant, .. } = stmt else {
         return None;
     };
-    if !custom_traits.iter().any(|(t, _)| t == "__constant") {
+    if constant.is_none() {
         return None;
     }
     let read = match name.as_bytes().first()? {
@@ -410,7 +413,7 @@ fn static_bind_decl(name: &str, type_constraint: Option<String>, is_dynamic: boo
         Some(b'%') => Expr::Literal(crate::value::Value::hash(crate::value::ValueMap::default())),
         _ => Expr::Literal(crate::value::Value::NIL),
     };
-    Stmt::VarDecl {
+    Stmt::VarDecl { marks: Default::default(),
         anonymous: false,
         name: name.to_string(),
         expr,
@@ -421,6 +424,9 @@ fn static_bind_decl(name: &str, type_constraint: Option<String>, is_dynamic: boo
         is_export: false,
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
+        has_initializer: false,
+        constant: None,
+        bind: None,
         where_constraint: None,
     }
 }
@@ -433,7 +439,7 @@ fn is_begin_time_effect(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Phaser { kind, .. } => *kind == PhaserKind::Begin,
         Stmt::Use { .. } | Stmt::Need { .. } | Stmt::Import { .. } => !is_positional_pragma(stmt),
-        Stmt::VarDecl { custom_traits, .. } => custom_traits.iter().any(|(t, _)| t == "__constant"),
+        Stmt::VarDecl { constant, .. } => constant.is_some(),
         Stmt::SyntheticBlock(inner) => is_will_begin_group(inner),
         // A user `trait_mod:<is>` runs when the declaration is compiled, so its
         // argument sees the unit's lexicals in their static state (#14146).
@@ -661,6 +667,7 @@ fn partition_will_begin(inner: Vec<Stmt>, prologue: &mut Vec<Stmt>, rest: &mut V
                 mut body,
                 condition,
                 end_index,
+                bare,
             } => {
                 if let [Stmt::Given { topic, .. }] = body.as_mut_slice() {
                     *topic = Expr::Var(name.clone());
@@ -670,6 +677,7 @@ fn partition_will_begin(inner: Vec<Stmt>, prologue: &mut Vec<Stmt>, rest: &mut V
                     body,
                     condition,
                     end_index,
+                    bare,
                 });
             }
             other => later.push(other),
@@ -683,7 +691,7 @@ fn partition_will_begin(inner: Vec<Stmt>, prologue: &mut Vec<Stmt>, rest: &mut V
 fn is_begin_time_stmt(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Phaser { kind, .. } => *kind == PhaserKind::Begin,
-        Stmt::VarDecl { custom_traits, .. } => custom_traits.iter().any(|(t, _)| t == "__constant"),
+        Stmt::VarDecl { constant, .. } => constant.is_some(),
         // A `unit module Foo;` is a body-less marker that puts every following
         // top-level statement into `Foo`; it has to precede them in the prologue
         // just as it does in the source.

@@ -132,7 +132,7 @@ impl Interpreter {
     /// is pulled later, outside the method; Trie).
     // Cost: O(1).
     fn lexical_self_class(&self) -> Option<Symbol> {
-        let self_value = self.env_self_value();
+        let self_value = self.frame_invocant();
         match self_value.as_ref().map(Value::view) {
             Some(ValueView::Instance { class_name, .. }) => Some(class_name),
             Some(ValueView::Package(name)) => Some(name),
@@ -241,10 +241,10 @@ impl Interpreter {
         if let Some(payload) = attributes.as_map().get("__mutsu_pair_value").cloned() {
             return Some(self.call_method_with_values(payload, method, vec![]));
         }
-        if let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned() {
+        if let Some(storage) = attributes.as_map().get(crate::symbol::wk::array_storage()).cloned() {
             return Some(self.call_method_with_values(storage, method, vec![]));
         }
-        if let Some(storage) = attributes.as_map().get("__mutsu_hash_storage").cloned() {
+        if let Some(storage) = attributes.as_map().get(crate::symbol::wk::hash_storage()).cloned() {
             let rendered = self.call_method_with_values(storage.clone(), method, vec![]);
             // An `is Map` subclass names itself in its `.raku`/`.gist`.
             if matches!(method, "raku" | "gist")
@@ -288,7 +288,7 @@ impl Interpreter {
         // A QuantHash (`is BagHash`/`is Set`/...) subclass renders under its own
         // type name: `ABH(a(2) b)` for `.gist`, `("a"=>2).ABH` for `.raku` —
         // see `runtime/quanthash_subclass.rs`.
-        if let Some(storage) = attributes.as_map().get("__baggy_data__").cloned() {
+        if let Some(storage) = attributes.as_map().get(crate::symbol::wk::baggy_data()).cloned() {
             let class_key = class_name.resolve();
             let name = crate::value::user_facing_type_name(&class_key).to_string();
             if method == "gist" {
@@ -528,7 +528,7 @@ impl Interpreter {
         }
         if matches!(attr.sigil, '@' | '%')
             && !value.is_nil()
-            && self.container_type_metadata(&value).is_none()
+            && !self.has_container_type_metadata(&value)
             && let Some(type_constraint) = self.get_attr_type_constraint(&class_name, method)
         {
             let (value_type, key_type) =
@@ -923,6 +923,17 @@ impl Interpreter {
                     method,
                     args,
                 );
+            }
+            // `$type.^isa($other)` reaches a user subclass of a builtin
+            // metaclass (Red's `MetamodelX::Red::Model is Metamodel::ClassHOW`) as
+            // `HOW.isa($type, $other)`: the metaobject's `isa` asks about the
+            // type object it is given, not about the HOW instance itself.
+            if method == "isa"
+                && args.len() == 2
+                && self.is_metamodel_how_class(&class_name.resolve())
+                && !matches!(args[0].view(), ValueView::Nil)
+            {
+                return self.call_method_with_values(args[0].clone(), "isa", vec![args[1].clone()]);
             }
             if method == "isa" {
                 let isa_arg = args.first().cloned().unwrap_or(Value::NIL);
@@ -1327,7 +1338,7 @@ impl Interpreter {
                             // returned value so push/insert type enforcement works.
                             if (attr.sigil == '@' || attr.sigil == '%')
                                 && !val.is_nil()
-                                && self.container_type_metadata(&val).is_none()
+                                && !self.has_container_type_metadata(&val)
                                 && let Some(tc) =
                                     self.get_attr_type_constraint(&cn, method.as_ref())
                             {
@@ -1919,6 +1930,34 @@ impl Interpreter {
                     _ => unreachable!("guarded by the match above"),
                 };
                 self.metamodel_new_type(&how_class, &args)
+            }
+            // `(Metamodel::SubsetHOW but Role).new_type(...)`: the minted type's
+            // `.HOW` is the metaclass with the role mixed in, so the role's
+            // methods answer `.^method` on the type (Red's `^submodel`).
+            "new_type"
+                if matches!(target.view(), ValueView::Mixin(inner, _)
+                    if matches!(inner.view(), ValueView::Package(n)
+                        if n.as_str().starts_with("Metamodel::")
+                            || self.is_metamodel_how_class(&n.resolve()))) =>
+            {
+                let ValueView::Mixin(inner, mixins) = target.view() else {
+                    return Ok(Value::NIL);
+                };
+                let ValueView::Package(sym) = inner.view() else {
+                    return Ok(Value::NIL);
+                };
+                let minted = self.metamodel_new_type(&sym.resolve(), &args)?;
+                if let ValueView::Package(name) = minted.view() {
+                    // The metaclass object the role is mixed into: an instance
+                    // of the builtin metaclass, so its native metamethods
+                    // (`refinee`, `name`, ...) still answer next to the role's.
+                    let how = self.dispatch_how(&minted, &[])?;
+                    let how = Value::mixin_with_state(how, (**mixins).clone());
+                    self.registry_mut()
+                        .class_how_values
+                        .insert(name.resolve().to_string(), how);
+                }
+                Ok(minted)
             }
             // `Metamodel::ClassHOW.new.new_type(...)`: a builtin HOW instance
             // mints the same type its type object does.
@@ -2625,7 +2664,21 @@ impl Interpreter {
                 && self.is_attribute_buildable(&cn, key)
             {
                 let sigil = sigil_map.get(key.as_str()).copied().unwrap_or('$');
-                let coerced = Self::coerce_attr_value_by_sigil(boxed.clone(), sigil);
+                // A twiddle is an assignment to the attribute: a typed one
+                // refuses a value of the wrong type (`X::TypeCheck::Assignment`).
+                let checked = match self.check_attr_store_type(&cn, key, sigil, boxed.clone()) {
+                    Ok(value) => value,
+                    Err(err) => return Some(Err(err)),
+                };
+                // `clone` binds an `@` attribute to an itemized Array as it is
+                // (`.clone(tasks => $arr)`), where `new` would wrap the item
+                // as one element.
+                let checked = if sigil == '@' {
+                    checked.deitemize_for_sigil_bind()
+                } else {
+                    checked
+                };
+                let coerced = Self::coerce_attr_value_by_sigil(checked, sigil);
                 attrs.insert(key.clone(), coerced);
             }
         }

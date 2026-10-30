@@ -203,6 +203,12 @@ impl Interpreter {
         // `as_str`, not `resolve`: see `native_method_0arg`. An owned copy of
         // an already-`&'static str` per native method call.
         let method_name: &str = method_sym.as_str();
+        // An `is Range`/`is Seq` subclass with its own `iterator` lists through
+        // it, not through the range or seq it carries (#15361): the instance
+        // dispatch (`own_iteration_view`) answers.
+        if args.is_empty() && self.payload_instance_lists_own_iterator(target, method_name) {
+            return None;
+        }
         // `.REPR` / `.WHERE` on a NativeCall handle. Telling a `nativecast`ed
         // CStruct/CUnion/CArray from an ordinary instance needs the class
         // registry, so the pure native path cannot answer these — and it must
@@ -504,6 +510,43 @@ impl Interpreter {
                         ))));
                     }
                     return Some(Ok(args[0].clone()));
+                }
+                // `flat 1, [\*] @infinite`: a genuinely-lazy list among several
+                // arguments stays lazy. The plain arguments around it are flattened
+                // now; each lazy one is wrapped in a flattening pipe, and the
+                // parts are read one after another.
+                if name.as_str() == "flat"
+                    && args.len() > 1
+                    && args.iter().any(|a| {
+                        matches!(a.view(), ValueView::LazyList(ll)
+                            if ll.is_genuinely_lazy() && !is_finite_gather(a))
+                    })
+                {
+                    let mut parts: Vec<Value> = Vec::new();
+                    let mut plain: Vec<Value> = Vec::new();
+                    let flush = |plain: &mut Vec<Value>, parts: &mut Vec<Value>| {
+                        if !plain.is_empty() {
+                            parts.push(Value::array(std::mem::take(plain)));
+                        }
+                    };
+                    for arg in args {
+                        match arg.view() {
+                            ValueView::LazyList(ll)
+                                if ll.is_genuinely_lazy() && !is_finite_gather(arg) =>
+                            {
+                                flush(&mut plain, &mut parts);
+                                parts.push(Value::lazy_list(crate::gc::Gc::new(
+                                    crate::value::LazyList::new_index_pipe(
+                                        arg.clone(),
+                                        crate::value::IndexTransform::Flat,
+                                    ),
+                                )));
+                            }
+                            _ => crate::builtins::flat_val(arg, &mut plain, true),
+                        }
+                    }
+                    flush(&mut plain, &mut parts);
+                    return Some(Ok(Self::lazy_concat_pipe(parts, false)));
                 }
                 let mut forced_args = Vec::with_capacity(args.len());
                 for arg in args {

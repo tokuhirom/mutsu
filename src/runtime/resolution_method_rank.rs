@@ -39,7 +39,7 @@ impl Interpreter {
     ) -> (usize, usize, usize, usize) {
         let mut rank = (0, 0, 0, 0);
         let mut positional_index = 0;
-        for p in &def.param_defs {
+        for p in def.param_defs.iter() {
             if !p.is_invocant && !p.named && !p.is_variadic() {
                 let shared = positional_index < shared_positions;
                 positional_index += 1;
@@ -170,7 +170,7 @@ impl Interpreter {
     /// wider than the augmented `Any`): no user candidate can win a call,
     /// whatever its arguments (#12751).
     // Cost: O(m * c), m = MRO depth, c = candidates per level.
-        pub(crate) fn user_candidates_all_outranked_by_builtin(
+    pub(crate) fn user_candidates_all_outranked_by_builtin_uncached(
         &mut self,
         class_name: &str,
         method_name: &str,
@@ -324,22 +324,28 @@ impl Interpreter {
             let order = Self::method_decl_order(mro, *owner, matched + j);
             self.method_rank_key(arg_values, def, usize::MAX, order, *owner)
         }));
-        multi_rank::assign_tiers(&mut tiered, |rank| rank, &|x, y| {
-            self.nominal_type_conforms(x, y)
-        });
+        {
+            let _scope = self.conformance_scope();
+            multi_rank::assign_tiers(&mut tiered, |rank| rank, &|x, y| {
+                self.nominal_type_conforms(x, y)
+            });
+        }
         for (rank, tiered) in ranks.iter_mut().zip(&tiered) {
             rank.tier = tiered.tier;
             rank.tiered = true;
         }
         // Across owners too: an ancestor's candidate and a subclass's that
         // are incomparable resolve by declaration order (`method_decl_order`).
-        let (mut ranked, ambiguous) = prune_to_maximal(
-            ranks
-                .into_iter()
-                .zip(0..)
-                .collect::<Vec<(MultiRank, usize)>>(),
-            &|x, y| self.nominal_type_conforms(x, y),
-        );
+        let (mut ranked, ambiguous) = {
+            let _scope = self.conformance_scope();
+            prune_to_maximal(
+                ranks
+                    .into_iter()
+                    .zip(0..)
+                    .collect::<Vec<(MultiRank, usize)>>(),
+                &|x, y| self.nominal_type_conforms(x, y),
+            )
+        };
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
         // An arity-incomparable split in one tier with no bind-time check:
         // rakudo's `X::Multi::Ambiguous`, unless `is default` picks one.

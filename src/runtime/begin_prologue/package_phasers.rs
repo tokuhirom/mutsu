@@ -326,12 +326,13 @@ impl Mover<'_> {
             body: inner,
             condition: None,
             end_index: None,
+            bare: false,
         });
     }
 }
 
 fn slot_decl(slot: &str) -> Stmt {
-    Stmt::VarDecl {
+    Stmt::VarDecl { marks: Default::default(),
         anonymous: false,
         name: slot.to_string(),
         expr: Expr::Literal(crate::value::Value::NIL),
@@ -342,6 +343,9 @@ fn slot_decl(slot: &str) -> Stmt {
         is_export: false,
         export_tags: vec![],
         custom_traits: vec![],
+        has_initializer: false,
+        constant: None,
+        bind: None,
         where_constraint: None,
     }
 }
@@ -431,7 +435,6 @@ impl<'ast> Visit<'ast> for Locals {
                 | NameKind::SubDecl
                 | NameKind::Param
                 | NameKind::BlockParam
-                | NameKind::Sigilless
         ) {
             self.0.insert(bare(name).to_string());
         }

@@ -235,7 +235,7 @@ impl Interpreter {
         if name == "self"
             && let Some(v) = self
                 .exported_sub_latest_self()
-                .or_else(|| self.env_self_value())
+                .or_else(|| self.frame_invocant())
         {
             self.stack.push(v);
             return Ok(());
@@ -598,7 +598,12 @@ impl Interpreter {
                 .cloned();
             preferred_module_bareword =
                 active_package_term.or_else(|| self.running_module_bareword(name));
+            // A term the caller bound is no meaning for a module's own type
+            // of the name (`own_package_type_over_foreign_term`, below).
             preferred_module_bareword.is_none()
+                && self
+                    .own_package_type_over_foreign_term(name, name_sym)
+                    .is_none()
         }) {
             // A sigil-less constant live in this scope's `env` — declared here
             // or imported by a block-scoped `use` — shadows a same-named type
@@ -956,6 +961,19 @@ impl Interpreter {
                 // to it rather than report a missing `&foo`.
                 && !self.package_namespace_exists(Interpreter::strip_pseudo_packages(name))
                 && !self.export_namespace_exists(name)
+                // A `package`/`module` the name itself declares (`module A::b`
+                // in a module file, read from a sub of that file, whose frame
+                // carries none of the package's `our` members).
+                && !self.is_declared_package(name)
+                // `UNIT::errno` / `MY::errno` naming a lexical class of that
+                // compunit: the pseudo-package selects the scope, the bare
+                // name is the type.
+                && !(Interpreter::strip_pseudo_packages(name) != name
+                    && (self.has_type(Interpreter::strip_pseudo_packages(name))
+                        || self
+                            .env()
+                            .get(Interpreter::strip_pseudo_packages(name))
+                            .is_some_and(|v| matches!(v.view(), ValueView::Package(_)))))
             {
                 // The last segment starts with lowercase, indicating a qualified
                 // function/sub call (e.g. `Our::Package::pkg`). If the prefix
@@ -968,7 +986,16 @@ impl Interpreter {
                 // Strip pseudo-package prefixes (OUR::, GLOBAL::, MY::, etc.)
                 // and resolve to the bare type name if it exists.
                 let bare = Interpreter::strip_pseudo_packages(name);
-                if bare != name
+                // A lexical class of the compunit is bound under its bare name
+                // to its (mangled) storage name: that is the type `UNIT::name`
+                // / `MY::name` denotes.
+                let lexical_type = (bare != name)
+                    .then(|| self.env().get(bare).cloned())
+                    .flatten()
+                    .filter(|v| matches!(v.view(), ValueView::Package(_)));
+                if let Some(lexical_type) = lexical_type {
+                    lexical_type
+                } else if bare != name
                     && (self.has_type(bare)
                         || Self::is_builtin_type(bare)
                         || Self::is_type_with_smiley(bare, self)
@@ -980,7 +1007,9 @@ impl Interpreter {
                     || self.export_namespace_exists(name)
                     || Self::is_builtin_type(name)
                     || crate::core_type_names::contains(name)
-                    || crate::rakuast::is_registered_type_object(name)
+                    || crate::rakuast::is_registered_type_object(
+                        crate::runtime::types::strip_type_smiley(name).0,
+                    )
                 {
                     Value::package(Symbol::intern(name))
                 } else {
@@ -1048,6 +1077,17 @@ impl Interpreter {
             // above (types, enums, functions, an unqualified `our`-var) already
             // had first refusal.
             pkg_val
+        } else if name != "IterationEnd"
+            // The core sentinel is found in CORE before GLOBAL is consulted, so
+            // it never asks GLOBAL: that probe assembles the whole GLOBAL stash
+            // (every env key, routine and class), ~1 ms with Red loaded, and
+            // `IterationEnd` is read on every `pull-one`.
+            && let Some(global_val) =
+                Self::stash_lookup_symbol(&self.package_stash_value("GLOBAL"), name)
+        {
+            // `GLOBAL::<Name> := Name` published the symbol to every scope,
+            // including code that never imported the module declaring it.
+            global_val
         } else if let Some(module_val) = self.module_scope_lexical(name).cloned() {
             // A `constant` (or sigilless declaration) the running routine's own
             // module made in its file scope. A module body executes in the env of

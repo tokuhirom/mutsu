@@ -69,12 +69,25 @@ impl<'a> Iterator for ArgSources<'a> {
 /// or one with a definedness smiley (`Map:D`), which rakudo renders as a
 /// `Type::Definedness`.
 fn is_type_spelling(source: &str) -> bool {
-    let base = source
-        .strip_suffix(":D")
-        .or_else(|| source.strip_suffix(":U"))
-        .or_else(|| source.strip_suffix(":_"))
+    let base = [":D", ":U", ":_"]
+        .iter()
+        .find_map(|smiley| super::type_build::strip_smiley(source, smiley))
         .unwrap_or(source);
     is_simple_type(base)
+}
+
+/// A colonpair argument (`:coerce(&f)`, `:!flag`) of a type application that
+/// only survives as source text: parse it as the expression it is.
+// Cost: O(n), n = argument spelling length.
+fn colonpair_argument(source: &str) -> Result<RakuAstNode, RuntimeError> {
+    let (statements, _) = crate::parser::parse_program(source)?;
+    let mut expressions = statements
+        .iter()
+        .filter(|statement| !matches!(statement, crate::ast::Stmt::SetLine(..)));
+    match (expressions.next(), expressions.next()) {
+        (Some(crate::ast::Stmt::Expr(expr)), None) => convert_expr(expr),
+        _ => Err(unsupported(&format!("type argument `{source}`"))),
+    }
 }
 
 /// Convert a type application using its parsed argument expressions. Only a
@@ -148,10 +161,17 @@ pub(super) fn parameterized_type_node_at(
         for source in sources {
             let node = if let Some(value) = crate::parser::numeric_literal_value(source) {
                 super::convert::convert_literal(&value)?
-            } else if let Some(value) = super::type_build::plain_string_literal(source) {
-                super::convert::quoted_string(crate::value::Value::str(value.to_string()))
+            } else if let Some(value) = super::type_build::string_literal_value(source) {
+                super::convert::quoted_string(crate::value::Value::str(value))
+            } else if source.starts_with(':') {
+                colonpair_argument(source)?
             } else {
-                build_type_node_at(source, depth + 1)?
+                match build_type_node_at(source, depth + 1) {
+                    Ok(node) => node,
+                    // Not a type spelling: a colonpair (`:coerce(&f)`) or other
+                    // term argument of the application.
+                    Err(err) => term_argument(source).ok_or(err)?,
+                }
             };
             fields.push(node_field(None, node));
         }
@@ -173,4 +193,18 @@ pub(super) fn parameterized_type_node_at(
         class: RakuAstClass::TypeParameterized,
         fields: node_fields,
     })
+}
+
+/// A non-type argument of a type application, parsed from its spelling as a
+/// single expression statement. `None` when it is not exactly one expression.
+// Cost: O(n), n = spelling length.
+fn term_argument(source: &str) -> Option<RakuAstNode> {
+    let (stmts, _) = crate::parser::parse_program_spelled(source).ok()?;
+    let mut exprs = stmts
+        .iter()
+        .filter(|stmt| !matches!(stmt, crate::ast::Stmt::SetLine(..)));
+    match (exprs.next(), exprs.next()) {
+        (Some(crate::ast::Stmt::Expr(expr)), None) => convert_expr(expr).ok(),
+        _ => None,
+    }
 }

@@ -686,7 +686,11 @@ impl Interpreter {
             };
             let native_base = base_class.is_none();
             let base_remaining: Vec<super::DeferralEntry> = if let Some(bc) = &base_class {
-                self.resolve_all_methods_with_owner(bc, lookup_name, &args)
+                // The ranked deferral expansion every other method frame uses,
+                // not declaration order: the most specific of the class's multis
+                // is the next candidate (`callsame` out of a mixed-in role's
+                // method, Red's `ScopedDriver.map-exception`).
+                self.matched_deferral_candidates(bc, lookup_name, &args, target, None)
                     .into_iter()
                     .filter(|(_, d)| d.is_private == is_private_call)
                     .map(|(owner, def)| super::DeferralEntry::Candidate {

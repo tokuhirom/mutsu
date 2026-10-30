@@ -18,6 +18,7 @@ pub(crate) fn walk_stmts<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, body: &'ast [
 pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt) {
     match s {
         Stmt::VarDecl {
+            marks: _,
             anonymous: _,
             name,
             expr,
@@ -28,6 +29,9 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             is_export: _,
             export_tags,
             custom_traits,
+            has_initializer: _,
+            constant: _,
+            bind: _,
             where_constraint,
         } => {
             v.visit_name(name, NameKind::VarDecl);
@@ -41,13 +45,13 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
         }
         Stmt::Ast(node) => super::walk_parsed(v, node),
         Stmt::MarkReadonly(name, _) => v.visit_name(name, NameKind::MarkReadonly),
-        Stmt::MarkBind
-        | Stmt::Proceed
+        Stmt::Proceed
         | Stmt::Succeed
         | Stmt::ReactDone
         | Stmt::SupplyBodyDone
         | Stmt::SetLine(..)
         | Stmt::BeginPrologueEnd
+        | Stmt::RunCheckCode
         | Stmt::Trace { .. } => {}
         // A copy of declarations that stay in the tree, where they are walked.
         Stmt::NestedTypeShells(_) | Stmt::UndeclaredRoutine(_) => {}
@@ -70,9 +74,6 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             for r in routines {
                 v.visit_name(r.as_str(), NameKind::Decl);
             }
-        }
-        Stmt::MarkSigillessReadonly(name) | Stmt::MarkSigilless(name) => {
-            v.visit_name(name, NameKind::Sigilless)
         }
         Stmt::Assign {
             name,
@@ -386,6 +387,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             version: _,
             is_export: _,
             export_tags,
+            custom_traits,
             is_my: _,
             decl_id: _,
         } => {
@@ -395,6 +397,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
                 v.visit_expr(e);
             }
             names(v, export_tags, NameKind::Module);
+            traits(v, custom_traits);
         }
         Stmt::Phaser {
             spans: _,
@@ -403,8 +406,11 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             // The condition's source text, kept only for the error message.
             condition: _,
             end_index: _,
+            bare: _,
         } => super::walk_stmts(v, body),
         Stmt::ProtoDecl {
+            is_hidden_from_backtrace: _,
+            is_hoisted_copy: _,
             name,
             params: flat,
             param_defs,
@@ -449,6 +455,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             method_args,
             value,
             is_attribute: _,
+            type_invocant: _,
         } => {
             v.visit_name(var_name, NameKind::TempTarget);
             v.visit_name(method_name, NameKind::Method);

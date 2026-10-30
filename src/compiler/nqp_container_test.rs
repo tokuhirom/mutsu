@@ -46,6 +46,24 @@ impl Compiler {
         let op = name
             .strip_prefix(crate::symbol::NQP_OP_PREFIX)
             .unwrap_or(name);
+        // `nqp::iscont(my $v := EXPR)` asks about the variable the bind
+        // declares: run the declaration, then test the variable's binding
+        // (Hash2Class's `nqp::iscont(my $value := nqp::atkey(..))`, #15106).
+        let declared;
+        let arg = if let Expr::DoStmt(stmt) = arg
+            && let Stmt::VarDecl {
+                name: var,
+                bind: Some(_),
+                ..
+            } = &**stmt
+        {
+            self.compile_expr(arg);
+            self.code.emit(OpCode::Pop);
+            declared = Expr::Var(var.clone());
+            &declared
+        } else {
+            arg
+        };
         if let Expr::Var(var) = arg
             && let Some(kind) = self
                 .local_types

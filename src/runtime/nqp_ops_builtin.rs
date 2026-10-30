@@ -135,6 +135,16 @@ impl Interpreter {
                 let hash = args.first().cloned().unwrap_or(Value::NIL);
                 let key = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
                 match hash.view() {
+                    // A Raku Hash's `$!storage` holds Scalar containers in
+                    // Rakudo, so a present key reads as the value's shared
+                    // cell (the twin of `atpos` on `$!reified`, #15106). A raw
+                    // `VMHash` holds bare values and answers them as they are.
+                    ValueView::Hash(map) if !map.bare_values && map.contains_key(&key) => {
+                        if !map.storage_cells {
+                            hash.promote_storage_cells();
+                        }
+                        Ok(map.get(&key).cloned().unwrap_or(Value::NIL))
+                    }
                     ValueView::Hash(map) => Ok(map.get(&key).cloned().unwrap_or(Value::NIL)),
                     _ => {
                         let h = hash.clone();
@@ -753,14 +763,14 @@ impl Interpreter {
         // every getattr O(attributes) (#9134).
         let attrs = attributes.as_map();
         if bare == "storage"
-            && let Some(storage) = attrs.get("__mutsu_hash_storage")
+            && let Some(storage) = attrs.get(crate::symbol::wk::hash_storage())
         {
             return Some(storage.raw_storage_view().unwrap_or_else(|| storage.clone()));
         }
         if bare == "reified"
-            && let Some(storage) = attrs.get("__mutsu_array_storage")
+            && let Some(storage) = attrs.get(crate::symbol::wk::array_storage())
         {
-            return Some(storage.clone());
+            return Some(storage.raw_storage_view().unwrap_or_else(|| storage.clone()));
         }
         attrs
             .get_vivify(bare)

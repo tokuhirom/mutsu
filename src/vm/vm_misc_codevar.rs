@@ -234,6 +234,20 @@ impl Interpreter {
                 ));
             }
         }
+        // `&name` of a routine a top-level `use` BELOW this read imports:
+        // nothing else resolved the name, and Raku binds the `use` at compile
+        // time.
+        if val.is_nil()
+            && !name_is_qualified
+            && let Some(late) = self.unit_late_import(name)
+        {
+            val = match late {
+                crate::runtime::lexical_imports::LexicalImport::Code(value) => value,
+                crate::runtime::lexical_imports::LexicalImport::Routine(def) => {
+                    self.sub_value_from_function_def((*def).clone())
+                }
+            };
+        }
         // `&infix:<word>` for a word-shaped operator nothing declares: the
         // by-name operator reference resolves for ANY spelling, but rakudo
         // rejects an undeclared one (`EVAL '&infix:<not-an-op>'` throws, which
@@ -789,7 +803,14 @@ impl Interpreter {
         let attr_name = name.strip_prefix('!').filter(|n| !n.is_empty())?;
         let self_val = self.get_env_self()?;
         let object = match self_val.view() {
-            ValueView::Mixin(inner, _) => Value::clone(inner.as_ref()),
+            // A role's own attribute lives in the Mixin-owned role cell, not in
+            // the wrapped object.
+            ValueView::Mixin(inner, mixins) => {
+                if let Some(value) = mixins.role_attribute_by_name(attr_name) {
+                    return Some(value);
+                }
+                Value::clone(inner.as_ref())
+            }
             _ => self_val.clone(),
         };
         match object.view() {

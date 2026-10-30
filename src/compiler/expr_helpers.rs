@@ -706,7 +706,6 @@ impl Compiler {
         }
         // ADR-0061: the reserved `$self` lexical key names the enclosing
         // routine's `$self` parameter when its signature declares one.
-        let name = self.resolve_self_lexical(name);
         // A later bare `$x` in a block that declares `$^x` names that same
         // placeholder parameter, not a same-named lexical of the caller. When
         // an interpreter-path carrier (`.map`/`.grep`/`...` callback, `where`
@@ -1198,12 +1197,12 @@ impl Compiler {
     // Cost: O(t), t = the declaration's traits.
     pub(super) fn is_scalar_bind_decl(
         name: &str,
-        custom_traits: &[(String, Option<Expr>)],
+        bind: Option<crate::ast::bind_decl::BindKind>,
     ) -> bool {
         !name.starts_with('@')
             && !name.starts_with('%')
             && !name.starts_with('&')
-            && custom_traits.iter().any(|(t, _)| t == "__scalar_bind")
+            && bind == Some(crate::ast::bind_decl::BindKind::Scalar)
     }
 
     /// Whether ADR-0039 slice 2's read flip covers `sigiled` at all — the

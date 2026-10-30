@@ -514,6 +514,7 @@ impl Interpreter {
         // triggers. A `use`d module and an `EVAL` re-publish their own over
         // this one for the span they own.
         let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(Some(unit_file));
+        let _unit_text = crate::unit_source_text::UnitSourceTextGuard::enter(&preprocessed);
         self.cur_source_line = 1;
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());
@@ -522,10 +523,7 @@ impl Interpreter {
         // the parser's scalar-var twigil handling); for the mainline that is the
         // script itself.
         let saved_source_file = crate::parser::set_parser_source_file(Some(source_file));
-        let parse_result = crate::parse_dispatch::parse_compilation_unit_of(
-            &preprocessed,
-            crate::rakuast::frontend::Unit::Mainline,
-        );
+        let parse_result = crate::parse_dispatch::parse_compilation_unit_of(&preprocessed);
         let unit_docs = crate::parser::decl_doc::take_unit_docs();
         crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();
@@ -559,9 +557,11 @@ impl Interpreter {
         Self::inject_metamodel_role_prelude(&code, &mut stmts);
         Self::inject_enumeration_prelude(&code, &mut stmts);
         Self::inject_iterator_role_prelude(&code, &mut stmts);
+        Self::inject_hash_ordered_prelude(&code, &mut stmts);
         Self::inject_x_wrapper_prelude(&code, &mut stmts);
         Self::inject_precomp_api_prelude(&code, &mut stmts);
         Self::inject_formatter_syntax_prelude(&code, &mut stmts);
+        Self::inject_deparse_prelude(&code, &mut stmts);
         Self::inject_container_descriptor_prelude(&code, &mut stmts);
         // Install EVERY END phaser this compunit declares — top-level, inside
         // a block, inside a sub or a method — before the VM runs a single
@@ -613,6 +613,7 @@ impl Interpreter {
                             body,
                             condition: None,
                             end_index: None,
+                            bare: false,
                         }
                     } else {
                         s
@@ -689,6 +690,24 @@ impl Interpreter {
                 // while the unit is still being compiled (#10977).
                 if end > 0 {
                     body_main.insert(end, Stmt::BeginPrologueEnd);
+                }
+                // The closures `$*CU.add-check-code` queued run after the
+                // unit's CHECK phasers (which follow the marker), before INIT.
+                // Only a unit with BEGIN-time effects can have queued any.
+                if end > 0 {
+                    let checks = body_main[end + 1..]
+                        .iter()
+                        .take_while(|stmt| {
+                            matches!(
+                                stmt,
+                                Stmt::Phaser {
+                                    kind: crate::ast::PhaserKind::Check,
+                                    ..
+                                }
+                            )
+                        })
+                        .count();
+                    body_main.insert(end + 1 + checks, Stmt::RunCheckCode);
                 }
                 (end > 0, if end > 0 { end + 1 } else { 0 })
             }
@@ -795,7 +814,18 @@ impl Interpreter {
             }
             other => other,
         };
-        let queue_result = if Self::should_run_success_queue_vm(&body_result, self.env.get("_")) {
+        // Rakudo calls `sub MAIN` from the end of the mainline, so the file's
+        // own LEAVE/KEEP/UNDO phasers of a program that declares one run after
+        // `MAIN` returns (#15407); `defer_exit_phasers` holds them until then.
+        let defer_exit_phasers = body_result.is_ok()
+            && !self.explicit_run_main
+            && body_main.iter().any(|s| {
+                matches!(s, Stmt::SubDecl { name, multi: false, .. } if name.as_str() == "MAIN")
+            });
+        let success_queue = Self::should_run_success_queue_vm(&body_result, self.env.get("_"));
+        let queue_result = if defer_exit_phasers {
+            Ok(())
+        } else if success_queue {
             self.run_block_raw(&success_ph)
         } else {
             self.run_block_raw(&failure_ph)
@@ -885,8 +915,26 @@ impl Interpreter {
         // `Usage:` and exited 2 where raku exits 0 silently — which also made
         // `use <dist>; exit 0` an unusable probe for the dist-compatibility sweep,
         // since every dist exporting a MAIN dispatched it.
-        if !self.explicit_run_main && !self.is_halted() {
-            self.dispatch_main(&compiled_fns)?;
+        let main_result = if !self.explicit_run_main && !self.is_halted() {
+            self.dispatch_main(&compiled_fns)
+        } else {
+            Ok(())
+        };
+        if defer_exit_phasers && !self.is_halted() {
+            // An `exit` leaves no scope, so it skips them.
+            let queue = if success_queue && main_result.is_ok() {
+                &success_ph
+            } else {
+                &failure_ph
+            };
+            let queue_result = self.run_block_raw(queue);
+            if main_result.is_ok() {
+                queue_result?;
+            }
+        }
+        if let Err(e) = main_result {
+            let _ = self.finish();
+            return Err(e);
         }
         self.finish()?;
         // GC program-end collect: deliver DESTROY for leaked cycles. Skipped
@@ -1341,6 +1389,10 @@ impl Interpreter {
             // distinguish between variables set by prior END phasers (which
             // should propagate) and stale captured values (which should not
             // override live values).
+            // A `my $*x` of the mainline dies with its frame: rakudo runs END
+            // with no caller chain, so `$*x` there is the process-level value
+            // (or undefined), not the mainline's lexical dynamic.
+            let dead_dynamics = self.drop_mainline_lexical_dynamics();
             let original_env = self.env.clone();
             // rakudo runs END after the mainline's warning handler is gone, so
             // an unhandled `warn` (explicit, or an uninitialized-value
@@ -1363,6 +1415,16 @@ impl Interpreter {
                 // END — a closure over the container — sees that variable's
                 // final value, so the live value wins there.
                 for (k, v) in captured_env.iter() {
+                    // A dynamic is looked up through callers, never captured: no
+                    // frame calls an END, so the declaring block's `my $*x` is gone.
+                    if dead_dynamics.contains(k)
+                        || k.with_str(|s| {
+                            s.starts_with('*')
+                                || ["$*", "@*", "%*", "&*"].iter().any(|p| s.starts_with(p))
+                        })
+                    {
+                        continue;
+                    }
                     if !self.env.contains_key_sym(*k) {
                         overlay_keys.push(k.resolve());
                         self.env.insert_sym(*k, v.clone());
@@ -1392,7 +1454,14 @@ impl Interpreter {
                     self.set_current_package(package.clone());
                 }
                 let saved_unit = std::mem::replace(&mut self.current_unit, phaser.unit);
+                // The body is the declaring compunit's top-level code: it sees
+                // that unit's own `use` imports, not the exit-time main
+                // script's.
+                self.module
+                    .module_loading_unit_stack
+                    .push((phaser.unit, self.routine_stack.len()));
                 let body_result = self.run_block(body);
+                self.module.module_loading_unit_stack.pop();
                 self.current_unit = saved_unit;
                 self.set_current_package(saved_package);
                 if self.control.halted {

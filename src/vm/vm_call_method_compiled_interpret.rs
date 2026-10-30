@@ -24,21 +24,32 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // A native array's `sort`/`reverse`/... answer is a native array.
+        if !crate::builtins::method_table::native_array_result::retypes(method_sym.as_str()) {
+            return self.try_compiled_method_or_interpret_sym_inner(target, method_sym, args);
+        }
+        let receiver = target.clone();
+        let answer = self.try_compiled_method_or_interpret_sym_inner(target, method_sym, args)?;
+        Ok(crate::builtins::method_table::native_array_result::retype(
+            &receiver,
+            method_sym.as_str(),
+            answer,
+        ))
+    }
+
+    fn try_compiled_method_or_interpret_sym_inner(
+        &mut self,
+        target: Value,
+        method_sym: crate::symbol::Symbol,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
         // See `call_method_with_values`: a user `^find_method` answers first.
         if let Some(result) =
             self.try_user_find_method_dispatch(&target, method_sym.as_str(), &args)
         {
             return result;
         }
-        let saved_self = self.env().get_sym(crate::symbol::wk::self_()).cloned();
-        let result = self.try_compiled_method_or_interpret_inner(target, method_sym, args);
-        match saved_self {
-            Some(s) => self.set_env_with_main_alias("self", s),
-            None => {
-                self.env_mut().remove("self");
-            }
-        }
-        result
+        self.try_compiled_method_or_interpret_inner(target, method_sym, args)
     }
 
     fn try_compiled_method_or_interpret_inner(
@@ -296,7 +307,7 @@ impl Interpreter {
             if !self.has_user_method(class, method)
                 && !Self::is_type_identity_method(method)
                 && let ValueView::Instance { attributes, .. } = target.view()
-                && attributes.contains_key("__mutsu_array_storage")
+                && attributes.contains_key(crate::symbol::wk::array_storage())
                 && self
                     .mro_readonly(class)
                     .iter()
@@ -304,7 +315,7 @@ impl Interpreter {
             {
                 let storage = attributes
                     .as_map()
-                    .get("__mutsu_array_storage")
+                    .get(crate::symbol::wk::array_storage())
                     .cloned()
                     .unwrap_or(Value::real_array(Vec::new()));
                 if let Some(native_result) = self.try_native_method(&storage, method_sym, &args) {

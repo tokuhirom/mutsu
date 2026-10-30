@@ -86,6 +86,10 @@ pub(crate) enum RegexExtension {
     ContextualizedInterpolation {
         sigil: char,
         sequential: bool,
+        /// The assertion spelling `<$(EXPR)>` / `<@(EXPR)>`, which reads a
+        /// string result as regex source (`Assertion::InterpolatedVar`), as
+        /// against the bare atom, which matches it literally.
+        assertion: bool,
         code: Box<RegexCode>,
     },
     /// `$^a`: a placeholder parameter of the enclosing block, interpolated.
@@ -262,8 +266,17 @@ impl RegexExtension {
             Self::InterpolatedQuote { source, .. } => format!("\"{source}\""),
             Self::Conjunction(operands) => join_operands(operands, "&"),
             Self::SequentialConjunction(operands) => join_operands(operands, "&&"),
-            Self::ContextualizedInterpolation { sigil, code, .. } => {
-                format!("{sigil}({})", code.code)
+            Self::ContextualizedInterpolation {
+                sigil,
+                code,
+                assertion,
+                ..
+            } => {
+                if *assertion {
+                    format!("<{sigil}({})>", code.code)
+                } else {
+                    format!("{sigil}({})", code.code)
+                }
             }
             Self::ContextualizedVariable { sigil, name, .. } => format!("{sigil}${name}"),
             Self::Placeholder { name, .. } => format!("$^{name}"),

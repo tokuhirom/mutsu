@@ -1,6 +1,6 @@
 ---
 name: ecosystem-dist-queue
-description: Take the next zef distribution off the ordered ecosystem queue (`scripts/ecosystem-tickets.py --queue`), lock it on the lock board (issue #12725) so no other agent works the same one, diagnose it with the ecosystem-dist-fix loop, then fix it or file its root cause in the right lane, and release the lock. Use when asked to make some/any module work rather than a named one ("モジュールを一個動くようにして", "work the ecosystem queue", "grab the next ecosystem module and fix it"), or when running several such agents in parallel and they must not collide.
+description: Take the next zef distribution off the ordered ecosystem queue (`scripts/ecosystem-tickets.py --queue`), lock it on the lock board (issue #15044) so no other agent works the same one, diagnose it with the ecosystem-dist-fix loop, then fix it or file its root cause in the right lane, and release the lock. Use when asked to make some/any module work rather than a named one ("モジュールを一個動くようにして", "work the ecosystem queue", "grab the next ecosystem module and fix it"), or when running several such agents in parallel and they must not collide.
 metadata:
   short-description: Take the next queued distribution, lock it, fix or file it
 ---
@@ -35,7 +35,7 @@ the only thing every agent reads identically.
 The board does not prevent a collision. It makes both sides **agree on who lost**, which is all an
 optimistic protocol can do, and all it needs to do.
 
-**The lock board is [tokuhirom/mutsu#12725](https://github.com/tokuhirom/mutsu/issues/12725)** — the
+**The lock board is [tokuhirom/mutsu#15044](https://github.com/tokuhirom/mutsu/issues/15044)** — the
 single open issue labelled `ecosystem:lock`. If that number is ever wrong, the label is the
 authority: `gh issue list --repo tokuhirom/mutsu --label ecosystem:lock` (remote: `list_issues` with
 `labels: ["ecosystem:lock"]`), and there is exactly one. (The board rotates to a fresh issue once
@@ -69,11 +69,11 @@ script's docstring says why). The ledger only changes with the nightly sweep, so
 ## 2. Read the board, take the first free entry
 
 ```sh
-gh issue view 12725 --repo tokuhirom/mutsu --comments
+gh issue view 15044 --repo tokuhirom/mutsu --comments
 ```
 
 Remote container: `issue_read` with `method: "get_comments"`, `owner: tokuhirom`, `repo: mutsu`,
-`issue_number: 12725`. Page to the end — the log is oldest-first and the live locks are spread
+`issue_number: 15044`. Page to the end — the log is oldest-first and the live locks are spread
 through it, not only at the bottom. If a single `get_comments` call now exceeds the tool's response
 size limit, the board needs rotating again — follow
 [`ecosystem-lock-board-rotation`](../ecosystem-lock-board-rotation/SKILL.md) before locking.
@@ -85,15 +85,30 @@ of every live lock; you will need it in step 4.
 Then walk the queue from rank 1 and **take the first entry that**
 
 - has no live lock on the board, and
-- has no open issue already tracking it — search open issues labelled `ecosystem` for the
-  distribution name (`gh issue list --repo tokuhirom/mutsu --label ecosystem --search '"<Dist::Name>"'`;
-  remote: `search_issues` with `repo:tokuhirom/mutsu is:issue is:open label:ecosystem "<Dist::Name>"`),
-  and no open PR working it.
+- has no open issue already tracking it, and no open PR working it. The tracking issues are the
+  open `ecosystem` issues whose body carries an `eco-dist: <Dist::Name>` marker line (or an
+  `eco-cluster: <id>` line for a cluster containing it). `scripts/ecosystem-dashboard.py` lists
+  them for you: its "Waiting on an issue" part is exactly the entries to pass, "Locked" is the
+  board's live set, and "Free queue" is what is left, in work order. It is a view of the board and
+  the issues, not a lock: still post `Locking:` (step 4). Its "Needs attention" part names open
+  issues that mention a queued distribution without a marker; read those before taking that
+  distribution, and add the marker line to the issue if it does track it.
 
 Those are the only reasons to pass an entry. **Skipping one because it looks hard is
 cherry-picking** and is exactly what the order exists to rule out. An entry waiting on an issue is
 passed because someone owns its cause already, not because it is hard; it comes back into play when
 that issue closes and the next sweep re-measures it.
+
+```sh
+scripts/ecosystem-dashboard.py                  # needs `gh api`; prints the body
+scripts/ecosystem-dashboard.py --issues-json tmp/issues.json --comments-json tmp/board.json
+```
+
+The dashboard issue is [#15488](https://github.com/tokuhirom/mutsu/issues/15488) (deliberately without the `ecosystem` label, so the script does not read its own output). Its body is this output, regenerated wholesale (`--update <N>`); nobody edits it
+by hand. The nightly sweep's `dashboard` job (`ecosystem-sweep.yml`) regenerates it after the
+ledger is pushed; run `--update 15488` yourself for a fresher view (a lock you just took shows up
+only after a refresh, so the board stays the authority). Locks are still appended to the board as comments, never kept in the dashboard body: a
+body edit is a read-modify-write that two agents can both win.
 
 ## 3. Lock it, then diagnose and route
 
@@ -112,7 +127,8 @@ Then decide by **where the root cause lives** — not by how big the fix looks:
   ([ADR-11276](../../../docs/adr/11276-built-in-methods-are-handler-rows.md), #11276) and RakuAST as
   the frontend ([ADR-10723](../../../docs/adr/10723-rakuast-is-the-frontend-ir.md), #7564). Do
   **not** fix it on the path the campaign is retiring. File an issue with its `lane:*` label and the
-  `ecosystem` label (plus `todo:ticket`/`todo:deep`), make it a sub-issue of the campaign's carrier
+  `ecosystem` label (plus `todo:ticket`/`todo:deep`) and an `eco-dist: <Dist::Name>` line in the
+  body, make it a sub-issue of the campaign's carrier
   when the campaign's ADR covers it, unlock with `filed #N`, and take the next entry.
 - **(c) The same signature fails 3 or more distributions** (the queue row shows a cluster id): file
   one issue for the cause with the
@@ -131,7 +147,7 @@ each nightly sweep, when closed issues have turned into re-measured records.
 
 ## 4. Lock protocol
 
-Post one comment to #12725 whose **first line is exactly**:
+Post one comment to #15044 whose **first line is exactly**:
 
 ```
 Locking: String::Utils claude/ecosystem-string-utils-ab12
@@ -142,7 +158,7 @@ push. The branch is what identifies you — every agent posts as the same GitHub
 names no branch names nobody.
 
 ```sh
-gh issue comment 12725 --repo tokuhirom/mutsu --body 'Locking: String::Utils claude/<branch>'
+gh issue comment 15044 --repo tokuhirom/mutsu --body 'Locking: String::Utils claude/<branch>'
 ```
 
 Then **read the comments again** and compare ids. Among the live locks for *that distribution*, the
@@ -187,7 +203,7 @@ Three things that belong to this wrapper rather than that one:
   `ecosystem-data` branch, which only the nightly sweep writes. Verify the fix with
   the distribution's own test files (step 3) and the `t/` pin, and report "file X now passes under
   mutsu" in the PR body in place of a record transition.
-- **Mention the lock in the PR body** ("locked on #12725"), so a reviewer can see the run was
+- **Mention the lock in the PR body** ("locked on #15044"), so a reviewer can see the run was
   serialized and can find the release.
 - **Re-read the board at `ecosystem-dist-fix`'s own checkpoints** — before the pre-publication
   `make test` + `make roast` run, and immediately before opening the PR. Steps 2-4 settle only the
@@ -201,7 +217,7 @@ Three things that belong to this wrapper rather than that one:
 The moment the run ends — merged, filed, blocked, `no_baseline`, or you simply stopped:
 
 ```sh
-gh issue comment 12725 --repo tokuhirom/mutsu --body 'Unlocking: String::Utils claude/<branch>
+gh issue comment 15044 --repo tokuhirom/mutsu --body 'Unlocking: String::Utils claude/<branch>
 Merged as #7901. t/03 still needs #7902 (nqp::unipropcode).'
 ```
 

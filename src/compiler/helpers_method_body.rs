@@ -192,13 +192,6 @@ impl Compiler {
             method_compiler.enclosing_scopes.push(frame.clone());
         }
         method_compiler.role_type_param_names = self.role_type_param_names.clone();
-        // `method m($self: $n)` names its invocant param `self`, so it binds the
-        // plain `"self"` key; a `$self` read in the body must resolve to it
-        // rather than to the reserved lexical key (ADR-0061). An *anonymous*
-        // invocant marker (`method m(Foo:D:)`) declares no `$self` and is
-        // excluded by `ParamDef::declares_self_lexical`.
-        method_compiler.self_is_signature_param =
-            crate::ast::signature_declares_self_lexical(&effective_param_defs);
         let mut method_params: Vec<String> = vec![
             "self".to_string(),
             "__ANON_STATE#".to_string(),
@@ -379,7 +372,7 @@ impl Compiler {
             package_routine_scoped_cache: std::sync::OnceLock::new(),
         };
         cf.precompute_param_local_slots();
-        cf.precompute_named_call_plan();
+        cf.precompute_named_call_plan(crate::runtime::named_fast_fill);
         cf.precompute_param_name_syms();
         cf.detect_inner_subs();
         cf.compute_declared_locals();
@@ -578,7 +571,7 @@ impl Compiler {
 /// throwaway compile (`compile_method_def_in_place_with_dist`) it is meant
 /// to replace bytecode from later (D3-8b/c). For each sample declaration,
 /// the SOURCE-ORDER class/role decl plan's `compiled_routine_key` (looked
-/// up post-compile, skipping the `__hoisted` forward-reference shell which
+/// up post-compile, skipping the hoisted forward-reference shell which
 /// this box's own optimization leaves keyless — see `add_class_decl_plan`'s
 /// doc comment) must resolve to a `CompiledFunction` whose `code` is
 /// `Debug`-identical to the `CompiledCode` the SAME source installs on the
@@ -831,7 +824,7 @@ mod d3_8a_byte_parity_tests {
     /// failure, so it must not silently report "equal".
     fn compiled_code_pair(source: &str, type_name: &str, method_name: &str) -> (String, String) {
         // Main-pass side: parse + compile, then find the SOURCE-ORDER class
-        // or role decl plan (the `__hoisted` shell's method_decls are all
+        // or role decl plan (the hoisted shell's method_decls are all
         // `None` by this box's own optimization, so the first plan with a
         // `Some` key for this method is unambiguously the real one).
         let (stmts, _) =
@@ -1035,7 +1028,7 @@ mod d3_8a_byte_parity_tests {
     /// roast/S12-construction/roles-6e.t).
     ///
     /// `my $a = 0;` counts as a runtime statement, so `class Foo` here is ALSO
-    /// hoisted into a `__hoisted` forward-reference shell — whose own plan
+    /// hoisted into a hoisted forward-reference shell — whose own plan
     /// deliberately records nothing. This therefore pins both halves: the shell
     /// staying silent must not cost the real declaration its harvest.
     #[test]

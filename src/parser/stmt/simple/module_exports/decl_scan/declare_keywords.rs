@@ -26,12 +26,8 @@ impl DeclScan {
                 // HOW of a built-in declarator for the importing unit.
                 Stmt::Package { name, body, .. } if name.resolve() == "SUPERSEDE" => {
                     for decl in body {
-                        if let Stmt::VarDecl {
-                            name,
-                            custom_traits,
-                            ..
-                        } = decl
-                            && custom_traits.iter().any(|(t, _)| t == "__constant")
+                        if let Stmt::VarDecl { name, constant, .. } = decl
+                            && constant.is_some()
                         {
                             self.out.supersede_keywords.push(name.clone());
                         }
@@ -44,8 +40,9 @@ impl DeclScan {
                                 name,
                                 expr: Expr::BareWord(how_type),
                                 custom_traits,
+                                constant,
                                 ..
-                            } if custom_traits.iter().any(|(t, _)| t == "__constant") => {
+                            } if constant.is_some() => {
                                 self.out
                                     .declare_keywords
                                     .push((name.clone(), how_type.clone()));

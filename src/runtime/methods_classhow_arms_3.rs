@@ -250,6 +250,23 @@ impl Interpreter {
             ))))
     }
 
+    // Cost: O(n), n = the length of the coercion type's name.
+    pub(crate) fn mop_coercion_part(&mut self, args: Vec<Value>, source: bool) -> Result<Value, RuntimeError> {
+        let name = self.mop_receiver_owner(&args[0]);
+        let part = name
+            .strip_suffix(')')
+            .filter(|n| !n.contains('['))
+            .and_then(|n| n.find('(').filter(|&o| o > 0).map(|o| (&n[..o], &n[o + 1..])));
+        let picked = match part {
+            Some((_, src)) if source => {
+                if src.is_empty() { "Any" } else { src }
+            }
+            Some((target, _)) => target,
+            None => name.as_str(),
+        };
+        Ok(Value::package(Symbol::intern(picked)))
+    }
+
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_coerce(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
             let target_constraint = self.mop_receiver_owner(&args[0]);

@@ -341,10 +341,10 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
             mut role_is_rw,
             is_export,
             export_tags,
-            mut custom_traits,
+            custom_traits,
             written,
         },
-    ) = header::parse(rest, &name, &type_params)?;
+    ) = header::parse(rest)?;
     rest = after_header;
 
     // A role can refer to itself from its own methods. Register its name before
@@ -368,7 +368,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
     let brace = rest;
     let (rest, mut body) = package_body_block_with_terms(rest, &sigilless_terms)?;
     let spans = crate::parser::stmt::sub::package_spans(name_span, brace, rest, &body);
-    crate::parser::stmt::nested_block_methods::hoist(&mut body);
+    crate::rakuast::nested_methods::hoist(&mut body);
     // Handle `also is rw;` in the role body
     body.retain(|stmt| {
         if stmt_is_also_is_rw(stmt) {
@@ -426,11 +426,11 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
     // `role R { ... }.^name` is one expression; see `reject_trailing_postfix`.
     super::reject_trailing_postfix(rest)?;
 
-    if kw != "role" {
-        custom_traits.push(crate::parser::declare_how_marker(kw.to_string()));
-    } else if let Some(marker) = super::super::simple::supersede_marker("role") {
-        custom_traits.push(marker);
-    }
+    let declarator = if kw != "role" {
+        Some(kw.to_string())
+    } else {
+        super::super::simple::superseded_declarator("role")
+    };
     let role_stmt = Stmt::RoleDecl {
         spans,
         name: Symbol::intern(&name),
@@ -440,9 +440,14 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
         export_tags,
         body,
         is_rw: role_is_rw,
+        is_lexical: false,
         language_version: super::super::simple::current_language_version(),
         custom_traits,
         decl_id: crate::ast::next_class_decl_id(),
+        marks: crate::ast::PackageMarks {
+            declarator,
+            ..Default::default()
+        },
     };
     // The ver/auth/api traits become the declaration's header adverbs, like
     // a class declaration's.

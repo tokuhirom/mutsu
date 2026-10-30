@@ -59,8 +59,11 @@ fn call(
     };
     // #11217: a renderer (`.Str` / `.gist` / `.raku`) that ran out of native
     // stack truncated its text; raise instead of answering with it.
-    answer
-        .map(|(result, rerunnable)| (crate::value::render_guard::check_render(result), rerunnable))
+    answer.map(|(result, rerunnable)| {
+        let result =
+            result.map(|value| super::native_array_result::retype(target, row.name, value));
+        (crate::value::render_guard::check_render(result), rerunnable)
+    })
 }
 
 /// The List of elements `Any`'s row reads from a built-in receiver with an
@@ -276,7 +279,18 @@ pub(crate) fn invoke_mut(
     }
     // `Any` ends every owner chain: the proto a kind with no mutator of its
     // own falls back to (`Any.splice`).
-    let owners = mutating::owners_of(place.value()).unwrap_or(&[]);
+    // `BIND-KEY` on a native hash a role was mixed into is the `Hash` row's:
+    // `hash_bind_key` looks through the mixin and binds on the shared node.
+    // (The other `Hash` mutators reach a mixin through their own paths.)
+    let mixed_hash_bind = method == "BIND-KEY"
+        && matches!(place.value().descalarize().view(),
+            crate::value::ValueView::Mixin(inner, _)
+                if matches!(inner.view(), crate::value::ValueView::Hash(_)));
+    let owners = if mixed_hash_bind {
+        &["Hash"][..]
+    } else {
+        mutating::owners_of(place.value()).unwrap_or(&[])
+    };
     let id = owners
         .iter()
         .chain(&["Any"])
@@ -438,6 +452,18 @@ fn dispatch(
         // deriving from a built-in scalar type has no shape of its own, and is
         // answered by the rows of its payload's shape, the payload as invocant.
         None => match crate::builtins::native_base::redirect(target, method.as_str()) {
+            // A `Seq` payload is consumed through the interpreter (its
+            // iterator is user code): the instance dispatch redirects it.
+            Some(base) if base.is_seq_value() => return None,
+            // An `is Range`/`is Seq` subclass with its own `iterator` lists
+            // through it, which the interpreter does (#15361).
+            Some(_)
+                if interp.as_deref_mut().is_some_and(|i| {
+                    i.payload_instance_lists_own_iterator(target, method.as_str())
+                }) =>
+            {
+                return None;
+            }
             Some(base) => {
                 payload = base;
                 let receiver = Receiver::of_settled(&payload)?;

@@ -44,10 +44,6 @@ use super::{ClassDef, MethodDef, RoleCandidateDef, RoleDef, SubsetDef};
 /// [`Registry::classes`]'s type: a copy-on-write table, so a snapshot of it
 /// (an import scope's, `ImportScopeSnapshot`) is a reference bump.
 pub(crate) type ClassTable = CowTable<HashMap<String, CowTable<ClassDef>>>;
-/// [`Registry::proto_functions`]'s map.
-pub(crate) type ProtoFunctionMap = HashMap<Symbol, Arc<FunctionDef>>;
-/// The `proto sub` marker set behind [`Registry::proto_subs_snapshot`].
-pub(crate) type ProtoSubSet = HashSet<String>;
 
 /// Canonical method-table key. Both built-in handlers and user candidates will
 /// occupy this namespace; the latter still live in `ClassDef::methods` during
@@ -58,9 +54,60 @@ pub(crate) struct MethodEntryKey {
     pub(crate) name: Symbol,
 }
 
+/// The user candidates of one `(owner, name)` method row. Shared, so a dispatch
+/// that reads the row takes a reference count instead of deep-copying every
+/// `MethodDef` (`user_method_overloads` ran on each multi-method call and each
+/// `new` of a class declaring one); a mutator copies on write through
+/// [`Self::make_mut`]. Borrowed iteration and slice/`Vec` reads work as on the
+/// `Vec` this replaces; consuming it by value clones the definitions, as before.
+#[derive(Clone, Default)]
+pub(crate) struct MethodOverloads(Arc<Vec<MethodDef>>);
+
+impl MethodOverloads {
+    // Cost: O(1) when unshared; O(c) copy when a dispatch still holds the row, c = candidates.
+    pub(crate) fn make_mut(&mut self) -> &mut Vec<MethodDef> {
+        Arc::make_mut(&mut self.0)
+    }
+}
+
+impl From<Vec<MethodDef>> for MethodOverloads {
+    fn from(defs: Vec<MethodDef>) -> Self {
+        Self(Arc::new(defs))
+    }
+}
+
+impl std::ops::Deref for MethodOverloads {
+    type Target = Vec<MethodDef>;
+    fn deref(&self) -> &Vec<MethodDef> {
+        &self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a MethodOverloads {
+    type Item = &'a MethodDef;
+    type IntoIter = std::slice::Iter<'a, MethodDef>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl IntoIterator for MethodOverloads {
+    type Item = MethodDef;
+    type IntoIter = std::vec::IntoIter<MethodDef>;
+    // Cost: O(c) clone unless this was the last holder.
+    fn into_iter(self) -> Self::IntoIter {
+        Arc::try_unwrap(self.0)
+            .unwrap_or_else(|shared| (*shared).clone())
+            .into_iter()
+    }
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct MethodEntry {
-    pub(crate) user_candidates: Vec<MethodDef>,
+    /// Shared so a dispatch that reads the candidates (`user_method_overloads`)
+    /// takes a reference count, not a deep copy of every `MethodDef`; the
+    /// mutators below go through `Arc::make_mut`.
+    pub(crate) user_candidates: MethodOverloads,
     /// Visibility of the auto-generated accessor for a `has $.x`/`has $!x`
     /// attribute this class declares directly, keyed by attribute name under
     /// the same `(owner, name)` row as a same-named method would occupy
@@ -77,7 +124,7 @@ pub(crate) struct MethodEntry {
     /// The proto declared `is hidden-from-backtrace`: its dispatch frame is
     /// left out of a `Backtrace` like any other hidden routine's.
     pub(crate) proto_hidden_from_backtrace: bool,
-    pub(crate) proto: Option<FunctionDef>,
+    pub(crate) proto: Option<Arc<FunctionDef>>,
 }
 
 /// The grammar token/rule table's shape: name -> its registered overloads.
@@ -636,12 +683,6 @@ pub(crate) struct Registry {
     /// key of it was last found in (`reinstate_module_functions`, #9170).
     pub(crate) module_functions_present:
         Option<(std::sync::Arc<std::collections::HashSet<Symbol>>, u64)>,
-    /// How many times [`Registry::functions`] was written or replaced: every
-    /// `functions_mut` borrow, `install_function` and wholesale restore counts
-    /// one. Never decreases, so an import scope that logged its own writes can
-    /// tell at its pop whether anything else wrote the map meanwhile
-    /// (`ImportScopeSnapshot::logged_function_writes`, #9170).
-    pub(crate) function_writes: u64,
     /// `our`-scoped subs that persist across block boundaries. Held behind `Arc`
     /// (like `functions`) so block-scope restore and whole-registry clones
     /// (`clone_for_thread`, EVAL copy) share the def rather than deep-cloning it;
@@ -682,6 +723,11 @@ pub(crate) struct Registry {
     /// play. The actual proto bodies live in `MethodEntry::proto`
     /// (`method_entries`), read per-owner via [`Registry::method_entry_proto`].
     pub(crate) has_proto_methods: bool,
+    /// The method names some `proto method`/`proto submethod` is declared
+    /// for, in any class: `lookup_proto_method`'s O(1) negative answer, so a
+    /// call of any other method skips the MRO walk. Written only by
+    /// [`Registry::set_proto_method`].
+    proto_method_names: std::collections::HashSet<Symbol>,
     /// Compiled bytecode for a `proto method`/`proto submethod` body, keyed by
     /// `(owner, method_name)`. ADR-0019 D3-8 (`todo/tickets/
     /// adr0019-method-body-compile-dedup-remnants.md` item 2) never covered
@@ -705,9 +751,28 @@ pub(crate) struct Registry {
     /// dropped by [`RegistryWriteGuard`]'s `DerefMut`; see
     /// [`Registry::has_lexical_type_key_for`].
     lexical_type_names: std::sync::OnceLock<rustc_hash::FxHashSet<Box<str>>>,
+    /// `short name -> class key` for every class whose key is qualified: the
+    /// part after the LAST `::` of the key, pointing at the smallest key with
+    /// that tail. Built on first query and dropped by
+    /// [`RegistryWriteGuard`]'s `DerefMut` together with
+    /// [`Self::lexical_type_names`]; see [`Registry::class_key_by_short_name`].
+    class_short_names: std::sync::OnceLock<rustc_hash::FxHashMap<Box<str>, Box<str>>>,
+    /// A process-unique stamp of this registry's content, replaced on every
+    /// write through [`RegistryWriteGuard`]'s `DerefMut` (the only path to a
+    /// `&mut Registry`), so a memo tagged with it cannot outlive a change to
+    /// the class, role, enum or subset tables; see [`Self::type_stamp`].
+    type_stamp: u64,
 }
 
 impl Registry {
+    /// The stamp of this registry's content. Two reads that return the same
+    /// value saw the same classes, roles, enums and subsets, whichever thread
+    /// or copy-on-write clone they went through.
+    // Cost: O(1).
+    pub(crate) fn type_stamp(&self) -> u64 {
+        self.type_stamp
+    }
+
     /// Whether any key in `classes` / `roles` / `enum_types` / `subsets` is a
     /// lexically-mangled storage name whose source-facing part is exactly
     /// `unmangled` — that is, whether a `key.starts_with("{unmangled}\u{0}")`
@@ -752,11 +817,53 @@ impl Registry {
             .contains(unmangled)
     }
 
-    /// Drop the [`Self::has_lexical_type_key_for`] cache. Called from the
-    /// write guard's `DerefMut`, which is the only way to reach `&mut
-    /// Registry`.
+    /// The registry key of a class declared as `...::short` (a name `short`
+    /// that is not itself a key), or `None`. The fallback of a bare class-name
+    /// lookup: `Bot::Grammar` answers to `Grammar` when nothing else does.
+    ///
+    /// A miss used to be answered by walking every class key and splitting it
+    /// (`split_qualified` per entry, ~400 entries): every `.can`, `.^mro` or
+    /// parent walk on a BUILT-IN type name (`Int`, `Any`, `Mu`), which has no
+    /// registry entry, paid ~400 splits per step -- 400K instructions for one
+    /// `Int.can("x")`. Several keys can share a tail; the smallest wins, so the
+    /// answer no longer depends on the hash map's iteration order.
+    ///
+    /// Coherent by construction like [`Self::has_lexical_type_key_for`]: the
+    /// index is a `OnceLock` that the write guard's `DerefMut` drops.
+    // Cost: O(1) expected; the first query after a registry write builds the index in O(k), k = classes.
+    pub(crate) fn class_key_by_short_name(&self, short: &str) -> Option<&str> {
+        self.class_short_names
+            .get_or_init(|| {
+                let mut index: rustc_hash::FxHashMap<Box<str>, Box<str>> =
+                    rustc_hash::FxHashMap::default();
+                for key in self.classes.keys() {
+                    let Some((_, tail)) =
+                        crate::qualified::split_qualified(crate::qualified::known_symbol(key))
+                    else {
+                        continue;
+                    };
+                    match index.get_mut(tail.as_str()) {
+                        Some(held) if **held <= **key => {}
+                        Some(held) => *held = key.as_str().into(),
+                        None => {
+                            index.insert(tail.as_str().into(), key.as_str().into());
+                        }
+                    }
+                }
+                index
+            })
+            .get(short)
+            .map(|key| &**key)
+    }
+
+    /// Drop the [`Self::has_lexical_type_key_for`] and
+    /// [`Self::class_key_by_short_name`] caches. Called from the write guard's
+    /// `DerefMut`, which is the only way to reach `&mut Registry`.
     fn invalidate_lexical_type_names(&mut self) {
         self.lexical_type_names.take();
+        self.class_short_names.take();
+        static NEXT_STAMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        self.type_stamp = NEXT_STAMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -792,7 +899,7 @@ impl Registry {
         &self,
         class_name: &str,
         method_name: &str,
-    ) -> Option<Vec<MethodDef>> {
+    ) -> Option<MethodOverloads> {
         self.method_entries
             .get(&MethodEntryKey {
                 owner: Symbol::intern(class_name),
@@ -864,7 +971,7 @@ impl Registry {
             return (false, false);
         };
         let (mut local, mut role) = (false, false);
-        for d in &entry.user_candidates {
+        for d in entry.user_candidates.iter() {
             if d.is_private || (d.is_my && is_ancestor) {
                 continue;
             }
@@ -890,9 +997,10 @@ impl Registry {
             owner: Symbol::intern(class_name),
             name: Symbol::intern(method_name),
         };
-        self.method_entries.entry(key).or_default().proto = Some(def);
+        self.method_entries.entry(key).or_default().proto = Some(Arc::new(def));
         self.proto_compiled_cache.remove(&key);
         self.has_proto_methods = true;
+        self.proto_method_names.insert(key.name);
         self.bump_method_generation();
     }
 
@@ -945,12 +1053,27 @@ impl Registry {
         &self,
         class_name: &str,
         method_name: &str,
-    ) -> Option<FunctionDef> {
+    ) -> Option<Arc<FunctionDef>> {
+        self.method_entry_proto_sym(Symbol::intern(class_name), Symbol::intern(method_name))
+    }
+
+    /// Whether a `proto method` named `name` is declared in any class.
+    // Cost: O(1).
+    pub(crate) fn has_proto_method_named(&self, name: Symbol) -> bool {
+        self.proto_method_names.contains(&name)
+    }
+
+    /// [`Self::method_entry_proto`] for an owner and method already interned
+    /// (the MRO walk of `lookup_proto_method` interns the method name once, not
+    /// once per level).
+    // Cost: O(1).
+    pub(crate) fn method_entry_proto_sym(
+        &self,
+        owner: Symbol,
+        name: Symbol,
+    ) -> Option<Arc<FunctionDef>> {
         self.method_entries
-            .get(&MethodEntryKey {
-                owner: Symbol::intern(class_name),
-                name: Symbol::intern(method_name),
-            })
+            .get(&MethodEntryKey { owner, name })
             .and_then(|entry| entry.proto.clone())
     }
 
@@ -1684,7 +1807,7 @@ impl Registry {
         &self,
         class_name: &str,
         method_name: &str,
-    ) -> Option<Vec<MethodDef>> {
+    ) -> Option<MethodOverloads> {
         self.user_method_overloads(class_name, method_name)
     }
 
@@ -1722,9 +1845,9 @@ impl Registry {
         &self,
         class_name: &str,
         method_name: &str,
-    ) -> Option<Vec<MethodDef>> {
+    ) -> Option<MethodOverloads> {
         self.get_method_overloads(class_name, method_name)
-            .or_else(|| self.role_method_overloads(class_name, method_name))
+            .or_else(|| self.role_method_overloads(class_name, method_name).map(MethodOverloads::from))
     }
 
     /// Bound role type parameters for `class_name` (e.g. the `::T` -> value map
@@ -1794,7 +1917,6 @@ impl Registry {
     /// answerable without every mutating site having to say so (#8314).
     #[inline]
     pub(crate) fn functions_mut(&mut self) -> &mut HashMap<Symbol, std::sync::Arc<FunctionDef>> {
-        self.function_writes += 1;
         crate::runtime::cow_table_mut(&mut self.functions).map_mut()
     }
 
@@ -1814,7 +1936,6 @@ impl Registry {
     pub(crate) fn install_function(&mut self, key: Symbol, def: std::sync::Arc<FunctionDef>) {
         // `functions` and `fn_transitions` are disjoint fields; the split
         // borrow is what lets the memo drive the table (and its stamp).
-        self.function_writes += 1;
         let transitions = &mut self.fn_transitions;
         transitions.install(&mut self.functions, key, def);
     }
@@ -2208,6 +2329,28 @@ impl std::ops::DerefMut for RegistryWriteGuard<'_> {
 mod tests {
     use super::*;
 
+    /// The short-name class index answers by the part after the LAST `::`,
+    /// picks the smallest key when two share a tail, ignores unqualified keys,
+    /// and is rebuilt after the invalidation the write guard performs.
+    #[test]
+    fn class_short_name_index_follows_the_class_table() {
+        let mut reg = Registry::default();
+        reg.classes
+            .insert("Zed::Thing".to_string(), ClassDef::default().into());
+        reg.classes
+            .insert("Plain".to_string(), ClassDef::default().into());
+        assert_eq!(reg.class_key_by_short_name("Thing"), Some("Zed::Thing"));
+        assert_eq!(reg.class_key_by_short_name("Plain"), None);
+        assert_eq!(reg.class_key_by_short_name("Other"), None);
+        reg.classes
+            .insert("Alpha::Beta::Thing".to_string(), ClassDef::default().into());
+        reg.invalidate_lexical_type_names();
+        assert_eq!(
+            reg.class_key_by_short_name("Thing"),
+            Some("Alpha::Beta::Thing")
+        );
+    }
+
     /// A thread clone shares its parent's `Arc<Registry>`, and its first write
     /// (an inner `my sub` re-installed on every call) copies the `Registry`.
     /// The role and class-sub tables must survive that copy as shared
@@ -2330,8 +2473,8 @@ mod tests {
             value_prototype: None,
             syms: Default::default(),
             lexical_package: crate::symbol::wk::global_package(),
-            params: Vec::new(),
-            param_defs: Vec::new(),
+            params: Default::default(),
+            param_defs: Default::default(),
             body: std::sync::Arc::new(Vec::new()),
             is_rw: false,
             is_raw: false,

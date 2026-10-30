@@ -1076,7 +1076,7 @@ impl Interpreter {
                         .iter()
                         .any(|pd| pd.is_invocant);
                     let (params, param_defs) = if has_explicit_invocant {
-                        (def.params.clone(), def.param_defs.to_vec())
+                        (def.params.clone(), def.param_defs.clone())
                     } else {
                         let mut params = vec!["self".to_string()];
                         params.extend(def.params.iter().filter(|p| p.as_str() != "self").cloned());
@@ -1087,7 +1087,7 @@ impl Interpreter {
                                 .filter(|p| p.name.as_str() != "self")
                                 .cloned(),
                         );
-                        (params, param_defs)
+                        (std::sync::Arc::new(params), std::sync::Arc::new(param_defs))
                     };
                     let mut env = crate::env::Env::new();
                     env.insert(

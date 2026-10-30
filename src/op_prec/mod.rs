@@ -96,6 +96,29 @@ pub(crate) fn for_name(name: &str) -> Option<PrecEntries> {
     builtin(category, symbol).or_else(|| category_default(category))
 }
 
+/// The symbols of the built-in infix operators whose `prec` is `base`
+/// (`t=` for additive), in table order.
+// Cost: O(n), n = built-in operator count (~180).
+pub(crate) fn infix_symbols_with_prec(base: &str) -> impl Iterator<Item = &'static str> + '_ {
+    builtin_table::BUILTIN
+        .iter()
+        .filter(move |(category, _, entries)| {
+            *category == "infix" && entries.iter().any(|(k, v)| *k == "prec" && *v == base)
+        })
+        .map(|(_, symbol, _)| *symbol)
+}
+
+/// Split a user operator's `prec` string into the built-in level it was
+/// derived from and its distance from it in `is tighter` (+1) / `is looser`
+/// (-1) steps: `t:=` is `("t=", -1)`.
+// Cost: O(|prec|).
+pub(crate) fn split_prec_marks(prec: &str) -> (String, i32) {
+    let tighter = prec.matches('@').count() as i32;
+    let looser = prec.matches(':').count() as i32;
+    let base = prec.chars().filter(|c| !matches!(c, '@' | ':')).collect();
+    (base, tighter - looser)
+}
+
 /// The routine name an `is equiv/tighter/looser` argument refers to:
 /// `&[+]`, `&infix:<+>`, `infix:<+>` and a bare `+` (from `is tighter<+>`)
 /// all name `infix:<+>`.

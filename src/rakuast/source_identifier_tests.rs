@@ -1,6 +1,6 @@
 use super::RakuAstClass;
 use super::convert::convert_expr;
-use crate::ast::{Expr, spelled::keep_spelling};
+use crate::ast::Expr;
 use crate::symbol::Symbol;
 
 fn call(name: &str, args: Vec<Expr>) -> Expr {
@@ -25,7 +25,6 @@ fn unmarked_generated_identifiers_still_refuse() {
 
 #[test]
 fn source_call_provenance_does_not_escape_into_arguments() {
-    let _guard = keep_spelling(true);
     let expr = Expr::source_identifier(
         call("__written_test", vec![call("__generated_test", Vec::new())]),
         "__written_test(...)",
@@ -36,7 +35,6 @@ fn source_call_provenance_does_not_escape_into_arguments() {
 
 #[test]
 fn source_names_do_not_activate_generated_helper_conversion() {
-    let _guard = keep_spelling(true);
     let expr = Expr::source_identifier(call("__object_hash", Vec::new()), "__object_hash()");
     assert_eq!(convert_expr(&expr).unwrap().class, RakuAstClass::CallName);
     assert_eq!(

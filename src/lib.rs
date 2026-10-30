@@ -73,6 +73,7 @@ pub(crate) mod trir;
 pub(crate) mod type_id;
 mod ucd;
 pub(crate) mod unit_source_file;
+pub(crate) mod unit_source_text;
 mod value;
 mod vm;
 /// Cooperative scheduler standing in for OS threads in the browser.
@@ -177,14 +178,10 @@ pub fn gc_register_main_thread() {
 pub fn dump_ast(input: &str) -> Result<String, RuntimeError> {
     // Dumping does not execute: no parse-time probe may run a `use`d module.
     let _no_execute = parser::no_execute::NoExecuteGuard::enter();
-    let (stmts, _) = if rakuast::frontend::covers(rakuast::frontend::Unit::Mainline) {
-        parse_dispatch::parse_source_spelled(input)?
-    } else {
-        parse_dispatch::parse_source(input)?
-    };
-    // Under `MUTSU_RAKUAST` the dump is the tree the unit would run as: the
-    // RakuAST round trip's result, so the two frontends can be diffed.
-    let stmts = rakuast::frontend::round_trip_if_enabled(stmts, rakuast::frontend::Unit::Mainline)?;
+    let (stmts, _) = parse_dispatch::parse_source_spelled(input)?;
+    // The dump is the tree the unit would run as: the RakuAST round trip's
+    // result.
+    let stmts = rakuast::frontend::round_trip_unit(stmts)?;
     Ok(format!("{:#?}", stmts))
 }
 
@@ -199,7 +196,8 @@ pub fn dump_bytecode(input: &str, source_file: Option<&str>) -> Result<String, R
     use std::fmt::Write;
     // Dumping does not execute: no parse-time probe may run a `use`d module.
     let _no_execute = parser::no_execute::NoExecuteGuard::enter();
-    let (stmts, _) = parse_dispatch::parse_source(input)?;
+    let (stmts, _) = parse_dispatch::parse_source_spelled(input)?;
+    let stmts = rakuast::frontend::round_trip_unit(stmts)?;
     let _unit_file = unit_source_file::UnitSourceFileGuard::enter(
         source_file.map(crate::symbol::Symbol::intern),
     );

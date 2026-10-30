@@ -198,8 +198,8 @@ pub(crate) struct MethodDef {
     /// hash on a path that runs per call. Registration already knows the name,
     /// so the intern is paid once, where the declaration is read.
     pub(crate) lexical_package: crate::symbol::Symbol,
-    pub(crate) params: Vec<String>,
-    pub(crate) param_defs: Vec<ParamDef>,
+    pub(crate) params: std::sync::Arc<Vec<String>>,
+    pub(crate) param_defs: std::sync::Arc<Vec<ParamDef>>,
     /// Method body AST. Wrapped in Arc to make MethodDef clones O(1) since
     /// the body is never mutated after construction and can be large.
     pub(crate) body: std::sync::Arc<Vec<Stmt>>,

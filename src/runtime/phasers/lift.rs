@@ -48,19 +48,17 @@ impl VisitMut for Reorder {
     }
 
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
-        // A statement-form loop phaser is marked as `[SyntheticBlock([stmt])]`
-        // (see phaser_stmt): it shares the enclosing block's lexical scope,
-        // and `expand_loop_phasers` reads the marker to splice it scope-less.
-        // Flattening the marker here would silently downgrade it to the
-        // scoped block form, so reorder the inner statements instead.
+        // A statement-form (`bare`) loop phaser holds the one statement it was
+        // written over, which shares the enclosing block's lexical scope;
+        // reordering its body as a block would flatten that statement.
         if let Stmt::Phaser {
             kind: PhaserKind::First | PhaserKind::Next | PhaserKind::Last,
             body,
+            bare: true,
             ..
         } = stmt
-            && let [Stmt::SyntheticBlock(inner)] = body.as_mut_slice()
         {
-            reorder_recursive(inner, false, false);
+            reorder_recursive(body, false, false);
             return;
         }
         walk_stmt_mut(self, stmt);
@@ -242,7 +240,7 @@ fn phaser_value(body: Vec<Stmt>, kind: PhaserKind) -> Expr {
 
 /// Push `my $temp; $temp = VALUE` for a lifted phaser to `bucket`.
 fn push_temp_phaser(bucket: &mut Vec<Stmt>, temp_name: String, value: Expr) {
-    bucket.push(Stmt::VarDecl {
+    bucket.push(Stmt::VarDecl { marks: Default::default(),
         anonymous: false,
         name: temp_name.clone(),
         expr: Expr::Literal(crate::value::Value::NIL),
@@ -253,6 +251,9 @@ fn push_temp_phaser(bucket: &mut Vec<Stmt>, temp_name: String, value: Expr) {
         is_export: false,
         export_tags: vec![],
         custom_traits: vec![],
+        has_initializer: false,
+        constant: None,
+        bind: None,
         where_constraint: None,
     });
     bucket.push(Stmt::Assign {

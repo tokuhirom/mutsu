@@ -101,6 +101,7 @@ impl Interpreter {
             self.registry().class_direct_composed_roles.clone();
         let class_role_param_bindings_snapshot = self.registry().class_role_param_bindings.clone();
         let env_snapshot = self.env.clone();
+        let saved_failed_classes = std::mem::take(&mut self.module.eval_failed_classes);
         let saved_package = self.current_package();
         let previous_pod = self.env.get("=pod").cloned();
         let previous_doc_comments = self.declarator_docs.doc_comments.clone();
@@ -269,22 +270,36 @@ impl Interpreter {
                             .is_some_and(|suffix| suffix.starts_with('[')))
             })
         };
+        // A class whose declaration died while the unit compiled it (a trait or
+        // `BEGIN` that throws) is discarded with the unit, as rakudo does, so
+        // a later `EVAL` can declare the name again. A class the caller already
+        // had (an `augment` that died) is not new, so it keeps its snapshot.
+        let failed_classes = std::mem::replace(
+            &mut self.module.eval_failed_classes,
+            saved_failed_classes,
+        );
         let mut current_classes = self.registry().classes.clone();
-        current_classes.retain(|name, _| !is_eval_role_artifact(name));
-        let current_hidden_classes = self.registry().hidden_classes.clone();
+        current_classes.retain(|name, _| !is_eval_role_artifact(name) && !failed_classes.contains(name));
+        let mut current_hidden_classes = self.registry().hidden_classes.clone();
+        current_hidden_classes.retain(|name| !failed_classes.contains(name));
         let current_hidden_defer_parents = self.registry().hidden_defer_parents.clone();
         let mut current_class_composed_roles = self.registry().class_composed_roles.clone();
         current_class_composed_roles.retain(|name, roles| {
-            !is_eval_role_artifact(name) && !roles.iter().any(|role| eval_role_names.contains(role))
+            !is_eval_role_artifact(name)
+                && !failed_classes.contains(name)
+                && !roles.iter().any(|role| eval_role_names.contains(role))
         });
         let mut current_class_direct_composed_roles =
             self.registry().class_direct_composed_roles.clone();
         current_class_direct_composed_roles.retain(|name, roles| {
-            !is_eval_role_artifact(name) && !roles.iter().any(|role| eval_role_names.contains(role))
+            !is_eval_role_artifact(name)
+                && !failed_classes.contains(name)
+                && !roles.iter().any(|role| eval_role_names.contains(role))
         });
         let mut current_class_role_param_bindings =
             self.registry().class_role_param_bindings.clone();
-        current_class_role_param_bindings.retain(|name, _| !is_eval_role_artifact(name));
+        current_class_role_param_bindings
+            .retain(|name, _| !is_eval_role_artifact(name) && !failed_classes.contains(name));
         let current_type_keys: std::collections::HashSet<String> = current_roles
             .keys()
             .filter(|name| keep_role(name))
@@ -372,6 +387,11 @@ impl Interpreter {
         // above, before the merge) is O(resurrected) instead. Every other
         // class's `method_entries` rows are already correct and untouched
         // by the snapshot/extend dance.
+        // The method rows a discarded class registered before it died.
+        for class_name in &failed_classes {
+            let owner = crate::symbol::Symbol::intern(class_name);
+            self.registry_mut().restore_user_method_rows(owner, Vec::new());
+        }
         for class_name in resurrected_classes {
             let owner = crate::symbol::Symbol::intern(&class_name);
             let rows = method_rows_snapshot
@@ -432,6 +452,26 @@ impl Interpreter {
         }
         result
     }
+    /// Record the classes a dying declaration added, if an `EVAL` unit is
+    /// compiling it (see `ModuleState::eval_failed_classes`).
+    // Cost: O(c), c = classes registered.
+    pub(crate) fn note_failed_eval_class_decl(
+        &mut self,
+        classes_before: &crate::runtime::registry::ClassTable,
+    ) {
+        if self.env.get("__mutsu_in_eval").is_none_or(|v| !v.truthy()) {
+            return;
+        }
+        let added: Vec<String> = self
+            .registry()
+            .classes
+            .keys()
+            .filter(|name| !classes_before.contains_key(*name))
+            .cloned()
+            .collect();
+        self.module.eval_failed_classes.extend(added);
+    }
+
     /// Parse and run the source of a string `EVAL`, retrying the snippet
     /// shapes the parser rejects at unit scope.
     fn eval_eval_source(&mut self, trimmed: &str) -> Result<Value, RuntimeError> {

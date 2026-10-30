@@ -381,9 +381,14 @@ impl Interpreter {
                     // compared in place: O(r), r = its length.
                     RxOp::InterpEnds(i) => 'interp: {
                         let parsed = match &program.atoms[i as usize] {
-                            RegexAtom::CodeInterp { code, list } => self.regex_code_interp_parsed(
+                            RegexAtom::CodeInterp {
+                                code,
+                                list,
+                                as_regex,
+                            } => self.regex_code_interp_parsed(
                                 code,
                                 *list,
+                                *as_regex,
                                 chars,
                                 levels.top().caps(),
                                 program.atom_ic[i as usize],

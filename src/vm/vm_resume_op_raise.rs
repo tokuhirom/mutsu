@@ -23,17 +23,37 @@ use crate::value::{RuntimeError, Value, ValueView};
 impl Interpreter {
     /// Whether an exception raised by `op` itself may resume at the next op.
     // Cost: O(1).
-    pub(crate) fn op_raise_resumes_in_place(op: &OpCode) -> bool {
-        matches!(
-            op,
-            OpCode::SetLocal(_)
-                | OpCode::SetLocalDecl { .. }
-                | OpCode::TypeCheck(..)
-                | OpCode::IndexAssignExprNamed { .. }
-                | OpCode::IndexAssignLocal { .. }
-        )
+    pub(crate) fn op_raise_resumes_in_place(code: &CompiledCode, op: &OpCode) -> bool {
+        Self::is_resumable_call_op(code, op)
+            || matches!(
+                op,
+                OpCode::SetLocal(_)
+                    | OpCode::SetLocalDecl { .. }
+                    | OpCode::TypeCheck(..)
+                    | OpCode::IndexAssignExprNamed { .. }
+                    | OpCode::IndexAssignLocal { .. }
+            )
     }
 
+    /// A call op whose native routine raised: the exception resumes the call,
+    /// which then yields `Any`. Not the calls that raise on purpose or carry an
+    /// exception onward (`die`, `.throw`, `.rethrow`, `fail`, `warn`,
+    /// `.resume`): those hand the exception to the handlers themselves, and a
+    /// handler resuming the raising call itself would swallow a rethrow.
+    // Cost: O(1) (one name compare).
+    fn is_resumable_call_op(code: &CompiledCode, op: &OpCode) -> bool {
+        let name_idx = match op {
+            OpCode::CallFunc { name_idx, .. }
+            | OpCode::CallFuncNamed { name_idx, .. }
+            | OpCode::CallMethod { name_idx, .. }
+            | OpCode::CallMethodMut { name_idx, .. } => *name_idx,
+            _ => return false,
+        };
+        !matches!(
+            Self::const_str(code, name_idx),
+            "die" | "throw" | "rethrow" | "fail" | "warn" | "resume" | "exit"
+        )
+    }
     /// Offer `err`, raised by the op at `*ip`, to the resume-capable `CATCH`
     /// handlers at its raise site ([`Interpreter::try_catch_inline`]). A
     /// handler that resumes continues at the next op with the container
@@ -45,6 +65,22 @@ impl Interpreter {
         ip: &mut usize,
         err: RuntimeError,
     ) -> Result<(), RuntimeError> {
+        // A call whose routine raised from inside the callee's frame (a native
+        // op under a sub, a `Proxy`'s `STORE`, a closure): the handler runs
+        // here, with the callee's Rust frames intact, so `.resume` continues
+        // the callee (#15555). The call yields `Any`.
+        if Self::is_resumable_call_op(code, &code.ops[*ip]) {
+            if self.control.catch_handlers.is_empty()
+                || !Self::is_inline_catchable(&err)
+                || err.catch_inline_verdict().is_some()
+            {
+                return Err(err);
+            }
+            let resumed = self.try_catch_inline(err)?;
+            self.stack.push(resumed);
+            *ip += 1;
+            return Ok(());
+        }
         if !Self::is_inline_catchable(&err)
             || err.catch_inline_verdict().is_some()
             || !err.exception.as_deref().is_some_and(|exception| {

@@ -412,28 +412,13 @@ impl Interpreter {
         // its default resolves bare names through THAT package's import
         // aliases and file-scope lexicals (#8842).
         let decl_package = declaring_package.unwrap_or(class_key);
-        let old_self = self.env.get("self").cloned();
-        self.env.insert("self".to_string(), self_val.clone());
-        // A compiled method-body chunk always carries an implicit `__ANON_STATE#`
-        // param alongside `self` (see `compile_routine_closure_body`); mirror that
-        // here so an anonymous-`$`-referencing default resolves the same way a
-        // method body would.
-        let old_anon = self.env.get("__ANON_STATE#").cloned();
-        self.env
-            .insert("__ANON_STATE#".to_string(), self_val.clone());
-        // `::?CLASS` in a default (e.g. `has $.Version = ::?CLASS.^ver` composed
-        // from a role) resolves through `?CLASS`; bind it to the class being built.
-        let old_class = self.env.get("?CLASS").cloned();
-        self.env
-            .insert("?CLASS".to_string(), Value::package(class_name));
-        let mut saved_attr_env: Vec<(String, Option<Value>)> = Vec::new();
+        let mut saved_attr_env: Vec<(Symbol, Option<Value>)> = Vec::with_capacity(attrs.len() * 2);
         for (a_name, a_val) in attrs {
-            let bang = format!("!{}", a_name);
-            let dot = format!(".{}", a_name);
-            saved_attr_env.push((bang.clone(), self.env.get(&bang).cloned()));
-            saved_attr_env.push((dot.clone(), self.env.get(&dot).cloned()));
-            self.env.insert(bang, a_val.clone());
-            self.env.insert(dot, a_val.clone());
+            let (bang, dot) = super::attr_env_keys::attr_env_keys(*a_name);
+            saved_attr_env.push((bang, self.env.get_sym(bang).cloned()));
+            saved_attr_env.push((dot, self.env.get_sym(dot).cloned()));
+            self.env.insert_sym(bang, a_val.clone());
+            self.env.insert_sym(dot, a_val.clone());
         }
         // Temporarily switch to the class package so that class-scoped subs
         // (e.g. `sub inner`) are found when evaluating the initializer.
@@ -472,6 +457,16 @@ impl Interpreter {
             self.executing_source_file_sym(),
             decl_file,
         );
+        // The default sees the object under construction as `self` (and, as a
+        // method body's chunk carries it, `__ANON_STATE#`), and the class
+        // being built as `::?CLASS` (`has $.Version = ::?CLASS.^ver` composed
+        // from a role).
+        self.routine_stack
+            .attach_fixtures_to_top(crate::value::frame_fixtures::FrameFixtures {
+                invocant: Some(self_val.clone()),
+                class: Some(Value::package(Symbol::intern(&class_name.to_string()))),
+                role: None,
+            });
         let result = self.eval_decl_trait_arg_with_captured_env(arg, captured_env);
         self.pop_routine();
         self.current_unit = saved_unit;
@@ -479,25 +474,10 @@ impl Interpreter {
         self.set_current_package(saved_package);
         for (key, old_val) in saved_attr_env {
             if let Some(v) = old_val {
-                self.env.insert(key, v);
+                self.env.insert_sym(key, v);
             } else {
-                self.env.remove(&key);
+                self.env.remove_sym(key);
             }
-        }
-        if let Some(old) = old_self {
-            self.env.insert("self".to_string(), old);
-        } else {
-            self.env.remove("self");
-        }
-        if let Some(old) = old_anon {
-            self.env.insert("__ANON_STATE#".to_string(), old);
-        } else {
-            self.env.remove("__ANON_STATE#");
-        }
-        if let Some(old) = old_class {
-            self.env.insert("?CLASS".to_string(), old);
-        } else {
-            self.env.remove("?CLASS");
         }
         // An attribute initializer is an ASSIGNMENT, so the attribute gets a
         // COPY of whatever container the default evaluated to, not that

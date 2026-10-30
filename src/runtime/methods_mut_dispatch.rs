@@ -79,6 +79,25 @@ impl Interpreter {
                 return Ok(result);
             }
         }
+        // A scalar value held in a container cell (an `is rw` routine's tail
+        // call on its own parameter reaches here with the parameter's cell, not
+        // its value): a method call deconts its invocant, and a plain scalar
+        // has no aggregate to fold back into the cell.
+        if let ValueView::ContainerRef(cell) = target.view() {
+            let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            if matches!(
+                inner.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Rat(..)
+                    | ValueView::FatRat(..)
+            ) {
+                return self.call_method_with_values(inner, method, args);
+            }
+        }
         let readonly_key = crate::runtime::sigilless_readonly_key(target_var);
         let alias_key = crate::runtime::sigilless_alias_key(target_var);
         let has_sigilless_meta =
@@ -499,8 +518,30 @@ impl Interpreter {
         // like `@a.map({ $_++ })`). An infinite sequence/closure spec must stay
         // lazy — fall through to the lazy `map` pipeline in `call_method_with_values`
         // (L2b). Writeback is meaningless on an unbounded array anyway.
+        //
+        // A Proxy bound to an `@` attribute (`nqp::bindattr` of Red's
+        // relationships) is FETCHed first, and a receiver that is a user class
+        // with its own `map` (Red's `ResultSeq`) is not an array to write back
+        // into: its method answers, as it does for `$obj.map`.
+        let target = if method == "map"
+            && target_var.starts_with('@')
+            && matches!(target.view(), ValueView::Proxy { .. })
+        {
+            self.auto_fetch_proxy(&target)?
+        } else {
+            target
+        };
+        let user_map_receiver = method == "map"
+            && match target.view() {
+                ValueView::Instance { class_name, .. } => {
+                    self.has_user_method_including_role(&class_name.resolve(), "map")
+                }
+                ValueView::Mixin(..) => self.mixin_composes_method(&target, "map"),
+                _ => false,
+            };
         if method == "map"
             && target_var.starts_with('@')
+            && !user_map_receiver
             // A live gather/pipe has no eager item snapshot to put into the
             // deferred map body. Let the ordinary map dispatcher preserve
             // its lazy source instead of turning it into an empty Seq.
@@ -666,10 +707,11 @@ impl Interpreter {
                     // Write the updated delegate back into the frontend's live cell.
                     let mut updated = attributes.to_map();
                     updated.insert(attr_key.to_string(), updated_delegate);
-                    self.env.insert(
-                        target_var.to_string(),
-                        Value::write_back_sharing(&attributes, class_name, updated, target_id),
-                    );
+                    let written =
+                        Value::write_back_sharing(&attributes, class_name, updated, target_id);
+                    if !self.store_invocant_by_name(target_var, &written) {
+                        self.env.insert(target_var.to_string(), written);
+                    }
                 }
                 // Restore skip_pseudo for the outer caller.
                 self.dispatch.skip_pseudo_method_native = saved_skip_pseudo;
@@ -820,10 +862,10 @@ impl Interpreter {
                         // The delta commit already landed in the shared cell, so
                         // rebinding the name is all that is left (no second write
                         // of a whole map, which is what lost concurrent updates).
-                        self.env.insert(
-                            target_var.to_string(),
-                            Value::instance_sharing_cell(&attributes, class_name, target_id),
-                        );
+                        let shared = Value::instance_sharing_cell(&attributes, class_name, target_id);
+                        if !self.store_invocant_by_name(target_var, &shared) {
+                            self.env.insert(target_var.to_string(), shared);
+                        }
                         return Ok(result);
                     }
                     Err(err) => {
@@ -925,10 +967,10 @@ impl Interpreter {
                 )?;
                 let updated_clone = updated.clone();
                 attributes.commit_attrs(updated);
-                self.env.insert(
-                    target_var.to_string(),
-                    Value::instance_sharing_cell(&attributes, class_name, target_id),
-                );
+                let shared = Value::instance_sharing_cell(&attributes, class_name, target_id);
+                if !self.store_invocant_by_name(target_var, &shared) {
+                    self.env.insert(target_var.to_string(), shared);
+                }
                 // Auto-FETCH if the method returned a Proxy
                 if result.is_proxy_value()
                     && self.should_fetch_returned_proxy(&class_name.resolve(), method)

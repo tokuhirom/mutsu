@@ -145,7 +145,7 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
 pub(crate) enum NilPredispatchVerdict {
     Error(RuntimeError),
     Warn {
-        message: &'static str,
+        message: std::borrow::Cow<'static, str>,
         resume: Value,
     },
 }
@@ -198,31 +198,41 @@ pub(crate) fn nil_predispatch_verdict(
                 _ => unreachable!(),
             };
             Some(NilPredispatchVerdict::Warn {
-                message: "Use of Nil in numeric context",
+                message: "Use of Nil in numeric context".into(),
                 resume: zero,
             })
         }
         "abs" | "floor" | "ceiling" | "round" | "truncate" | "sign" if no_args => {
             Some(NilPredispatchVerdict::Warn {
-                message: "Use of Nil in numeric context",
+                message: "Use of Nil in numeric context".into(),
                 resume: Value::int(0),
             })
         }
         "Str" | "Stringy" if no_args => Some(NilPredispatchVerdict::Warn {
-            message: "Use of Nil in string context",
+            message: "Use of Nil in string context".into(),
             resume: Value::str(String::new()),
         }),
         // `Nil.join` / `Nil.join($sep)` joins the one stringified `Nil`.
         "join" => Some(NilPredispatchVerdict::Warn {
-            message: "Use of Nil in string context",
+            message: "Use of Nil in string context".into(),
             resume: Value::str(String::new()),
         }),
+        // Cool's string methods coerce the `Nil` invocant through `Nil.Str`:
+        // rakudo warns "Use of Nil.<method> coerced to empty string" and
+        // resumes with the empty string (not the method's usual result type).
+        "chars" | "chop" | "chomp" | "uc" | "lc" | "tc" | "flip" | "codes" | "lines" | "words"
+        | "comb" | "index" | "rindex" | "contains" | "starts-with" | "ends-with" | "substr" => {
+            Some(NilPredispatchVerdict::Warn {
+                message: format!("Use of Nil.{method} coerced to empty string").into(),
+                resume: Value::str(String::new()),
+            })
+        }
         "ords" if no_args => Some(NilPredispatchVerdict::Warn {
-            message: "Use of Nil in string context",
+            message: "Use of Nil in string context".into(),
             resume: Value::seq(vec![]),
         }),
         "chrs" if no_args => Some(NilPredispatchVerdict::Warn {
-            message: "Use of Nil in string context",
+            message: "Use of Nil in string context".into(),
             resume: Value::str("\0".to_string()),
         }),
         _ => None,
@@ -230,6 +240,34 @@ pub(crate) fn nil_predispatch_verdict(
 }
 
 impl Interpreter {
+    /// Rendering (`.raku`, `.gist`) a Rakudo metarole (`Metamodel::Naming`), or
+    /// a junction of them, dies: it is an NQP-level object whose `HOW` has no
+    /// `find_method`. `Kind`'s naming relies on that to fall back to the type
+    /// name (`Kind[Junction]`).
+    // Cost: O(v), v = values of a junction target; O(1) otherwise.
+    pub(super) fn metarole_render_failure(
+        method: &str,
+        target: &Value,
+    ) -> Result<(), RuntimeError> {
+        if !matches!(method, "raku" | "gist") {
+            return Ok(());
+        }
+        let is_metarole = |v: &Value| {
+            matches!(v.view(), ValueView::Package(name)
+                if crate::runtime::types::metamodel_how_roles::metarole_bare_name(&name.resolve()).is_some())
+        };
+        let hit = match target.view() {
+            ValueView::Junction { values, .. } => values.iter().any(is_metarole),
+            _ => is_metarole(target),
+        };
+        if hit {
+            return Err(RuntimeError::new(
+                "Cannot find method 'find_method' on object of type NQPParametricRoleHOW",
+            ));
+        }
+        Ok(())
+    }
+
     /// Build an X::Multi::NoMatch error for a `print`/`say`/`put`/`note` call
     /// made with a positional argument on an invocant whose only candidate is
     /// the default `(Mu: *%_)` one. The `capture` attribute carries the full
@@ -456,9 +494,7 @@ impl Interpreter {
                 // plain scalar read skips the MRO attribute collection, which
                 // clones every attribute definition (#10229).
                 let attr = if matches!(out.view(), ValueView::Array(..) | ValueView::Hash(_)) {
-                    self.collect_class_attributes(&cn)
-                        .into_iter()
-                        .find(|attr| attr.is_public && attr.name == method)
+                    self.find_public_class_attribute(&cn, method)
                 } else {
                     None
                 };
@@ -493,7 +529,7 @@ impl Interpreter {
                     // attribute's `Str:D`) copies it, so every read answered a
                     // fresh array and `.push`/`.append` on the result never
                     // reached the attribute (#11902).
-                    && self.container_type_metadata(&out).is_none()
+                    && !self.has_container_type_metadata(&out)
                     && let Some(tc) = self.get_attr_type_constraint(&cn, method)
                     && !matches!(tc.as_str(), "Mu" | "Any")
                 {
@@ -748,7 +784,7 @@ impl Interpreter {
         else {
             return false;
         };
-        if !attributes.contains_key("__mutsu_array_storage") {
+        if !attributes.contains_key(crate::symbol::wk::array_storage()) {
             return false;
         }
         let cn = class_name.resolve();
@@ -918,6 +954,7 @@ impl Interpreter {
             self.stack.push(msg.clone());
             return Ok(());
         }
+        Self::metarole_render_failure(method, &target)?;
         if method == "raku"
             && crate::builtins::methods_0arg::raku_repr::raku_scalar_itemized(&target)
             && let Some(rendered) = self.raku_repr_with_dispatch(&target)
@@ -1784,7 +1821,7 @@ impl Interpreter {
                     let cn = class_name.resolve();
                     if !self.has_user_method(&cn, method)
                         && !Self::is_type_identity_method(method)
-                        && attributes.contains_key("__mutsu_array_storage")
+                        && attributes.contains_key(crate::symbol::wk::array_storage())
                         && self
                             .mro_readonly(&cn)
                             .iter()
@@ -1800,7 +1837,7 @@ impl Interpreter {
                                 Some(source) => source?,
                                 None => attributes
                                     .as_map()
-                                    .get("__mutsu_array_storage")
+                                    .get(crate::symbol::wk::array_storage())
                                     .cloned()
                                     .unwrap_or(Value::real_array(Vec::new())),
                             };
@@ -1890,7 +1927,7 @@ impl Interpreter {
                                 "callmethod",
                                 "nil-predispatch",
                             );
-                            let resumed = self.raise_resumable_warning(message, resume)?;
+                            let resumed = self.raise_resumable_warning(&message, resume)?;
                             self.stack.push(resumed);
                             return Ok(());
                         }

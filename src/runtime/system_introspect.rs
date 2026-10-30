@@ -132,6 +132,8 @@ impl Interpreter {
                     routine: k.checked_sub(1).and_then(|p| self.routine_stack.get(p)).copied(),
                     synthetic: false,
                     routine_depth: k,
+                    flushed: Vec::new(),
+                    flushed_frame: None,
                 });
             }
         }
@@ -193,6 +195,7 @@ impl Interpreter {
     // Cost: O(1).
     fn block_frame_code() -> Value {
         Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
+            fixtures: None,
             package: Symbol::intern("GLOBAL"),
             name: Symbol::intern(""),
             params: std::sync::Arc::new(Vec::new()),

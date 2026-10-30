@@ -8,6 +8,7 @@
 
 use super::bareword::simple_type_node;
 use super::method_assign_decl::call_method;
+use super::nested_methods::unhoist;
 use super::origin;
 use super::placeholder::{is_placeholder_name, placeholder_node};
 use super::regex_declaration::{
@@ -150,10 +151,6 @@ pub(super) fn package_scope(is_lexical: bool, is_unit: bool) -> Option<&'static 
 /// The custom trait the parser gives an operator sub that declares its
 /// precedence or associativity.
 const OP_PREC_TRAIT: &str = "__prec";
-
-/// The parser's `custom_traits` marker for a `my`-scoped declaration
-/// (`my role R { }`).
-pub(super) const MY_SCOPED: &str = "__my_scoped";
 
 /// Whether `stmt` is a block-form loop or conditional the parser carries in an
 /// expression (`do for ...`) as a `DoStmt`.
@@ -458,20 +455,8 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         // `proceed` / `succeed` without arguments are bare calls as well.
         Stmt::Proceed => Ok(Some(statement_expression(control_call("proceed", &[])?))),
         Stmt::Succeed => Ok(Some(statement_expression(control_call("succeed", &[])?))),
-        Stmt::TempMethodAssign {
-            var_name,
-            method_name,
-            method_args,
-            value,
-            is_attribute,
-        } => Ok(Some(statement_expression(
-            super::temporize::convert_method_assign(
-                var_name,
-                method_name,
-                method_args,
-                value,
-                *is_attribute,
-            )?,
+        Stmt::TempMethodAssign { .. } => Ok(Some(statement_expression(
+            super::temporize::convert_method_assign_stmt(stmt)?,
         ))),
         Stmt::VarDecl { .. } => var_decl_statement(var_decl_parts(stmt)?, false),
         Stmt::DocPhaser(inner) => Ok(Some(super::doc_phaser::convert(inner)?)),
@@ -490,11 +475,15 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             body,
             condition,
             end_index,
+            bare,
         } => {
             if let Some(condition) = condition {
-                return super::phaser_condition::convert(kind, body, condition)?
-                    .map(Some)
-                    .ok_or_else(|| unsupported("PRE/POST phaser condition"));
+                let mut statement = super::phaser_condition::convert(kind, body, condition)?
+                    .ok_or_else(|| unsupported("PRE/POST phaser condition"))?;
+                if *bare {
+                    super::bare_prefix::unblock_phaser(&mut statement);
+                }
+                return Ok(Some(statement));
             }
             let class = match phaser_class(kind) {
                 Some(c) => c,
@@ -507,11 +496,15 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             let mut fields = vec![node_field(None, block)];
             // The source position of a main-compunit `END` (see `origin`).
             fields.extend(end_index.map(origin::end_index_field));
-            Ok(Some(statement_expression(RakuAstNode {
+            let mut statement = statement_expression(RakuAstNode {
                 origin: Default::default(),
                 class,
                 fields,
-            })))
+            });
+            if *bare {
+                super::bare_prefix::unblock_phaser(&mut statement);
+            }
+            Ok(Some(statement))
         }
         // A conditional is a typed node (`ast::parsed::Conditional`), and a
         // statement modifier too (`ast::parsed::Modified`). The one desugared
@@ -650,8 +643,6 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 (
                     custom_traits.iter().any(|(t, _)| {
                         t.starts_with("__")
-                            && !is_return_spelling_marker(t)
-                            && t != "__hidden_from_backtrace"
                             // The operator-precedence record the parser derives
                             // from `is assoc` / `is tighter`; lowering rebuilds it.
                             && t != OP_PREC_TRAIT
@@ -748,11 +739,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     "method with `handles`",
                 ),
                 (
-                    custom_traits.iter().any(|(t, _)| {
-                        t.starts_with("__")
-                            && !is_return_spelling_marker(t)
-                            && t != "__hidden_from_backtrace"
-                    }),
+                    custom_traits.iter().any(|(t, _)| t.starts_with("__")),
                     "method with an internal trait",
                 ),
             ];
@@ -820,15 +807,16 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             body,
             custom_traits,
             is_unit,
+            is_native,
+            export_tags,
+            marks,
             implicit_grammar_parent,
             is_grammar,
             parent_args,
             body_parents,
             ..
         } => {
-            let is_native = custom_traits
-                .iter()
-                .any(|(trait_name, _)| trait_name == "__mutsu_native_decl");
+            let is_native = *is_native;
             if *is_grammar {
                 if name_expr.is_some()
                     || *class_is_rw
@@ -848,33 +836,35 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 }
                 let mut fields = package_header_fields(
                     *name,
-                    if is_anon_package(custom_traits) {
+                    if marks.anon {
                         Some("anon")
                     } else {
                         package_scope(*is_lexical, *is_unit)
                     },
-                    is_colons_package(custom_traits),
+                    marks.colons,
                 );
+                super::role_header::retain_name(&mut fields, *name);
                 // The implicit `Grammar` parent is not a written trait.
                 let written: &[String] = if *implicit_grammar_parent {
                     parents.get(1..).unwrap_or(&[])
                 } else {
                     parents
                 };
-                // An `also is Parent;` lifted out of the body has no header
-                // spelling; it renders as a trailing `is` trait, which lowers
-                // back to the same parent.
+                // An `also is Parent;` lifted out of the body is a
+                // `Statement::Also` leading it, as for a class.
                 let mut header_parents = written.to_vec();
-                let mut also_traits = Vec::new();
+                let mut also_statements = Vec::new();
                 for parent in body_parents {
                     if let Some(at) = header_parents.iter().rposition(|p| p == parent) {
                         header_parents.remove(at);
                     }
-                    also_traits.push(Value::rakuast(Box::new(super::routine_source::trait_node(
-                        &also_parent(parent, parent_args),
-                    )?)));
+                    let node =
+                        super::routine_source::trait_node(&also_parent(parent, parent_args))?;
+                    also_statements.push(super::role::also_is_statement(Value::rakuast(Box::new(
+                        node,
+                    ))));
                 }
-                let mut traits = header_trait_values(
+                let traits = header_trait_values(
                     body,
                     &HeaderFields {
                         parents: &header_parents,
@@ -885,28 +875,28 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                         custom_traits: &[],
                     },
                 )?;
-                traits.extend(also_traits);
                 if !traits.is_empty() {
                     fields.push(RakuAstField {
                         name: Some("traits"),
                         value: RakuAstFieldValue::List(traits),
                     });
                 }
+                let grammar_body = block_node(&unhoist(body))?;
                 fields.push(node_field(
                     Some("body"),
-                    block_node(&crate::parser::unhoist_nested_methods(body))?,
+                    super::role::with_leading_statements(grammar_body, also_statements),
                 ));
                 let grammar = RakuAstNode {
                     origin: Default::default(),
                     class: RakuAstClass::Grammar,
                     fields,
                 };
-                let grammar = match super::package_header::lexical_export_tags(custom_traits) {
+                let grammar = match export_tags {
                     Some(tags) => super::package_header::apply(
                         &grammar,
                         &crate::ast::package_header::Header {
                             adverbs: Vec::new(),
-                            export_tags: Some(tags),
+                            export_tags: Some(tags.clone()),
                         },
                     )?,
                     None => grammar,
@@ -918,12 +908,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // A `my` class leads with `scope => "my"` (`our` is the default
             // and renders none). Unit scope, `hides`, computed names and user
             // traits carry extra RakuAST shape, deferred.
-            let visible_custom_traits: Vec<_> = custom_traits
-                .iter()
-                .filter(|(trait_name, _)| trait_name != "__mutsu_native_decl")
-                .cloned()
-                .collect();
-            if has_package_traits(&visible_custom_traits) && !is_native {
+            if has_package_traits(custom_traits) && !is_native {
                 return Err(unsupported(&format!(
                     "class with inheritance / scope / repr / traits ({})",
                     custom_traits
@@ -935,23 +920,24 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             }
             let mut fields = package_header_fields(
                 *name,
-                if is_anon_package(custom_traits) {
+                if marks.anon {
                     Some("anon")
                 } else {
                     package_scope(*is_lexical, *is_unit)
                 },
-                is_colons_package(custom_traits),
+                marks.colons,
             );
+            super::role_header::retain_name(&mut fields, *name);
             if let Some(expr) = name_expr {
                 let name = node_field(Some("name"), super::symbolic_deref::indirect_name(expr)?);
                 match fields.iter_mut().find(|f| f.name == Some("name")) {
                     Some(slot) => *slot = name,
                     None => fields.push(name),
                 }
-            } else if has_leading_colons(custom_traits) {
+            } else if marks.leading_colons {
                 name_parts::with_leading_empty(&mut fields);
             }
-            super::declare_how::add_field(&mut fields, custom_traits, "class");
+            super::declare_how::add_field(&mut fields, marks.declarator.as_deref(), "class");
             // Field order matches raku: scope, parsed-declarator, name, repr,
             // traits, body.
             if let Some(r) = repr {
@@ -977,7 +963,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     hidden_parents,
                     is_rw: *class_is_rw,
                     is_hidden: *is_hidden,
-                    custom_traits: &visible_custom_traits,
+                    custom_traits,
                 },
             )?;
             if !traits.is_empty() {
@@ -986,9 +972,8 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     value: RakuAstFieldValue::List(traits),
                 });
             }
-            let class_body = block_node(&crate::parser::unhoist_nested_methods(
-                without_composed_header(body, does_parents),
-            ))?;
+            let unhoisted = unhoist(without_composed_header(body, does_parents));
+            let class_body = block_node(&unhoisted)?;
             fields.push(node_field(
                 Some("body"),
                 super::role::with_leading_statements(class_body, also_statements),
@@ -1002,13 +987,13 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 },
                 fields,
             };
-            // A lexical `my class ... is export` keeps its tags in a marker.
-            let class = match super::package_header::lexical_export_tags(custom_traits) {
+            // A lexical `my class ... is export` records its tags on the node.
+            let class = match export_tags {
                 Some(tags) => super::package_header::apply(
                     &class,
                     &crate::ast::package_header::Header {
                         adverbs: Vec::new(),
-                        export_tags: Some(tags),
+                        export_tags: Some(tags.clone()),
                     },
                 )?,
                 None => class,
@@ -1048,10 +1033,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     value: RakuAstFieldValue::List(traits),
                 });
             }
-            fields.push(node_field(
-                Some("body"),
-                block_node(&crate::parser::unhoist_nested_methods(body))?,
-            ));
+            fields.push(node_field(Some("body"), block_node(&unhoist(body))?));
             Ok(Some(statement_expression(RakuAstNode {
                 origin: Default::default(),
                 class: if *is_role {
@@ -1153,10 +1135,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 Some("name"),
                 name_from_identifier(&name.resolve()),
             ));
-            fields.push(node_field(
-                Some("body"),
-                block_node(&crate::parser::unhoist_nested_methods(body))?,
-            ));
+            fields.push(node_field(Some("body"), block_node(&unhoist(body))?));
             let mut node = RakuAstNode {
                 origin: Default::default(),
                 class,
@@ -1180,6 +1159,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             predicate,
             is_export,
             export_tags,
+            custom_traits,
             is_my,
             ..
         } => {
@@ -1201,6 +1181,8 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             )
             .into_iter()
             .collect();
+            // `is foo` / `is foo(ARG)`; after `is export`, before the base.
+            traits.extend(super::decl_traits::convert(custom_traits)?);
             if *base_is_explicit {
                 traits.push(Value::rakuast(Box::new(RakuAstNode {
                     origin: Default::default(),
@@ -1238,8 +1220,7 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 return_type: return_type.as_deref(),
                 body,
                 is_export: *is_export,
-                has_traits: custom_traits.iter().any(|t| !is_return_spelling_marker(t))
-                    || !trait_args.is_empty(),
+                has_traits: !custom_traits.is_empty() || !trait_args.is_empty(),
                 is_method: *is_method,
                 is_our: *is_our,
             },
@@ -1274,7 +1255,9 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             export_tags,
             body,
             is_rw,
+            is_lexical,
             custom_traits,
+            marks,
             ..
         } => Ok(Some(statement_expression(super::role::convert(
             super::role::RoleDecl {
@@ -1285,7 +1268,9 @@ fn convert_stmt_node(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 export_tags,
                 body,
                 is_rw: *is_rw,
+                is_lexical: *is_lexical,
                 custom_traits,
+                marks: marks.clone(),
             },
         )?))),
         Stmt::HasDecl { .. } => super::attribute_decl::convert(stmt),
@@ -1484,18 +1469,12 @@ fn stub_node(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, RuntimeErr
     }))
 }
 
-/// The bound value of an indexed bind's `__mutsu_bind_index_value(rhs, meta)`
-/// marker, or `None` for any other value. The marker's source metadata is
-/// derived from `rhs`, so lowering rebuilds it.
+/// The bound value of an indexed bind's `IndexBindValue`, or `None` for any
+/// other value.
 // Cost: O(1).
 fn index_bind_rhs(value: &Expr) -> Option<&Expr> {
     match value {
-        Expr::Call { name, args, .. } if name.as_str() == "__mutsu_bind_index_value" => {
-            match args.as_slice() {
-                [rhs, _] => Some(rhs),
-                _ => None,
-            }
-        }
+        Expr::IndexBindValue(rhs) => Some(rhs),
         _ => None,
     }
 }
@@ -1764,6 +1743,9 @@ pub(super) fn var_decl_statement(
         is_our,
         is_dynamic,
         custom_traits,
+        marks,
+        has_initializer,
+        constant,
         where_constraint,
         is_export,
         export_tags,
@@ -1771,37 +1753,24 @@ pub(super) fn var_decl_statement(
     let export_trait = super::package_header::export_trait_value(is_export, export_tags);
     // Real `is`/`does` traits carry richer shape, deferred.
     // `constant X = 5` is a distinct raku node, not a scoped `my`.
-    // mutsu marks it with a `__constant` pseudo-trait (plus a
-    // `__constant_sigil` recording the declared sigil) and sets
+    // mutsu records it as the declaration's `constant` sigil and sets
     // `is_our` for the package-scoped default spelling.
-    if !is_binding && custom_traits.iter().any(|(n, _)| n == "__constant") {
+    if let Some(sigil) = constant
+        && !is_binding
+    {
         return constant_declaration(
             name,
             expr,
+            sigil,
             custom_traits,
             type_constraint,
             is_our,
             export_trait,
         );
     }
-    let is_internal = |n: &str| {
-        n == "__has_initializer"
-            // The parser's own mark of a declaration whose initializer reads
-            // the new binding; the lowering marks it again.
-            || n == "__init_sees_self"
-            || n == crate::ast::method_assign_decl::METHOD_ASSIGN_DECL_TRAIT
-            || n == crate::ast::shaped_decl::SHAPED_DECL
-            || n == crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE
-            // The argument of `is dynamic(ARG)`, rendered with the trait.
-            || n == crate::ast::DYNAMIC_TRAIT_ARGUMENT
-            // The written colonpairs of the name, rendered in `desigilname`.
-            || n == crate::ast::NAME_COLONPAIRS
-            || (is_binding && n == crate::ast::bind_decl::SCALAR_BIND)
-            || (is_binding && n == crate::ast::bind_decl::CODE_BIND)
-    };
     let unrendered: Vec<&str> = custom_traits
         .iter()
-        .filter(|(n, arg)| !is_internal(n) && !decl_traits::is_rendered(n, arg))
+        .filter(|(n, arg)| !decl_traits::is_rendered(n, arg))
         .map(|(n, _)| n.as_str())
         .collect();
     if !unrendered.is_empty() {
@@ -1813,7 +1782,7 @@ pub(super) fn var_decl_statement(
     // build_type_node validates simple/definite and defers the rest. A
     // key-typed hash (`my Int %h{Str}`) splits into its value `type` and a
     // `shape`.
-    let keyed = super::keyed_hash::split(name, type_constraint.as_deref(), custom_traits);
+    let keyed = super::keyed_hash::split(name, type_constraint.as_deref(), marks);
     let type_name = match keyed {
         Some((value, _)) => value,
         None => type_constraint.as_deref(),
@@ -1837,9 +1806,9 @@ pub(super) fn var_decl_statement(
         _ => expr,
     };
     // `my @a <== EXPR` is a declaration whose initializer is the parser's
-    // feed helper call; without the `__has_initializer` mark it would read as
-    // none and the feed would be dropped.
-    let unmarked = !is_binding && !custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+    // feed helper call; without `has_initializer` it would read as none and
+    // the feed would be dropped.
+    let unmarked = !is_binding && !has_initializer;
     if unmarked
         && let Expr::Call { name: callee, .. } = expr
         && is_desugar_marker(callee.as_str())
@@ -1865,10 +1834,7 @@ pub(super) fn var_decl_statement(
     {
         Some(Initializer::CallAssignMarker(rhs))
     } else {
-        custom_traits
-            .iter()
-            .any(|(name, _)| name == "__has_initializer")
-            .then_some(Initializer::Assign(expr))
+        has_initializer.then_some(Initializer::Assign(expr))
     };
     // A dynamic `my $*x` is named `*x` (`@*a` / `%*h` keep their sigil in
     // front); raku renders the `*` as the declaration's `twigil`.
@@ -1895,7 +1861,9 @@ pub(super) fn var_decl_statement(
         if !traits.is_empty() {
             return Err(unsupported("`is dynamic` beside other traits"));
         }
-        traits.push(decl_traits::dynamic_trait(custom_traits)?);
+        traits.push(decl_traits::dynamic_trait(
+            marks.dynamic_argument.as_deref(),
+        )?);
     }
     if let Some(export) = export_trait {
         // Like `is dynamic`, `is export` is a flag of the parsed declaration,
@@ -1906,7 +1874,7 @@ pub(super) fn var_decl_statement(
         traits.push(export);
     }
     decl_traits::insert(&mut decl, traits);
-    super::name_colonpairs::apply(&mut decl, custom_traits)?;
+    super::name_colonpairs::apply(&mut decl, marks)?;
     // `where` is the declaration's last field, after the initializer.
     if let Some(constraint) = where_constraint {
         decl.fields
@@ -1925,12 +1893,10 @@ pub(super) fn does_declaration(
     init: Option<&Expr>,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
     let mut parts = var_decl_parts(decl)?;
-    let mut traits = parts.custom_traits.to_vec();
     if let Some(init) = init {
-        traits.push(("__has_initializer".to_string(), None));
+        parts.has_initializer = true;
         parts.expr = init;
     }
-    parts.custom_traits = &traits;
     let Some(statement) = var_decl_statement(parts, false)? else {
         return Ok(None);
     };
@@ -1968,6 +1934,10 @@ pub(super) struct VarDeclParts<'a> {
     is_our: bool,
     is_dynamic: bool,
     custom_traits: &'a [(String, Option<Expr>)],
+    marks: &'a crate::ast::var_marks::VarMarks,
+    /// Whether the declaration has an explicit initializer.
+    has_initializer: bool,
+    constant: Option<crate::ast::ConstantSigil>,
     /// The declaration's `where` expression.
     where_constraint: Option<&'a Expr>,
     /// Whether it is `is export`, and with which tags (`["DEFAULT"]` for the
@@ -1986,6 +1956,10 @@ pub(super) fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeErr
         is_our,
         is_dynamic,
         custom_traits,
+        has_initializer,
+        constant,
+        bind: _,
+        marks,
         where_constraint,
         is_export,
         export_tags,
@@ -2002,6 +1976,9 @@ pub(super) fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeErr
         is_our: *is_our,
         is_dynamic: *is_dynamic,
         custom_traits,
+        marks,
+        has_initializer: *has_initializer,
+        constant: *constant,
         where_constraint: where_constraint.as_deref(),
         is_export: *is_export,
         export_tags,
@@ -2277,17 +2254,11 @@ pub(super) fn package_header_fields(
 }
 
 /// Whether a package declaration's `custom_traits` hold anything but the
-/// parser's empty-name marker and its lexical `is export` marker, which the
-/// node expresses itself.
+/// traits the node expresses itself.
 pub(super) fn has_package_traits(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits.iter().any(|(t, _)| {
-        t != crate::parser::ANON_COLONS_TRAIT
-            && t != crate::parser::EXPORT_TYPE_MARKER
-            && t != crate::parser::LEADING_COLONS_TRAIT
-            && t != crate::parser::DECLARE_HOW_TRAIT
-            && t != crate::parser::ANON_DECL_TRAIT
-            && !decl_traits::is_class_trait(t)
-    })
+    custom_traits
+        .iter()
+        .any(|(t, _)| !decl_traits::is_class_trait(t))
 }
 
 /// The `expression` of a `Statement::Expression` node.
@@ -2303,29 +2274,6 @@ pub(super) fn expression_of(statement: &RakuAstNode) -> Option<RakuAstNode> {
             },
             _ => None,
         })
-}
-
-/// Whether a package was declared `anon class Name` (the parser's
-/// `ANON_DECL_TRAIT`; the registry name carries a site suffix).
-// Cost: O(t), t = number of custom traits.
-pub(super) fn is_anon_package(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits
-        .iter()
-        .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT)
-}
-
-/// Whether a class was declared as `class ::Name`.
-pub(super) fn has_leading_colons(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits
-        .iter()
-        .any(|(t, _)| t == crate::parser::LEADING_COLONS_TRAIT)
-}
-
-/// Whether a package declaration was written with the empty name `::`.
-pub(super) fn is_colons_package(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits
-        .iter()
-        .any(|(t, _)| t == crate::parser::ANON_COLONS_TRAIT)
 }
 
 /// `TARGET[INDEX]` / `TARGET{INDEX}` as `ApplyPostfix(operand, Postcircumfix::*Index)`,
@@ -2571,7 +2519,7 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     // The adverbs of a subscript lower from the class of the subscript.
     let adverbs = {
         let _inspected = super::passthrough::Inspecting::enter();
-        subscript_adverb::convert(expr)
+        subscript_adverb::convert_hyper_slice(expr)
     };
     if let Some(node) = adverbs {
         return node;
@@ -2775,11 +2723,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Spelling::PackageIndirect { package, key } => {
                 super::symbolic_deref::convert_package_indirect(package, key)
             }
-            Spelling::NamedSubscript { .. }
-            | Spelling::ConflictingSubscript { .. }
-            | Spelling::ConditionalMultidimDelete { .. } => {
-                Err(unsupported("subscript adverb source form"))
-            }
             Spelling::CompositionWhatever(source) => {
                 super::composition_source::convert(source, &spelled.expr)
             }
@@ -2890,25 +2833,11 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if let Some(atomic) = super::atomic_op::convert(name.as_str(), args) {
                 return atomic;
             }
-            if let Some(hyper) = super::hyper_prefix::convert(name.as_str(), args) {
-                return hyper;
-            }
             if name.as_str() == crate::ast::quote_processing::FORMAT {
                 return super::quoted_string::convert_format(args);
             }
             if let Some(words) = super::word_quote::convert_words_atom(name.as_str(), args) {
                 return words;
-            }
-            if name.as_str() == "__mutsu_unknown_backslash_escape"
-                && let [Expr::Literal(escape)] = args.as_slice()
-            {
-                return Err(RuntimeError::typed_msg(
-                    "X::Backslash::UnrecognizedSequence",
-                    format!(
-                        "Unrecognized backslash sequence: \\{}",
-                        escape.to_string_value()
-                    ),
-                ));
             }
             if is_desugar_marker(name.as_str()) {
                 return Err(desugared(name.as_str()));
@@ -4182,7 +4111,10 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if *closes_block_same_line {
                 return super::quoted_string::convert_closed_block_heredoc(content);
             }
-            convert_expr(&crate::parser::interpolate_heredoc_content(content))
+            // The interpolated code is parsed here, after the unit's own parse
+            // ended: it keeps its typed nodes (a statement modifier inside a
+            // `{ ... }`) the way the rest of the tree does.
+            convert_expr(&crate::parser::interpolate_heredoc_content(content)?)
         }
         Expr::StringInterpolation(parts) => {
             let mut segments = Vec::with_capacity(parts.len());
@@ -5017,25 +4949,16 @@ fn pointy_block_from_lambda(
 fn constant_declaration(
     name: &str,
     expr: &Expr,
+    constant: crate::ast::ConstantSigil,
     custom_traits: &[(String, Option<Expr>)],
     type_constraint: &Option<String>,
     is_our: bool,
     export_trait: Option<Value>,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
-    // `__constant_sigil` carries the declared sigil; only the sigilless form
-    // (a plain `constant X`) maps onto the measured node shape.
-    let sigil = custom_traits.iter().find_map(|(n, arg)| {
-        (n == "__constant_sigil").then(|| match arg {
-            Some(Expr::Literal(v)) => match v.view() {
-                ValueView::Str(s) => s.to_string(),
-                _ => String::new(),
-            },
-            _ => String::new(),
-        })
-    });
+    let sigil = constant.as_str();
     // rakudo's `name` carries the sigil (`"@a"`, `"$x"`). The parser keeps
     // it in the name for `@` / `%` / `&` and strips a `$`.
-    let name = match sigil.as_deref().unwrap_or("") {
+    let name = match sigil {
         // `constant term:<$bar>`: a sigiled name without a sigil of its own
         // is a term, which rakudo names `term:<$bar>`.
         "" if name.starts_with(['$', '@', '%', '&']) => format!("term:<{name}>"),
@@ -5044,10 +4967,7 @@ fn constant_declaration(
         sigil @ ("@" | "%" | "&") if name.starts_with(sigil) => name.to_string(),
         _ => return Err(unsupported("sigilled constant")),
     };
-    if custom_traits
-        .iter()
-        .any(|(n, _)| n != "__constant" && n != "__constant_sigil" && n != "__has_initializer")
-    {
+    if !custom_traits.is_empty() {
         return Err(unsupported("constant with traits"));
     }
     let mut fields = Vec::new();
@@ -5200,13 +5120,6 @@ fn phaser_class(kind: &crate::ast::PhaserKind) -> Option<RakuAstClass> {
         Close => RakuAstClass::StatementPrefixPhaserClose,
         Pre | Post => return None,
     })
-}
-
-/// The parser markers that record a `returns` / `of` return-type trait. They
-/// are internal (`__`-prefixed) bookkeeping, not user traits, so the converter
-/// reads them for the spelling instead of treating them as a coverage boundary.
-fn is_return_spelling_marker(trait_name: &str) -> bool {
-    matches!(trait_name, "__return_via_trait" | "__return_via_of")
 }
 
 /// `Signature(parameters => (Parameter, ...)[, returns => Type])`. `type_setting`
@@ -5569,6 +5482,7 @@ pub(super) fn is_pseudo_type(t: &str) -> bool {
     let base = t
         .strip_suffix(":D")
         .or_else(|| t.strip_suffix(":U"))
+        .or_else(|| t.strip_suffix(":_"))
         .unwrap_or(t);
     matches!(base, "::?CLASS" | "::?ROLE" | "::?PACKAGE")
 }
@@ -6232,6 +6146,12 @@ pub(super) fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
             Some(tree) if tree.declaration_kind.is_some() => anon_regex_declaration(v, tree),
             _ => Err(unsupported("literal Regex without a declarator tree")),
         },
+        // `∅`
+        ValueView::Set(set, false) if set.iter().next().is_none() => Ok(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::TermEmptySet,
+            fields: Vec::new(),
+        }),
         other => Err(unsupported(&format!("literal {other:?}"))),
     }
 }
@@ -6645,7 +6565,7 @@ fn colonpair_spelling(expr: &Expr, form: crate::ast::BinaryForm) -> Option<RakuA
         BinaryForm::ColonPairValue => colonpair_value_expr(expr),
         BinaryForm::ColonPairBracketed => colonpair_bracketed_expr(expr),
         BinaryForm::ColonPairNumber => colonpair_number_expr(expr),
-        BinaryForm::Infix | BinaryForm::CaretPrefix => return None,
+        BinaryForm::Infix | BinaryForm::CaretPrefix | BinaryForm::DoesDeclInit => return None,
     }
     .ok()
 }

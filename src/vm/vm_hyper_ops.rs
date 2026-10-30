@@ -192,11 +192,11 @@ impl Interpreter {
             // elements (`self »-« @vec` inside a Vector method): unwrap it to
             // the `__mutsu_array_storage` list so both sides line up by length.
             ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_array_storage") =>
+                if attributes.contains_key(crate::symbol::wk::array_storage()) =>
             {
                 attributes
                     .as_map()
-                    .get("__mutsu_array_storage")
+                    .get(crate::symbol::wk::array_storage())
                     .cloned()
                     .unwrap_or_else(|| Value::real_array(Vec::new()))
             }

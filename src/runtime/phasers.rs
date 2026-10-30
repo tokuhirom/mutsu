@@ -195,12 +195,10 @@ fn flatten_synthetic_blocks(stmts: &mut Vec<Stmt>) {
     let old = std::mem::take(stmts);
     for stmt in old {
         if let Stmt::SyntheticBlock(ref inner) = stmt {
-            let has_mark_readonly = inner
-                .iter()
-                .any(|s| matches!(s, Stmt::MarkReadonly(..) | Stmt::MarkSigillessReadonly(_)));
+            let has_mark_readonly = inner.iter().any(|s| matches!(s, Stmt::MarkReadonly(..)));
             // Keep SyntheticBlocks with a bind marker intact so the compiler
             // can detect `:=` bind context.
-            let has_mark_bind = inner.iter().any(|s| matches!(s, Stmt::MarkBind));
+            let has_mark_bind = crate::ast::var_marks::is_bind_group(inner);
             if has_mark_readonly || has_mark_bind {
                 stmts.push(stmt);
             } else if let Stmt::SyntheticBlock(inner) = stmt {
@@ -343,7 +341,7 @@ fn reorder_at_level(
         // triggers this split. Compiling the constant as one unsplit
         // declaration (its normal, unhoisted path) keeps the mark-readonly
         // strictly after its one real store, like a phaser-free `constant`.
-        let is_constant_decl = matches!(&stmt, Stmt::VarDecl { custom_traits, .. } if custom_traits.iter().any(|(t, _)| t == "__constant"));
+        let is_constant_decl = matches!(&stmt, Stmt::VarDecl { constant, .. } if constant.is_some());
         if is_constant_decl {
             // A constant is a compile-time value, so a later CHECK sees it. Keep
             // source order by hoisting only while nothing that stays in `rest`
@@ -387,6 +385,7 @@ fn reorder_at_level(
             body: body.clone(),
             condition: None,
             end_index: None,
+            bare: false,
         });
     }
     // Extra CHECK from lifted phasers.
@@ -412,6 +411,7 @@ fn reorder_at_level(
             body: body.clone(),
             condition: None,
             end_index: None,
+            bare: false,
         });
     }
     stmts.extend(extra_init);
@@ -512,16 +512,6 @@ fn expr_has_phaser_expr(expr: &Expr) -> bool {
     matches!(expr, Expr::PhaserExpr { .. })
 }
 
-/// Marks a declaration whose initializer reads its static cell (ADR-0134).
-pub(crate) const BEGIN_STATIC_TRAIT: &str = "__begin_static";
-
-/// Marks the static half of a `:D`-typed scalar declaration (`my Int:D $x =
-/// 3`). Its container holds the nominal type object (`Int`), which the `:D`
-/// constraint itself rejects, so the compiler stores the value first and
-/// registers the constraint after it, the order an `is default` trait already
-/// uses. The run-time assignment that follows is checked as usual.
-pub(crate) const BEGIN_STATIC_DEFINITE_TRAIT: &str = "__begin_static_definite";
-
 /// The nominal type a `:D` scalar declaration's static half holds, for a
 /// constraint whose base is a plain type name (`Int:D`, `Foo::Bar:D`).
 fn static_definite_type(name: &str, type_constraint: Option<&str>) -> Option<String> {
@@ -545,11 +535,11 @@ fn static_definite_type(name: &str, type_constraint: Option<&str>) -> Option<Str
 /// declaration's source position. `None` for any other statement, and for a
 /// `constant`, whose initializer is itself a BEGIN-time effect.
 /// Whether a declaration's initializer builds a shaped container: the parser
-/// marks one with an explicit initializer `__shaped_decl`, and a bare `my
+/// marks one with an explicit initializer `VarMarks::shaped`, and a bare `my
 /// @a[2;2]` is `Array.new(:shape(2, 2))`.
 // Cost: O(a), a = the initializer call's arguments.
-fn is_shaped_decl(init_expr: &Expr, custom_traits: &[(String, Option<Expr>)]) -> bool {
-    if custom_traits.iter().any(|(t, _)| t == "__shaped_decl") {
+fn is_shaped_decl(init_expr: &Expr, marks: &crate::ast::var_marks::VarMarks) -> bool {
+    if marks.shaped {
         return true;
     }
     let Expr::MethodCall { name, args, .. } = init_expr else {
@@ -577,18 +567,26 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
         is_export,
         export_tags,
         custom_traits,
+        bind,
+        constant,
+        has_initializer,
+        marks,
         where_constraint,
     } = stmt
     else {
         return None;
     };
-    if custom_traits.iter().any(|(t, _)| t == "__constant") {
+    if constant.is_some() {
+        return None;
+    }
+    // A sigilless term has no container to declare ahead of its binding.
+    if marks.term != crate::ast::var_marks::TermMark::No {
         return None;
     }
     // A shaped declaration (`my @a[2;2]`, `my @a[2;2] = (1,2;3,4)`) builds its
     // container with the shape: an empty static half plus a plain `@a = ...`
     // assignment would lose the shape. It stays whole, at its own position.
-    if is_shaped_decl(init_expr, custom_traits) {
+    if is_shaped_decl(init_expr, marks) {
         return None;
     }
     // A user trait (`my %m is R = 1, 2`) is applied with the initializer in
@@ -601,12 +599,12 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     // whole declaration stays at its position and binds, or a Proxy on the
     // right would be FETCHed into a plain Scalar. The caller declares its
     // static half separately.
-    if custom_traits.iter().any(|(t, _)| t == "__scalar_bind") {
+    if *bind == Some(crate::ast::bind_decl::BindKind::Scalar) {
         return None;
     }
     // A declaration a lifted BEGIN gave a static cell (ADR-0134 slice 2) is
     // already its static half: its initializer reads the static value.
-    if custom_traits.iter().any(|(t, _)| t == BEGIN_STATIC_TRAIT) {
+    if marks.begin_static {
         return Some((stmt.clone(), None));
     }
     // A bare `my @a;`/`my %h;` (no explicit initializer) still parses with a
@@ -615,12 +613,10 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     // literal wrongly treats those as "has an initializer" and splices a
     // spurious `@a = []` reset after the static declaration, clobbering any
     // mutation a BEGIN performed on the array/hash in between. The parser
-    // already marks a real explicit initializer with the `__has_initializer`
-    // custom trait (checked the same way at e.g. `compiler/stmt.rs`'s
+    // already records a real explicit initializer in the declaration's
+    // `has_initializer` field (read the same way at e.g. `compiler/stmt.rs`'s
     // `has_init` sites) — use that instead of guessing from the expression shape.
-    let has_init = custom_traits
-        .iter()
-        .any(|(n, _)| n == "__has_initializer" || n == "__scalar_bind");
+    let has_init = *has_initializer;
     // The static declaration's value (before any real initializer runs) must
     // match what an uninitialized declaration of this sigil actually holds:
     // `Nil` for a scalar, but an EMPTY container for `@`/`%` — never a raw
@@ -652,21 +648,13 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     };
     // A `:D` scalar's static state is its nominal type object, as in Rakudo
     // (`my Int:D $x = 3; BEGIN say $x.raku` prints `Int`). It is not an
-    // initializer, so it carries no `__has_initializer` mark.
-    let (static_default, static_traits) =
+    // initializer, so it does not set `has_initializer`.
+    let (static_default, static_definite, static_has_initializer) =
         match static_definite_type(name, type_constraint.as_deref())
             .filter(|_| has_init && !*is_our)
         {
-            Some(nominal) => {
-                let mut traits: Vec<_> = custom_traits
-                    .iter()
-                    .filter(|(t, _)| t != "__has_initializer" && t != "__scalar_bind")
-                    .cloned()
-                    .collect();
-                traits.push((BEGIN_STATIC_DEFINITE_TRAIT.to_string(), None));
-                (Expr::BareWord(nominal), traits)
-            }
-            None => (static_default, custom_traits.clone()),
+            Some(nominal) => (Expr::BareWord(nominal), true, false),
+            None => (static_default, false, *has_initializer),
         };
     let static_decl = Stmt::VarDecl {
         anonymous: *anonymous,
@@ -678,7 +666,18 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
         is_dynamic: *is_dynamic,
         is_export: *is_export,
         export_tags: export_tags.clone(),
-        custom_traits: static_traits,
+        custom_traits: custom_traits.clone(),
+        has_initializer: static_has_initializer,
+        constant: *constant,
+        bind: None,
+        marks: crate::ast::var_marks::VarMarks {
+            // The static half of a `:D` scalar holds its nominal type object
+            // (`Int`), which the `:D` constraint itself rejects: the compiler
+            // stores the value first and registers the constraint after it, the
+            // order an `is default` trait already uses.
+            begin_static_definite: static_definite,
+            ..marks.clone()
+        },
         where_constraint: where_constraint.clone(),
     };
     let assign = has_init.then(|| Stmt::Assign {

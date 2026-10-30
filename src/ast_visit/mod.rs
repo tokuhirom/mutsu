@@ -79,8 +79,6 @@ pub(crate) enum NameKind {
     AssignTarget,
     /// The variable of a `Stmt::MarkReadonly`.
     MarkReadonly,
-    /// The variable of a `Stmt::MarkSigilless` / `MarkSigillessReadonly`.
-    Sigilless,
     /// The variable of a `Stmt::Let` (`let` / `temp`) or the variable of a
     /// `Stmt::TempMethodAssign`.
     TempTarget,

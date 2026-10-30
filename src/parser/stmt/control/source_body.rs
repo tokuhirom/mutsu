@@ -72,11 +72,7 @@ impl<'ast> Visit<'ast> for Budget {
 }
 
 // Cost: O(n), n = copied nodes; recursion and accepted copies are bounded.
-pub(in crate::parser::stmt) fn check(
-    cond: &Expr,
-    params: &[ParamDef],
-    body: &[Stmt],
-) -> Result<(), RuntimeError> {
+pub(crate) fn check(cond: &Expr, params: &[ParamDef], body: &[Stmt]) -> Result<(), RuntimeError> {
     let mut budget = Budget::default();
     budget.visit_expr(cond);
     for param in params {
@@ -93,9 +89,7 @@ pub(in crate::parser::stmt) fn check(
 }
 
 // Cost: O(n), n = signature nodes; traversal and accepted allocation are bounded.
-pub(in crate::parser::stmt) fn check_signature(
-    decl: &crate::ast::SignatureDecl,
-) -> Result<(), RuntimeError> {
+pub(crate) fn check_signature(decl: &crate::ast::SignatureDecl) -> Result<(), RuntimeError> {
     let mut budget = Budget::default();
     budget.visit_signature_decl(decl);
     if budget.exceeded {
@@ -153,7 +147,7 @@ mod tests {
                 rhs: Expr::ArrayLiteral(Vec::new()),
             }),
         };
-        let error = crate::parser::signature_decl_expansion(declaration)
+        let error = crate::rakuast::signature_expand::signature_decl(declaration)
             .expect_err("signature allocation has a catchable budget error");
         assert!(error.message.contains("source form exceeds"));
     }

@@ -1,91 +1,54 @@
-//! The RakuAST round-trip frontend mode (ADR-10723 Stage 0).
+//! The RakuAST frontend (ADR-10723 Stages 0 and 3).
 //!
-//! Under `MUTSU_RAKUAST`, a compilation unit the interpreter is about to run is
-//! converted to its RakuAST tree and lowered back before it is compiled. The
+//! The frontend is `parse -> RakuAST -> lower`: every compilation unit (the
+//! main program, every `EVAL` string, every `use`d module and `require`d file)
+//! is converted to its RakuAST tree and lowered back before it is compiled. The
 //! result is what the RakuAST frontend will produce once the parser emits
-//! RakuAST directly, so the number of test files that still pass in this mode
-//! is the migration's metric.
+//! RakuAST directly (Stage 2). There is no opt-out.
 //!
-//! - `MUTSU_RAKUAST=1`: the program's own units, the main program and every
-//!   `EVAL` string.
-//! - `MUTSU_RAKUAST=all`: those, plus every `use`d module and `require`d file,
-//!   bundled ones included.
-//! - `MUTSU_RAKUAST=convert`: as `1`, but no subtree crosses as the parser's own
-//!   tree ([`super::passthrough`]): every node goes through `convert` and `lower`,
-//!   as `.AST` and `EVAL($ast)` do. `1` is the cost-measured mode; this one keeps
-//!   the coverage of the `convert` and `lower` arms of the carried families.
+//! `MUTSU_RAKUAST=convert` is the one test level that is left: no subtree
+//! crosses as the parser's own tree ([`super::passthrough`]), every node goes
+//! through `convert` and `lower`, as `.AST` and `EVAL($ast)` do. The default is
+//! the cost-measured level; `convert` keeps the coverage of the `convert` and
+//! `lower` arms of the carried families (`scripts/rakuast-frontend.sh check`).
 //!
-//! The two levels exist because a module is shared by every program that uses
-//! it: while `Test.rakumod` itself does not round-trip, `all` fails every test
-//! file at its first line, and `1` is the level whose count says something
-//! about the files themselves.
-//!
-//! A construct the converter or the lowerer refuses is a compile error in this
-//! mode, never a silent fallback to the parser's own tree: a fallback would
-//! count a file as round-tripping when it does not.
+//! A construct the converter or the lowerer refuses is a compile error, never a
+//! silent fallback to the parser's own tree: a fallback would count a file as
+//! round-tripping when it does not.
 
 use std::sync::OnceLock;
 
 use crate::ast::Stmt;
 use crate::value::RuntimeError;
 
-/// Which kind of compilation unit is being parsed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Unit {
-    /// The program's main unit.
-    Mainline,
-    /// An `EVAL` string.
-    Eval,
-    /// A `use`d module or a `require`d file.
-    Module,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Mode {
-    Off,
-    ProgramUnits,
-    All,
-    /// [`Mode::ProgramUnits`] without the passthrough leaves.
-    Convert,
-}
-
-/// The `MUTSU_RAKUAST` setting. Read once per process.
-fn mode() -> Mode {
-    static MODE: OnceLock<Mode> = OnceLock::new();
-    *MODE.get_or_init(|| parse_mode(std::env::var("MUTSU_RAKUAST").ok().as_deref()))
+/// Whether `MUTSU_RAKUAST=convert` is set: the test level without passthrough
+/// leaves. Read once per process.
+fn convert_level() -> bool {
+    static CONVERT: OnceLock<bool> = OnceLock::new();
+    *CONVERT.get_or_init(|| convert_level_from(std::env::var("MUTSU_RAKUAST").ok().as_deref()))
 }
 
 // Cost: O(1).
-fn parse_mode(value: Option<&str>) -> Mode {
-    match value {
-        Some("1") => Mode::ProgramUnits,
-        Some("all") => Mode::All,
-        Some("convert") => Mode::Convert,
-        _ => Mode::Off,
+fn convert_level_from(rakuast: Option<&str>) -> bool {
+    rakuast == Some("convert")
+}
+
+/// A short name of the frontend level, part of the precompilation cache key: a
+/// module cached under one level is never read under another.
+// Cost: O(1).
+pub(crate) fn cache_tag() -> &'static str {
+    if convert_level() {
+        "ast-convert"
+    } else {
+        "ast"
     }
 }
 
-/// Whether the `MUTSU_RAKUAST` mode runs a unit of this kind through the round
-/// trip. Such a unit is parsed with its spellings kept (ADR-12199): the
-/// conversion reads them, and the lowering hands the compiler the same tree it
-/// would have had without them.
-pub(crate) fn covers(unit: Unit) -> bool {
-    match mode() {
-        Mode::Off => false,
-        Mode::ProgramUnits | Mode::Convert => unit != Unit::Module,
-        Mode::All => true,
-    }
-}
-
-/// Run a parsed compilation unit through the RakuAST round trip when the mode
-/// covers its kind; hand it back untouched otherwise.
-pub(crate) fn round_trip_if_enabled(
-    stmts: Vec<Stmt>,
-    unit: Unit,
-) -> Result<Vec<Stmt>, RuntimeError> {
-    if !covers(unit) {
-        return Ok(stmts);
-    }
+/// Run a parsed compilation unit through the RakuAST round trip. Every unit is
+/// parsed with its spellings kept (ADR-12199): the conversion reads them, and
+/// the lowering hands the compiler the same tree it would have had without
+/// them.
+pub(crate) fn round_trip_unit(stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
     round_trip_owned(stmts).map_err(refusal)
 }
 
@@ -115,7 +78,7 @@ pub(crate) fn round_trip(stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
 pub(crate) fn round_trip_owned(mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
     // The conversion matches expressions by shape, so the term origins the
     // spelled parse kept come off first (`expr_origins`).
-    let _leaves = (mode() != Mode::Convert).then(super::passthrough::Scope::enter);
+    let _leaves = (!convert_level()).then(super::passthrough::Scope::enter);
     let _origins = super::expr_origins::strip(&mut stmts);
     let node = super::convert::statement_list(&stmts)?;
     let mut lowered = super::lower(&node)?;
@@ -126,7 +89,7 @@ pub(crate) fn round_trip_owned(mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, Runtim
     Ok(lowered)
 }
 
-/// [`round_trip_if_enabled`] for an `EVAL` string, whose bare names may be
+/// [`round_trip_unit`] for an `EVAL` string, whose bare names may be
 /// declared by the scope that called it: `types` and `terms` are those names,
 /// and `operators` the operator routines it makes visible.
 pub(crate) fn round_trip_eval(
@@ -139,6 +102,15 @@ pub(crate) fn round_trip_eval(
         super::with_caller_operators(operators, || round_trip(stmts))
     })
     .map_err(refusal)
+}
+
+/// Run `convert` with `types` installed as the type names the calling scope of a
+/// `Str.AST` declares, for the `is NAME` traits of the declarations in its
+/// source (a bare class name is still a `Term::Name`: see [`with_caller_names`]).
+// Cost: O(n) to install, n = number of caller type names, plus `convert`.
+pub(crate) fn with_caller_trait_types<T>(types: Vec<String>, convert: impl FnOnce() -> T) -> T {
+    let _caller = super::bareword::CallerTraitTypes::install(types);
+    convert()
 }
 
 /// Run `convert` with `types` and `terms` installed as the names the calling
@@ -160,12 +132,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn convert_mode_covers_program_units_without_the_passthrough() {
-        assert_eq!(parse_mode(Some("convert")), Mode::Convert);
-        assert_eq!(parse_mode(Some("1")), Mode::ProgramUnits);
-        assert_eq!(parse_mode(Some("all")), Mode::All);
-        assert_eq!(parse_mode(None), Mode::Off);
-        assert_eq!(parse_mode(Some("0")), Mode::Off);
+    fn only_convert_selects_the_test_level() {
+        assert!(convert_level_from(Some("convert")));
+        assert!(!convert_level_from(Some("1")));
+        assert!(!convert_level_from(Some("all")));
+        assert!(!convert_level_from(Some("0")));
+        assert!(!convert_level_from(None));
     }
 
     #[test]

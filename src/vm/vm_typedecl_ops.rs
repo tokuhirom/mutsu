@@ -3,36 +3,14 @@ use super::*;
 use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
-fn source_compound_name(
-    traits: &[(String, Option<crate::opcode::DeclTraitArg>)],
-) -> Option<String> {
-    traits.iter().find_map(|(name, arg)| {
-        if name == "__source_compound_name" {
-            arg.as_ref()?.literal()?.as_str().map(str::to_owned)
-        } else {
-            None
-        }
-    })
-}
-
 /// The source spelling of a parent the compiler package-qualified (`foo` for
-/// `M::foo` inside `unit module M`), recorded as a `__parent_spelling` trait.
-// Cost: O(t), t = the declaration's traits.
-fn parent_spelling<'a>(
-    traits: &'a [(String, Option<crate::opcode::DeclTraitArg>)],
-    qualified: &str,
-) -> Option<&'a str> {
-    traits.iter().find_map(|(name, arg)| {
-        if name != "__parent_spelling" {
-            return None;
-        }
-        let ValueView::Pair(key, value) = arg.as_ref()?.literal()?.view() else {
-            return None;
-        };
-        (key.as_str() == qualified)
-            .then(|| value.as_str())
-            .flatten()
-    })
+/// `M::foo` inside `unit module M`), recorded in `parent_spellings`.
+// Cost: O(p), p = the declaration's package-qualified parents.
+fn parent_spelling<'a>(spellings: &'a [(String, String)], qualified: &str) -> Option<&'a str> {
+    spellings
+        .iter()
+        .find(|(q, _)| q == qualified)
+        .map(|(_, written)| written.as_str())
 }
 
 impl Interpreter {
@@ -50,31 +28,23 @@ impl Interpreter {
             }
             Some(crate::opcode::CompiledDeclPlanRef::Class(plan_idx)) => {
                 self.note_type_body_written_lexicals(code);
+                // Copy-on-write snapshot: the classes this declaration adds are
+                // the keys missing from it if the declaration dies.
+                let classes_before = self.registry().classes.clone();
                 match self.exec_register_class_op(code, plan_idx, compiled_fns) {
                     Ok(()) => Ok(()),
-                    Err(_)
-                        if code.class_decl_plans[plan_idx as usize]
-                            .custom_traits
-                            .iter()
-                            .any(|(name, _)| name == "__hoisted") =>
-                    {
-                        Ok(())
+                    Err(_) if code.class_decl_plans[plan_idx as usize].pass.hoisted => Ok(()),
+                    Err(error) => {
+                        self.note_failed_eval_class_decl(&classes_before);
+                        Err(error)
                     }
-                    Err(error) => Err(error),
                 }
             }
             Some(crate::opcode::CompiledDeclPlanRef::Role(plan_idx)) => {
                 self.note_type_body_written_lexicals(code);
                 match self.exec_register_role_op(code, plan_idx, compiled_fns) {
                     Ok(()) => Ok(()),
-                    Err(_)
-                        if code.role_decl_plans[plan_idx as usize]
-                            .custom_traits
-                            .iter()
-                            .any(|(name, _)| name == "__hoisted") =>
-                    {
-                        Ok(())
-                    }
+                    Err(_) if code.role_decl_plans[plan_idx as usize].pass.hoisted => Ok(()),
                     Err(error) => Err(error),
                 }
             }
@@ -228,8 +198,14 @@ impl Interpreter {
             does_parents,
             body_parents,
             repr,
+            is_native,
+            export_tags,
+            declarator,
+            source_compound_name,
+            parent_spellings,
             language_version,
             custom_traits,
+            pass,
             decl_id,
             is_stub,
             trusts,
@@ -356,7 +332,7 @@ impl Interpreter {
                 let qualified_sym = Symbol::intern(&qualified_name);
                 let short = crate::qualified::is_qualified(qualified_sym)
                     .then(|| crate::qualified::unqualified_part(qualified_sym).as_str());
-                let alias = source_compound_name(custom_traits);
+                let alias = source_compound_name.clone();
                 for bound in [
                     Some(qualified_name.as_str()),
                     Some(resolved_name.as_str()),
@@ -579,10 +555,9 @@ impl Interpreter {
             // distinguishing EVAL re-definitions from normal re-execution
             // (e.g., anonymous classes in loops, augment) requires tracking
             // compilation unit boundaries.
-            let has_trait = |name: &str| custom_traits.iter().any(|(t, _)| t == name);
-            let hoisted_shell = if has_trait("__hoisted_nested") {
+            let hoisted_shell = if pass.hoisted_nested {
                 crate::runtime::HoistedShell::Nested
-            } else if has_trait("__hoisted") {
+            } else if pass.hoisted {
                 crate::runtime::HoistedShell::Forward
             } else {
                 crate::runtime::HoistedShell::No
@@ -604,12 +579,7 @@ impl Interpreter {
             // before entering `register_class_decl`, but defer the protocol
             // (`new_type`/`add_method`) until after the body has registered its
             // own attributes and methods, as before.
-            let declare_how_keyword = custom_traits
-                .iter()
-                .find(|(trait_name, _)| trait_name == crate::parser::DECLARE_HOW_TRAIT)
-                .and_then(|(_, arg)| arg.as_ref())
-                .and_then(crate::opcode::DeclTraitArg::literal)
-                .map(|kw| kw.to_string_value());
+            let declare_how_keyword = declarator.clone();
             let declare_how_keyword_text = declare_how_keyword.clone();
             let (declare_how_installed, declare_how_has_compose) =
                 if let Some(keyword) = declare_how_keyword {
@@ -706,7 +676,7 @@ impl Interpreter {
             }
             // Compile method bodies to bytecode for the fast path.
             //
-            // A `__hoisted` forward-reference shell (`hoist_type_decl_shells`)
+            // A hoisted forward-reference shell (`hoist_type_decl_shells`)
             // is skipped: its `CompiledMethodDecl`s all carry
             // `compiled_routine_key: None` (`add_class_decl_plan` computes
             // `package_name: None` for a shell), so this pass would compile
@@ -736,8 +706,9 @@ impl Interpreter {
             // The bare name resolves to the (possibly mangled) storage name so
             // that `Foo.new` inside this scope produces instances tagged with
             // this declaration's identity, not an earlier same-named class's.
-            let source_alias =
-                source_compound_name(custom_traits).filter(|alias| !self.has_type_direct(alias));
+            let source_alias = source_compound_name
+                .clone()
+                .filter(|alias| !self.has_type_direct(alias));
             let skip_identity_binding =
                 self.qualified_identity_binding_is_redundant(&qualified_name, &storage_name);
             if !*is_lexical {
@@ -942,7 +913,12 @@ impl Interpreter {
             // `is ctype` / `is nativesize` / `is unsigned` are core traits
             // that set NativeHOW metadata; they never reach a user
             // `trait_mod:<is>` (see `runtime::native_decl`).
-            self.apply_native_type_traits(&storage_name, repr.as_deref(), custom_traits)?;
+            self.apply_native_type_traits(
+                &storage_name,
+                repr.as_deref(),
+                *is_native,
+                custom_traits,
+            )?;
             // `is array_type(T)` is core too (`runtime::array_type_trait`).
             self.apply_class_array_type_trait(&storage_name, custom_traits)?;
             // Dispatch custom `is` traits via trait_mod:<is> if defined.
@@ -959,7 +935,7 @@ impl Interpreter {
                 let type_obj = Value::package(Symbol::intern(&storage_name));
                 // Dispatch explicitly parsed custom traits (with args)
                 for (trait_name, trait_arg) in custom_traits {
-                    // Internal markers (`__mutsu_declare_how`, `__hoisted`, ...)
+                    // Internal markers (hoisted, ...)
                     // are not user traits; never dispatch them to trait_mod:<is>.
                     if trait_name.starts_with("__")
                         || crate::runtime::native_decl::is_native_type_trait(trait_name)
@@ -1000,7 +976,8 @@ impl Interpreter {
                         &deferred_traits
                     };
                 for trait_name in deferred_traits {
-                    let spelling = parent_spelling(custom_traits, trait_name).unwrap_or(trait_name);
+                    let spelling =
+                        parent_spelling(parent_spellings, trait_name).unwrap_or(trait_name);
                     let named_arg = Value::pair(spelling.to_string(), Value::TRUE);
                     match self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])
                     {
@@ -1092,24 +1069,14 @@ impl Interpreter {
 
             // A lexical `my class C is export` cannot carry the runtime
             // `__MUTSU_EXPORT_TYPE__` call (see `class_decl`), only its
-            // `__mutsu_export_type` marker. Publish it here, the way an
-            // exported role is, so `import M` of an inline `module M` finds it
-            // (#10557); a module file's scan records the same entry.
+            // `export_tags`. Publish it here, the way an exported role is, so
+            // `import M` of an inline `module M` finds it (#10557); a module
+            // file's scan records the same entry.
             if *is_lexical
                 && !self.module.suppress_exports
-                && let Some((_, tags)) = custom_traits
-                    .iter()
-                    .find(|(t, _)| t == "__mutsu_export_type")
+                && let Some(tags) = export_tags
             {
-                let tags: Vec<String> = match tags {
-                    Some(arg) => {
-                        crate::runtime::utils::value_to_list(&self.eval_decl_trait_arg(arg)?)
-                            .iter()
-                            .map(Value::to_string_value)
-                            .collect()
-                    }
-                    None => Vec::new(),
-                };
+                let tags = tags.clone();
                 let qualified_sym = Symbol::intern(&qualified_name);
                 let (export_pkg, export_short) =
                     match crate::qualified::package_parent(qualified_sym) {
@@ -1162,6 +1129,16 @@ impl Interpreter {
             // registered at this name in the type registry.
             this.get_env_with_main_alias_sym(name.as_str(), name)
                 .or_else(|| {
+                    // An entry bound into the stash at run time (an `EXPORT`
+                    // hook's `LEXICAL::<EXPORTHOW> := ...`) keeps the `$` of
+                    // its scalar binding in the key.
+                    let sigiled = crate::qualified::qualified_text(package, format!("${keyword}"));
+                    this.get_env_with_main_alias_sym(
+                        sigiled.as_str(),
+                        crate::symbol::Symbol::intern(sigiled.as_str()),
+                    )
+                })
+                .or_else(|| {
                     this.registry()
                         .classes
                         .contains_key(name.as_str())
@@ -1170,6 +1147,8 @@ impl Interpreter {
         };
         probe(self, "EXPORTHOW::DECLARE")
             .or_else(|| probe(self, "EXPORTHOW::SUPERSEDE"))
+            .or_else(|| self.exporthow_stash_entry("DECLARE", keyword))
+            .or_else(|| self.exporthow_stash_entry("SUPERSEDE", keyword))
             .or_else(|| self.slang_declarator_how(keyword))
     }
 
@@ -1346,8 +1325,12 @@ impl Interpreter {
             is_export,
             export_tags,
             is_rw,
+            is_lexical,
             language_version,
+            declarator,
+            source_compound_name,
             custom_traits,
+            pass,
             own_attribute_names,
             body_used_modules,
             body_declared_types,
@@ -1396,19 +1379,15 @@ impl Interpreter {
                 &name_str,
                 &source_qualified_name,
                 &current_package,
-                custom_traits
-                    .iter()
-                    .any(|(trait_name, _)| trait_name == "__my_scoped"),
-                source_compound_name(custom_traits).is_some(),
+                *is_lexical,
+                source_compound_name.is_some(),
                 *decl_id,
             );
             // If the short name was suppressed by an earlier lexical type with
             // the same name, re-enable it before registering the new role.
             self.unsuppress_name(&name_str);
             self.note_amp_param_shadowed_names(type_param_defs);
-            let is_hoisted_shell = custom_traits
-                .iter()
-                .any(|(trait_name, _)| trait_name == "__hoisted");
+            let is_hoisted_shell = pass.hoisted;
             // A body `my $w := $z` aliases the declaring frame's `$z`, but the
             // body is deferred to composition, which runs it as a separate
             // chunk -- possibly in another frame -- that reaches `$z` by name
@@ -1466,9 +1445,7 @@ impl Interpreter {
             if self.env().contains_key("__mutsu_in_eval")
                 && !self.module_load_active()
                 && !name_is_qualified
-                && custom_traits
-                    .iter()
-                    .any(|(trait_name, _)| trait_name == "__my_scoped")
+                && *is_lexical
             {
                 self.env_mut().insert(
                     MetaNs::EvalRole.owned_key_for_str(&qualified_name),
@@ -1516,7 +1493,7 @@ impl Interpreter {
             }
             // Store language revision metadata from the version captured at parse time
             self.store_language_revision_from_version(&qualified_name, language_version);
-            // Compile role method bodies to bytecode. A `__hoisted`
+            // Compile role method bodies to bytecode. A hoisted
             // forward-reference shell is skipped for the same reason the class
             // side skips it (see `exec_register_class_op`): `add_role_decl_plan`
             // leaves every `compiled_routine_key` `None` for a shell, so this
@@ -1546,8 +1523,9 @@ impl Interpreter {
                     Value::package(Symbol::intern(&qualified_name)),
                 );
             }
-            if let Some(alias) =
-                source_compound_name(custom_traits).filter(|alias| !self.has_type_direct(alias))
+            if let Some(alias) = source_compound_name
+                .clone()
+                .filter(|alias| !self.has_type_direct(alias))
             {
                 // See the class twin: a module mainline's qualified spelling
                 // is a package symbol of the program (#7817).
@@ -1611,7 +1589,7 @@ impl Interpreter {
             if has_trait_mod && (!custom_traits.is_empty() || !role_deferred.is_empty()) {
                 let type_obj = Value::package(Symbol::intern(&qualified_name));
                 for (trait_name, trait_arg) in custom_traits {
-                    // Skip internal markers (e.g. `__my_scoped`); they are not real `is` traits.
+                    // Skip internal markers (e.g. hoisted); they are not real `is` traits.
                     if trait_name.starts_with("__")
                         || crate::runtime::array_type_trait::is_array_type_trait(trait_name)
                     {
@@ -1666,13 +1644,7 @@ impl Interpreter {
 
             // A role declared through a superseded `role` declarator (or a
             // role-kind slang declarator) is built with that declarator's HOW.
-            let declare_how_keyword = custom_traits
-                .iter()
-                .find(|(trait_name, _)| trait_name == crate::parser::DECLARE_HOW_TRAIT)
-                .and_then(|(_, arg)| arg.as_ref())
-                .and_then(crate::opcode::DeclTraitArg::literal)
-                .map(|kw| kw.to_string_value());
-            if let Some(keyword) = declare_how_keyword
+            if let Some(keyword) = declarator.clone()
                 && let Some(how_type) = self.declarator_how_type(&keyword)
             {
                 self.install_custom_class_how(&qualified_name, how_type, false)?;
@@ -1726,6 +1698,9 @@ impl Interpreter {
             version,
             is_export,
             export_tags,
+            // Applied by `ApplyPackageTrait` ops the compiler emits after
+            // this registration.
+            custom_traits: _,
             is_my,
             decl_id,
             // Only the RakuAST converter cares whether the base type was

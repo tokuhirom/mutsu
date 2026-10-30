@@ -73,7 +73,7 @@ use super::*;
 /// `$v` as a plain value and the write was lost — while the writeback that used
 /// to carry it had been retired for the iteration precisely because the chunk
 /// carried a cell. A *writable* scalar multi-parameter now binds raw
-/// (`Stmt::MarkBind` + a declaration, the shape `@`/`%`-sigil multi-params
+/// (a bound declaration, the shape `@`/`%`-sigil multi-params
 /// already had), and `array_slot_ref`'s idempotence makes that bind alias the
 /// SOURCE element rather than the temporary chunk. ADR-0045 row 16.
 ///
@@ -211,6 +211,16 @@ impl Interpreter {
             ValueView::Array(..) => self.array_element_producer(target, method),
             ValueView::Hash(..) if !matches!(method, "reverse" | "sort") => {
                 self.hash_element_producer(target, method)
+            }
+            // A role mixed into a hash (`my %h does R`) keeps the hash's own
+            // storage: its elements are the same containers (bound ones stay
+            // bound). The caller has already ruled out a user override of the
+            // method.
+            ValueView::Mixin(inner, _)
+                if matches!(inner.view(), ValueView::Hash(..))
+                    && !matches!(method, "reverse" | "sort") =>
+            {
+                self.hash_element_producer(inner.as_ref(), method)
             }
             _ => None,
         }

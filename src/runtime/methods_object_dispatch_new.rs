@@ -1098,6 +1098,20 @@ impl Interpreter {
                 );
                 return Ok(Value::make_instance(*class_name, attrs));
             }
+            // A user subclass of Seq (`unit class Gauge is Seq`) carries the
+            // Seq `Seq.new($iterator)` builds under `__mutsu_seq_value`, as a
+            // Range subclass does; `Seq`'s methods answer on it.
+            let is_seq_subclass = cn_resolved != "Seq"
+                && self.class_mro(class_key).iter().any(|name| name == "Seq");
+            if is_seq_subclass && (skip_user_new || !self.has_user_method(class_key, "new")) {
+                let seq = self.dispatch_new(Value::package(Symbol::intern("Seq")), args)?;
+                let mut attrs = HashMap::new();
+                attrs.insert(
+                    crate::builtins::native_base::SEQ_PAYLOAD.to_string(),
+                    seq,
+                );
+                return Ok(Value::make_instance(*class_name, attrs));
+            }
             // A user subclass of Match (`class M is Match {}`, #14338) is built
             // like a `Match` -- `orig[from..to]` sliced, the captures stored --
             // and marked as a match, so `Match`'s rows read it (the table's
@@ -1757,7 +1771,7 @@ impl Interpreter {
                     return Err(RuntimeError::new("Cannot convert type object to Int"));
                 }
                 if class_mro.iter().any(|n| *n == "Array" || *n == "List")
-                    && !attrs.contains_key("__mutsu_array_storage")
+                    && !attrs.contains_key(crate::symbol::wk::array_storage())
                     && !positional_ctor_args.is_empty()
                 {
                     let elems =
@@ -2160,8 +2174,7 @@ impl Interpreter {
                             // `self` is the constructed object itself, holding
                             // the attributes settled so far.
                             inv_cell.commit_attrs(attrs.clone());
-                            let old_self = self.env.get("self").cloned();
-                            self.env.insert("self".to_string(), inv.clone());
+                            let fixtures_mark = self.begin_scoped_invocant(inv.clone());
                             let result = self.eval_decl_trait_arg_with_captured_context(
                                 &arg,
                                 captured_env.as_ref(),
@@ -2173,11 +2186,7 @@ impl Interpreter {
                                         .copied()
                                 }),
                             );
-                            if let Some(old) = old_self {
-                                self.env.insert("self".to_string(), old);
-                            } else {
-                                self.env.remove("self");
-                            }
+                            self.end_scoped_fixtures(fixtures_mark);
                             match result {
                                 Ok(v) => Self::coerce_attr_value_by_sigil(v, sigil),
                                 Err(_) => Value::NIL,
@@ -2234,7 +2243,7 @@ impl Interpreter {
                     .class_mro(class_key)
                     .iter()
                     .any(|n| *n == "Array" || *n == "List")
-                    && !attrs.contains_key("__mutsu_array_storage")
+                    && !attrs.contains_key(crate::symbol::wk::array_storage())
                 {
                     let storage = self.positional_base_storage(class_key, Vec::new());
                     attrs.insert("__mutsu_array_storage".to_string(), storage);
@@ -2256,7 +2265,7 @@ impl Interpreter {
                     .class_mro(class_key)
                     .iter()
                     .any(|n| *n == "Hash" || *n == "Map")
-                    && !attrs.contains_key("__mutsu_hash_storage")
+                    && !attrs.contains_key(crate::symbol::wk::hash_storage())
                 {
                     let has_positional = args.iter().any(|a| !a.is_string_pair_value());
                     let hash_args: Vec<Value> = args
@@ -2468,6 +2477,27 @@ impl Interpreter {
                             return Err(
                                 self.no_such_qualified_symbol(pkg_prefix.as_str(), short.as_str())
                             );
+                        }
+                        // An abstract built-in (`Cool`, `Numeric`, `Real`,
+                        // `Stringy`, `Callable`, ...) with no native
+                        // constructor: `Mu.new` builds a defined, attribute-less
+                        // instance of it, as it does for `Any` (rakudo:
+                        // `Cool.new.defined` is True, `.raku` is `Cool.new`).
+                        // `UInt` is a subset, not a class: it cannot be
+                        // instantiated (rakudo: "Cannot instantiate a subtype").
+                        // Rakudo also refuses `Code` and its subclasses
+                        // (`Sub`, `Block`, `Method`, `Regex`, ...), `Junction`
+                        // and `Failure`: they have no useful empty instance.
+                        let mro = crate::builtin_types::catalog::builtin_type_mro_syms(&resolved);
+                        let refused = resolved == "UInt"
+                            || resolved == "Junction"
+                            || resolved == "Failure"
+                            || mro.as_ref().is_some_and(|m| m.iter().any(|c| c == "Code"));
+                        if !refused
+                            && (mro.is_some()
+                                || crate::runtime::types::is_builtin_role_name(&resolved))
+                        {
+                            return Ok(Value::make_instance(name, HashMap::new()));
                         }
                         Err(crate::runtime::did_you_mean::method_not_found(
                             "new", &resolved,

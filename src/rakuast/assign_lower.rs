@@ -9,7 +9,6 @@
 
 use crate::ast::parsed::{Assign, ParsedExpr};
 use crate::ast::{AssignOp, Expr, Stmt};
-use crate::symbol::Symbol;
 
 /// Whether an assignment in expression position assigns to `target`, as
 /// written. `$(EXPR) = v` is not one here: its item assignment is the
@@ -38,6 +37,8 @@ pub(crate) fn is_expression_target(target: &Expr) -> bool {
         | Expr::CallOn { .. }
         | Expr::DynamicMethodCall { .. }
         | Expr::ArrayLiteral(_) => true,
+        // `@a[0]:v = 1`: the adverbs make the read a value, which refuses.
+        Expr::Ast(node) => matches!(node.as_ref(), ParsedExpr::SubscriptAdverbs(_)),
         _ => false,
     }
 }
@@ -66,7 +67,12 @@ pub(crate) fn is_callable_lvalue_target(target: &Expr) -> bool {
         Expr::DoStmt(stmt) => matches!(stmt.as_ref(), Stmt::VarDecl { .. }),
         // `($x = 5) = 6`, `(@a[0] = 5) = 7`: an assignment yields its
         // target's container.
-        Expr::Ast(node) => matches!(node.as_ref(), ParsedExpr::Assign(_)),
+        Expr::Ast(node) => match node.as_ref() {
+            ParsedExpr::Assign(_) => true,
+            // `@a[0;1]:!exists = 1` is an immutable `Bool`.
+            ParsedExpr::SubscriptAdverbs(adverbs) => adverbs.has_exists(),
+            _ => false,
+        },
         Expr::AssignExpr { is_bind, .. } => !is_bind,
         Expr::IndexAssign { .. } | Expr::MultiDimIndexAssign { .. } => true,
         _ => false,
@@ -96,66 +102,12 @@ pub(crate) fn lower_expression(node: Assign) -> Expr {
     while let Expr::Spelled(spelled) = target {
         target = spelled.expr;
     }
-    match crate::parser::unwrap_grouped_lvalue(target) {
-        Expr::Var(name) => Expr::AssignExpr {
-            name,
-            expr: Box::new(source),
-            is_bind: false,
-        },
-        Expr::ArrayVar(name) => Expr::AssignExpr {
-            name: format!("@{name}"),
-            expr: Box::new(source),
-            is_bind: false,
-        },
-        Expr::HashVar(name) => Expr::AssignExpr {
-            name: format!("%{name}"),
-            expr: Box::new(source),
-            is_bind: false,
-        },
+    match super::assign_target::unwrap_grouped_lvalue(target) {
         // `&f = …, …` (a statement whose comma list follows the assignment).
         Expr::CodeVar(name) => Expr::AssignExpr {
             name: format!("&{name}"),
             expr: Box::new(source),
             is_bind: false,
-        },
-        // `(@a[0]:kv)[1] = rhs` writes through the live element container the
-        // `:kv` list carries (ADR-0036 slice 2), so a subscript needs no
-        // special case.
-        Expr::Index {
-            target,
-            index,
-            is_positional,
-            spelling,
-            ..
-        } => Expr::IndexAssign {
-            target,
-            index,
-            value: Box::new(source),
-            is_positional,
-            spelling,
-        },
-        Expr::Call { name, args, .. } => {
-            crate::parser::named_sub_lvalue_assign_expr(name.resolve(), args, source)
-        }
-        Expr::MultiDimIndex {
-            target,
-            dimensions,
-            is_positional,
-        } => Expr::MultiDimIndexAssign {
-            target,
-            dimensions,
-            value: Box::new(source),
-            is_positional,
-        },
-        // `$::('name') = expr` (`flat $::('b') = l()`).
-        Expr::SymbolicDeref { sigil, expr } => Expr::SymbolicDerefAssign {
-            sigil,
-            expr,
-            value: Box::new(source),
-        },
-        Expr::IndirectTypeLookup(inner) => Expr::IndirectTypeLookupAssign {
-            expr: inner,
-            value: Box::new(source),
         },
         // A bareword target is a term, spelled by its term key (ADR-12441).
         Expr::BareWord(name) => Expr::AssignExpr {
@@ -163,29 +115,30 @@ pub(crate) fn lower_expression(node: Assign) -> Expr {
             expr: Box::new(source),
             is_bind: false,
         },
-        Expr::CallOn { target, args } => callable_lvalue(*target, args, source),
-        // A method-call lvalue (`$o.a = v`, `my $c = $o.a = 42`): the
-        // rw-accessor writeback. `$(EXPR) = v` is the contextualizer's
-        // `.item` call here, which writes through to `EXPR`.
-        target @ (Expr::MethodCall { .. } | Expr::DynamicMethodCall { .. }) => {
-            crate::parser::assign_to_target_expr(target, source)
-        }
         // A parenthesised list target (`say ($a, $b) = foo()`): a lone
         // `*`-slurpy target takes its element by position, any other list
         // assigns through the list container.
         Expr::ArrayLiteral(items) => {
             match crate::parser::single_target_list_lvalue_expr(items.clone(), source.clone()) {
                 Some(expr) => expr,
-                None => callable_lvalue(Expr::ArrayLiteral(items), Vec::new(), source),
+                None => super::assign_writeback::callable_lvalue_assign_expr(
+                    Expr::ArrayLiteral(items),
+                    Vec::new(),
+                    source,
+                ),
             }
         }
         // `-$x = 5`, `c ?? $a !! $b = 1`, `$<c> = $0`, `($a || $b) = 1`,
         // `(my $v) = 1, 2`: write through the expression's result.
-        target if is_callable_lvalue_target(&target) => callable_lvalue(target, Vec::new(), source),
-        // Anything else (`pi = 4` in a call argument, a literal) is what the
-        // parser's general target expansion makes of it: an immutable target
-        // dies with `X::Assignment::RO` when the assignment runs.
-        other => crate::parser::assign_to_target_expr(other, source),
+        target if is_callable_lvalue_target(&target) => {
+            super::assign_writeback::callable_lvalue_assign_expr(target, Vec::new(), source)
+        }
+        // Every other target is the one general dispatch: a variable, a
+        // subscript, a call, a method call (the rw-accessor writeback, and
+        // `$(EXPR) = v` through its `.item` call), a symbolic or type
+        // lookup. An immutable one (`pi = 4`, a literal) dies with
+        // `X::Assignment::RO` when the assignment runs.
+        other => super::assign_target::assign_to_target_expr(other, source),
     }
 }
 
@@ -214,15 +167,5 @@ pub(super) fn variable_name(target: &Expr) -> Option<String> {
         Expr::HashVar(name) => Some(format!("%{name}")),
         Expr::CodeVar(name) => Some(format!("&{name}")),
         _ => None,
-    }
-}
-
-/// The writeback through a callable or list container.
-// Cost: O(1).
-fn callable_lvalue(target: Expr, args: Vec<Expr>, source: Expr) -> Expr {
-    Expr::Call {
-        name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-        args: vec![target, Expr::ArrayLiteral(args), source],
-        listop: false,
     }
 }

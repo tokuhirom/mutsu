@@ -85,26 +85,13 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
     // Record the source sigil so the compiler can distinguish a scalar
     // `constant $x` from a sigilless `constant x` for X::Redeclaration purposes
     // (the VarDecl `name` strips the `$`, so both would otherwise collide).
-    let sigil_marker = match sigil {
-        b'$' => "$",
-        b'@' => "@",
-        b'%' => "%",
-        b'&' => "&",
-        _ => "",
-    };
-    let anonymous = !sigil_marker.is_empty() && name_input.len() - rest.len() == 1;
+    let constant = crate::ast::ConstantSigil::from_sigil(sigil);
+    let anonymous =
+        constant != crate::ast::ConstantSigil::Term && name_input.len() - rest.len() == 1;
     // A constant always has a user-written initializer, so it is marked like
     // any other initialized declaration: `constant z = Nil` must keep its Nil
     // rather than be taken for the synthesized default (re-seeded as `Any`,
     // or — being package-scoped — loaded as a bare `our` redeclaration).
-    let constant_traits = vec![
-        ("__constant".to_string(), None),
-        ("__has_initializer".to_string(), None),
-        (
-            "__constant_sigil".to_string(),
-            Some(Expr::Literal(Value::str(sigil_marker.to_string()))),
-        ),
-    ];
     let (mut rest, _) = ws(rest)?;
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
@@ -180,6 +167,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         return Ok((
             r,
             Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous,
                 name,
                 expr,
@@ -189,7 +177,10 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export,
                 export_tags: export_tags.clone(),
-                custom_traits: constant_traits,
+                custom_traits: Vec::new(),
+                constant: Some(constant),
+                bind: None,
+                has_initializer: true,
                 where_constraint: None,
             },
         ));
@@ -228,6 +219,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         return Ok((
             rest,
             Stmt::VarDecl {
+                marks: Default::default(),
                 anonymous,
                 name,
                 expr,
@@ -237,7 +229,10 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export,
                 export_tags: export_tags.clone(),
-                custom_traits: constant_traits,
+                custom_traits: Vec::new(),
+                constant: Some(constant),
+                bind: None,
+                has_initializer: true,
                 where_constraint: None,
             },
         ));
@@ -318,6 +313,7 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
     let (mut rest, _) = ws(rest)?;
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
+    let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
     let mut base: Option<String> = None;
     // `of Base` and `is trait` may appear in either order before `where`:
     // `subset S of T is export where …` and `subset S is export of T where …`
@@ -369,6 +365,21 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
                 let (r2, _) = ws(r2)?;
                 rest = r2;
             } else {
+                // Any other trait is a user `trait_mod:<is>` candidate,
+                // optionally with an argument: `is foo`, `is foo(1)`.
+                let mut r = r;
+                let mut argument = None;
+                if r.starts_with('(') {
+                    let (after, parsed) = super::super::class::trait_argument(r);
+                    if let Ok(Some(crate::ast::routine_trait::TraitArgument::Parentheses(expr))) =
+                        parsed
+                        && !matches!(&expr, Expr::ArrayLiteral(items) if items.is_empty())
+                    {
+                        argument = Some(expr);
+                    }
+                    r = after;
+                }
+                custom_traits.push((trait_name, argument));
                 let (r, _) = ws(r)?;
                 rest = r;
             }
@@ -398,6 +409,7 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
             version: super::super::simple::current_language_version(),
             is_export,
             export_tags,
+            custom_traits,
             is_my: false,
             decl_id: crate::ast::next_class_decl_id(),
         },
@@ -464,6 +476,7 @@ pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
         version: super::super::simple::current_language_version(),
         is_export: false,
         export_tags: Vec::new(),
+        custom_traits: Vec::new(),
         is_my: false,
         decl_id: crate::ast::next_class_decl_id(),
     };

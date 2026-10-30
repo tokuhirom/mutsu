@@ -166,7 +166,9 @@ mod tests {
         let result = crate::parser::stmt::program(input);
         reset_slang_modes();
         match result {
-            Ok((rest, stmts)) if rest.trim().is_empty() => Ok(stmts),
+            Ok((rest, stmts)) if rest.trim().is_empty() => {
+                Ok(crate::parser::test_lower::stmts(stmts))
+            }
             Ok((rest, _)) => Err(format!("unparsed trailing input: {rest:?}")),
             Err(e) => Err(format!("{e:?}")),
         }

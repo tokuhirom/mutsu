@@ -57,6 +57,7 @@ impl Interpreter {
             | OpCode::EnterPointyTopic
             | OpCode::ExitPointyTopic
             | OpCode::GetGivenPointyTopic
+            | OpCode::IndexBindValue
             | OpCode::IntBitNeg
             | OpCode::Itemize
             | OpCode::ItemizeVar(..)
@@ -388,6 +389,7 @@ impl Interpreter {
             | OpCode::RegisterEnum(..)
             | OpCode::ResetStateLocals { .. }
             | OpCode::RoutineScope { .. }
+            | OpCode::RunCheckCode
             | OpCode::StateVarInitGuard(..)
             | OpCode::SucceedBarrier { .. }
             | OpCode::ThrowUndeclaredRoutine(..)

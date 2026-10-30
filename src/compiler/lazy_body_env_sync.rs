@@ -27,7 +27,7 @@
 //! [`Compiler::note_role_decl_env_sync`]. Expressions still evaluated from
 //! raw AST at registration (a computed method name, a fallback trait
 //! argument) are enumerated from an analysis compile of the same expression,
-//! a static `token`/`rule` body from its pattern text, and a `__hoisted`
+//! a static `token`/`rule` body from its pattern text, and a hoisted
 //! shell is bounded together with its source-order declaration (#11116).
 
 use super::Compiler;
@@ -69,6 +69,14 @@ impl Compiler {
                 return;
             }
             collect_by_name_reads(&cf.code, &mut names);
+            // The signature's defaults, `where` clauses and shape dimensions are
+            // evaluated by the binder against the declaring frame's env.
+            if self
+                .param_defs_by_name_reads(&cf.param_defs, &mut names)
+                .is_none()
+            {
+                return;
+            }
         }
         self.record_bounded_lazy_decl(plan_idxs, names);
     }
@@ -198,7 +206,7 @@ impl Compiler {
     }
 
     /// Mark the class/role plan `decl_idx` bounded with its reads `names`,
-    /// together with any `__hoisted` shell of the same declaration
+    /// together with any hoisted shell of the same declaration
     /// (`decl_id`) this compiler emitted: the shell registers a subset of the
     /// same body, so it reads no name the full declaration does not. The
     /// shell's own plan is never bounded on its own (its methods are compiled
@@ -372,6 +380,18 @@ impl Compiler {
         out: &mut Vec<Symbol>,
     ) -> Option<()> {
         match chunk {
+            // A type declared inside a class body registers from a plan of its
+            // own whose reads (a `BEGIN` writing an outer lexical) are not
+            // folded into this one's: leave the enclosing plan unbounded.
+            Some(chunk)
+                if chunk
+                    .code
+                    .ops
+                    .iter()
+                    .any(|op| matches!(op, crate::opcode::OpCode::RegisterDecl(_))) =>
+            {
+                None
+            }
             Some(chunk) => chunk_reads(chunk, out),
             None => self.raw_stmt_reads(raw, &self.current_package, out),
         }

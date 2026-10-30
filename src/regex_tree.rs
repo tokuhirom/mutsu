@@ -1763,11 +1763,23 @@ impl Parser {
             let before_modifier = self.pos;
             self.skip_whitespace();
             let spaced_modifier = self.pos != before_modifier;
-            let backtrack = self.parse_atom_backtrack(&atom);
+            let backtrack = self.parse_atom_backtrack();
             if backtrack.is_none() {
                 self.pos = before_modifier;
             }
+            let mut term_whitespace = saw_whitespace;
             if let Some(backtrack) = backtrack {
+                // The control binds to the final character of a literal run
+                // (`host:` is `hos` then `t:`), as a quantifier does above.
+                if let RegexNode::Literal(text) = &mut atom
+                    && text.chars().count() > 1
+                {
+                    let last = text.pop().expect("literal has more than one character");
+                    let prefix = std::mem::take(text);
+                    self.push_term(&mut nodes, RegexNode::Literal(prefix), saw_whitespace);
+                    *text = last.to_string();
+                    term_whitespace = false;
+                }
                 if spaced_modifier {
                     atom = RegexNode::WithWhitespace(Box::new(atom));
                 }
@@ -1776,7 +1788,7 @@ impl Parser {
                     backtrack,
                 });
             }
-            self.push_term(&mut nodes, atom, saw_whitespace);
+            self.push_term(&mut nodes, atom, term_whitespace);
         }
 
         if nodes.is_empty() {
@@ -2242,6 +2254,23 @@ impl Parser {
                     assertion: Box::new(call),
                 }));
             }
+            // `<thing=@(EXPR)>` / `<x=$(EXPR)>`: an alias over an interpolated
+            // expression (Raku: `Assertion::Alias` over an `InterpolatedVar`).
+            if is_simple_subrule_name(alias)
+                && capturing
+                && matches!(target.as_bytes(), [b'$' | b'@' | b'%', b'(', ..])
+                && let Some(tree) =
+                    RegexTree::parse_lookaround_body(&format!("<{target}>"), self.in_unit_parse)
+                && matches!(
+                    tree.body,
+                    RegexNode::Extension(RegexExtension::ContextualizedInterpolation { .. })
+                )
+            {
+                return Some(RegexNode::Extension(RegexExtension::Alias {
+                    alias: alias.to_string(),
+                    assertion: Box::new(tree.body),
+                }));
+            }
             // `<rx=$r>` / `<foo=[bao]>` / `<wc=&wc>`: an alias over an
             // assertion that is no named subrule call.
             if is_simple_subrule_name(alias)
@@ -2255,6 +2284,7 @@ impl Parser {
                         | RegexNode::Callable { .. }
                         | RegexNode::CharClassAssertion(_)
                         | RegexNode::InterpolatedBlock { .. }
+                        | RegexNode::ArrayInterpolation { .. }
                 )
             {
                 return Some(RegexNode::Extension(RegexExtension::Alias {
@@ -2297,17 +2327,12 @@ impl Parser {
         })
     }
 
-    /// `:`, `:!` or `:?` written right after `atom`: its own backtracking
+    /// `:`, `:!` or `:?` written right after an atom: its own backtracking
     /// control. A modifier that could instead start something else (`a:i`, the
     /// cut `a::`) is not taken.
     // Cost: O(1).
-    fn parse_atom_backtrack(&mut self, atom: &RegexNode) -> Option<RegexBacktrack> {
+    fn parse_atom_backtrack(&mut self) -> Option<RegexBacktrack> {
         if self.chars.get(self.pos) != Some(&':') {
-            return None;
-        }
-        // A literal of several characters is split before its last one when a
-        // quantifier follows; the same split is not modelled here.
-        if matches!(atom, RegexNode::Literal(text) if text.chars().count() > 1) {
             return None;
         }
         let (backtrack, width) = match self.chars.get(self.pos + 1) {
@@ -2401,12 +2426,14 @@ impl Parser {
             RegexExtension::ContextualizedInterpolation {
                 sigil,
                 sequential,
+                assertion: false,
                 code: Box::new(RegexCode { code, body }),
             },
         ))
     }
 
-    /// `$<name>` that is not an alias: match what the capture matched.
+    /// `$<name>` that is not an alias: match what the capture matched. The name
+    /// is whatever precedes the `>` (`$<s=x>` looks up the key `s=x`).
     // Cost: O(n), n = length of the name.
     fn parse_named_back_reference(&mut self) -> Option<RegexNode> {
         self.pos += 2; // '$<'
@@ -2414,7 +2441,7 @@ impl Parser {
         while self
             .chars
             .get(self.pos)
-            .is_some_and(|ch| ch.is_alphanumeric() || matches!(ch, '_' | '-'))
+            .is_some_and(|ch| *ch != '>' && !ch.is_whitespace())
         {
             self.pos += 1;
         }
@@ -3147,6 +3174,9 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         // A construct only the RakuAST boundary reads (`$<x>`, `<?alpha>`):
         // execution keeps the text, which the lowerer's own check declines.
         RegexNode::Extension(_) => true,
+        // `<?before [:i 'x']>`: an inline adverb inside the body. Only the
+        // RakuAST boundary reads this tree; the matcher keeps the text.
+        RegexNode::InternalModifier { .. } => true,
         other => is_executable_lookaround_body(other),
     }
 }

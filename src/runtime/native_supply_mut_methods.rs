@@ -205,10 +205,20 @@ impl Interpreter {
 
                 // If this Supply has a supply_id (belongs to Proc::Async),
                 // register tap in the global registry so .start can find it
-                if let Some(ValueView::Int(sid)) = attrs.get("supply_id").map(Value::view) {
+                // A `.lines` view of a Proc::Async output stream registers on the
+                // process's own stream, which delivers the tap line by line.
+                let proc_lines = attrs.contains_key("proc_output")
+                    && matches!(attrs.get("is_lines").map(Value::view), Some(ValueView::Bool(true)));
+                let tap_supply_id = match (proc_lines, attrs.get("parent_supply_id").map(Value::view)) {
+                    (true, Some(ValueView::Int(parent))) => Some(Value::int(parent)),
+                    _ => attrs.get("supply_id").cloned(),
+                };
+                if let Some(ValueView::Int(sid)) = tap_supply_id.as_ref().map(Value::view) {
                     let sid = sid as u64;
                     if Self::supply_has_active_callback(&tap_cb) {
-                        register_supply_tap(sid, tap_cb.clone());
+                        let lines_chomp = proc_lines
+                            .then(|| attrs.get("line_chomp").map(Value::truthy).unwrap_or(true));
+                        register_supply_tap_with_lines(sid, tap_cb.clone(), lines_chomp);
                         // A Proc::Async output Supply is done when the stream
                         // ends, not when it is tapped: hand `done =>` to the
                         // stream's delivery path (live pump or replay).
@@ -1721,6 +1731,7 @@ impl Interpreter {
             quoted: false, sugar: false,
         })];
         let tick = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
+            fixtures: None,
             package: Symbol::intern("GLOBAL"),
             name: Symbol::intern(""),
             params: crate::value::empty_params(),

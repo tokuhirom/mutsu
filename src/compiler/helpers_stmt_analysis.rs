@@ -119,7 +119,7 @@ impl Compiler {
         let mark = self.lexical_import_chain.len();
         let mut local_multis: Option<Vec<String>> = None;
         for stmt in stmts {
-            if let Some(id) = Self::lexical_use_set_id(stmt) {
+            if let Some(id) = Self::block_lexical_use_set_id(stmt) {
                 let local = local_multis.get_or_insert_with(|| Self::block_multi_names(stmts));
                 let id = Self::with_block_multis(id, local);
                 // A block's `use` of the import list the unit's own `use`
@@ -139,7 +139,7 @@ impl Compiler {
     /// directly, sorted. Operators are left out: an operator family keeps
     /// its registry alias anyway.
     // Cost: O(s log s), s = statements of the block.
-    fn block_multi_names(stmts: &[Stmt]) -> Vec<String> {
+    pub(crate) fn block_multi_names(stmts: &[Stmt]) -> Vec<String> {
         let mut names: Vec<String> = stmts
             .iter()
             .filter_map(|stmt| match stmt {
@@ -162,7 +162,7 @@ impl Compiler {
     /// {...} }` dispatches over M's and the block's candidates of `f`), so
     /// such a family keeps the registry path (ADR-8751 stage 2).
     // Cost: O(n), n = length of the names.
-    fn with_block_multis(id: Symbol, local: &[String]) -> Symbol {
+    pub(crate) fn with_block_multis(id: Symbol, local: &[String]) -> Symbol {
         if local.is_empty() {
             return id;
         }
@@ -178,7 +178,7 @@ impl Compiler {
     /// [`Self::enter_lexical_use_block`] opened it for the innermost block.
     // Cost: O(c + n), c = open import sets, n = length of an id.
     pub(super) fn open_lexical_use_set(&mut self, stmt: &Stmt) -> Option<Symbol> {
-        let full = Self::lexical_use_set_id(stmt)?;
+        let full = Self::block_lexical_use_set_id(stmt)?;
         // The unit's own top-level `use` opens its set where it stands
         // (`defer_unit_lexical_use_sets`).
         let base_text = full.resolve();
@@ -273,7 +273,20 @@ impl Compiler {
     /// statement, so a recompile of the block finds the same set and every
     /// `use` importing the same list shares it.
     // Cost: O(n), n = size of the `use`'s argument expression.
-    pub(super) fn lexical_use_set_id(stmt: &Stmt) -> Option<Symbol> {
+    pub(crate) fn lexical_use_set_id(stmt: &Stmt) -> Option<Symbol> {
+        Self::use_set_id(stmt, false)
+    }
+
+    /// [`Self::lexical_use_set_id`] for a `use` below the unit's top level:
+    /// `Test` and `Test::*` bind in the block too, while the unit's own
+    /// top-level `use Test` stays the whole unit's, on the registry.
+    // Cost: O(n), n = size of the `use`'s argument expression.
+    pub(crate) fn block_lexical_use_set_id(stmt: &Stmt) -> Option<Symbol> {
+        Self::use_set_id(stmt, true)
+    }
+
+    // Cost: O(n), n = size of the `use`'s argument expression.
+    fn use_set_id(stmt: &Stmt, in_block: bool) -> Option<Symbol> {
         let Stmt::Use {
             module,
             tags,
@@ -284,7 +297,11 @@ impl Compiler {
         else {
             return None;
         };
-        super::begin_use::preloadable_module_name(module, tags, None, None)?;
+        if in_block {
+            super::begin_use::lexically_importable_module_name(module, tags)?;
+        } else {
+            super::begin_use::preloadable_module_name(module, tags, None, None)?;
+        }
         if tags.iter().any(|t| t == "from") {
             return None;
         }
@@ -532,6 +549,18 @@ impl Compiler {
         }
     }
 
+    /// Emit an `OpCode::LexImportBuiltinOp` prefix for the bare `X` / `Z` the
+    /// caller emits next (`meta` is `"X"` or `"Z"`): it is the routine
+    /// `infix:<X>` / `infix:<Z>`, whose user candidates a block-scoped `use`
+    /// may have imported.
+    // Cost: O(c), c = enclosing `use`-blocks; O(1) outside every `use`-block.
+    pub(super) fn emit_lex_import_list_infix(&mut self, meta: &str) {
+        if self.lexical_import_chain.is_empty() {
+            return;
+        }
+        self.emit_lex_import_builtin_named(&format!("infix:<{meta}>"));
+    }
+
     /// Emit an `OpCode::LexImportBuiltinOp` prefix for the `X`/`Z`/`R`
     /// meta-op over the built-in `op` the caller emits next, when its user
     /// candidates bind lexically (ADR-8751 stage 2). A meta-op over a user
@@ -544,6 +573,58 @@ impl Compiler {
         }
         if let Some(name) = crate::lexical_builtin_op::infix_of_meta(op) {
             self.emit_lex_import_builtin_named(&name);
+        }
+    }
+
+    /// Record, for a bareword call or `&name` written above the unit's
+    /// top-level `use`, the sets [`Self::lexical_import_chain_idx`] drops for
+    /// their line. Raku binds the `use` at compile time, so a name that meant
+    /// nothing before it still reaches the imported routine. The sets are kept
+    /// in a chain led by [`crate::runtime::lexical_imports::LATE_IMPORT_MARK`]
+    /// that no op names: the run-time lookup that is about to report the name
+    /// as unknown consults it last (`Interpreter::unit_late_import`), so a
+    /// name that means anything else keeps that meaning.
+    // Cost: O(c), c = enclosing `use`-blocks (usually 1).
+    pub(super) fn register_late_import_fallback(&mut self, name: Symbol) {
+        if self.lexical_import_chain.is_empty()
+            || self.lexically_in_routine
+            || crate::qualified::is_qualified(name)
+            || name.resolve().starts_with("__mutsu")
+            || crate::runtime::Interpreter::is_builtin_function(&name.resolve())
+            || self.amp_binding_in_active_scope(&name.resolve())
+            || self
+                .inherited_scope_routine_decls
+                .iter()
+                .chain(self.scope_routine_decls.iter())
+                .any(|&(_, decl)| decl == name)
+        {
+            return;
+        }
+        let Some(line) = self.last_source_line else {
+            return;
+        };
+        let mut chain = vec![Symbol::intern(
+            crate::runtime::lexical_imports::LATE_IMPORT_MARK,
+        )];
+        for id in self.lexical_import_chain.iter().rev() {
+            if self
+                .unit_set_line
+                .get(id)
+                .is_some_and(|&use_line| line < use_line)
+                && self.unit_active_sets.contains(id)
+                && self
+                    .lexical_import_chain
+                    .iter()
+                    .filter(|c| *c == id)
+                    .count()
+                    == 1
+                && !chain.contains(id)
+            {
+                chain.push(*id);
+            }
+        }
+        if chain.len() > 1 && !self.code.lexical_import_chains.contains(&chain) {
+            self.code.lexical_import_chains.push(chain);
         }
     }
 

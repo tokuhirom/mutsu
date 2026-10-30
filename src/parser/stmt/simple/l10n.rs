@@ -28,6 +28,7 @@
 //! than silently acquiring the wrong meaning. The remaining residue is
 //! tracked in <https://github.com/tokuhirom/mutsu/issues/7990>.
 
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -139,6 +140,7 @@ impl L10nVocabulary {
         let Some(literal) = body.and_then(literal_of) else {
             return false;
         };
+        let literal = literal.as_ref();
         match category {
             Category::Replacement => {
                 let entry = self.keywords.entry(canonical.to_string()).or_default();
@@ -327,7 +329,7 @@ fn canonical_infix_name(name: &str) -> &str {
 /// grammar would otherwise read as syntax (`:ratchet "(続き)"`). Anything else
 /// would need the regex engine to decide what it matches, which is precisely
 /// the Rakudo-internal-token execution ADR-0026 §4 rejects.
-fn literal_of(body: &str) -> Option<&str> {
+fn literal_of(body: &str) -> Option<Cow<'_, str>> {
     let body = body.trim();
     // The parser records a `token`'s implicit `:ratchet` in the regex source.
     let body = body.strip_prefix(":ratchet").unwrap_or(body).trim();
@@ -338,14 +340,25 @@ fn literal_of(body: &str) -> Option<&str> {
                 && !inner.contains(quote)
                 && !inner.contains('\\')
             {
-                return Some(inner);
+                return Some(Cow::Borrowed(inner));
+            }
+        }
+        // The parser re-spells a double-quoted literal that holds an apostrophe
+        // as a single-quoted one with the apostrophe escaped (`"'eS"` is
+        // recorded as `'\'eS'`), the form Klingon's `block-loop` arrives in.
+        if let Some(inner) = body.strip_prefix('\'').and_then(|b| b.strip_suffix('\''))
+            && inner.contains("\\'")
+        {
+            let unescaped = inner.replace("\\'", "'");
+            if !unescaped.is_empty() && !unescaped.contains(['"', '\\']) {
+                return Some(Cow::Owned(unescaped));
             }
         }
     }
     if body.is_empty() || body.chars().any(is_regex_metachar) {
         return None;
     }
-    Some(body)
+    Some(Cow::Borrowed(body))
 }
 
 /// Characters that make an *unquoted* token body regex syntax rather than a
@@ -473,32 +486,6 @@ pub(crate) fn l10n_adverb_alias(category: &str, name: &str) -> Option<String> {
     })
 }
 
-/// Match a localized colon-adverb name, returning `(canonical, negated,
-/// remainder)`. The caller owns the canonical name because it is translated
-/// out of a thread-local vocabulary; the source remainder remains borrowed.
-pub(crate) fn l10n_match_adverb<'a>(
-    category: &str,
-    input: &'a str,
-) -> Option<(String, bool, &'a str)> {
-    if !L10N_ACTIVE.with(Cell::get) {
-        return None;
-    }
-    let after_colon = input.strip_prefix(':')?;
-    let (negated, after_bang) = after_colon
-        .strip_prefix('!')
-        .map_or((false, after_colon), |rest| (true, rest));
-    let end = after_bang
-        .char_indices()
-        .find(|(_, c)| !c.is_alphanumeric() && *c != '_' && *c != '-')
-        .map_or(after_bang.len(), |(idx, _)| idx);
-    if end == 0 {
-        return None;
-    }
-    let name = &after_bang[..end];
-    let canonical = l10n_adverb_alias(category, name)?;
-    Some((canonical, negated, &after_bang[end..]))
-}
-
 /// Match the longest localized infix spelling at the start of `input`,
 /// returning its canonical spelling and the bytes consumed from the source.
 pub(crate) fn l10n_match_infix(input: &str) -> Option<(String, usize)> {
@@ -619,9 +606,12 @@ mod tests {
 
     #[test]
     fn quoted_token_bodies_lose_their_quotes() {
-        assert_eq!(literal_of(":ratchet \"(続き)\""), Some("(続き)"));
-        assert_eq!(literal_of(":ratchet もしも"), Some("もしも"));
-        assert_eq!(literal_of(":ratchet \"^ff\""), Some("^ff"));
+        assert_eq!(literal_of(":ratchet \"(続き)\"").as_deref(), Some("(続き)"));
+        assert_eq!(literal_of(":ratchet もしも").as_deref(), Some("もしも"));
+        assert_eq!(literal_of(":ratchet \"^ff\"").as_deref(), Some("^ff"));
+        // `"'eS"` as the parser re-spells it (Klingon `block-loop`).
+        assert_eq!(literal_of(":ratchet '\\'eS' ").as_deref(), Some("'eS"));
+        assert_eq!(literal_of(":ratchet 'a\\'b\\'' ").as_deref(), Some("a'b'"));
     }
 
     #[test]

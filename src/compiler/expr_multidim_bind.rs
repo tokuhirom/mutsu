@@ -10,26 +10,18 @@ impl Compiler {
         value: &Expr,
         is_positional: bool,
     ) {
-        let Expr::Call {
-            name: marker, args, ..
-        } = value
-        else {
-            unreachable!("indexed bind has a bind marker");
+        let Expr::IndexBindValue(rhs) = value else {
+            unreachable!("indexed bind has a bind value");
         };
         // No source metadata and no lvalue promotion: BIND-POS receives the
         // value, even when the expression names a writable scalar container.
-        self.compile_expr(&Expr::Call {
-            name: *marker,
-            args: vec![
-                Expr::Call {
-                    name: Symbol::intern("nqp::decont"),
-                    args: vec![args[0].clone()],
-                    listop: false,
-                },
-                Expr::Literal(Value::NIL),
-            ],
+        self.compile_call_arg(&Expr::Call {
+            name: Symbol::intern("nqp::decont"),
+            args: vec![rhs.as_ref().clone()],
             listop: false,
         });
+        self.compile_call_arg(&Expr::Literal(Value::NIL));
+        self.code.emit(OpCode::IndexBindValue);
         for dimension in dimensions.iter().rev() {
             self.compile_expr(dimension);
         }

@@ -96,10 +96,7 @@ impl Interpreter {
         // requirer's — mirrors `run_modules::parse_module_source`.
         let saved_source_file =
             crate::parser::set_parser_source_file(Some(path.to_string_lossy().to_string()));
-        let result = parse_dispatch::parse_compilation_unit_of(
-            &preprocessed,
-            crate::rakuast::frontend::Unit::Module,
-        );
+        let result = parse_dispatch::parse_compilation_unit_of(&preprocessed);
         crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();
         // See the parallel comment in `run_modules::parse_module_source`: the
@@ -592,6 +589,32 @@ impl Interpreter {
                 crate::qualified::qualified(Symbol::intern(module), Symbol::intern(name));
             let value = self.resolve_code_var(source.as_str());
             if value.truthy() {
+                return Some((value, RequiredKey::Routine));
+            }
+            // A module that exports only `multi` candidates has no single
+            // `Module::name` entry; its candidates are keyed `Module::name/<sig>`
+            // (`multi crypt(...) is export` of Crypt::Libcrypt).
+            let candidate_prefix = format!("{}/", source.as_str());
+            if self
+                .registry()
+                .functions
+                .keys()
+                .any(|k| k.resolve().starts_with(&candidate_prefix))
+            {
+                // The listed name denotes the whole family: bind a dispatcher
+                // over its candidates, not the (absent) single routine.
+                let candidates: Vec<_> = self
+                    .registry()
+                    .functions
+                    .iter()
+                    .filter(|(k, _)| k.resolve().starts_with(&candidate_prefix))
+                    .map(|(_, def)| def.clone())
+                    .collect();
+                let value = if candidates.is_empty() {
+                    value
+                } else {
+                    self.sub_value_from_multi_candidates(name, candidates)
+                };
                 return Some((value, RequiredKey::Routine));
             }
             // A package-less module declares its routines in GLOBAL.

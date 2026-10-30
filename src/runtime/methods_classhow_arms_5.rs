@@ -34,8 +34,8 @@ impl Interpreter {
                 value_prototype: None,
                 syms: Default::default(),
                 lexical_package: sub_data.package,
-                params: sub_data.params.to_vec(),
-                param_defs: sub_data.param_defs.to_vec(),
+                params: (sub_data.params.to_vec()).into(),
+                param_defs: (sub_data.param_defs.to_vec()).into(),
                 body: sub_data.body.clone(),
                 is_rw: sub_data.is_rw,
                 is_raw: sub_data.is_raw,
@@ -500,6 +500,22 @@ impl Interpreter {
                 return Ok(Value::array(vec![Value::package(Symbol::intern(
                     &base_name,
                 ))]));
+            }
+            // A core role modelled natively (`Blob`, `Positional`) has no
+            // `RoleDef`, but in rakudo it is a role group with one
+            // `ParametricRoleHOW` candidate: hand out the same candidate
+            // object a declared role would.
+            if crate::runtime::types::is_builtin_role_name(&base_name) {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("__mutsu_role_candidate_idx".to_string(), Value::int(0));
+                attrs.insert(
+                    "__mutsu_role_base_name".to_string(),
+                    Value::str(base_name.clone()),
+                );
+                return Ok(Value::array(vec![Value::make_instance(
+                    Symbol::intern(&base_name),
+                    attrs,
+                )]));
             }
             Ok(Value::array(Vec::new()))
     }

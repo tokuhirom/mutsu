@@ -178,7 +178,9 @@ impl Interpreter {
                 ip = coro.ip;
                 self.locals.refill_from(&coro.locals.clone());
                 self.stack = coro.stack.clone();
+                let puller = self.env().clone();
                 *self.env_mut() = coro.env.clone();
+                self.inherit_puller_dynamics(&puller);
                 self.async_state.gather_for_loop_resume = coro.for_loop_resume.clone();
                 has_prior_state = true;
             } else {
@@ -188,7 +190,9 @@ impl Interpreter {
                 // preserves overlay+parent+tombstones), so the body's writes
                 // accumulate across takes without forking `list.env`.
                 ip = 0;
+                let puller = self.env().clone();
                 *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
+                self.inherit_puller_dynamics(&puller);
                 self.locals.refill_slots(cc.locals.len());
                 for (i, name) in cc.locals.iter().enumerate() {
                     if let Some(val) = self.env().get(name) {
@@ -201,7 +205,9 @@ impl Interpreter {
         } else {
             // Fresh start (no coroutine slot yet)
             ip = 0;
+            let puller = self.env().clone();
             *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
+            self.inherit_puller_dynamics(&puller);
             self.locals.refill_slots(cc.locals.len());
             for (i, name) in cc.locals.iter().enumerate() {
                 if let Some(val) = self.env().get(name) {
@@ -245,7 +251,7 @@ impl Interpreter {
         let saved_routine_depth = self
             .async_state
             .lazy_pull_entry_routine_depth
-            .replace(self.routine_stack_len());
+            .replace(self.lazy_pull_routine_depth());
         // An enclosing multi-take op's deferral belongs to the OUTER pull; this
         // pull's own takes suspend normally.
         let saved_take_defer_to_op_end =
@@ -695,6 +701,23 @@ impl Interpreter {
                     },
                     _ => Value::NIL,
                 },
+                CatPullMode::UserIterator => {
+                    let item =
+                        self.try_compiled_method_or_interpret(cat.clone(), "pull-one", vec![])?;
+                    if item.is_iteration_end() {
+                        if let Some(spec) = list.cat_pull.as_ref() {
+                            spec.lock().unwrap_or_else(|e| e.into_inner()).done = true;
+                        }
+                        return Ok(());
+                    }
+                    // A `Nil` item is a real element here, not the end marker.
+                    list.cache
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .get_or_insert_with(Vec::new)
+                        .push(item);
+                    continue;
+                }
                 CatPullMode::Lines => self.call_method_with_values(cat.clone(), "get", vec![])?,
                 CatPullMode::Handles if !started => {
                     // First pull: the currently-active handle, opened on demand

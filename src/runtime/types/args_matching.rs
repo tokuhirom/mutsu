@@ -237,6 +237,45 @@ impl Interpreter {
         }
     }
 
+    /// Whether the invocant `inv` satisfies the `where` clause of its own
+    /// parameter (`multi method m($self where { .ok }:)`), which method
+    /// candidate matching otherwise never reads: the positional walk drops the
+    /// invocant parameter. A parameter without a `where` accepts.
+    // Cost: O(w), w = the cost of the user `where` clause.
+    pub(crate) fn invocant_where_accepts(
+        &mut self,
+        pd: &ParamDef,
+        inv: &Value,
+        package: Option<Symbol>,
+    ) -> bool {
+        let Some(where_expr) = &pd.where_constraint else {
+            return true;
+        };
+        let saved = self.env.clone();
+        self.env.insert_sym(crate::symbol::wk::topic(), inv.clone());
+        // The invocant's `where` reads it as `self`: a scoped record, not an
+        // env key (ADR-14843).
+        let scope = (pd.name == "self").then(|| self.begin_scoped_invocant(inv.clone()));
+        if !pd.name.is_empty() && pd.name != "self" {
+            self.env.insert(pd.storage_name().into_owned(), inv.clone());
+        }
+        let ev = self.eval_param_where_in_candidate_package(pd, package);
+        let ok = match where_expr.as_ref() {
+            Expr::AnonSub { .. } => self.where_truthy(ev),
+            Expr::MethodCall { target, .. }
+                if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
+            {
+                self.where_truthy(ev)
+            }
+            _ => self.where_smartmatch(inv, ev),
+        };
+        if let Some(mark) = scope {
+            self.end_scoped_fixtures(mark);
+        }
+        self.restore_env_preserving_dynamics(saved);
+        ok
+    }
+
     fn eval_param_where_in_candidate_package(
         &mut self,
         pd: &ParamDef,

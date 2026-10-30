@@ -346,6 +346,20 @@ jobs:
         # its parser first.
         run: make check-interp-fields
 
+      - name: No new reference to the fixed frame names
+        # A ratchet (ADR-14843): `self`, `?CLASS` and `?ROLE` live in the frame
+        # record, never in an `Env` key. Per-file reference counts live in
+        # scripts/frame-fixtures.d/ and may go down, never up (a drop needs no edit).
+        # Self-tests its counter first.
+        run: make check-frame-fixtures
+
+      - name: Frontend debt does not grow
+        # ADR-15334 section 3.3: SyntheticBlock references and `"__..."`
+        # literals in src/parser, and the lines of src/rakuast/convert.rs, stay
+        # at or below the ceilings in scripts/frontend-debt.d/. Self-tests its
+        # comparison first.
+        run: make check-frontend-debt
+
       - name: Value API wall holds
         # A ratchet (docs/nanbox-3b0-api-wall.md): no direct `Value::<Variant>`
         # outside src/value/. At 0; this keeps it there.
@@ -624,7 +638,8 @@ jobs:
         # list only grows (`scripts/rakuast-frontend.sh update`); a listed file
         # that fails here is a regression in the RakuAST layer, fixed in the
         # same PR rather than dropped from the list. Same per-file wrapper,
-        # timeout and -j4 as the TAP step above.
+        # timeout and -j4 as the TAP step above. There is no opt-out left to
+        # check (the `MUTSU_LEGACY=1` step of #15060 was deleted with it).
         run: |
           mkdir -p tmp
           scripts/rakuast-frontend.sh check

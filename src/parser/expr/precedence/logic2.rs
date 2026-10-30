@@ -12,6 +12,21 @@ pub(crate) fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         // the operand is a whole item-level expression: `not $x = 42` is
         // `not($x = 42)` and `not A ?? B !! C` is `not(A ?? B !! C)` (#11478).
         let (r, expr) = item_expr(r, mode)?;
+        // A declared (or imported) `prefix:<not>` multi takes the call, with the
+        // builtin as its fallback for other argument types (Red's
+        // `multi prefix:<not>(Red::AST $a)`). The precedence stays the builtin's:
+        // a candidate added to `not` does not make it a tight prefix, so
+        // `not *.name in <b c>` is still `not(*.name in <b c>)`.
+        if crate::parser::stmt::simple::is_user_declared_prefix_sub("not") {
+            return Ok((
+                r,
+                Expr::Call {
+                    name: crate::symbol::Symbol::intern("prefix:<not>"),
+                    args: vec![expr],
+                    listop: true,
+                },
+            ));
+        }
         return Ok((
             r,
             Expr::Unary {

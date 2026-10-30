@@ -65,7 +65,13 @@ impl Interpreter {
                 Self::collect_handle_ids(&value.deref_container(), depth, out)
             }
             ValueView::Instance { attributes, .. } if depth > 0 => {
-                for attr in attributes.as_map().values() {
+                // The read guard is released before recursing: an object
+                // graph that reaches this instance again (a parent holding
+                // its children, each holding the parent) would otherwise
+                // take a second read lock on the same `RwLock`, which blocks
+                // for good once another thread queues a write in between.
+                let attrs: Vec<Value> = attributes.as_map().values().cloned().collect();
+                for attr in &attrs {
                     Self::collect_handle_ids(attr, depth - 1, out);
                 }
             }

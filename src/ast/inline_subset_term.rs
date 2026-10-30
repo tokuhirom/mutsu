@@ -2,16 +2,13 @@
 
 use super::{Expr, Stmt};
 
-/// An inline subset term: kept as the declaration written by a `.AST` parse,
-/// lowered at once otherwise (ADR-10723 Stage 2, #14966).
+/// An inline subset term: kept as the declaration written, for the
+/// conversion to lower (ADR-10723 Stage 2, #14966).
 // Cost: O(n), n = size of the declaration.
 pub(crate) fn expand(declaration: Stmt) -> Expr {
-    if super::spelled::keeping() {
-        return Expr::Ast(Box::new(super::parsed::ParsedExpr::InlineSubset(Box::new(
-            declaration,
-        ))));
-    }
-    lower(declaration)
+    Expr::Ast(Box::new(super::parsed::ParsedExpr::InlineSubset(Box::new(
+        declaration,
+    ))))
 }
 
 /// Expand a subset term to its declaration and the value of its generated name.

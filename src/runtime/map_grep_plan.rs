@@ -81,7 +81,7 @@ pub(crate) struct InlineLoopPlan {
 
 /// The consuming frame's bindings an inline loop displaced, put back by
 /// [`Interpreter::leave_inline_loop_env`].
-pub(crate) struct SavedLoopBindings(Vec<(Symbol, Option<Value>)>);
+pub(crate) struct SavedLoopBindings(Vec<(Symbol, Option<Value>)>, Option<usize>);
 
 /// Where a deferred `.map`/`.grep` keeps what it computed about its callback
 /// across pulls (`SeqSource::MapGrep::plan`). Empty until the first pull; a
@@ -262,19 +262,13 @@ impl Interpreter {
         for &p in &param_syms {
             push(&mut temporaries, p);
         }
-        // A sigilless param (`-> \x`) is marked by a top-level
-        // `MarkSigillessReadonly` statement in the body (a simple pointy block
-        // carries no `param_defs` to say so), which writes its readonly marker
-        // into the consuming frame's env. Left behind, the marker made a later
-        // `$x is rw` parameter of an unrelated call read as readonly (#11429).
-        for stmt in data.body.iter() {
-            if let crate::ast::Stmt::MarkSigillessReadonly(name) = stmt {
-                push(
-                    &mut temporaries,
-                    crate::runtime::sigilless_readonly_key(&crate::runtime::term_names::term_key(
-                        name,
-                    )),
-                );
+        // A sigilless param (`-> \x`, stored under its term key) has its
+        // readonly marker written into the consuming frame's env on entry. Left
+        // behind, the marker made a later `$x is rw` parameter of an unrelated
+        // call read as readonly (#11429).
+        for p in data.params.iter() {
+            if crate::runtime::term_names::term_spelling(p).is_some() {
+                push(&mut temporaries, crate::runtime::sigilless_readonly_key(p));
             }
         }
         // An `is rw`/`is raw` scalar param shares its bare name with a live
@@ -316,14 +310,12 @@ impl Interpreter {
             .compiled_code
             .as_ref()
             .map(|cc| cc.capture_free_var_set());
-        let self_sym = crate::symbol::wk::self_();
         let captures = data
             .env
             .iter()
             .map(|(k, v)| CaptureKey {
                 name: *k,
-                overwrites: *k == self_sym
-                    || super::resolution_map_grep::capture_wins_over_caller(free_vars, k, v),
+                overwrites: super::resolution_map_grep::capture_wins_over_caller(free_vars, k, v),
                 is_temporary: temporaries.contains(k),
             })
             .collect();
@@ -429,12 +421,21 @@ impl Interpreter {
             }
             self.env.insert_sym(c.name, v.clone());
         }
-        SavedLoopBindings(saved)
+        // The callback's `self` and `?CLASS` are its creator's (ADR-14843).
+        let fixtures_mark = data.fixtures.clone().map(|f| {
+            let mark = self.routine_stack.fixtures_len();
+            self.routine_stack.push_scoped_fixtures(f);
+            mark
+        });
+        SavedLoopBindings(saved, fixtures_mark)
     }
 
     /// Put back what [`Self::enter_inline_loop_env`] displaced.
     // Cost: O(s), s = saved bindings.
     pub(crate) fn leave_inline_loop_env(&mut self, saved: SavedLoopBindings) {
+        if let Some(mark) = saved.1 {
+            self.routine_stack.truncate_fixtures(mark);
+        }
         for (k, orig) in saved.0 {
             match orig {
                 Some(v) => {

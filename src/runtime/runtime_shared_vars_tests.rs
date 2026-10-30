@@ -53,6 +53,7 @@ fn thread_param_mask_guard_restores_on_panic_unwind() {
         let _guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
             &mut interp,
             param_defs.iter(),
+            &[],
         );
         assert!(
             interp
@@ -113,6 +114,7 @@ fn thread_param_mask_guard_restores_on_normal_drop() {
         let _guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
             &mut interp,
             param_defs.iter(),
+            &[],
         );
         assert!(
             interp
@@ -170,6 +172,7 @@ fn thread_param_mask_guard_does_not_disturb_an_ancestor_mask() {
         let _guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
             &mut interp,
             param_defs.iter(),
+            &[],
         );
     }
 
@@ -260,6 +263,85 @@ fn unsuppressed_write_publishes_to_the_shared_lane() {
         Some("assigned".to_string())
     );
     assert!(interp.is_shared_var_dirty("url"));
+}
+
+/// Entering a critical section refreshes only what ANOTHER thread committed.
+/// A value this thread wrote itself (inside an earlier critical section) is in
+/// its env already; pulling it back replaced a same-named lexical of the frame
+/// now entering the section (Red's nested `-> :$guard!` blocks: the outer
+/// block's `$guard` became the inner block's, written under `Lock.protect`).
+#[test]
+fn entering_a_critical_section_keeps_a_same_named_lexical_over_own_writes() {
+    let mut interp = Interpreter::new();
+    interp.threads.shared_vars_active = true;
+    interp
+        .threads
+        .shared_vars
+        .declare("guard", Value::str("seed".to_string()));
+
+    interp.enter_critical_section();
+    interp.set_shared_var_sym("guard", None, Value::str("inner".to_string()));
+    interp.leave_critical_section();
+
+    // The outer frame's own `$guard`, entering a critical section later.
+    interp.env.insert("guard".to_string(), Value::str("outer".to_string()));
+    interp.enter_critical_section();
+
+    assert_eq!(
+        interp.env.get("guard").and_then(|v| match v.view() {
+            ValueView::Str(s) => Some(s.to_string()),
+            _ => None,
+        }),
+        Some("outer".to_string()),
+        "this thread's own earlier write must not replace the entering frame's lexical"
+    );
+    interp.leave_critical_section();
+}
+
+/// A thread's own binding (a name it re-declared, or captured from its spawn)
+/// is not refreshed from a critical-section entry the PARENT lineage committed
+/// under the same bare name: that entry belongs to another binding of the name
+/// (Red's `Guard.start`: the worker's `$guard` became an earlier call's guard
+/// after its first `GuardRecord.^create`, so its `$guard.commit` found a
+/// committed scope). A name it has not made its own is still refreshed.
+#[test]
+fn critical_section_refresh_skips_a_name_the_thread_made_its_own() {
+    let mut interp = Interpreter::new();
+    interp.threads.shared_vars_active = true;
+    let parent_lane = interp.threads.shared_vars.clone();
+    parent_lane.declare("guard", Value::str("seed".to_string()));
+    parent_lane.declare("total", Value::str("seed".to_string()));
+    interp.threads.shared_vars = crate::runtime::shared_store::SharedStore::child_of(&parent_lane);
+
+    // Another lineage commits both names inside a critical section.
+    parent_lane.set("guard", Value::str("stale-binding".to_string()));
+    parent_lane.set("total", Value::str("committed".to_string()));
+    interp.mark_critical_dirty("guard");
+    interp.mark_critical_dirty("total");
+
+    interp.env.insert("guard".to_string(), Value::str("mine".to_string()));
+    interp.env.insert("total".to_string(), Value::str("stale-copy".to_string()));
+    interp
+        .threads
+        .thread_redeclared_vars
+        .borrow_mut()
+        .insert("guard".to_string());
+
+    interp.enter_critical_section();
+
+    let read = |interp: &Interpreter, name: &str| {
+        interp.env.get(name).and_then(|v| match v.view() {
+            ValueView::Str(s) => Some(s.to_string()),
+            _ => None,
+        })
+    };
+    assert_eq!(read(&interp, "guard"), Some("mine".to_string()));
+    assert_eq!(
+        read(&interp, "total"),
+        Some("committed".to_string()),
+        "a shared name another thread committed is still refreshed"
+    );
+    interp.leave_critical_section();
 }
 
 fn seed_dirty_atomic_lane(interp: &mut Interpreter, name: &str, value_key: &str) {

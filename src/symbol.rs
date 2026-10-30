@@ -185,13 +185,6 @@ thread_local! {
     /// contend or perturb what it measures.
     static INTERN_CALLS: Cell<u64> = const { Cell::new(0) };
 
-    /// Per-thread `id -> &'static str` memo in front of `GLOBAL_TABLE`, the
-    /// mirror of `INTERN_CACHE` for the resolve direction. Interned strings are
-    /// leaked and ids never remapped, so a cached entry is valid forever.
-    /// Keeps `as_str` (the single hottest symbol operation — every dispatch
-    /// class-name borrow, `==` compare, `starts_with`, `Display`) off the
-    /// globally-shared `RwLock`.
-    static RESOLVE_CACHE: RefCell<Vec<Option<&'static str>>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Pure, string-derived properties of a symbol, computed once per symbol.
@@ -542,6 +535,38 @@ fn store_flags(idx: usize, f: u16) {
     chunk[idx & (FLAG_CHUNK_LEN - 1)].store(f, Ordering::Relaxed);
 }
 
+/// The `id -> &'static str` direction of the symbol table, readable without a
+/// lock, a thread-local or a `RefCell`.
+///
+/// Same shape and the same argument as [`FLAG_TABLE`]: ids are global and
+/// append-only, each slot is written exactly once (by `intern_global`, under
+/// the table's write lock and before the id escapes), and a `OnceLock` publishes
+/// the leaked string with acquire/release ordering, so a reader that sees the
+/// slot filled sees the whole string. It replaces a per-thread
+/// `RefCell<Vec<Option<&'static str>>>` memo that charged a thread-local access,
+/// a borrow-flag write pair and a bounds-checked index on every `as_str` -- the
+/// single hottest symbol operation, ~3.5% of a plain method-call loop.
+/// Ids past the table's reach read the global table under its lock.
+static STR_TABLE: [OnceLock<Box<[OnceLock<&'static str>]>>; FLAG_CHUNKS] =
+    [const { OnceLock::new() }; FLAG_CHUNKS];
+
+/// The string of symbol id `idx` if its slot is filled and in the table's reach.
+#[inline]
+fn str_slot(idx: usize) -> Option<&'static str> {
+    let chunk = STR_TABLE.get(idx >> FLAG_CHUNK_BITS)?.get()?;
+    chunk[idx & (FLAG_CHUNK_LEN - 1)].get().copied()
+}
+
+/// Fill the string slot of symbol id `idx`, allocating its chunk on first use.
+/// Called once per id, from `intern_global`, under the table's write lock.
+fn store_str(idx: usize, s: &'static str) {
+    let Some(cell) = STR_TABLE.get(idx >> FLAG_CHUNK_BITS) else {
+        return;
+    };
+    let chunk = cell.get_or_init(|| (0..FLAG_CHUNK_LEN).map(|_| OnceLock::new()).collect());
+    let _ = chunk[idx & (FLAG_CHUNK_LEN - 1)].set(s);
+}
+
 /// Record that `sym` has been used as an env key.
 ///
 /// Call this from every site that can put a key into an env tier — the set is
@@ -691,10 +716,23 @@ pub(crate) mod wk {
     well_known! {
         /// The topic `$_`. Env keys are stored sigil-less, so this is `"_"`.
         topic => "_";
+        /// The backing attributes of an Array-, Hash- or Baggy-subclass
+        /// instance. Asked of every `Instance` that is itemized, passed or
+        /// stored, so the probe must not hash the literal each time
+        /// (`Symbol::lookup` on a `&str` key is ~120 Ir).
+        array_storage => "__mutsu_array_storage";
+        hash_storage => "__mutsu_hash_storage";
+        baggy_data => "__baggy_data__";
+        /// The marker an `Attribute` meta-object's instance carries; asked of every
+        /// `Instance` a type check sees (`attribute_identity::is_bootstrapattr`).
+        bootstrapattr_marker => "__mutsu_is_bootstrapattr";
         /// The dispatcher builtins `callsame` / `nextsame` and the `&`-sigiled
         /// env keys a lexical override of them binds under
         /// (`vm_call_dispatcher_builtin`).
         callsame => "callsame";
+        /// The builtin a subscript's value adverbs (`:k`/`:v`/`:kv`/`:p`) lower to
+        /// (`ast::SUBSCRIPT_ADVERB_FN`).
+        subscript_adverb => "__mutsu_subscript_adverb";
         nextsame => "nextsame";
         amp_callsame => "&callsame";
         amp_nextsame => "&nextsame";
@@ -822,6 +860,9 @@ pub(crate) mod wk {
         /// A callable's kind tag (`"WhateverCode"`, ...), probed by the map
         /// loops' routine-callback gate.
         callable_type => "__mutsu_callable_type";
+        /// Set on a captured `multi` candidate declared `is default`, so the
+        /// dispatchee row built from the code object keeps the tie-break.
+        multi_is_default => "__mutsu_multi_is_default";
         /// The rw map loop's `$_`-write mirror (`eval_map_over_items_rw_into`).
         rw_map_topic => "__mutsu_rw_map_topic__";
         /// The grep loop's per-element topic source key.
@@ -889,6 +930,14 @@ impl Symbol {
         Symbol(id)
     }
 
+    /// Whether this is one of the three names a method frame's record owns
+    /// (`self`, `?CLASS`, `?ROLE`): no `Env` key stores them (ADR-14843).
+    // Cost: O(1).
+    #[inline]
+    pub fn is_frame_fixture(self) -> bool {
+        self == wk::self_() || self == wk::class_decl() || self == wk::role_decl()
+    }
+
     /// Intern a string and return its `Symbol`.  If the string has already been
     /// interned, the existing symbol is returned (idempotent).
     pub fn intern(s: &str) -> Symbol {
@@ -954,6 +1003,7 @@ impl Symbol {
         let sym = Symbol(id);
         let leaked: &'static str = Box::leak(s.to_owned().into_boxed_str());
         table.id_to_str.push(leaked);
+        store_str(id as usize, leaked);
         if let Some(slash) = leaked.find('/')
             && crate::str_scan::has_double_colon(leaked)
         {
@@ -994,20 +1044,14 @@ impl Symbol {
     /// str` is valid for the whole process (interned strings are never freed),
     /// and no lock is held after this returns — safe to keep across arbitrary
     /// downstream calls, unlike `with_str`'s old lock-scoped borrow.
+    // Cost: O(1), two atomic loads; no thread-local, no lock for any id below the table's reach.
+    #[inline]
     pub fn as_str(&self) -> &'static str {
         let idx = self.0 as usize;
-        RESOLVE_CACHE.with(|c| {
-            let mut cache = c.borrow_mut();
-            if let Some(Some(s)) = cache.get(idx) {
-                return *s;
-            }
-            let s = global_table().read().unwrap().id_to_str[idx];
-            if cache.len() <= idx {
-                cache.resize(idx + 1, None);
-            }
-            cache[idx] = Some(s);
-            s
-        })
+        if let Some(s) = str_slot(idx) {
+            return s;
+        }
+        global_table().read().unwrap().id_to_str[idx]
     }
 
     /// This symbol's memoized [`flags`] word — see that module for what the
@@ -1384,6 +1428,25 @@ mod tests {
     fn resolve_roundtrip() {
         let sym = Symbol::intern("roundtrip_test");
         assert_eq!(sym.resolve(), "roundtrip_test");
+    }
+
+    #[test]
+    fn as_str_resolves_across_threads_and_chunks() {
+        // Symbols interned on one thread resolve on another through the global
+        // slot table, including ids that land in a later chunk than the first.
+        let syms: Vec<(Symbol, String)> = (0..FLAG_CHUNK_LEN + 8)
+            .map(|i| {
+                let name = format!("as_str_chunk_test_{i}");
+                (Symbol::intern(&name), name)
+            })
+            .collect();
+        std::thread::spawn(move || {
+            for (sym, name) in &syms {
+                assert_eq!(sym.as_str(), name.as_str());
+            }
+        })
+        .join()
+        .unwrap();
     }
 
     #[test]

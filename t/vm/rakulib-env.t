@@ -1,6 +1,6 @@
 use Test;
 
-plan 9;
+plan 11;
 
 # Rakudo-targeting tools (Pakku's test/build children) hand their repository
 # chain to a child interpreter through RAKULIB: a comma-separated list of
@@ -33,6 +33,10 @@ like child({RAKULIB => "$envdir:$plain"}, '-e', $code), /^'[exit '/,
     'a colon is not a separator (the whole value is one path)';
 like child({RAKULIB => "bogus#$plain"}, '-e', $code), /^'[exit '/,
     'an entry with an unknown scheme is ignored';
+is child({RAKULIB => "CompUnit::Repository::Staging#name(site)#$inst"}, '-e', $code), 'installed',
+    'a staging repository path-spec (what Pakku hands its children) is an installation';
+is child({RAKULIB => "CompUnit::Repository::Installation#$inst"}, '-e', $code), 'installed',
+    'a spelled-out Installation spec is an installation';
 is child({RAKULIB => $plain, MUTSULIB => $envdir}, '-e', $code), 'env', 'MUTSULIB wins over RAKULIB';
 is child({RAKULIB => $envdir}, '-I', $plain, '-e', $code), 'plain', '-I wins over RAKULIB';
 

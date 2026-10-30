@@ -42,10 +42,7 @@ impl Interpreter {
         for (idx, plan) in code.sub_decl_plans.iter().enumerate() {
             // The hoist pre-pass registers a stripped copy of the same
             // declaration; the in-sequence plan carries the full traits.
-            if !plan.is_export
-                || plan.name_chunk.is_some()
-                || plan.custom_traits.iter().any(|(t, _)| t == "__hoisted")
-            {
+            if !plan.is_export || plan.name_chunk.is_some() || plan.pass.hoisted {
                 continue;
             }
             self.exec_register_sub_op_in_registry(code, idx as u32, compiled_fns)?;

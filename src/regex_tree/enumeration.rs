@@ -280,11 +280,13 @@ impl Parser {
             } else {
                 // `-` is literal only at an edge: `a-z` is rakudo's
                 // "Unsupported use of - as character range".
+                // Plain whitespace between the `-` and the closing `]` does
+                // not make it interior (`<[ _ - ]>`).
                 if ch == '-'
                     && !elements.is_empty()
-                    && self
-                        .chars
-                        .get(self.pos + 1)
+                    && self.chars[self.pos + 1..]
+                        .iter()
+                        .find(|c| !c.is_whitespace())
                         .is_some_and(|next| *next != ']')
                 {
                     return None;
@@ -363,6 +365,20 @@ fn single_char(element: &EnumerationElement) -> Option<char> {
             let ch = chars.next()?;
             chars.next().is_none().then_some(ch)
         }
+        // `\0`, `\t`, `\e`, `\f`, `\r`, `\b` each denote one character
+        // (`<[\0..\xFF]>`); `\n`, `\s`, `\d`, ... are not range endpoints.
+        EnumerationElement::Class(CharClassAtom::Backslash {
+            class,
+            negated: false,
+        }) => match class {
+            BackslashClass::Nul => Some('\0'),
+            BackslashClass::Tab => Some('\t'),
+            BackslashClass::Escape => Some('\u{1b}'),
+            BackslashClass::FormFeed => Some('\u{0c}'),
+            BackslashClass::CarriageReturn => Some('\r'),
+            BackslashClass::BackSpace => Some('\u{08}'),
+            _ => None,
+        },
         _ => None,
     }
 }

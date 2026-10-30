@@ -277,9 +277,10 @@ impl Interpreter {
                 Stmt::VarDecl {
                     name,
                     custom_traits,
+                    constant,
                     is_our: true,
                     ..
-                } if custom_traits.iter().any(|(t, _)| t == "__constant")
+                } if constant.is_some()
                     && name.starts_with(|c: char| c.is_alphabetic() || c == '_') =>
                 {
                     Symbol::intern(name)
@@ -302,9 +303,9 @@ impl Interpreter {
                 // either becoming the provider of the bare name.
                 Stmt::RoleDecl {
                     name,
-                    custom_traits,
+                    is_lexical: false,
                     ..
-                } if !custom_traits.iter().any(|(t, _)| t == "__my_scoped") => *name,
+                } => *name,
                 _ => continue,
             };
             if crate::qualified::is_qualified(name) {
@@ -496,33 +497,60 @@ impl Interpreter {
     /// ([`Self::module_routine_visible_statically`]).
     // Cost: O(d), d = EVAL nesting of the anchor units (at most 64).
     pub(crate) fn module_merged_in_anchor_units(&self, module: Symbol) -> bool {
-        let own_unit = self
-            .module
-            .module_visibility
-            .module_units
-            .get(&module)
-            .copied();
-        // Two anchors, as `prelude_visible_here` explains: `?FILE` is right
-        // while a module's mainline runs, `current_unit` names an EVAL unit
-        // whose `?FILE` a nested frame has moved on from.
+        self.module_merged_in_units(&self.merge_anchor_units(), module)
+    }
+
+    /// The units whose merge tables apply to the running code: the two anchors
+    /// and every `EVAL` parent of each. The chain does not depend on the
+    /// module asked about, so a caller testing many modules builds it once.
+    ///
+    /// Two anchors, as `prelude_visible_here` explains: `?FILE` is right while
+    /// a module's mainline runs, `current_unit` names an EVAL unit whose
+    /// `?FILE` a nested frame has moved on from.
+    // Cost: O(d), d = EVAL nesting of the anchor units (at most 64 each); one `EVAL_UNIT_PARENTS` read per step.
+    fn merge_anchor_units(&self) -> Vec<Symbol> {
+        let mut units = Vec::with_capacity(4);
         for anchor in [self.executing_unit_sym_for_module_load(), self.current_unit] {
             let mut unit = Some(anchor);
             for _ in 0..64 {
                 let Some(sym) = unit else { break };
-                if Some(sym) == own_unit
-                    || self
-                        .module
-                        .module_visibility
-                        .unit_merged_modules
-                        .get(&sym)
-                        .is_some_and(|merged| merged.contains(&module))
-                {
-                    return true;
+                // A unit already collected brings its ancestors with it.
+                if units.contains(&sym) {
+                    break;
                 }
+                units.push(sym);
                 unit = crate::runtime::eval_unit_parent(sym);
             }
         }
-        false
+        units
+    }
+
+    /// [`Self::module_merged_in_anchor_units`] over a chain from
+    /// [`Self::merge_anchor_units`].
+    // Cost: O(u), u = units in the chain, one table probe each.
+    fn module_merged_in_units(&self, units: &[Symbol], module: Symbol) -> bool {
+        let visibility = &self.module.module_visibility;
+        let own_unit = visibility.module_units.get(&module).copied();
+        units.iter().any(|&unit| {
+            Some(unit) == own_unit
+                || visibility
+                    .unit_merged_modules
+                    .get(&unit)
+                    .is_some_and(|merged| merged.contains(&module))
+        })
+    }
+
+    /// Whether any of `modules` is merged into the code running right now:
+    /// [`Self::module_merged_here`] over a set, with the anchor chain built
+    /// once instead of once per module (a package granted by a hundred
+    /// modules, such as `Red`, paid a hundred chain walks per variable read).
+    // Cost: O(m + d), m = modules in the set, d = EVAL nesting of the anchor units.
+    pub(crate) fn any_module_merged_here(&self, modules: &HashSet<Symbol>) -> bool {
+        let units = self.merge_anchor_units();
+        modules.iter().any(|&module| {
+            self.env.contains_key_sym(MetaNs::ModuleMerge.key(module))
+                || self.module_merged_in_units(&units, module)
+        })
     }
 
     /// Whether [`Self::module_routine_visible_here`] holds for `key` for a
@@ -665,6 +693,9 @@ impl Interpreter {
                         .is_none()
                     && self.get_our_var(&key).is_none())
             }
+            // `GLOBAL::<Name> := Name` publishes the type to every scope.
+            // Last: it builds GLOBAL's stash.
+            && Self::stash_lookup_symbol(&self.package_stash_value("GLOBAL"), name).is_none()
     }
 
     /// Whether a block-level merge live here granted the package `top`

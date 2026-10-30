@@ -18,13 +18,18 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());
-        let result = crate::rakuast::frontend::with_caller_names(Vec::new(), self.str_ast_caller_terms(), || {
-            if compunit {
-                crate::rakuast::str_dot_ast_compunit(source)
-            } else {
-                crate::rakuast::str_dot_ast(source)
-            }
-        });
+        let result = crate::rakuast::frontend::with_caller_trait_types(
+            self.str_ast_caller_trait_types(),
+            || {
+                crate::rakuast::frontend::with_caller_names(Vec::new(), self.str_ast_caller_terms(), || {
+                    if compunit {
+                        crate::rakuast::str_dot_ast_compunit(source)
+                    } else {
+                        crate::rakuast::str_dot_ast(source)
+                    }
+                })
+            },
+        );
         crate::parser::clear_parser_lib_paths();
         result
     }
@@ -45,11 +50,41 @@ impl Interpreter {
         let slang = crate::runtime::types::value_is_defined(slang).then(|| slang.to_string_value());
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());
-        let result = crate::rakuast::frontend::with_caller_names(Vec::new(), self.str_ast_caller_terms(), || {
-            crate::rakuast::str_dot_ast_with_slang(source, slang.as_deref())
-        });
+        let result = crate::rakuast::frontend::with_caller_trait_types(
+            self.str_ast_caller_trait_types(),
+            || {
+                crate::rakuast::frontend::with_caller_names(Vec::new(), self.str_ast_caller_terms(), || {
+                    crate::rakuast::str_dot_ast_with_slang(source, slang.as_deref())
+                })
+            },
+        );
         crate::parser::clear_parser_lib_paths();
         result
+    }
+
+    /// The type names the scope running `.AST` declares, for the `is NAME`
+    /// traits of the declarations in its source. Unlike the caller *terms*, an
+    /// environment entry only counts when the package it holds is the one its
+    /// key names (`my class P`), not a variable that happens to hold a type
+    /// object (`my $rw`, whose slot is the type object `Any`).
+    // Cost: O(r + e + m + x*d), as [`Interpreter::eval_caller_type_names`].
+    fn str_ast_caller_trait_types(&self) -> Vec<String> {
+        let held_by_variable: std::collections::HashSet<String> = self
+            .env
+            .iter()
+            .filter_map(|(key, value)| {
+                let ValueView::Package(held) = value.view() else {
+                    return None;
+                };
+                let key = key.resolve();
+                let base = key.split('\u{0}').next().unwrap_or(&key);
+                let held = held.resolve();
+                (held.split('\u{0}').next().unwrap_or(&held) != base).then(|| base.to_string())
+            })
+            .collect();
+        let mut types = self.eval_caller_type_names();
+        types.retain(|name| !held_by_variable.contains(name));
+        types
     }
 
     /// The names the scope running `.AST` declares, for the conversion of its

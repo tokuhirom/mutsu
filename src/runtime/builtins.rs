@@ -422,34 +422,6 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn has_invalid_anonymous_rw_trait(code: &str) -> bool {
-        let bytes = code.as_bytes();
-        let mut i = 0usize;
-        while i < bytes.len() {
-            if bytes[i] != b'$' {
-                i += 1;
-                continue;
-            }
-            let mut j = i + 1;
-            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
-                j += 1;
-            }
-            if j + 1 >= bytes.len() || bytes[j] != b'i' || bytes[j + 1] != b's' {
-                i += 1;
-                continue;
-            }
-            j += 2;
-            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
-                j += 1;
-            }
-            if j + 1 < bytes.len() && bytes[j] == b'r' && bytes[j + 1] == b'w' {
-                return true;
-            }
-            i += 1;
-        }
-        false
-    }
-
     // Cost: O(v), v = number of variants.
     /// The variant of `enum_name` named `name` (a CLI argument spelling such as
     /// `Rock`), unlike [`Self::coerce_to_enum_variant`], which looks up by value.
@@ -666,6 +638,9 @@ impl Interpreter {
         if let Some(leaves) = Self::shaped_routine_args(name, &args) {
             args = leaves;
         }
+        if let Some(result) = self.forward_cool_routine_to_method(name, &args) {
+            return result;
+        }
         match name {
             // Error / control flow
             "die" => self.builtin_die(&args),
@@ -699,19 +674,6 @@ impl Interpreter {
             "__mutsu_zip_xx" => self.builtin_zip_xx(&args),
             "__mutsu_cross_xx" => self.builtin_cross_xx(&args),
             "__mutsu_zip_assign" => self.builtin_zip_assign(&args),
-            "__mutsu_bind_index_value" => Ok(Value::pair(
-                "__mutsu_bind_index_value".to_string(),
-                Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(vec![
-                        args.first().cloned().unwrap_or(Value::NIL),
-                        args.get(1).cloned().unwrap_or(Value::array_with_kind(
-                            crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
-                            crate::value::ArrayKind::List,
-                        )),
-                    ])),
-                    crate::value::ArrayKind::List,
-                ),
-            )),
             "__mutsu_subscript_adverb" => self.builtin_subscript_adverb(&args),
             "__mutsu_subscript_adverb_error" => Self::builtin_subscript_adverb_error(&args),
             "__mutsu_subscript_named_adverbs" => self.builtin_subscript_named_adverbs(&args),
@@ -757,7 +719,7 @@ impl Interpreter {
             "Int" | "Num" | "Str" | "Bool" | "Uni" | "Rat" | "FatRat" | "Complex" | "Real"
             | "Numeric" | "Buf" | "Blob" | "buf8" | "buf16" | "buf32" | "buf64" | "blob8"
             | "blob16" | "blob32" | "blob64" => self.builtin_coerce(name, &args),
-            "Array" | "List" | "Hash" => self.builtin_container_coerce(name, &args),
+            "Array" | "List" | "Hash" | "Seq" => self.builtin_container_coerce(name, &args),
             "Map" => self.builtin_map_coerce(&args),
             "UNBASE" => self.builtin_unbase(&args),
             "RADIX_LIST" => self.builtin_radix_list(&args),
@@ -767,8 +729,6 @@ impl Interpreter {
             "__mutsu_make_format" => self.builtin_make_format(&args),
             "__mutsu_quotewords_atom" => self.builtin_quotewords_atom(&args),
             "__mutsu_words_atom" => self.builtin_words_atom(&args),
-            "__mutsu_qw_result" => Ok(args.first().cloned().unwrap_or(Value::NIL)),
-            "__mutsu_unknown_backslash_escape" => self.builtin_unknown_backslash_escape(&args),
             "undefine" => Ok(Value::package(crate::symbol::wk::any())),
             "__mutsu_undefine_rvalue" => {
                 // Called when undefine receives a non-variable expression.
@@ -1402,7 +1362,13 @@ impl Interpreter {
     }
 
     pub(crate) fn is_builtin_function(name: &str) -> bool {
-        BUILTIN_FUNCTION_NAMES.contains(&name)
+        // Cost: O(len(name)) -- one hash probe; the slice it indexes is ~150
+        // names, which a linear `contains` compared one by one on every call.
+        static NAMES: std::sync::OnceLock<rustc_hash::FxHashSet<&'static str>> =
+            std::sync::OnceLock::new();
+        NAMES
+            .get_or_init(|| BUILTIN_FUNCTION_NAMES.iter().copied().collect())
+            .contains(name)
     }
 
     /// MOP pseudo-methods (`WHAT`, `HOW`, `VAR`) that Raku also exposes as

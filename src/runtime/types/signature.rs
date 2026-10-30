@@ -702,7 +702,34 @@ fn sub_signature_matches_value_unbound(
         value.unwrap_varref().deref_container().descalarize().view(),
         ValueView::Array(..) | ValueView::Seq(..)
     ) {
-        positional.retain(|v| !matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)));
+        // The Pairs set aside are named parts of the Capture: a sub-signature
+        // that neither names one nor slurps named arguments rejects the list
+        // (rakudo: "unexpected named arguments passed (getter,setter) in
+        // sub-signature"), which is what lets a later candidate take it.
+        let has_named_slurpy = sub_params.iter().any(|p| {
+            p.slurpy && (p.named || p.name.starts_with('%') || p.name == "_capture" || p.sigilless)
+        });
+        let mut surplus_named = false;
+        positional.retain(|v| match v.view() {
+            ValueView::Pair(key, _) => {
+                surplus_named |= !sub_params.iter().any(|p| {
+                    p.named && p.name.trim_start_matches(|c: char| "$@%&".contains(c)) == *key
+                });
+                false
+            }
+            ValueView::ValuePair(key, _) => {
+                let key = key.to_string_value();
+                surplus_named |= !sub_params.iter().any(|p| {
+                    p.named
+                        && p.name.trim_start_matches(|c: char| "$@%&".contains(c)) == key.as_str()
+                });
+                false
+            }
+            _ => true,
+        });
+        if surplus_named && !has_named_slurpy {
+            return false;
+        }
     }
     let mut positional_idx = 0usize;
     for pd in sub_params {
@@ -1114,6 +1141,9 @@ fn bind_sub_param_name(interpreter: &mut Interpreter, name: &str, value: Value) 
             .param_bound_aggregates
             .note(name, &value);
     }
+    // A sub-parameter spelled `$self` is the reserved lexical, never the
+    // invocant (ADR-0061).
+    let name = if name == "self" { crate::env::LEX_SELF } else { name };
     interpreter.env.insert(name.to_string(), value);
 }
 
@@ -1435,14 +1465,14 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             // binding like a top-level `sub f(\a) { a = 1 }` param, and a
             // `$`-sigiled leaf (`sub f($ ($x, $y)) { $x = 1 }`) is a readonly
             // ALIAS like any other non-`is rw` parameter. Both are marked at
-            // the ordinary top-level binding site -- `MarkSigillessReadonly`
-            // (a parser/compiler prologue, `compiler/helpers_sub_body.rs`)
+            // the ordinary top-level binding site -- `TermMark::Readonly`
+            // (`Compiler::mark_sigilless_subsig_params`)
             // for the former, `mark_readonly` (`binding_signature.rs`'s
             // "correct" branch) for the latter -- but a destructure leaf is
             // bound purely at RUNTIME, here, and neither mechanism reaches
             // it, so an assignment silently succeeded where Raku throws.
             if sub_pd.sigilless {
-                // Mirror the exact env-key marker `Stmt::MarkSigillessReadonly`
+                // Mirror the exact env-key marker `TermMark::Readonly`
                 // compiles to, so `CheckReadOnly` treats this identically to a
                 // top-level sigilless param or a `my \x = 5` bind (X::Assignment::RO,
                 // "Cannot modify an immutable TYPE (VALUE)").

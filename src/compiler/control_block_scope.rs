@@ -74,7 +74,7 @@ impl Compiler {
                     name,
                     is_state: false,
                     is_our: false,
-                    custom_traits,
+                    constant,
                     ..
                 } = s
                     // Plain lexical scalars store a bare, sigil-stripped
@@ -88,7 +88,7 @@ impl Compiler {
                     && !name.starts_with('*')
                     && !name.contains("::")
                     && let Some(&slot) = self.local_map.get(name.as_str())
-                    && !custom_traits.iter().any(|(t, _)| t == "__constant")
+                    && !constant.is_some()
                 {
                     self.code.emit(OpCode::LoadNil);
                     self.code.emit(OpCode::SetLocal(slot));

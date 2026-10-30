@@ -9,11 +9,11 @@ use super::convert::{
     signature_block_node, statement_expression, topic_block_node,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
+use crate::ast::Stmt;
 use crate::ast::parsed::{
     BlockParams, BlockSpans, ClauseKind, CompoundMeta, Conditional, ConditionalKind, LoopKind,
     LoopStmt, Modified, ModifierKind, ParsedBlock, ParsedExpr, ParsedStmt,
 };
-use crate::ast::{Expr, Stmt};
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The RakuAST node of a construct the parser built in its RakuAST shape.
@@ -107,16 +107,9 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
         ParsedStmt::CommaDecls(declarations) => {
             statement_expression(super::convert::comma_declarations_node(declarations)?)
         }
-        ParsedStmt::BarePhaser(phaser) => super::bare_prefix::bare_phaser_statement(phaser)?
-            .ok_or_else(|| super::convert::unsupported("a phaser over a bare statement"))?,
         ParsedStmt::ImmediateCall { decl, args } => {
             statement_expression(super::immediate_call::convert(decl, args)?)
         }
-        ParsedStmt::AttributeModifier {
-            decl,
-            condition,
-            kind,
-        } => declaration_modifier_node(decl, condition, *kind)?,
         ParsedStmt::AttributeGroup(attributes) => {
             statement_expression(super::attribute_group::to_signature(attributes)?)
         }
@@ -153,7 +146,7 @@ pub(super) fn parsed_node(node: &ParsedStmt) -> Result<RakuAstNode, RuntimeError
                 },
             )?)
         }
-        ParsedStmt::WillDecl { decl, phasers } => super::var_will::convert(decl, phasers)?,
+        ParsedStmt::WillDecl { decl, phasers, .. } => super::var_will::convert(decl, phasers)?,
         ParsedStmt::DoesDecl { decl, role, init } => {
             super::convert::does_declaration(decl, role, init.as_ref())?
                 .ok_or_else(|| super::convert::unsupported("does declaration"))?
@@ -219,6 +212,11 @@ pub(super) fn parsed_expr_node(node: &ParsedExpr) -> Result<RakuAstNode, Runtime
             super::convert::hyper_infix(&a.target, "=", &a.value, a.dwim_left, a.dwim_right)
         }
         ParsedExpr::InlineSubset(declaration) => inline_subset_node(declaration),
+        ParsedExpr::HyperPrefix(p) => super::hyper_prefix::node(&p.symbol, &p.operand),
+        ParsedExpr::AtomicVar(a) => super::atomic_op::var_node(a),
+        ParsedExpr::SubscriptAdverbs(s) => {
+            super::subscript_adverb::postcircumfix_node(&s.subscript, &s.pairs)
+        }
     }
 }
 
@@ -686,32 +684,4 @@ fn with_block_origins(mut node: RakuAstNode, block: BlockSpans) -> RakuAstNode {
     }
     body.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(blockoid)));
     node
-}
-
-/// An attribute declaration with its postfix modifier: the written
-/// declaration with a `condition-modifier`.
-// Cost: O(n), n = size of the declaration and the condition.
-fn declaration_modifier_node(
-    declaration: &Stmt,
-    condition: &Expr,
-    kind: crate::ast::decl_modifier::DeclarationModifier,
-) -> Result<RakuAstNode, RuntimeError> {
-    use crate::ast::decl_modifier::DeclarationModifier;
-    let mut statement = super::convert::convert_stmt(declaration)?
-        .ok_or_else(|| super::convert::unsupported("empty declaration modifier"))?;
-    statement.fields.push(node_field(
-        Some("condition-modifier"),
-        RakuAstNode {
-            origin: Default::default(),
-            class: match kind {
-                DeclarationModifier::If => RakuAstClass::StatementModifierIf,
-                DeclarationModifier::Unless => RakuAstClass::StatementModifierUnless,
-                DeclarationModifier::With => RakuAstClass::StatementModifierWith,
-                DeclarationModifier::Without => RakuAstClass::StatementModifierWithout,
-                DeclarationModifier::When => RakuAstClass::StatementModifierWhen,
-            },
-            fields: vec![node_field(None, convert_expr(condition)?)],
-        },
-    ));
-    Ok(statement)
 }

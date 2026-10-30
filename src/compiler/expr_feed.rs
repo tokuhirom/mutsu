@@ -83,12 +83,11 @@ impl Compiler {
                             && let Stmt::VarDecl {
                                 name,
                                 is_state: false,
-                                custom_traits,
+                                has_initializer: false,
+                                constant: None,
+                                bind: None,
                                 ..
                             } = stmt.as_ref()
-                            && !custom_traits
-                                .iter()
-                                .any(|(name, _)| name == "__has_initializer")
                         {
                             let target = feed_variable(name);
                             self.declarations.push((**stmt).clone());

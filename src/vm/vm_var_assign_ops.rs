@@ -2,6 +2,10 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
 
+/// The tag of the `Pair` [`Interpreter::bind_index_marker`] builds. Only the
+/// marker helpers below may name it.
+const BIND_INDEX_MARKER: &str = "__mutsu_bind_index_value";
+
 impl Interpreter {
     /// Return the default fill value for a native type constraint.
     /// For `int`/`uint` variants returns `Value::int(0)`,
@@ -389,44 +393,74 @@ impl Interpreter {
         }
     }
 
-    /// Unwrap a `__mutsu_bind_index_value` payload to `(value, first_source)`.
-    /// `value` is the RHS value being bound; `first_source` is the name of the
-    /// single source variable when the bind is the common `LHS := $scalar`
-    /// shape. Returns `(val, None)` for a plain (non-bind) value, so callers can
-    /// treat the non-bind path unchanged.
+    /// The marker an indexed `:=` hands the index-assign ops
+    /// ([`OpCode::IndexBindValue`]): the bound value and the names of its
+    /// source variables, tagged so [`Self::unwrap_bind_index_value`] can tell
+    /// it from an ordinary value.
+    // Cost: O(1).
+    pub(crate) fn bind_index_marker(value: Value, sources: Value) -> Value {
+        Value::pair(
+            BIND_INDEX_MARKER.to_string(),
+            Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(vec![value, sources])),
+                crate::value::ArrayKind::List,
+            ),
+        )
+    }
+
     /// Whether `val` is the marker a `:=` to an index carries (see
-    /// [`Self::unwrap_bind_index_value`]).
+    /// [`Self::bind_index_marker`]).
     // Cost: O(1).
     pub(crate) fn is_bind_index_value(val: &Value) -> bool {
         match val.view() {
-            ValueView::Pair(name, _) => name == "__mutsu_bind_index_value",
-            ValueView::ValuePair(name, _) => name.as_str() == Some("__mutsu_bind_index_value"),
+            ValueView::Pair(name, _) => name == BIND_INDEX_MARKER,
+            ValueView::ValuePair(name, _) => name.as_str() == Some(BIND_INDEX_MARKER),
             _ => false,
         }
     }
 
-    pub(crate) fn unwrap_bind_index_value(val: Value) -> (Value, Option<String>) {
+    /// Split a [`Self::bind_index_marker`] into the bound value and the name of
+    /// each source variable (`None` for a source that is not a plain
+    /// variable); a value that is no marker comes back as `Err(val)`.
+    // Cost: O(s), s = number of sources.
+    pub(crate) fn split_bind_index_marker(
+        val: Value,
+    ) -> Result<(Value, Vec<Option<String>>), Value> {
         let payload = match val.view() {
-            ValueView::Pair(name, payload) if name == "__mutsu_bind_index_value" => payload,
-            ValueView::ValuePair(name, payload)
-                if name.as_str() == Some("__mutsu_bind_index_value") =>
-            {
+            ValueView::Pair(name, payload) if name == BIND_INDEX_MARKER => payload,
+            ValueView::ValuePair(name, payload) if name.as_str() == Some(BIND_INDEX_MARKER) => {
                 payload
             }
-            _ => return (val, None),
+            _ => return Err(val),
         };
-        if let ValueView::Array(items, ..) = payload.view() {
-            let value = items.first().cloned().unwrap_or(Value::NIL);
-            let source = match items.get(1).map(Value::view) {
-                Some(ValueView::Array(srcs, ..)) => match srcs.first().map(Value::view) {
-                    Some(ValueView::Str(s)) if !s.is_empty() => Some((**s).clone()),
+        let ValueView::Array(items, ..) = payload.view() else {
+            return Ok((payload.clone(), Vec::new()));
+        };
+        let value = items.first().cloned().unwrap_or(Value::NIL);
+        let sources = match items.get(1).map(Value::view) {
+            Some(ValueView::Array(srcs, ..)) => srcs
+                .iter()
+                .map(|src| match src.view() {
+                    ValueView::Str(s) if !s.is_empty() => Some((**s).clone()),
                     _ => None,
-                },
-                _ => None,
-            };
-            return (value, source);
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        Ok((value, sources))
+    }
+
+    /// Unwrap a [`Self::bind_index_marker`] to `(value, first_source)`.
+    /// `value` is the RHS value being bound; `first_source` is the name of the
+    /// single source variable when the bind is the common `LHS := $scalar`
+    /// shape. Returns `(val, None)` for a plain (non-bind) value, so callers can
+    /// treat the non-bind path unchanged.
+    // Cost: O(s), s = number of sources.
+    pub(crate) fn unwrap_bind_index_value(val: Value) -> (Value, Option<String>) {
+        match Self::split_bind_index_marker(val) {
+            Ok((value, sources)) => (value, sources.into_iter().next().flatten()),
+            Err(val) => (val, None),
         }
-        (payload.clone(), None)
     }
 
     pub(crate) fn varref_target(value: &Value) -> Option<(String, Option<usize>)> {

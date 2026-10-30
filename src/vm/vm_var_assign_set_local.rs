@@ -187,7 +187,7 @@ impl Interpreter {
                     ) || self
                         .class_composed_roles(&cn)
                         .is_some_and(|roles| roles.iter().any(|r| r == "Positional"))
-                        || attributes.contains_key("__mutsu_array_storage")
+                        || attributes.contains_key(crate::symbol::wk::array_storage())
                         // Positional reached through a composed role's own
                         // roles (`role R does Positional`, `class C does R`).
                         || self.type_matches_value("Positional", raw_popped)
@@ -683,11 +683,8 @@ impl Interpreter {
         // slot-authoritative plain lexical skips its env mirror. The `is_bind` /
         // `is_constant` / term-symbol terms of that condition are all settled
         // above, so only the two live tests remain.
-        if code.needs_env_sync.get(idx).copied().unwrap_or(true)
-            || crate::opcode::reflective_name_access_possible()
-        {
-            let name = code.locals[idx].clone();
-            self.set_env_plain_lexical(&name, name_sym, val);
+        if code.needs_env_sync.get(idx).copied().unwrap_or(true) || code.mirrors_all_params() {
+            self.set_env_plain_lexical(&code.locals[idx], name_sym, val);
         }
         true
     }
@@ -741,6 +738,11 @@ impl Interpreter {
         // The hot `$x = <scalar>` store, decided up front so it pays for none of
         // the cascade below or in `exec_set_local_op_inner`. See its doc comment.
         if self.exec_set_local_scalar_fast(code, idx) {
+            return Ok(());
+        }
+        // The same for an inert scalar stored to a private scalar attribute
+        // (`$!x = <scalar>`), see `vm_attr_store_lane`.
+        if self.exec_set_local_attr_fast(code, idx) {
             return Ok(());
         }
         // The same for a plain `my $x = <scalar>` declaration whose slot is its
@@ -1161,7 +1163,15 @@ impl Interpreter {
         {
             let name = &code.locals[idx];
             if name.starts_with('@') || name.starts_with('%') {
-                if body.needs_touch() {
+                // A Seq over a lazy user iterator stays a lazy array.
+                let lazy_array = if name.starts_with('@') && body.needs_touch() {
+                    self.lazy_array_from_seq(&body)?
+                } else {
+                    None
+                };
+                if let Some(lazy_array) = lazy_array {
+                    raw_popped = lazy_array;
+                } else if body.needs_touch() {
                     let body = std::sync::Arc::clone(&body);
                     self.reify_seq_body(&body)?;
                     // `body` is shared by `raw_popped` (both alias the same
@@ -1706,7 +1716,7 @@ impl Interpreter {
                 self.coerce_constant_hash_value(name, raw_popped)?
             } else {
                 let decl = self.local_store_decl(code, idx);
-                self.coerce_hash_var_value(decl, name, raw_popped)?
+                self.coerce_hash_var_value(decl, name, raw_popped, None)?
             }
         } else if name.starts_with('@') {
             if is_bind {
@@ -1962,6 +1972,21 @@ impl Interpreter {
                     // instead of being capped to a 100k `ArrayKind::Lazy` Array. (L2)
                     _ if runtime::utils::infinite_range_to_lazy_array(&raw_popped).is_some() => {
                         runtime::utils::infinite_range_to_lazy_array(&raw_popped).unwrap()
+                    }
+                    // `my @a = |(1..*)`: `|` rides an unreifiable lazy list in a
+                    // one-item Slip (see `exec_make_slip_op`), which the array
+                    // keeps lazy exactly as it does the bare list.
+                    ValueView::Slip(items)
+                        if items.len() == 1
+                            && matches!(
+                                items[0].view(),
+                                ValueView::LazyList(ref l) if l.preserve_lazy_on_array_assign()
+                            ) =>
+                    {
+                        match items[0].view() {
+                            ValueView::LazyList(list) => self.lazy_array_value(&list, name),
+                            _ => runtime::coerce_to_array(raw_popped.clone()),
+                        }
                     }
                     _ => {
                         // Resolve bound-element sentinels before coercing to
@@ -3163,9 +3188,18 @@ impl Interpreter {
         {
             self.locals[idx] = container;
         }
+        // A declaration never writes through a READONLY cell the slot still
+        // holds from an outer binding (`my $*H := Str` after the same frame
+        // read the outer, bound `$*H`): it makes a fresh binding instead.
+        let declares_over_readonly_cell = is_vardecl
+            && matches!(
+                self.locals[idx].view(),
+                ValueView::ContainerRef(ref arc) if arc.is_readonly()
+            );
         // Write through ContainerRef in slow path: update inner value
         if !is_bind
             && !is_rebind
+            && !declares_over_readonly_cell
             && let ValueView::ContainerRef(arc) = self.locals[idx].view()
         {
             // Slice 2a: a `=`-array-shared scalar reassigned as a whole REPLACES
@@ -3496,7 +3530,7 @@ impl Interpreter {
             && !is_constant
             && !bind_marks_type_object
             && !code.needs_env_sync.get(idx).copied().unwrap_or(true)
-            && !crate::opcode::reflective_name_access_possible()
+            && !code.mirrors_all_params()
             && Self::term_symbol_from_name(name).is_none();
         // A rebind (`$a := EXPR`) replaces the name's binding, so the env entry
         // must stop naming the container it was bound to before. When that

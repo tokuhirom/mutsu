@@ -42,9 +42,8 @@ impl Interpreter {
         self.set_current_package(name.clone());
         let lexicals = (lexicals_idx != crate::opcode::NO_PACKAGE_LEXICALS)
             .then(|| Self::const_str(code, lexicals_idx));
-        if let Some(lexicals) = lexicals {
-            self.bind_package_body_lexicals(&name, lexicals);
-        }
+        let class_scope =
+            lexicals.and_then(|lexicals| self.bind_package_body_lexicals(&name, lexicals));
         // The names the body's own scope declares are its bindings, never a
         // write to a same-named enclosing lexical (#13428).
         let declared: Vec<Symbol> = (decls_idx != u32::MAX)
@@ -85,6 +84,17 @@ impl Interpreter {
         for lane in &body_lanes {
             self.env_mut().remove_sym(*lane);
         }
+        // A body split by the BEGIN prologue declared its typed `@`/`%`
+        // lexicals ahead of this run-time part (`my %as{Any:U} = ...` is a
+        // declaration there and an assignment here), which recorded their
+        // lanes for the package. The assignment checks against that record,
+        // so put the package's own lanes back for the body (#15247).
+        for (key, value) in self.class_body_static_meta_lanes(&name) {
+            let lane = Symbol::intern(&key);
+            if body_lanes.contains(&lane) {
+                self.env_mut().insert_sym(lane, value);
+            }
+        }
         let result = self.run_range(code, *ip + 1, body_end, compiled_fns);
         // What the body declared, recorded per package: its routines read the
         // record whatever way they are entered (`declared_meta_lane` asks the
@@ -121,6 +131,9 @@ impl Interpreter {
                 BlockEnvSave::Whole(env) => env,
             };
             self.unbind_package_body_lexicals(&name, lexicals, saved_env);
+        }
+        if let Some(mark) = class_scope {
+            self.end_scoped_fixtures(mark);
         }
         let ClosedBlockEnv {
             base: mut env,

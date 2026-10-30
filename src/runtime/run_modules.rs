@@ -595,10 +595,7 @@ impl Interpreter {
         let saved_source_file =
             crate::parser::set_parser_source_file(Some(source_path.to_string_lossy().to_string()));
         let parse = || {
-            parse_dispatch::parse_compilation_unit_of(
-                &preprocessed,
-                crate::rakuast::frontend::Unit::Module,
-            )
+            parse_dispatch::parse_compilation_unit_of(&preprocessed)
         };
         let result = match unit {
             Some(unit) => crate::anon_names::with_content_unit(unit.parse_session(), parse),
@@ -656,9 +653,11 @@ impl Interpreter {
         Self::inject_trait_mod_is_export_prelude(&code, &mut stmts);
         Self::inject_enumeration_prelude(&code, &mut stmts);
         Self::inject_iterator_role_prelude(&code, &mut stmts);
+        Self::inject_hash_ordered_prelude(&code, &mut stmts);
         Self::inject_x_wrapper_prelude(&code, &mut stmts);
         Self::inject_precomp_api_prelude(&code, &mut stmts);
         Self::inject_formatter_syntax_prelude(&code, &mut stmts);
+        Self::inject_deparse_prelude(&code, &mut stmts);
         Self::inject_container_descriptor_prelude(&code, &mut stmts);
 
         // Save to precompilation cache when the module is eligible.
@@ -926,6 +925,7 @@ impl Interpreter {
                 .resolve_module_path(module)
                 .ok_or_else(|| RuntimeError::unsatisfied_dependency(module))?,
         };
+        crate::runtime::bump_unit_scope_epoch();
         crate::runtime::cow_table_mut(&mut self.module.module_source_packages).insert(
             crate::symbol::Symbol::intern(&source_path.to_string_lossy()),
             crate::symbol::Symbol::intern(module),
@@ -1002,6 +1002,8 @@ impl Interpreter {
                 RuntimeError::new(format!("Failed to read module {}: {}", module, err))
             })?,
         };
+        // `$*CU` while this module compiles (`unit_source_text`).
+        let _unit_text = crate::unit_source_text::UnitSourceTextGuard::enter(&source_text);
         let path_text = source_path.to_string_lossy().into_owned();
         let (mut module_ast, facts, effects, precompiled) = match &entry {
             Some(entry) => {
@@ -1183,6 +1185,7 @@ impl Interpreter {
             // record X so that `register_exported_sub` can mirror exports into
             // `unit_module_exported_subs` for tag validation.
             if let Some(name) = unit_name.as_deref() {
+                crate::runtime::bump_unit_scope_epoch();
                 crate::runtime::cow_table_mut(&mut self.module.unit_module_packages).insert(
                     module_unit_for_loading_stack,
                     crate::symbol::Symbol::intern(name),
@@ -1292,6 +1295,7 @@ impl Interpreter {
             // with -- or silently overwrite -- a same-named one the loading
             // scope already declared.
             let hidden_toplevel = self.hide_toplevel_global_routines();
+            let functions_before_body = std::sync::Arc::clone(&self.registry().functions);
             // The importer's hoisted `multi`s are already registered; they are
             // lexical to it and must not take part in this module's dispatch
             // (#11310).
@@ -1792,7 +1796,7 @@ impl Interpreter {
                 // (candidates are additive across compunits) but become
                 // visible only to it and to whoever imports them (#11004).
                 self.scope_unit_multi_families(&module_path);
-                self.remember_own_families(module, &module_path);
+                self.remember_own_families(module, &module_path, &functions_before_body);
             }
             // See `hide_toplevel_global_routines`: restore the loading scope's
             // own top-level routines regardless of whether the module's body
@@ -1807,6 +1811,8 @@ impl Interpreter {
             // load must not leave it hidden.
             let export_result = match result {
                 Ok(()) => {
+                    // `$*CU` in the module's `sub EXPORT` is the importing unit.
+                    let _export_phase = crate::unit_source_text::ExportPhaseGuard::enter();
                     self.apply_module_export(export_args.unwrap_or_default(), module_body_env)
                 }
                 Err(err) => Err(err),
@@ -2150,7 +2156,7 @@ impl Interpreter {
                 is_our,
                 is_dynamic,
                 is_export,
-                custom_traits,
+                constant,
                 ..
             } = s
             else {
@@ -2174,7 +2180,7 @@ impl Interpreter {
             // discriminate on the `__constant` trait the same way
             // `collect_unit_package_scope_names` does, rather than on a
             // scope keyword that only incidentally lines up.
-            if custom_traits.iter().any(|(t, _)| t == "__constant") {
+            if constant.is_some() {
                 continue;
             }
             // Anonymous container slots (`@__ANON_ARRAY__`/`%__ANON_HASH__`)
@@ -2332,20 +2338,20 @@ impl Interpreter {
                     name,
                     is_export: _,
                     is_dynamic,
-                    custom_traits,
+                    constant,
                     ..
                 } => {
                     // A `constant` parses to `VarDecl { is_our: true, .. }` with
                     // a `__constant` trait; `is_our` alone cannot tell it from an
                     // ordinary `our $x`, which is a package variable the loading
                     // scope may legitimately share.
-                    if *is_dynamic || !custom_traits.iter().any(|(t, _)| t == "__constant")
+                    if *is_dynamic || !constant.is_some()
                     {
                         continue;
                     }
                     // A sigil-less constant is stored under its term key
                     // (#9962); that is the `env` entry to drop.
-                    if crate::runtime::term_names::is_term_constant_decl(name, custom_traits) {
+                    if crate::runtime::term_names::is_term_constant_decl(name, *constant) {
                         push(&crate::runtime::term_names::term_key(name));
                     } else {
                         push(name);
@@ -2386,19 +2392,19 @@ impl Interpreter {
                 is_our: false,
                 is_dynamic: false,
                 is_export: false,
-                custom_traits,
+                constant,
                 ..
             } = s
             else {
                 continue;
             };
-            if !custom_traits.iter().any(|(t, _)| t == "__constant")
+            if !constant.is_some()
                 || crate::qualified::is_qualified_str(name)
                 || name.contains("__ANON")
             {
                 continue;
             }
-            let key = if crate::runtime::term_names::is_term_constant_decl(name, custom_traits) {
+            let key = if crate::runtime::term_names::is_term_constant_decl(name, *constant) {
                 crate::runtime::term_names::term_key(name)
             } else {
                 name.clone()
@@ -2433,19 +2439,19 @@ impl Interpreter {
                 name,
                 is_our: true,
                 is_dynamic: false,
-                custom_traits,
+                constant,
                 ..
             } = s
             else {
                 continue;
             };
-            if custom_traits.iter().any(|(t, _)| t == "__constant")
+            if constant.is_some()
                 || crate::qualified::is_qualified(crate::symbol::Symbol::intern(name))
                 || name.contains("__ANON")
             {
                 continue;
             }
-            let bare = name.strip_prefix(['@', '%']).unwrap_or(name);
+            let bare = name.strip_prefix(['@', '%', '&']).unwrap_or(name);
             if bare
                 .chars()
                 .next()

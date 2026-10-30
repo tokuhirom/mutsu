@@ -163,7 +163,7 @@ impl Interpreter {
         {
             return None;
         }
-        if !attributes.contains_key("__mutsu_hash_storage") {
+        if !attributes.contains_key(crate::symbol::wk::hash_storage()) {
             return None;
         }
         if !self
@@ -176,7 +176,7 @@ impl Interpreter {
         }
         let storage = attributes
             .as_map()
-            .get("__mutsu_hash_storage")
+            .get(crate::symbol::wk::hash_storage())
             .cloned()
             .unwrap_or_else(|| Value::hash(ValueMap::default()));
         // `%h = pairs` / `my %h is Bar = pairs` (the tied-variable declaration
@@ -215,7 +215,7 @@ impl Interpreter {
             // `%h` -- shares that node, so `self.STORE(...)` (or `self = ...`)
             // inside a method is seen by the caller. Rebuilding the instance
             // with a fresh storage node only reached the name written back.
-            if let Some(old_storage) = attributes.as_map().get("__mutsu_hash_storage")
+            if let Some(old_storage) = attributes.as_map().get(crate::symbol::wk::hash_storage())
                 && let ValueView::Hash(old_gc) = old_storage.view()
                 && let ValueView::Hash(new_gc) = new_storage.view()
             {
@@ -238,26 +238,13 @@ impl Interpreter {
         // like `STORE` above, so every holder of the instance sees it. The
         // native `BIND-KEY` lives on the opcode path, which a re-targeted
         // by-value dispatch never reaches.
-        if method == "BIND-KEY"
-            && args.len() == 2
-            && let ValueView::Hash(old_gc) = storage.view()
-        {
-            let mut data = (**old_gc).clone();
-            let key = if data.key_type.is_some() {
-                let which = crate::runtime::utils::value_which_key(&args[0]);
-                data.original_keys
-                    .get_or_insert_with(ValueMap::default)
-                    .insert(which.clone(), args[0].clone());
-                which
-            } else {
-                args[0].to_string_value()
-            };
-            data.map.insert(key, args[1].clone());
-            let new_storage = Value::hash(data);
-            if let ValueView::Hash(new_gc) = new_storage.view() {
-                Self::hash_inplace_reassign(&old_gc, &new_gc);
-            }
-            return Some(Ok(args[1].clone()));
+        if method == "BIND-KEY" && args.len() == 2 && matches!(storage.view(), ValueView::Hash(_)) {
+            // Bound as the `Hash` row binds it (a cell, so `.values` hands the
+            // bound value out and not a fresh Scalar), on the shared node.
+            return Some(
+                crate::builtins::method_table::bind_key_in(self, &storage, args, None)
+                    .map(|(value, _)| value),
+            );
         }
         // The renderings mutate nothing, and the read-only twin already names
         // an `is Map` subclass in them.
@@ -281,6 +268,17 @@ impl Interpreter {
                         ))
                     }),
             );
+        }
+        // `.values` hands out the backing hash's own element containers, as it
+        // does for a plain `Hash` (a bound element stays a bound value rather
+        // than a fresh Scalar).
+        if method == "values"
+            && args.is_empty()
+            && !self
+                .native_lever_a_user_override_sym(&storage, crate::symbol::Symbol::intern(method))
+            && let Some(produced) = self.try_element_container_producer(&storage, method, args)
+        {
+            return Some(Ok(produced));
         }
         // Seed a synthetic binding so the native xxKEY fast paths (which
         // write back into `self.env` by NAME — see `vm_call_method_mut_ops.rs`)
@@ -361,7 +359,7 @@ impl Interpreter {
         {
             return None;
         }
-        if !attributes.contains_key("__mutsu_hash_storage") {
+        if !attributes.contains_key(crate::symbol::wk::hash_storage()) {
             return None;
         }
         if !self
@@ -392,7 +390,7 @@ impl Interpreter {
         }
         let storage = attributes
             .as_map()
-            .get("__mutsu_hash_storage")
+            .get(crate::symbol::wk::hash_storage())
             .cloned()
             .unwrap_or_else(|| Value::hash(ValueMap::default()));
         let result = self.try_native_method(&storage, method_sym, args);
@@ -433,8 +431,10 @@ impl Interpreter {
         let updated_instance =
             Value::instance_parts(*inst_class, crate::gc::Gc::clone(attributes), inst_id);
         // Through the shared cell, not over it: see `Env::insert_through`.
-        self.env_mut()
-            .insert_through(target_name.to_string(), updated_instance.clone());
+        if !self.store_invocant_by_name(target_name, &updated_instance) {
+            self.env_mut()
+                .insert_through(target_name.to_string(), updated_instance.clone());
+        }
         updated_instance
     }
 }

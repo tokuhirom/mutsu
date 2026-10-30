@@ -43,7 +43,7 @@ impl Interpreter {
         nth_idx: Option<u32>,
         x_idx: Option<u32>,
         replacement_thunk: bool,
-    ) -> SubstOp {
+    ) -> Result<SubstOp, RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         // The replacement is an assignment-form thunk, compiled to the closure
         // the op pops, or a `qq` quote (see `vm_subst_repl`): parse that once
@@ -51,9 +51,9 @@ impl Interpreter {
         let plan = if replacement_thunk {
             SubstReplPlan::Thunk(self.stack.pop().unwrap_or(Value::NIL))
         } else {
-            self.subst_replacement_plan(Self::const_str(code, replacement_idx))
+            self.subst_replacement_plan(Self::const_str(code, replacement_idx))?
         };
-        SubstOp {
+        Ok(SubstOp {
             pattern,
             plan,
             nth_spec: nth_idx.map(|idx| Self::const_str(code, idx).to_string()),
@@ -63,7 +63,7 @@ impl Interpreter {
             samemark,
             samespace,
             global,
-        }
+        })
     }
 
     /// Every match of `op`'s pattern in `text`, with its captures. Only the
@@ -281,7 +281,7 @@ impl Interpreter {
             nth_idx,
             x_idx,
             replacement_thunk,
-        );
+        )?;
         let outcome = self.run_subst_with_qq_thunks(&op, qq_thunks)?;
         if outcome.matched {
             self.write_subst_topic_checked(code, Value::str(outcome.text))?;
@@ -329,7 +329,7 @@ impl Interpreter {
             nth_idx,
             x_idx,
             replacement_thunk,
-        );
+        )?;
         let outcome = self.run_subst_with_qq_thunks(&op, qq_thunks)?;
         // S/// sets $/ to the match (without mutating $_) and yields the string.
         let slash = outcome.slash.clone();

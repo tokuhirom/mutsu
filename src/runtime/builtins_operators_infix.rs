@@ -8,10 +8,71 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// Whether `callable` is the captured multi family bound as `&{infix_name}`
+    /// whose candidates `try_user_infix` has just declined: dispatching the
+    /// family again would reach this built-in operator once more, forever
+    /// (the same `multi infix:` imported by an `EXPORT` hook and a direct
+    /// `use`).
+    // Cost: O(1).
+    fn declined_captured_family(&self, infix_name: &str, callable: &Value) -> bool {
+        self.user_infix_override(infix_name)
+            && matches!(callable.view(), ValueView::Sub(data)
+                if data.env.get_sym(crate::symbol::wk::multi_dispatch_candidates()).is_some())
+    }
+
     pub(crate) fn call_infix_routine(
         &mut self,
         op: &str,
         args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        self.call_infix_routine_in(op, args, false)
+    }
+
+    /// The core operator `op` applied to `args`, ignoring every candidate of
+    /// the same name the program or an import declared (`&CORE::infix:<op>`).
+    // Cost: as `call_infix_routine`.
+    pub(crate) fn call_core_infix_routine(
+        &mut self,
+        op: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        self.call_infix_routine_in(op, args, true)
+    }
+
+    /// The routine `name` of the CORE setting called with `args`: the built-in
+    /// operator or routine, never a same-named declaration of the program.
+    // Cost: O(1) dispatch beyond the built-in's own cost.
+    pub(crate) fn call_core_routine(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(op) = name
+            .strip_prefix("infix:<")
+            .and_then(|s| s.strip_suffix('>'))
+        {
+            return self.call_core_infix_routine(Self::normalize_unicode_infix(op), &args);
+        }
+        let (args, _) = self.sanitize_call_args_owned(args);
+        match self.call_function_arms(name, args.clone(), false) {
+            // A `Cool` routine (`abs`, `uc`, `sqrt`, ...) is its invocant's
+            // method of the same name.
+            Err(err) if err.is_multi_no_match() && !args.is_empty() => {
+                let rest = args[1..].to_vec();
+                self.call_method_with_values(args[0].clone(), name, rest)
+            }
+            result => result,
+        }
+    }
+
+    // `core_only` skips the user candidates, the `&infix:<op>` env callable
+    // and the expression-evaluation fallback (which would resolve the
+    // operator by name again).
+    fn call_infix_routine_in(
+        &mut self,
+        op: &str,
+        args: &[Value],
+        core_only: bool,
     ) -> Result<Value, RuntimeError> {
         // Hyper meta-operators called via their subroutine name, e.g.
         // `&infix:<<<+>>>(@a, @b)` / `&infix:<»+«>(@a, @b)`. Apply the inner
@@ -403,16 +464,22 @@ impl Interpreter {
         for rhs in &args[1..] {
             let pair_args = vec![acc.clone(), rhs.clone()];
             let infix_name = format!("infix:<{}>", op);
-            if let Some(value) = self.try_user_infix(&infix_name, &pair_args[0], &pair_args[1])? {
+            if !core_only
+                && let Some(value) = self.try_user_infix(&infix_name, &pair_args[0], &pair_args[1])?
+            {
                 acc = value;
                 continue;
             }
-            if let Some(def) = self.resolve_function_with_types(&infix_name, &pair_args)? {
+            if !core_only
+                && let Some(def) = self.resolve_function_with_types(&infix_name, &pair_args)?
+            {
                 crate::trace::trace_log!("call", "call_infix_routine dispatch def: {}", infix_name);
                 acc = self.call_routine_def(&def, pair_args)?;
                 continue;
             }
-            if let Some(callable) = self.env.get(&format!("&{}", infix_name)).cloned()
+            if !core_only
+                && let Some(callable) = self.env.get(&format!("&{}", infix_name)).cloned()
+                && !self.declined_captured_family(&infix_name, &callable)
                 && matches!(
                     callable.view(),
                     ValueView::Sub(_)
@@ -451,7 +518,11 @@ impl Interpreter {
             // operator. The real `Test.rakumod`'s `cmp-ok` reaches `eqv` only
             // through this routine form.
             if op == "eqv" {
-                acc = self.eqv_values(acc, rhs.clone())?;
+                acc = if core_only {
+                    self.core_eqv_values(acc, rhs.clone())?
+                } else {
+                    self.eqv_values(acc, rhs.clone())?
+                };
                 continue;
             }
             // The numeric-comparison family likewise needs the full
@@ -548,6 +619,11 @@ impl Interpreter {
                     };
                 let expr_args = vec![expr_left.clone(), expr_right.clone()];
                 let expr_infix_name = format!("infix:<{}>", expr_op);
+                if core_only {
+                    return Err(RuntimeError::new(format!(
+                        "No core candidate of {expr_infix_name} accepts these arguments"
+                    )));
+                }
                 if let Some(def) = self.resolve_function_with_types(&expr_infix_name, &expr_args)? {
                     crate::trace::trace_log!(
                         "call",
@@ -558,6 +634,7 @@ impl Interpreter {
                     continue;
                 }
                 if let Some(callable) = self.env.get(&format!("&{}", expr_infix_name)).cloned()
+                    && !self.declined_captured_family(&expr_infix_name, &callable)
                     && matches!(
                         callable.view(),
                         ValueView::Sub(_)

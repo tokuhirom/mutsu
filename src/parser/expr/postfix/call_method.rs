@@ -39,6 +39,12 @@ pub(crate) fn auto_invoke_bareword_method_target(expr: Expr) -> Expr {
 }
 
 pub(crate) fn append_call_arg(expr: &mut Expr, arg: Expr) -> bool {
+    // A call remembered as spelled in a particular way (the dotty infix call
+    // of `$x\n.meth(...)`) still takes the adverb.
+    let mut expr = expr;
+    while let Expr::Spelled(spelled) = expr {
+        expr = &mut spelled.expr;
+    }
     match expr {
         Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
             args.push(arg);
@@ -307,7 +313,7 @@ pub(crate) fn parse_quoted_method_name(input: &str) -> Option<(&str, QuotedMetho
         // Check if content has interpolation
         if content.contains('$') || content.contains('@') || content.contains('{') {
             use crate::parser::primary::string::interpolate_string_content_with_modes;
-            let name_expr = interpolate_string_content_with_modes(content, true, true);
+            let name_expr = interpolate_string_content_with_modes(content, true, true).ok()?;
             return Some((rest, QuotedMethodName::Dynamic(name_expr)));
         }
         return Some((rest, QuotedMethodName::Static(content.to_string())));

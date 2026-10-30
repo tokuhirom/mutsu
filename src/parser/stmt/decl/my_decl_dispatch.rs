@@ -129,6 +129,7 @@ pub(super) fn try_keyword_dispatch(
                     version: super::super::simple::current_language_version(),
                     is_export: false,
                     export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
                     is_my: !is_our,
                     decl_id: crate::ast::next_class_decl_id(),
                 },
@@ -169,6 +170,23 @@ pub(super) fn try_keyword_dispatch(
             .map(|r2| ws(r2).map(|(r3, _)| r3).unwrap_or(r2))
             .unwrap_or(r);
         let (r, mut stmt) = sub_decl_body(r, true, false, false)?;
+        if is_our && let Stmt::SubDecl { scope, .. } = &mut stmt {
+            *scope = crate::ast::SubScope::Our;
+        }
+        return Ok(Some((r, stmt)));
+    }
+
+    // my/our only [sub] name(...) { ... }: `only` is the explicit non-multi
+    // declarator, a plain routine declaration.
+    if let Some(r) = keyword("only", rest)
+        && let Ok((r, _)) = ws1(r)
+        && !r.starts_with('{')
+        && !r.starts_with('(')
+    {
+        let r = keyword("sub", r)
+            .map(|r2| ws(r2).map(|(r3, _)| r3).unwrap_or(r2))
+            .unwrap_or(r);
+        let (r, mut stmt) = sub_decl_body(r, false, false, false)?;
         if is_our && let Stmt::SubDecl { scope, .. } = &mut stmt {
             *scope = crate::ast::SubScope::Our;
         }
@@ -240,8 +258,8 @@ pub(super) fn try_keyword_dispatch(
     if let Some(r) = keyword("native", rest) {
         let (r, _) = ws1(r)?;
         let (r, mut stmt) = class_decl_body(r, !is_our)?;
-        if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
-            custom_traits.push(("__mutsu_native_decl".to_string(), None));
+        if let Stmt::ClassDecl { is_native, .. } = &mut stmt {
+            *is_native = true;
         }
         return Ok(Some((r, stmt)));
     }
@@ -255,8 +273,8 @@ pub(super) fn try_keyword_dispatch(
         // A `my role` is lexically scoped (private to its declaring scope). Mark it
         // so the role-body forbidden-declaration check allows it inside another role,
         // mirroring how `my class` is permitted inside a role.
-        if !is_our && let Stmt::RoleDecl { custom_traits, .. } = &mut stmt {
-            custom_traits.push(("__my_scoped".to_string(), None));
+        if !is_our && let Stmt::RoleDecl { is_lexical, .. } = &mut stmt {
+            *is_lexical = true;
         }
         return Ok(Some((r, stmt)));
     }
@@ -339,8 +357,8 @@ pub(super) fn try_keyword_dispatch(
         };
         let (r, _) = ws1(r)?;
         let (r, mut stmt) = class_decl_body(r, !is_our)?;
-        if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
-            custom_traits.push(crate::parser::declare_how_marker(kw));
+        if let Stmt::ClassDecl { marks, .. } = &mut stmt {
+            marks.declarator = Some(kw);
         }
         return Ok(Some((r, stmt)));
     }

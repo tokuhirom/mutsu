@@ -2454,3 +2454,209 @@ and parses the full comma-list RHS of `Z=` in expression position. Lowering
 reuses the existing meta-assignment path. The focused contract is
 `t/rakuast/rakuast-xz-assignment.t`.
 
+### 6.121 A declaration's initializer is a field of `VarDecl` (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+Second step of the marker-to-field series after §6.119. `Stmt::VarDecl` gains `has_initializer: bool`
+and the `__has_initializer` entry of `custom_traits` is deleted: the parser, the lowering
+(`lower`, `var_does`, `decl_from_cell`, `split_var_decl`) set the field, and the compiler, the BEGIN
+prologue, the TRIR slot allocator and `convert` read it. A "declaration with no user traits" test that
+spelled `all(t == "__has_initializer")` is `custom_traits.is_empty()`. `convert::var_decl_statement`
+drops the marker from its internal-trait filter and from the constant-trait check, and
+`does_declaration` sets `VarDeclParts::has_initializer` instead of rebuilding a trait list.
+
+Deleted: the `__has_initializer` marker and its ~35 push sites, the marker filters in
+`modifier_decl_split`, `cell_ast::without_initializer_markers` (now `without_bind_marker`), the
+`var_does` retain/re-push, and the `convert` trait-list rebuild in `does_declaration`.
+Remaining `VarDecl` pseudo-traits (`__constant*`, `__init_sees_self`, `__scalar_bind`/`__code_bind`,
+shaped/implicit-value-type/name-colonpair marks, the `is dynamic` argument) follow in their own PRs.
+
+### 6.122 Stage 3: the default frontend is the RakuAST round trip (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+With the maintainer's approval (2026-10-27) the default flips as §2.2 defines: a program unit
+(the main program and every `EVAL` string) runs as `parse -> RakuAST -> lower -> compile`, the
+path `MUTSU_RAKUAST=1` selected. `MUTSU_LEGACY=1` is the opt-out (and wins over any
+`MUTSU_RAKUAST` value); `MUTSU_RAKUAST=0` is accepted as the same opt-out; `all` and `convert`
+keep their meaning. `use`d modules are still outside the default level (`all` is not at parity:
+`Test.rakumod` itself does not round-trip), so a module's precompilation is unchanged by the
+flip; the cache key nevertheless carries the frontend level (`cache_tag`) so levels never mix.
+
+Ratchets after the flip: "passes by default" is what `make test` / `make roast` gate.
+`scripts/rakuast-frontend.sh check` keeps `ci/rakuast-frontend-passing.txt` but runs it at
+`convert`, the level the default no longer exercises (it covers the `convert` / `lower` arms the
+parsed-leaf passthrough bypasses); `scripts/rakuast-frontend.sh legacy` runs all of `t/` under
+`MUTSU_LEGACY=1` for the release the opt-out is kept. The legacy CI step is a `.github/` change
+and rides a separate PR (CODEOWNERS).
+
+Deleting the legacy path, `convert.rs` and the remaining parser desugarings (the rest of §2.2
+Stage 3) is the next release's work and is not done here. Frontend cost: see the flip PR for the
+measurements against the pre-flip ordinary frontend (§2.4).
+
+### 6.123 A `constant` declaration is a field of `VarDecl` (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+Third step of the marker-to-field series (§6.119, §6.121). `Stmt::VarDecl` gains
+`constant: Option<ConstantSigil>` (`Term`, `Scalar`, `Array`, `Hash`, `Code`), and the `__constant` /
+`__constant_sigil` entries of `custom_traits` are deleted. The sigil was always paired with the marker (the
+declaration's `name` strips a `$`, so a scalar `constant $x` and a term `constant x` need it), so one
+field carries both. The parser's `constant_decl` and the RakuAST `lower` set it; about forty readers in
+the compiler, the begin-prologue, the module registrar, the export scan and `convert` test the field instead
+of scanning `custom_traits`. `term_names::{is_term_constant_decl, decl_storage_name}` take the field.
+
+Deleted: both marker traits and their two push sites, the sigil recovery by trait scan in `convert`
+(`constant_declaration`), the compiler's two `__constant_sigil` lookups, `is_term_constant_decl`'s trait scan,
+and the "no other traits" check in `convert` that spelled `n != "__constant" && n != "__constant_sigil"`
+(now `custom_traits.is_empty()`).
+
+Remaining `VarDecl` pseudo-traits: `__scalar_bind` / `__code_bind`, `__my_scoped`, `__object_hash`,
+`__init_sees_self`, `__shaped_decl`, `__implicit_value_type`, the name-colonpair mark and the `is dynamic`
+argument.
+
+### 6.124 A binding declaration is a field of `VarDecl` (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+Fourth step of the marker-to-field series (§6.119, §6.121, §6.123). `Stmt::VarDecl` gains
+`bind: Option<BindKind>` (`Scalar` for `my $x := …`, `Code` for `my &f := …`), and the `__scalar_bind` /
+`__code_bind` entries of `custom_traits` are deleted. `@` and `%` binds carry none: `ast::bind_decl::expand`
+wraps them, and `declared` reads the wrapper. The parser's `BindDecl` node, the RakuAST `lower`, the
+destructuring desugar, the `self` alias and the compiler's own synthesized binds set the field; the
+compiler, the BEGIN lifting, TRIR slot allocation and the statement modifier split read it. The
+`uninit_untyped_scalar_defaults_to_any` family and `is_scalar_bind_decl` take the field as a parameter.
+
+Deleted: both marker traits and their push sites, `cell_ast::without_bind_marker` and the two
+`filter(!= "__scalar_bind")` rebuilds (the BEGIN static split and the modifier split), the
+`SCALAR_BIND` / `CODE_BIND` exemptions in `convert`'s internal-trait filter, the dead `has_init |= bind`
+in `split_var_decl` (a scalar bind returned earlier), and about 20 `custom_traits.iter().any(…)` scans.
+
+As in §6.123, a declaration guard spelled `custom_traits.is_empty()` had been excluding bound
+declarations implicitly; the passthrough leaf, the for-topic alias, the register-before-init test and the
+modifier split now name `bind: None`.
+
+Remaining `VarDecl` pseudo-traits: `__my_scoped`, `__object_hash`, `__init_sees_self`, `__shaped_decl`,
+`__implicit_value_type`, the name-colonpair mark and the `is dynamic` argument.
+
+### 6.125 The rest of a declaration's pseudo-traits are fields (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+Last step of the marker-to-field series (§6.119, §6.121, §6.123, §6.124). Two shapes, because
+the markers were two different things:
+
+`__my_scoped` was never a `VarDecl` marker: only `RoleDecl` carried it (`ClassDecl` has had
+`is_lexical` for a long time). `RoleDecl` gains `is_lexical: bool`, `CompiledRoleDeclPlan` carries
+it to the registrar, and the twelve readers (parser export scan and type qualification, the
+compiler's body scans, hoist and plan, the VM's lexical role storage name, the module merge and
+the EVAL scans) match on the field.
+
+The other five are facts about a `Stmt::VarDecl`, held in one typed field, `marks: VarMarks`
+(`ast/var_marks.rs`): `init_sees_self` (set by the scope pass; the compiler gives the
+initializer a fresh `Any`), `shaped` (an initialized shaped array: the value-copy must not strip
+the shape), `implicit_value_type` (a keyed hash whose `Any` the parser supplied),
+`name_colonpairs` (the written colonpairs of the name, `.AST` parses only) and
+`dynamic_argument` (the written `is dynamic(ARG)` argument). One struct instead of five fields
+because all five are "what the canonical tree drops", have the same default, and are only ever
+cleared together (`VarMarks::is_plain`); the parser's `MyDeclState`, `MethodAssignDecl` and the
+RakuAST `lower` build one value and move it. `custom_traits` of a `VarDecl` now holds only what the
+program wrote (plus the compiler's `__restore_*`/`__pointy_*` run-time flags).
+
+The pitfall of §6.123/§6.124 recurred in a smaller form: seven guards spelled
+`custom_traits.is_empty()` on a `VarDecl` (the passthrough leaf, the for-topic alias, the
+register-before-init test, the modifier split, the `our`-cell test, TRIR slot allocation, the
+implicit anon-state test) had been excluding the marked declarations. They now also test
+`marks.is_plain()`, so no behaviour moved.
+
+Deleted: `NAME_COLONPAIRS`, `DYNAMIC_TRAIT_ARGUMENT`, `shaped_decl::SHAPED_DECL`,
+`keyed_hash::IMPLICIT_VALUE_TYPE`, `convert::MY_SCOPED`; the five-name "internal trait" exemption in
+`convert::var_decl_statement` (only the `.=` marker is left in it); the trait-list searches in
+`name_colonpairs::apply`, `decl_traits::dynamic_trait` and `keyed_hash::split`; and the marker pushes
+of the parser, the scope pass and `lower`.
+
+`__object_hash` is not a declaration marker: it is the name of the builtin that builds `:{ ... }`
+(§4 of this ADR, a call, not a trait) and stays.
+
+Remaining `VarDecl` pseudo-traits: none that `convert` reconstructs. What is left in `custom_traits`
+under `__` are compiler/run-time flags (`__restore_pointy_given_topic`, `__pointy_copy`,
+`__pointy_native_param`, the BEGIN static-cell marks) and the `.=` declaration marker.
+
+### 6.126 The legacy opt-out is gone (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+§6.122 kept `MUTSU_LEGACY=1` (and `MUTSU_RAKUAST=0`) as an opt-out to the parser's own tree "for one
+release". The maintainer's decision of 2026-10-27 is to delete the Stage 3 leftovers now, so the
+opt-out goes: the round trip is the one frontend for the main program and every `EVAL` string.
+
+Deleted: the `MUTSU_LEGACY` / `MUTSU_RAKUAST=0` / `MUTSU_RAKUAST=all` levels and the `Mode` enum
+behind them (`Mode::{Off, ProgramUnits, All}`; what is left is the boolean "`MUTSU_RAKUAST=convert`"), the
+`legacy` command of `scripts/rakuast-frontend.sh`, the post-merge CI step that ran it (#15060), its
+doc bullet and `t/rakuast/rakuast-frontend-default-legacy.t`.
+
+What is *not* deleted: `use`d and `require`d modules are still compiled from the parser's own tree
+(`Unit::Module` is outside `covers`). Measured with `MUTSU_RAKUAST=all` on 2026-10-27, whole `t/`
+passes except one file (`t/modules/module-import-alias-scope-paths.t`) after four fixes that rode with
+this change (a `%(…)` argument of a role application, the `$<a=b>` back-reference spelling, a
+statement modifier in a heredoc's `{…}`, `also is Base` in a grammar body keeping the parser's
+body-positioned parent); the remaining cause is #15074 (`require Foo::Bar` after a `use` with lexical
+imports dies "Could not find symbol '&Bar' in 'GLOBAL::Foo'" with identical lowered trees). Routing
+modules through the round trip, and with it the unspelled parse, is the next deletion once that
+issue is closed.
+
+### 6.127 `use`d modules run as their round trip, and the unspelled parse is gone from execution (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+§2.2's "`MUTSU_LEGACY=1` as the opt-out for one release" is withdrawn (maintainer decision
+2026-10-27: mutsu is in development and has no users to protect), so §6.126 deleted the opt-out and
+this section deletes what it had kept alive: `use`d and `require`d modules were compiled from the
+parser's own tree because `Test.rakumod` did not round-trip. It does now. Measured on 2026-10-27 with
+every module round-tripped, the whole of `t/` and the roast whitelist pass (`scripts/dev gate --full`),
+after these fixes: a `Pkg::D` / `Pkg::U` type name is not a smiley (`type_build::strip_smiley`), a
+`require Module` operand that is an `ImportedTerm` bareword is still a module name (#15074; the
+`Spelled` wrapper hid the `BareWord` from `parse_require_expr`), plus the four of §6.126.
+
+Deleted: `frontend::Unit`, `frontend::covers`, the `unit` parameter of `parse_compilation_unit_of`
+and `round_trip_if_enabled`, and the two-way choice between `parse_program` and
+`parse_program_spelled` in `parse_dispatch` and `lib.rs` (`dump_ast`, `dump_bytecode`: both now show the
+tree the unit runs as). The unspelled parse stays for the analyses that never execute a unit
+(`parse_program_recovering`, the LSP) and the preludes; `Stmt::Ast` carriers and `convert` stay until
+the parser builds RakuAST directly.
+
+### 6.128 `is hidden-from-backtrace` is a field of the routine declaration (2026-10-27, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+`SubDecl`, `MethodDecl` and `ProtoDecl` gain `is_hidden_from_backtrace: bool`, set by the parser
+(`SubTraits`), by the RakuAST `lower` (`IsTraits`) and by the `MethodDecl` -> `SubDecl` lowering of a
+`my method`. The `__hidden_from_backtrace` entry of `custom_traits` is deleted: nothing stores it, the
+plan (`CompiledSubDeclPlan`), `register_*_sub_decl*`, the compiler's body compile and the proto-method
+registration take the field, and `convert`'s "internal trait" refusal no longer lists it. Deleted:
+the marker push, `routine_traits::lower_custom`'s special case, two `convert` exemptions and five
+`custom_traits.iter().any(…)` scans. `__prec` stays: it is data the parser derives from `is assoc` /
+`is tighter` and `lower` derives again through the same function, not a reconstruction.
+The `unit class` / `unit role` / `unit grammar` forms with `:ver<>` / `:auth<>` / `:api<>` adverbs were the
+last producers of the `__MUTSU_SET_META__` desugar outside the typed header (`ParsedStmt::PackageHeader`);
+the converter refused them, which the passthrough guard hid until modules were round-tripped at the
+`convert` level. They now build the typed header around the declaration, `stmt_list` takes the header off,
+absorbs the rest of the unit into the declaration and puts the header back. Deleted:
+`package_unit_meta::{decl_adverb_meta_stmts, with_meta_stmts}` and `class_decl::meta_setter_stmt`.
+
+### 6.129 Class and role pseudo-traits are fields; frontend cost after the flip (2026-10-28, [#7564](https://github.com/tokuhirom/mutsu/issues/7564))
+
+`Stmt::ClassDecl` and `Stmt::RoleDecl` no longer carry the parser's markers in `custom_traits`:
+`__mutsu_export_type` is `ClassDecl.export_tags` (#15131), and `__anon_decl` / `__anon_colons` /
+`__leading_colons` (#15136) and `__mutsu_declare_how` (#15143) are `marks: PackageMarks { anon, colons,
+leading_colons, declarator }`. Deleted with them: the four constants and their builders, the
+`supersede_marker` trait tuple (now `superseded_declarator`), `PackageHead::custom_traits`,
+`convert::{is_anon_package, has_leading_colons, is_colons_package}`, and eleven `custom_traits`
+scans/filters in the compiler, VM, runtime scans and `convert`/`role`.
+
+Measured on 2026-10-28 after these three PRs, as §2.4 asks (callgrind Ir of `-c`, `profiling` build,
+warm, 4 cores): the ordinary frontend is the binary of `7f17b198^` (the commit before the flip, run
+with `MUTSU_RAKUAST=0`), the round trip is `main` at `1dcff3b8`.
+
+| file | ordinary | round trip (default) | ratio |
+| --- | ---: | ---: | ---: |
+| `vendor/zef/lib/Zef/CLI.rakumod` | 459.9M | 499.4M | 1.086 |
+| `vendor/zef/lib/Zef/Client.rakumod` | 53.2M | 52.9M | 0.993 |
+| `roast/S32-exceptions/misc.t` | 671.7M | 738.0M | 1.099 |
+| `roast/S12-class/attributes.t` | 291.8M | 332.4M | 1.139 |
+| `t/rakuast/rakuast-source-forms.t` | 268.8M | 307.3M | 1.143 |
+| `use Test; plan 1; ok 1;` | 244.3M | 279.4M | 1.144 |
+
+The budget (<= 1.10) holds for the large single-file cases and misses by 1-4 points on every file that
+`use`s `Test`: §6.127 sends `Test.rakumod` through the round trip too, and loading it is the 35M-Ir
+difference in the last row. That cost is paid once per test process, so the next frontend-cost slice is
+the module load (caching the lowered tree or bytecode of a bundled module), not the per-statement path.
+
+Stage 0 and roast did not regress: `scripts/dev gate --full` on `5a30c23e` passes (lint, `make test`
+on every `t/` file under the default frontend, roast whitelist with only the 4 known environment-only
+failures).

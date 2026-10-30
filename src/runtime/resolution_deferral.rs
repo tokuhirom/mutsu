@@ -48,6 +48,7 @@ impl Interpreter {
     fn own_overloads_at_level(&mut self, owner: &str, method_name: &str) -> Option<Vec<MethodDef>> {
         self.registry()
             .get_method_overloads_with_role_fallback(owner, method_name)
+            .map(|overloads| overloads.to_vec())
     }
 
     /// Nominal (argument-independent) narrowness of `def`'s positional, non-slurpy parameter
@@ -58,7 +59,7 @@ impl Interpreter {
     /// resolves to its ultimate base type first, same as the arg-distance ranking does.
     fn nominal_positional_narrowness(&mut self, def: &MethodDef) -> usize {
         let mut total = 0usize;
-        for pd in &def.param_defs {
+        for pd in def.param_defs.iter() {
             if pd.is_invocant || pd.named || pd.slurpy || pd.double_slurpy {
                 continue;
             }

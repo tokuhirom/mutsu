@@ -30,6 +30,7 @@ pub(crate) fn bind_stmt(name: String, expr: Expr) -> Stmt {
         .starts_with('*');
     if name.starts_with('&') || is_dynamic_target {
         Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name,
             expr,
@@ -40,6 +41,9 @@ pub(crate) fn bind_stmt(name: String, expr: Expr) -> Stmt {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         }
     } else {
@@ -65,6 +69,7 @@ pub(crate) fn decl_stmt(name: String, expr: Expr) -> Stmt {
         .trim_start_matches(['$', '@', '%', '&'])
         .starts_with('*');
     Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name,
         expr,
@@ -75,6 +80,9 @@ pub(crate) fn decl_stmt(name: String, expr: Expr) -> Stmt {
         is_export: false,
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
+        has_initializer: false,
+        constant: None,
+        bind: None,
         where_constraint: None,
     }
 }
@@ -241,12 +249,27 @@ pub(crate) fn destructure_binds(
                         args: Vec::new(),
                         modifier: None,
                         quoted: false,
-                        sugar: false,
+                        // The contextualizer form (`@$v`) re-reads a `Seq`
+                        // instead of consuming it, so unpacking the same hash
+                        // twice (`for @tests -> (:@expected!)`, Red t/41) still
+                        // sees the elements.
+                        sugar: true,
                     }
                 } else {
                     method_result
                 };
-                bind_stmts.push(decl_stmt(sub.name.clone(), target_expr));
+                // `:$count! is rw` aliases the element, so a write through it
+                // reaches the unpacked Hash (rakudo binds the container).
+                if sub.traits.iter().any(|t| t == "rw" || t == "raw") {
+                    bind_stmts.push(Stmt::SyntheticBlock(vec![
+                        crate::ast::var_marks::with_bound_mark(decl_stmt(
+                            sub.name.clone(),
+                            target_expr,
+                        )),
+                    ]));
+                } else {
+                    bind_stmts.push(decl_stmt(sub.name.clone(), target_expr));
+                }
             }
         } else if sub.slurpy && sub.sigilless {
             // |rest capture parameter: the remaining positional elements and the
@@ -472,7 +495,10 @@ fn positional_decl_stmt(sub: &crate::ast::ParamDef, value_expr: Expr) -> Stmt {
         || sub.sigilless
         || sub.traits.iter().any(|t| t == "rw" || t == "raw");
     if binds_container {
-        Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl_stmt(name.clone(), value_expr)])
+        Stmt::SyntheticBlock(vec![crate::ast::var_marks::with_bound_mark(decl_stmt(
+            name.clone(),
+            value_expr,
+        ))])
     } else {
         decl_stmt(name.clone(), value_expr)
     }
@@ -497,7 +523,6 @@ pub(crate) fn destructure_declaring(
 ) {
     let from = bind_stmts.len();
     destructure_binds(target_name, sub_params, bind_stmts);
-    let mut marks = Vec::new();
     for stmt in &mut bind_stmts[from..] {
         let Stmt::Assign { name, expr, .. } = stmt else {
             continue;
@@ -506,12 +531,13 @@ pub(crate) fn destructure_declaring(
             .iter()
             .any(|p| p.slurpy && p.sigilless && p.name == *name)
         {
-            marks.push(Stmt::MarkSigillessReadonly(name.clone()));
-            *stmt = decl_stmt(
-                name.clone(),
-                std::mem::replace(expr, Expr::Literal(Value::NIL)),
+            *stmt = crate::ast::var_marks::with_term_mark(
+                decl_stmt(
+                    name.clone(),
+                    std::mem::replace(expr, Expr::Literal(Value::NIL)),
+                ),
+                crate::ast::var_marks::TermMark::Readonly,
             );
         }
     }
-    bind_stmts.extend(marks);
 }

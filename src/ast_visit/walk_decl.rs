@@ -25,6 +25,9 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
             language_version: _,
             custom_traits,
             is_unit: _,
+            is_native: _,
+            export_tags: _,
+            marks: _,
             implicit_grammar_parent: _,
             is_grammar: _,
             decl_id: _,
@@ -147,9 +150,11 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
             export_tags,
             body,
             is_rw: _,
+            is_lexical: _,
             language_version: _,
             custom_traits,
             decl_id: _,
+            marks: _,
         } => {
             v.visit_name(name.as_str(), NameKind::Decl);
             names(v, type_params, NameKind::BlockParam);

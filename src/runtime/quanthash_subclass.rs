@@ -91,7 +91,7 @@ impl Interpreter {
         attrs: &mut crate::runtime::AttrMap,
         positional_args: &[Value],
     ) -> Result<(), RuntimeError> {
-        if attrs.contains_key("__baggy_data__") {
+        if attrs.contains_key(crate::symbol::wk::baggy_data()) {
             return Ok(());
         }
         // Pure class shape, memoized on a registered class's plan: the parent

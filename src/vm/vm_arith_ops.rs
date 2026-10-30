@@ -408,6 +408,78 @@ impl Interpreter {
         }
     }
 
+    /// The materialized `&infix:<op>` family a `sub EXPORT` hook handed to the
+    /// unit running right now, from `env`.
+    ///
+    /// The hook installs its value in the shared `env`, so a routine of
+    /// ANOTHER unit (a role module that never imported the operator, loaded
+    /// while the exporting module was still loading) would otherwise find the
+    /// importer's family there and have its own `infix:<op>` replaced by it.
+    /// Raku scopes the import to the importing unit (GH-15203). A unit that
+    /// imported nothing under the name gets none; a unit that imported its own
+    /// family gets that one.
+    // Cost: O(1) hash probes, plus O(e) over the recorded EXPORT imports when
+    // the executing unit imported none of the name, e = their count.
+    fn unit_visible_captured_family(&self, op_sym: Symbol) -> Option<Value> {
+        let env_value = self
+            .env()
+            .get_sym(crate::runtime::dispatch_key::amp_sym(op_sym))
+            .cloned();
+        if !self.module.export_amp_override_names.contains(&op_sym) {
+            return env_value;
+        }
+        // A multi candidate's `where` runs before the candidate has a frame:
+        // its declaring unit is then the one asking, not the caller's.
+        let unit = match self.lexicals.candidate_scope_unit {
+            Some((unit, depth)) if depth == self.routine_stack().len() => unit,
+            _ => self.executing_unit_sym(),
+        };
+        let mut imported_elsewhere = false;
+        for ((file, name), value) in &self.module.unit_imported_callables {
+            if *name != op_sym {
+                continue;
+            }
+            if self.unit_of_source_sym(Some(*file)) == unit {
+                return Some(value.clone());
+            }
+            imported_elsewhere = true;
+        }
+        if imported_elsewhere { None } else { env_value }
+    }
+
+    /// The captured family a `sub EXPORT` hook handed the running unit as
+    /// `&{op_name}`, with its candidates; `None` when the unit has none.
+    // Cost: as `unit_visible_captured_family`.
+    fn exported_captured_family(&self, op_name: &str) -> Option<(Value, Vec<Value>)> {
+        let value =
+            Symbol::lookup(op_name).and_then(|op_sym| self.unit_visible_captured_family(op_sym))?;
+        let ValueView::Sub(data) = value.view() else {
+            return None;
+        };
+        let candidates = data
+            .env
+            .get("__mutsu_multi_dispatch_candidates")
+            .and_then(|candidates| candidates.as_list_items().map(ToOwned::to_owned))?;
+        Some((value.clone(), candidates))
+    }
+
+    /// [`Self::try_captured_candidates`] over the family a `sub EXPORT` hook
+    /// handed the running unit as `&{op_name}`: `None` when the unit has no
+    /// such family or none of its candidates accepts `args`, so the built-in
+    /// operator runs.
+    // Cost: O(c * p) to rank, c = candidates, p = parameters bound per
+    // candidate, plus the winner's call.
+    pub(crate) fn try_exported_captured_family(
+        &mut self,
+        op_name: &str,
+        args: Vec<Value>,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let Some((dispatcher, candidates)) = self.exported_captured_family(op_name) else {
+            return Ok(None);
+        };
+        self.try_captured_candidates(&dispatcher, &candidates, op_name, args)
+    }
+
     /// Try to dispatch a binary operation to a user-defined infix operator.
     /// Returns Some(result) if a user-defined candidate matched, None otherwise.
     pub(crate) fn try_user_infix(
@@ -447,6 +519,36 @@ impl Interpreter {
         } else {
             vec![left.clone(), right.clone()]
         };
+        self.try_user_candidates(op_name, args, Some((left, right)))
+    }
+
+    /// Try to dispatch the list-associative operator `op_name` (`infix:<X>`)
+    /// over all of `args` to the user candidates in scope. `None` when no
+    /// candidate is in scope or none accepts `args`: the built-in operator
+    /// runs, as rakudo's core candidate does.
+    // Cost: O(1) when no `infix:<op>` is declared; else the ranking of the
+    // operator's candidates and the winner's call.
+    pub(crate) fn try_user_list_infix(
+        &mut self,
+        op_name: &str,
+        args: Vec<Value>,
+    ) -> Result<Option<Value>, RuntimeError> {
+        if !self.user_infix_override(op_name) {
+            return Ok(None);
+        }
+        self.try_user_candidates(op_name, args, None)
+    }
+
+    /// The user candidates of `op_name` for `args`: the block-scoped imports
+    /// first, then a captured family, a proto body, and the registry. `binary`
+    /// is the operand pair of a two-operand call, which a core candidate of
+    /// the operator competes against (ADR-0071).
+    fn try_user_candidates(
+        &mut self,
+        op_name: &str,
+        args: Vec<Value>,
+        binary: Option<(&Value, &Value)>,
+    ) -> Result<Option<Value>, RuntimeError> {
         // A custom EXPORT hook can return a materialized `&infix:<op>` value
         // whose candidates were private to the exporting compilation unit.
         // They are intentionally captured in the Sub, not left in the global
@@ -465,40 +567,14 @@ impl Interpreter {
         if let Some(result) = self.try_lexical_operator_candidates(op_name, args.clone()) {
             return result;
         }
-        let captured_candidates = Symbol::lookup(op_name)
-            .map(crate::runtime::dispatch_key::amp_sym)
-            .and_then(|amp| self.env().get_sym(amp))
-            .and_then(|value| match value.view() {
-                ValueView::Sub(data) => data
-                    .env
-                    .get("__mutsu_multi_dispatch_candidates")
-                    .and_then(|value| value.as_list_items().map(ToOwned::to_owned)),
-                _ => None,
-            });
-        if let Some(candidates) = captured_candidates {
-            for candidate in &candidates {
-                if let ValueView::Sub(candidate_data) = candidate.view() {
-                    // This is a trial bind: `call_sub_value` binds again in the
-                    // callee's own frame. A rejected candidate may already have
-                    // bound its earlier parameters into the env, and without the
-                    // rollback they surface as the caller's same-named lexicals
-                    // (`$a`/`$b` of a stored closure, #12512).
-                    let saved_env = self.env().clone();
-                    let bound = self
-                        .bind_function_args_values(
-                            &candidate_data.param_defs,
-                            &candidate_data.params,
-                            &args,
-                        )
-                        .is_ok();
-                    self.restore_env_preserving_dynamics(saved_env);
-                    if bound {
-                        let result = self.call_sub_value(candidate.clone(), args)?;
-                        return Ok(Some(result));
-                    }
-                }
-            }
-            return Ok(None);
+        if let Some((dispatcher, candidates)) = self.exported_captured_family(op_name) {
+            // The family's candidates are ranked by narrowness like any other
+            // multi (and compete with the operator's core candidates): a
+            // re-exported family lists them in stash order, so taking the first
+            // one that binds picked `Date()` over `DateTime()` for a DateTime
+            // operand (Red's `infix:<==>`). A call none accepts declines to the
+            // core operator.
+            return self.try_captured_candidates(&dispatcher, &candidates, op_name, args);
         }
         // A proto body is the operator's entry point, even when a multi
         // candidate matches. Its body may answer directly or dispatch through
@@ -517,12 +593,14 @@ impl Interpreter {
             // candidate set and only takes the call when it out-narrows the
             // core set. Reporting "no user candidate" here leaves the native
             // path to run, which is exactly what rakudo's core candidate does.
-            match self.core_infix_candidate_wins(op_name, &def, left, right) {
-                CoreInfixVerdict::Core => return Ok(None),
-                CoreInfixVerdict::Tie(core) => {
-                    return Err(self.core_infix_tie_error(op_name, &def, core, left, right));
+            if let Some((left, right)) = binary {
+                match self.core_infix_candidate_wins(op_name, &def, left, right) {
+                    CoreInfixVerdict::Core => return Ok(None),
+                    CoreInfixVerdict::Tie(core) => {
+                        return Err(self.core_infix_tie_error(op_name, &def, core, left, right));
+                    }
+                    CoreInfixVerdict::User => {}
                 }
-                CoreInfixVerdict::User => {}
             }
             let empty_fns = CompiledFns::default();
             let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;

@@ -8,94 +8,6 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         if let Ok((rest_after_paren, _)) = parse_char(rest_inner, ')') {
             return Ok((rest_after_paren, inner_assign));
         }
-        // If the inner assignment consumed part but left comma-separated items before ')',
-        // collect them into a list (e.g. `(@a[1,2] := "a","b")` where RHS is a list).
-        if rest_inner.starts_with(',') && !rest_inner.starts_with(",,") {
-            // Re-wrap: the inner assignment's RHS should include the remaining items
-            if let Expr::IndexAssign {
-                target,
-                index,
-                value,
-                is_positional,
-                ..
-            } = inner_assign
-            {
-                let mut items = vec![*value];
-                let mut r = rest_inner;
-                while r.starts_with(',') && !r.starts_with(",,") {
-                    let (r2, _) = parse_char(r, ',')?;
-                    let (r2, _) = ws(r2)?;
-                    if r2.starts_with(')') {
-                        r = r2;
-                        break;
-                    }
-                    let (r2, item) = expression_no_sequence(r2)?;
-                    items.push(item);
-                    let (r2, _) = ws(r2)?;
-                    r = r2;
-                }
-                let (r, _) = parse_char(r, ')')?;
-                return Ok((
-                    r,
-                    Expr::IndexAssign {
-                        target,
-                        index,
-                        value: Box::new(Expr::ArrayLiteral(items)),
-                        is_positional,
-                        spelling: Default::default(),
-                    },
-                ));
-            } else if let Expr::AssignExpr {
-                name,
-                expr,
-                is_bind,
-            } = inner_assign
-            {
-                // Item assignment (`=`) to a SCALAR is tighter than the comma, so
-                // `($x = l(), 3, 4)` parses as `(($x = l()), 3, 4)` -- a list whose
-                // first element is the assignment. Only an `@`/`%` (list) LHS
-                // absorbs the trailing comma items into its RHS
-                // (`(@a = 1, 2)` -> `@a = (1, 2)`). A `:=` bind also absorbs.
-                let scalar_item_assign =
-                    !is_bind && !name.starts_with('@') && !name.starts_with('%');
-                let mut items = if scalar_item_assign {
-                    vec![Expr::AssignExpr {
-                        name: name.clone(),
-                        expr,
-                        is_bind,
-                    }]
-                } else {
-                    vec![*expr]
-                };
-                let mut r = rest_inner;
-                while r.starts_with(',') && !r.starts_with(",,") {
-                    let (r2, _) = parse_char(r, ',')?;
-                    let (r2, _) = ws(r2)?;
-                    if r2.starts_with(')') {
-                        r = r2;
-                        break;
-                    }
-                    let (r2, item) = expression_no_sequence(r2)?;
-                    items.push(item);
-                    let (r2, _) = ws(r2)?;
-                    r = r2;
-                }
-                let (r, _) = parse_char(r, ')')?;
-                if scalar_item_assign {
-                    return Ok((r, Expr::ArrayLiteral(items)));
-                }
-                // Wrap in Grouped so that expand_call_arg does not split the
-                // parenthesized assignment's RHS back into separate call args.
-                return Ok((
-                    r,
-                    Expr::Grouped(Box::new(Expr::AssignExpr {
-                        name,
-                        expr: Box::new(Expr::ArrayLiteral(items)),
-                        is_bind: false,
-                    })),
-                ));
-            }
-        }
     }
     let (rest, lhs) = expression_no_sequence(rest)?;
     let (rest, _) = ws(rest)?;
@@ -189,7 +101,12 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
     }
     // The typed assignment node, target as written; its lowering owns the
     // per-target dispatch (`rakuast::assign_lower`).
-    if crate::rakuast::is_expression_assign_target(&lhs)
+    // A parenthesised `(&f = SUB)` is always an assignment to the routine
+    // variable (`lower_expression` writes a `&` target as an `AssignExpr`);
+    // outside parentheses a `&f` before `=` is left to the caller (`my $a
+    // where &even = 6`), so the expression target set does not list it.
+    if matches!(lhs, Expr::CodeVar(_))
+        || crate::rakuast::is_expression_assign_target(&lhs)
         || crate::rakuast::is_callable_lvalue_assign_target(&lhs)
     {
         return Ok((rest, super::written_assignment(lhs, rhs)));

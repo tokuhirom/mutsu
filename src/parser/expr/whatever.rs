@@ -135,7 +135,7 @@ pub(crate) fn fat_arrow_curries(left: &Expr, right: &Expr) -> bool {
     operand_curries(left) || operand_curries(right)
 }
 
-fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
+pub(crate) fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
     match expr.peel_parens() {
         Expr::Binary {
             left,
@@ -154,6 +154,11 @@ fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
                 || contains_xx_with_bare_whatever(right)
         }
         Expr::Unary { expr, .. } => contains_xx_with_bare_whatever(expr),
+        // `(1 xx *) Z <a b>`: a meta operator's operands are curry-spine
+        // positions too, so the infinite repeat inside them stays a repeat.
+        Expr::MetaOp { left, right, .. } => {
+            contains_xx_with_bare_whatever(left) || contains_xx_with_bare_whatever(right)
+        }
         // Follow only the curry spine (the operand positions `contains_whatever`
         // follows): a method/call/subscript *argument* is its own expression, so
         // a `1 xx *` there (`*.push(1 xx *)`) does not stop the target currying.
@@ -207,7 +212,14 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
         // an operand that can prime the complete read-modify-write expression.
         // The source marker is retained for RakuAST; closure construction later
         // rebuilds its execution expansion from this RHS.
-        Expr::CompoundAssign { rhs, .. } => contains_whatever(rhs) || is_wrapped_whatevercode(rhs),
+        Expr::CompoundAssign { target, rhs, .. } => {
+            // A bare `*` target keeps its own one-parameter expansion
+            // (`build_compound_assign_expr`); only a compound one (`*.name`,
+            // `*[0]`) primes the expression.
+            (!is_whatever(target) && contains_whatever(target))
+                || contains_whatever(rhs)
+                || is_wrapped_whatevercode(rhs)
+        }
         e if is_whatever(e) || matches!(e, Expr::HyperWhatever) => true,
         // Thunk barriers (`&&`, `||`, `//`, `and`, `or`, `andthen`, `orelse`,
         // `notandthen`, and the ternary) are **opaque** to the enclosing

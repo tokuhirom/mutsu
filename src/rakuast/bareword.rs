@@ -14,6 +14,7 @@ use std::collections::HashMap;
 
 use super::convert::{leaf_field, name_from_identifier, node_field};
 use super::{RakuAstClass, RakuAstNode, core_term_names, core_type_names, name_parts};
+use crate::ast::var_marks::TermMark;
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_param, walk_stmt, walk_stmts};
 use crate::qualified::qualified;
@@ -35,7 +36,7 @@ use crate::value::Value;
 mod caller_names;
 mod package_alias;
 
-pub(super) use caller_names::CallerNames;
+pub(super) use caller_names::{CallerNames, CallerTraitTypes};
 
 /// What a bareword naming something the same compilation unit declared means.
 ///
@@ -151,9 +152,10 @@ impl BlockScope {
                 Stmt::VarDecl {
                     name,
                     custom_traits,
+                    constant,
                     expr,
                     ..
-                } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
+                } if constant.is_some() => {
                     own.insert(name.clone(), constant_kind(expr));
                 }
                 _ => {}
@@ -183,11 +185,14 @@ fn declared_kind(name: &str) -> Option<DeclaredKind> {
 }
 
 /// Whether `name` names a type at parse time: a builtin type or one the unit
-/// declares. Rakudo's `is NAME` trait takes this test to choose between a
-/// container type (`Trait::Is(type => …)`) and a named trait.
+/// declares or imports (the parser's user-type registry). Rakudo's `is NAME` trait takes
+/// this test to choose between a container type (`Trait::Is(type => …)`) and a named trait.
 // Cost: O(k), k = length of `name`.
 pub(super) fn names_type(name: &str) -> bool {
-    setting_type(name) || declared_kind(name) == Some(DeclaredKind::Type)
+    setting_type(name)
+        || declared_kind(name) == Some(DeclaredKind::Type)
+        || crate::parser::is_user_declared_type(name)
+        || caller_names::declares_trait_type(name)
 }
 
 /// Whether a `::`-qualified package name resolves at parse time: a run of
@@ -336,16 +341,17 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                     }
                 }
                 // A method literal's folded sigilless invocant is a bind
-                // followed by this marker, just like any other term binding.
-                Stmt::MarkSigilless(name) | Stmt::MarkSigillessReadonly(name) => {
+                // marked as a term, just like any other term binding.
+                Stmt::VarDecl { name, marks, .. } if marks.term != TermMark::No => {
                     insert_term(self.0, name.clone());
                 }
                 Stmt::VarDecl {
                     name,
                     custom_traits,
+                    constant,
                     expr,
                     ..
-                } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
+                } if constant.is_some() => {
                     self.0.insert(name.clone(), constant_kind(expr));
                     if let Expr::BareWord(target) = expr {
                         self.2.push(package_alias::PackageAlias {

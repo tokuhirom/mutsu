@@ -224,6 +224,7 @@ pub(crate) fn op_prec_trait(
         is_test_assertion: false,
         is_rw: false,
         is_raw: false,
+        is_hidden_from_backtrace: false,
         return_type: None,
         associativity: associativity.cloned(),
         custom_traits: Vec::new(),
@@ -391,6 +392,7 @@ pub(crate) fn sub_decl_body(
             return Ok((
                 rest,
                 Stmt::SubDecl {
+                    is_hidden_from_backtrace: traits.is_hidden_from_backtrace,
                     spans: Default::default(),
                     name: Symbol::intern(&name),
                     name_expr,
@@ -438,6 +440,7 @@ pub(crate) fn sub_decl_body(
         return Ok((
             rest,
             Stmt::SubDecl {
+                is_hidden_from_backtrace: traits.is_hidden_from_backtrace,
                 spans: Default::default(),
                 name: Symbol::intern(&name),
                 name_expr,
@@ -486,6 +489,7 @@ pub(crate) fn sub_decl_body(
             return Ok((
                 rest,
                 Stmt::SubDecl {
+                    is_hidden_from_backtrace: traits.is_hidden_from_backtrace,
                     spans: Default::default(),
                     name: Symbol::intern(&name),
                     name_expr,
@@ -576,6 +580,7 @@ pub(crate) fn sub_decl_body(
         &body,
     );
     let sub_decl = Stmt::SubDecl {
+        is_hidden_from_backtrace: traits.is_hidden_from_backtrace,
         spans,
         name: sub_name_sym,
         name_expr,

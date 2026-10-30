@@ -299,6 +299,9 @@ impl Interpreter {
             "$*STACK-ID" | "*STACK-ID" => {
                 Value::int(crate::runtime::stack_id::current_stack_id() as i64)
             }
+            // `$*CU`: the unit being compiled, for BEGIN-time code and what
+            // `use` runs while it compiles (`unit_source_text`).
+            "$*CU" | "*CU" => return crate::unit_source_text::compile_time_cu(),
             "*USER" => Self::cached_user_instance(),
             "*GROUP" => Self::cached_group_instance(),
             _ => return None,
@@ -504,14 +507,18 @@ impl Interpreter {
             // mutations were lost (only the last write survived). Reconcile the
             // caller frame afterwards so the accumulation persists (Slice F).
             let caller_code = self.current_code;
-            if self
-                .call_method_with_values(handle, "print", vec![Value::str(payload.clone())])
-                .is_ok()
-            {
-                self.reconcile_caller_after_internal_dispatch(caller_code);
-                return Ok(());
-            }
+            let printed =
+                self.call_method_with_values(handle, "print", vec![Value::str(payload.clone())]);
             self.reconcile_caller_after_internal_dispatch(caller_code);
+            match printed {
+                Ok(_) => return Ok(()),
+                // The handle has no usable `print` at all: the text goes to
+                // the real stream. An exception the handle's own `print` threw
+                // propagates (`my $*OUT = class { method print(|) { die ... } }`
+                // is how Red forbids output inside a `map` block).
+                Err(e) if e.is_method_not_found() || e.is_multi_no_match() => {}
+                Err(e) => return Err(e),
+            }
             if name == "$*ERR" {
                 self.output_sink_mut().stderr_output.push_str(&payload);
             }
@@ -743,6 +750,18 @@ impl Interpreter {
     /// Stringify a value by calling .Str method (used by put/print).
     /// Falls back to to_string_value() if .Str method dispatch fails.
     pub(crate) fn render_str_value(&mut self, value: &Value) -> String {
+        self.render_str_value_checked(value)
+            .unwrap_or_else(|_| value.to_string_value())
+    }
+
+    /// [`Self::render_str_value`] that reports a user `Str` answering an
+    /// object it cannot unbox to a native string (#15117), as `print`/`put`
+    /// do in rakudo.
+    // Cost: as the `Str` call it makes.
+    pub(crate) fn render_str_value_checked(
+        &mut self,
+        value: &Value,
+    ) -> Result<String, RuntimeError> {
         // See `render_gist_value`: a container renders as what it holds.
         let deref;
         let value = if value.is_container_ref() {
@@ -753,7 +772,7 @@ impl Interpreter {
         };
         // A user `^find_method` answers `.Str` (`find_method_intercept`).
         if let Some(Ok(r)) = self.user_find_method_stringify(value, "Str") {
-            return r.to_string_value();
+            return crate::runtime::unbox_str_answer(&r);
         }
         // Printing a type object stringifies to "" with rakudo's
         // uninitialized-value warning suggesting .^name/.raku/.gist/.say —
@@ -765,16 +784,17 @@ impl Interpreter {
             if self.has_user_method(&n, "Str")
                 && let Ok(r) = self.call_method_with_values(value.clone(), "Str", vec![])
             {
-                return r.to_string_value();
+                return crate::runtime::unbox_str_answer(&r);
             }
-            return self
+            return Ok(self
                 .warn_type_object_string_context(&n, false)
                 .map(|v| v.to_string_value())
-                .unwrap_or_default();
+                .unwrap_or_default());
         }
-        self.call_method_with_values(value.clone(), "Str", vec![])
-            .map(|result| result.to_string_value())
-            .unwrap_or_else(|_| value.to_string_value())
+        match self.call_method_with_values(value.clone(), "Str", vec![]) {
+            Ok(result) => crate::runtime::unbox_str_answer(&result),
+            Err(_) => Ok(value.to_string_value()),
+        }
     }
 
     pub(super) fn get_dynamic_string(&self, name: &str) -> Option<String> {

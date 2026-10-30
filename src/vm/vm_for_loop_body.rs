@@ -333,7 +333,7 @@ impl Interpreter {
         let container_reversed = self.topic_state.container_ref_reversed;
         self.topic_state.container_ref_reversed = false;
         // ADR-0045 slice 6: a multi-parameter rw loop binds through the
-        // bind-prefix `MarkBind` declarations, which read out of the CHUNK. So
+        // bound declarations, which read out of the CHUNK. So
         // the source's elements must be promoted before the chunk is built —
         // promoting the chunk itself would alias the temporary. Doing it here
         // is what retires the last surviving arm of the writeback family; see
@@ -677,7 +677,7 @@ impl Interpreter {
         // owns a DISTINCT container per iteration. Mutations write through the
         // shared backing node (container identity §3), so binding the element
         // value as-is would let `@row[0] = v` reach the source element.
-        let param_is_copy = spec.is_rw && !spec.do_writeback;
+        let param_is_copy = spec.is_rw && !spec.do_writeback && !spec.param_raw;
         // ADR-0045 slices 1-3: an aliasing binding — `is rw` / `<->` /
         // sigilless `\v`, or the implicit topic — over a real mutable
         // `Array`/`Hash` source binds the element's own `ContainerRef` instead
@@ -761,8 +761,16 @@ impl Interpreter {
                     break;
                 }
             };
-            let mut item = if param_is_copy {
+            // Only an `@`/`%` copy parameter owns a fresh aggregate; `-> $t is
+            // copy` copies the Scalar and keeps the same Array/Hash object
+            // (`$t === $outer`, `$t.push` reaching the caller), as in rakudo.
+            let copies_aggregate = param_name
+                .as_deref()
+                .is_none_or(|name| name.starts_with(['@', '%']));
+            let mut item = if param_is_copy && copies_aggregate {
                 item.deref_container().detach_shared_container()
+            } else if param_is_copy {
+                item.deref_container()
             } else {
                 item
             };

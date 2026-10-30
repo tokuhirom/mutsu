@@ -320,6 +320,23 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
+    // `@%h`: list-contextualize the hash variable (`@%h` is `%h.list`).
+    if twigil.is_empty()
+        && rest.starts_with('%')
+        && let Ok((r2, expr @ Expr::HashVar(_))) = hash_var(rest)
+    {
+        return Ok((
+            r2,
+            Expr::MethodCall {
+                target: Box::new(expr),
+                name: crate::symbol::Symbol::intern("list"),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+                sugar: true,
+            },
+        ));
+    }
     // `@{...}` is either Raku's list contextualizer over the `{...}` circumfix
     // (`@{:a, :b}` is the two-pair list) or the Perl 5 array dereference. The
     // guard that tells them apart is rakudo's own — see `is_brace_contextualizer`.
@@ -363,12 +380,42 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
+    // `@%hash` applies list context to a hash variable (`.list`).
+    if twigil.is_empty()
+        && rest.starts_with('%')
+        && rest[1..]
+            .chars()
+            .next()
+            .is_some_and(is_raku_identifier_start)
+        && let Ok((r2, expr)) = hash_var(rest)
+    {
+        return Ok((
+            r2,
+            Expr::MethodCall {
+                target: Box::new(expr),
+                name: crate::symbol::Symbol::intern("list"),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+                sugar: false,
+            },
+        ));
+    }
     // `@@array` applies list context to an array variable.  It is equivalent
     // to `@array` for an ordinary array, but the second sigil still belongs to
     // the variable name: without this, the first `@` falls through as an
     // anonymous array and leaves `@array` as a discarded following term.
     if twigil.is_empty() && rest.starts_with('@') {
-        return array_var(rest);
+        let (after, var) = array_var(rest)?;
+        // `@@x` is `@(@x)`: a user `Positional` bound to `@x` answers its
+        // `.list` (an Array is its own list context).
+        return Ok((
+            after,
+            Expr::Contextualizer {
+                kind: crate::ast::ContextKind::List,
+                inner: Box::new(Expr::Grouped(Box::new(var))),
+            },
+        ));
     }
     // Bare @ (anonymous array variable) — each occurrence gets a unique name
     let next_is_ident =
@@ -470,6 +517,24 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // `%@a` / `%%h`-style stacked sigils: hash-contextualize the inner variable
+    // (`%@a` is `@a.hash`).
+    if twigil.is_empty()
+        && rest.starts_with('@')
+        && let Ok((r2, expr)) = array_var(rest)
+    {
+        return Ok((
+            r2,
+            Expr::MethodCall {
+                target: Box::new(expr),
+                name: crate::symbol::Symbol::intern("hash"),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+                sugar: false,
+            },
+        ));
+    }
     // %{...} — hash coercion of a block expression
     // In Raku, %{expr} treats the block as a hash initializer.
     if twigil.is_empty()
@@ -508,6 +573,27 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
+    }
+    // `%@array` applies hash context to an array variable (`.hash`).
+    if twigil.is_empty()
+        && rest.starts_with('@')
+        && rest[1..]
+            .chars()
+            .next()
+            .is_some_and(is_raku_identifier_start)
+        && let Ok((r2, expr)) = array_var(rest)
+    {
+        return Ok((
+            r2,
+            Expr::MethodCall {
+                target: Box::new(expr),
+                name: crate::symbol::Symbol::intern("hash"),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+                sugar: false,
+            },
+        ));
     }
     // `%%hash` applies hash context to a hash variable, and a bare `%%` is the
     // anonymous hash (an empty Hash term), mirroring `@@` above.  Only reached
@@ -785,8 +871,25 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
                         continue;
                     }
                     // This is the final name
-                    qualified.push_str(&normalize_raku_identifier(ident));
                     pos += ident.len();
+                    // `&CORE::infix:<+>`: the operator suffix follows the
+                    // category, as in the package-qualified form below.
+                    if matches!(
+                        ident,
+                        "infix"
+                            | "prefix"
+                            | "postfix"
+                            | "term"
+                            | "circumfix"
+                            | "postcircumfix"
+                            | "trait_mod"
+                    ) && let Some((r, OperatorCodeRefSuffix::Static(op_name))) =
+                        parse_operator_code_ref_suffix(ident, &input[pos..])
+                    {
+                        qualified.push_str(&op_name);
+                        return Ok((r, Expr::CodeVar(qualified)));
+                    }
+                    qualified.push_str(&normalize_raku_identifier(ident));
                     return Ok((&input[pos..], Expr::CodeVar(qualified)));
                 }
                 break;
@@ -946,7 +1049,8 @@ fn parse_operator_code_ref_suffix<'a>(
         let name_expr = crate::parser::primary::quote_adverbs::process_content_with_flags(
             symbol,
             &crate::parser::primary::quote_adverbs::QuoteFlags::qq_double(),
-        );
+        )
+        .ok()?;
         return Some((after_close, OperatorCodeRefSuffix::Dynamic(name_expr)));
     }
 
@@ -984,7 +1088,8 @@ fn parse_operator_code_ref_suffix<'a>(
         let name_expr = crate::parser::primary::quote_adverbs::process_content_with_flags(
             symbol,
             &crate::parser::primary::quote_adverbs::QuoteFlags::qq_double(),
-        );
+        )
+        .ok()?;
         return Some((after_close, OperatorCodeRefSuffix::Dynamic(name_expr)));
     }
 

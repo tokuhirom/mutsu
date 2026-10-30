@@ -31,6 +31,9 @@ pub(crate) fn shadow_slots_active() -> bool {
 }
 
 #[cfg(test)]
+mod readonly_code_param_tests;
+
+#[cfg(test)]
 mod declaration_plan_tests {
     use super::Compiler;
     use crate::ast::Stmt;
@@ -581,7 +584,7 @@ mod declaration_plan_tests {
             typed[10],
             ClassBodyOp::Attr { name, .. } if name.as_str() == "v"
         ));
-        // `my ($p, $q) := ...` nests its `MarkBind` group inside the outer
+        // `my ($p, $q) := ...` nests its bind group inside the outer
         // destructuring `SyntheticBlock`: the outer one is looked through, the
         // bind group stays one `Other` op so it compiles with its context.
         let bind_groups = plan_a
@@ -589,14 +592,14 @@ mod declaration_plan_tests {
             .iter()
             .filter(|op| {
                 matches!(op, ClassBodyOp::Other { raw: Stmt::SyntheticBlock(inner), .. }
-                    if matches!(inner.first(), Some(Stmt::MarkBind)))
+                    if crate::ast::var_marks::is_bind_group(inner))
             })
             .count();
         assert_eq!(bind_groups, 1);
         assert!(!plan_a.body_plan.iter().any(|op| matches!(
             op,
             ClassBodyOp::Other { raw: Stmt::SyntheticBlock(inner), .. }
-                if !matches!(inner.first(), Some(Stmt::MarkBind))
+                if !crate::ast::var_marks::is_bind_group(inner)
         )));
     }
 
@@ -845,7 +848,7 @@ mod declaration_plan_tests {
             role R does Some {
                 has $.x;
                 method m { 42 }
-                does Baz;
+                also does Baz;
                 say "hi";
             }
             "#,
@@ -1370,7 +1373,7 @@ pub(crate) struct Compiler {
     /// therefore back-fills its keys into the matching hoisted plan (same name
     /// and same `sub_registration_fingerprint`, i.e. the same declaration).
     hoisted_sub_plans: Vec<(crate::symbol::Symbol, u64, u32)>,
-    /// `__hoisted` class/role shell registrations emitted by
+    /// hoisted class/role shell registrations emitted by
     /// `hoist_type_decl_shells`, as `(decl_id, decl plan index)`. The shell
     /// carries a subset of the source-order declaration's body, so when that
     /// declaration's env-sync reads are bounded the shell's are too, and the
@@ -1484,6 +1487,11 @@ pub(crate) struct Compiler {
     /// Expression declarations inside a synthesized WhateverCode belong to the
     /// surrounding source block and therefore store through its captured slot.
     promoted_expr_decl_names: HashSet<String>,
+    /// `@`/`%` names whose `my @a = <initializer>` / `our @a = ...` is being
+    /// compiled right now (here or in an enclosing frame). A closure created by
+    /// that initializer reads the declared container after the store, so
+    /// `compute_upvalues` must not freeze it into a snapshot (#15387).
+    decl_initializer_aggregates: Vec<String>,
     /// Inline scalar declarations currently compiled as call arguments need
     /// a lexical slot so their VarRef can identify a writable container.
     call_arg_decl_slots: HashSet<String>,
@@ -1608,28 +1616,6 @@ pub(crate) struct Compiler {
     /// placeholder. This is set only while compiling that closure and is
     /// resolved through the lexical `OUTERS::<%_>` path.
     pub(crate) capture_enclosing_method_named_args: bool,
-    /// True when the enclosing routine's own signature declares a parameter
-    /// spelled `$self` — an explicit invocant (`method m($self: $n)`,
-    /// `method symbol(::?CLASS $self: ...)`) or an ordinary parameter
-    /// (`sub ($self)`, `-> $self, $x`). A parser-synthesized *anonymous*
-    /// invocant (`method () {}`, `method (Foo:D:)`, `method (::?CLASS:)`) is
-    /// excluded: it is named `self` only because that is the invocant's env key,
-    /// and it declares no lexical.
-    ///
-    /// Such a parameter is named `self` in `ParamDef`. Plain routines bind it
-    /// under the ordinary `"self"` key, while methods keep the parser's
-    /// reserved [`crate::env::LEX_SELF`] key separate from their implicit
-    /// invocant. Inherited by nested blocks and closures, exactly like the
-    /// lexical scope it describes.
-    pub(crate) self_is_signature_param: bool,
-    /// When true, the current VarDecl is from a `:=` bind declaration.
-    bind_vardecl: bool,
-    /// When true, the current VarDecl is a `:=` bind whose target is a
-    /// SIGILLESS term (`my \a := ...`, or a sigilless target of a
-    /// list-destructuring bind). Set by the enclosing `SyntheticBlock`, which is
-    /// the only place that knows -- the trailing `MarkSigilless` compiles after
-    /// the declaration. One-shot, like [`Self::bind_vardecl`].
-    sigilless_bind_vardecl: bool,
     /// True while compiling a terminal subscript whose consumer settles its own
     /// writability from the element it receives — the RHS of a `:=`
     /// DECLARATION (`my \a := ...`, `my $x := ...`) and a `return-rw` operand —
@@ -1713,6 +1699,10 @@ pub(crate) struct Compiler {
     /// `compile_call_arg` keeps its tag, which the binder reads to make the
     /// alias readonly.
     call_arg_direct: bool,
+    /// The registration pass the next `SubDecl` this compiler lowers is for
+    /// (set by the class-body hoist chunk, consumed by that declaration so a
+    /// nested one is not affected).
+    next_sub_decl_pass: crate::ast::DeclPass,
     /// When true, a scalar root of the source indexed assignment in a nested
     /// indexed bind must be promoted to a shared container before its path is
     /// evaluated. Ordinary bind chains retain their deferred-local fast path.
@@ -1858,11 +1848,6 @@ pub(crate) struct Compiler {
     /// degrade to the literal name string once the creating frame is gone
     /// (escaping closure / `.^add_method`).
     enclosing_sigilless: std::collections::HashSet<String>,
-    /// Set just before compiling a `VarDecl` that declares a sigilless TERM
-    /// (`my \x`, a `with`/`if` pointy `-> \x`): the parser spells it bare,
-    /// like a scalar `my $x`, and this is what stores it under the term key
-    /// instead (ADR-12441).
-    decl_is_term: bool,
     /// Local names visible in enclosing compiled frames. A same-named local
     /// declaration in this compiler shadows a captured binding even though the
     /// outer binding has no slot in this chunk.
@@ -1881,6 +1866,10 @@ pub(crate) struct Compiler {
     /// (`package P { for @a <-> $v { $v = 9 } }` wrote `$P::v`, losing the rw
     /// write-back).
     for_param_names: Vec<String>,
+    /// `&name` parameters (`&middleware`) a re-compile of a block body found
+    /// already bound in env, with no slot in the fresh compiler
+    /// (`seed_prebound_amp_params`).
+    prebound_amp_params: Vec<String>,
     /// Loop parameters of the `for` loops being compiled that live only in env
     /// by name (a single-parameter loop has no slot); a nested `my` of the same
     /// name shadows them, see [`Self::declare_local`].
@@ -2147,6 +2136,7 @@ impl Compiler {
             in_real_loop_body: false,
             next_scope_decl_transparent: false,
             promoted_expr_decl_names: HashSet::new(),
+            decl_initializer_aggregates: Vec::new(),
             call_arg_decl_slots: HashSet::new(),
             current_package_kind: None,
             enclosing_package: None,
@@ -2167,9 +2157,6 @@ impl Compiler {
             lexically_in_block: false,
             lexically_in_method: false,
             capture_enclosing_method_named_args: false,
-            self_is_signature_param: false,
-            bind_vardecl: false,
-            sigilless_bind_vardecl: false,
             raw_list_elem_terminal: false,
             do_stmt_yields_value: false,
             scalar_bind_autovivify: false,
@@ -2181,6 +2168,7 @@ impl Compiler {
             pending_rw_arg_list_callee: None,
             bind_target_direct: false,
             call_arg_direct: false,
+            next_sub_decl_pass: crate::ast::DeclPass::default(),
             compile_nested_index_bind_source: false,
             suppress_multidim_bind_ref_arg: false,
             mint_named_pair: false,
@@ -2203,11 +2191,11 @@ impl Compiler {
             outer_constant_names: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
             enclosing_sigilless: std::collections::HashSet::new(),
-            decl_is_term: false,
             enclosing_local_names: std::collections::HashSet::new(),
             implicit_underscore: false,
             enclosing_underscore_implicit: false,
             for_param_names: Vec::new(),
+            prebound_amp_params: Vec::new(),
             by_name_for_params: Vec::new(),
             lexical_sub_free_vars: Default::default(),
             lexical_sub_written_vars: Default::default(),
@@ -2880,6 +2868,16 @@ impl Compiler {
         self.enclosing_sigilless.extend(names.iter().cloned());
     }
 
+    /// Seed the `&name` parameters (`for @l -> &middleware`, `.map(-> &f {..})`)
+    /// a re-compile of a block body finds already bound in env: the fresh
+    /// compiler has no slot for them, but they are lexical bindings of the
+    /// body all the same (`bound_amp_reads`).
+    // Cost: O(p), p = parameters.
+    pub(crate) fn seed_prebound_amp_params(&mut self, params: &[String]) {
+        self.prebound_amp_params
+            .extend(params.iter().filter(|p| p.starts_with('&')).cloned());
+    }
+
     /// Seed the placeholder parameters an interpret-path caller has already
     /// BOUND (in env) before re-compiling a block body with a fresh compiler
     /// (`call_sub_value` → `eval_block_value`). The body of
@@ -3055,13 +3053,20 @@ impl Compiler {
                 if pd.named {
                     continue;
                 }
-                if let Some(&slot) = self.local_map.get(pd.storage_name().as_ref()) {
+                let key = pd.storage_name();
+                if let Some(&slot) = self.local_map.get(key.as_ref()) {
                     slots.push(slot);
                 }
             }
         } else {
+            let declares_self = crate::ast::param_names_declare_self_lexical(params);
             for param in params {
-                if let Some(&slot) = self.local_map.get(param) {
+                let key = if declares_self && param == "self" {
+                    crate::env::LEX_SELF
+                } else {
+                    param
+                };
+                if let Some(&slot) = self.local_map.get(key) {
                     slots.push(slot);
                 }
             }
@@ -3176,10 +3181,25 @@ impl Compiler {
     /// mentioned in a body is not a declaration of it (raku: `my $y = 7;
     /// sub f { say $y; { say $OUTER::y } }` prints 7 then Nil).
     /// Record `pd` in `CompiledCode::readonly_code_params` when it is an
-    /// `&`-parameter whose binding nothing can change: no `is copy`, `is rw`
-    /// or `is raw`.
+    /// `&`-parameter or a plain `$`-scalar parameter whose binding nothing can
+    /// change: no `is copy`, `is rw` or `is raw`.
+    ///
+    /// A scalar parameter is included so that a closure created in the routine
+    /// (`$!lock.protect: { ... $id ... }`) captures THIS invocation's value
+    /// rather than resolving the name later: a thread cloned while a caller
+    /// held a shared cell under the same name would otherwise answer that
+    /// cell's stale value (#15625).
     fn note_readonly_code_param(&mut self, pd: &crate::ast::ParamDef) {
-        if pd.name.starts_with('&')
+        let plain_scalar = !pd.sigilless
+            && !pd.slurpy
+            && !pd.double_slurpy
+            && pd.name != "_"
+            && pd
+                .name
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_');
+        if (pd.name.starts_with('&') || plain_scalar)
             && !pd
                 .traits
                 .iter()
@@ -3220,11 +3240,8 @@ impl Compiler {
 
     /// True when a signature declares a parameter the *source* spelled `$self` —
     /// an explicit invocant or an ordinary positional, but not a synthesized
-    /// anonymous invocant. Such a `ParamDef` is named `self`; plain routines
-    /// bind it under the ordinary env key `"self"`, while method binding keeps
-    /// it under [`crate::env::LEX_SELF`] so it cannot collide with the implicit
-    /// invocant. See [`Compiler::self_is_signature_param`],
-    /// [`crate::ast::ParamDef::declares_self_lexical`] and ADR-0061.
+    /// anonymous invocant. Its slot is the reserved [`crate::env::LEX_SELF`]
+    /// lexical ([`crate::ast::ParamDef::declares_self_lexical`], ADR-0061).
     pub(crate) fn signature_declares_self(
         params: &[String],
         param_defs: &[crate::ast::ParamDef],
@@ -3232,25 +3249,7 @@ impl Compiler {
         crate::ast::signature_declares_self_lexical(param_defs)
             // The legacy binding path only: a single pointy-block parameter
             // (`-> $self { }`) arrives as a bare name with no `ParamDef` at all.
-            // Whenever `param_defs` IS populated it is authoritative — a method
-            // literal (`method () { ... }`) carries `params = ["self"]` for its
-            // synthesized invocant, which declares no lexical.
             || (param_defs.is_empty() && crate::ast::param_names_declare_self_lexical(params))
-    }
-
-    /// Resolve the reserved `$self` lexical key ([`crate::env::LEX_SELF`]).
-    /// Methods have two distinct values when their signature contains an
-    /// ordinary `$self` parameter: the bare `self` term is the method's
-    /// invocant, while `$self` is that explicit parameter. Keep the reserved
-    /// key in method bytecode so those values cannot collide. Plain routines
-    /// retain the historical mapping to the ordinary `self` binding.
-    pub(crate) fn resolve_self_lexical<'a>(&self, name: &'a str) -> &'a str {
-        if self.self_is_signature_param && !self.lexically_in_method && name == crate::env::LEX_SELF
-        {
-            "self"
-        } else {
-            name
-        }
     }
 
     /// Emit a read of `bare` from the scope `depth` levels out (`$OUTER::x`,
@@ -3437,7 +3436,6 @@ impl Compiler {
             Some(attr) if attr.starts_with('!') => attr,
             _ => name,
         };
-        let name = self.resolve_self_lexical(name);
         if let Some(&slot) = self.local_map.get(name) {
             self.code.emit(OpCode::SetLocal(slot));
         } else if name.starts_with('!') && name.len() > 1 {
@@ -4299,7 +4297,7 @@ impl Compiler {
             // it instead, so each iteration gets a genuinely fresh container
             // and the outer variable is shadowed rather than clobbered. See
             // todo/tickets/for-multi-param-array-hash-shadow-clobbers-outer-container.md.
-            // `MarkBind` (the same marker `my @a := expr` uses) makes the
+            // a bound declaration (the same mark `my @a := expr` uses) makes the
             // declaration a raw bind rather than a `my @a = expr`-style
             // coercing assignment, which would collapse an already
             // element-typed source array (`array[int8]`) to a plain `Array`.
@@ -4311,7 +4309,7 @@ impl Compiler {
             // producer handed out arrived at `$v` as a bare value and the write
             // was lost, while the writeback that used to carry it had already
             // been retired for the iteration precisely BECAUSE the chunk carried
-            // a cell. `MarkBind` + a declaration is the shape that does not
+            // a cell. A bound declaration is the shape that does not
             // coerce, and `array_slot_ref` is idempotent, so binding
             // `_[1]` over a chunk holding a source cell aliases the SOURCE
             // element rather than the temporary chunk.
@@ -4327,10 +4325,10 @@ impl Compiler {
                         .get(i)
                         .is_some_and(|d| d.sigilless || d.traits.iter().any(|t| t == "rw")));
             let stmt = if actual_name.starts_with(['@', '%']) || rw_scalar_alias {
-                Stmt::SyntheticBlock(vec![
-                    Stmt::MarkBind,
-                    decl_stmt(actual_name.clone(), value_expr),
-                ])
+                Stmt::SyntheticBlock(vec![crate::ast::var_marks::with_bound_mark(decl_stmt(
+                    actual_name.clone(),
+                    value_expr,
+                ))])
             } else if actual_name == "_" {
                 bind_stmt(actual_name.clone(), value_expr)
             } else {
@@ -4359,30 +4357,34 @@ impl Compiler {
         // type object of the value its parameter received, like `my \T = $x.WHAT`.
         // A bare capture's parameter is named `__type_capture__T` by the parser.
         let capture_bind = |var: &str, cap: &str| {
-            Stmt::SyntheticBlock(vec![
-                Stmt::MarkBind,
-                Stmt::VarDecl {
-                    anonymous: false,
-                    name: cap.to_string(),
-                    expr: Expr::MethodCall {
-                        target: Box::new(Expr::Var(var.to_string())),
-                        name: Symbol::intern("WHAT"),
-                        args: Vec::new(),
-                        modifier: None,
-                        quoted: false,
-                        sugar: false,
-                    },
-                    type_constraint: None,
-                    is_state: false,
-                    is_our: false,
-                    is_dynamic: false,
-                    is_export: false,
-                    export_tags: Vec::new(),
-                    custom_traits: vec![("__has_initializer".to_string(), None)],
-                    where_constraint: None,
+            Stmt::SyntheticBlock(vec![Stmt::VarDecl {
+                marks: crate::ast::var_marks::VarMarks {
+                    bound: true,
+                    term: crate::ast::var_marks::TermMark::Bound,
+                    ..Default::default()
                 },
-                Stmt::MarkSigilless(cap.to_string()),
-            ])
+                anonymous: false,
+                name: cap.to_string(),
+                expr: Expr::MethodCall {
+                    target: Box::new(Expr::Var(var.to_string())),
+                    name: Symbol::intern("WHAT"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                    sugar: false,
+                },
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                has_initializer: true,
+                constant: None,
+                bind: None,
+                where_constraint: None,
+            }])
         };
         if let (Some(name), Some(def)) = (param, param_def)
             && let Some(cap) = &def.type_capture
@@ -5130,7 +5132,7 @@ impl Compiler {
                             // real `BlockScope` instead, which also delivers the
                             // block value via the topic (matching the SetTopic the
                             // inline path emits).
-                            if Self::has_block_enter_leave_phasers(body) {
+                            if Self::needs_phaser_block_scope(body) {
                                 self.compile_phaser_block_scope(
                                     body,
                                     PhaserBlockResult::ReturnViaTopic,
@@ -5240,6 +5242,9 @@ impl Compiler {
             }
         }
         self.record_unit_hidden_lexicals();
+        // A routine of this unit that names lexicals by string (`sub e($c) { EVAL $c }`)
+        // reads this unit's lexicals by name.
+        self.note_routines_naming_lexicals();
         self.code.compute_needs_env_sync();
         (self.code, self.compiled_functions)
     }

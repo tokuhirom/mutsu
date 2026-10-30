@@ -125,6 +125,26 @@ impl Compiler {
         package_body_lexicals: &std::collections::HashSet<String>,
         static_class: Option<(&str, bool)>,
     ) -> crate::opcode::CompiledDeclExpr {
+        let chunk_compiler = self.package_chunk_compiler(
+            package,
+            class_body_static_code_vars,
+            class_body_type_aliases,
+            package_body_lexicals,
+            static_class,
+        );
+        Self::compile_decl_chunk(chunk_compiler, stmts)
+    }
+
+    /// The child compiler of a package-scoped declaration chunk.
+    // Cost: O(v + a + l), v/a/l = the static code vars, type aliases and body lexicals.
+    fn package_chunk_compiler(
+        &self,
+        package: &str,
+        class_body_static_code_vars: &std::collections::HashSet<String>,
+        class_body_type_aliases: &std::collections::HashMap<String, String>,
+        package_body_lexicals: &std::collections::HashSet<String>,
+        static_class: Option<(&str, bool)>,
+    ) -> Compiler {
         let mut chunk_compiler = self.new_decl_chunk_compiler();
         chunk_compiler.set_current_package(package.to_string());
         chunk_compiler.static_class = static_class.map(|(name, _)| name.to_string());
@@ -134,6 +154,14 @@ impl Compiler {
         chunk_compiler
             .type_aliases
             .extend(class_body_type_aliases.clone());
+        chunk_compiler
+    }
+
+    // Cost: O(n), n = size of `stmts`.
+    fn compile_decl_chunk(
+        chunk_compiler: Compiler,
+        stmts: &[Stmt],
+    ) -> crate::opcode::CompiledDeclExpr {
         let (code, fns) = chunk_compiler.compile(stmts);
         crate::opcode::CompiledDeclExpr {
             code: std::sync::Arc::new(code),
@@ -190,7 +218,7 @@ impl Compiler {
     /// Lower a `SubDecl` into the declaration-plan pool, compiling its
     /// declaration-time expressions (computed name, custom-trait arguments) into
     /// child chunks first.
-    pub(crate) fn add_sub_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+    pub(crate) fn add_sub_decl_plan(&mut self, stmt: &Stmt, pass: crate::ast::DeclPass) -> u32 {
         let Stmt::SubDecl {
             name_expr,
             custom_traits,
@@ -208,13 +236,15 @@ impl Compiler {
         match self.with_param_type_aliases_resolved(stmt) {
             Some(resolved) => self
                 .code
-                .add_sub_decl_plan(&resolved, name_chunk, trait_args),
-            None => self.code.add_sub_decl_plan(stmt, name_chunk, trait_args),
+                .add_sub_decl_plan(&resolved, name_chunk, trait_args, pass),
+            None => self
+                .code
+                .add_sub_decl_plan(stmt, name_chunk, trait_args, pass),
         }
     }
 
     /// [`Self::add_sub_decl_plan`] for a class declaration.
-    pub(crate) fn add_class_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+    pub(crate) fn add_class_decl_plan(&mut self, stmt: &Stmt, pass: crate::ast::DeclPass) -> u32 {
         let expanded = Self::with_expression_methods(stmt);
         let stmt = expanded.as_ref().unwrap_or(stmt);
         let Stmt::ClassDecl {
@@ -226,6 +256,7 @@ impl Compiler {
             is_hidden,
             is_lexical,
             decl_id,
+            marks,
             ..
         } = stmt
         else {
@@ -241,7 +272,7 @@ impl Compiler {
         // a `class ::($n) {...}` has no compile-time-known package to key
         // method bodies under) gets its methods' bodies compiled here; the
         // computed-name case leaves every entry `None` and keeps using the
-        // registration-time throwaway compile. A `__hoisted` forward-reference
+        // registration-time throwaway compile. A hoisted forward-reference
         // shell (`hoist_type_decl_shells`) carries a full copy of every method
         // body too, but only the SOURCE-ORDER declaration's plan is ever the
         // one D3-8b/c would install from (the shell's own `RegisterDecl` is
@@ -252,7 +283,7 @@ impl Compiler {
         // keys to install from, that pass used to compile every body from
         // scratch and then have the whole `MethodDef` set thrown away
         // unread by the real declaration's registration.
-        let is_hoisted_shell = custom_traits.iter().any(|(t, _)| t == "__hoisted");
+        let is_hoisted_shell = pass.hoisted;
         // ADR-0019 D3-8d: a class declared inside a sub/method/closure body
         // (e.g. `subtest "..." => { my class C { ... } }`) compiles under a
         // synthetic STATE-SCOPE pseudo-package (`current_package` containing
@@ -278,9 +309,7 @@ impl Compiler {
         let lexical_type_short_name = lexical_type_name.as_deref().and_then(|name| {
             (self.in_unit_package
                 && !name.starts_with("GLOBAL::")
-                && !custom_traits
-                    .iter()
-                    .any(|(trait_name, _)| trait_name == "__source_compound_name"))
+                && marks.source_compound_name.is_none())
             .then(|| name.rsplit("::").next().unwrap_or(name).to_string())
         });
         let method_outer_lexical_slots = self.local_slots_by_name();
@@ -308,6 +337,7 @@ impl Compiler {
             method_compiled_keys,
             method_outer_lexical_slots,
             body_plan,
+            pass,
         )
     }
 
@@ -401,10 +431,9 @@ impl Compiler {
                     name,
                     expr: Expr::BareWord(target),
                     custom_traits,
+                    constant,
                     ..
-                } if custom_traits.iter().any(|(t, _)| t == "__constant")
-                    && !name.starts_with(['$', '@', '%', '&']) =>
-                {
+                } if constant.is_some() && !name.starts_with(['$', '@', '%', '&']) => {
                     Some((name.clone(), target.clone()))
                 }
                 _ => None,
@@ -466,13 +495,20 @@ impl Compiler {
                     Some((package_name, is_hidden)),
                 ));
                 let hoisted_raw = Self::hoisted_class_sub_decl(raw);
-                *hoist_chunk = Some(self.compile_decl_stmts_chunk_in_package(
-                    std::slice::from_ref(&hoisted_raw),
+                let mut hoist_compiler = self.package_chunk_compiler(
                     package_name,
                     &class_body_static_code_vars,
                     &class_body_type_aliases,
                     &body_lexicals,
                     Some((package_name, is_hidden)),
+                );
+                hoist_compiler.next_sub_decl_pass = crate::ast::DeclPass {
+                    hoisted: true,
+                    ..Default::default()
+                };
+                *hoist_chunk = Some(Self::compile_decl_chunk(
+                    hoist_compiler,
+                    std::slice::from_ref(&hoisted_raw),
                 ));
                 continue;
             }
@@ -494,11 +530,11 @@ impl Compiler {
         ops
     }
 
-    /// Clone a class-body `Stmt::SubDecl` with the `__hoisted` marker set and
-    /// user-defined custom traits stripped, mirroring the per-statement hoist
+    /// Clone a class-body `Stmt::SubDecl` (to be registered in the hoist pass)
+    /// with user-defined custom traits stripped, mirroring the per-statement hoist
     /// copy `Compiler::hoist_sub_decls` builds at the compilation-unit level
     /// (`lexical_hoist: false` — a class body is a package scope, not a
-    /// nested lexical one, so `__lexical_hoist`'s local-slot writeback does
+    /// nested lexical one, so lexical-hoist's local-slot writeback does
     /// not apply here). A custom trait like `is native(LIB)` may depend on a
     /// `use` that has not run yet this early; the in-sequence registration
     /// (the unmarked `chunk`, still compiled from `raw` unchanged) validates
@@ -506,9 +542,6 @@ impl Compiler {
     fn hoisted_class_sub_decl(raw: &Stmt) -> Stmt {
         let mut hoisted = raw.clone();
         if let Stmt::SubDecl { custom_traits, .. } = &mut hoisted {
-            if !custom_traits.iter().any(|(t, _)| t == "__hoisted") {
-                custom_traits.push(("__hoisted".to_string(), None));
-            }
             custom_traits.retain(|(t, _)| {
                 t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
             });
@@ -837,14 +870,16 @@ impl Compiler {
 
     /// [`Self::add_sub_decl_plan`] for a role declaration. A role's name is
     /// always compile-time known, so only its trait arguments are lowered.
-    pub(crate) fn add_role_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+    pub(crate) fn add_role_decl_plan(&mut self, stmt: &Stmt, pass: crate::ast::DeclPass) -> u32 {
         let expanded = Self::with_expression_methods(stmt);
         let stmt = expanded.as_ref().unwrap_or(stmt);
         let Stmt::RoleDecl {
             name,
             custom_traits,
+            is_lexical,
             body,
             type_param_defs,
+            marks,
             ..
         } = stmt
         else {
@@ -860,8 +895,8 @@ impl Compiler {
         // walker) — see its doc comment — so mirror both here exactly. Skip
         // the (otherwise fully redundant — the role hoist shell keeps the
         // whole original body, unlike the class shell) compile for a
-        // `__hoisted` forward-reference shell, mirroring `add_class_decl_plan`.
-        let is_hoisted_shell = custom_traits.iter().any(|(t, _)| t == "__hoisted");
+        // hoisted forward-reference shell, mirroring `add_class_decl_plan`.
+        let is_hoisted_shell = pass.hoisted;
         // ADR-0019 D3-8d: see `add_class_decl_plan`'s identical comment — a
         // role declared inside a sub/closure body (e.g. `subtest "..." => {
         // my role R { ... } }`) compiles under a synthetic STATE-SCOPE
@@ -873,16 +908,11 @@ impl Compiler {
         } else {
             Some(self.declared_type_name(&name.resolve(), self.decl_name_is_prequalified()))
         };
-        let lexical_type_name = custom_traits
-            .iter()
-            .any(|(trait_name, _)| trait_name == "__my_scoped")
-            .then(|| name.resolve());
+        let lexical_type_name = is_lexical.then(|| name.resolve());
         let lexical_type_short_name = lexical_type_name.as_deref().and_then(|name| {
             (self.in_unit_package
                 && !name.starts_with("GLOBAL::")
-                && !custom_traits
-                    .iter()
-                    .any(|(trait_name, _)| trait_name == "__source_compound_name"))
+                && marks.source_compound_name.is_none())
             .then(|| name.rsplit("::").next().unwrap_or(name).to_string())
         });
         let role_param_scope: crate::compiler::lex_scope::ScopeFrame = type_param_defs
@@ -922,7 +952,7 @@ impl Compiler {
         // the narrow window in between), `deferred_body_ops` is
         // the ONLY source `run_role_body_for_composition`/
         // `run_composed_role_deferred_body` read since D8-2's consumer
-        // cutover. A role's `__hoisted` shell is not a throwaway stub the
+        // cutover. A role's hoisted shell is not a throwaway stub the
         // way a class's is — it "keeps the whole original body" (D3-8a's
         // comment above) and is the SAME plan the real, source-position
         // declaration re-registers from (confirmed via `rust-gdb`:
@@ -952,6 +982,7 @@ impl Compiler {
             method_compiled_keys,
             method_outer_lexical_slots,
             deferred_body_ops,
+            pass,
         )
     }
 

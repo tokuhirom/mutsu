@@ -203,8 +203,8 @@ impl Interpreter {
                 crate::value::RoutinePrototype::new(site, method_cell.clone()))),
             syms: Default::default(),
             lexical_package: crate::symbol::Symbol::intern(&cx.saved_package),
-            params: effective_params.clone(),
-            param_defs: effective_param_defs.clone(),
+            params: (effective_params.clone()).into(),
+            param_defs: (effective_param_defs.clone()).into(),
             body: std::sync::Arc::new(if needs_placeholder_die {
                 crate::method_signature_shared::direct_positional_placeholder_die_body()
             } else {
@@ -325,10 +325,8 @@ impl Interpreter {
             );
         }
         // Apply custom trait_mod:<is> for each non-builtin trait on methods.
-        // `__`-prefixed entries are internal parser markers (the
-        // `__return_via_trait` / `__return_via_of` return-type spelling the
-        // RakuAST converter reads), never user traits, so they never reach a
-        // user `trait_mod:<is>` candidate.
+        // `__`-prefixed entries are internal parser markers, never user
+        // traits, so they never reach a user `trait_mod:<is>` candidate.
         self.apply_method_is_traits(
             cx.name,
             &resolved_method_name,
@@ -471,6 +469,20 @@ impl Interpreter {
                 body_facts_cache: std::sync::OnceLock::new(),
                 routine_cell: Default::default(),
             };
+            // The class body's registry restore drops the short name, but the
+            // methods of the class are closures over this scope: carry the
+            // routine in the env under the reserved block-lexical key, the way
+            // a `my sub` of the body does, so `foo(self)` / `&foo` resolve from
+            // a sibling method (Proxy's `callwith :&FETCH, :&STORE`).
+            let lexical_sub = self.sub_value_from_function_def(func_def.clone());
+            self.env.insert(
+                format!("{}{resolved_method_name}", crate::env::CLASS_LEXICAL_METHOD_PREFIX),
+                lexical_sub.clone(),
+            );
+            self.env.insert(
+                format!("{}{resolved_method_name}", crate::env::BLOCK_LEXICAL_SUB_PREFIX),
+                lexical_sub,
+            );
             // Register under the short name (lexical scope)
             self.registry_mut().functions_mut().insert(
                 Symbol::intern(&resolved_method_name),

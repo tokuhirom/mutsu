@@ -9,14 +9,13 @@
 //! HOW itself is not part of the rendered tree, and `.parsed-declarator`
 //! answers the plain keyword (`"class"`, `"role"`, `"grammar"`) otherwise.
 //!
-//! The parser records the keyword as the `DECLARE_HOW_TRAIT` marker, which is
+//! The parser records the keyword as `PackageMarks::declarator`, which is
 //! exactly that field: conversion renders it, lowering hands it back, and
 //! registration resolves the HOW from the keyword as for a parsed declaration.
 
 use super::convert::leaf_field;
 use super::lower::leaf_str;
 use super::{RakuAstClass, RakuAstField, RakuAstNode};
-use crate::ast::Expr;
 use crate::value::{RuntimeError, Value};
 
 /// The keyword a package node of `class` declares with when it is written
@@ -35,14 +34,14 @@ fn default_declarator(class: RakuAstClass) -> &'static str {
 // Cost: O(f + t), f = number of fields, t = number of custom traits.
 pub(super) fn add_field(
     fields: &mut Vec<RakuAstField>,
-    custom_traits: &[(String, Option<Expr>)],
+    declarator: Option<&str>,
     default_declarator: &str,
 ) {
-    let Some(keyword) = crate::parser::declare_how_keyword(custom_traits) else {
+    let Some(keyword) = declarator else {
         return;
     };
     if keyword == default_declarator {
-        if crate::parser::supersede_marker(default_declarator).is_some() {
+        if crate::parser::superseded_declarator(default_declarator).is_some() {
             fields.push(super::routine_source::package_supersede_field());
         }
         return;
@@ -50,14 +49,14 @@ pub(super) fn add_field(
     let at = usize::from(fields.first().is_some_and(|f| f.name == Some("scope")));
     fields.insert(
         at,
-        leaf_field(Some("parsed-declarator"), Value::str(keyword)),
+        leaf_field(Some("parsed-declarator"), Value::str_from(keyword)),
     );
 }
 
 /// The parser's marker for a package node's `parsed-declarator`, or `None`
 /// when the node is written with its built-in declarator.
 // Cost: O(f), f = number of fields.
-pub(super) fn marker(node: &RakuAstNode) -> Result<Option<(String, Option<Expr>)>, RuntimeError> {
+pub(super) fn marker(node: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
     if !node
         .fields
         .iter()
@@ -66,6 +65,5 @@ pub(super) fn marker(node: &RakuAstNode) -> Result<Option<(String, Option<Expr>)
         return Ok(None);
     }
     let keyword = leaf_str(node, "parsed-declarator")?;
-    Ok((keyword != default_declarator(node.class))
-        .then(|| crate::parser::declare_how_marker(keyword)))
+    Ok((keyword != default_declarator(node.class)).then_some(keyword))
 }

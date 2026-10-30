@@ -462,7 +462,7 @@ impl Interpreter {
         self.lexicals.hll_syms.insert((hll, name), value);
     }
 
-    /// Seeds the one HLL symbol mutsu itself relies on: Rakudo's core setting
+    /// Seeds the HLL symbols mutsu itself relies on: Rakudo's core setting
     /// reads `nqp::gethllsym("default", "SysConfig")` from a `BEGIN` block in
     /// several bootstrap-adjacent modules (e.g. `Rakudo::CORE::META`, see
     /// issue #8775) to get at `.rakudo-build-config`. Real Rakudo installs
@@ -476,6 +476,15 @@ impl Interpreter {
             "default".to_string(),
             "SysConfig".to_string(),
             Value::make_instance(Symbol::intern("Perl6::SysConfig"), HashMap::new()),
+        );
+        // Rakudo's compiler binds the frontend it runs on, and distributions
+        // branch on it (`nqp::gethllsym('Raku', 'COMPILER-FRONTEND')`, e.g.
+        // Red's `todo ... if ... eq 'rakuast'`). mutsu's frontend is RakuAST
+        // (ADR-10723), the value Rakudo's default frontend reports.
+        self.set_hll_sym(
+            "Raku".to_string(),
+            "COMPILER-FRONTEND".to_string(),
+            Value::str("rakuast".to_string()),
         );
     }
 
@@ -802,7 +811,7 @@ impl Interpreter {
         };
         match inner.view() {
             ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_hash_storage") =>
+                if attributes.contains_key(crate::symbol::wk::hash_storage()) =>
             {
                 Some((**inner).clone())
             }
@@ -1259,7 +1268,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Resolved {
         debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
-        let Some(arg_keys) = self.multi_arg_type_keys(args) else {
+        let Some(arg_keys) = self.multi_arg_type_keys_with_named(args) else {
             return self.resolve_function_with_types(name, args);
         };
         // A compunit-scoped family's winner depends on the executing unit,
@@ -1348,6 +1357,8 @@ impl Interpreter {
     /// dispatch context when the receiver is a user-defined HOW class (so
     /// `callsame` can reach the native metamodel method as the last
     /// candidate). Always pair with `pop_method_samewith_context`.
+    // Cost: O(1) when no unit mentions `samewith` or a deferral builtin;
+    // otherwise O(a), a = the call's argument count (copied into the context).
     pub(crate) fn push_method_samewith_context(
         &mut self,
         receiver_class: &str,
@@ -1355,6 +1366,13 @@ impl Interpreter {
         args: &[Value],
         invocant: Option<Value>,
     ) {
+        // Nothing in the program can read the invocant, the arguments or the
+        // metamodel entry below (see `opcode::samewith_context_possible`): the
+        // only reader left wants the routine name for an error message.
+        if !crate::opcode::samewith_context_possible() {
+            self.push_samewith_context(method_name, None, None);
+            return;
+        }
         // A role mixed into a class's native HOW (`$class.HOW does
         // SomeHOWRole`, Staticish) dispatches with the role as
         // `receiver_class`; its `callsame` must still reach the native

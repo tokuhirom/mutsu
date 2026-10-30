@@ -264,6 +264,10 @@ impl Interpreter {
             *ip = loop_end;
             return Ok(());
         }
+        // A bare instance with its own lazy `iterator` is pulled per iteration.
+        if let Some(lazy) = self.lazy_for_source_of_instance(&iterable)? {
+            iterable = lazy;
+        }
         // For gather-based, sequence-spec, or lazy map/grep pipeline LazyList
         // iterables, iterate lazily by pulling items one at a time. This avoids
         // materializing infinite sequences.
@@ -636,7 +640,7 @@ impl Interpreter {
             return false;
         };
         let cn = class_name.as_str().to_string();
-        if attributes.contains_key("__mutsu_array_storage") || cn == "IO::Path::Parts" {
+        if attributes.contains_key(crate::symbol::wk::array_storage()) || cn == "IO::Path::Parts" {
             return true;
         }
         if self.class_does_role(&cn, "Iterable")
@@ -665,6 +669,22 @@ impl Interpreter {
         &mut self,
         raw: &Value,
     ) -> Result<Option<Value>, RuntimeError> {
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = raw.view()
+        {
+            let cn = class_name.resolve();
+            // An `Iterable` with its own `iterator` populates the array from
+            // it -- lazily when that iterator reports `is-lazy` (#15305).
+            if !attributes.contains_key("__mutsu_array_storage")
+                && self.has_user_method(&cn, "iterator")
+                && self.class_does_role(&cn, "Iterable")
+            {
+                return self.array_from_iterable_instance(raw).map(Some);
+            }
+        }
         if let Some(items) = self.try_iterable_instance_items(raw)? {
             return Ok(Some(crate::runtime::coerce_to_array(Value::real_array(
                 items,
@@ -673,7 +693,11 @@ impl Interpreter {
         let ValueView::Instance { attributes, .. } = raw.view() else {
             return Ok(None);
         };
-        let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned() else {
+        let Some(storage) = attributes
+            .as_map()
+            .get(crate::symbol::wk::array_storage())
+            .cloned()
+        else {
             return Ok(None);
         };
         Ok(Some(crate::runtime::coerce_to_array(Value::real_array(
@@ -707,6 +731,9 @@ impl Interpreter {
         else {
             return Ok(None);
         };
+        if let Some(items) = self.iterable_payload_items(iterable)? {
+            return Ok(Some(items));
+        }
         let cn = class_name.as_str().to_string();
         if !self.has_user_method(&cn, "iterator") {
             // A class that composes `Iterable` without declaring its own
@@ -731,7 +758,7 @@ impl Interpreter {
         // Without such an override the storage is still the answer, so the
         // `has_user_method` gate above is what keeps the ordinary subclass on
         // the `value_to_list` path.
-        if !attributes.contains_key("__mutsu_array_storage")
+        if !attributes.contains_key(crate::symbol::wk::array_storage())
             && !self.class_does_role(&cn, "Iterable")
         {
             return Ok(None);
@@ -757,6 +784,20 @@ impl Interpreter {
         if let Some(pairs) = crate::builtins::method_table::io_path_parts_pairs(iterable) {
             return Ok(Some(pairs));
         }
+        // A `but`-mixed instance iterates through its `iterator` as the bare
+        // instance does, with the mixed value as `self` (#14921).
+        if let ValueView::Mixin(inner, _) = iterable.view() {
+            let inner_class = match inner.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                _ => None,
+            };
+            if self.mixin_composes_method(iterable, "iterator")
+                || inner_class.is_some_and(|cn| self.has_user_method(&cn, "iterator"))
+            {
+                return self.drive_user_iterator_items(iterable).map(Some);
+            }
+            return Ok(None);
+        }
         let ValueView::Instance {
             class_name,
             attributes,
@@ -767,8 +808,11 @@ impl Interpreter {
         };
         // An `is Array`/`is List` subclass's own iterator override is driven
         // by `positional_subclass_iteration_source` instead.
-        if attributes.contains_key("__mutsu_array_storage") {
+        if attributes.contains_key(crate::symbol::wk::array_storage()) {
             return Ok(None);
+        }
+        if let Some(items) = self.iterable_payload_items(iterable)? {
+            return Ok(Some(items));
         }
         let cn = class_name.as_str().to_string();
         if !self.has_user_method(&cn, "iterator") {
@@ -800,9 +844,32 @@ impl Interpreter {
         };
         let storage = attributes
             .as_map()
-            .get("__mutsu_array_storage")?
+            .get(crate::symbol::wk::array_storage())?
             .deref_container();
         Self::array_element_cells(&storage)
+    }
+
+    /// The elements of an instance of a `Seq` or `Range` subclass: the value
+    /// it carries, read through its `list` (the inherited `Seq.list` /
+    /// `Range.list`).
+    // Cost: O(n), n = the sequence's elements.
+    fn iterable_payload_items(
+        &mut self,
+        iterable: &Value,
+    ) -> Result<Option<Vec<Value>>, RuntimeError> {
+        if !crate::builtins::native_base::has_iterable_payload(iterable) {
+            return Ok(None);
+        }
+        // A subclass with its own `iterator` (and no `list`) is iterated through
+        // it: `Range.list` / `Seq.list` read `self.iterator` (#15353).
+        if let ValueView::Instance { class_name, .. } = iterable.view() {
+            let cn = class_name.resolve();
+            if self.has_user_method(&cn, "iterator") && !self.has_user_method(&cn, "list") {
+                return Ok(None);
+            }
+        }
+        let list = self.try_compiled_method_or_interpret(iterable.clone(), "list", vec![])?;
+        Ok(Some(crate::runtime::utils::value_to_list(&list)))
     }
 
     /// Drain a value's user-defined `iterator` method into its elements.
@@ -810,7 +877,14 @@ impl Interpreter {
         &mut self,
         iterable: &Value,
     ) -> Result<Vec<Value>, RuntimeError> {
-        let iterator = if let Some(result) =
+        // The class's own `iterator` of a `but`-mixed `does Sequence` instance
+        // runs with the mixed value as `self`; the `Sequence` role's `iterator`
+        // would wrap the instance (#14921).
+        let iterator = if matches!(iterable.view(), ValueView::Mixin(..))
+            && self.is_iterator_sequence_instance(iterable)
+        {
+            self.call_user_iterator_on_mixin(iterable)?
+        } else if let Some(result) =
             self.dispatch_mixin_method_call(iterable, "iterator", Vec::new())
         {
             result?

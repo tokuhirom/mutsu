@@ -290,12 +290,13 @@ pub(crate) fn try_custom_infix_word<'a>(
     let (r2, right) = operand(r2).map_err(|err| {
         enrich_expected_error(err, "expected expression after infix operator", rest.len())
     })?;
-    // The junction operators are list-associative: an overloaded
-    // `infix:<&>` with no `is assoc` trait is one call over every operand
-    // (`1 & 2 & 3 :adv`), as with the core operator.
+    // The junction operators and the cross / zip operators are
+    // list-associative: an overloaded `infix:<&>` or `infix:<X>` with no
+    // `is assoc` trait is one call over every operand (`1 & 2 & 3 :adv`,
+    // `$a X $b X $c`), as with the core operator.
     let assoc = crate::parser::stmt::simple::lookup_user_infix_assoc(&name).unwrap_or_else(|| {
         match name.as_str() {
-            "&" | "|" | "^" => "list",
+            "&" | "|" | "^" | "X" | "Z" => "list",
             _ => "left",
         }
         .to_string()

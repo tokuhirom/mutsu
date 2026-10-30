@@ -1168,6 +1168,14 @@ pub(crate) struct NativeCtorPlan {
     /// dropped on (`native_ctor_plan_cache` is cleared at every class-shape
     /// mutation and generation bump), so the memo cannot outlive it.
     pub(crate) noarg_user_new_declines: std::sync::OnceLock<bool>,
+    /// Whether the `new` candidates of this class are decided by the argument
+    /// type keys alone (no `where`/literal/subset/coercion/`is rw`/
+    /// sub-signature parameter), which is what makes the next memo sound.
+    pub(crate) new_candidates_type_keyed: std::sync::OnceLock<bool>,
+    /// Memo of `user_new_declines` for an all-named call, keyed by
+    /// [`Interpreter::multi_arg_type_keys_with_named`]. Like the no-argument
+    /// memo above it lives exactly as long as the class shape does.
+    pub(crate) named_user_new_declines: std::sync::Mutex<rustc_hash::FxHashMap<Vec<Symbol>, bool>>,
     /// The `:D`/`:U` smileys and `is required` attribute names across the
     /// MRO that `enforce_attribute_smiley_constraints` checks, collected once
     /// per class shape instead of per construction (#12917).
@@ -1557,6 +1565,14 @@ pub(crate) struct CallFrameEntry {
     /// routine frame takes. A routine frame no entry claims was reached through
     /// a frameless light call path (see `Interpreter::effective_callframes`).
     pub routine_depth: usize,
+    /// The slot-only locals of the calling frame that `push_caller_env` copied
+    /// into [`Self::env`] for a by-name reader (#15048); an `EVAL` run with this
+    /// frame as its `context` makes them visible to the snippet.
+    pub flushed: Vec<(Symbol, Value)>,
+    /// The calling frame's `CompiledCode` address and slot base, set with
+    /// [`Self::flushed`] so a write the `EVAL` makes to one of them can be stored
+    /// back into the slot.
+    pub flushed_frame: Option<(usize, usize)>,
 }
 
 /// Entry in the routine stack, tracking the call chain for backtraces.
@@ -2592,6 +2608,33 @@ pub(crate) fn embedded_container_type_info(value: &Value) -> Option<ContainerTyp
     }
 }
 
+/// [`container_type_metadata_with`] reduced to "is there any", with no clone of
+/// the type names. Must stay in step with it, arm for arm.
+// Cost: O(1), no allocation.
+pub(crate) fn has_container_type_metadata_with(
+    value: &Value,
+    instance_meta: &Arc<RwLock<Arc<HashMap<u64, ContainerTypeInfo>>>>,
+) -> bool {
+    match value.view() {
+        ValueView::Array(items, ..) => items.has_type_meta(),
+        ValueView::Mix(items, _) => items.has_type_meta(),
+        ValueView::Set(items, _) => items.has_type_meta(),
+        ValueView::Bag(items, _) => items.has_type_meta(),
+        ValueView::Hash(items) => items.has_type_meta(),
+        ValueView::LazyList(list) => list
+            .descriptor
+            .as_deref()
+            .is_some_and(|d| d.value_type.is_some()),
+        ValueView::Instance { id, .. } => instance_meta.read().unwrap().contains_key(&id),
+        ValueView::Mixin(inner, _) => has_container_type_metadata_with(inner, instance_meta),
+        ValueView::ContainerRef(cell) => {
+            let inner = cell.load();
+            has_container_type_metadata_with(&inner, instance_meta)
+        }
+        _ => false,
+    }
+}
+
 /// Read a value's container type metadata. Array/Hash/Set/Bag/Mix carry it
 /// embedded in their backing data struct (travels across copy-on-write);
 /// `Instance` values look it up in the shared `instance_type_metadata` side
@@ -2658,10 +2701,28 @@ pub(crate) fn main_unit() -> Symbol {
     *MAIN
 }
 
+/// Bumped whenever a table `lexical_package_for_frame` reads changes: the
+/// module/unit package maps and the EVAL unit parents. Process-global, so a
+/// bump is conservative for every interpreter (a memo is just recomputed).
+static UNIT_SCOPE_EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// See [`UNIT_SCOPE_EPOCH`].
+// Cost: O(1).
+pub(crate) fn unit_scope_epoch() -> u64 {
+    UNIT_SCOPE_EPOCH.load(std::sync::atomic::Ordering::Acquire)
+}
+
+/// Record that a table behind `lexical_package_for_frame` changed.
+// Cost: O(1).
+pub(crate) fn bump_unit_scope_epoch() {
+    UNIT_SCOPE_EPOCH.fetch_add(1, std::sync::atomic::Ordering::Release);
+}
+
 pub(crate) fn note_eval_unit_parent(unit: Symbol, parent: Symbol) {
     if let Ok(mut map) = EVAL_UNIT_PARENTS.write() {
         map.insert(unit, parent);
     }
+    bump_unit_scope_epoch();
 }
 
 /// The compilation unit an `EVAL` unit was compiled inside, if `unit` is one.
@@ -2685,6 +2746,15 @@ pub(crate) type RoutineRegistrySnapshot = (
     Arc<HashMap<Symbol, HashSet<String>>>, // imported exported-proto tags snapshot
 );
 
+/// One routine-registry write an import made inside an import scope, with the
+/// value it replaced (`None`: the key was absent).
+pub(crate) enum ImportWrite {
+    Function(Symbol, Option<Arc<FunctionDef>>),
+    Proto(Symbol, Option<Arc<FunctionDef>>),
+    /// A `proto_subs` marker, and whether it was already there.
+    ProtoSub(String, bool),
+}
+
 /// What a lexical import scope (`{ use Foo; ... }`) restores when it pops: the
 /// registry key sets that existed before the `use`, plus the pragma flags `use`
 /// can flip. Every symbol table an import writes into has to be listed here —
@@ -2692,31 +2762,18 @@ pub(crate) type RoutineRegistrySnapshot = (
 /// stayed visible to `has_proto` after the block and kept `skip(5, @a)` on the
 /// user-routine argument path (VarRef-wrapped) instead of the list builtin's.
 pub(crate) struct ImportScopeSnapshot {
-    /// The registry tables as the scope opened: each is copy-on-write, so the
-    /// snapshot is a reference to the very table (O(1), #9170), and a table
-    /// still identical to it at the pop was not written in the scope.
-    pub(crate) functions: Arc<function_table::FunctionTable>,
-    pub(crate) proto_subs: Arc<registry::ProtoSubSet>,
-    pub(crate) proto_functions: Arc<registry::ProtoFunctionMap>,
-    /// Function definitions hidden by an imported proto/multi family in this
-    /// scope. Imports merge multi candidates into one package key, so the
-    /// ordinary key snapshot cannot restore an enclosing candidate that the
-    /// import intentionally shadowed.
-    pub(crate) shadowed_functions: HashMap<Symbol, Arc<FunctionDef>>,
-    /// `Registry::function_writes` as the scope opened.
-    pub(crate) function_writes_at_open: u64,
-    /// The functions-map writes this scope's imports made and logged while it
-    /// was the innermost scope, and the keys they installed. When the
-    /// registry counted no other write since the scope opened, these keys are
-    /// every key the pop may have to take away, so it need not filter the
-    /// whole map (#9170).
-    pub(crate) logged_function_writes: u64,
-    pub(crate) installed_function_keys: Vec<Symbol>,
-    /// Proto definitions hidden by an imported proto in this scope.
-    pub(crate) shadowed_proto_functions: HashMap<Symbol, Arc<FunctionDef>>,
-    /// Fully-qualified imported proto names already given shadowing semantics
-    /// in this scope. Multiple imports in one scope still merge candidates;
-    /// only the first import hides the enclosing family.
+    /// The routine-registry writes the scope's registry-path imports made, in
+    /// order, each with what it replaced: the pop undoes them in reverse. A
+    /// plain routine or a multi family an import binds lexically writes none
+    /// (ADR-8751); what is left is an import that keeps the registry (a family
+    /// the block extends itself, a core listop, an operator, another unit's).
+    pub(crate) import_writes: Vec<ImportWrite>,
+    /// `resolution::peek_decl_order` as the scope opened: a routine stamped
+    /// below it was visible when the block began, one stamped at or above it is
+    /// the block's own, which a registry-path import must not hide.
+    pub(crate) decl_order_at_open: u64,
+    /// Fully-qualified imported proto names whose enclosing family this scope
+    /// already hid. Further imports of the name merge with the first one.
     pub(crate) shadowed_proto_names: HashSet<String>,
     /// Exact `env` keys `import_module` wrote as an imported alias while
     /// this scope was on top of `import_scope_stack` (e.g. `&ok`, `$CONST`,
@@ -3208,6 +3265,7 @@ mod tests {
         ];
 
         let block = crate::gc::Gc::new(SubData {
+            fixtures: None,
             package: Symbol::intern("GLOBAL"),
             name: Symbol::intern("__protect_test__"),
             params: crate::value::empty_params(),

@@ -34,7 +34,7 @@ impl Interpreter {
         };
         for overloads in methods.values_mut() {
             for method in overloads {
-                self.resolve_owned_param_types(owner, &mut method.param_defs, &type_params, 0)?;
+                self.resolve_owned_param_types(owner, &mut std::sync::Arc::make_mut(&mut method.param_defs)[..], &type_params, 0)?;
                 if let Some(return_type) = method.return_type.as_mut() {
                     *return_type =
                         self.resolve_role_owned_type_name(owner, return_type, &type_params);
@@ -274,7 +274,7 @@ impl Interpreter {
                 | Stmt::SubsetDecl { .. } => {
                     !parameterized || !stmt_mentions_role_params(&op.raw, type_params)
                 }
-                Stmt::VarDecl { custom_traits, .. } if is_constant_decl(custom_traits) => {
+                Stmt::VarDecl { constant, .. } if is_constant_decl(*constant) => {
                     (!parameterized || !stmt_mentions_role_params(&op.raw, type_params))
                         && !stmt_mentions_role_params(&op.raw, &body_routines)
                 }
@@ -285,11 +285,11 @@ impl Interpreter {
                         match s {
                             Stmt::VarDecl {
                                 is_export,
-                                custom_traits,
+                                constant,
                                 ..
                             } => {
                                 *is_export
-                                    || (is_constant_decl(custom_traits)
+                                    || (is_constant_decl(*constant)
                                         && !stmt_mentions_role_params(s, &body_routines))
                             }
                             _ => false,
@@ -314,28 +314,16 @@ impl Interpreter {
                     &mut declared_types,
                 );
             }
-            // A lexical `my class C is export` carries its tags on an internal
-            // marker (see `class_decl`); publish it the way an exported subset is.
+            // A lexical `my class C is export` records its tags on the node (see
+            // `class_decl`); publish it the way an exported subset is.
             if let Stmt::ClassDecl {
                 name,
-                custom_traits,
+                export_tags: Some(tags),
                 ..
             } = &op.raw
-                && let Some((_, tags)) = custom_traits
-                    .iter()
-                    .find(|(t, _)| t == "__mutsu_export_type")
                 && !self.module.suppress_exports
             {
-                let tags = match tags {
-                    Some(Expr::ArrayLiteral(items)) => items
-                        .iter()
-                        .filter_map(|e| match e {
-                            Expr::Literal(v) => Some(v.to_string_value()),
-                            _ => None,
-                        })
-                        .collect(),
-                    _ => vec!["DEFAULT".to_string()],
-                };
+                let tags = tags.clone();
                 let (pkg, short) = match crate::qualified::package_parent(*name) {
                     Some(parent) => (
                         parent.resolve().to_string(),
@@ -402,8 +390,8 @@ fn stmt_mentions_role_params(stmt: &Stmt, params: &[String]) -> bool {
     m.found
 }
 
-/// Whether a `VarDecl`'s traits mark it a `constant` declaration.
-// Cost: O(t), t = the declaration's traits.
-fn is_constant_decl(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits.iter().any(|(name, _)| name == "__constant")
+/// Whether a `VarDecl` is a `constant` declaration.
+// Cost: O(1).
+fn is_constant_decl(constant: Option<crate::ast::ConstantSigil>) -> bool {
+    constant.is_some()
 }

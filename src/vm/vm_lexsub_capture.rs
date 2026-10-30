@@ -217,6 +217,11 @@ impl Interpreter {
             new_data.env.insert(format!("&{name}"), sibling);
         }
         new_data.env.mark_activation_capture();
+        // The routine closes over the declaring method's `self` and `?CLASS`
+        // (ADR-14843).
+        if new_data.fixtures.is_none() {
+            new_data.fixtures = self.capture_fixtures();
+        }
         let captured = Value::sub_value(data);
         if let Some(cell) = back_edge {
             cell.assign_into_container(captured.clone());

@@ -43,7 +43,7 @@ pub(crate) fn embedded_container_type_name(target: &Value) -> Option<String> {
 
 impl Interpreter {
     /// Dispatch .WHAT method
-    pub(super) fn dispatch_what(
+    pub(crate) fn dispatch_what(
         &mut self,
         target: &Value,
         args: Vec<Value>,
@@ -310,7 +310,7 @@ impl Interpreter {
     /// `install_custom_class_how`), keyed by the string that identifies the
     /// type the HOW describes, so a later `.HOW` call for the same type finds
     /// it via the lookup below instead of minting again.
-    pub(super) fn dispatch_how(
+    pub(crate) fn dispatch_how(
         &mut self,
         target: &Value,
         args: &[Value],
@@ -414,7 +414,10 @@ impl Interpreter {
         };
         let how_cache_key = how_lookup_name.as_ref().map(|name| {
             let is_package = matches!(target.view(), ValueView::Package(_));
-            if !is_package && self.registry().roles.contains_key(name) {
+            if !is_package
+                && (self.registry().roles.contains_key(name)
+                    || crate::runtime::types::is_builtin_role_name(name))
+            {
                 match target.view() {
                     ValueView::Instance { attributes, .. } => {
                         match attributes.as_map().get("__mutsu_role_candidate_idx") {
@@ -632,6 +635,14 @@ impl Interpreter {
                 // statement, so it has no `package_kinds` entry, but it is still a
                 // package and reports `PackageHOW`, not the default `ClassHOW`.
                 "Perl6::Metamodel::PackageHOW".to_string()
+            } else if is_type_object
+                && type_name
+                    .split_once('[')
+                    .is_some_and(|(base, _)| crate::runtime::types::is_builtin_role_name(base))
+            {
+                // `Blob[uint8]`, `Callable[Int]`: a core role curried with its
+                // arguments reports `CurriedRoleHOW` like a declared one.
+                "Perl6::Metamodel::CurriedRoleHOW".to_string()
             } else if is_type_object
                 && (self.registry().roles.contains_key(&type_name) && !type_name.contains('[')
                 // The core roles mutsu models natively have no `RoleDef`; ask the
@@ -1191,7 +1202,17 @@ impl Interpreter {
             // `.^name` path resolves that same node here before falling back
             // to the synthesized `Base+{Role,...}` name.
             ValueView::Mixin(inner, mixins) => {
-                self.mixin_instance_type_name(target, inner, mixins)?
+                let name = self.mixin_instance_type_name(target, inner, mixins)?;
+                // A role mixed into a typed container keeps the container's
+                // parameterization (`my %h{Str} does R` is
+                // `Hash[Any,Str]+{R}`): rename the bare `Hash` base.
+                match (inner.view(), name.strip_prefix("Hash+")) {
+                    (ValueView::Hash(_), Some(suffix)) => {
+                        let base = self.dispatch_caret_name(inner)?.to_string_value();
+                        format!("{base}+{suffix}")
+                    }
+                    _ => name,
+                }
             }
             // `p.class_name()` is the raw internal storage name, which for a
             // lexical Promise subclass (`my class Meows is Promise {}`)

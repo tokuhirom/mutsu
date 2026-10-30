@@ -243,7 +243,7 @@ impl Interpreter {
 
     /// Extract junction from an argument, handling both positional and named (Pair) args.
     /// Returns (kind, values, pair_key) where pair_key is Some(key) for Pair args.
-    pub(super) fn extract_junction_from_arg(
+    pub(crate) fn extract_junction_from_arg(
         val: &Value,
     ) -> Option<(crate::value::JunctionKind, Arc<Vec<Value>>, Option<String>)> {
         if let ValueView::Pair(key, inner) = val.view() {
@@ -255,7 +255,7 @@ impl Interpreter {
 
     /// Pick the junction argument to thread over, based on Raku's priority:
     /// all/none junctions are threaded first (leftmost), then any/one (leftmost).
-    pub(super) fn pick_autothread_junction_index(
+    pub(crate) fn pick_autothread_junction_index(
         &self,
         args: &[Value],
         indices: &[usize],
@@ -301,9 +301,11 @@ impl Interpreter {
     ) -> Result<Option<Value>, RuntimeError> {
         // Don't auto-thread args for methods that natively handle junctions
         // or that accept Mu/Junction arguments (matchers, comparators, etc.)
-        if matches!(
-            method,
-            "Bool"
+        let multi_accepts = method == "ACCEPTS" && self.user_multi_accepts_threads(target, args);
+        if !multi_accepts
+            && matches!(
+                method,
+                "Bool"
                 | "so"
                 | "WHAT"
                 | "WHICH"
@@ -362,7 +364,14 @@ impl Interpreter {
                 | "note"
                 | "printf"
                 | "sprintf"
-        ) {
+            )
+        {
+            return Ok(None);
+        }
+
+        // `Metamodel::Primitives` methods (`parameterize_type`, `is_type`, ...)
+        // take their arguments as `Mu`: a Junction is an ordinary value there.
+        if Self::is_metamodel_primitives(target) {
             return Ok(None);
         }
 
@@ -427,24 +436,38 @@ impl Interpreter {
                 std::option::Option::None => junction_indices,
             }
         } else {
-            match target.view() {
-                ValueView::Instance { class_name, .. } => {
-                    let resolved_args: Vec<Value> =
-                        args.iter().map(Self::unwrap_junction_deep).collect();
-                    match self.resolve_method_with_owner(
-                        &class_name.resolve(),
-                        method,
-                        &resolved_args,
-                    ) {
-                        Some((_, def)) => self.autothread_indices_for_params(
-                            args,
-                            &junction_indices,
-                            &def.param_defs,
-                        ),
-                        std::option::Option::None => junction_indices,
+            // A metaobject receiver (`self.kind: |args` inside `method
+            // ^parameterize`) reaches the metamethod the type declared as
+            // `^kind`; its parameters decide threading like any other method's.
+            if multi_accepts {
+                junction_indices
+            } else if let Some(indices) =
+                self.how_metamethod_autothread_indices(target, method, args, &junction_indices)
+            {
+                indices
+            } else {
+                // A type-object receiver (`Path::Finder.skip-dir(any(...))`) binds
+                // its parameters by the same rules as an instance: a `Mu` parameter
+                // takes the junction whole.
+                match target.view() {
+                    ValueView::Instance { class_name, .. } | ValueView::Package(class_name) => {
+                        let resolved_args: Vec<Value> =
+                            args.iter().map(Self::unwrap_junction_deep).collect();
+                        match self.resolve_method_with_owner(
+                            &class_name.resolve(),
+                            method,
+                            &resolved_args,
+                        ) {
+                            Some((_, def)) => self.autothread_indices_for_params(
+                                args,
+                                &junction_indices,
+                                &def.param_defs,
+                            ),
+                            std::option::Option::None => junction_indices,
+                        }
                     }
+                    _ => junction_indices,
                 }
-                _ => junction_indices,
             }
         };
         if junction_indices.is_empty() {
@@ -510,6 +533,93 @@ impl Interpreter {
         Ok(Some(Value::junction(kind, results)))
     }
 
+    /// Whether the proto parameter at positional `idx` is declared `Mu` /
+    /// `Junction` (or a smiley of them): the proto itself binds the Junction
+    /// whole, so `{*}` must not thread it. A slurpy or absent parameter says
+    /// nothing.
+    // Cost: O(p), p = parameters of the proto.
+    pub(crate) fn proto_param_takes_junction_whole(
+        pds: &[crate::ast::ParamDef],
+        idx: usize,
+    ) -> bool {
+        pds.iter()
+            .filter(|pd| !pd.named)
+            .nth(idx)
+            .is_some_and(|pd| {
+                !(pd.slurpy || pd.onearg || pd.double_slurpy)
+                    && pd.type_constraint.as_deref().is_some_and(|tc| {
+                        let nominal =
+                            crate::runtime::types::strip_type_smiley(Self::nominal_type(tc)).0;
+                        matches!(nominal, "Mu" | "Junction")
+                    })
+            })
+    }
+
+    /// Whether `target` is the `Metamodel::Primitives` type object, whose
+    /// methods never autothread a Junction argument.
+    // Cost: O(1).
+    pub(crate) fn is_metamodel_primitives(target: &Value) -> bool {
+        matches!(target.view(), ValueView::Package(name) if name.as_str() == "Metamodel::Primitives")
+    }
+
+    /// Rakudo quirk: a class that declares `multi method ACCEPTS` without a
+    /// `proto` of its own gets a dispatcher that autothreads a Junction
+    /// argument even when the candidate binds it as `Mu` (a plain `method
+    /// ACCEPTS(Mu \\K)` or an explicit proto does not). `Kind`'s `Refine`
+    /// relies on it (`$junction := self.ACCEPTS: $junction` is a Junction of
+    /// subs). Measured with `raku`; no other method name behaves so.
+    // Cost: O(m), m = methods of the receiver's class chain.
+    fn user_multi_accepts_threads(&mut self, target: &Value, args: &[Value]) -> bool {
+        let class_name = match target.view() {
+            ValueView::Instance { class_name, .. } | ValueView::Package(class_name) => {
+                class_name.resolve()
+            }
+            _ => return false,
+        };
+        if !self.has_user_method(&class_name, "ACCEPTS")
+            || self.lookup_proto_method(&class_name, "ACCEPTS").is_some()
+        {
+            return false;
+        }
+        let resolved_args: Vec<Value> = args.iter().map(Self::unwrap_junction_deep).collect();
+        self.resolve_method_with_owner(&class_name, "ACCEPTS", &resolved_args)
+            .is_some_and(|(_, def)| def.is_multi)
+    }
+
+    /// The junction arguments that autothread when `target` is a metaobject
+    /// receiving a metamethod the type declared itself (`^kind` reached as
+    /// `self.kind: ...`), decided by that metamethod's own parameters (a
+    /// `Mu` parameter or a capture takes the junction whole). `None` when
+    /// `target` is not such a call.
+    // Cost: O(p), p = parameters of the metamethod.
+    pub(crate) fn how_metamethod_autothread_indices(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+        junction_indices: &[usize],
+    ) -> Option<Vec<usize>> {
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return None;
+        };
+        if !Self::is_metamodel_how(&class_name) || method.starts_with('^') {
+            return None;
+        }
+        // A metamethod's first argument is the type object it describes
+        // (`$obj.^kind(..)` is `$obj.HOW.kind($obj, ..)`).
+        let Some(ValueView::Package(owner)) = args.first().map(Value::view) else {
+            return None;
+        };
+        let owner = owner.resolve();
+        let meta_name = format!("^{method}");
+        if !self.has_user_method(&owner, &meta_name) {
+            return None;
+        }
+        let resolved_args: Vec<Value> = args.iter().map(Self::unwrap_junction_deep).collect();
+        let (_, def) = self.resolve_method_with_owner(&owner, &meta_name, &resolved_args)?;
+        Some(self.autothread_indices_for_params(args, junction_indices, &def.param_defs))
+    }
+
     /// Find an instance in the environment by class name and id.
     /// Used to refresh a target after mutation during auto-threading.
     fn find_instance_in_env(&self, class_name: &str, id: u64) -> Option<Value> {
@@ -566,7 +676,7 @@ impl Interpreter {
     /// positionals as raw values, and a slurpy hash (`*%h`, `+%h`, the implicit
     /// `%_`) collects named arguments the same way. Shared by the sub and the
     /// method call paths so both obey one rule.
-    pub(super) fn autothread_indices_for_params(
+    pub(crate) fn autothread_indices_for_params(
         &mut self,
         args: &[Value],
         junction_indices: &[usize],
@@ -581,7 +691,8 @@ impl Interpreter {
             // type (Mu here) — autothreading is based on the nominal. A subset
             // whose ultimate base type is Mu/Junction passes the junction
             // through to its where-clause check as well.
-            let nominal = Self::nominal_type(tc.as_str());
+            let nominal =
+                crate::runtime::types::strip_type_smiley(Self::nominal_type(tc.as_str())).0;
             if matches!(nominal, "Mu" | "Junction") {
                 return true;
             }

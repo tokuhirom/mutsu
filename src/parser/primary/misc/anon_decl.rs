@@ -7,13 +7,6 @@ use crate::parser::stmt::keyword;
 use crate::symbol::Symbol;
 use std::sync::atomic::AtomicU64;
 
-/// The `custom_traits` marker of a declaration written with the empty name
-/// (`class :: { }`, `role :: { }`, `grammar :: { }`). The declaration is
-/// anonymous either way; the marker only lets the RakuAST conversion tell the
-/// two spellings apart, since rakudo renders the `::` one with an `anon` scope
-/// over an empty name. Internal (`__`-prefixed), so never dispatched as a trait.
-pub(crate) const ANON_COLONS_TRAIT: &str = "__anon_colons";
-
 static ANON_CLASS_COUNTER: AtomicU64 = AtomicU64::new(0);
 static ANON_ROLE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -99,7 +92,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
     }
 
     let (rest, mut body) = parse_block_body_no_self(rest)?;
-    crate::parser::stmt::nested_block_methods::hoist(&mut body);
+    crate::rakuast::nested_methods::hoist(&mut body);
     let AnonClassClauses {
         mut parents,
         does_roles,
@@ -147,12 +140,15 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             repr: None,
             body,
             language_version: crate::parser::current_language_version(),
-            custom_traits: {
-                let mut traits = colons_marker(colons, "class");
-                traits.extend(clause_traits);
-                traits
-            },
+            custom_traits: clause_traits,
             is_unit: false,
+            is_native: false,
+            export_tags: None,
+            marks: crate::ast::PackageMarks {
+                colons,
+                declarator: crate::parser::superseded_declarator("class"),
+                ..Default::default()
+            },
             implicit_grammar_parent: false,
             is_grammar: false,
             decl_id: crate::ast::next_class_decl_id(),
@@ -279,7 +275,7 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("'{' for anonymous grammar"));
     }
     let (rest, mut body) = parse_block_body_no_self(rest)?;
-    crate::parser::stmt::nested_block_methods::hoist(&mut body);
+    crate::rakuast::nested_methods::hoist(&mut body);
     // Same `also is Base` extraction the statement path does: this is the route a
     // named `grammar G { also is Base }.parse(...)` takes.
     let mut parents = vec!["Grammar".to_string()];
@@ -313,8 +309,15 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
             repr: None,
             body,
             language_version: crate::parser::current_language_version(),
-            custom_traits: colons_marker(colons, "grammar"),
+            custom_traits: Vec::new(),
             is_unit: false,
+            is_native: false,
+            export_tags: None,
+            marks: crate::ast::PackageMarks {
+                colons,
+                declarator: crate::parser::superseded_declarator("grammar"),
+                ..Default::default()
+            },
             implicit_grammar_parent,
             is_grammar: true,
             decl_id: crate::ast::next_class_decl_id(),
@@ -372,9 +375,15 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
             export_tags: Vec::new(),
             body,
             is_rw: false,
+            is_lexical: false,
             language_version: crate::parser::current_language_version(),
-            custom_traits: colons_marker(colons, "role"),
+            custom_traits: Vec::new(),
             decl_id: crate::ast::next_class_decl_id(),
+            marks: crate::ast::PackageMarks {
+                colons,
+                declarator: crate::parser::superseded_declarator("role"),
+                ..Default::default()
+            },
         })),
     ))
 }
@@ -396,18 +405,6 @@ pub(crate) fn prepend_does_header(body: &mut Vec<Stmt>, does_roles: &[String]) {
             },
         );
     }
-}
-
-/// The `custom_traits` of a declaration spelled with (`colons`) or without the
-/// empty name `::`.
-fn colons_marker(colons: bool, keyword: &str) -> Vec<(String, Option<Expr>)> {
-    let mut traits = Vec::new();
-    if colons {
-        traits.push((ANON_COLONS_TRAIT.to_string(), None));
-    }
-    // `EXPORTHOW::SUPERSEDE` replaced this built-in declarator's HOW.
-    traits.extend(crate::parser::stmt::simple::supersede_marker(keyword));
-    traits
 }
 
 /// After parsing `anon class`/`anon role`/`anon grammar` via the
@@ -444,9 +441,8 @@ fn colons_marker(colons: bool, keyword: &str) -> Vec<(String, Option<Expr>)> {
 /// mangling it further would break the `<anon|N>` display, which recognizes
 /// exactly that bare marker shape (`value::display::anon_type_display_name`).
 ///
-/// `Stmt::ClassDecl`/`Stmt::RoleDecl` also get the `__anon_decl` custom
-/// trait (the same marker `anon sub NAME` uses) so the compiler's per-scope
-/// class-redeclaration check skips them — though with the name now
+/// `Stmt::ClassDecl`/`Stmt::RoleDecl` also get `marks.anon` so the compiler's
+/// per-scope class-redeclaration check skips them — though with the name now
 /// site-unique by construction, two `anon class Foo {}` declarations in one
 /// scope would not collide in that check even without the marker.
 pub(crate) fn mark_anon_package_decl(expr: &mut Expr) {
@@ -454,29 +450,13 @@ pub(crate) fn mark_anon_package_decl(expr: &mut Expr) {
     mark_anon_package_stmt(stmt);
 }
 
-/// The `custom_traits` marker of an `anon`-scoped declaration (`anon sub g`,
-/// `anon class Foo`): it is built but not installed under its name.
-pub(crate) const ANON_DECL_TRAIT: &str = "__anon_decl";
-
 /// [`mark_anon_package_decl`] on the declaration itself; the RakuAST lowering
 /// of an `anon`-scoped package calls it too.
 // Cost: O(k), k = length of the name.
 pub(crate) fn mark_anon_package_stmt(stmt: &mut Stmt) {
     match stmt {
-        Stmt::ClassDecl {
-            name,
-            custom_traits,
-            ..
-        } => {
-            custom_traits.push((ANON_DECL_TRAIT.to_string(), None));
-            mangle_named_anon_decl(name);
-        }
-        Stmt::RoleDecl {
-            name,
-            custom_traits,
-            ..
-        } => {
-            custom_traits.push((ANON_DECL_TRAIT.to_string(), None));
+        Stmt::ClassDecl { name, marks, .. } | Stmt::RoleDecl { name, marks, .. } => {
+            marks.anon = true;
             mangle_named_anon_decl(name);
         }
         Stmt::Package { name, .. } => {

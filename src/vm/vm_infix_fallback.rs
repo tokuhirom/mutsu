@@ -93,6 +93,43 @@ impl Interpreter {
         {
             return Ok(result);
         }
+        if name == "X" && call_args.len() >= 2 {
+            // One n-ary product over the operands as written: a parenthesized
+            // operand that is itself a product stays one nested column
+            // (`(A X B) X C` yields `((a, b), c)`), unlike a pairwise fold
+            // that would extend the left operand's rows.
+            let mut operands = Vec::with_capacity(call_args.len());
+            for arg in &call_args {
+                operands.push(self.fetch_proxy_for_store(Self::unwrap_var_ref_value(arg.clone()))?);
+            }
+            // An infinite operand makes the product a lazy stage, as for the
+            // meta-operator form.
+            let combine = Self::meta_row_combine(Symbol::intern(""), false);
+            if let Some(pipe) = Self::lazy_cross_pipe(&operands, combine) {
+                return Ok(pipe);
+            }
+            let mut columns = Vec::with_capacity(operands.len());
+            for operand in &operands {
+                columns.push(self.cross_operand_list(operand)?);
+            }
+            return Ok(Value::seq(
+                crate::builtins::cross_product::cross_product_rows(&columns, false),
+            ));
+        }
+        // `eqv` is not a pure table operation: rakudo's rule for user objects
+        // (identical, or the same type and equal `.raku`), the lazy-iterable
+        // rules and the Seq protocol live in `eqv_values`. A unit that declares
+        // its own `infix:<eqv>` candidate compiles the operator to this generic
+        // route rather than `OpCode::Eqv`, and the pure `Value::eqv` of the
+        // reduction table below compared two equal Red columns structurally
+        // (GH-15203).
+        if name == "eqv" && call_args.len() == 2 {
+            let left =
+                self.fetch_proxy_for_store(Self::unwrap_var_ref_value(call_args[0].clone()))?;
+            let right =
+                self.fetch_proxy_for_store(Self::unwrap_var_ref_value(call_args[1].clone()))?;
+            return self.eqv_values(left, right);
+        }
         if call_args.len() >= 2 {
             // `apply_reduction_op` is always a NATIVE reduction (`+`, `mod`,
             // junctions, ...) — never a call that could bind an `is rw`

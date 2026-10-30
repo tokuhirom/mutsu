@@ -42,6 +42,7 @@ pub(crate) fn next_tmp_name() -> String {
 /// still evaluating an effectful subscript only once.
 pub(crate) fn defined_condition(negated: bool, tmp_name: &str, cond_expr: Expr) -> Expr {
     let decl = Stmt::VarDecl {
+        marks: Default::default(),
         anonymous: false,
         name: tmp_name.to_string(),
         expr: cond_expr,
@@ -52,6 +53,9 @@ pub(crate) fn defined_condition(negated: bool, tmp_name: &str, cond_expr: Expr) 
         is_export: false,
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
+        has_initializer: false,
+        constant: None,
+        bind: None,
         where_constraint: None,
     };
     let init = Expr::DoStmt(Box::new(decl));

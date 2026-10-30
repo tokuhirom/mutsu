@@ -30,12 +30,28 @@ static REFLECTIVE_NAME_ACCESS_SEEN: AtomicBool = AtomicBool::new(false);
 /// The part of [`REFLECTIVE_NAME_ACCESS_SEEN`] that is not an `EVAL`: set by
 /// the ops that can read *another* frame's lexical (`CALLER::`, symbolic
 /// dereference, pseudo-stashes, ...). An `EVAL` resolves names in the scope it
-/// is written in (and its enclosing scopes), so a routine's parameters need the
-/// env write only when this latch is set or the routine's own chunk (or one
-/// nested in it) holds the `EVAL` (#14337). Stores of plain locals keep using
-/// the broader latch: an `EVAL` nested in a closure or routine reads the
-/// enclosing chunks' locals, which no per-chunk flag of theirs records.
+/// is written in (and its enclosing scopes), so a routine's parameters and
+/// local stores need the env write only when this latch is set or the chunk's
+/// own flag says it (or a closure/routine nested in it) holds the `EVAL`
+/// ([`CompiledCode::mirrors_all_params`], #14337, #15048).
 static NON_EVAL_REFLECTIVE_SEEN: AtomicBool = AtomicBool::new(false);
+
+/// Process-global latch: some compiled code reads the *immediate* caller's frame
+/// by name (`CALLER::<$x>`, a bare `CALLER::` stash, `&CALLER::LEXICAL::(..)`).
+/// Such a reader is never a light call (`uses_callframe`), so it is reached
+/// through `push_caller_env`, which then copies the slot-only locals of the
+/// calling frame into the entry it pushes (`flush_calling_frame_slots`) -- the
+/// reader no longer forces every routine to mirror its parameters and every
+/// local store to write `env` (#14337, #15048).
+/// Deeper (`CALLER::CALLER::`) and cascading (`CALLERS::`) readers keep
+/// [`NON_EVAL_REFLECTIVE_SEEN`].
+static CALLER_FRAME_READ_SEEN: AtomicBool = AtomicBool::new(false);
+
+/// See [`CALLER_FRAME_READ_SEEN`].
+#[inline]
+pub(crate) fn caller_frame_read_possible() -> bool {
+    CALLER_FRAME_READ_SEEN.load(Ordering::Relaxed)
+}
 
 /// True if any compiled code may read a caller frame's lexical by dynamic name.
 /// See [`REFLECTIVE_NAME_ACCESS_SEEN`].
@@ -91,6 +107,7 @@ pub(crate) fn sorted_by_name(set: impl IntoIterator<Item = Symbol>) -> Vec<Symbo
 pub(crate) fn replay_compile_latches(
     reflective: bool,
     non_eval_reflective: bool,
+    caller_frame_read: bool,
     dispatcher: bool,
 ) {
     if reflective {
@@ -99,12 +116,36 @@ pub(crate) fn replay_compile_latches(
     if non_eval_reflective {
         NON_EVAL_REFLECTIVE_SEEN.store(true, Ordering::Relaxed);
     }
+    if caller_frame_read {
+        CALLER_FRAME_READ_SEEN.store(true, Ordering::Relaxed);
+    }
     if dispatcher {
         DISPATCHER_SEEN.store(true, Ordering::Relaxed);
     }
 }
 
-/// Set [`DISPATCHER_SEEN`] when `s` mentions a dispatch-frame builtin. Called
+/// Process-global latch: set once any compilation unit anywhere in the program
+/// mentions `samewith` (see [`note_dispatcher_mention`]).
+///
+/// The samewith context a method call pushes carries the routine's name, the
+/// invocant and a copy of the call's arguments. Only `samewith`, the deferral
+/// builtins ([`DISPATCHER_SEEN`]) and the gather-body capture of them read
+/// the invocant and arguments; every other reader (a parameter-binding error
+/// message) wants the name alone. So a program that names none of those never
+/// needs the copies, and `Interpreter::push_method_samewith_context` pushes
+/// the name only. Monotonic and global, so an over-set only forces the full
+/// context.
+static SAMEWITH_SEEN: AtomicBool = AtomicBool::new(false);
+
+/// True if any compiled code in this program may read a samewith context's
+/// invocant or arguments. See [`SAMEWITH_SEEN`].
+#[inline]
+pub(crate) fn samewith_context_possible() -> bool {
+    SAMEWITH_SEEN.load(Ordering::Relaxed) || DISPATCHER_SEEN.load(Ordering::Relaxed)
+}
+
+/// Set [`DISPATCHER_SEEN`] when `s` mentions a dispatch-frame builtin, and
+/// [`SAMEWITH_SEEN`] when it mentions `samewith`. Called
 /// on every compilation unit's source text before it is parsed (or served from
 /// the precompilation cache), and on every string entering a constant pool —
 /// every call of one reaches the pool as its name (a call, a bare word, an
@@ -113,6 +154,9 @@ pub(crate) fn replay_compile_latches(
 // Cost: O(n), n = bytes of `s` (only while the latch is still unset).
 #[inline]
 pub(crate) fn note_dispatcher_mention(s: &str) {
+    if !SAMEWITH_SEEN.load(Ordering::Relaxed) && s.contains("samewith") {
+        SAMEWITH_SEEN.store(true, Ordering::Relaxed);
+    }
     if !dispatcher_possible()
         && (s.contains("call") || s.contains("next"))
         && [
@@ -466,6 +510,11 @@ pub(crate) struct ForLoopSpec {
     /// cannot tell the two apart -- the AST stores `\v` as plain `"v"` -- so
     /// the compiler records the distinction here.
     pub(crate) param_sigilless: bool,
+    /// Whether the single named loop parameter is `is raw`: an alias of the
+    /// element's own container (a Proxy element runs its STORE on assignment),
+    /// writable like `is rw` but neither a copy (`is copy`) nor written back,
+    /// and not refused a value element (`for @values -> $p is raw`).
+    pub(crate) param_raw: bool,
     /// The body provably cannot tell the implicit topic bound to an element's
     /// own container from a copy of its value (`compiler::for_topic_alias`), so
     /// a `for @a` over a real array skips promoting every element to a
@@ -552,8 +601,7 @@ pub(crate) struct CompiledMethodDecl {
     /// For a method the parser hoisted out of a nested block of the package
     /// body (`class C { do { method m { } } }`), the per-body index its
     /// in-block `Stmt::NestedMethodCapture` marker files the block's lexical
-    /// capture under (`OpCode::CaptureNestedMethodEnv`). Read from the
-    /// `__nested_block_method` parser marker trait.
+    /// capture under (`OpCode::CaptureNestedMethodEnv`).
     pub(crate) nested_capture_index: Option<u32>,
 }
 
@@ -581,8 +629,10 @@ impl CompiledMethodDecl {
             deprecated_message,
             handles,
             custom_traits,
+            is_hidden_from_backtrace,
             is_export,
             export_tags,
+            nested_capture_index,
             ..
         } = stmt
         else {
@@ -609,22 +659,10 @@ impl CompiledMethodDecl {
             custom_traits: custom_traits.clone(),
             is_export: *is_export,
             export_tags: export_tags.clone(),
-            is_hidden_from_backtrace: custom_traits
-                .iter()
-                .any(|(t, _)| t == "__hidden_from_backtrace"),
+            is_hidden_from_backtrace: *is_hidden_from_backtrace,
             compiled_routine_key: None,
             uses_bare_positional_args,
-            nested_capture_index: custom_traits.iter().find_map(|(t, arg)| {
-                (t == crate::parser::NESTED_BLOCK_METHOD_TRAIT)
-                    .then(|| match arg {
-                        Some(Expr::Literal(v)) => match v.view() {
-                            crate::value::ValueView::Int(i) => u32::try_from(i).ok(),
-                            _ => None,
-                        },
-                        _ => None,
-                    })
-                    .flatten()
-            }),
+            nested_capture_index: *nested_capture_index,
         }
     }
 }
@@ -675,6 +713,10 @@ pub(crate) struct RuntimeHasDeclSpec {
 
 /// Slot marker in [`OpCode::LoadRegexClosure`]'s capture list: the captured
 /// name has no local slot in the creating frame and must be read from `env`.
+/// `GetCallerVar` depth meaning `CLIENT::<$x>`: the frame count to the nearest
+/// caller in another package is resolved when the op runs
+/// ([`crate::runtime::Interpreter::client_frame_depth`]).
+pub(crate) const CLIENT_CALLER_DEPTH: u32 = u32::MAX;
 pub(crate) const NOT_A_LOCAL: u32 = u32::MAX;
 
 /// Slot marker in [`OpCode::LoadRegexClosure`]'s capture list: a kebab-case
@@ -1529,6 +1571,10 @@ pub(crate) enum OpCode {
     /// array's element type (see `Expr::DeitemizeForBind`). Falls back to plain
     /// list flattening for non-array values.
     DeitemizeForBind,
+    /// Pop the bound value's source-variable names and the bound value and
+    /// push the bind marker an indexed `:=` hands the index-assign ops (see
+    /// `Interpreter::unwrap_bind_index_value`).
+    IndexBindValue,
     /// Strip ONE level of itemization for a zen slice (`$a[]` / `$a<>`):
     /// an itemized Array/List drops its Scalar container (kind flag) so a
     /// following list context flattens it; a `Scalar` wrapper unwraps.
@@ -2978,7 +3024,15 @@ pub(crate) enum OpCode {
     /// Third field: true when this is a bare block `{ }`, false for `sub { }`.
     MakeAnonSub(u32, Option<u32>, bool),
     /// Third field: true when generated by Whatever-currying (WhateverCode).
-    MakeAnonSubParams(u32, Option<u32>, bool, Option<Symbol>),
+    /// Last field: the declarator a `method (...) { }` / `submethod` literal was
+    /// written with, which decides the type the closure reports (`Sub` otherwise).
+    MakeAnonSubParams(
+        u32,
+        Option<u32>,
+        bool,
+        Option<Symbol>,
+        crate::ast::RoutineDeclarator,
+    ),
     /// Third field: true when generated by Whatever-currying (WhateverCode).
     MakeLambda(u32, Option<u32>, bool),
     /// Build a bare-block closure. Stack: `[] → [Sub]`.
@@ -4455,7 +4509,7 @@ pub(crate) enum OpCode {
     /// `CompiledDeclPlanRef` that selects the compile-time plan it registers:
     /// `sub_decl_plans`, `class_decl_plans`, `role_decl_plans`,
     /// `proto_decl_plans` or `token_decl_plans` (or a proto token). A class or
-    /// role plan carrying the `__hoisted` trait swallows its registration errors.
+    /// role plan carrying the hoisted trait swallows its registration errors.
     RegisterDecl(u32),
     /// Record the lexical capture of a `method` declared in a nested block of
     /// a package body (`Stmt::NestedMethodCapture`). Stack: `[closure] → []`.
@@ -4477,6 +4531,9 @@ pub(crate) enum OpCode {
     /// an error raised from here on is a run-time one, which runs the END
     /// phasers. Stack: `[] → []`.
     EndBeginPrologue,
+    /// Run the check code queued on the main unit (`Stmt::RunCheckCode`).
+    /// Stack: `[] → []`.
+    RunCheckCode,
     /// Register an `enum` declaration. Stack: `[] → []`.
     ///
     /// The operand indexes `CompiledCode::stmt_pool` (a `Stmt::EnumDecl`), which
@@ -5184,8 +5241,8 @@ pub(crate) type DeclTraits = [(String, Option<DeclTraitArg>)];
 
 /// Pair a declaration's trait names with the arguments the compiler lowered for
 /// them. `lowered` is index-aligned with `custom_traits`; a lowering site may
-/// append an argument-less marker trait (`__lexical_hoist`) after building the
-/// list, so a shorter list pads with `None` rather than misaligning.
+/// append an argument-less marker trait after building the list, so a shorter
+/// list pads with `None` rather than misaligning.
 fn zip_decl_trait_args(
     custom_traits: &[(String, Option<Expr>)],
     lowered: Vec<Option<DeclTraitArg>>,
@@ -5263,9 +5320,12 @@ pub(crate) struct CompiledSubDeclPlan {
     pub(crate) is_export: bool,
     pub(crate) export_tags: Vec<String>,
     pub(crate) is_test_assertion: bool,
+    pub(crate) is_hidden_from_backtrace: bool,
     pub(crate) supersede: bool,
     pub(crate) scope: crate::ast::SubScope,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
+    /// Which registration this plan is for (see [`crate::ast::DeclPass`]).
+    pub(crate) pass: crate::ast::DeclPass,
     pub(crate) fingerprint: Option<u64>,
     /// Registration metadata derived once while lowering the declaration.
     /// Keeping it beside the plan prevents the registry adapter from walking
@@ -5650,18 +5710,16 @@ fn role_body_our_scope_violation(body: &[Stmt]) -> Option<&'static str> {
             // nothing ambiguous to complain about (rakudo accepts it).
             Stmt::EnumDecl { name, .. } if name.as_str().is_empty() => None,
             Stmt::EnumDecl { .. } => Some("enum"),
-            Stmt::RoleDecl { custom_traits, .. }
-                if custom_traits.iter().any(|(t, _)| t == "__my_scoped") =>
-            {
-                None
-            }
+            Stmt::RoleDecl {
+                is_lexical: true, ..
+            } => None,
             Stmt::RoleDecl { .. } => Some("role"),
             Stmt::VarDecl {
                 is_our: true,
-                custom_traits,
+                constant,
                 ..
             } => {
-                if custom_traits.iter().any(|(t, _)| t == "__constant") {
+                if constant.is_some() {
                     Some("constant")
                 } else {
                     Some("variable")
@@ -5740,8 +5798,21 @@ pub(crate) struct CompiledClassDeclPlan {
     /// what brings it into scope.
     pub(crate) body_parents: Vec<String>,
     pub(crate) repr: Option<String>,
+    /// Declared with the `native` declarator (`ast::Stmt::ClassDecl::is_native`).
+    pub(crate) is_native: bool,
+    /// The export tags of an `is export` class published without an export statement
+    /// (`ast::Stmt::ClassDecl::export_tags`).
+    pub(crate) export_tags: Option<Vec<String>>,
+    /// The `EXPORTHOW` declarator keyword (`ast::PackageMarks::declarator`).
+    pub(crate) declarator: Option<String>,
+    /// `ast::PackageMarks::source_compound_name`.
+    /// `ast::PackageMarks::parent_spellings`.
+    pub(crate) parent_spellings: Vec<(String, String)>,
+    pub(crate) source_compound_name: Option<String>,
     pub(crate) language_version: String,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
+    /// Which registration this plan is for (see [`crate::ast::DeclPass`]).
+    pub(crate) pass: crate::ast::DeclPass,
     pub(crate) decl_id: u64,
     /// Whether the declared body is a yada stub (ADR-0019 D1). Precomputed at
     /// plan lowering so registration never re-walks the raw body to judge
@@ -5839,7 +5910,7 @@ pub(crate) enum ClassBodyOp {
     ClassSub {
         name: Symbol,
         chunk: Option<CompiledDeclExpr>,
-        /// A `__hoisted`-marked copy of `chunk` (mirrors
+        /// A hoisted copy of `chunk` (mirrors
         /// `Compiler::hoist_sub_decls` at the compilation-unit level, ADR-0041
         /// §9), registered by `run_class_body` before any class-body statement
         /// runs. Raku hoists a `sub`'s name to the top of its enclosing scope
@@ -5929,7 +6000,7 @@ pub(crate) enum ClassBodyOp {
 /// `SetLine` marker immediately preceding it in the body does.
 pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
     let mut flattened: Vec<&Stmt> = crate::ast::scope_members(body)
-        .keep_whole(synthetic_block_needs_atomic_compile)
+        .keep_whole(crate::ast::var_marks::is_bind_group)
         .collect();
     collect_nested_has_decl_stmts(body, &mut flattened);
     let mut decl_line: Option<i64> = None;
@@ -5945,8 +6016,8 @@ pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
 }
 
 /// The outer-lexical slots a type body's `:=` declarations bind: for each
-/// bind group kept whole by [`synthetic_block_needs_atomic_compile`]
-/// (`[MarkBind, VarDecl, ...]`), the slot of a `VarDecl` whose right-hand
+/// bind group kept whole by [`crate::ast::var_marks::is_bind_group`]
+/// (`[VarDecl { marks.bound }, ...]`), the slot of a `VarDecl` whose right-hand
 /// side is a plain variable of the declaring frame. Shared by the class and
 /// role plans: see [`CompiledClassDeclPlan::body_bind_source_slots`] and
 /// [`CompiledRoleDeclPlan::body_bind_source_slots`].
@@ -5960,7 +6031,7 @@ fn body_bind_source_slots<'a>(
         let Stmt::SyntheticBlock(inner) = stmt else {
             continue;
         };
-        if !inner.iter().any(|s| matches!(s, Stmt::MarkBind)) {
+        if !crate::ast::var_marks::is_bind_group(inner) {
             continue;
         }
         for stmt in inner {
@@ -5980,36 +6051,6 @@ fn body_bind_source_slots<'a>(
         }
     }
     slots
-}
-
-/// Whether a `SyntheticBlock`'s statements must be compiled together, as one
-/// `Compiler::compile_stmt` call, rather than split apart by
-/// [`class_body_plan`]'s flatten step.
-///
-/// `Compiler::compile_stmt`'s own `Stmt::SyntheticBlock` arm scans its
-/// statement list for these same markers (`Stmt::MarkBind`,
-/// `Stmt::MarkSigilless`, `Stmt::MarkSigillessReadonly`, and the `@`-bind
-/// marker call) to decide how the `Stmt::VarDecl` sitting alongside them
-/// should store its value — e.g. whether a sigilless bind (`my \x := $y`)
-/// aliases `$y`'s container or snapshots its value. That decision needs the
-/// WHOLE block as context. Splitting the block into independent
-/// single-statement chunks (each compiled by its own child `Compiler`, as a
-/// top-level class-body "Other" statement is) loses that context: the
-/// `VarDecl`'s own compile no longer sees the `MarkSigilless` that follows
-/// it, so the runtime's `OpCode::MarkSigillessBind` handler falls back to
-/// inspecting the already-stored (and already-dereferenced) value instead of
-/// the compiler's verdict — turning a container bind into an immutable-value
-/// one. A `my \x := $x` placed directly at class-body top level (a common
-/// class-scoped-scratch-variable idiom) hit exactly this: the bind aliased
-/// nothing, and the first later write from a method died with "Cannot modify
-/// an immutable Int" (Math::Interval 0.0.3's `Operation` helper class).
-fn synthetic_block_needs_atomic_compile(stmts: &[Stmt]) -> bool {
-    stmts.iter().any(|s| {
-        matches!(
-            s,
-            Stmt::MarkBind | Stmt::MarkSigilless(_) | Stmt::MarkSigillessReadonly(_)
-        )
-    })
 }
 
 /// `has` declarations nested anywhere below a class body's own statements —
@@ -6247,7 +6288,7 @@ pub(crate) enum RoleBodyOp {
 /// does.
 pub(crate) fn role_body_plan(body: &[Stmt]) -> Vec<RoleBodyOp> {
     crate::ast::scope_members(body)
-        .keep_whole(synthetic_block_needs_atomic_compile)
+        .keep_whole(crate::ast::var_marks::is_bind_group)
         .map(classify_role_body_stmt)
         .collect()
 }
@@ -6396,8 +6437,16 @@ pub(crate) struct CompiledRoleDeclPlan {
     pub(crate) is_export: bool,
     pub(crate) export_tags: Vec<String>,
     pub(crate) is_rw: bool,
+    /// A `my role`: stored under its declaration-site storage name.
+    pub(crate) is_lexical: bool,
     pub(crate) language_version: String,
+    /// The `EXPORTHOW` declarator keyword (`ast::PackageMarks::declarator`).
+    pub(crate) declarator: Option<String>,
+    /// `ast::PackageMarks::source_compound_name`.
+    pub(crate) source_compound_name: Option<String>,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
+    /// Which registration this plan is for (see [`crate::ast::DeclPass`]).
+    pub(crate) pass: crate::ast::DeclPass,
     /// Attribute names this role declares in its own body (ADR-0019 D2a),
     /// precomputed at plan lowering instead of `walk_role_body`'s pre-scan
     /// pass re-deriving it on every registration.
@@ -6499,6 +6548,8 @@ pub(crate) struct CompiledProtoDeclPlan {
     /// Tags on `is export(:TAG1, :TAG2)`; empty means untagged (DEFAULT).
     pub(crate) export_tags: Vec<String>,
     pub(crate) custom_traits: Vec<String>,
+    /// Which registration this plan is for (see [`crate::ast::DeclPass`]).
+    pub(crate) pass: crate::ast::DeclPass,
     pub(crate) trait_args: Vec<Option<DeclTraitArg>>,
     /// True for `proto method`/`proto submethod`: such a proto never
     /// registers at the package level (its `{*}` dispatches over the type's
@@ -7634,6 +7685,13 @@ pub(crate) struct CompiledCode {
     /// (`Compiler::lexical_scope_known`); empty otherwise, which keeps the
     /// by-name resolution. Read by `Interpreter::imported_amp_over_inherited`.
     pub(crate) unscoped_amp_reads: Vec<Symbol>,
+    /// The converse of `unscoped_amp_reads`: `&name` reads whose site the
+    /// compiler proved sits inside a lexical `&name` binding it can see (a
+    /// `for ... -> &name` parameter, a `my &name`), so the env `&name` entry
+    /// IS that binding even when the callable it holds was made in another
+    /// compunit. Recorded only when `Compiler::lexical_scope_known`. Read by
+    /// `Interpreter::imported_amp_over_inherited`.
+    pub(crate) bound_amp_reads: Vec<Symbol>,
     /// Free variables (names NOT in this code's own locals) that must become a
     /// shared `ContainerRef` cell in whichever *ancestor* frame declares them,
     /// because they are captured-and-mutated by an ESCAPING closure somewhere in
@@ -7724,7 +7782,7 @@ pub(crate) struct CompiledCode {
     pub(crate) may_observe_named_slurpy: bool,
     /// True if this code is the body of a `supply { … }` block — the lambda
     /// `Supply.on-demand` is handed, recognised by its generated emitter
-    /// parameter (`__mutsu_supply_emitter_N`, see `supply_method_call`).
+    /// parameter (`__mutsu_supply_emitter_N`, see `rakuast::supply_lower`).
     ///
     /// Such a body is a scope of its own that the caller never re-enters, so the
     /// names it declares with `my` are private to it: they must not be written
@@ -8457,6 +8515,7 @@ impl CompiledCode {
             outer_code_var_names: std::collections::HashSet::new(),
             eval_scope_names: std::collections::HashSet::new(),
             unscoped_amp_reads: Vec::new(),
+            bound_amp_reads: Vec::new(),
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
             upvalue_syms: Vec::new(),
@@ -8488,6 +8547,23 @@ impl CompiledCode {
             #[cfg(feature = "jit")]
             jit: JitCodeState::default(),
         }
+    }
+
+    /// Number of attribute inline-cache words of this chunk: one per local
+    /// slot (a `$!x` access by slot), then one per constant (an `@!x` / `%!x`
+    /// store by name, whose `SetGlobal` operand is that constant).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn attr_site_words(&self) -> usize {
+        self.locals.len() + self.constants.len()
+    }
+
+    /// The attribute inline-cache word of the `SetGlobal` whose name is
+    /// constant `name_idx` (see [`Self::attr_site_words`]).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn global_attr_site(&self, name_idx: u32) -> usize {
+        self.locals.len() + name_idx as usize
     }
 
     /// The attribute-cell key of local slot `idx`, or `None` when that slot is
@@ -9270,6 +9346,36 @@ impl CompiledCode {
     /// A local needs env sync if it's referenced by GetGlobal/SetGlobal/etc.
     /// in this code. Locals only accessed via GetLocal don't need env sync,
     /// which reduces env size and makes method call env clones cheaper.
+    /// The variable spellings (`$n`, `@xs`, `%h`, and the sigil-less `n` a
+    /// scalar local is stored under) that source text names.
+    // Cost: O(t), t = bytes of `text`.
+    fn sigiled_names_in(text: &str) -> Vec<&str> {
+        let bytes = text.as_bytes();
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            if matches!(bytes[i], b'$' | b'@' | b'%') {
+                let start = i;
+                let mut j = i + 1;
+                while j < bytes.len()
+                    && (bytes[j].is_ascii_alphanumeric() || matches!(bytes[j], b'_' | b'-'))
+                {
+                    j += 1;
+                }
+                if j > i + 1 {
+                    out.push(&text[start..j]);
+                    if bytes[start] == b'$' {
+                        out.push(&text[start + 1..j]);
+                    }
+                }
+                i = j;
+            } else {
+                i += 1;
+            }
+        }
+        out
+    }
+
     pub(crate) fn compute_needs_env_sync(&mut self) {
         // The ip -> line table must stay index-aligned with `ops`: a code path
         // that pushes/removes an op without going through `emit()` (or without
@@ -9362,6 +9468,13 @@ impl CompiledCode {
         // unaffected and still skips the per-call flush for its slot-only params.
         let n = self.locals.len();
         self.needs_env_sync = vec![false; n];
+        // A dynamic `&*name` parameter is read by name from callees' frames, so
+        // its slot is always mirrored into the env (a `$*name` has no slot).
+        for (slot, name) in self.locals.iter().enumerate() {
+            if name.starts_with("&*") {
+                self.needs_env_sync[slot] = true;
+            }
+        }
         self.env_consumer_slots = EnvConsumerSlots::default();
         let mut has_for_loop = false;
         let mut has_block_scope = false;
@@ -9563,6 +9676,25 @@ impl CompiledCode {
                 | OpCode::MultiDimIndexAssignNested { name_idx: idx, .. }
                 | OpCode::MultiDimIndexAssign { name_idx: idx, .. } => Some(*idx),
                 OpCode::AtomicCompoundVar { name_idx, .. } => Some(*name_idx),
+                // The tag names the container a topic/element alias writes back to
+                // (`with %h<k> { } else { $_ = v }`, `given @a.reverse`): the
+                // write-back resolves it by name.
+                OpCode::TagElementSource { container_idx, .. }
+                | OpCode::TagElementSourcePath { container_idx, .. } => Some(*container_idx),
+                OpCode::TagContainerRef(idx, _) | OpCode::TagContainerRefReversed(idx, _) => {
+                    Some(*idx)
+                }
+                // An aggregate (or sigilless alias) argument: the callee may bind its
+                // parameter to the caller's variable by name and write it back
+                // there (`sub f(\c) { c<b> = 1 }`, `is rw`).
+                OpCode::WrapVarRef { name_idx, .. }
+                    if matches!(
+                        self.constants.get(*name_idx as usize).map(Value::view),
+                        Some(ValueView::Str(name)) if name.starts_with(['@', '%'])
+                    ) =>
+                {
+                    Some(*name_idx)
+                }
                 _ => None,
             };
             if let Some(idx) = name_idx
@@ -9582,14 +9714,64 @@ impl CompiledCode {
                 } => Some(*target_name_idx),
                 _ => self.op_container_mutate_const_idx(op),
             };
+            // A scalar target of a push-family method vivifies by name when it
+            // holds a type object (`sub f($p is rw) { $p.push(1) }`): the new
+            // container is written back through the env binding.
+            let scalar_vivifies = matches!(
+                op,
+                OpCode::CallMethodMut { name_idx, .. }
+                    if matches!(
+                        self.constants.get(*name_idx as usize).map(Value::view),
+                        Some(ValueView::Str(method)) if Self::is_mutating_container_method(&method)
+                    )
+            );
             if let Some(idx) = container_idx
                 && let Some(ValueView::Str(name)) =
                     self.constants.get(idx as usize).map(Value::view)
-                && name.starts_with(['@', '%'])
+                && (name.starts_with(['@', '%']) || scalar_vivifies)
                 && let Some(&slot) = locals_map.get(name.as_str())
             {
                 self.needs_env_sync[slot] = true;
             }
+        }
+        // A variable's name pushed as a string VALUE (`__mutsu_cas_array_multidim
+        // ("@p", @p, ..)`, `__mutsu_*_var("$x", ..)`): the callee resolves and
+        // republishes the variable by that name, so its env mirror must stay
+        // current whichever builtin it is. A plain string literal that happens to
+        // spell a local only costs that local its slot-only status.
+        for op in &self.ops {
+            if let OpCode::LoadConst(idx) = op
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(*idx as usize).map(Value::view)
+                && let Some(&slot) = locals_map.get(name.as_str())
+            {
+                self.needs_env_sync[slot] = true;
+            }
+        }
+        // A regex literal's adverb arguments (`m:nth($n)`, `:x(@counts)`) are kept as
+        // source text and evaluated by name when the match runs.
+        for c in &self.constants {
+            if let ValueView::RegexWithAdverbs(adverbs) = c.view() {
+                let args = adverbs.nth.iter().map(|a| a.as_str()).chain(
+                    adverbs
+                        .source_adverbs
+                        .iter()
+                        .flat_map(|list| list.iter())
+                        .filter_map(|(_, arg)| arg.as_deref()),
+                );
+                for text in args {
+                    for var in Self::sigiled_names_in(text) {
+                        if let Some(&slot) = locals_map.get(var) {
+                            self.needs_env_sync[slot] = true;
+                        }
+                    }
+                }
+            }
+        }
+        // A regex match writes `$/` by name, so a `$/` that is a local or a
+        // parameter lives in the env as well as its slot.
+        if let Some(&slot) = locals_map.get("/") {
+            self.needs_env_sync[slot] = true;
         }
         // `(B)` per-store env-write gate — closure-capture cluster fold.
         // A nested closure normally reads its free variables straight from this
@@ -9840,8 +10022,8 @@ impl CompiledCode {
         )
     }
 
-    /// Whether this routine's parameters must all be mirrored into `env` by
-    /// name: a reflective op that can reach another frame's lexical exists
+    /// Whether this routine's parameters -- and the stores to its slot-only
+    /// locals -- must be mirrored into `env` by name: a reflective op that can reach another frame's lexical exists
     /// somewhere, or this chunk (or a closure nested in it) looks one up by a
     /// runtime string (`EVAL`, ...). An `EVAL` in an unrelated routine -- as in
     /// every program that loads `JSON::Fast` -- does not make this routine's
@@ -9849,7 +10031,38 @@ impl CompiledCode {
     // Cost: O(1).
     #[inline]
     pub(crate) fn mirrors_all_params(&self) -> bool {
-        NON_EVAL_REFLECTIVE_SEEN.load(Ordering::Relaxed) || self.needs_reflective_capture
+        // A body stashed in `stmt_pool` runs by name against the live env (phasers
+        // of a `map` block, anonymous subs, trait arguments, enum/subset
+        // declarations ...), so it can name any lexical of this chunk.
+        NON_EVAL_REFLECTIVE_SEEN.load(Ordering::Relaxed)
+            || self.needs_reflective_capture
+            || !self.stmt_pool.is_empty()
+    }
+
+    /// Whether every `SymbolicDeref` of this chunk is spelled
+    /// `&CALLER::LEXICAL::(..)`: the constant `CALLER::LEXICAL::` is loaded
+    /// once per deref and the name is spliced after it, so the counts agree. A
+    /// chunk that also derefs a name it computes whole (`::($n)`) disagrees and
+    /// keeps the process-wide latch.
+    // Cost: O(n), n = ops in this chunk.
+    fn symbolic_derefs_name_caller_lexical(&self) -> bool {
+        let loads = self
+            .ops
+            .iter()
+            .filter(|op| {
+                matches!(op, OpCode::LoadConst(idx)
+                if matches!(
+                    self.constants.get(*idx as usize).map(Value::view),
+                    Some(ValueView::Str(name)) if name.as_str() == "CALLER::LEXICAL::"
+                ))
+            })
+            .count();
+        let derefs = self
+            .ops
+            .iter()
+            .filter(|op| matches!(op, OpCode::SymbolicDeref { .. }))
+            .count();
+        derefs != 0 && derefs == loads
     }
 
     pub(crate) fn scan_reflective_name_access(&mut self) {
@@ -9857,9 +10070,45 @@ impl CompiledCode {
         // Whether a reflective op other than `EVAL` was seen: only those latch
         // the process-global flag (see `eval_reads_own_scope_only`).
         let mut latch_reflective = false;
+        // Whether a reader of the immediate caller's frame was seen (see
+        // `CALLER_FRAME_READ_SEEN`).
+        let mut caller_read = false;
+        // Computed on the first `SymbolicDeref`: whether every one in this
+        // chunk is the `&CALLER::LEXICAL::(..)` spelling.
+        let mut derefs_read_caller_lexical: Option<bool> = None;
         for (i, op) in self.ops.iter().enumerate() {
             let mut is_eval = false;
+            let mut op_reads_caller = false;
             let reflective = match op {
+                // The immediate caller's frame, by a statically visible
+                // spelling: no routine has to mirror its parameters for it,
+                // because `push_caller_env` copies the light caller's
+                // slot-only parameters into the entry it pushes (#14337).
+                OpCode::GetCallerVar { depth: 1, .. }
+                | OpCode::GetCallersVar {
+                    depth: 1,
+                    cascade: false,
+                    ..
+                } => {
+                    op_reads_caller = true;
+                    true
+                }
+                OpCode::GetPseudoStash(name_idx) | OpCode::GetPseudoStashKeyed(name_idx)
+                    if matches!(
+                        self.constants.get(*name_idx as usize).map(Value::view),
+                        Some(ValueView::Str(name)) if name.as_str() == "CALLER::"
+                    ) =>
+                {
+                    op_reads_caller = true;
+                    true
+                }
+                OpCode::SymbolicDeref { .. }
+                    if *derefs_read_caller_lexical
+                        .get_or_insert_with(|| self.symbolic_derefs_name_caller_lexical()) =>
+                {
+                    op_reads_caller = true;
+                    true
+                }
                 // `::($name)` / `::('$x')` names a lexical by string unless
                 // its operand is a constant type name (`::('Int')`,
                 // `::('Foo::Bar')`): a sigiled constant or a name computed at
@@ -9918,9 +10167,10 @@ impl CompiledCode {
             };
             if reflective {
                 own_reflective = true;
-                if !is_eval {
+                if op_reads_caller {
+                    caller_read = true;
+                } else if !is_eval {
                     latch_reflective = true;
-                    break;
                 }
             }
         }
@@ -9931,6 +10181,11 @@ impl CompiledCode {
         if !latch_reflective && self.holds_indirect_regex_lookup() {
             own_reflective = true;
             latch_reflective = true;
+        }
+        if caller_read {
+            CALLER_FRAME_READ_SEEN.store(true, Ordering::Relaxed);
+            // Reached through `push_caller_env`, never the light paths.
+            self.uses_callframe = true;
         }
         if own_reflective {
             REFLECTIVE_NAME_ACCESS_SEEN.store(true, Ordering::Relaxed);
@@ -10601,7 +10856,7 @@ impl CompiledCode {
     fn op_closure_code_idxs(op: &OpCode) -> impl Iterator<Item = u32> + '_ {
         let (first, phasers): (Option<u32>, &[WheneverPhaser]) = match op {
             OpCode::MakeAnonSub(_, cc, _)
-            | OpCode::MakeAnonSubParams(_, cc, _, _)
+            | OpCode::MakeAnonSubParams(_, cc, _, _, _)
             | OpCode::MakeLambda(_, cc, _)
             | OpCode::MakeBlockClosure(_, cc)
             | OpCode::MakeGather(_, cc, _) => (*cc, &[]),
@@ -12675,6 +12930,7 @@ impl CompiledCode {
         stmt: &Stmt,
         name_chunk: Option<CompiledDeclExpr>,
         trait_args: Vec<Option<DeclTraitArg>>,
+        pass: crate::ast::DeclPass,
     ) -> u32 {
         let Stmt::SubDecl {
             name,
@@ -12691,6 +12947,7 @@ impl CompiledCode {
             is_export,
             export_tags,
             is_test_assertion,
+            is_hidden_from_backtrace,
             supersede,
             scope,
             custom_traits,
@@ -12763,9 +13020,11 @@ impl CompiledCode {
             is_export: *is_export,
             export_tags: export_tags.clone(),
             is_test_assertion: *is_test_assertion,
+            is_hidden_from_backtrace: *is_hidden_from_backtrace,
             supersede: *supersede,
             scope: *scope,
             custom_traits: plan_traits,
+            pass,
             fingerprint,
             routine_metadata,
         });
@@ -12909,6 +13168,7 @@ impl CompiledCode {
         method_compiled_keys: Vec<Option<Symbol>>,
         method_outer_lexical_slots: Vec<(Symbol, u32)>,
         body_plan: Vec<ClassBodyOp>,
+        pass: crate::ast::DeclPass,
     ) -> u32 {
         let Stmt::ClassDecl {
             name,
@@ -12925,6 +13185,9 @@ impl CompiledCode {
             custom_traits,
             decl_id,
             body_parents,
+            is_native,
+            export_tags,
+            marks,
             ..
         } = stmt
         else {
@@ -12972,8 +13235,14 @@ impl CompiledCode {
             does_parents: does_parents.clone(),
             body_parents: body_parents.clone(),
             repr: repr.clone(),
+            is_native: *is_native,
+            export_tags: export_tags.clone(),
+            declarator: marks.declarator.clone(),
+            parent_spellings: marks.parent_spellings.clone(),
+            source_compound_name: marks.source_compound_name.clone(),
             language_version: language_version.clone(),
             custom_traits: plan_traits,
+            pass,
             decl_id: *decl_id,
             is_stub,
             trusts,
@@ -13004,6 +13273,7 @@ impl CompiledCode {
         method_compiled_keys: Vec<Option<Symbol>>,
         method_outer_lexical_slots: Vec<(Symbol, u32)>,
         deferred_body_ops: Vec<DeferredBodyOp>,
+        pass: crate::ast::DeclPass,
     ) -> u32 {
         let Stmt::RoleDecl {
             spans: _,
@@ -13014,9 +13284,11 @@ impl CompiledCode {
             export_tags,
             body,
             is_rw,
+            is_lexical,
             language_version,
             custom_traits,
             decl_id,
+            marks,
         } = stmt
         else {
             panic!("add_role_decl_plan expects RoleDecl");
@@ -13061,8 +13333,12 @@ impl CompiledCode {
             is_export: *is_export,
             export_tags: export_tags.clone(),
             is_rw: *is_rw,
+            is_lexical: *is_lexical,
             language_version: language_version.clone(),
+            declarator: marks.declarator.clone(),
+            source_compound_name: marks.source_compound_name.clone(),
             custom_traits: zip_decl_trait_args(custom_traits, trait_args),
+            pass,
             own_attribute_names,
             body_used_modules,
             body_declared_types,
@@ -13513,6 +13789,12 @@ pub(crate) struct NamedParamBind {
     pub(crate) alias_binds: Vec<(String, Option<usize>)>,
     /// `outer_sub_signature` alias keys (sigils trimmed) that also match.
     pub(crate) outer_alias_keys: Vec<String>,
+    /// The parameter declares a fast type (`Bool :$flag`): a supplied value is
+    /// checked by name before it binds.
+    pub(crate) typed: bool,
+    /// The constant default (`:$flag = True`, already verified against the
+    /// type) an unsupplied call binds. `None` for no default.
+    pub(crate) fill: Option<Value>,
 }
 
 /// A compiled function body (SubDecl compiled to bytecode).
@@ -13935,11 +14217,10 @@ impl CompiledFunction {
     /// in-sequence plan carries the full traits.
     // Cost: O(p), p = sub declaration plans in the body.
     pub(crate) fn has_nested_export_plans(&self) -> bool {
-        self.code.sub_decl_plans.iter().any(|plan| {
-            plan.is_export
-                && plan.name_chunk.is_none()
-                && !plan.custom_traits.iter().any(|(t, _)| t == "__hoisted")
-        })
+        self.code
+            .sub_decl_plans
+            .iter()
+            .any(|plan| plan.is_export && plan.name_chunk.is_none() && !plan.pass.hoisted)
     }
 
     /// Stamp a compiled routine and its nested named-subs with their enclosing
@@ -14060,7 +14341,15 @@ impl CompiledFunction {
     }
 
     /// Pre-compute the light named-call bind plan (see [`NamedCallPlan`]).
-    pub(crate) fn precompute_named_call_plan(&mut self) {
+    ///
+    /// `named_fast` answers, for a named parameter, whether it is a fast-typed
+    /// and/or constant-defaulted scalar the light bind can serve itself, and
+    /// its constant default (`Some(None)` for none). It is a parameter because
+    /// the plan lives in `runtime`, which this layer does not name.
+    pub(crate) fn precompute_named_call_plan(
+        &mut self,
+        named_fast: fn(&crate::ast::ParamDef) -> Option<Option<Value>>,
+    ) {
         if self.param_defs.is_empty() || !self.param_defs.iter().any(|pd| pd.named) {
             return;
         }
@@ -14103,6 +14392,7 @@ impl CompiledFunction {
                 .unwrap_or(match_key)
                 .to_string();
             let slot = slot_of(&pd.name);
+            let fast = named_fast(pd);
             let mut alias_keys = Vec::new();
             let mut alias_binds = Vec::new();
             if let Some(ref sub_params) = pd.sub_signature {
@@ -14161,6 +14451,8 @@ impl CompiledFunction {
                 alias_keys,
                 alias_binds,
                 outer_alias_keys,
+                typed: pd.type_constraint.is_some() && fast.is_some(),
+                fill: fast.flatten(),
             }));
         }
         self.named_call_plan = Some(Box::new(NamedCallPlan {

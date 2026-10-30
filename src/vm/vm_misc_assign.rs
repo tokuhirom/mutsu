@@ -13,7 +13,7 @@ impl Interpreter {
     pub(super) fn apply_attr_container_element_type(
         &mut self,
         name: &str,
-        mut val: Value,
+        val: Value,
         is_bind: bool,
     ) -> Result<Value, RuntimeError> {
         if !(name.starts_with('@') || name.starts_with('%')) {
@@ -44,7 +44,21 @@ impl Interpreter {
         // `Array`. Only the SetGlobal call site (attribute assignment reached
         // by name) can even see a bind here; the others are gated to plain
         // `=`/AssignExpr forms already.
-        let Some(tc) = self.self_attr_type_constraint(name) else {
+        let tc = self.self_attr_type_constraint(name);
+        self.apply_attr_container_element_type_with(name, val, is_bind, tc)
+    }
+
+    /// [`Self::apply_attr_container_element_type`] for a caller that already
+    /// holds the attribute's declared type constraint `tc`.
+    // Cost: O(e) as the caller, e = elements checked against a typed constraint.
+    pub(super) fn apply_attr_container_element_type_with(
+        &mut self,
+        name: &str,
+        mut val: Value,
+        is_bind: bool,
+        tc: Option<String>,
+    ) -> Result<Value, RuntimeError> {
+        let Some(tc) = tc else {
             return Ok(if is_bind {
                 val
             } else {
@@ -76,10 +90,11 @@ impl Interpreter {
         let Some(elems) = elems else {
             return Ok(val);
         };
+        let mut memo = crate::runtime::elem_type_memo::ElemTypeMemo::default();
         for item in &elems {
             if !matches!(value_type, "Mu" | "Any")
                 && !item.is_nil()
-                && !self.type_matches_value(value_type, item)
+                && !self.type_matches_value_memo(value_type, item, &mut memo)
             {
                 return Err(self.type_check_element_failure(name, value_type, item));
             }
@@ -209,7 +224,7 @@ impl Interpreter {
             // Array/Hash value shares its backing node with every holder, so
             // it is reassigned in place either way; a container object is
             // assigned through its `STORE`, as `=` on any container is.
-            let self_value = self.env_self_value();
+            let self_value = self.frame_invocant();
             let (cell, current) = match self_value.as_ref().map(Value::view) {
                 Some(ValueView::ContainerRef(cell)) => {
                     let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -259,8 +274,8 @@ impl Interpreter {
                     // instance) is assignable; a plain object `self` stays
                     // immutable (X::Assignment::RO).
                     None if matches!(aggregate.view(), ValueView::Instance { attributes, .. }
-                        if attributes.as_map().contains_key("__mutsu_hash_storage")
-                            || attributes.as_map().contains_key("__mutsu_array_storage")) =>
+                        if attributes.as_map().contains_key(crate::symbol::wk::hash_storage())
+                            || attributes.as_map().contains_key(crate::symbol::wk::array_storage())) =>
                     {
                         let stored =
                             self.try_compiled_method_or_interpret(current, "STORE", vec![val])?;
@@ -327,7 +342,7 @@ impl Interpreter {
         // captured lexical reached through this env-named path rather than a
         // local slot) must route through the class's STORE, exactly like the
         // local-slot `maybe_tied_store_reassign` does.
-        if self.maybe_tied_store_reassign_named(&name)?.is_some() {
+        if self.maybe_tied_store_reassign_named(&name, None)?.is_some() {
             return Ok(());
         }
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);

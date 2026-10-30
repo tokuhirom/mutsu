@@ -245,7 +245,7 @@ impl Interpreter {
         Some(Self::watch_path_supply(watched, p))
     }
 
-    fn is_io_path_value(value: &Value) -> bool {
+    pub(crate) fn is_io_path_value(value: &Value) -> bool {
         matches!(value.view(), ValueView::Instance { class_name, .. }
             if class_name == "IO::Path" || class_name.as_str().starts_with("IO::Path::"))
     }

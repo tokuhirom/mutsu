@@ -22,6 +22,9 @@ impl Interpreter {
             Self::stamp_stash_origin_package(&stash, &origin);
             Self::stamp_stash_origin_routine(&stash, origin_routine.as_deref());
             Self::stamp_stash_origin_unit(&stash, self.caller_frame_unit());
+            if let Some(index) = self.callframe_stack_len().checked_sub(depth) {
+                Self::stamp_stash_caller_frame(&stash, index);
+            }
             self.stack.push(stash);
             return Ok(());
         }
@@ -345,6 +348,11 @@ impl Interpreter {
         // scope frame. Preserve those visible package bindings while keeping
         // ordinary scalar entries frame-local; the latter are precisely what
         // makes MY:: stop leaking enclosing lexicals.
+        // A nested block's pad holds what its own declarations and `use`s put
+        // there (#10626): a loaded module's package the unit bound at file
+        // level (`use Test`) is the unit's, not the block's. The block's own
+        // `my class` stays.
+        let block_pad = !matches!(routines, LexicalStashRoutines::All);
         for (key, value) in self.env().iter() {
             let key = key.resolve();
             // A module's package the BEGIN-time preload bound is a pad entry
@@ -352,6 +360,7 @@ impl Interpreter {
             if self.should_hide_from_my_global_stash(&key)
                 || !matches!(value.view(), ValueView::Package(_))
                 || self.module_name_hidden_here(&key)
+                || (block_pad && self.module.loaded_modules.contains(key.as_str()))
             {
                 continue;
             }
@@ -425,6 +434,21 @@ impl Interpreter {
         self.stack.push(stash);
     }
 
+    /// The routine `name` the import sets the block owning
+    /// `import_scopes()[scope]` filled bind, or Nil.
+    // Cost: O(s), s = the scope's import sets.
+    fn scope_hook_routine(&self, scope: usize, name: Symbol) -> Value {
+        let sets = &self.import_scopes()[scope].lexical_sets;
+        let chain: Vec<Symbol> = sets.iter().rev().copied().collect();
+        match self.lexical_import_binding(&chain, name) {
+            Some(crate::runtime::lexical_imports::LexicalImport::Code(value)) => value,
+            Some(crate::runtime::lexical_imports::LexicalImport::Routine(def)) => {
+                self.sub_value_from_function_def((*def).clone())
+            }
+            None => Value::NIL,
+        }
+    }
+
     /// Add the routines the block owning `import_scopes()[scope]` imported.
     // Cost: O(a * p), a = routines that block imported, p = bare-name packages.
     fn add_scope_imported_routines(&self, scope: usize, entries: &mut ValueMap) {
@@ -437,10 +461,31 @@ impl Interpreter {
             {
                 continue;
             }
+            let key = name;
             let name = name.resolve();
-            let value = self.resolve_code_var(&name);
+            let mut value = self.resolve_code_var(&name);
+            if value.is_nil() {
+                // A routine bound only in the scope's lexical import sets
+                // (a `sub EXPORT` hook's `&name`) has no env alias.
+                value = self.scope_hook_routine(scope, key);
+            }
             if !value.is_nil() {
                 entries.entry(format!("&{name}")).or_insert(value);
+            }
+        }
+        // A code object a `use` bound only in the scope's import sets (an
+        // exported `&name` variable, a `sub EXPORT` hook's routine) has no
+        // routine alias to list it by: the sets are the record.
+        for set in self.import_scopes()[scope].lexical_sets.iter().rev() {
+            let Some(bindings) = self.module_lexical_import_set(*set) else {
+                continue;
+            };
+            for (name, binding) in bindings {
+                if let crate::runtime::lexical_imports::LexicalImport::Code(value) = binding {
+                    entries
+                        .entry(format!("&{}", name.resolve()))
+                        .or_insert_with(|| value.clone());
+                }
             }
         }
     }
@@ -478,7 +523,12 @@ impl Interpreter {
     /// paths — so the type travels as the hash's declared type, exactly the way
     /// a `Map` does. Without this the spellings answered a bare `Hash`, with no
     /// symbol-table type at all.
-    pub(super) fn pseudo_stash_hash(&mut self, entries: ValueMap) -> Value {
+    pub(super) fn pseudo_stash_hash(&mut self, mut entries: ValueMap) -> Value {
+        // `$_` is a declared lexical of every scope, `Any` until something
+        // topicalizes it, so a lexical stash always answers it.
+        if entries.get("$_").is_none_or(Value::is_nil) {
+            entries.insert("$_".to_string(), Value::package(Symbol::intern("Any")));
+        }
         let hash = Value::hash_with_data(Value::hash_arc(entries));
         self.tag_container_metadata(
             hash,

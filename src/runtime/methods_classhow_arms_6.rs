@@ -176,6 +176,20 @@ impl Interpreter {
             Ok(Value::str(letter))
     }
 
+    /// `Metamodel::LanguageRevision.set_language_revision($type, $rev)`: record
+    /// the revision `^language-revision` answers for the type.
+    // Cost: O(1) expected (see `type_metadata_mut`).
+    pub(crate) fn mop_set_language_revision(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        let (Some(target), Some(rev)) = (args.first(), args.get(1)) else {
+            return Ok(Value::NIL);
+        };
+        let type_name = self.mop_receiver_owner(target);
+        let revision = Value::str(rev.to_string_value());
+        self.type_metadata_mut(type_name)
+            .insert("language-revision".to_string(), revision);
+        Ok(Value::NIL)
+    }
+
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_method_table(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
             let type_name = match args[0].view() {

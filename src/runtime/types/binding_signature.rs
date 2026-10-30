@@ -646,13 +646,29 @@ impl Interpreter {
         // those alone.
         // A `Positional`-typed parameter (`sub f(Positional $p)`) binds a
         // Seq through the same failover (rakudo#4864).
-        let positional_typed = pd.type_constraint.as_deref() == Some("Positional");
+        let positional_typed = pd
+            .type_constraint
+            .as_deref()
+            .is_some_and(|tc| super::strip_type_smiley(tc) == ("Positional", None)
+                || super::strip_type_smiley(tc) == ("Positional", Some(":D"))
+                || super::strip_type_smiley(tc) == ("Positional", Some(":_")));
         if (pd.name.starts_with('@') || positional_typed)
             && !seq_list_array_context
             && (is_builtin_seq || self.type_matches_value("PositionalBindFailover", &value))
             && (is_builtin_seq || !self.type_matches_value("Positional", &value))
         {
-            value = self.coerce_positional_bind_failover(value)?;
+            // A plain Seq binds through `.cache`, as an `@` parameter does: it
+            // is reified once and kept, so the same Seq binds again later.
+            if positional_typed
+                && let ValueView::Seq(body) = value.view()
+                && !body.is_lazy()
+            {
+                let body = std::sync::Arc::clone(&body);
+                body.mark_cache_requested();
+                value = Value::seq_list_view(&body);
+            } else {
+                value = self.coerce_positional_bind_failover(value)?;
+            }
         }
         // A `::T` capture records the argument's type under `T`; it is not a
         // nominal check. Done before the constraint block so `::T Foo:D $x`
@@ -837,10 +853,15 @@ impl Interpreter {
                 // Verified against `raku -e 'sub f(::T $x, T $y) {}; f(1, "s")'`
                 // and its anonymous-parameter twin.
                 let param_display = param_display_name(pd);
+                // The value is not even of the nominal type here (a smiley
+                // mismatch on a matching base was reported above), and rakudo
+                // names that type without its smiley: `Str:D $k` given `123`
+                // reads `expected Str but got Int (123)`.
+                let expected_shown = crate::runtime::types::strip_type_smiley(&resolved_constraint).0;
                 return Err(self
                     .typecheck_binding_parameter_failure(
                         &param_display,
-                        &resolved_constraint,
+                        expected_shown,
                         &value,
                     )
                     .with_parameter_object(pd, Some(&*self)));
@@ -867,25 +888,17 @@ impl Interpreter {
         Ok(value)
     }
 
-    /// Bind a call's arguments to a signature, then mirror a `$self` parameter
-    /// onto the reserved lexical key (ADR-0061).
-    ///
-    /// A parameter the source spelled `$self` keeps the sigil-less
-    /// `ParamDef.name` — signature introspection re-adds the sigil, and a *named*
-    /// parameter matches its argument `Pair` by that name — so it binds the plain
-    /// `"self"` key. A body compiled with `Compiler::self_is_signature_param`
-    /// reads it there and needs nothing more, but the AST **carrier** path
-    /// (`eval_block_value`, which recompiles `SubData::body` with a bare
-    /// `Compiler::new()`) has no such flag to consult and reads the reserved key
-    /// instead. Binding both makes the parameter visible to every execution
-    /// path — compiled, carrier, or slow — instead of only the ones that happen
-    /// to carry the compiler's view of the signature.
+    /// Bind a call's arguments to a signature. A parameter the source spelled
+    /// `$self` keeps the sigil-less `ParamDef.name` — signature introspection
+    /// re-adds the sigil, and a *named* parameter matches its argument `Pair` by
+    /// that name — but binds the reserved [`crate::env::LEX_SELF`] key
+    /// ([`ParamDef::storage_name`], ADR-0061), never the `self` term, which only
+    /// the frame record answers.
     ///
     /// Gated on [`ParamDef::declares_self_lexical`], NOT on the bare name: a
     /// parser-synthesized anonymous invocant (`method () { ... }`,
-    /// `method (Foo:D:)`) is also recorded under the name `self`, and mirroring
-    /// *that* onto the reserved key would put the invocant back on top of a
-    /// captured outer `my $self` — the very collision ADR-0061 removes.
+    /// `method (Foo:D:)`) is also recorded under the name `self` and declares no
+    /// lexical.
     pub(crate) fn bind_function_args_values(
         &mut self,
         param_defs: &[ParamDef],
@@ -1022,7 +1035,7 @@ impl Interpreter {
             reads: args_usage,
             is_block,
         } = usage;
-        let result = self.bind_function_args_values_inner(
+        self.bind_function_args_values_inner(
             param_defs,
             params,
             args,
@@ -1034,15 +1047,23 @@ impl Interpreter {
                 bind_self_lexical: false,
                 is_block,
             },
-        );
-        let declares_self = crate::ast::signature_declares_self_lexical(param_defs)
-            // The legacy binding path: a single pointy-block parameter
-            // (`-> $self { }`) arrives as a bare name with no `ParamDef`.
-            || (param_defs.is_empty() && crate::ast::param_names_declare_self_lexical(params));
-        if declares_self && let Some(bound) = self.env_self_value() {
-            self.env.insert(crate::env::LEX_SELF.to_string(), bound);
+        )
+    }
+
+    /// [`Self::bind_param_value_sym`] for the parameter `pd`. A method's
+    /// implicit invocant has no env key: the frame record holds it
+    /// ([`Self::install_function_invocant`], ADR-14843).
+    fn bind_pd_value_sym(
+        &mut self,
+        pd: &ParamDef,
+        binding_name: &str,
+        name_sym: Symbol,
+        value: Value,
+    ) {
+        if pd.is_implicit_invocant() && binding_name == "self" && pd.default.is_none() {
+            return;
         }
-        result
+        self.bind_param_value_sym(binding_name, name_sym, value);
     }
 
     /// Bind a method's explicit parameters while keeping its implicit
@@ -1294,8 +1315,8 @@ impl Interpreter {
         let mut invocant_captures = invocant_captures.peekable();
         if invocant_captures.peek().is_some()
             && let Some(invocant_value) = self
-                .env_or_fixture_sym(crate::symbol::wk::self_())
-                .or_else(|| self.env_or_fixture_sym(crate::symbol::wk::class_decl()))
+                .frame_fixture_value(crate::symbol::wk::self_())
+                .or_else(|| self.frame_fixture_value(crate::symbol::wk::class_decl()))
         {
             for captured_name in invocant_captures {
                 self.bind_type_capture(captured_name, &invocant_value);
@@ -1496,6 +1517,14 @@ impl Interpreter {
                         value
                     };
                     match param_sym {
+                        // A method's injected invocant is the frame record's.
+                        Some(_) | None
+                            if param == "self"
+                                && !crate::ast::param_names_declare_self_lexical(params) => {}
+                        // An ordinary `$self` parameter is the reserved lexical.
+                        Some(_) | None if param == "self" => {
+                            self.bind_param_value(crate::env::LEX_SELF, value)
+                        }
                         Some(sym) => self.bind_param_value_sym(param, sym, value),
                         None => self.bind_param_value(param, value),
                     }
@@ -1652,7 +1681,7 @@ impl Interpreter {
         let mut positional_idx = 0usize;
         for (param_idx, pd) in param_defs.iter().enumerate() {
             let storage_name = pd.storage_name();
-            let binding_name = if bind_self_lexical && pd.declares_self_lexical() {
+            let binding_name = if pd.declares_self_lexical() {
                 crate::env::LEX_SELF
             } else {
                 storage_name.as_ref()
@@ -1834,7 +1863,8 @@ impl Interpreter {
                 } else if pd.traits.iter().any(|t| t == "raw" || t == "rw") {
                     // `+@a is raw` / `is rw` deliberately alias the caller's
                     // element containers, so their cells pass straight through.
-                    Value::real_array(items)
+                    // Rakudo binds a `List`, not an `Array`, for these.
+                    Value::array(items)
                 } else {
                     // A sigiled `+@a` binds an `Array`, and — exactly like `*@a`
                     // — each element is a fresh binding rather than an alias of
@@ -2099,7 +2129,7 @@ impl Interpreter {
                         break;
                     }
                     if !pd.name.is_empty() {
-                        self.bind_param_value_sym(binding_name, pd_name_sym(), value.clone());
+                        self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), value.clone());
                         self.bind_param_type_constraint_sym(
                             binding_name,
                             pd_name_sym(),
@@ -2246,7 +2276,11 @@ impl Interpreter {
                                     encode_slurpy_rw_param(&slurpy_key, items.len(), source_index),
                                     source_name,
                                 ));
-                                items.push(if source_value.is_container_ref() {
+                                // A `Proxy` mediates its own FETCH/STORE; a cell
+                                // around it would take a plain write instead.
+                                items.push(if source_value.is_container_ref()
+                                    || matches!(source_value.view(), ValueView::Proxy { .. })
+                                {
                                     source_value
                                 } else {
                                     Value::container_ref(crate::gc::Gc::new(
@@ -2365,7 +2399,8 @@ impl Interpreter {
                     // `*@a is raw` / `is rw` deliberately DO alias, and record
                     // that through `rw_bindings` — leave those items alone.
                     let slurpy_value = if is_alias_slurpy {
-                        Value::real_array(items)
+                        // Rakudo binds a `List` (not an `Array`) for `*@a is raw`.
+                        Value::array(items)
                     } else if !lazy_slots.is_empty() {
                         Self::lazy_literal_with_slipped_tail(
                             items.into_iter().map(Value::into_deref).collect(),
@@ -2768,6 +2803,18 @@ impl Interpreter {
                                 // A bare cell IS a writable lvalue (mirrors the
                                 // positional arm's deepmap/hyper case).
                             } else if named_is_rw {
+                                // The nominal type is checked before the
+                                // container requirement (`Str:D $k is rw` given
+                                // `123` is the type error).
+                                if pd.type_constraint.is_some() {
+                                    self.check_and_coerce_param_type(
+                                        pd,
+                                        bound_value.clone(),
+                                        None,
+                                        None,
+                                        false,
+                                    )?;
+                                }
                                 return Err(crate::runtime::utils::parameter_rw_not_container(
                                     &param_display_name(pd),
                                     &bound_value,
@@ -2816,7 +2863,7 @@ impl Interpreter {
                             // `f(v => [1,2])` binds `$v` as `$[1, 2]`); rw
                             // cells pass through untouched.
                             let bound_value = Self::itemize_plain_scalar_param(pd, bound_value.clone());
-                            self.bind_param_value_sym(binding_name, pd_name_sym(), bound_value);
+                            self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), bound_value);
                             self.bind_param_type_constraint_sym(
                                 binding_name,
                                 pd_name_sym(),
@@ -2918,7 +2965,7 @@ impl Interpreter {
                     if let Some(captured_name) = pd.captured_type_name() {
                         self.bind_type_capture(captured_name, &value);
                         if !pd.name.is_empty() && !is_rename {
-                            self.bind_param_value_sym(binding_name, pd_name_sym(), value.clone());
+                            self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), value.clone());
                             self.bind_param_type_constraint_sym(
                                 binding_name,
                                 pd_name_sym(),
@@ -2926,7 +2973,7 @@ impl Interpreter {
                             );
                         }
                     } else if !pd.name.is_empty() && !is_rename {
-                        self.bind_param_value_sym(binding_name, pd_name_sym(), value.clone());
+                        self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), value.clone());
                         self.bind_param_type_constraint_sym(
                             binding_name,
                             pd_name_sym(),
@@ -2975,7 +3022,7 @@ impl Interpreter {
                     // A named alias binds only its leaf variable (below); skip
                     // binding the parameter's own name in that form.
                     if !pd.named_alias {
-                        self.bind_param_value_sym(binding_name, pd_name_sym(), value.clone());
+                        self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), value.clone());
                         self.bind_param_type_constraint_sym(
                             binding_name,
                             pd_name_sym(),
@@ -3332,6 +3379,16 @@ impl Interpreter {
                             // ADR-0059 Slice 3): the first write creates the
                             // element.
                         } else if is_rw {
+                            // As for the named parameter: the type error wins.
+                            if pd.type_constraint.is_some() {
+                                self.check_and_coerce_param_type(
+                                    pd,
+                                    args[positional_idx].clone(),
+                                    None,
+                                    None,
+                                    false,
+                                )?;
+                            }
                             return Err(crate::runtime::utils::parameter_rw_not_container(
                                 &param_display_name(pd),
                                 &args[positional_idx],
@@ -3509,6 +3566,18 @@ impl Interpreter {
                     // `is copy` detaches — a detached copy of the wrapper would
                     // still be a wrapper.
                     if pd.name.starts_with('%') && !pd.slurpy && !pd.double_slurpy {
+                        value = value.deitemize_for_sigil_bind();
+                    }
+                    // A role mixin over an itemized Array (`$x = [1,2,3] but R`)
+                    // binds to an `@` parameter as the Array, so `for @p` and
+                    // `@p.elems` iterate its elements (plain itemized Arrays
+                    // are decontainerized on read; the mixin wrapper hides
+                    // the itemization from that read).
+                    if pd.name.starts_with('@')
+                        && !pd.slurpy
+                        && !pd.double_slurpy
+                        && matches!(value.view(), ValueView::Mixin(..))
+                    {
                         value = value.deitemize_for_sigil_bind();
                     }
                     // Check the argument before `is copy` removes its container type.
@@ -4011,7 +4080,7 @@ impl Interpreter {
                             }
                             _ => value,
                         };
-                        self.bind_param_value_sym(binding_name, pd_name_sym(), value);
+                        self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), value);
                         self.bind_param_type_constraint_sym(
                             binding_name,
                             pd_name_sym(),
@@ -4049,7 +4118,7 @@ impl Interpreter {
                         // supplied argument: `sub f($a = [])` binds `$[]`, a
                         // single subscript key rather than a slice.
                         let value = Self::itemize_plain_scalar_param(pd, value);
-                        self.bind_param_value_sym(binding_name, pd_name_sym(), value);
+                        self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), value);
                         self.bind_param_type_constraint_sym(
                             binding_name,
                             pd_name_sym(),
@@ -4108,7 +4177,7 @@ impl Interpreter {
                         true,
                     )?;
                     if !pd.name.is_empty() {
-                        self.bind_param_value_sym(binding_name, pd_name_sym(), value);
+                        self.bind_pd_value_sym(pd, binding_name, pd_name_sym(), value);
                         self.bind_param_type_constraint_sym(
                             binding_name,
                             pd_name_sym(),
@@ -4210,7 +4279,7 @@ impl Interpreter {
             // attribute binds, already skipped above.)
             let is_container_param = pd.name.starts_with('@') || pd.name.starts_with('%');
             if !is_container_param {
-                let binding_name = if bind_self_lexical && pd.declares_self_lexical() {
+                let binding_name = if pd.declares_self_lexical() {
                     crate::env::LEX_SELF
                 } else {
                     pd.name.as_str()

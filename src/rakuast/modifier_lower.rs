@@ -38,15 +38,38 @@ pub(crate) fn lower(node: Modified) -> Result<Stmt, RuntimeError> {
         })?;
         return Ok(Stmt::SyntheticBlock(vec![stmt, value]));
     }
+    // `has $.x for LIST`: an attribute is composed with its class, so the loop
+    // cannot repeat it; the declaration stays and the modifiers only evaluate
+    // their operands, over an empty statement.
+    if is_attribute_declaration(&stmt) && loop_.is_some() {
+        let value = lower(Modified {
+            stmt: Box::new(Stmt::SyntheticBlock(Vec::new())),
+            condition,
+            loop_,
+            body: crate::ast::SrcSpan::NONE,
+        })?;
+        return Ok(Stmt::SyntheticBlock(vec![stmt, value]));
+    }
     if let Some(modifier) = condition {
         stmt = condition_modifier(modifier, stmt)?;
     }
     // A signature declaration no condition took is lowered whole.
-    stmt = crate::parser::lower_pending_declaration(stmt)?;
+    stmt = super::signature_expand::lower_pending(stmt)?;
     if let Some(modifier) = loop_ {
         stmt = loop_modifier(modifier, stmt);
     }
     Ok(stmt)
+}
+
+/// Whether `stmt` is an attribute declaration, alone or followed by the
+/// assignment of its compound initializer.
+// Cost: O(1).
+fn is_attribute_declaration(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::HasDecl { .. } => true,
+        Stmt::SyntheticBlock(parts) => matches!(parts.first(), Some(Stmt::HasDecl { .. })),
+        _ => false,
+    }
 }
 
 /// `S if C`, `S unless C`, `S when M`, `S with T`, `S without T`.
@@ -55,7 +78,9 @@ fn condition_modifier(modifier: StatementModifier, stmt: Stmt) -> Result<Stmt, R
     let StatementModifier { kind, expr, .. } = modifier;
     // An attribute is composed with its class, so a modifier cannot gate it:
     // the declaration stays and the modifier only evaluates its operand.
-    if let Stmt::HasDecl { .. } = stmt
+    // `has $.g //= EXPR if C` is the declaration and its assignment, which
+    // stay in the one flat block.
+    if is_attribute_declaration(&stmt)
         && let Some(kind) = declaration_modifier(kind)
     {
         return Ok(crate::ast::attribute_modifier::expand(stmt, expr, kind));
@@ -69,10 +94,12 @@ fn condition_modifier(modifier: StatementModifier, stmt: Stmt) -> Result<Stmt, R
             let stmt = rewrite_placeholder_block(stmt, &expr);
             // A declaration takes effect unconditionally; only its
             // initializer is gated.
-            if let Some(split) = crate::parser::conditional_declaration(&stmt, &expr, is_unless)? {
+            if let Some(split) =
+                super::decl_modifier_split::conditional_declaration(&stmt, &expr, is_unless)?
+            {
                 return Ok(split);
             }
-            let stmt = crate::parser::lower_pending_declaration(stmt)?;
+            let stmt = super::signature_expand::lower_pending(stmt)?;
             Ok(Stmt::If {
                 cond: negate_if(expr, is_unless),
                 then_branch: vec![stmt],
@@ -91,7 +118,7 @@ fn condition_modifier(modifier: StatementModifier, stmt: Stmt) -> Result<Stmt, R
             topic: Expr::Var("_".to_string()),
             body: vec![Stmt::When {
                 cond: expr,
-                body: vec![crate::parser::lower_pending_declaration(stmt)?],
+                body: vec![super::signature_expand::lower_pending(stmt)?],
                 is_statement_modifier: true,
             }],
             is_statement_modifier: true,
@@ -158,10 +185,12 @@ fn with_modifier(is_without: bool, topic: Expr, stmt: Stmt) -> Result<Stmt, Runt
         };
         return Ok(Stmt::Expr(Expr::DoStmt(Box::new(given))));
     }
-    if let Some(expanded) = crate::parser::topical_declaration(&stmt, &topic, is_without)? {
+    if let Some(expanded) =
+        super::decl_modifier_split::topical_declaration(&stmt, &topic, is_without)?
+    {
         return Ok(expanded);
     }
-    let stmt = crate::parser::lower_pending_declaration(stmt)?;
+    let stmt = super::signature_expand::lower_pending(stmt)?;
     Ok(Stmt::Given {
         topic,
         body: vec![if_stmt(stmt)],
@@ -254,6 +283,7 @@ fn rewrite_placeholder_block(stmt: Stmt, value: &Expr) -> Stmt {
     let mut rewritten = Vec::with_capacity(placeholders.len() + body.len());
     for (idx, name) in placeholders.into_iter().enumerate() {
         rewritten.push(Stmt::VarDecl {
+            marks: Default::default(),
             anonymous: false,
             name,
             expr: if idx == 0 {
@@ -268,6 +298,9 @@ fn rewrite_placeholder_block(stmt: Stmt, value: &Expr) -> Stmt {
             is_export: false,
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
+            has_initializer: false,
+            constant: None,
+            bind: None,
             where_constraint: None,
         });
     }

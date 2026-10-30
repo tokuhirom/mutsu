@@ -1,6 +1,40 @@
 use super::*;
 use crate::meta_ns::MetaNs;
 
+/// How deep `type_matches_value_why` may nest in itself (a subset whose base
+/// leads back to it, an alias cycle). A legitimate check nests a handful of
+/// levels: a subset chain, a parameterization, a coercion.
+const MAX_TYPE_CHECK_NESTING: u32 = 256;
+
+thread_local! {
+    static TYPE_CHECK_NESTING: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// One level of `type_matches_value_why` nesting on this thread, released on drop.
+struct TypeCheckNesting;
+
+impl TypeCheckNesting {
+    // Cost: O(1).
+    #[inline]
+    fn enter() -> Option<Self> {
+        TYPE_CHECK_NESTING.with(|depth| {
+            let now = depth.get();
+            if now >= MAX_TYPE_CHECK_NESTING {
+                return None;
+            }
+            depth.set(now + 1);
+            Some(Self)
+        })
+    }
+}
+
+impl Drop for TypeCheckNesting {
+    #[inline]
+    fn drop(&mut self) {
+        TYPE_CHECK_NESTING.with(|depth| depth.set(depth.get() - 1));
+    }
+}
+
 impl Interpreter {
     pub(crate) fn type_arg_value_from_name(&self, name: &str) -> Value {
         let trimmed = name.trim().trim_start_matches('(').trim_end_matches(')');
@@ -184,6 +218,11 @@ impl Interpreter {
     /// instruction count, almost entirely `String` alloc/free churn, even
     /// though the benchmark never uses a package-scoped nested type).
     pub(crate) fn try_resolved_type_capture_name(&self, constraint: &str) -> Option<String> {
+        // A `CORE::`-pinned spelling already names the outer type, and inside
+        // the pinned check a registered name must not be re-aliased.
+        if constraint.starts_with("CORE::") || self.types.core_pin_depth > 0 {
+            return None;
+        }
         if let Some(inner) = constraint
             .strip_prefix("::(")
             .and_then(|s| s.strip_suffix(')'))
@@ -273,8 +312,12 @@ impl Interpreter {
         // (`Hash[Int]`) is checked against the literal, unbound `T` and fails.
         // NOT gated on the capture latch: `type_alias_target` resolves a
         // `constant intptr = uint64` alias with no capture in sight.
+        // (A subset minted under that very name -- `Kind[any(A, B)]` -- is a
+        // type of its own, not a parameterization whose arguments to
+        // re-split at their commas.)
         if let Some(open) = bracket_start
             && constraint.ends_with(']')
+            && !self.registry().subsets.contains_key(constraint)
         {
             let base = &constraint[..open];
             let inner = &constraint[open + 1..constraint.len() - 1];
@@ -595,9 +638,15 @@ impl Interpreter {
     /// parameter grants a Seq (`sub f(Positional $p)`, rakudo#4864).
     // Cost: O(1) amortized, as `type_matches_value`.
     pub(crate) fn param_constraint_accepts(&mut self, constraint: &str, value: &Value) -> bool {
-        self.type_matches_value(constraint, value)
-            || (constraint == "Positional"
-                && self.type_matches_value("PositionalBindFailover", value))
+        if self.type_matches_value(constraint, value) {
+            return true;
+        }
+        // `Positional:D` takes the failover Seq too (a defined one); `:U`
+        // never does.
+        let (base, smiley) = super::strip_type_smiley(constraint);
+        base == "Positional"
+            && smiley != Some(":U")
+            && self.type_matches_value("PositionalBindFailover", value)
     }
 
     // Cost: O(1) when the constraint matches or names no lexical type; the
@@ -618,6 +667,19 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
+        // The check recurses through subset bases, parameterizations and type
+        // aliases without crossing a Raku call boundary, so the VM's stack
+        // guard never sees a cycle among them. Bound the nesting of the check
+        // itself and refuse with a catchable exception instead of aborting the
+        // process on a native stack overflow (docs/security.md).
+        let Some(_nesting) = TypeCheckNesting::enter() else {
+            if why.is_none() {
+                *why = Some(Box::new(RuntimeError::new(
+                    crate::native_stack::DEEP_RECURSION_MESSAGE,
+                )));
+            }
+            return false;
+        };
         // An object reblessed on another thread may carry a mixin type this
         // thread has not composed yet (#11456).
         if let ValueView::Instance { class_name, .. } = value.view() {
@@ -639,6 +701,179 @@ impl Interpreter {
         self.type_matches_value_unviewed_why(constraint, value, &mut None)
     }
 
+    /// Whether `value` satisfies the registered subset `constraint`: its base
+    /// type, then its `where` predicate (run with the registry guard dropped,
+    /// since it re-enters user code).
+    // Cost: O(1) plus the base-type check and the predicate's own cost.
+    fn check_registered_subset(
+        &mut self,
+        constraint: &str,
+        subset: &std::sync::Arc<SubsetDef>,
+        value: &Value,
+        why: &mut Option<Box<RuntimeError>>,
+    ) -> bool {
+        // The subset's own type object satisfies it, whichever spelling the
+        // parameter and the value use (`Pos` and `Cat::Pos` for a `my
+        // subset` declared in a class body): checking it by running the
+        // `where` against a type object would reject it.
+        if let ValueView::Package(name) = value.view() {
+            // Lexical-site suffixes (`Cat::Pos\0<id>`) are part of the
+            // key, not the name.
+            let raw = name.resolve();
+            let name = raw.split('\0').next().unwrap_or("");
+            let own = constraint.split('\0').next().unwrap_or("");
+            let same_subset = |a: &str, b: &str| {
+                a == b
+                    || crate::qualified::unqualified_part(Symbol::intern(a))
+                        == crate::qualified::unqualified_part(Symbol::intern(b))
+            };
+            if same_subset(name, own)
+                && (self.registry().subsets.contains_key(raw.as_str())
+                    || self.registry().subsets.contains_key(name))
+            {
+                return true;
+            }
+        }
+        if !self.type_matches_value_why(&subset.base, value, why) {
+            return false;
+        }
+        let predicate_value = self.coerce_value_for_constraint(&subset.base, value.clone());
+        // A rejection reported by an earlier check (the base's own subset)
+        // is superseded by this predicate's verdict.
+        *why = None;
+        // `where * < 100`: one comparison against a literal, answered
+        // without a nested run of the body (`crate::predicate_shape`).
+        if subset.predicate_closure.is_none()
+            && let Some(cmp) = subset.predicate_int_compare
+            && let Some(ok) = self.topic_int_compare_holds(cmp, &predicate_value)
+        {
+            return ok;
+        }
+        // NOTE: the predicate's env effects must SURVIVE this check —
+        // roast S12-subset/subtypes.t counts `$*call1++` side effects in
+        // `where` blocks across `~~` checks. Do NOT snapshot/restore the
+        // whole env here (a previous attempt broke that test); the
+        // per-name saves below cover only the bind variable.
+        //
+        // Run the predicate as if still lexically inside the package the
+        // `subset` was declared in (Raku closes `where` over the
+        // declaration scope). Without this, a predicate that references a
+        // sibling symbol private to that package (e.g. a `grammar`
+        // nested in the same `class` body) resolves it only when the
+        // ambient dynamic package happens to already be that class —
+        // true inside one of the class's own methods, but NOT while
+        // matching a multi candidate's signature during dispatch, before
+        // any method body has been entered (#8003).
+        let _package_guard = self.enter_package_guarded_sym(subset.decl_package_sym);
+        if let Some(closure) = &subset.predicate_closure {
+            // Built at the declaration site over its lexicals (#10868).
+            self.call_subset_predicate(closure.clone(), predicate_value, why)
+        } else if let Some(pred) = &subset.predicate {
+            // A predicate that takes its candidate value through a single
+            // simple variable is equivalent to running its body with that
+            // variable bound — no closure, no `call_sub_value` round-trip.
+            // The bind target is `$_` for a bare block `where { $_ %% 2 }`,
+            // and the param name for a single-param pointy / Whatever-curry
+            // (`where -> $x {...}` and `where * < 1000` both desugar to
+            // `Lambda { param }` — `Lambda` only carries a plain name, so it
+            // is always an untyped single param; any type/default/trait/
+            // sub-signature pointy parses to `AnonSubParams` and falls
+            // through below). Running the body inline skips creating a
+            // closure (which would flatten/capture the current env) and the
+            // extra ping-pong; the closure would have captured the *same*
+            // current env, so this is behavior-equivalent. Placeholder blocks
+            // (`where { $^a }`) and multi/typed params fall through too.
+            // Decided once, at registration (`SubsetDef::predicate_inline`).
+            let inline = if subset.predicate_inline {
+                super::subset_inline_predicate_shape(pred)
+            } else {
+                None
+            };
+
+            if let Some((body, bind_name)) = inline {
+                // Inline execution: compile the block body once (cached by
+                // subset name) and run it with the candidate bound to the
+                // topic / param variable.
+                let compiled = self.compile_subset_predicate(constraint, body);
+                let bind_sym = if bind_name == "_" {
+                    crate::symbol::wk::topic()
+                } else {
+                    crate::symbol::Symbol::intern(bind_name)
+                };
+                let saved = self.env.get_sym(bind_sym).cloned();
+                self.env.insert_sym(bind_sym, predicate_value);
+                let result = match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
+                    Ok(v) => v.truthy(),
+                    Err(e) => {
+                        record_subset_where_fail(why, e);
+                        false
+                    }
+                };
+                if let Some(old) = saved {
+                    self.env.insert_sym(bind_sym, old);
+                } else {
+                    self.env.remove_sym(bind_sym);
+                }
+                result
+            } else {
+                // The predicate is a fixed `Expr`; compile `[Stmt::Expr(pred)]`
+                // once (cached by subset name) and run the cached bytecode on a
+                // sub-VM via the lean `eval_precompiled_block_fast` — no
+                // per-check recompile and no registry clone (the old
+                // `eval_block_value` path did both on every type check).
+                let body = [Stmt::Expr(pred.clone())];
+                let compiled = self.compile_subset_predicate(constraint, &body);
+                // Check if the predicate is a block/lambda (AnonSub, AnonSubParams, etc.)
+                // ADR-0033 Phase 1: a Whatever-curried predicate (`where *
+                // < 1000`) is still an un-expanded `WhateverCurry` marker
+                // at this point, not yet the `Lambda` the fast inline
+                // path above matches — it must still be recognized as
+                // callable here so it is invoked, not compared as a
+                // literal value.
+                let is_callable_expr = matches!(
+                    pred,
+                    Expr::AnonSub { .. }
+                        | Expr::AnonSubParams { .. }
+                        | Expr::Block(_)
+                        | Expr::WhateverCurry(_)
+                );
+                if is_callable_expr {
+                    // Evaluate to get a callable, then call with the value
+                    match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
+                        Ok(callable) if matches!(callable.view(), ValueView::Sub(_)) => {
+                            self.call_subset_predicate(callable, predicate_value, why)
+                        }
+                        Ok(v) => v.truthy(),
+                        Err(e) => {
+                            record_subset_where_fail(why, e);
+                            false
+                        }
+                    }
+                } else {
+                    // Bare expression: set $_ and evaluate directly
+                    let saved = self.env.get("_").cloned();
+                    self.env.insert("_".to_string(), predicate_value);
+                    let result =
+                        match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
+                            Ok(v) => self.smart_match(value, &v),
+                            Err(e) => {
+                                record_subset_where_fail(why, e);
+                                false
+                            }
+                        };
+                    if let Some(old) = saved {
+                        self.env.insert("_".to_string(), old);
+                    } else {
+                        self.env.remove("_");
+                    }
+                    result
+                }
+            }
+        } else {
+            true
+        }
+    }
+
     /// [`Self::type_matches_value_unviewed`], reporting why as
     /// [`Self::type_matches_value_why`] does.
     // Cost: as `type_matches_value`.
@@ -648,6 +883,28 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
+        // `CORE::Name` names the type the scope outside every `my` declaration
+        // of `Name` sees. The parser writes it for a type position that
+        // precedes a later `my class Name` in its scope (rakudo resolves a
+        // signature's type names where the signature is written).
+        if let Some(pinned) = constraint.strip_prefix("CORE::")
+            && !pinned.contains(['[', '(', '{', ' '])
+            && !pinned.trim_end_matches(":D").trim_end_matches(":U").contains(':')
+        {
+            self.types.core_pin_depth += 1;
+            let matched = self.type_matches_value_unviewed_why(pinned, value, why);
+            self.types.core_pin_depth -= 1;
+            return matched;
+        }
+        // A subset minted at run time through `SubsetHOW.new_type` is named by
+        // free text (`Kind[any(A, B)]`): that name is no parameterization or
+        // coercion to be taken apart, only the key of a registered subset.
+        if constraint.contains(['[', '(']) {
+            let subset = self.registry().subsets.get(constraint).cloned();
+            if let Some(subset) = subset {
+                return self.check_registered_subset(constraint, &subset, value, why);
+            }
+        }
         // `Cursor` is an alias of `Match` (a grammar instance IS a `Match`),
         // so `has Cursor $.cursor` accepts the grammar `self`.
         let constraint = self.resolve_core_type_alias(constraint);
@@ -693,7 +950,8 @@ impl Interpreter {
         // package was declared in, which a loaded module's routine does not
         // see (ADR-12529): a constraint recorded before the type existed (an
         // `EVAL`'d `class Foo {}; my Foo $x`) still names it.
-        if !constraint.contains(['\u{0}', ':', '[', '(', '{', ' '])
+        if self.types.core_pin_depth == 0
+            && !constraint.contains(['\u{0}', ':', '[', '(', '{', ' '])
             && let Some(own) = self.resolve_type_in_current_package(constraint)
             && own != constraint
         {
@@ -706,7 +964,8 @@ impl Interpreter {
         // the spelling is resolved against the registry instead -- but only
         // when exactly one lexical type carries that name, since which of
         // several same-named ones was meant is not recoverable here.
-        if constraint.contains(['\u{0}', ':', '[', '(', '{', ' '])
+        if self.types.core_pin_depth > 0
+            || constraint.contains(['\u{0}', ':', '[', '(', '{', ' '])
             || !self.registry().has_lexical_type_key_for(constraint)
             || self.has_type_direct(constraint)
         {
@@ -1541,167 +1800,7 @@ impl Interpreter {
         // predicate (user code re-entry), which would deadlock under a held read lock.
         let subset = self.registry().subsets.get(constraint).cloned();
         if let Some(subset) = subset {
-            // The subset's own type object satisfies it, whichever spelling the
-            // parameter and the value use (`Pos` and `Cat::Pos` for a `my
-            // subset` declared in a class body): checking it by running the
-            // `where` against a type object would reject it.
-            if let ValueView::Package(name) = value.view() {
-                // Lexical-site suffixes (`Cat::Pos\0<id>`) are part of the
-                // key, not the name.
-                let raw = name.resolve();
-                let name = raw.split('\0').next().unwrap_or("");
-                let own = constraint.split('\0').next().unwrap_or("");
-                let same_subset = |a: &str, b: &str| {
-                    a == b
-                        || crate::qualified::unqualified_part(Symbol::intern(a))
-                            == crate::qualified::unqualified_part(Symbol::intern(b))
-                };
-                if same_subset(name, own)
-                    && (self.registry().subsets.contains_key(raw.as_str())
-                        || self.registry().subsets.contains_key(name))
-                {
-                    return true;
-                }
-            }
-            if !self.type_matches_value_why(&subset.base, value, why) {
-                return false;
-            }
-            let predicate_value = self.coerce_value_for_constraint(&subset.base, value.clone());
-            // A rejection reported by an earlier check (the base's own subset)
-            // is superseded by this predicate's verdict.
-            *why = None;
-            // `where * < 100`: one comparison against a literal, answered
-            // without a nested run of the body (`crate::predicate_shape`).
-            if subset.predicate_closure.is_none()
-                && let Some(cmp) = subset.predicate_int_compare
-                && let Some(ok) = self.topic_int_compare_holds(cmp, &predicate_value)
-            {
-                return ok;
-            }
-            // NOTE: the predicate's env effects must SURVIVE this check —
-            // roast S12-subset/subtypes.t counts `$*call1++` side effects in
-            // `where` blocks across `~~` checks. Do NOT snapshot/restore the
-            // whole env here (a previous attempt broke that test); the
-            // per-name saves below cover only the bind variable.
-            //
-            // Run the predicate as if still lexically inside the package the
-            // `subset` was declared in (Raku closes `where` over the
-            // declaration scope). Without this, a predicate that references a
-            // sibling symbol private to that package (e.g. a `grammar`
-            // nested in the same `class` body) resolves it only when the
-            // ambient dynamic package happens to already be that class —
-            // true inside one of the class's own methods, but NOT while
-            // matching a multi candidate's signature during dispatch, before
-            // any method body has been entered (#8003).
-            let _package_guard = self.enter_package_guarded_sym(subset.decl_package_sym);
-            let ok = if let Some(closure) = &subset.predicate_closure {
-                // Built at the declaration site over its lexicals (#10868).
-                self.call_subset_predicate(closure.clone(), predicate_value, why)
-            } else if let Some(pred) = &subset.predicate {
-                // A predicate that takes its candidate value through a single
-                // simple variable is equivalent to running its body with that
-                // variable bound — no closure, no `call_sub_value` round-trip.
-                // The bind target is `$_` for a bare block `where { $_ %% 2 }`,
-                // and the param name for a single-param pointy / Whatever-curry
-                // (`where -> $x {...}` and `where * < 1000` both desugar to
-                // `Lambda { param }` — `Lambda` only carries a plain name, so it
-                // is always an untyped single param; any type/default/trait/
-                // sub-signature pointy parses to `AnonSubParams` and falls
-                // through below). Running the body inline skips creating a
-                // closure (which would flatten/capture the current env) and the
-                // extra ping-pong; the closure would have captured the *same*
-                // current env, so this is behavior-equivalent. Placeholder blocks
-                // (`where { $^a }`) and multi/typed params fall through too.
-                // Decided once, at registration (`SubsetDef::predicate_inline`).
-                let inline = if subset.predicate_inline {
-                    super::subset_inline_predicate_shape(pred)
-                } else {
-                    None
-                };
-
-                if let Some((body, bind_name)) = inline {
-                    // Inline execution: compile the block body once (cached by
-                    // subset name) and run it with the candidate bound to the
-                    // topic / param variable.
-                    let compiled = self.compile_subset_predicate(constraint, body);
-                    let bind_sym = if bind_name == "_" {
-                        crate::symbol::wk::topic()
-                    } else {
-                        crate::symbol::Symbol::intern(bind_name)
-                    };
-                    let saved = self.env.get_sym(bind_sym).cloned();
-                    self.env.insert_sym(bind_sym, predicate_value);
-                    let result = match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
-                        Ok(v) => v.truthy(),
-                        Err(e) => {
-                            record_subset_where_fail(why, e);
-                            false
-                        }
-                    };
-                    if let Some(old) = saved {
-                        self.env.insert_sym(bind_sym, old);
-                    } else {
-                        self.env.remove_sym(bind_sym);
-                    }
-                    result
-                } else {
-                    // The predicate is a fixed `Expr`; compile `[Stmt::Expr(pred)]`
-                    // once (cached by subset name) and run the cached bytecode on a
-                    // sub-VM via the lean `eval_precompiled_block_fast` — no
-                    // per-check recompile and no registry clone (the old
-                    // `eval_block_value` path did both on every type check).
-                    let body = [Stmt::Expr(pred.clone())];
-                    let compiled = self.compile_subset_predicate(constraint, &body);
-                    // Check if the predicate is a block/lambda (AnonSub, AnonSubParams, etc.)
-                    // ADR-0033 Phase 1: a Whatever-curried predicate (`where *
-                    // < 1000`) is still an un-expanded `WhateverCurry` marker
-                    // at this point, not yet the `Lambda` the fast inline
-                    // path above matches — it must still be recognized as
-                    // callable here so it is invoked, not compared as a
-                    // literal value.
-                    let is_callable_expr = matches!(
-                        pred,
-                        Expr::AnonSub { .. }
-                            | Expr::AnonSubParams { .. }
-                            | Expr::Block(_)
-                            | Expr::WhateverCurry(_)
-                    );
-                    if is_callable_expr {
-                        // Evaluate to get a callable, then call with the value
-                        match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
-                            Ok(callable) if matches!(callable.view(), ValueView::Sub(_)) => {
-                                self.call_subset_predicate(callable, predicate_value, why)
-                            }
-                            Ok(v) => v.truthy(),
-                            Err(e) => {
-                                record_subset_where_fail(why, e);
-                                false
-                            }
-                        }
-                    } else {
-                        // Bare expression: set $_ and evaluate directly
-                        let saved = self.env.get("_").cloned();
-                        self.env.insert("_".to_string(), predicate_value);
-                        let result =
-                            match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
-                                Ok(v) => self.smart_match(value, &v),
-                                Err(e) => {
-                                    record_subset_where_fail(why, e);
-                                    false
-                                }
-                            };
-                        if let Some(old) = saved {
-                            self.env.insert("_".to_string(), old);
-                        } else {
-                            self.env.remove("_");
-                        }
-                        result
-                    }
-                }
-            } else {
-                true
-            };
-            return ok;
+            return self.check_registered_subset(constraint, &subset, value, why);
         }
         if let Some((constraint_base, constraint_args)) =
             Self::parse_parametric_type_name(constraint)

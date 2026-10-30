@@ -50,6 +50,29 @@ use crate::symbol::Symbol;
 use crate::value::ValueMap;
 
 impl Interpreter {
+    /// Remove the `my $*x` bindings still held by the exit-time env (the
+    /// mainline's frame is gone when `END` runs) and answer their env keys, so
+    /// a captured END env does not bring them back.
+    // Cost: O(e), e = env keys.
+    pub(crate) fn drop_mainline_lexical_dynamics(&mut self) -> rustc_hash::FxHashSet<Symbol> {
+        let prefix = crate::meta_ns::MetaNs::LexicalDynamic.prefix();
+        let names: Vec<String> = self
+            .env
+            .keys()
+            .filter_map(|k| k.with_str(|s| s.strip_prefix(prefix).map(str::to_string)))
+            .collect();
+        let mut dead = rustc_hash::FxHashSet::default();
+        for name in names {
+            self.env
+                .remove(&crate::meta_ns::MetaNs::LexicalDynamic.owned_key_for_str(&name));
+            for key in [name.clone(), format!("${name}")] {
+                self.env.remove(&key);
+                dead.insert(Symbol::intern(&key));
+            }
+        }
+        dead
+    }
+
     /// Install every `END` declared anywhere in the main compunit, in source
     /// order. See the module docs.
     pub(crate) fn preregister_main_end_phasers(&mut self, stmts: &[Stmt]) {
@@ -409,23 +432,22 @@ impl EndWalker<'_> {
                 name,
                 is_our: false,
                 is_dynamic: false,
-                custom_traits,
+                constant,
                 ..
             } => self.push_lexical(&crate::runtime::term_names::decl_storage_name(
-                name,
-                custom_traits,
+                name, *constant,
             )),
             Stmt::VarDecl {
                 name,
                 is_our: true,
                 type_constraint,
-                custom_traits,
+                constant,
                 ..
             } => {
                 // A sigil-less constant's lexical alias and unqualified
                 // package symbol live under its term key (#9962), exactly
                 // where the compiler stores them.
-                let storage = crate::runtime::term_names::decl_storage_name(name, custom_traits);
+                let storage = crate::runtime::term_names::decl_storage_name(name, *constant);
                 let name = &storage;
                 self.install_our_symbol(name, type_constraint.as_deref());
                 // An `our` inside a nested block also creates a LEXICAL alias

@@ -32,6 +32,22 @@ impl Compiler {
         }
     }
 
+    /// Compile the raise of `error`, a diagnosis found while compiling a body
+    /// whose source is only read here (a heredoc's interpolation): the program
+    /// dies with it when it reaches the construct, with the exception class
+    /// the diagnosis carries.
+    // Cost: O(1).
+    pub(super) fn emit_deferred_error(&mut self, error: crate::value::RuntimeError) {
+        let user_throw = error.exception.is_none();
+        let thrown = match error.exception {
+            Some(exception) => *exception,
+            None => Value::str(error.message.to_string()),
+        };
+        let idx = self.code.add_constant(thrown);
+        self.code.emit(OpCode::LoadConst(idx));
+        self.code.emit(OpCode::Die { user_throw });
+    }
+
     /// Compile AnonSub expression.
     /// `is_block` = true for bare blocks `{ }`, false for `sub { }`.
     /// Bare blocks are NOT routine boundaries for `return`.
@@ -81,6 +97,7 @@ impl Compiler {
             let esc = self.escaping_position;
             let cc_idx = self.add_closure_code_baked(compiled, esc);
             let idx = self.code.add_stmt(Stmt::SubDecl {
+                is_hidden_from_backtrace: false,
                 spans: Default::default(),
                 name: Symbol::intern(""),
                 name_expr: None,
@@ -101,8 +118,13 @@ impl Compiler {
                 scope: crate::ast::SubScope::My,
                 custom_traits: Vec::new(),
             });
-            self.code
-                .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false, None));
+            self.code.emit(OpCode::MakeAnonSubParams(
+                idx,
+                Some(cc_idx),
+                false,
+                None,
+                Default::default(),
+            ));
         } else {
             // Conflict checking, like params, uses the *shallow* collector: a
             // placeholder belongs to its innermost enclosing block, so a
@@ -172,8 +194,13 @@ impl Compiler {
         let esc = self.escaping_position;
         let cc_idx = self.add_closure_code_baked(compiled, esc);
         let idx = self.code.add_stmt(stmt.clone());
-        self.code
-            .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false, None));
+        self.code.emit(OpCode::MakeAnonSubParams(
+            idx,
+            Some(cc_idx),
+            false,
+            None,
+            Default::default(),
+        ));
     }
 
     /// Compile Lambda expression.
@@ -192,20 +219,6 @@ impl Compiler {
             vec![crate::runtime::term_names::term_key(param)]
         } else {
             vec![param.to_string()]
-        };
-        // A sigilless pointy parameter (`-> \x { }`) shadows a same-named term
-        // constant (e.g. the imaginary unit `i`) inside the body. Mark it with
-        // the same `__mutsu_sigilless_readonly::<name>` marker that `my \x = ...`
-        // uses, so a bareword read resolves the parameter, not the constant.
-        let sigilless_body: Vec<Stmt>;
-        let body: &[Stmt] = if param_sigilless && !param.is_empty() {
-            let mut v = Vec::with_capacity(body.len() + 1);
-            v.push(Stmt::MarkSigillessReadonly(param.to_string()));
-            v.extend_from_slice(body);
-            sigilless_body = v;
-            &sigilless_body
-        } else {
-            body
         };
         // A `$`-sigiled single pointy-block parameter (`-> $v { }`) reaches this
         // function with an empty `param_defs` (see the module doc on
@@ -310,6 +323,11 @@ impl Compiler {
                 body,
                 &promoted_decls,
             )
+        } else if param_sigilless && !param.is_empty() {
+            // A sigilless pointy parameter (`-> \x { }`) shadows a same-named term
+            // constant (e.g. the imaginary unit `i`) inside the body, as `my \x = ...`
+            // does, so a bareword read resolves the parameter, not the constant.
+            self.compile_closure_body_with_term_param(&params, &wc_param_defs, body, param)
         } else {
             self.compile_closure_body(&params, &wc_param_defs, body)
         };
@@ -330,6 +348,7 @@ impl Compiler {
         let esc = self.escaping_position;
         let cc_idx = self.add_closure_code_baked(compiled, esc);
         let idx = self.code.add_stmt(Stmt::SubDecl {
+            is_hidden_from_backtrace: false,
             spans: Default::default(),
             name: Symbol::intern(""),
             name_expr: None,
@@ -359,7 +378,7 @@ impl Compiler {
     /// subscript (i.e. `[...]` vs `{...}`/`<...>`), preserved from the
     /// `IndexAssign` AST node.
     /// Compile the RHS value of an `IndexAssign`. When the value is a `:=` bind
-    /// marker (`__mutsu_bind_index_value(...)`) whose RHS is itself an indexed
+    /// marker (`Expr::IndexBindValue`) whose RHS is itself an indexed
     /// element (`$bar[..]<..> := $foo[1]<key>`), compile it with terminal
     /// promotion (`scalar_bind_autovivify` + `bind_terminal`) so the bound
     /// element shares a `ContainerRef` cell with the source. That makes
@@ -424,14 +443,7 @@ impl Compiler {
         if source == target_name {
             return None;
         }
-        Some(Expr::Call {
-            name: Symbol::intern("__mutsu_bind_index_value"),
-            args: vec![
-                value.clone(),
-                Expr::ArrayLiteral(vec![Expr::Literal(Value::str(source))]),
-            ],
-            listop: false,
-        })
+        Some(Expr::IndexBindValue(Box::new(value.clone())))
     }
 
     /// A named package's stash (`EXPORT::DEFAULT::{$_} = ::($_)`, the
@@ -444,10 +456,7 @@ impl Compiler {
     /// frame, which the compiler re-enters recursively.
     #[inline(never)]
     pub(super) fn compile_bind_index_value(&mut self, value: &Expr) {
-        let is_bind = matches!(
-            value,
-            Expr::Call { name, .. } if *name == "__mutsu_bind_index_value"
-        );
+        let is_bind = matches!(value, Expr::IndexBindValue(_));
         if is_bind {
             let saved_av = self.scalar_bind_autovivify;
             let saved_term = self.bind_terminal;
@@ -492,19 +501,16 @@ impl Compiler {
         value: &Expr,
         outer_positional: bool,
     ) -> bool {
-        let Expr::Call { name, args, .. } = value else {
+        let Expr::IndexBindValue(bound) = value else {
             return false;
         };
-        if *name != "__mutsu_bind_index_value" {
-            return false;
-        }
-        let Some(Expr::IndexAssign {
+        let Expr::IndexAssign {
             target: source_target,
             index: source_index,
             value: source_value,
             is_positional: source_positional,
             ..
-        }) = args.first()
+        } = bound.as_ref()
         else {
             return false;
         };
@@ -512,8 +518,7 @@ impl Compiler {
         // bind (`%a<x> := %a<y> := value`).  Its existing compiler path keeps
         // the chain's value semantics intact; only a real assignment value
         // needs the raw-location preservation below.
-        if matches!(source_value.as_ref(), Expr::Call { name, .. } if *name == "__mutsu_bind_index_value")
-        {
+        if matches!(source_value.as_ref(), Expr::IndexBindValue(_)) {
             return false;
         }
 
@@ -544,11 +549,7 @@ impl Compiler {
         self.compile_bind_index_value(source_value);
         self.code.emit(OpCode::SetGlobal(temp_idx));
 
-        let rebound_source = Expr::Call {
-            name: Symbol::intern("__mutsu_bind_index_value"),
-            args: vec![Expr::Var(temp_name)],
-            listop: false,
-        };
+        let rebound_source = Expr::IndexBindValue(Box::new(Expr::Var(temp_name)));
         self.compile_expr_index_assign(
             target,
             index,
@@ -648,7 +649,27 @@ impl Compiler {
             }
             _ => return None,
         };
-        self.compile_expr(cur);
+        // A package stash root (`Foo::<%reg><x> = 5`): the stash itself is no
+        // container to store through, but its entry is, so the temp holds the
+        // entry (`Foo::<%reg>`, the shared `our %reg`) and the chain continues
+        // below it.
+        let stash_entry_root;
+        let root_expr: &Expr = match (cur, levels.pop()) {
+            (Expr::PseudoStash(_), Some((entry, is_positional))) => {
+                stash_entry_root = Expr::Index {
+                    target: Box::new(cur.clone()),
+                    index: Box::new(entry.clone()),
+                    is_positional,
+                    spelling: Default::default(),
+                };
+                &stash_entry_root
+            }
+            (_, popped) => {
+                levels.extend(popped);
+                cur
+            }
+        };
+        self.compile_expr(root_expr);
         let tmp = format!(
             "{}{}#{}",
             crate::runtime::utils::LVALUE_ROOT_TEMP_PREFIX,
@@ -699,7 +720,7 @@ impl Compiler {
         if self.compile_nested_index_bind_source(target, index, value, outer_positional) {
             return;
         }
-        if matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value")
+        if matches!(value, Expr::IndexBindValue(_))
             && crate::parser::index_bind_target_is_immutable(original_target)
         {
             // An immutable subscript cannot receive a binding. Evaluate the
@@ -709,9 +730,7 @@ impl Compiler {
             self.code.emit(OpCode::Pop);
             self.compile_expr(index);
             self.code.emit(OpCode::Pop);
-            if let Expr::Call { args, .. } = value
-                && let Some(rhs) = args.first()
-            {
+            if let Expr::IndexBindValue(rhs) = value {
                 self.compile_expr(rhs);
                 self.code.emit(OpCode::Pop);
             }
@@ -734,23 +753,22 @@ impl Compiler {
         // (`@a[0,1] := ...`) and a plain variable-index bind (`@a[$i] := ...`)
         // stay valid. Emit a runtime throw so `throws-like { ... }` catches it
         // (a parse-time error would abort the whole enclosing file).
-        if matches!(
-            value,
-            Expr::Call { name, .. } if *name == "__mutsu_bind_index_value"
-        ) && matches!(
-            index,
-            // ADR-0033 Phase 1: the index is still an un-expanded
-            // `WhateverCurry` marker here (this runs before the compiler's
-            // `Expr::WhateverCurry` arm would expand it) — check that
-            // directly rather than the built closure the parser used to
-            // produce eagerly. (The `Lambda` arm is kept as a
-            // belt-and-suspenders match; only reachable pre-ADR-0033.)
-            Expr::WhateverCurry(_)
-                | Expr::Lambda {
-                    is_whatever_code: true,
-                    ..
-                }
-        ) {
+        if matches!(value, Expr::IndexBindValue(_))
+            && matches!(
+                index,
+                // ADR-0033 Phase 1: the index is still an un-expanded
+                // `WhateverCurry` marker here (this runs before the compiler's
+                // `Expr::WhateverCurry` arm would expand it) — check that
+                // directly rather than the built closure the parser used to
+                // produce eagerly. (The `Lambda` arm is kept as a
+                // belt-and-suspenders match; only reachable pre-ADR-0033.)
+                Expr::WhateverCurry(_)
+                    | Expr::Lambda {
+                        is_whatever_code: true,
+                        ..
+                    }
+            )
+        {
             // A Whatever index is always positional, so the sliced container is
             // an Array. `type` and `message` mirror what rakudo's exception
             // carries (`X::Bind::Slice.new(type => Array).message` is
@@ -842,10 +860,7 @@ impl Compiler {
             && key.starts_with(['$', '@', '%', '&'])
         {
             let (is_bind, rhs) = match value {
-                Expr::Call { name, args, .. } if *name == "__mutsu_bind_index_value" => (
-                    true,
-                    args.first().cloned().unwrap_or(Expr::Literal(Value::NIL)),
-                ),
+                Expr::IndexBindValue(rhs) => (true, rhs.as_ref().clone()),
                 other => (false, other.clone()),
             };
             // `$OUR::name` compiles to AssignExpr name "OUR::name" (scalar sigil
@@ -870,9 +885,7 @@ impl Compiler {
             && stash_name == "OUR::"
         {
             let rhs = match value {
-                Expr::Call { name, args, .. } if *name == "__mutsu_bind_index_value" => {
-                    args.first().cloned().unwrap_or(Expr::Literal(Value::NIL))
-                }
+                Expr::IndexBindValue(rhs) => rhs.as_ref().clone(),
                 other => other.clone(),
             };
             self.compile_expr(&rhs);
@@ -901,7 +914,7 @@ impl Compiler {
         // of another module (see `reexport_module_tag`).
         if let Expr::PseudoStash(stash_name) = target
             && stash_name == "UNIT::EXPORT::"
-            && matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value")
+            && matches!(value, Expr::IndexBindValue(_))
         {
             self.compile_bind_index_value(value);
             self.compile_expr(index);
@@ -932,14 +945,13 @@ impl Compiler {
         // Only depth >= 2 routes here: a single-level `$o.a[0] = v` is already
         // correct through `__mutsu_index_assign_method_lvalue`, which also
         // performs the accessor write-back a non-container attribute needs.
-        let binding =
-            matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value");
+        let binding = matches!(value, Expr::IndexBindValue(_));
         if let Some(rewritten) = self.bind_method_rooted_chain_root(target, binding) {
             self.compile_expr_index_assign(&rewritten, index, value, outer_positional, spelling);
             return;
         }
         if spelling == crate::ast::IndexSpelling::SemicolonDimensions
-            && matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value")
+            && matches!(value, Expr::IndexBindValue(_))
             && let Expr::ArrayLiteral(dimensions) = index
             && let Some(name) = self.index_assign_target_name(target)
         {
@@ -1174,7 +1186,7 @@ impl Compiler {
         is_positional: bool,
     ) {
         if let Some(var_name) = self.index_assign_target_name(target) {
-            if matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value") {
+            if matches!(value, Expr::IndexBindValue(_)) {
                 self.compile_bind_index_value(value);
             } else {
                 self.compile_expr(value);

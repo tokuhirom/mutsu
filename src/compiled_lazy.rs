@@ -185,7 +185,7 @@ impl AdaptInputs {
         // declaring statement's own `use fatal;` (if any, earlier in the same scope)
         // has run, and would wrongly bake in `false`.
         adapted.precompute_param_local_slots();
-        adapted.precompute_named_call_plan();
+        adapted.precompute_named_call_plan(crate::runtime::named_fast_fill);
         adapted.precompute_param_name_syms();
         Arc::new(adapted)
     }

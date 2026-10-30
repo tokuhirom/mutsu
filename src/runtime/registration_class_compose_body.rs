@@ -648,11 +648,7 @@ impl Interpreter {
         // $?CLASS.^attributes` computes each class's own list (SBOM). The
         // class body sets `?CLASS` only after its roles are composed, so
         // without this the body saw the PREVIOUSLY registered class.
-        let saved_class = self.env.get("?CLASS").cloned();
-        self.env.insert(
-            "?CLASS".to_string(),
-            Value::package(Symbol::intern(cx.name)),
-        );
+        let fixtures_mark = self.begin_class_scope(Symbol::intern(cx.name));
         // The `my` variables the body declares: a statement naming one reaches
         // the declared variable, not a package variable of the role.
         let body_lexicals: std::collections::HashSet<String> = role
@@ -830,7 +826,7 @@ impl Interpreter {
             // borrowed before unwinding, and report it as Rakudo
             // does: X::Role::Instantiation wrapping the original.
             if let Err(err) = r {
-                Self::restore_env_entry(&mut self.env, "?CLASS", saved_class.clone());
+                self.end_scoped_fixtures(fixtures_mark);
                 if err.control.is_none() {
                     match saved_topic.clone() {
                         Some(topic) => {
@@ -856,7 +852,7 @@ impl Interpreter {
                 self.env.remove("_");
             }
         }
-        Self::restore_env_entry(&mut self.env, "?CLASS", saved_class);
+        self.end_scoped_fixtures(fixtures_mark);
         self.leave_source_file(saved_file);
         self.apply_nested_method_captures(base_role_name, cx.name);
         // Persist the role body's lexicals as class-body statics of
@@ -881,13 +877,22 @@ impl Interpreter {
                 role_param_values.keys().map(|k| k.to_string()).collect();
             declared.extend(bound.iter().cloned());
             self.persist_role_body_lexicals_except(cx.name, &declared, &bound);
-            if role_lexical_package.is_none() {
+            // A parametric composition re-declares the subs only when it has
+            // value parameters for them to close over; otherwise the
+            // declaration under the role's lexical package serves.
+            let value_params: Vec<(String, Value)> = role_param_values
+                .iter()
+                .filter(|(name, _)| !type_capture_names.contains(*name))
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect();
+            if role_lexical_package.is_none() || !value_params.is_empty() {
                 self.register_role_body_subs_per_composer(
                     cx.name,
                     cx.class_body_plan,
                     base_role_name,
                     role,
                     &declared,
+                    &value_params,
                 )?;
             }
         }
@@ -1006,7 +1011,8 @@ impl Interpreter {
                 // hazard the F4c design note's R8 warns about.
                 let maybe_parent_role = self.registry().roles.get(parent_base).cloned();
                 if let Some(parent_role) = maybe_parent_role {
-                    if !cx.out.composed_roles_list.contains(&resolved_parent) {
+                    let first_composition = !cx.out.composed_roles_list.contains(&resolved_parent);
+                    if first_composition {
                         cx.out.composed_roles_list.push(resolved_parent.clone());
                     }
                     let parent_type_subs: Vec<(String, String)> = if let Some(parent_tps) =
@@ -1112,6 +1118,25 @@ impl Interpreter {
                         for def in composed {
                             registry.push_user_method(owner, method_sym, def);
                         }
+                    }
+                    // The parent role has parents of its own (`role P[::H] is H`
+                    // composed as `P[Metamodel::ClassHOW]`): they are the
+                    // class's too, with P's type parameters bound to the
+                    // arguments this composition gave them (#15377).
+                    if first_composition && !parent_type_subs.is_empty() {
+                        let mut nested_values = ValueMap::default();
+                        for (param, arg) in &parent_type_subs {
+                            nested_values.insert(
+                                param.clone(),
+                                Value::package(Symbol::intern(arg)),
+                            );
+                        }
+                        self.propagate_composed_role_parent_specs(
+                            cx,
+                            parent_base,
+                            &parent_role,
+                            &nested_values,
+                        );
                     }
                 } else if ((self.registry().classes.contains_key(parent_base)
                     || BUILTIN_PARENT_TYPES.contains(&parent_base)

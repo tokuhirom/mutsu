@@ -32,8 +32,13 @@ pub(crate) struct ModuleState {
     /// operator candidate that a `use` imported is visible only to its
     /// declaring unit and to these importers (#9944); see
     /// `runtime/operator_scope.rs`.
+    ///
+    /// An `rustc_hash` map: [`Interpreter::operator_has_import_scope_sym`]
+    /// probes it on every function call once any unit imported an operator
+    /// (`use Test` does), and std's SipHash made that probe ~65 instructions
+    /// for a `Symbol` that is already a small integer (#7565).
     pub(crate) operator_import_units:
-        std::sync::Arc<HashMap<Symbol, HashMap<Symbol, HashSet<Symbol>>>>,
+        std::sync::Arc<rustc_hash::FxHashMap<Symbol, HashMap<Symbol, HashSet<Symbol>>>>,
     /// Bumped whenever `operator_import_units` gains an entry, so a memo of an
     /// operator-visibility answer (`bare_multi_plan_cache`) can key on it.
     pub(crate) operator_import_gen: u64,
@@ -301,6 +306,9 @@ pub(crate) struct ModuleState {
     /// its routines need this metadata after the load has finished in order to
     /// resolve the module's own imported aliases lexically.
     pub(crate) unit_module_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
+    /// The last answer of `Interpreter::lexical_package_for_frame`, valid while
+    /// the unit-scope epoch is unchanged (#15048).
+    pub(crate) lexical_package_memo: std::cell::Cell<Option<LexicalPackageMemo>>,
     /// Declared unit package by requested module path. A module file may be
     /// loaded as `A::B` while declaring `unit module A::C`.
     pub(crate) module_declared_unit_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
@@ -489,10 +497,18 @@ pub(crate) struct ModuleState {
     /// owner): code of any other compunit it calls reads its own top-level
     /// `use`s, not the chain (#14481).
     pub(crate) eval_import_unit: Option<Symbol>,
+    /// Classes whose declaration died while an `EVAL` unit was compiling it
+    /// (a trait or `BEGIN` that throws). Rakudo discards a unit that fails to
+    /// compile, so `isolated_eval_unit` does not merge these into the
+    /// registry the caller sees.
+    pub(crate) eval_failed_classes: HashSet<String>,
     /// The modules an `EVAL` unit's pre-run already `use`d while its CHECK-time
     /// validation runs, whose names the checks read from the interpreter, not
     /// from the module's source (`run_eval_hook_uses`, #13441).
     pub(crate) eval_prerun_modules: HashSet<String>,
+    /// The import sets the pre-run of the `use`s nested in the `EVAL`'d unit's
+    /// blocks filled, for the unit's CHECK-time name checks.
+    pub(crate) eval_prerun_sets: Vec<Symbol>,
     /// What each `sub EXPORT` hook returned while an `EVAL` unit's pre-run
     /// ran it, by module and `use` arguments (`hook_replay_key`). The same
     /// `use` left in its block replays the map instead of running the hook a
@@ -616,7 +632,7 @@ pub(crate) struct ModuleState {
     /// reach must see it. Populated at export-symbol installation; checked
     /// cheaply (guarded by `is_empty()`) on each call. Never removed, mirroring
     /// `amp_param_shadowed_names`.
-    pub(crate) export_amp_override_names: std::collections::HashSet<Symbol>,
+    pub(crate) export_amp_override_names: rustc_hash::FxHashSet<Symbol>,
     /// The `&name` callables a `sub EXPORT` map handed to each compunit, keyed
     /// by the (importing file, bare name). `env` holds one `&name` slot for
     /// the whole program, so a second import of the same name (the script
@@ -639,6 +655,18 @@ pub(crate) struct ModuleState {
     /// Populated at export-symbol installation and never removed, mirroring
     /// `export_amp_override_names`.
     pub(crate) export_term_override_names: std::collections::HashSet<Symbol>,
+}
+
+/// One memoised `lexical_package_for_frame` answer: the question
+/// (`def_file`, the ambient unit) and the unit-scope epoch it was computed under.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LexicalPackageMemo {
+    pub(crate) epoch: u64,
+    pub(crate) def_file: Option<Symbol>,
+    /// The running unit, recorded only when `def_file` is `None` (a frame with
+    /// no file starts its walk there).
+    pub(crate) ambient_unit: Option<Symbol>,
+    pub(crate) package: Option<Symbol>,
 }
 
 impl ModuleState {
@@ -692,6 +720,7 @@ impl ModuleState {
             module_imported_lexical_names: std::sync::Arc::new(PackageKeyed::default()),
             module_source_packages: Default::default(),
             unit_module_packages: Default::default(),
+            lexical_package_memo: std::cell::Cell::new(None),
             module_declared_unit_packages: Default::default(),
             exported_subs: Default::default(),
             exported_sub_values: Default::default(),
@@ -723,7 +752,9 @@ impl ModuleState {
             lexical_operator_import_sets: HashSet::new(),
             eval_import_chain: None,
             eval_import_unit: None,
+            eval_failed_classes: HashSet::new(),
             eval_prerun_modules: HashSet::new(),
+            eval_prerun_sets: Vec::new(),
             eval_hook_results: HashMap::new(),
             eval_hook_recording: false,
             foreign_main_clean_version: None,
@@ -739,7 +770,7 @@ impl ModuleState {
             precomp_enabled: crate::precomp::enabled_by_default(),
             monkey_typing: false,
             imported_compiled_fns: HashMap::new(),
-            export_amp_override_names: std::collections::HashSet::new(),
+            export_amp_override_names: Default::default(),
             unit_imported_callables: std::collections::HashMap::new(),
             export_term_override_names: std::collections::HashSet::new(),
         }
@@ -798,6 +829,7 @@ impl ModuleState {
             module_imported_lexical_names: self.module_imported_lexical_names.clone(),
             module_source_packages: self.module_source_packages.clone(),
             unit_module_packages: self.unit_module_packages.clone(),
+            lexical_package_memo: std::cell::Cell::new(None),
             module_declared_unit_packages: self.module_declared_unit_packages.clone(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
@@ -829,7 +861,9 @@ impl ModuleState {
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
             eval_import_chain: self.eval_import_chain.clone(),
             eval_import_unit: self.eval_import_unit,
+            eval_failed_classes: HashSet::new(),
             eval_prerun_modules: self.eval_prerun_modules.clone(),
+            eval_prerun_sets: self.eval_prerun_sets.clone(),
             eval_hook_results: self.eval_hook_results.clone(),
             eval_hook_recording: false,
             foreign_main_clean_version: self.foreign_main_clean_version,
@@ -857,5 +891,19 @@ impl ModuleState {
             unit_imported_callables: self.unit_imported_callables.clone(),
             export_term_override_names: self.export_term_override_names.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `operator_has_import_scope_sym` probes this table on every call once a
+    /// unit imported an operator, so it must stay a cheap-hash map (#7565).
+    /// Compile-time check: it stops compiling if the table is a std map again.
+    #[allow(dead_code)]
+    fn operator_import_units_is_an_fx_map(state: &ModuleState) {
+        fn is_fx<K, V>(_: &std::sync::Arc<rustc_hash::FxHashMap<K, V>>) {}
+        is_fx(&state.operator_import_units);
     }
 }

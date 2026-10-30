@@ -196,6 +196,7 @@ fn contains_hyperwhatever(expr: &Expr) -> bool {
         | Expr::HyperMethodCall { target, .. }
         | Expr::HyperMethodCallDynamic { target, .. }
         | Expr::CallOn { target, .. }
+        | Expr::Exists { target, .. }
         | Expr::Index { target, .. } => contains_hyperwhatever(target),
         Expr::InfixFunc { left, right, .. } => {
             contains_hyperwhatever(left) || right.iter().any(contains_hyperwhatever)
@@ -235,7 +236,11 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
         // one-parameter expansion (`build_compound_assign_expr`).
         Expr::CompoundAssign { target, rhs, .. } => {
             let n = count_whatever(rhs);
-            n + usize::from(n > 0 && is_whatever(target))
+            if is_whatever(target) {
+                n + usize::from(n > 0)
+            } else {
+                n + count_whatever(target)
+            }
         }
         // A nested, already-planted WhateverCurry operand (e.g. `(* - 1)`
         // inside `(* - 1) - 1`) contributes its own un-curried placeholder
@@ -326,6 +331,8 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
         }
         // Only check target, not index (subscript handles its own WhateverCode)
         Expr::Index { target, .. } => count_whatever(target),
+        // `*<a>:exists`: the adverb applies to the subscript, which primes.
+        Expr::Exists { target, .. } => count_whatever(target),
         // A zen slice is the empty-subscript postcircumfix; like `Index`, only
         // its target can hold the `*` that decides the arity.
         Expr::ZenSlice(target) => count_whatever(target),

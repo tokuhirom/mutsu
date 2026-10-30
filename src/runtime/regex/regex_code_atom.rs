@@ -70,9 +70,9 @@ impl Interpreter {
         // other rule's on a cursor minted without BUILD.
         let self_cursor = (code_needs_self(code) && self.class_is_grammar(&pkg.resolve()))
             .then(|| start_invocant.unwrap_or_else(|| self.new_grammar_cursor(chars, pos, pkg)));
-        let saved_self = self_cursor
+        let fixtures_mark = self_cursor
             .as_ref()
-            .map(|cursor| self.env.insert("self".to_string(), cursor.clone()));
+            .map(|cursor| self.begin_scoped_invocant(cursor.clone()));
         // The rule's code closes over the scope of the file declaring it
         // (#13915), which is not the running rule's for an inherited one.
         let rule = self.regex_state.code_atom_rule.take();
@@ -145,11 +145,8 @@ impl Interpreter {
             new_caps.ast = outcome.made;
             Some((pos, new_caps))
         });
-        if let Some(prev) = saved_self {
-            match prev {
-                Some(prev) => self.env.insert("self".to_string(), prev),
-                None => self.env.remove("self"),
-            };
+        if let Some(mark) = fixtures_mark {
+            self.end_scoped_fixtures(mark);
         }
         result
     }
@@ -241,7 +238,7 @@ impl Interpreter {
                     name,
                     expr,
                     is_our,
-                    custom_traits,
+                    has_initializer,
                     ..
                 } = stmt
                 else {
@@ -253,7 +250,7 @@ impl Interpreter {
                 // value it already holds (#13255). An initializer re-runs.
                 if !*is_our
                     && current_caps.regex_vars().contains_key(name)
-                    && !custom_traits.iter().any(|(t, _)| t == "__has_initializer")
+                    && !*has_initializer
                 {
                     continue;
                 }
