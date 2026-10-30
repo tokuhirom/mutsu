@@ -49,7 +49,17 @@ impl Interpreter {
             self.light_uint_check(val)
         } else {
             Self::fast_type_check_tagged(val, kind, name_sym)
+                || self.light_instance_of_builtin(val, name_sym.as_str())
         }
+    }
+
+    /// An object of a user class that inherits a builtin
+    /// (`class TextString { also is Str }`) is no builtin value shape, so the
+    /// shape-based fast checks refuse it; its MRO decides.
+    // Cost: O(m) in `type_matches_value`, m = the value's type MRO; O(1) for any
+    // other shape.
+    fn light_instance_of_builtin(&mut self, val: &Value, type_name: &str) -> bool {
+        matches!(val.view(), ValueView::Instance { .. }) && self.type_matches_value(type_name, val)
     }
 
     /// [`Self::light_return_type_check_tagged`] for the light return check:
@@ -84,7 +94,7 @@ impl Interpreter {
         if type_name == "UInt" {
             self.light_uint_check(val)
         } else {
-            Self::fast_type_check(val, type_name)
+            Self::fast_type_check(val, type_name) || self.light_instance_of_builtin(val, type_name)
         }
     }
 

@@ -562,9 +562,11 @@ impl Interpreter {
                     } else {
                         &*val
                     };
-                    if kind == crate::opcode::FastParamType::UInt {
-                        // The type matcher needs `&mut self`; only this
-                        // constraint can reach it.
+                    if kind == crate::opcode::FastParamType::UInt
+                        || matches!(val.view(), ValueView::Instance { .. })
+                    {
+                        // The type matcher needs `&mut self`; only a `UInt`
+                        // constraint or an object can reach it.
                         let val = val.clone();
                         self.light_param_type_check(&val, kind, name_sym)
                     } else {
