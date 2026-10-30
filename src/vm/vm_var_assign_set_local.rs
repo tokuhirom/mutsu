@@ -1308,6 +1308,17 @@ impl Interpreter {
         {
             let name = &code.locals[idx];
             self.update_bound_decont_marker(name, scalar_bind || is_bind, &raw_popped);
+            // `$!attr := $var` seats the variable's own container, so the
+            // attribute stays a writable one (`nqp::isrwcont`) although the
+            // stack carries only its value.
+            if is_bind
+                && name.starts_with('!')
+                && bind_source
+                    .as_deref()
+                    .is_some_and(|n| !self.name_is_readonly_binding(n))
+            {
+                self.note_bound_private_attr_container(name);
+            }
         }
         // A scalar `:=` bound to a plain immutable VALUE with no named source
         // (`my $r := $obj.ro-attr` — a non-rw accessor result) is bound to that

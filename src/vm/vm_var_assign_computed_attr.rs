@@ -788,6 +788,30 @@ impl Interpreter {
         }
     }
 
+    /// `$!attr := $var`: the attribute now holds the variable's container, so
+    /// the bound-value marker [`Self::note_bound_private_attr`] set for the
+    /// stack's bare value is withdrawn.
+    // Cost: O(1) (one attribute lookup and one map write).
+    pub(super) fn note_bound_private_attr_container(&self, name: &str) {
+        let Some((bare, true)) = Self::attr_twigil_base(name) else {
+            return;
+        };
+        let Some(self_val) = self.get_env_self() else {
+            return;
+        };
+        let marker = crate::meta_ns::MetaNs::BoundAttr.key_for_str(bare);
+        if let Some(attributes) = self.with_self_attr(
+            &self_val,
+            None,
+            crate::symbol::Symbol::intern(bare),
+            true,
+            '$',
+            |attributes, _, _| attributes.clone(),
+        ) {
+            attributes.with_map_mut(|map| map.remove(marker));
+        }
+    }
+
     /// The shared tail of both write paths. Unwraps a `Mixin` self to the inner
     /// instance's shared cell so a runtime-`does` mixin method's `$.attr`/`$!attr`
     /// write persists (the cell is an `Arc<RwLock>` shared with the caller's

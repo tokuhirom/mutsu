@@ -723,7 +723,7 @@ impl Interpreter {
             if !has_native_assign
                 && self
                     .resolve_method_with_owner(&cls, at_method, std::slice::from_ref(&idx_arg))
-                    .is_some_and(|(_, def)| def.is_rw)
+                    .is_some_and(|(_, def)| def.is_rw || def.is_raw)
                 && !self.has_user_method_including_role(&cls, assign_method)
                 && !self.stack.last().is_some_and(Self::is_bind_index_value)
             {
