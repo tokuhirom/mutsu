@@ -63,6 +63,21 @@ pub(crate) fn coerce_impossible_error(target: &str, got: &Value) -> RuntimeError
 
 /// Coerce a value to the target type.
 pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
+    // An argument read from an array element or a variable reaches a raw
+    // (sigilless) coercion parameter as its container; the coercion is of what
+    // the container holds, and the result is a fresh value, not the container.
+    // A value the coercion leaves as it is keeps its container.
+    if value.is_container_ref() {
+        let inner = value.deref_container();
+        let coerced = coerce_value(target, inner.clone());
+        return if crate::runtime::value_type_name(&coerced)
+            == crate::runtime::value_type_name(&inner)
+        {
+            value
+        } else {
+            coerced
+        };
+    }
     let base_target = if target.ends_with(":D") || target.ends_with(":U") || target.ends_with(":_")
     {
         &target[..target.len() - 2]
