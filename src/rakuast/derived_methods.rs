@@ -32,6 +32,7 @@ pub(super) fn names(class: RakuAstClass) -> &'static [&'static str] {
             &["dispatch", "dispatcher"]
         }
         InitializerAssign | InitializerCallAssign | InitializerBind => &["is-binding"],
+        ParameterTargetVar => &["declaration"],
         VarDeclarationSimple => &["original-type", "return-type"],
         VarDeclarationSignature => &["type"],
         Signature => &["parameters-initialized"],
@@ -237,6 +238,9 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         (VarDeclarationPlaceholderSlurpyHash, "lexical-name") => Some(Value::str_from("%_")),
         (TypeSubset, "of") | (VarDeclarationTerm, "type") => {
             Some(field(node, method).unwrap_or(Value::NIL))
+        }
+        (ParameterTargetVar, "declaration") => {
+            Some(super::resolve::target_declaration(node).unwrap_or(Value::NIL))
         }
         (VarDeclarationSimple, "return-type") => Some(super::resolve::return_type(node)),
         (InitializerAssign | InitializerCallAssign, "is-binding") => Some(Value::truth(false)),
