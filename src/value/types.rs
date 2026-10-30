@@ -113,6 +113,84 @@ pub(crate) fn parametric_role_name(base_name: &str, type_args: &[Value]) -> Stri
     format!("{}[{}]", base_name, args.join(","))
 }
 
+/// The type constraint `constraint` without the named arguments of its
+/// parameterized types: rakudo names and checks `NT[Int, :coerce(&cf)]` as
+/// `NT[Int]` (#15504). The parser keeps the written spelling (RakuAST renders
+/// it back), so a consumer of a constraint string reads it through here.
+// Cost: O(1) for a name with no `[`; else O(n), n = length of the constraint.
+pub(crate) fn constraint_without_named_args(constraint: &str) -> std::borrow::Cow<'_, str> {
+    // Every named argument sits after a `[` and a `:` of its own.
+    if !constraint.contains('[') || !constraint.contains(':') {
+        return std::borrow::Cow::Borrowed(constraint);
+    }
+    let mut out = String::with_capacity(constraint.len());
+    let mut changed = false;
+    let mut rest = constraint;
+    while let Some(open) = rest.find('[') {
+        // The bracketed argument list: up to its matching `]`.
+        let mut depth = 0usize;
+        let mut close = None;
+        for (idx, ch) in rest[open..].char_indices() {
+            match ch {
+                '[' => depth += 1,
+                ']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(open + idx);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(close) = close else { break };
+        out.push_str(&rest[..open]);
+        let inner = &rest[open + 1..close];
+        let mut items: Vec<&str> = Vec::new();
+        let (mut d, mut start) = (0i32, 0usize);
+        for (idx, b) in inner.bytes().enumerate() {
+            match b {
+                b'[' | b'(' | b'{' => d += 1,
+                b']' | b')' | b'}' => d -= 1,
+                b',' if d == 0 => {
+                    items.push(inner[start..idx].trim());
+                    start = idx + 1;
+                }
+                _ => {}
+            }
+        }
+        items.push(inner[start..].trim());
+        let is_named = |item: &str| {
+            item.strip_prefix(':')
+                .and_then(|r| r.chars().next())
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
+                && !matches!(item, ":D" | ":U" | ":_")
+        };
+        if items.iter().any(|item| is_named(item)) {
+            changed = true;
+            let kept: Vec<&str> = items.into_iter().filter(|i| !is_named(i)).collect();
+            if !kept.is_empty() {
+                out.push('[');
+                // Arguments that are parameterized types themselves.
+                let nested: Vec<String> = kept
+                    .iter()
+                    .map(|i| constraint_without_named_args(i).into_owned())
+                    .collect();
+                out.push_str(&nested.join(", "));
+                out.push(']');
+            }
+        } else {
+            out.push_str(&rest[open..=close]);
+        }
+        rest = &rest[close + 1..];
+    }
+    if !changed {
+        return std::borrow::Cow::Borrowed(constraint);
+    }
+    out.push_str(rest);
+    std::borrow::Cow::Owned(out)
+}
+
 /// [`parametric_role_name`] as a human sees it (`.^name`, `.gist`, `.raku`):
 /// a lexical role's declaration-site key (`R\u{0}<id>`, ADR-0047) is dropped.
 /// The raw name stays the identity key compositions are matched on.
