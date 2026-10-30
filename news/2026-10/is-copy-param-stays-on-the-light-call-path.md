@@ -12,7 +12,15 @@ as the general binder does. A constant default (`$t is copy = "z"`) is filled fr
 precomputed constant, which is immutable, so a write to the copy cannot reach the next call.
 
 Measured with callgrind (profiling build, slope between 500 and 1500 iterations, startup
-subtracted): `sub f($desc is copy) { $desc }; f("x")` 21,723 -> 6,074 Ir per call.
+subtracted, both binaries built from the same `main`): `sub f($desc is copy) { $desc }; f("x")`
+21,741 -> 6,132 Ir per call, and `sub f($s is copy, $t is copy = "z") { $s ~= $t; $s }; f("a")`
+25,052 -> 7,928. A light-bound copy also owns its name's type metadata, as the general binder
+makes it: a typed one registers its constraint, an untyped one drops an inherited same-named
+caller constraint.
+
+This does not speed up `Test::ok`/`is` yet (190.7k -> 189.9k Ir per `ok`, -0.5%):
+`proclaim` also takes a `Bool(Mu)` coercion parameter, which still sends it through the general
+binder (+18.8k Ir per call measured separately).
 
 As a side effect the light path matches rakudo where the general binder does not: `$x is copy`
 bound to an Array shares the array (`$x.push(9)` is seen by the caller), while the general binder
