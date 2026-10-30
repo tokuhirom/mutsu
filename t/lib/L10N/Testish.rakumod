@@ -15,6 +15,9 @@ role L10N::Testish {
     token block-if { iffy }
     token block-else { elsey }
     token block-unless { なければ }
+    # An apostrophe in the spelling (Klingon `block-loop` is "'eS"): the parser
+    # re-spells the quoted body as `'\'eS'`, which the vocabulary has to unescape.
+    token block-loop { "'tick" }
     token modifier-if { iffish }
     token scope-my { mine }
     token package-class { klass }
