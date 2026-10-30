@@ -378,6 +378,18 @@ impl Interpreter {
         // package chain, keeping any definiteness smiley.
         if bracket_start.is_none() && !constraint.contains('(') {
             let (base, smiley) = crate::runtime::types::strip_type_smiley(constraint);
+            // A measured RakuAST name nobody declared is not an alias, a
+            // relative compound name or a published head: Raku cannot bind a
+            // qualified name with `constant`, and a declaration of the same
+            // name is `has_type_direct`. The walk below only ever answered
+            // `None` for it, ~10k instructions per check, 267 times per
+            // `RakuAST::Deparse` dispatch.
+            if base.starts_with("RakuAST::")
+                && crate::rakuast::hierarchy::entry(base).is_some()
+                && !self.has_type_direct(base)
+            {
+                return None;
+            }
             if !self.has_type_direct(base)
                 && let Some(resolved) = self
                     .resolve_type_alias_chain(base)
