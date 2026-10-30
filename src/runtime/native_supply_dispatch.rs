@@ -681,6 +681,15 @@ impl Interpreter {
                 if let Some(reason) = attributes.get("quit_reason") {
                     new_attrs.insert("quit_reason".to_string(), reason.clone());
                 }
+                // A `.lines` view of a Proc::Async output stream is tapped on the
+                // process's own stream (the `tap` arm reads `proc_output` and
+                // `parent_supply_id`): the stream delivers it split into lines.
+                if let Some(marker) = attributes.get("proc_output") {
+                    new_attrs.insert("proc_output".to_string(), marker.clone());
+                }
+                if let Some(enc) = attributes.get("enc") {
+                    new_attrs.insert("enc".to_string(), enc.clone());
+                }
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "merge" => {
