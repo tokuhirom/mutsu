@@ -2168,6 +2168,17 @@ impl Interpreter {
                 // without the marker `@a = $p` itemized it (#9262).
                 if !is_internal_temp {
                     self.update_bound_decont_marker(&name, was_scalar_bind || is_bind_ctx, &val);
+                    // `$!attr := $var` seats the variable's own container, so
+                    // the attribute stays a writable one (`nqp::isrwcont`)
+                    // even though the stack carries only its value.
+                    if is_bind_ctx
+                        && name.starts_with('!')
+                        && bind_source
+                            .as_deref()
+                            .is_some_and(|n| !self.name_is_readonly_binding(n))
+                    {
+                        self.note_bound_private_attr_container(&name);
+                    }
                 }
                 // SetGlobal is also used for an attribute assignment inside a
                 // nested `given`/`when` body.  The by-name env mirror can then
