@@ -179,6 +179,43 @@ impl Interpreter {
         }
     }
 
+    /// `Type.^meta(args)` where `Type.HOW` is one of the builtin metaclasses
+    /// and nobody can have put a method of their own in front of its
+    /// metamethod: answer through `dispatch_classhow_method` directly instead
+    /// of re-entering the general method-call chain on the HOW instance
+    /// (~28k instructions per `.^find_method`, ~4k here). `how_args` is the
+    /// argument list `Type.HOW.meta(...)` receives, type object first.
+    /// `None` leaves the call to the general path.
+    // Cost: O(1) to decide; `dispatch_classhow_method`'s own cost.
+    pub(crate) fn try_builtin_how_meta_lane(
+        &mut self,
+        how: &Value,
+        meta_method: &str,
+        how_args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !Self::is_classhow_method(meta_method)
+            || self.has_any_wrap_chains()
+            || crate::runtime::find_method_intercept::any_user_find_method()
+        {
+            return None;
+        }
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = how.view()
+        else {
+            return None;
+        };
+        if !Self::is_metamodel_how(&class_name)
+            || self.has_user_method(class_name.as_str(), meta_method)
+        {
+            return None;
+        }
+        let how_args = self.how_dispatch_args(&attributes, meta_method, how_args);
+        Some(self.dispatch_classhow_method(meta_method, how_args))
+    }
+
     pub(super) fn dispatch_classhow_method(
         &mut self,
         method: &str,
