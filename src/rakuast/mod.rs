@@ -3516,7 +3516,10 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     // The core declarations a resolved lookup answers (see [`resolve`]).
     if matches!(
         class_name,
-        "RakuAST::Declaration::External::Setting" | "RakuAST::Declaration::External::Constant"
+        "RakuAST::Declaration::External::Setting"
+            | "RakuAST::Declaration::External::Constant"
+            | "RakuAST::Declaration::Import"
+            | "RakuAST::Declaration::LexicalPackage"
     ) {
         return Some(vec!["compile-time-value"]);
     }

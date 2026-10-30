@@ -120,6 +120,14 @@ pub(super) const fn opaque(
             "RakuAST::Declaration::External::Constant",
             &["RakuAST::Declaration::External::Constant"],
         ),
+        S::RakuAstDeclarationImport => (
+            "RakuAST::Declaration::Import",
+            &["RakuAST::Declaration::Import"],
+        ),
+        S::RakuAstDeclarationLexicalPackage => (
+            "RakuAST::Declaration::LexicalPackage",
+            &["RakuAST::Declaration::LexicalPackage"],
+        ),
         _ => return None,
     })
 }
