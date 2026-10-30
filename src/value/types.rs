@@ -113,6 +113,17 @@ pub(crate) fn parametric_role_name(base_name: &str, type_args: &[Value]) -> Stri
     format!("{}[{}]", base_name, args.join(","))
 }
 
+/// The positional arguments of a curried role: its named arguments are no
+/// part of the type it names (#15504, #15710).
+// Cost: O(n), n = arguments.
+pub(crate) fn positional_role_args(type_args: &[Value]) -> Vec<Value> {
+    type_args
+        .iter()
+        .filter(|arg| !matches!(arg.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+        .cloned()
+        .collect()
+}
+
 /// The type constraint `constraint` without the named arguments of its
 /// parameterized types: rakudo names and checks `NT[Int, :coerce(&cf)]` as
 /// `NT[Int]` (#15504). The parser keeps the written spelling (RakuAST renders
@@ -200,11 +211,7 @@ pub(crate) fn constraint_without_named_args(constraint: &str) -> std::borrow::Co
 /// concretizations of one role must stay distinguishable to the composition
 /// machinery.
 pub(crate) fn parametric_role_display_name(base_name: &str, type_args: &[Value]) -> String {
-    let positional: Vec<Value> = type_args
-        .iter()
-        .filter(|arg| !matches!(arg.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
-        .cloned()
-        .collect();
+    let positional = positional_role_args(type_args);
     if positional.is_empty() && !type_args.is_empty() {
         return crate::value::user_facing_type_name(base_name).into_owned();
     }

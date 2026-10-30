@@ -105,6 +105,14 @@ fn does(i: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answer 
         ValueView::Package(name) => name.resolve(),
         ValueView::Str(name) => name.to_string(),
         ValueView::Instance { class_name, .. } => class_name.resolve(),
+        // A curried role names its positional arguments only (#15715).
+        ValueView::ParametricRole {
+            base_name,
+            type_args,
+        } => crate::value::parametric_role_name(
+            &base_name.resolve(),
+            &crate::value::positional_role_args(type_args),
+        ),
         // A plain value stands for its type: `2.does(2)` asks `Int` about
         // `Int` (Test's `does-ok($x, 2, ...)`).
         _ => crate::runtime::value_type_name(&args[0]).to_string(),
