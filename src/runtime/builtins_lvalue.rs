@@ -303,6 +303,16 @@ impl Interpreter {
                 for (k, v) in map.iter() {
                     resolved.insert(k.clone(), self.resolve_proxies_in_value(v)?);
                 }
+                // A `Map` (or a typed / object hash) stays what it was: `eqv`
+                // compares the type, and the rebuilt hash lost `declared_type`.
+                if map.declared_type.is_some() || map.key_type.is_some() {
+                    let mut data: crate::value::HashData = (**map).clone();
+                    data.map = resolved;
+                    return Ok(Value::hash_with_data_itemized(
+                        crate::gc::Gc::new(data),
+                        value.hash_is_itemized(),
+                    ));
+                }
                 Ok(Value::hash(resolved))
             }
             ValueView::Pair(k, v) => {
