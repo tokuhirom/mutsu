@@ -115,6 +115,16 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
+    // `RakuAST::Sub.compile-time-value`: the routine a resolved call of a unit
+    // sub stands for (#15610), read from the interpreter on demand.
+    MethodRow {
+        owner: "RakuAST::Sub",
+        name: "compile-time-value",
+        arity: 0,
+        handler: Handler::Interp(sub_value),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
     // An imported routine (`use Test; plan`) and a unit-declared package.
     MethodRow {
         owner: "RakuAST::Declaration::Import",
@@ -207,6 +217,21 @@ fn external_value(
         return Some(Ok(interp.resolve_code_var(routine)));
     }
     Some(Ok(Value::package(Symbol::intern(&name))))
+}
+
+/// `compile-time-value` of a unit-declared `RakuAST::Sub`: the routine of that name.
+// Cost: O(1) plus the interpreter's lookup of the name.
+fn sub_value(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::RakuAst(node) = target.view() else {
+        return None;
+    };
+    let name = crate::rakuast::declared_sub_name(node)?;
+    Some(Ok(interp.resolve_code_var(&name)))
 }
 
 /// `Origin.as-match`: a `RakuAST::Origin::Match` for the span: the unit's file,

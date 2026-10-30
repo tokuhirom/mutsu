@@ -1492,6 +1492,14 @@ pub(crate) fn lower_parsed_stmt(
     conditional_lower::lower_parsed(node)
 }
 
+/// The name a `RakuAST::Sub` node declares (`foo` of `sub foo { }`), if it has one.
+// Cost: O(f), f = fields of the node.
+pub(crate) fn declared_sub_name(node: &RakuAstNode) -> Option<String> {
+    (node.class == RakuAstClass::Sub)
+        .then(|| declared_routines::declared_by(node))
+        .flatten()
+}
+
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
 pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
     let _origins_wanted = crate::parser::term_origins::Wanted::enter();
@@ -3574,7 +3582,7 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     }
     if matches!(
         class,
-        RakuAstClass::VarDeclarationSimple | RakuAstClass::ParameterTargetVar
+        RakuAstClass::VarDeclarationSimple | RakuAstClass::ParameterTargetVar | RakuAstClass::Sub
     ) {
         names.push("compile-time-value");
     }
