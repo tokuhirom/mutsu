@@ -726,20 +726,9 @@ impl Interpreter {
         // one-element list -- verified against `raku`
         // (`Foo.^lookup('bar').candidates[0]` on a plain method, not just a
         // multi's). Set once the Instance exists so it can hold a self-copy.
-        if !is_dispatcher
-            && let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = method_obj.view()
-        {
-            let mut am = attributes.as_map().clone();
-            am.insert(
-                "candidates".to_string(),
-                Value::array(vec![method_obj.clone()]),
-            );
-            let method_obj = Value::make_instance(class_name, am);
-            return self.method_object_with_routine_mixins(method_obj, method_def, name, owner_class, is_dispatcher);
+        if !is_dispatcher && let ValueView::Instance { attributes, .. } = method_obj.view() {
+            // The method itself, not a copy: `$m.candidates[0] === $m`.
+            attributes.insert("candidates", Value::array(vec![method_obj.clone()]));
         }
         self.method_object_with_routine_mixins(method_obj, method_def, name, owner_class, is_dispatcher)
     }

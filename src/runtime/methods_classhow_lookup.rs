@@ -275,6 +275,17 @@ impl Interpreter {
                     0,
                 ));
             }
+            // An inherited method is the declaring class's own method object
+            // (`C.^find_method('m') === B.^find_method('m')`).
+            if owner_str != class_name_str
+                && let Some(own) = self.classhow_lookup_impl(
+                    &Value::package(*owner_sym),
+                    method_name,
+                    include_ancestor_submethods,
+                )
+            {
+                return Some(own);
+            }
             return Some(self.make_method_object_with_owner(
                 method_name,
                 first,
@@ -397,9 +408,6 @@ impl Interpreter {
             // (`class H is Hash`: `Hash`'s `AT-KEY`): calling the Method
             // object on an `H` must not look the name up on `H` again, where a
             // composed role's own method of that name would answer.
-            let user_class =
-                crate::builtin_types::catalog::builtin_type_info(&class_name_str).is_none();
-            let class_name_owner = class_name_str.clone();
             let owner = if crate::builtin_types::catalog::builtin_type_info(&class_name_str)
                 .is_some()
             {
@@ -411,20 +419,17 @@ impl Interpreter {
                         crate::builtin_types::catalog::builtin_type_info(level).is_some()
                             && self.registry().declares_builtin_method(level, method_name)
                     })
-                    .unwrap_or(class_name_str)
+                    // A user class inherits its constructors from `Mu`
+                    // (`C.^find_method('new').package` is `Mu`).
+                    .unwrap_or_else(|| {
+                        if matches!(method_name, "new" | "bless") {
+                            "Mu".to_string()
+                        } else {
+                            class_name_str
+                        }
+                    })
             };
-            let method = self.make_native_method_object(method_name, &owner);
-            // A user class inherits what no built-in ancestor declares from
-            // `Mu` (`C.^find_method('new').package` is `Mu`); the callable
-            // keeps dispatching on the class, so an override still applies.
-            if user_class
-                && owner == class_name_owner
-                && (method_name == "new" || self.registry().declares_builtin_method("Mu", method_name))
-                && let ValueView::Instance { attributes, .. } = method.view()
-            {
-                attributes.insert("package", Value::package(Symbol::intern("Mu")));
-            }
-            return Some(method);
+            return Some(self.make_native_method_object(method_name, &owner));
         }
         // A built-in type outside the introspected owner set (`DateTime`,
         // `Date`, ...) still declares its methods in the native row table,
