@@ -28,8 +28,8 @@
 //! than silently acquiring the wrong meaning. The remaining residue is
 //! tracked in <https://github.com/tokuhirom/mutsu/issues/7990>.
 
-use std::cell::{Cell, RefCell};
 use std::borrow::Cow;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
