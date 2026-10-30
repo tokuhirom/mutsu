@@ -106,7 +106,7 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
         }
         // The `state` declaration the parser puts at the top of a block for
         // each bare `$` it contains: rakudo's node is the `$` itself.
-        if crate::ast::anon_state::is_implicit_decl(stmt) {
+        if crate::ast::anon_state::is_implicit_decl(stmt) && !super::passthrough::executing() {
             continue;
         }
         if trace.is_none()

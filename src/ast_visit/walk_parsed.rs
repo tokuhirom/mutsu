@@ -216,7 +216,7 @@ pub(crate) fn walk_parsed_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Parsed
         }
         ParsedStmt::CommaDecls(declarations)
         | ParsedStmt::AttributeGroup(declarations)
-        | ParsedStmt::AttributeColonArglist(declarations) => super::walk_stmts_mut(v, declarations),
+        | ParsedStmt::AttributeColonArglist(declarations) => v.visit_stmts_mut(declarations),
         ParsedStmt::SignatureDecl(decl) => walk_signature_decl_mut(v, decl),
         ParsedStmt::Temporize(t) => {
             if let crate::ast::temporize::Target::Element(element) = &mut t.target {
@@ -296,7 +296,7 @@ fn block_mut<V: VisitMut + ?Sized>(v: &mut V, b: &mut ParsedBlock) {
             }
         }
     }
-    super::walk_stmts_mut(v, &mut b.body);
+    v.visit_stmts_mut(&mut b.body);
 }
 
 /// Visits every child of `node`, an expression kept in its RakuAST shape.
@@ -358,7 +358,7 @@ pub(crate) fn walk_parsed_expr_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut P
             v.visit_expr_mut(&mut a.target);
             v.visit_expr_mut(&mut a.source);
         }
-        ParsedExpr::Supply(body) | ParsedExpr::StartBody(body) => super::walk_stmts_mut(v, body),
+        ParsedExpr::Supply(body) | ParsedExpr::StartBody(body) => v.visit_stmts_mut(body),
         ParsedExpr::HyperAssign(a) => {
             v.visit_expr_mut(&mut a.target);
             v.visit_expr_mut(&mut a.value);

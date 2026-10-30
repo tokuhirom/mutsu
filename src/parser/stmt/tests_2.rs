@@ -409,10 +409,10 @@ fn parse_class_decl_captures_parent_bracket_exprs() {
     else {
         panic!("expected ClassDecl");
     };
-    assert_eq!(parents, &vec!["Bar[Int, 'a,b']".to_string()]);
+    assert_eq!(parents, &vec!["Bar[Int, \"a,b\"]".to_string()]);
     assert_eq!(parent_args.len(), 1);
     let (key, exprs) = &parent_args[0];
-    assert_eq!(key, "Bar[Int, 'a,b']");
+    assert_eq!(key, "Bar[Int, \"a,b\"]");
     assert_eq!(exprs.len(), 2);
 }
 

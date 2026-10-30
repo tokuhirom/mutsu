@@ -20,16 +20,23 @@ fn operator(node: &CompoundAssign) -> Result<CompoundAssignOp, PError> {
 /// current value.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PError> {
+    lower_compound_expression_with(node, crate::parser::is_user_declared_value_term)
+}
+
+/// [`lower_compound_expression`] where `is_term` says which barewords name a
+/// sigilless term: the parser asks its own scopes, the lowering of a parsed
+/// unit the terms the unit declares.
+// Cost: O(n), n = size of the target and source.
+pub(crate) fn lower_compound_expression_with(
+    node: CompoundAssign,
+    is_term: fn(&str) -> bool,
+) -> Result<Expr, PError> {
     match node.meta {
         CompoundMeta::Reverse => return Ok(lower_reverse(node)),
         CompoundMeta::Set => return lower_set(node),
         CompoundMeta::TopicDotty => return Ok(topic_dotty_expression(node.source)),
         CompoundMeta::Dotty => {
-            return Ok(lower_dotty(
-                node,
-                false,
-                crate::parser::is_user_declared_value_term,
-            ));
+            return Ok(lower_dotty(node, false, is_term));
         }
         CompoundMeta::BracketedMeta(..) => return bracketed_meta_expression(node),
         CompoundMeta::Plain if is_routine_infix(&node.op) => {
@@ -54,11 +61,17 @@ pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PE
 /// as a statement.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_compound_statement(node: CompoundAssign) -> Result<Stmt, PError> {
+    lower_compound_statement_with(node, crate::parser::is_user_declared_value_term)
+}
+
+/// [`lower_compound_statement`] with the caller's notion of a sigilless term.
+// Cost: O(n), n = size of the target and source.
+pub(crate) fn lower_compound_statement_with(
+    node: CompoundAssign,
+    is_term: fn(&str) -> bool,
+) -> Result<Stmt, PError> {
     if matches!(node.meta, CompoundMeta::Dotty | CompoundMeta::TopicDotty) {
-        return Ok(lower_dotty_statement(
-            node,
-            crate::parser::is_user_declared_value_term,
-        ));
+        return Ok(lower_dotty_statement(node, is_term));
     }
     if let CompoundMeta::BracketedMeta(..) = node.meta {
         if !is_variable(&node.target) {
@@ -73,7 +86,7 @@ pub(crate) fn lower_compound_statement(node: CompoundAssign) -> Result<Stmt, PEr
         });
     }
     if matches!(node.meta, CompoundMeta::Reverse | CompoundMeta::Set) {
-        return Ok(Stmt::Expr(lower_compound_expression(node)?));
+        return Ok(Stmt::Expr(lower_compound_expression_with(node, is_term)?));
     }
     if node.meta == CompoundMeta::Plain && is_routine_infix(&node.op) {
         return lower_routine_statement(node);
@@ -82,16 +95,16 @@ pub(crate) fn lower_compound_statement(node: CompoundAssign) -> Result<Stmt, PEr
         // `$.n += 1` writes through the accessor: the expression form's
         // `AssignExpr` is what the compiler reads the `$.` twigil from.
         Expr::Var(name) if name.starts_with('.') => {
-            return Ok(Stmt::Expr(lower_compound_expression(node)?));
+            return Ok(Stmt::Expr(lower_compound_expression_with(node, is_term)?));
         }
         Expr::Var(name) => name.clone(),
         Expr::ArrayVar(name) => format!("@{name}"),
         Expr::HashVar(name) => format!("%{name}"),
-        _ => return Ok(Stmt::Expr(lower_compound_expression(node)?)),
+        _ => return Ok(Stmt::Expr(lower_compound_expression_with(node, is_term)?)),
     };
     let op = operator(&node)?;
     if matches!(node.target, Expr::Var(_)) && short_circuit_keep(op).is_some() {
-        return Ok(Stmt::Expr(lower_compound_expression(node)?));
+        return Ok(Stmt::Expr(lower_compound_expression_with(node, is_term)?));
     }
     Ok(Stmt::Assign {
         name,

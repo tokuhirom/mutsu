@@ -44,7 +44,8 @@ thread_local! {
 
 /// Whether an executing round trip is running ([`Scope`] is installed): nothing
 /// then reads the source positions `.AST` reports, only the line a statement
-/// began on.
+/// began on, and a bare `$` is carried with the `state` declaration the parser
+/// put with it (`.AST` shows only the node).
 // Cost: O(1).
 pub(super) fn executing() -> bool {
     TABLE.with(|t| t.borrow().is_some())
@@ -300,6 +301,22 @@ fn held(node: &RakuAstNode) -> Result<Held, RuntimeError> {
 struct Kept(Option<RuntimeError>);
 
 impl Kept {
+    /// The operands of a compound assignment lowered as the conversion reads
+    /// them: `* *= 2` curries to `{ $_ *= 2 }`, so a priming argument target is
+    /// the bare `*`, and a conditional target is restored.
+    fn compound_operands(&mut self, compound: &mut crate::ast::parsed::CompoundAssign) {
+        self.visit_expr_mut(&mut compound.target);
+        self.visit_expr_mut(&mut compound.source);
+        let target = std::mem::replace(&mut compound.target, Expr::Whatever);
+        let target = match super::compound_stmt::restore_conditional_target(target) {
+            Expr::WhateverArg => Expr::Whatever,
+            other => other,
+        };
+        compound.target = target;
+    }
+}
+
+impl Kept {
     fn finish(self, held: Held) -> Result<Held, RuntimeError> {
         match self.0 {
             Some(err) => Err(err),
@@ -322,15 +339,46 @@ impl VisitMut for Kept {
     // The traits a routine was written with are compiler-inert: lowering them
     // produces no statement (a stub body `{ ... }` is the body's only one).
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
-        body.retain(|s| {
-            !matches!(s, Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::RoutineTraits(_)))
+        body.retain(|s| match s {
+            // A `;` that ends no statement runs nothing and is no block's value.
+            Stmt::Expr(Expr::Spelled(spelled)) => !pure::is_empty_statement(spelled),
+            _ => true,
         });
-        crate::ast_visit::walk_stmts_mut(self, body);
+        // The names a body declares classify the barewords written in it, as
+        // they do when it is converted.
+        let _scope = super::bareword::BlockScope::enter(body);
+        // A routine or `&name` declared in the body is in scope for the
+        // statements after it, as it is for the parser.
+        crate::parser::with_rakuast_lexical_scope(|| {
+            for stmt in body.iter_mut() {
+                self.visit_stmt_mut(stmt);
+                crate::parser::register_rakuast_user_sub_binding(stmt);
+            }
+        });
     }
 
     // A spelling only annotates the expression it wraps (ADR-12199): an
     // executing parse builds the expression alone.
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
+        // An expression the leaf cannot carry (a bareword to classify, a
+        // regex with code, ...) is converted and lowered on its own.
+        let mut inner = &*expr;
+        while let Expr::Spelled(spelled) = inner {
+            inner = &spelled.expr;
+        }
+        if !pure::expr_node_allowed(inner) {
+            let converted = {
+                let _inspecting = Inspecting::enter();
+                super::convert::convert_expr(expr).and_then(|node| super::lower::lower_expr(&node))
+            };
+            match converted {
+                Ok(lowered) => *expr = lowered,
+                Err(err) => {
+                    self.0.get_or_insert(err);
+                }
+            }
+            return;
+        }
         while matches!(expr, Expr::Spelled(_)) {
             if let Expr::Spelled(spelled) = std::mem::replace(expr, Expr::Whatever) {
                 *expr = spelled.expr;
@@ -343,6 +391,24 @@ impl VisitMut for Kept {
                 unreachable!("checked above");
             };
             *expr = super::lower_expression_assign(self.assignment(assign));
+            return;
+        }
+        if matches!(expr, Expr::Ast(node) if matches!(node.as_ref(), ParsedExpr::CompoundAssign(_)))
+            && let Expr::Ast(node) = std::mem::replace(expr, Expr::Whatever)
+        {
+            let ParsedExpr::CompoundAssign(mut compound) = *node else {
+                unreachable!("checked above");
+            };
+            self.compound_operands(&mut compound);
+            match super::compound::lower::lower_compound_expression_with(
+                compound,
+                super::shadowed_terms::is_value_term,
+            ) {
+                Ok(lowered) => *expr = lowered,
+                Err(err) => {
+                    self.0.get_or_insert(RuntimeError::new(format!("{err:?}")));
+                }
+            }
             return;
         }
         // A word quote is the runtime's word list; its words are lowered
@@ -373,6 +439,24 @@ impl VisitMut for Kept {
             *stmt = super::lower_statement_assign(self.assignment(assign));
             return;
         }
+        if matches!(stmt, Stmt::Expr(Expr::Ast(node)) if matches!(node.as_ref(), ParsedExpr::CompoundAssign(_)))
+            && let Stmt::Expr(Expr::Ast(node)) = std::mem::replace(stmt, Stmt::Last(None))
+        {
+            let ParsedExpr::CompoundAssign(mut compound) = *node else {
+                unreachable!("checked above");
+            };
+            self.compound_operands(&mut compound);
+            match super::compound::lower::lower_compound_statement_with(
+                compound,
+                super::shadowed_terms::is_value_term,
+            ) {
+                Ok(lowered) => *stmt = lowered,
+                Err(err) => {
+                    self.0.get_or_insert(RuntimeError::new(format!("{err:?}")));
+                }
+            }
+            return;
+        }
         // A modifier lowers the declaration it governs itself (`my ($a, $b) =
         // ... if $c` declares unconditionally), so that statement stays kept
         // while its own operands are lowered.
@@ -387,13 +471,25 @@ impl VisitMut for Kept {
             crate::ast_visit::walk_stmt_mut(self, inner);
         }
         crate::ast_visit::walk_stmt_mut(self, stmt);
+        // The traits a package was written with (`is T`, `does R`) are the
+        // package's own fields; only a routine keeps them in its body.
+        if let Stmt::ClassDecl { body, .. }
+        | Stmt::RoleDecl { body, .. }
+        | Stmt::Package { body, .. } = stmt
+        {
+            body.retain(|s| {
+                !matches!(s, Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::RoutineTraits(_)))
+            });
+        }
         if let Some(inner) = pending
             && let Stmt::Ast(node) = stmt
             && let ParsedStmt::Modified(modified) = node.as_mut()
         {
             *modified.stmt = inner;
         }
-        if matches!(stmt, Stmt::Ast(_))
+        // The traits a routine was written with stay in its body (the runtime
+        // reads them); they are compiler-inert.
+        if matches!(stmt, Stmt::Ast(node) if !matches!(node.as_ref(), ParsedStmt::RoutineTraits(_)))
             && let Stmt::Ast(node) = std::mem::replace(stmt, Stmt::Last(None))
         {
             match super::lower_parsed_stmt(*node) {
@@ -419,6 +515,12 @@ pub(super) fn declared_routines_of(
         fn visit_stmt(&mut self, stmt: &'ast Stmt) {
             if let Stmt::SubDecl { name, .. } = stmt {
                 self.0.insert(name.resolve());
+            }
+            // `my &name` declares a routine of the unit.
+            if let Stmt::VarDecl { name, .. } = stmt
+                && let Some(code) = name.strip_prefix('&')
+            {
+                self.0.insert(code.to_string());
             }
             crate::ast_visit::walk_stmt(self, stmt);
         }
@@ -448,6 +550,8 @@ pub(super) fn declared_routines_of(
 #[derive(Default)]
 pub(super) struct ScopeFacts {
     pub(super) terms: std::collections::HashSet<String>,
+    /// Names a constant or enum declaration makes the unit's own (`shadowed_terms`).
+    pub(super) shadowed: std::collections::HashSet<String>,
     pub(super) packages: std::collections::HashSet<String>,
 }
 
@@ -464,6 +568,25 @@ pub(super) fn scope_facts_of(node: &RakuAstNode, facts: &mut ScopeFacts) {
                         self.0.terms.insert(source.name.clone());
                     }
                 }
+                Stmt::VarDecl {
+                    name,
+                    constant: Some(sigil),
+                    ..
+                } => {
+                    // `constant term:<$box> = ...` declares the term `$box`.
+                    // A sigiled constant is the term `term:<$x>`, as the
+                    // conversion spells it; the parser stores the bare name.
+                    if matches!(sigil, crate::ast::ConstantSigil::Term) {
+                        self.0.terms.insert(name.clone());
+                    }
+                    self.0.shadowed.insert(name.clone());
+                }
+                Stmt::EnumDecl { name, variants, .. } => {
+                    self.0.shadowed.insert(name.resolve());
+                    self.0
+                        .shadowed
+                        .extend(variants.iter().map(|(variant, _)| variant.clone()));
+                }
                 Stmt::ClassDecl { name, .. }
                 | Stmt::RoleDecl { name, .. }
                 | Stmt::Package { name, .. } => {
@@ -472,6 +595,13 @@ pub(super) fn scope_facts_of(node: &RakuAstNode, facts: &mut ScopeFacts) {
                 _ => {}
             }
             crate::ast_visit::walk_stmt(self, stmt);
+        }
+        // `-> \p { ... }`: a sigilless parameter is a term of its body.
+        fn visit_param(&mut self, param: &'ast crate::ast::ParamDef) {
+            if param.sigilless {
+                self.0.terms.insert(param.name.clone());
+            }
+            crate::ast_visit::walk_param(self, param);
         }
     }
     let Ok(at) = slot(node) else { return };

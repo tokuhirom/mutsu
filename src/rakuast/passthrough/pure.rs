@@ -5,15 +5,25 @@
 //! given and lets the visitor's `walk_*` functions recurse, so a variant the
 //! test does not name is refused, never skipped.
 
-use crate::ast::parsed::{ParsedExpr, ParsedStmt};
-use crate::ast::{CallArg, Expr, ParamDef, Stmt};
-use crate::ast_visit::{Visit, walk_expr, walk_param, walk_stmt};
+use crate::ast::parsed::{CompoundAssign, CompoundMeta, ParsedExpr, ParsedStmt};
+use crate::ast::{Expr, Stmt};
+use crate::ast_visit::{Visit, walk_expr, walk_stmt};
 use crate::value::ValueView;
 
 /// Whether `stmt` may be carried, and if so whether it holds a spelling or a
 /// kept construct to undo first.
 // Cost: O(s), s = nodes of `stmt`.
 pub(super) fn analyse_stmt(stmt: &Stmt) -> Option<bool> {
+    // An empty statement is no statement of the lowered tree; inside a carried
+    // body `Kept` drops it, on its own the conversion does.
+    if matches!(stmt, Stmt::Expr(Expr::Spelled(spelled)) if is_empty_statement(spelled)) {
+        return None;
+    }
+    // The traits a routine was written with are read by the conversion of the
+    // routine that holds them; inside a carried body `Kept` drops them.
+    if matches!(stmt, Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::RoutineTraits(_))) {
+        return None;
+    }
     let mut purity = Purity::default();
     purity.visit_stmt(stmt);
     purity.pure.then_some(purity.fixup)
@@ -23,8 +33,17 @@ pub(super) fn analyse_stmt(stmt: &Stmt) -> Option<bool> {
 // Cost: O(e), e = nodes of `expr`.
 pub(super) fn analyse_expr(expr: &Expr) -> Option<bool> {
     let mut purity = Purity::default();
+    if !purity.expr_allowed(expr) {
+        return None;
+    }
     purity.visit_expr(expr);
     purity.pure.then_some(purity.fixup)
+}
+
+/// Whether the node itself (not its operands) is carried as the parser built it.
+// Cost: O(1) (a regex: O(n), n = its nodes).
+pub(super) fn expr_node_allowed(expr: &Expr) -> bool {
+    Purity::default().expr_allowed(expr)
 }
 
 struct Purity {
@@ -57,8 +76,11 @@ impl<'ast> Visit<'ast> for Purity {
         if !self.pure {
             return;
         }
+        // An expression the leaf cannot carry is converted where it stands
+        // when the tree is lowered (`Kept`), so it does not hold the rest of
+        // the statement back.
         if !self.expr_allowed(expr) {
-            self.pure = false;
+            self.fixup = true;
             return;
         }
         // A regex without code holds no expression; one with code is refused.
@@ -70,23 +92,16 @@ impl<'ast> Visit<'ast> for Purity {
         }
         walk_expr(self, expr);
     }
-
-    fn visit_param(&mut self, param: &'ast ParamDef) {
-        if !self.pure {
-            return;
-        }
-        if !pure_param(param) {
-            self.pure = false;
-            return;
-        }
-        walk_param(self, param);
-    }
 }
 
 impl Purity {
     // Cost: O(1) for the node itself.
     fn stmt_allowed(&mut self, stmt: &Stmt) -> bool {
         match stmt {
+            // Its statement form is read by the conversion too.
+            Stmt::Expr(Expr::Ast(node)) if matches!(node.as_ref(), ParsedExpr::CompoundAssign(c) if !compound_carried(c)) => {
+                false
+            }
             Stmt::SetLine(..)
             | Stmt::Last(_)
             | Stmt::Next(_)
@@ -104,72 +119,47 @@ impl Purity {
             | Stmt::Take(..) => true,
             // A routine's written traits are read by the conversion of the
             // routine that holds them, not carried on their own.
-            Stmt::Ast(node) => {
+            Stmt::Ast(_) => {
                 self.fixup = true;
-                !matches!(node.as_ref(), ParsedStmt::RoutineTraits(_))
+                true
             }
-            Stmt::Assign {
-                name,
-                target_is_sigilless: false,
-                ..
-            } => declared_name(name),
-            Stmt::VarDecl {
-                name,
-                anonymous: false,
-                is_export: false,
-                export_tags,
-                custom_traits,
-                // A `constant` is a distinct RakuAST node; the scope scans
-                // of `bareword` must see it, so it is converted, not carried.
-                constant: None,
-                bind: None,
-                marks,
-                where_constraint: None,
-                ..
-            } => {
-                declared_name(name)
-                    && export_tags.is_empty()
-                    && custom_traits.is_empty()
-                    && marks.is_plain()
-            }
-            // A plain named routine whose signature and body are themselves
-            // carried: nothing in it is read by node class.
+            Stmt::Assign { .. } => true,
+            // An anonymous declaration (`my @`) is named by a desugaring's
+            // temporary; the conversion reads it as the declaration it is.
+            // The `state` declaration the parser puts at the top of a block for
+            // each bare `$` it holds is carried with the `$` it declares.
+            Stmt::VarDecl { .. } => true,
+            // A named routine whose signature and body are themselves carried;
+            // an operator's precedence, a symbolic name and a signature
+            // alternative are still read by node class.
             Stmt::SubDecl {
-                name_expr: None,
-                associativity: None,
-                precedence_trait: None,
-                return_type: None,
+                name_expr,
+                associativity,
+                precedence_trait,
                 signature_alternates,
-                export_tags,
-                custom_traits,
-                is_export: false,
-                is_test_assertion: false,
-                supersede: false,
-                is_hidden_from_backtrace: false,
                 ..
             } => {
-                signature_alternates.is_empty()
-                    && export_tags.is_empty()
-                    && custom_traits.is_empty()
+                name_expr.is_none()
+                    && associativity.is_none()
+                    && precedence_trait.is_none()
+                    && signature_alternates.is_empty()
             }
-            // A plain method, with the same conditions.
             Stmt::MethodDecl {
-                name_expr: None,
-                value_prototype: None,
-                return_type: None,
-                deprecated_message: None,
-                handles,
-                custom_traits,
-                is_export: false,
-                is_hidden_from_backtrace: false,
-                export_tags,
-                nested_capture_index: None,
+                name_expr,
+                value_prototype,
+                deprecated_message,
+                nested_capture_index,
                 ..
-            } => handles.is_empty() && custom_traits.is_empty() && export_tags.is_empty(),
-            Stmt::Call { args, .. } => args
-                .iter()
-                .all(|a| matches!(a, CallArg::Positional(_) | CallArg::Named { .. })),
-            _ => false,
+            } => {
+                name_expr.is_none()
+                    && value_prototype.is_none()
+                    && deprecated_message.is_none()
+                    && nested_capture_index.is_none()
+            }
+            // `temp Type.meth = v` is expanded (save, assign, restore) by the
+            // conversion of the temporizer, not by the compiler.
+            Stmt::TempMethodAssign { .. } => false,
+            _ => true,
         }
     }
 
@@ -184,16 +174,20 @@ impl Purity {
                     | ValueView::WeakSub(_)
                     | ValueView::Instance { .. }
             ),
+            // A desugaring's temporary (`__ANON_ARRAY__`) is the compiler's own
+            // name, carried as the parser built it.
             Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name) | Expr::CodeVar(name) => {
-                plain_name(name)
+                plain_name(name) || name.starts_with("__")
             }
             // A type name: the spelled parse leaves a lowercase bareword to
             // the lowering, which resolves it against what the unit imported.
             Expr::BareWord(word) => {
+                // `Pointer[int8]` is a parameterized type name as the parser wrote it.
                 word.starts_with(|c: char| c.is_uppercase())
-                    && word
-                        .chars()
-                        .all(|c| c.is_alphanumeric() || matches!(c, ':' | '-' | '_'))
+                    && (word.ends_with(']') && word.contains('[')
+                        || word
+                            .chars()
+                            .all(|c| c.is_alphanumeric() || matches!(c, ':' | '-' | '_')))
             }
             // A `;` that ends no statement is no statement of the lowered
             // tree (`sub f { 1;; }` still returns 1); only the lowering of the
@@ -204,14 +198,21 @@ impl Purity {
             }
             Expr::Ast(node) => {
                 self.fixup = true;
-                matches!(
-                    node.as_ref(),
-                    ParsedExpr::Assign(_) | ParsedExpr::WordList(_) | ParsedExpr::WordsAtom(_)
-                )
+                match node.as_ref() {
+                    ParsedExpr::CompoundAssign(compound) => compound_carried(compound),
+                    ParsedExpr::Assign(_) | ParsedExpr::WordList(_) | ParsedExpr::WordsAtom(_) => {
+                        true
+                    }
+                    _ => false,
+                }
             }
             // The lowering plants the priming scopes of a `*` itself (a second pass
             // over a tree the parser already marked wraps it again), and a `||`
             // dimension splat is a spelled form it rewrites.
+            // The marker a `my T $x .= new` declaration carries as its initializer.
+            Expr::CompoundAssign { op, .. } => {
+                op == crate::ast::method_assign_decl::DECL_INITIALIZER_OP
+            }
             Expr::Unary { op, .. } => !matches!(op, crate::token_kind::TokenKind::OrOr),
             Expr::AnonSubParams { custom_traits, .. } => custom_traits.as_slice().is_empty(),
             Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => !has_code(tree),
@@ -259,7 +260,7 @@ impl Purity {
 // Cost: O(1).
 /// Whether a spelling, or one it wraps, is the `;` of a `Statement::Empty`.
 // Cost: O(d), d = nesting depth of the spellings.
-fn is_empty_statement(spelled: &crate::ast::spelled::Spelled) -> bool {
+pub(super) fn is_empty_statement(spelled: &crate::ast::spelled::Spelled) -> bool {
     let mut spelled = spelled;
     loop {
         if matches!(
@@ -273,19 +274,6 @@ fn is_empty_statement(spelled: &crate::ast::spelled::Spelled) -> bool {
             _ => return false,
         }
     }
-}
-
-fn pure_param(param: &ParamDef) -> bool {
-    param.default.is_none()
-        && param.where_constraint.is_none()
-        && param.sub_signature.is_none()
-        && param.outer_sub_signature.is_none()
-        && param.code_signature.is_none()
-        && param.shape_constraints.is_none()
-        && param.literal_value.is_none()
-        && param.type_capture.is_none()
-        && param.no_traits()
-        && param.trait_args.is_empty()
 }
 
 /// A variable name the parser's tree and the lowering agree on: not a
@@ -322,10 +310,18 @@ fn has_code(tree: &crate::regex_tree::RegexTree) -> bool {
     code.0
 }
 
-/// The name a declaration or assignment carries: the sigil of an array or hash
-/// variable is part of it. A code variable is not carried: `lower` resolves
-/// the calls that follow `my &emit` against the declaration it sees.
+/// Whether a compound assignment is lowered from its typed node: a scalar `Z+=`
+/// and a bracketed metaoperator assignment (`@a X= 10`) are read by the
+/// conversion.
 // Cost: O(1).
-fn declared_name(name: &str) -> bool {
-    plain_name(name.strip_prefix(['@', '%']).unwrap_or(name))
+fn compound_carried(compound: &CompoundAssign) -> bool {
+    matches!(
+        compound.meta,
+        CompoundMeta::Plain
+            | CompoundMeta::Bracketed(_)
+            | CompoundMeta::Set
+            | CompoundMeta::Dotty
+            | CompoundMeta::TopicDotty
+            | CompoundMeta::Reverse
+    )
 }

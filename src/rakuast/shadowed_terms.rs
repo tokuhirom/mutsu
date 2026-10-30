@@ -110,6 +110,13 @@ pub(super) fn is_declared_term(name: &str) -> bool {
     TERMS.with(|t| t.borrow().contains(name))
 }
 
+/// Whether `name` is a sigilless value term the unit declares or the parser
+/// scope it is lowered in knows (a term imported from a module).
+// Cost: O(s), s = open parser scopes.
+pub(super) fn is_value_term(name: &str) -> bool {
+    is_declared_term(name) || crate::parser::is_user_declared_value_term(name)
+}
+
 /// Whether the unit last passed to [`scan`] declares a term named `name`.
 // Cost: O(1).
 pub(super) fn is_shadowed(name: &str) -> bool {
@@ -139,6 +146,7 @@ fn walk(node: &RakuAstNode, in_decl: bool, found: &mut Found) {
         let mut facts = super::passthrough::ScopeFacts::default();
         super::passthrough::scope_facts_of(node, &mut facts);
         found.shadowed.extend(facts.terms.iter().cloned());
+        found.shadowed.extend(facts.shadowed);
         found.terms.extend(facts.terms);
         found.packages.extend(facts.packages);
         super::passthrough::declared_routines_of(node, &mut found.routines);

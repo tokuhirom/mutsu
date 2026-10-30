@@ -38,14 +38,14 @@ fn pure_families_cross_as_the_ordinary_tree() {
     }
 }
 
-/// A statement holding a construct the conversion still renders is not
-/// carried as a leaf.
+/// A statement holding a construct the conversion still renders is carried
+/// with a fixup: the construct is converted where it stands.
 #[test]
-fn a_regex_with_code_is_converted() {
+fn a_regex_with_code_is_converted_where_it_stands() {
     let (spelled, _) =
         crate::parse_dispatch::parse_source_spelled("say 'a' ~~ /a <?{ 1 }>/;").unwrap();
     let _scope = super::Scope::enter();
-    assert!(analyse_stmt(&spelled[spelled.len() - 1]).is_none());
+    assert_eq!(analyse_stmt(&spelled[spelled.len() - 1]), Some(true));
 }
 
 /// Outside a round trip nothing is carried: `.AST` renders every node.
