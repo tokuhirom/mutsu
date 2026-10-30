@@ -311,13 +311,17 @@ pub(crate) enum DispatchShape {
     RakuAstOriginSource,
     /// `RakuAST::Origin::Match` (opaque).
     RakuAstOriginMatch,
+    /// `RakuAST::Declaration::External::Setting` (opaque).
+    RakuAstDeclarationExternalSetting,
+    /// `RakuAST::Declaration::External::Constant` (opaque).
+    RakuAstDeclarationExternalConstant,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into seven bits of a byte (the eighth marks a type object) and the
     /// table keeps a bit of a `u128` per shape, so this stays under 128.
-    pub(crate) const ALL: [DispatchShape; 100] = [
+    pub(crate) const ALL: [DispatchShape; 102] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -414,6 +418,8 @@ impl DispatchShape {
         DispatchShape::RakuAstOrigin,
         DispatchShape::RakuAstOriginSource,
         DispatchShape::RakuAstOriginMatch,
+        DispatchShape::RakuAstDeclarationExternalSetting,
+        DispatchShape::RakuAstDeclarationExternalConstant,
         DispatchShape::Iterator,
         DispatchShape::PredictiveIterator,
         DispatchShape::Stash,
