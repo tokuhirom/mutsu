@@ -214,6 +214,7 @@ pub(super) fn parsed_expr_node(node: &ParsedExpr) -> Result<RakuAstNode, Runtime
         ParsedExpr::InlineSubset(declaration) => inline_subset_node(declaration),
         ParsedExpr::HyperPrefix(p) => super::hyper_prefix::node(&p.symbol, &p.operand),
         ParsedExpr::AtomicVar(a) => super::atomic_op::var_node(a),
+        ParsedExpr::SubscriptAdverbs(s) => super::subscript_adverb::node(&s.subscript, &s.pairs),
     }
 }
 

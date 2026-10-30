@@ -45,7 +45,7 @@ pub(crate) use lib_paths::{fold_use_lib_path, parser_source_file, use_lib_args};
 // `pub(crate)` re-exports.
 pub(crate) use compile_consts::is_imported_function;
 pub(crate) use l10n::{
-    L10nVocabulary, l10n_adverb_alias, l10n_alias, l10n_canonical_keyword, l10n_match_adverb,
+    L10nVocabulary, l10n_adverb_alias, l10n_alias, l10n_canonical_keyword,
     l10n_match_infix, l10n_match_keyword, l10n_named_alias, set_l10n_preseed, set_l10n_vocabulary,
 };
 pub(crate) use registry::{

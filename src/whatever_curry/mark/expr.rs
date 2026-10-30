@@ -233,6 +233,12 @@ fn mark_expr_after_plant(expr: &mut Expr) {
                 super::stmt::mark_stmt(declaration)
             }
             crate::ast::parsed::ParsedExpr::HyperPrefix(p) => mark_expr(&mut p.operand),
+            crate::ast::parsed::ParsedExpr::SubscriptAdverbs(s) => {
+                mark_expr(&mut s.subscript);
+                for pair in &mut s.pairs {
+                    mark_expr(pair);
+                }
+            }
             crate::ast::parsed::ParsedExpr::AtomicVar(a) => {
                 if let crate::ast::parsed::AtomicVar::Store { value, .. } = a {
                     mark_expr(value);

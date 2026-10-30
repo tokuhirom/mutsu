@@ -473,32 +473,6 @@ pub(crate) fn l10n_adverb_alias(category: &str, name: &str) -> Option<String> {
     })
 }
 
-/// Match a localized colon-adverb name, returning `(canonical, negated,
-/// remainder)`. The caller owns the canonical name because it is translated
-/// out of a thread-local vocabulary; the source remainder remains borrowed.
-pub(crate) fn l10n_match_adverb<'a>(
-    category: &str,
-    input: &'a str,
-) -> Option<(String, bool, &'a str)> {
-    if !L10N_ACTIVE.with(Cell::get) {
-        return None;
-    }
-    let after_colon = input.strip_prefix(':')?;
-    let (negated, after_bang) = after_colon
-        .strip_prefix('!')
-        .map_or((false, after_colon), |rest| (true, rest));
-    let end = after_bang
-        .char_indices()
-        .find(|(_, c)| !c.is_alphanumeric() && *c != '_' && *c != '-')
-        .map_or(after_bang.len(), |(idx, _)| idx);
-    if end == 0 {
-        return None;
-    }
-    let name = &after_bang[..end];
-    let canonical = l10n_adverb_alias(category, name)?;
-    Some((canonical, negated, &after_bang[end..]))
-}
-
 /// Match the longest localized infix spelling at the start of `input`,
 /// returning its canonical spelling and the bytes consumed from the source.
 pub(crate) fn l10n_match_infix(input: &str) -> Option<(String, usize)> {

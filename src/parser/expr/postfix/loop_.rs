@@ -1,13 +1,9 @@
 use super::adverb::{
-    DeleteAdverb, apply_delete_adverb, build_adverb_error_call, collect_remaining_adverbs,
-    delete_with_exists, determine_subscript_what, multidim_delete_fn, multidim_target_var_name,
-    normalize_adverb_name, parse_delete_adverb, parse_dynamic_subscript_adverb,
-    parse_subscript_adverb_with_expr, source_adverb_pair, subscript_adverb_expr_with_cond,
-    supports_postfix_call_adverbs, try_parse_exists_adverb,
+    has_exists_adverb, scan_subscript_adverbs, subscript_adverbs_expr, supports_postfix_call_adverbs,
 };
 use super::call_method::{
     ParsedBracketIndex, QuotedMethodName, append_call_arg, auto_invoke_bareword_method_target,
-    has_ternary_else_after, is_postfix_operator_boundary, parse_bracket_indices_inner,
+    is_postfix_operator_boundary, parse_bracket_indices_inner,
     parse_custom_postfix_operator, parse_prefix_as_postfix, parse_private_method_name,
     parse_quoted_method_name,
 };
@@ -18,11 +14,7 @@ use super::helpers::{
     colonpair_adverb_follows, extract_negative_literal, extract_range_negative_end,
     is_angle_subscript_key_char, make_negative_subscript_error,
 };
-use super::named_adverb::{
-    has_subscript_named_adverb, lower_subscript_named_adverbs, scan_subscript_named_adverbs,
-};
-use crate::ast::subscript_adverb::{conditional_delete, delete_flag, delete_key};
-use crate::ast::{ExistsAdverb, Expr, HyperSliceAdverb, Stmt};
+use crate::ast::{Expr, HyperSliceAdverb, Stmt};
 use crate::parser::expr::operators::{
     PrefixUnaryOp, parse_postfix_update_op, parse_prefix_unary_op,
 };
@@ -392,7 +384,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             // Detect precedence confusion: `!%h<a>:exists` should be `:!exists`
             // Only trigger when the operand was NOT parenthesized (i.e., not `!(%h<a>:exists)`)
             if op == PrefixUnaryOp::Not
-                && matches!(&expr, Expr::Exists { .. })
+                && has_exists_adverb(&expr)
                 && !input[len..].trim_start().starts_with('(')
             {
                 return Ok((
@@ -1002,8 +994,8 @@ fn postfix_expr_loop_from<'a>(
                 is_positional: false,
                 spelling: Default::default(),
             };
-            if let Some((r, exists_expr)) = try_parse_exists_adverb(rest, target) {
-                expr = exists_expr;
+            if let Some((r, pairs)) = scan_subscript_adverbs(rest) {
+                expr = subscript_adverbs_expr(target, pairs);
                 rest = r;
                 continue;
             }
@@ -1929,15 +1921,8 @@ fn postfix_expr_loop_from<'a>(
             let r = &rest[1..];
             let (r, _) = ws(r)?;
             // Zen slice: expr[] — returns expr unchanged (identity on lists)
-            // But check for :exists adverb first since @a[]:exists needs ZenSlice
             if let Some(after) = r.strip_prefix(']') {
                 let (r_adv, _) = ws(after)?;
-                if r_adv.starts_with(":exists") || r_adv.starts_with(":!exists") {
-                    // Will be handled by adverb check below
-                    expr = Expr::ZenSlice(Box::new(expr));
-                    rest = after;
-                    continue;
-                }
                 // Binding to an array zen slice (`@a[] := ...`) is illegal; keep
                 // the ZenSlice wrapper so the bind site can raise
                 // X::Bind::ZenSlice instead of silently dropping the subscript.
@@ -1950,12 +1935,9 @@ fn postfix_expr_loop_from<'a>(
                 // carrying a subscript adverb returns all keys/values just like
                 // the whatever slice `@a[*]:adverb`, so model the empty subscript
                 // as a Whatever index and let the adverb block below build the
-                // `__mutsu_subscript_adverb` call. Without this the `[]` would be
+                // adverb node. Without this the `[]` would be
                 // dropped and the adverb mis-parsed as a colonpair argument.
-                if parse_subscript_adverb_with_expr(r_adv).is_some()
-                    || parse_delete_adverb(r_adv).is_some()
-                    || has_subscript_named_adverb(r_adv)
-                {
+                if scan_subscript_adverbs(r_adv).is_some() {
                     // A zen slice carrying an adverb behaves like the whatever
                     // slice for VALUES (all keys/values), so model the empty
                     // subscript as a Whatever index. Use a `Literal(Whatever)`
@@ -2122,12 +2104,6 @@ fn postfix_expr_loop_from<'a>(
                     r,
                 )
             };
-            // Check for :exists / :!exists / :delete adverbs
-            if let Some((r_after, exists_expr)) = try_parse_exists_adverb(r, indexed_expr.clone()) {
-                expr = exists_expr;
-                rest = r_after;
-                continue;
-            }
             expr = indexed_expr;
             rest = r;
             continue;
@@ -2155,13 +2131,6 @@ fn postfix_expr_loop_from<'a>(
                         r,
                     )
                 };
-                if let Some((r_after, exists_expr)) =
-                    try_parse_exists_adverb(r, indexed_expr.clone())
-                {
-                    expr = exists_expr;
-                    rest = r_after;
-                    continue;
-                }
                 expr = indexed_expr;
                 rest = r;
                 continue;
@@ -2192,13 +2161,6 @@ fn postfix_expr_loop_from<'a>(
                         r,
                     )
                 };
-                if let Some((r_after, exists_expr)) =
-                    try_parse_exists_adverb(r, indexed_expr.clone())
-                {
-                    expr = exists_expr;
-                    rest = r_after;
-                    continue;
-                }
                 expr = indexed_expr;
                 rest = r;
                 continue;
@@ -2344,17 +2306,11 @@ fn postfix_expr_loop_from<'a>(
                 // `:foo`) is kept as Index{Whatever} so the shared adverb-parsing
                 // loop below handles the slice semantics and X::Adverb validation.
                 // A bare `%h{}` with no adverb stays a ZenSlice.
-                let has_adverb = r_adv.starts_with(":exists")
-                    || r_adv.starts_with(":!exists")
-                    || r_adv.starts_with(":delete")
-                    || r_adv.starts_with(":!delete")
-                    || parse_subscript_adverb_with_expr(r_adv).is_some()
-                    || has_subscript_named_adverb(r_adv);
-                if has_adverb {
+                if scan_subscript_adverbs(r_adv).is_some() {
                     // Keep as Index with Whatever so adverb processing works
                     expr = Expr::Index {
                         target: Box::new(expr),
-                        index: Box::new(Expr::Whatever),
+                        index: Box::new(Expr::Literal(Value::WHATEVER)),
                         is_positional: false,
                         spelling: Default::default(),
                     };
@@ -2371,8 +2327,6 @@ fn postfix_expr_loop_from<'a>(
                 let (r, _) = parse_char(r, '}')?;
                 (r, parsed)
             };
-            // Allow whitespace before adverbs
-            let (r_adv, _) = ws(r)?;
             match parsed {
                 ParsedBracketIndex::MultiDim(dimensions) => {
                     expr = Expr::MultiDimIndex {
@@ -2384,66 +2338,6 @@ fn postfix_expr_loop_from<'a>(
                     continue;
                 }
                 ParsedBracketIndex::Single(index) => {
-                    // Check for :exists / :!exists / :delete adverbs on curly-brace subscript
-                    let indexed = Expr::Index {
-                        target: Box::new(expr.clone()),
-                        index: Box::new(index.clone()),
-                        is_positional: false,
-                        spelling: Default::default(),
-                    };
-                    if let Some((r_after, exists_expr)) = try_parse_exists_adverb(r_adv, indexed) {
-                        expr = exists_expr;
-                        rest = r_after;
-                        continue;
-                    }
-                    // Try :delete:exists combination first
-                    if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_adv) {
-                        let indexed_expr = Expr::Index {
-                            target: Box::new(expr.clone()),
-                            index: Box::new(index.clone()),
-                            is_positional: false,
-                            spelling: Default::default(),
-                        };
-                        if let Some((r_after, exists_expr)) =
-                            try_parse_exists_adverb(r_after_delete, indexed_expr.clone())
-                        {
-                            expr = delete_with_exists(delete_adv, exists_expr, true);
-                            rest = r_after;
-                            continue;
-                        }
-                        rest = r_after_delete;
-                        match delete_adv {
-                            DeleteAdverb::NoDelete => {
-                                expr = indexed_expr;
-                            }
-                            DeleteAdverb::Delete(None) => {
-                                expr = Expr::MethodCall {
-                                    target: Box::new(indexed_expr),
-                                    name: Symbol::intern("DELETE-KEY"),
-                                    args: vec![],
-                                    modifier: None,
-                                    quoted: false,
-                                    sugar: false,
-                                };
-                            }
-                            DeleteAdverb::Delete(Some(cond)) => {
-                                let delete_expr = Expr::MethodCall {
-                                    target: Box::new(indexed_expr.clone()),
-                                    name: Symbol::intern("DELETE-KEY"),
-                                    args: vec![],
-                                    modifier: None,
-                                    quoted: false,
-                                    sugar: false,
-                                };
-                                expr = Expr::Ternary {
-                                    cond: Box::new(cond),
-                                    then_expr: Box::new(delete_expr),
-                                    else_expr: Box::new(indexed_expr),
-                                };
-                            }
-                        }
-                        continue;
-                    }
                     expr = Expr::Index {
                         target: Box::new(expr),
                         index: Box::new(index),
@@ -2456,452 +2350,15 @@ fn postfix_expr_loop_from<'a>(
             continue;
         }
 
-        // Adverbs on subscript expressions: :exists / :!exists / :delete
-        // These can appear with whitespace after ] or } subscripts
-        // Also on expressions already wrapped with adverbs (Exists, __mutsu_multidim_adverb)
+        // Adverbs on a subscript (`@a[0]:exists`, `%h<a>:delete:k`, `@a[1] :foo`):
+        // the colonpairs written after it, kept as the postcircumfix's own.
         if matches!(
             &expr,
-            Expr::Index { .. }
-                | Expr::ZenSlice(_)
-                | Expr::MultiDimIndex { .. }
-                | Expr::Exists { .. }
-        ) || matches!(&expr, Expr::Call { name, .. } if name == "__mutsu_subscript_adverb" || name == "__mutsu_subscript_adverb_error" || name == "__mutsu_multidim_adverb" || name == "__mutsu_multidim_subscript_adverb" || name == "__mutsu_multidim_delete" || name == "__mutsu_multidim_dynamic_adverb")
-        {
-            let (r_adv2, _) = ws(rest)?;
-            // A chain carrying any non-built-in adverb (`@a[0]:foo`,
-            // `%h{"a";"b"}:$no`, `@a[0]:k:foo`) becomes named arguments of the
-            // subscript operator as a whole.
-            if matches!(&expr, Expr::Index { .. } | Expr::MultiDimIndex { .. })
-                && let Some((r_after, pairs)) = scan_subscript_named_adverbs(r_adv2)
-                && let Some(lowered) = lower_subscript_named_adverbs(&expr, pairs)
-            {
-                expr = lowered;
-                rest = r_after;
-                continue;
-            }
-            if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_adv2)
-                && let Some((r_after, exists_expr)) =
-                    try_parse_exists_adverb(r_after_delete, expr.clone())
-            {
-                expr = delete_with_exists(delete_adv, exists_expr, true);
-                rest = r_after;
-                continue;
-            }
-            if let Some((r_after_adv, adv_name, adv_cond)) =
-                parse_subscript_adverb_with_expr(r_adv2)
-                && !has_ternary_else_after(r_after_adv)
-            {
-                // If expr already has a subscript adverb, detect conflict
-                if let Expr::Call {
-                    ref name, ref args, ..
-                } = expr
-                    && *name == Symbol::intern("__mutsu_subscript_adverb")
-                    && args.len() >= 3
-                {
-                    let first_adv = if let Expr::Literal(lit) = &args[2]
-                        && let ValueView::Str(s) = lit.view()
-                    {
-                        s.to_string()
-                    } else {
-                        String::new()
-                    };
-                    let var_name = args
-                        .get(3)
-                        .and_then(|a| {
-                            if let Expr::Literal(lit) = a
-                                && let ValueView::Str(s) = lit.view()
-                            {
-                                Some(s.to_string())
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or_default();
-                    let what = determine_subscript_what(&args[0], &args[1]);
-                    let mut known = vec![
-                        normalize_adverb_name(&first_adv),
-                        normalize_adverb_name(adv_name),
-                    ];
-                    let (r, trailing_pairs) = collect_remaining_adverbs(r_after_adv, &mut known);
-                    let first_condition = match args.get(5..) {
-                        Some([Expr::Literal(marker), condition, ..]) if matches!(marker.view(), ValueView::Str(s) if s.as_str() == "__adverb_cond__") => {
-                            Some(condition.clone())
-                        }
-                        _ => None,
-                    };
-                    let mut pairs = vec![
-                        source_adverb_pair(&first_adv, first_condition),
-                        source_adverb_pair(adv_name, adv_cond.clone()),
-                    ];
-                    pairs.extend(trailing_pairs);
-                    let is_positional = matches!(
-                        args.get(4),
-                        Some(Expr::Literal(marker)) if matches!(marker.view(), ValueView::Str(s) if s.as_str() == crate::ast::SUBSCRIPT_POSITIONAL_MARKER)
-                    );
-                    let subscript = Expr::Index {
-                        target: Box::new(args[0].clone()),
-                        index: Box::new(args[1].clone()),
-                        is_positional,
-                        spelling: Default::default(),
-                    };
-                    let error =
-                        build_adverb_error_call(&what, &var_name, Some(&args[0]), &known, &[]);
-                    expr = Expr::spelled(error, || {
-                        crate::ast::spelled::Spelling::ConflictingSubscript {
-                            subscript: Box::new(subscript),
-                            pairs,
-                        }
-                    });
-                    rest = r;
-                    continue;
-                }
-                expr = subscript_adverb_expr_with_cond(expr, adv_name, adv_cond);
-                rest = r_after_adv;
-                continue;
-            }
-            if let Some((r_after, exists_expr)) = try_parse_exists_adverb(r_adv2, expr.clone()) {
-                expr = exists_expr;
-                rest = r_after;
-                continue;
-            }
-            if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_adv2) {
-                rest = r_after_delete;
-                // `:exists:delete` — the reverse of the `:delete:exists` order
-                // handled above. `:exists` has already been folded into an
-                // `Expr::Exists`, and that node carries its own `delete` flag,
-                // so the trailing `:delete` sets the flag rather than wrapping
-                // the *answer* in `DELETE-KEY` (which would call it on a Bool,
-                // or on the List a slice answers with).
-                if let Expr::Exists { delete: false, .. } = &expr {
-                    expr = delete_with_exists(delete_adv, expr, false);
-                    continue;
-                }
-                // `:delete:k` — a value adverb after the `:delete` reads the
-                // removed element the same way as the `:k:delete` order.
-                if matches!(expr, Expr::Index { .. })
-                    && let Some((r_after_adv, adv_name, adv_cond)) =
-                        parse_subscript_adverb_with_expr(r_after_delete)
-                    && !has_ternary_else_after(r_after_adv)
-                {
-                    let read = subscript_adverb_expr_with_cond(expr, adv_name, adv_cond);
-                    expr = apply_delete_adverb(delete_adv, read);
-                    rest = r_after_adv;
-                    continue;
-                }
-                match delete_adv {
-                    DeleteAdverb::NoDelete => {
-                        // Explicitly non-deleting adverb; expression is unchanged.
-                    }
-                    DeleteAdverb::Delete(None) => {
-                        if let Expr::MultiDimIndex {
-                            target: mdt,
-                            dimensions: dims,
-                            is_positional,
-                            ..
-                        } = expr
-                        {
-                            let var_name = multidim_target_var_name(&mdt);
-                            let dims_len = dims.len();
-                            let mut args = vec![Expr::Literal(Value::str(var_name))];
-                            args.extend(dims);
-                            expr = Expr::Call {
-                                name: Symbol::intern(multidim_delete_fn(is_positional, dims_len)),
-                                args,
-                                listop: false,
-                            };
-                        } else if let Expr::Call { name, mut args, .. } = expr {
-                            if name == "__mutsu_subscript_adverb" {
-                                // Inject delete flag into the subscript adverb call
-                                args.push(delete_flag());
-                                expr = Expr::Call {
-                                    name,
-                                    args,
-                                    listop: false,
-                                };
-                            } else if name == "__mutsu_multidim_subscript_adverb" {
-                                // `@a[i;j;k]:k:delete` (static delete combined with a
-                                // :k/:kv/:p/:v adverb). Convert the static multidim
-                                // adverb call into its `_dyn` form with a constant-true
-                                // delete flag so the element is both read and removed
-                                // (the static form would otherwise be wrapped in a
-                                // `DELETE-KEY` method call on the already-computed key
-                                // tuple — a List — and fail). Args go from
-                                // [target, adverb, dims...] to
-                                // [var_name, adverb, true, dims...].
-                                let target = args.remove(0);
-                                let var_name_str = multidim_target_var_name(&target);
-                                let adverb_name = args.remove(0);
-                                let dims = args;
-                                let mut new_args = vec![
-                                    Expr::Literal(Value::str(var_name_str)),
-                                    adverb_name,
-                                    Expr::Literal(Value::TRUE),
-                                ];
-                                new_args.extend(dims);
-                                expr = Expr::Call {
-                                    name: Symbol::intern("__mutsu_multidim_subscript_adverb_dyn"),
-                                    args: new_args,
-                                    listop: false,
-                                };
-                            } else {
-                                expr = delete_key(Expr::Call {
-                                    name,
-                                    args,
-                                    listop: false,
-                                });
-                            }
-                        } else {
-                            expr = delete_key(expr);
-                        }
-                    }
-                    DeleteAdverb::Delete(Some(cond)) => {
-                        let original_expr = expr.clone();
-                        let source_condition = cond.clone();
-                        let is_multidim = matches!(&original_expr, Expr::MultiDimIndex { .. })
-                            || matches!(&original_expr, Expr::Call { name, .. }
-                                if name == "__mutsu_multidim_subscript_adverb");
-                        if let Expr::MultiDimIndex {
-                            target: mdt,
-                            dimensions: dims,
-                            is_positional,
-                            ..
-                        } = original_expr.clone()
-                        {
-                            let var_name = multidim_target_var_name(&mdt);
-                            let dims_len = dims.len();
-                            let mut args = vec![Expr::Literal(Value::str(var_name))];
-                            args.extend(dims);
-                            let delete_fn = multidim_delete_fn(is_positional, dims_len);
-                            let delete_expr = Expr::Call {
-                                name: Symbol::intern(delete_fn),
-                                args,
-                                listop: false,
-                            };
-                            // When the subscript form has no `:delete` candidate at
-                            // all, the adverb's VALUE never gets to decide anything:
-                            // `%h{1;2}:delete(0)` throws exactly like `:delete`
-                            // does. Every form that DOES have one keeps the guard.
-                            expr = if delete_fn != "__mutsu_multidim_delete_assoc" {
-                                Expr::Ternary {
-                                    cond: Box::new(cond),
-                                    then_expr: Box::new(delete_expr),
-                                    else_expr: Box::new(original_expr.clone()),
-                                }
-                            } else {
-                                delete_expr
-                            };
-                        } else if matches!(&original_expr, Expr::Call { name, .. } if name == "__mutsu_subscript_adverb")
-                        {
-                            // Inject conditional delete into subscript adverb call
-                            if let Expr::Call { name, mut args, .. } = original_expr.clone() {
-                                args.push(delete_flag());
-                                let delete_expr = Expr::Call {
-                                    name,
-                                    args,
-                                    listop: false,
-                                };
-                                expr = conditional_delete(cond, delete_expr, original_expr.clone());
-                            }
-                        } else if matches!(&original_expr, Expr::Call { name, .. } if name == "__mutsu_multidim_subscript_adverb")
-                        {
-                            // `@a[i;j;k]:k:delete($cond)` — conditional delete with a
-                            // :k/:kv/:p/:v adverb. The no-delete branch keeps the
-                            // original static adverb call; the delete branch lowers to
-                            // the by-name `_dyn` builtin (it must mutate the variable).
-                            // Without this it would wrap the computed key tuple (a
-                            // List) in `DELETE-KEY` and fail.
-                            if let Expr::Call { mut args, .. } = original_expr.clone() {
-                                let target = args.remove(0);
-                                let var_name_str = multidim_target_var_name(&target);
-                                let adverb_name = args.remove(0);
-                                let dims = args;
-                                let mut new_args = vec![
-                                    Expr::Literal(Value::str(var_name_str)),
-                                    adverb_name,
-                                    Expr::Literal(Value::TRUE),
-                                ];
-                                new_args.extend(dims);
-                                let delete_expr = Expr::Call {
-                                    name: Symbol::intern("__mutsu_multidim_subscript_adverb_dyn"),
-                                    args: new_args,
-                                    listop: false,
-                                };
-                                expr = Expr::Ternary {
-                                    cond: Box::new(cond),
-                                    then_expr: Box::new(delete_expr),
-                                    else_expr: Box::new(original_expr.clone()),
-                                };
-                            }
-                        } else {
-                            let delete_expr = delete_key(original_expr.clone());
-                            expr = conditional_delete(cond, delete_expr, original_expr.clone());
-                        }
-                        if is_multidim {
-                            expr = Expr::spelled(expr, || {
-                                crate::ast::spelled::Spelling::ConditionalMultidimDelete {
-                                    source: Box::new(original_expr),
-                                    condition: Box::new(source_condition),
-                                }
-                            });
-                        }
-                    }
-                }
-                continue;
-            }
-            // Dynamic adverb: :$delete — runtime-decided delete
-            if let Some(r_after) = parse_dynamic_subscript_adverb(r_adv2) {
-                let adverb_var = &r_adv2[2..r_adv2.len() - r_after.len()];
-                if let Expr::MultiDimIndex {
-                    target: mdt,
-                    dimensions: dims,
-                    is_positional,
-                    ..
-                } = expr.clone()
-                {
-                    // `:$delete` is the `delete` adverb with a runtime-decided
-                    // flag. Mirror the literal `:delete($cond)` lowering: a
-                    // Ternary whose else-branch is the *original* MultiDimIndex
-                    // read (so the value path resolves the variable through the
-                    // normal opcode, seeing local slots / sub-writeback — unlike
-                    // the by-name `self.env.get` the builtin used, which missed an
-                    // outer hash assigned inside a sub).
-                    let var_name = multidim_target_var_name(&mdt);
-                    let dims_len = dims.len();
-                    let mut del_args = vec![Expr::Literal(Value::str(var_name))];
-                    del_args.extend(dims);
-                    let delete_fn = multidim_delete_fn(is_positional, dims_len);
-                    let delete_expr = Expr::Call {
-                        name: Symbol::intern(delete_fn),
-                        args: del_args,
-                        listop: false,
-                    };
-                    // See the `:delete($cond)` lowering: when the subscript form
-                    // has no `:delete` candidate, the runtime flag never gets to
-                    // choose.
-                    expr = if delete_fn != "__mutsu_multidim_delete_assoc" {
-                        Expr::Ternary {
-                            cond: Box::new(Expr::Var(adverb_var.to_string())),
-                            then_expr: Box::new(delete_expr),
-                            else_expr: Box::new(expr),
-                        }
-                    } else {
-                        delete_expr
-                    };
-                } else if matches!(&expr, Expr::Call { name, .. }
-                    if name == "__mutsu_multidim_subscript_adverb"
-                    || name == "__mutsu_multidim_exists_adverb")
-                {
-                    // Wrap adverb calls: inject delete flag into the call by
-                    // converting to a combined handler. Like the bare `:$delete`
-                    // case, lower to a Ternary so the no-delete branch keeps the
-                    // *original* static-adverb call (which passes the evaluated
-                    // target expression and so resolves the container normally);
-                    // only the delete branch falls back to the by-name `_dyn`
-                    // builtin (it must mutate the variable).
-                    let original_expr = expr.clone();
-                    if let Expr::Call {
-                        name: inner_name,
-                        mut args,
-                        ..
-                    } = expr
-                    {
-                        // Original args: [target_expr, adverb_name, dim0, dim1, ...]
-                        // New args: [var_name_str, adverb_name, delete_var, dim0, dim1, ...]
-                        let target = args.remove(0);
-                        let var_name_str = multidim_target_var_name(&target);
-                        let adverb_name = args.remove(0);
-                        let dims = args;
-                        let mut new_args = vec![
-                            Expr::Literal(Value::str(var_name_str)),
-                            adverb_name,
-                            Expr::Var(adverb_var.to_string()),
-                        ];
-                        new_args.extend(dims);
-                        let fn_name = if inner_name == "__mutsu_multidim_subscript_adverb" {
-                            "__mutsu_multidim_subscript_adverb_dyn"
-                        } else {
-                            "__mutsu_multidim_exists_adverb_dyn"
-                        };
-                        let delete_expr = Expr::Call {
-                            name: Symbol::intern(fn_name),
-                            args: new_args,
-                            listop: false,
-                        };
-                        expr = Expr::Ternary {
-                            cond: Box::new(Expr::Var(adverb_var.to_string())),
-                            then_expr: Box::new(delete_expr),
-                            else_expr: Box::new(original_expr),
-                        };
-                    } else {
-                        unreachable!()
-                    }
-                } else if let Expr::Exists {
-                    target,
-                    negated,
-                    adverb: exists_adv,
-                    ..
-                } = &expr
-                {
-                    // :$delete on Exists { target: MultiDimIndex }. Lower to a
-                    // Ternary so the no-delete branch keeps the original `Exists`
-                    // expr (which resolves the container via the normal opcode);
-                    // only the delete branch uses the by-name `_dyn` builtin.
-                    if let Expr::MultiDimIndex {
-                        target: mdt,
-                        dimensions: dims,
-                        ..
-                    } = target.as_ref()
-                    {
-                        let original_expr = expr.clone();
-                        let var_name = multidim_target_var_name(mdt);
-                        let adverb_str = match exists_adv {
-                            ExistsAdverb::Kv => "kv",
-                            ExistsAdverb::P => "p",
-                            ExistsAdverb::InvalidK => "k",
-                            ExistsAdverb::InvalidV => "v",
-                            _ => "none",
-                        };
-                        let negated_val = *negated;
-                        let dims = dims.clone();
-                        let mut new_args = vec![
-                            Expr::Literal(Value::str(var_name)),
-                            Expr::Literal(Value::truth(negated_val)),
-                            Expr::Var(adverb_var.to_string()),
-                            Expr::Literal(Value::str(adverb_str.to_string())),
-                        ];
-                        new_args.extend(dims);
-                        let delete_expr = Expr::Call {
-                            name: Symbol::intern("__mutsu_multidim_exists_adverb_dyn"),
-                            args: new_args,
-                            listop: false,
-                        };
-                        expr = Expr::Ternary {
-                            cond: Box::new(Expr::Var(adverb_var.to_string())),
-                            then_expr: Box::new(delete_expr),
-                            else_expr: Box::new(original_expr),
-                        };
-                    } else {
-                        expr = Expr::Call {
-                            name: Symbol::intern("__mutsu_multidim_adverb"),
-                            args: vec![
-                                expr,
-                                Expr::Literal(Value::str(adverb_var.to_string())),
-                                Expr::Var(adverb_var.to_string()),
-                            ],
-                            listop: false,
-                        };
-                    }
-                } else {
-                    expr = Expr::Call {
-                        name: Symbol::intern("__mutsu_multidim_adverb"),
-                        args: vec![
-                            expr,
-                            Expr::Literal(Value::str(adverb_var.to_string())),
-                            Expr::Var(adverb_var.to_string()),
-                        ],
-                        listop: false,
-                    };
-                }
+            Expr::Index { .. } | Expr::MultiDimIndex { .. }
+        ) {
+            let (r_adv, _) = ws(rest)?;
+            if let Some((r_after, pairs)) = scan_subscript_adverbs(r_adv) {
+                expr = subscript_adverbs_expr(expr, pairs);
                 rest = r_after;
                 continue;
             }

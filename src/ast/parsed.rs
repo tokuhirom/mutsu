@@ -293,6 +293,32 @@ pub(crate) enum ParsedExpr {
     /// variable named by its storage name. They lower to the reserved calls
     /// the runtime executes (`ast::atomic_op::lower_var`).
     AtomicVar(AtomicVar),
+    /// A subscript with the adverbs written after it, `@a[0]:exists`,
+    /// `%h<a>:delete:k`, `@a[1]:foo` (`Postcircumfix::*Index` with its
+    /// `colonpairs`). It lowers through the postcircumfix lowering
+    /// (`rakuast::subscript_adverb::lower`).
+    SubscriptAdverbs(SubscriptAdverbs),
+}
+
+/// A subscript and the colonpairs written after it, in source order.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SubscriptAdverbs {
+    /// The subscript as written (`Index`, `MultiDimIndex`, or the `ZenSlice`
+    /// of `@a[]:exists`).
+    pub(crate) subscript: Expr,
+    /// Each adverb as the colonpair expression the source spells
+    /// (`Binary` over `=>`, with its [`super::BinaryForm`]).
+    pub(crate) pairs: Vec<Expr>,
+}
+
+impl SubscriptAdverbs {
+    /// Whether one of the adverbs is `:exists` (in any spelling).
+    // Cost: O(a), a = adverbs.
+    pub(crate) fn has_exists(&self) -> bool {
+        self.pairs
+            .iter()
+            .any(|pair| super::subscript_adverb::pair_key(pair).as_deref() == Some("exists"))
+    }
 }
 
 /// An atomic access of a variable by name.

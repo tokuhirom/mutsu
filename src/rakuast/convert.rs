@@ -2519,7 +2519,7 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     // The adverbs of a subscript lower from the class of the subscript.
     let adverbs = {
         let _inspected = super::passthrough::Inspecting::enter();
-        subscript_adverb::convert(expr)
+        subscript_adverb::convert_hyper_slice(expr)
     };
     if let Some(node) = adverbs {
         return node;
@@ -2722,11 +2722,6 @@ fn convert_expr_node(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Spelling::BareStatement => super::bare_prefix::bare_statement_node(&spelled.expr),
             Spelling::PackageIndirect { package, key } => {
                 super::symbolic_deref::convert_package_indirect(package, key)
-            }
-            Spelling::NamedSubscript { .. }
-            | Spelling::ConflictingSubscript { .. }
-            | Spelling::ConditionalMultidimDelete { .. } => {
-                Err(unsupported("subscript adverb source form"))
             }
             Spelling::CompositionWhatever(source) => {
                 super::composition_source::convert(source, &spelled.expr)
