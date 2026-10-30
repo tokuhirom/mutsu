@@ -232,6 +232,23 @@ impl std::ops::BitOr for LvaluePeel {
     }
 }
 
+/// Extract the writeback variable name from a declaration used in expression
+/// position as an lvalue-method target, e.g. `(my $o = $s).substr-rw(...) = ...`.
+/// Without this the assignment would target a detached value and the mutation
+/// would be lost. Handles both a bare `VarDecl` and the `SyntheticBlock`-wrapped
+/// declarations the lowering produces for `:=` binds and readonly scalar binds.
+// Cost: O(s), s = statements of a SyntheticBlock.
+pub(crate) fn decl_target_var_name(stmt: &Stmt) -> Option<String> {
+    match stmt {
+        Stmt::VarDecl { name, .. } => Some(name.clone()),
+        Stmt::SyntheticBlock(inner) => inner.iter().find_map(|s| match s {
+            Stmt::VarDecl { name, .. } => Some(name.clone()),
+            _ => None,
+        }),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -302,22 +319,5 @@ mod tests {
             temp.lvalue_root(LvaluePeel::TEMP),
             Some(LvalueRoot::Key("@a".into()))
         );
-    }
-}
-
-/// Extract the writeback variable name from a declaration used in expression
-/// position as an lvalue-method target, e.g. `(my $o = $s).substr-rw(...) = ...`.
-/// Without this the assignment would target a detached value and the mutation
-/// would be lost. Handles both a bare `VarDecl` and the `SyntheticBlock`-wrapped
-/// declarations the lowering produces for `:=` binds and readonly scalar binds.
-// Cost: O(s), s = statements of a SyntheticBlock.
-pub(crate) fn decl_target_var_name(stmt: &Stmt) -> Option<String> {
-    match stmt {
-        Stmt::VarDecl { name, .. } => Some(name.clone()),
-        Stmt::SyntheticBlock(inner) => inner.iter().find_map(|s| match s {
-            Stmt::VarDecl { name, .. } => Some(name.clone()),
-            _ => None,
-        }),
-        _ => None,
     }
 }
