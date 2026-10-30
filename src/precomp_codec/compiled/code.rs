@@ -63,6 +63,7 @@ impl Encode for CompiledCode {
             source_line,
             is_pointy_block,
             is_whatever_code,
+            is_hidden_from_backtrace,
             pointy_alias_param,
             immutable_topic,
             declarator_doc,
@@ -222,6 +223,7 @@ impl Encode for CompiledCode {
         source_line.encode(encoder)?;
         is_pointy_block.encode(encoder)?;
         is_whatever_code.encode(encoder)?;
+        is_hidden_from_backtrace.encode(encoder)?;
         pointy_alias_param.encode(encoder)?;
         immutable_topic.encode(encoder)?;
         Compat(declarator_doc.as_deref()).encode(encoder)?;
@@ -370,6 +372,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             source_line: Decode::decode(decoder)?,
             is_pointy_block: Decode::decode(decoder)?,
             is_whatever_code: Decode::decode(decoder)?,
+            is_hidden_from_backtrace: Decode::decode(decoder)?,
             pointy_alias_param: Decode::decode(decoder)?,
             immutable_topic: Decode::decode(decoder)?,
             declarator_doc: decode_serde::<Option<crate::decl_doc::DeclDoc>, _>(decoder)?

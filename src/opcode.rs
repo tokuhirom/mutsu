@@ -7028,6 +7028,9 @@ pub(crate) struct CompiledCode {
     /// boundary, but its call frame is named after the code object rather than
     /// the pointy-block marker. Read by the light closure call (#13286).
     pub(crate) is_whatever_code: bool,
+    /// `sub (...) is hidden-from-backtrace { }`: the closure's call frame is
+    /// no line of a backtrace.
+    pub(crate) is_hidden_from_backtrace: bool,
     /// Whether this is a single-`$`-sigiled-parameter pointy block (`-> $v {
     /// }`, compiled via `Expr::Lambda`) whose one parameter must be marked
     /// readonly (`ReadonlyKind::Alias`) at the call site. Set only for the
@@ -8445,6 +8448,7 @@ impl CompiledCode {
             source_line: None,
             is_pointy_block: false,
             is_whatever_code: false,
+            is_hidden_from_backtrace: false,
             pointy_alias_param: false,
             immutable_topic: false,
             declarator_doc: None,

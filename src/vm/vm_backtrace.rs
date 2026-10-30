@@ -185,6 +185,10 @@ impl BacktraceCapture {
             if is_anonymous_block(frame) {
                 continue;
             }
+            // So is a routine declared `is hidden-from-backtrace`.
+            if frame.is_hidden_from_backtrace {
+                continue;
+            }
             let (line, file) = if i == 0 {
                 // Innermost frame: use current ?LINE, and the frame's own
                 // lexical file for ?FILE.
@@ -326,7 +330,8 @@ impl BacktraceCapture {
             // `.nice`, it omits the anonymous bare-block line (the enclosing
             // `<unit>` line already covers it). The block still appears in the
             // structured `frames` below (so `.list`/`.elems` count it).
-            if !is_anon_block {
+            // `is hidden-from-backtrace` routines are no line of the text either.
+            if !is_anon_block && !frame.is_hidden_from_backtrace {
                 if subname == "<unit>" {
                     text_lines.push(format!("  in block <unit>{}", location));
                 } else {

@@ -1313,7 +1313,10 @@ impl Interpreter {
                 is_submethod: false,
                 is_block: true,
                 is_inlined_block: false,
-                is_hidden_from_backtrace: false,
+                is_hidden_from_backtrace: data
+                    .compiled_code
+                    .as_ref()
+                    .is_some_and(|cc| cc.is_hidden_from_backtrace),
                 // The file this block's body was DECLARED in, exactly as the
                 // compiled closure dispatch records it
                 // (`vm_closure_dispatch.rs`'s `push_block_routine_with_location`).
