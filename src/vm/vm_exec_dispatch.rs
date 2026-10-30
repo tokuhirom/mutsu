@@ -7565,6 +7565,8 @@ impl Interpreter {
                 // The unit's compile phase ends after its CHECK phasers and
                 // queued check code: `$*CU` is a Failure from here on.
                 crate::unit_source_text::end_compile_phase();
+                let (sorries, worries) = crate::unit_diagnostics::take();
+                self.report_compile_diagnostics(sorries, worries)?;
                 *ip += 1;
             }
             // Cost: O(size of the declaration) per execution (routine/class/role registration).

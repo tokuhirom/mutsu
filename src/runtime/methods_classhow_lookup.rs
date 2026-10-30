@@ -275,6 +275,17 @@ impl Interpreter {
                     0,
                 ));
             }
+            // An inherited method is the declaring class's own method object
+            // (`C.^find_method('m') === B.^find_method('m')`).
+            if owner_str != class_name_str
+                && let Some(own) = self.classhow_lookup_impl(
+                    &Value::package(*owner_sym),
+                    method_name,
+                    include_ancestor_submethods,
+                )
+            {
+                return Some(own);
+            }
             return Some(self.make_method_object_with_owner(
                 method_name,
                 first,
@@ -408,7 +419,15 @@ impl Interpreter {
                         crate::builtin_types::catalog::builtin_type_info(level).is_some()
                             && self.registry().declares_builtin_method(level, method_name)
                     })
-                    .unwrap_or(class_name_str)
+                    // A user class inherits its constructors from `Mu`
+                    // (`C.^find_method('new').package` is `Mu`).
+                    .unwrap_or_else(|| {
+                        if matches!(method_name, "new" | "bless") {
+                            "Mu".to_string()
+                        } else {
+                            class_name_str
+                        }
+                    })
             };
             return Some(self.make_native_method_object(method_name, &owner));
         }

@@ -204,6 +204,7 @@ mod vm_multi_light_call;
 mod vm_operator_values;
 mod vm_trailing_sub_decl;
 pub(crate) use vm_operator_values::StrCmp;
+mod vm_compile_diagnostics;
 mod vm_concat_assign;
 mod vm_control_ops;
 mod vm_core_helpers;

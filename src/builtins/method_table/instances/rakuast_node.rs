@@ -88,6 +88,16 @@ pub(super) static ROWS: &[MethodRow] = &[
         crate::unit_source_text::add_check_code(t.clone(), a[0].clone());
         Some(Ok(Value::NIL))
     }),
+    // `$*CU.add-sorry($ex)` / `add-worry($ex)`: queue a compile-time
+    // diagnostic, reported at the end of the unit's compile phase (#15666).
+    node_row!("RakuAST::CompUnit", "add-sorry", |_t, a| {
+        crate::unit_diagnostics::add(&a[0], false);
+        Some(Ok(Value::NIL))
+    }),
+    node_row!("RakuAST::CompUnit", "add-worry", |_t, a| {
+        crate::unit_diagnostics::add(&a[0], true);
+        Some(Ok(Value::NIL))
+    }),
     node_row!(
         "RakuAST::Statement::Expression",
         "set-expression",
@@ -168,6 +178,12 @@ pub(super) static ROWS: &[MethodRow] = &[
     origin_row!("RakuAST::Origin", "source", 0, origin_source),
     origin_row!("RakuAST::Origin::Source", "original-line", 1, original_line),
     origin_row!("RakuAST::Origin::Source", "orig", 0, source_orig),
+    origin_row!(
+        "RakuAST::Origin::Source",
+        "prepost-of-pos",
+        1,
+        prepost_of_pos
+    ),
 ];
 
 /// `Node.fileline`: `"<file>:<line>"` where the node's origin begins. The unit
@@ -229,6 +245,26 @@ fn external_value(
     Some(Ok(Value::package(Symbol::intern(&name))))
 }
 
+/// `compile-time-value` of a `RakuAST::Method` declared in a package of the
+/// unit: the method object its class holds.
+// Cost: O(1) plus the interpreter's method lookup.
+fn method_value(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::RakuAst(node) = target.view() else {
+        return None;
+    };
+    let (owner, name) = crate::rakuast::declared_method(node)?;
+    Some(interp.call_method_with_values(
+        Value::package(Symbol::intern(&owner)),
+        "^find_method",
+        vec![Value::str(name)],
+    ))
+}
+
 /// `compile-time-value` of a unit-declared `RakuAST::Sub`: the routine of that name.
 // Cost: O(1) plus the interpreter's lookup of the name.
 fn sub_value(
@@ -240,6 +276,14 @@ fn sub_value(
     let ValueView::RakuAst(node) = target.view() else {
         return None;
     };
+    // One row serves the routine kinds (the first owner that declares a name
+    // is the only one the walk asks).
+    if matches!(
+        node.class,
+        crate::rakuast::RakuAstClass::Method | crate::rakuast::RakuAstClass::Submethod
+    ) {
+        return method_value(interp, target, _args, _named);
+    }
     let name = crate::rakuast::declared_sub_name(node)?;
     let routine = interp.resolve_code_var(&name);
     // A CHECK phaser runs before the unit's subs are installed as lexicals,
@@ -421,6 +465,43 @@ fn original_line(target: &Value, args: &[Value]) -> Option<Result<Value, Runtime
         .as_slice()
         .partition_point(|start| matches!(start.view(), ValueView::Int(s) if s <= pos));
     Some(Ok(Value::int(line.max(1) as i64)))
+}
+
+/// How many characters of the line `prepost-of-pos` shows on each side.
+const PREPOST_CHARS: usize = 40;
+
+/// `Origin::Source.prepost-of-pos($position)`: the text before and after the
+/// character offset `$position`, each at most 40 characters and cut at the line
+/// boundary, with `<BOL>` / `<EOL>` standing for an empty side. This is the
+/// excerpt a `===SORRY!===` shows around `<HERE>`.
+// Cost: O(n), n = length of the unit's text.
+fn prepost_of_pos(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Int(pos) = args.first()?.view() else {
+        return None;
+    };
+    let orig = source_orig(target, &[])?.ok()?.to_string_value();
+    let chars: Vec<char> = orig.chars().collect();
+    let pos = (pos.max(0) as usize).min(chars.len());
+    let before = &chars[pos.saturating_sub(PREPOST_CHARS)..pos];
+    let pre: String = before
+        .iter()
+        .skip(before.iter().rposition(|c| *c == '\n').map_or(0, |i| i + 1))
+        .collect();
+    let post: String = chars[pos..chars.len().min(pos + PREPOST_CHARS)]
+        .iter()
+        .take_while(|c| **c != '\n')
+        .collect();
+    let side = |text: String, empty: &str| {
+        Value::str(if text.is_empty() {
+            empty.to_string()
+        } else {
+            text
+        })
+    };
+    Some(Ok(Value::array(vec![
+        side(pre, "<BOL>"),
+        side(post, "<EOL>"),
+    ])))
 }
 
 /// The child nodes of `node`, in field order: every field value that is itself

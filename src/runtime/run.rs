@@ -559,6 +559,7 @@ impl Interpreter {
         Self::inject_iterator_role_prelude(&code, &mut stmts);
         Self::inject_hash_ordered_prelude(&code, &mut stmts);
         Self::inject_x_wrapper_prelude(&code, &mut stmts);
+        Self::inject_x_comp_prelude(&code, &mut stmts);
         Self::inject_precomp_api_prelude(&code, &mut stmts);
         Self::inject_formatter_syntax_prelude(&code, &mut stmts);
         Self::inject_deparse_prelude(&code, &mut stmts);
@@ -711,6 +712,19 @@ impl Interpreter {
                         })
                         .map_or(0, |last| last + 1);
                     body_main.insert(end + 1 + checks, Stmt::RunCheckCode);
+                } else if let Some(last) = body_main.iter().rposition(|stmt| {
+                    matches!(
+                        stmt,
+                        Stmt::Phaser {
+                            kind: crate::ast::PhaserKind::Check,
+                            ..
+                        }
+                    )
+                }) {
+                    // No BEGIN-time effects, but a CHECK phaser may queue
+                    // check code or `$*CU.add-sorry` all the same: the unit's
+                    // compile phase ends after the last one.
+                    body_main.insert(last + 1, Stmt::RunCheckCode);
                 }
                 (end > 0, if end > 0 { end + 1 } else { 0 })
             }
@@ -724,7 +738,7 @@ impl Interpreter {
         if compile_only {
             // `-c`: what is left of the unit is the BEGIN prologue, the CHECK
             // phasers (reordered ahead of INIT and the mainline above), the
-            // subs hoisted ahead of them and the check code they run.
+            // subs and types hoisted ahead of them and the check code they run.
             let mut index = 0;
             body_main.retain(|stmt| {
                 let keep = index < head_len
@@ -734,6 +748,11 @@ impl Interpreter {
                             kind: crate::ast::PhaserKind::Check,
                             ..
                         } | Stmt::SubDecl { .. }
+                            | Stmt::ClassDecl { .. }
+                            | Stmt::RoleDecl { .. }
+                            | Stmt::Package { .. }
+                            | Stmt::EnumDecl { .. }
+                            | Stmt::SubsetDecl { .. }
                             | Stmt::RunCheckCode
                     );
                 index += 1;

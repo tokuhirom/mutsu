@@ -175,6 +175,9 @@ impl Interpreter {
             }
         } else if merge_to_capture {
             // Both streams were configured above with the shared capture pipe.
+        } else if let Some(handle_id) = opts.err_handle_id {
+            let (file, _) = self.out_handle_files(handle_id, false)?;
+            cmd.stderr(std::process::Stdio::from(file));
         } else if opts.capture_err {
             cmd.stderr(std::process::Stdio::piped());
         } else if opts.err_explicit {
@@ -196,6 +199,9 @@ impl Interpreter {
             } else {
                 cmd.stdin(std::process::Stdio::piped());
             }
+        } else if let Some(handle_id) = opts.in_handle_id {
+            let (file, _) = self.out_handle_files(handle_id, false)?;
+            cmd.stdin(std::process::Stdio::from(file));
         } else if opts.capture_in || opts.in_pipe_content.is_some() {
             cmd.stdin(std::process::Stdio::piped());
         }
@@ -426,7 +432,7 @@ impl Interpreter {
         let state = table
             .map
             .get(&handle_id)
-            .ok_or_else(|| RuntimeError::new("Invalid IO::Handle for :out"))?;
+            .ok_or_else(|| RuntimeError::new("Invalid IO::Handle for :out/:err"))?;
         let file = state
             .file
             .as_ref()
@@ -492,12 +498,20 @@ impl Interpreter {
         }
         if let Some(file) = stdout_file_for_merge {
             command.stderr(std::process::Stdio::from(file));
+        } else if let Some(handle_id) = opts.err_handle_id {
+            let (file, _) = self.out_handle_files(handle_id, false)?;
+            command.stderr(std::process::Stdio::from(file));
         } else if opts.capture_err {
             command.stderr(std::process::Stdio::piped());
         } else if opts.err_explicit {
             command.stderr(std::process::Stdio::null());
         } else {
             command.stderr(std::process::Stdio::inherit());
+        }
+
+        if let Some(handle_id) = opts.in_handle_id {
+            let (file, _) = self.out_handle_files(handle_id, false)?;
+            command.stdin(std::process::Stdio::from(file));
         }
 
         // shell() defaults the child's working directory to the dynamic $*CWD

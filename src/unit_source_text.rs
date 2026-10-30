@@ -12,21 +12,25 @@ use crate::value::Value;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-struct Unit {
-    source: Rc<str>,
+pub(crate) struct Unit {
+    pub(crate) source: Rc<str>,
     /// The unit's compile phase is over (its BEGIN prologue has run).
-    compiled: bool,
+    pub(crate) compiled: bool,
     cu: Option<Value>,
     /// Closures `$*CU.add-check-code` queued, each with the `CompUnit` it was
     /// called on, for the unit's CHECK phase.
     check_code: Vec<(Value, Value)>,
+    /// Exceptions `$*CU.add-sorry` / `add-worry` queued, reported when the
+    /// unit's compile phase ends (`unit_diagnostics`).
+    pub(crate) sorries: Vec<Value>,
+    pub(crate) worries: Vec<Value>,
     /// A module's `sub EXPORT` is running for this unit: `$*CU` is the
     /// importing unit below it, not this one.
     in_export: bool,
 }
 
 thread_local! {
-    static UNITS: RefCell<Vec<Unit>> = const { RefCell::new(Vec::new()) };
+    pub(crate) static UNITS: RefCell<Vec<Unit>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Publishes a unit's source for the lifetime of the guard.
@@ -41,6 +45,8 @@ impl UnitSourceTextGuard {
                 compiled: false,
                 cu: None,
                 check_code: Vec::new(),
+                sorries: Vec::new(),
+                worries: Vec::new(),
                 in_export: false,
             });
         });
@@ -58,7 +64,7 @@ impl Drop for UnitSourceTextGuard {
 
 /// The unit `$*CU` names: the innermost one not running a `sub EXPORT` of its
 /// own (that one runs on behalf of the unit importing it).
-fn active_index(units: &[Unit]) -> Option<usize> {
+pub(crate) fn active_index(units: &[Unit]) -> Option<usize> {
     units.iter().rposition(|unit| !unit.in_export)
 }
 

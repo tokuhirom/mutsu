@@ -42,6 +42,8 @@ struct Scopes<'a> {
     scopes: Vec<HashMap<String, Value>>,
     /// Whether the interpreter knows a routine of this name (an import).
     imported: &'a dyn Fn(&str) -> bool,
+    /// The named packages enclosing the node being walked, innermost last.
+    packages: Vec<String>,
 }
 
 impl Scopes<'_> {
@@ -64,6 +66,7 @@ pub(super) fn annotate(node: &mut RakuAstNode, imported: &dyn Fn(&str) -> bool) 
     let mut scopes = Scopes {
         scopes: vec![HashMap::new()],
         imported,
+        packages: Vec::new(),
     };
     walk(node, &mut scopes);
 }
@@ -94,6 +97,20 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
         scopes.scopes.push(HashMap::new());
         hoist(node, scopes);
     }
+    // A method remembers the package that declares it, for `compile-time-value`.
+    let package = matches!(
+        node.class,
+        C::Class | C::Role | C::Grammar | C::Module | C::Package
+    )
+    .then(|| package_name(node))
+    .flatten();
+    if matches!(node.class, C::Method | C::Submethod) && !scopes.packages.is_empty() {
+        node.origin.2 = Some(Value::str(scopes.packages.join("::")));
+    }
+    let named_package = package.is_some();
+    if let Some(name) = package {
+        scopes.packages.push(name);
+    }
     let parameter_type = (node.class == C::Parameter).then(|| type_field(node));
     for field in &mut node.fields {
         match &mut field.value {
@@ -111,6 +128,9 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
             }
             _ => {}
         }
+    }
+    if named_package {
+        scopes.packages.pop();
     }
     if opened {
         scopes.scopes.pop();
@@ -152,13 +172,29 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
         held.class,
         C::Class | C::Role | C::Grammar | C::Module | C::Package
     ) && let Some(name) = package_name(held)
-        && let Some(package) = external("RakuAST::Declaration::LexicalPackage", &name)
     {
-        scopes.declare(name, package);
+        // The package answers by its full name (`Example::C` in a
+        // `unit module Example`), the scope by the name it is written with.
+        let full = if scopes.packages.is_empty() {
+            name.clone()
+        } else {
+            format!("{}::{name}", scopes.packages.join("::"))
+        };
+        if let Some(package) = external("RakuAST::Declaration::LexicalPackage", &full) {
+            scopes.declare(name, package);
+        }
     }
     if !opens_scope(held.class) {
         hoist(held, scopes);
     }
+}
+
+/// The package and name of a method declared in a named package of the unit
+/// tree `$*CU` answers: what `Method.compile-time-value` looks up.
+// Cost: O(f), f = fields of the node.
+pub(super) fn declared_method(node: &RakuAstNode) -> Option<(String, String)> {
+    let owner = node.origin.2.as_ref()?.to_string_value();
+    Some((owner, package_name(node)?))
 }
 
 /// The identifier a package declaration (`class Bar`) is named by.

@@ -32,6 +32,7 @@ mod run_prelude_precomp;
 mod run_prelude_deparse;
 mod run_prelude_formatter;
 mod run_prelude_trait_export;
+mod run_prelude_x_comp;
 mod run_roast_preprocess;
 mod runtime_caller_env;
 mod runtime_class_query;
