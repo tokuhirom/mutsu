@@ -113,6 +113,7 @@ impl Interpreter {
                 unit_env_imports: self.module.unit_env_imports.clone(),
                 leave_phasers: Vec::new(),
                 lexical_sets: Vec::new(),
+                region: None,
                 routine_depth: self.routine_stack().len(),
                 unit: self.executing_unit_sym_for_module_load(),
                 importer_type_aliases: (
@@ -524,6 +525,7 @@ impl Interpreter {
                 scope_classes: _,
                 leave_phasers: _,
                 lexical_sets: _,
+                region: _,
                 routine_depth: _,
                 unit: _,
                 importer_type_aliases,

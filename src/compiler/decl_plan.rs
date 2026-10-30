@@ -51,6 +51,7 @@ impl Compiler {
         // An attribute default or a class-body statement calls what the `use`s
         // around the declaration imported (ADR-8751).
         chunk_compiler.lexical_import_chain = self.lexical_import_chain.clone();
+        chunk_compiler.import_region_chain = self.import_region_chain.clone();
         self.inherit_deferred_unit_sets(&mut chunk_compiler);
         chunk_compiler.type_aliases = self
             .outer_type_aliases

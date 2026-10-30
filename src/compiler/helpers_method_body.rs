@@ -119,6 +119,7 @@ impl Compiler {
         // A method sees the routines the `use`s around its class declaration
         // bound (ADR-8751).
         method_compiler.lexical_import_chain = self.lexical_import_chain.clone();
+        method_compiler.import_region_chain = self.import_region_chain.clone();
         self.inherit_deferred_unit_sets(&mut method_compiler);
         // Only the enclosing `my &k` Callable containers are handed down (not the
         // whole scope chain, design decision 2): `&k = ...` in a method body

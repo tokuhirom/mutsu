@@ -4419,8 +4419,12 @@ pub(crate) enum OpCode {
     /// Bracket a callable body with a lexical import scope. A use inside a
     /// routine or closure is executed at call time in mutsu, so the registry
     /// changes must be restored when the body returns, including a non-local
-    /// return or exception.
-    ImportScope { body_end: u32 },
+    /// return or exception. `region` names the block's import region (file
+    /// and line of its first import statement): the open scope carries it
+    /// (`ImportScopeSnapshot::region`), and a routine written inside the block
+    /// lists it in `CompiledCode::enclosing_import_regions`, so the routine
+    /// sees every kind of import the block made, not only the lexical sets.
+    ImportScope { body_end: u32, region: Symbol },
 
     /// Push an anonymous block callframe onto the routine stack. Emitted around a
     /// genuine bare block `{ ... }` that the compiler *inlines* (tail-position
@@ -7254,6 +7258,10 @@ pub(crate) struct CompiledCode {
     /// body recorded a chain (a `supply` body whose nested `whenever`
     /// closure calls the imported routine).
     pub(crate) enclosing_import_chain: Vec<Symbol>,
+    /// The import regions (`OpCode::ImportScope::region`) of the blocks this
+    /// code was written in, innermost first: a frame of this code does not
+    /// hide what those blocks imported (`hide_unit_names_from_frame`).
+    pub(crate) enclosing_import_regions: Vec<Symbol>,
     /// The lexical import chains of this code's `EVAL` calls (one per distinct
     /// chain, innermost first): the sets an EVAL'd unit starts inside
     /// (`Interpreter::eval_lexical_import_chain`). Empty when the code calls
@@ -8473,6 +8481,7 @@ impl CompiledCode {
             free_var_syms: Vec::new(),
             lexical_import_chains: Vec::new(),
             enclosing_import_chain: Vec::new(),
+            enclosing_import_regions: Vec::new(),
             eval_site_chains: Vec::new(),
             free_var_parent_slots: Vec::new(),
             upvalue_parent_slots: Vec::new(),
@@ -12767,7 +12776,7 @@ impl CompiledCode {
     pub(crate) fn patch_import_scope_end(&mut self, idx: usize) {
         let target = self.ops.len() as u32;
         match &mut self.ops[idx] {
-            OpCode::ImportScope { body_end } => *body_end = target,
+            OpCode::ImportScope { body_end, .. } => *body_end = target,
             _ => panic!("patch_import_scope_end on non-ImportScope opcode"),
         }
     }

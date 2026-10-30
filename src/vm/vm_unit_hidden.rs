@@ -17,20 +17,19 @@ use std::sync::Arc;
 
 impl Interpreter {
     /// Whether the open import scope `scope` belongs to a block `code` was
-    /// declared in: one of the scope's `use` import sets is among the sets
-    /// lexically around the declaration. Such a routine is written inside the
-    /// block, so what the block imported is in its lexical outer and its frame
-    /// does not hide it (#15661).
-    // Cost: O(s * c), s = the scope's import sets, c = the declaration's chain.
+    /// declared in: the scope's region is among the regions lexically around
+    /// the declaration, whatever kind of import the block made (`use`, `need`,
+    /// `import`, `:from`, a conditional `use`). Such a routine is written
+    /// inside the block, so what the block imported is in its lexical outer
+    /// and its frame does not hide it (#15661).
+    // Cost: O(c), c = the declaration's enclosing regions.
     fn scope_encloses_code(
         scope: &crate::runtime::ImportScopeSnapshot,
         code: &CompiledCode,
     ) -> bool {
-        !code.enclosing_import_chain.is_empty()
-            && scope
-                .lexical_sets
-                .iter()
-                .any(|set| code.enclosing_import_chain.contains(set))
+        scope
+            .region
+            .is_some_and(|region| code.enclosing_import_regions.contains(&region))
     }
 
     /// Mark the running frame root, just made for `code` (a routine declared
