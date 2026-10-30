@@ -13,6 +13,10 @@ struct BodyKind<'a> {
     promoted_decls: &'a [String],
     /// The sigilless pointy parameter the body reads as a bare word.
     term_param: Option<&'a str>,
+    /// Bind the body's call-only `my sub`s as frame lexicals (ADR-0113), as
+    /// `compile_sub_body` does for a `sub`. Set for a method body, which is
+    /// compiled once at its declaration and never recompiled from its AST.
+    frame_lexicals: bool,
 }
 
 impl Compiler {
@@ -1358,6 +1362,26 @@ impl Compiler {
         self.compile_closure_body_of_kind(params, param_defs, body, kind)
     }
 
+    /// [`Self::compile_routine_closure_body`] for a method body: its call-only
+    /// inner `my sub`s become frame lexicals (ADR-0113) instead of being
+    /// registered into, and rolled back out of, the routine registry on every
+    /// call.
+    pub(crate) fn compile_method_closure_body(
+        &mut self,
+        params: &[String],
+        param_defs: &[crate::ast::ParamDef],
+        body: &[Stmt],
+        is_rw: bool,
+    ) -> CompiledCode {
+        let kind = BodyKind {
+            is_routine: true,
+            rw_tail: is_rw,
+            frame_lexicals: true,
+            ..BodyKind::default()
+        };
+        self.compile_closure_body_of_kind(params, param_defs, body, kind)
+    }
+
     /// Whether a `return` compiled here stops at this body (`OpCode::Return`)
     /// — the definition-site answer when the carrier handed one over
     /// ([`Compiler::return_routineness`], ADR-0050).
@@ -1387,6 +1411,7 @@ impl Compiler {
             rw_tail,
             promoted_decls,
             term_param,
+            frame_lexicals,
         } = kind;
         self.attach_param_chunks(param_defs, "<anon>");
         let hoisted_enter_body = Self::hoist_enter_phaser_exprs(body);
@@ -1912,6 +1937,11 @@ impl Compiler {
         }
         if let Some(idx) = import_scope_idx {
             sub_compiler.code.patch_import_scope_end(idx);
+        }
+        // ADR-0113: before the chunk is finalized and before the imported
+        // table below is renamed, exactly where `compile_sub_body` runs it.
+        if frame_lexicals {
+            sub_compiler.resolve_frame_lexical_routines(body);
         }
         // Transfer any compiled functions from the closure to the parent while
         // preserving the declaration-plan references into the imported table.
