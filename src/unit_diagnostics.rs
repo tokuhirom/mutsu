@@ -64,6 +64,19 @@ pub(crate) fn take() -> (Vec<Value>, Vec<Value>) {
     })
 }
 
+/// The innermost unit's queued `(sorries, worries)`, left in place
+/// (`$*CU.sorries` / `$*CU.worries`).
+// Cost: O(d), d = queued diagnostics.
+pub(crate) fn peek() -> (Vec<Value>, Vec<Value>) {
+    UNITS.with(|units| {
+        let units = units.borrow();
+        active_index(&units)
+            .and_then(|i| units.get(i))
+            .map(|unit| (unit.sorries.clone(), unit.worries.clone()))
+            .unwrap_or_default()
+    })
+}
+
 /// Line number (1-based) of the first non-whitespace character of `source`
 /// and the first `POST_CHARS` characters from there to the end of that line.
 // Cost: O(w + p), w = leading whitespace, p = POST_CHARS.

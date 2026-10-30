@@ -98,6 +98,34 @@ pub(super) static ROWS: &[MethodRow] = &[
         crate::unit_diagnostics::add(&a[0], true);
         Some(Ok(Value::NIL))
     }),
+    // `$*CU.sorries` / `worries` / `has-check-time-problems`: what was queued so far.
+    MethodRow {
+        owner: "RakuAST::CompUnit",
+        name: "sorries",
+        arity: 0,
+        handler: Handler::Narrow(|_, _| Some(Ok(Value::array(crate::unit_diagnostics::peek().0)))),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::CompUnit",
+        name: "worries",
+        arity: 0,
+        handler: Handler::Narrow(|_, _| Some(Ok(Value::array(crate::unit_diagnostics::peek().1)))),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::CompUnit",
+        name: "has-check-time-problems",
+        arity: 0,
+        handler: Handler::Narrow(|_, _| {
+            let (sorries, worries) = crate::unit_diagnostics::peek();
+            Some(Ok(Value::truth(!sorries.is_empty() || !worries.is_empty())))
+        }),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
     node_row!(
         "RakuAST::Statement::Expression",
         "set-expression",
@@ -281,6 +309,10 @@ fn sub_value(
     use crate::rakuast::RakuAstClass as K;
     match node.class {
         K::Method | K::Submethod => return method_value(interp, target, _args, _named),
+        // A block's value is its closure.
+        K::Block | K::PointyBlock => {
+            return Some(interp.eval_rakuast_node(&crate::rakuast::as_item_call_statement(target)));
+        }
         // `::T` stands for a type nobody has bound yet.
         K::TypeCapture => return Some(Ok(Value::package(Symbol::intern("Any")))),
         // A constant's value is its initializer's, evaluated now.

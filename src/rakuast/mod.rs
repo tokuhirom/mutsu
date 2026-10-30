@@ -1506,6 +1506,43 @@ pub(crate) fn declared_method(node: &RakuAstNode) -> Option<(String, String)> {
     resolve::declared_method(node)
 }
 
+/// `item(NODE)` as a statement: a block in call-argument position is its
+/// closure, where a bare block statement would run.
+// Cost: O(1).
+pub(crate) fn as_item_call_statement(node: &Value) -> Value {
+    let call = RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::CallName,
+        fields: vec![
+            RakuAstField {
+                name: Some("name"),
+                value: RakuAstFieldValue::Node(Value::rakuast(Box::new(
+                    name_parts::name_from_parts(vec![name_parts::simple_part("item")]),
+                ))),
+            },
+            RakuAstField {
+                name: Some("args"),
+                value: RakuAstFieldValue::Node(Value::rakuast(Box::new(RakuAstNode {
+                    origin: Default::default(),
+                    class: RakuAstClass::ArgList,
+                    fields: vec![RakuAstField {
+                        name: None,
+                        value: RakuAstFieldValue::Node(node.clone()),
+                    }],
+                }))),
+            },
+        ],
+    };
+    Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::StatementExpression,
+        fields: vec![RakuAstField {
+            name: Some("expression"),
+            value: RakuAstFieldValue::Node(Value::rakuast(Box::new(call))),
+        }],
+    }))
+}
+
 /// `[kind, owner.., name, index]` of a `Parameter` of the unit tree `$*CU` answers.
 // Cost: O(1).
 pub(crate) fn declared_parameter_owner(node: &RakuAstNode) -> Option<Vec<String>> {
@@ -3475,6 +3512,14 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
                 .unwrap_or_else(|| Value::str("_whatever_arg_1".to_string())),
         );
     }
+    if method == "return-type" && node.class == RakuAstClass::VarAttribute {
+        return Some(
+            node.origin
+                .2
+                .clone()
+                .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Mu"))),
+        );
+    }
     if method == "container-type" && node.class == RakuAstClass::VarDeclarationSimple {
         return Some(resolve::container_type(node));
     }
@@ -3660,6 +3705,9 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     if class == RakuAstClass::CompUnit {
         names.push("add-check-code");
         names.push("add-sorry");
+        names.push("sorries");
+        names.push("worries");
+        names.push("has-check-time-problems");
         names.push("add-worry");
         names.push("replace-statement-list");
     }
@@ -3672,6 +3720,9 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     }
     if class == RakuAstClass::Block {
         names.push("is-immediate-block-user-body");
+    }
+    if class == RakuAstClass::VarAttribute {
+        names.push("return-type");
     }
     if class == RakuAstClass::WhateverCodeArgument {
         names.push("name");
@@ -3688,6 +3739,8 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
             | RakuAstClass::Submethod
             | RakuAstClass::TypeCapture
             | RakuAstClass::VarDeclarationConstant
+            | RakuAstClass::Block
+            | RakuAstClass::PointyBlock
     ) {
         names.push("compile-time-value");
     }
