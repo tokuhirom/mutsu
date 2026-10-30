@@ -2834,6 +2834,12 @@ pub(crate) struct ImportScopeSnapshot {
     /// (ADR-8751): what a by-name lookup the compiler could not resolve
     /// (`::('&f')`, an `EVAL` in the block) still sees while it runs.
     pub(crate) lexical_sets: Vec<Symbol>,
+    /// The region key of the `OpCode::ImportScope` that opened this scope
+    /// (`None` for a preload or an `EVAL`'s scope, which no routine is written
+    /// in): a routine whose `CompiledCode::enclosing_import_regions` holds it
+    /// was written inside the block, so what the block imported is in its
+    /// lexical outer.
+    pub(crate) region: Option<Symbol>,
     /// `routine_stack` depth when the scope opened: a frame pushed later (a
     /// routine the block calls) runs outside the block's lexical extent.
     pub(crate) routine_depth: usize,

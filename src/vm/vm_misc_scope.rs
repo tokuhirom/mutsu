@@ -562,11 +562,15 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         body_end: u32,
+        region_key: Symbol,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let end = body_end as usize;
         self.push_import_scope();
+        if let Some(scope) = self.module.import_scope_stack.last_mut() {
+            scope.region = Some(region_key);
+        }
         // The region's imports bind in an env layer of their own, dropped with
         // the region on every exit path: no key list and no restore
         // (ADR-14140).

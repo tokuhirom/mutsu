@@ -98,14 +98,44 @@ impl Compiler {
         stmts: &[Stmt],
         body: impl FnOnce(&mut Self),
     ) {
-        let idx =
-            Self::has_use_stmt(stmts).then(|| self.code.emit(OpCode::ImportScope { body_end: 0 }));
+        let region_mark = self.import_region_chain.len();
+        let idx = self.emit_import_scope_region(stmts);
         let chain_mark = self.enter_lexical_use_block(stmts);
         body(self);
         self.lexical_import_chain.truncate(chain_mark);
+        self.import_region_chain.truncate(region_mark);
         if let Some(idx) = idx {
             self.code.patch_import_scope_end(idx);
         }
+    }
+
+    /// Emit the `OpCode::ImportScope` that opens the import region of `stmts`
+    /// (a block body) when it holds an import statement, and open the region
+    /// for the code compiled next: its key joins `import_region_chain`, which
+    /// the caller truncates when the block ends. The key is the unit's file
+    /// plus the line of the block's first import statement, so a recompile of
+    /// the same AST (a `.map` callback) names the same region.
+    // Cost: O(s), s = statements of the block.
+    pub(super) fn emit_import_scope_region(&mut self, stmts: &[Stmt]) -> Option<usize> {
+        let first = stmts.iter().position(Self::opens_import_scope)?;
+        let line = stmts[..first]
+            .iter()
+            .rev()
+            .find_map(|stmt| match stmt {
+                Stmt::SetLine(n, _) => Some(*n),
+                _ => None,
+            })
+            .or(self.last_source_line)
+            .unwrap_or(0);
+        let file = crate::unit_source_file::current()
+            .map(|file| file.resolve())
+            .unwrap_or_default();
+        let region = Symbol::intern(&format!("{file}\u{1}{line}\u{1}{first}"));
+        self.import_region_chain.push(region);
+        Some(self.code.emit(OpCode::ImportScope {
+            body_end: 0,
+            region,
+        }))
     }
 
     /// Open the lexical import sets of the `use`s `stmts` (a block body)
@@ -324,6 +354,12 @@ impl Compiler {
     /// its own again as the body compiles.
     // Cost: O(s * c), s = call-site chains of `origin`, c = sets per chain.
     pub(crate) fn seed_lexical_import_chain_from(&mut self, origin: &crate::opcode::CompiledCode) {
+        self.import_region_chain = origin
+            .enclosing_import_regions
+            .iter()
+            .rev()
+            .copied()
+            .collect();
         let mut chains = origin.lexical_import_chains.iter();
         let Some(first) = chains.next() else {
             // No call site recorded a chain: the body still starts inside the

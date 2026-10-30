@@ -88,6 +88,7 @@ impl Encode for CompiledCode {
             free_var_syms,
             lexical_import_chains,
             enclosing_import_chain,
+            enclosing_import_regions,
             eval_site_chains,
             free_var_parent_slots,
             upvalue_parent_slots,
@@ -250,6 +251,7 @@ impl Encode for CompiledCode {
         free_var_syms.encode(encoder)?;
         lexical_import_chains.encode(encoder)?;
         enclosing_import_chain.encode(encoder)?;
+        enclosing_import_regions.encode(encoder)?;
         eval_site_chains.encode(encoder)?;
         free_var_parent_slots.encode(encoder)?;
         upvalue_parent_slots.encode(encoder)?;
@@ -400,6 +402,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             free_var_syms: Decode::decode(decoder)?,
             lexical_import_chains: Decode::decode(decoder)?,
             enclosing_import_chain: Decode::decode(decoder)?,
+            enclosing_import_regions: Decode::decode(decoder)?,
             eval_site_chains: Decode::decode(decoder)?,
             free_var_parent_slots: Decode::decode(decoder)?,
             upvalue_parent_slots: Decode::decode(decoder)?,

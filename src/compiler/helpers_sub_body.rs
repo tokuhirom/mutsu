@@ -398,8 +398,7 @@ impl Compiler {
         // exactly the parameter slots (before the body can shadow them). §1.5.
         sub_compiler.note_decont_scalar_params(param_defs);
         sub_compiler.record_param_local_slots(params, param_defs);
-        let import_scope_idx = Self::has_use_stmt(body)
-            .then(|| sub_compiler.code.emit(OpCode::ImportScope { body_end: 0 }));
+        let import_scope_idx = sub_compiler.emit_import_scope_region(body);
         // The body's own `use`s bind lexically in it (ADR-8751).
         sub_compiler.enter_lexical_use_block(body);
         // Hoist sub declarations within the sub body
@@ -652,11 +651,11 @@ impl Compiler {
         // so the program scope is this routine's lexical outer.
         sub_compiler.code.outer_is_unit =
             !(self.is_routine || self.lexically_in_routine || self.in_closure_body);
-        // The import sets of the blocks the declaration sits in: the frame
-        // does not hide what those blocks' `use`s imported
+        // The import regions of the blocks the declaration sits in: the frame
+        // does not hide what those blocks imported
         // (`hide_unit_names_from_frame`).
-        sub_compiler.code.enclosing_import_chain =
-            self.lexical_import_chain.iter().rev().copied().collect();
+        sub_compiler.code.enclosing_import_regions =
+            self.import_region_chain.iter().rev().copied().collect();
         sub_compiler.code.succeed_passes_through = !Self::body_has_toplevel_when(body);
         // ADR-0113: bind the body's call-only `my sub`s as frame lexicals.
         // Before `compute_needs_env_sync`, which finalizes the chunk.
@@ -1549,8 +1548,7 @@ impl Compiler {
         // with an import scope so an imported routine family shadows the
         // enclosing lexical family only for this invocation and is restored on
         // return or exception.
-        let import_scope_idx = Self::has_use_stmt(body)
-            .then(|| sub_compiler.code.emit(OpCode::ImportScope { body_end: 0 }));
+        let import_scope_idx = sub_compiler.emit_import_scope_region(body);
         // The body's own `use`s bind lexically in it (ADR-8751).
         sub_compiler.enter_lexical_use_block(body);
         // Hoist sub declarations within the closure body

@@ -1210,6 +1210,11 @@ pub(crate) struct Compiler {
     /// compiled while it is non-empty gets an `OpCode::LexImportCall`
     /// prefix. Nested routines and closures inherit it.
     lexical_import_chain: Vec<Symbol>,
+    /// The import regions (`OpCode::ImportScope::region`) of the blocks
+    /// enclosing the code being compiled, outermost first. Nested routines
+    /// and closures inherit it and record it as
+    /// `CompiledCode::enclosing_import_regions`.
+    import_region_chain: Vec<Symbol>,
     /// For each set of `lexical_import_chain`, how many routine declarations
     /// (`inherited_scope_routine_decls` then `scope_routine_decls`) were noted
     /// when it was opened. A plain routine noted after that mark is declared
@@ -2086,6 +2091,7 @@ impl Compiler {
             loop_exit_guards: Vec::new(),
             fatal_pragma_active: false,
             lexical_import_chain: Vec::new(),
+            import_region_chain: Vec::new(),
             lexical_set_decl_mark: HashMap::new(),
             deferred_unit_sets: Vec::new(),
             module_unit_own_names: None,
@@ -2734,6 +2740,8 @@ impl Compiler {
 
     pub(super) fn add_closure_code_baked(&mut self, mut compiled: CompiledCode, esc: bool) -> u32 {
         compiled.enclosing_import_chain = self.lexical_import_chain.iter().rev().copied().collect();
+        compiled.enclosing_import_regions =
+            self.import_region_chain.iter().rev().copied().collect();
         compiled.free_var_parent_slots = compiled
             .free_var_syms
             .iter()
@@ -2965,6 +2973,7 @@ impl Compiler {
         sub.variables_pragma = self.variables_pragma;
         sub.role_type_param_names = self.role_type_param_names.clone();
         sub.lexical_import_chain = self.lexical_import_chain.clone();
+        sub.import_region_chain = self.import_region_chain.clone();
         sub.lexical_set_decl_mark = self.lexical_set_decl_mark.clone();
         sub.unit_set_line = self.unit_set_line.clone();
         sub.unit_active_sets = self.unit_active_sets.clone();
