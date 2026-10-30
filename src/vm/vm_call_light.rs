@@ -859,6 +859,8 @@ impl Interpreter {
             // caller's container, which the body may store into (`%h<k> = v`,
             // `@a = ...`), and the general binder never marks one readonly.
             let writable = is_rw_param
+                || (cf.has_copy_positional_param
+                    && cf.param_defs[param_idx].traits.iter().any(|t| t == "copy"))
                 || (cf.aggregate_positional_params != 0 && param_name.starts_with(['@', '%']));
             match cf.param_name_syms.get(param_idx) {
                 Some(sym) if writable => self.unmark_readonly_sym(*sym),

@@ -536,12 +536,15 @@ impl Interpreter {
                     // `positional_light_rw_args_admitted` above, which is the
                     // per-call gate this signature-level check cannot express
                     // (whether THIS call's argument is actually a caller
-                    // lexical). Every other trait (`raw`, `copy`, ...) keeps
-                    // the general binder, matching the ADR's declared scope.
+                    // lexical). `copy` on a plain `$` scalar is admitted too:
+                    // the value is bound by value (the itemize mode already
+                    // follows `scalar_param_bind`) and the parameter stays
+                    // writable. Every other trait (`raw`, ...) keeps the
+                    // general binder, matching the ADR's declared scope.
                     && (pd.no_traits()
                         || (!pd.does_target
                             && pd.traits.len() == 1
-                            && pd.traits[0] == "rw"
+                            && (pd.traits[0] == "rw" || pd.traits[0] == "copy")
                             && Self::is_plain_scalar_param_name(&pd.name)))
                     && pd.sub_signature.is_none()
                     // Only allow basic type constraints that fast_type_check handles.
