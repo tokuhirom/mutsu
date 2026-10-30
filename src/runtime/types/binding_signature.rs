@@ -1779,6 +1779,25 @@ impl Interpreter {
                     }
                     continue;
                 }
+                // `+@a is raw` / `is rw` alias the caller's scalar containers like
+                // `*@a is raw` does: each element that names a plain caller
+                // variable (or already is a cell, `$ = 1`) binds as that
+                // variable's shared cell, written back at return.
+                let raw_alias =
+                    !pd.sigilless && !pd.name.is_empty() && pd.traits.iter().any(|t| t == "raw" || t == "rw");
+                let raw_alias_key = if pd.name.starts_with('@') {
+                    pd.name.clone()
+                } else {
+                    format!("@{}", pd.name)
+                };
+                let remaining_idx: Vec<usize> = (positional_idx..args.len())
+                    .filter(|i| {
+                        !matches!(
+                            unwrap_varref_value(args[*i].clone()).view(),
+                            ValueView::Pair(..)
+                        )
+                    })
+                    .collect();
                 let items = if remaining_positional.len() == 1 {
                     let single = unwrap_varref_value(remaining_positional[0].clone());
                     // ADR-0058: a lone `.map`/`.grep` argument is a Seq whose
@@ -1805,7 +1824,40 @@ impl Interpreter {
                         values
                     } else {
                         match single.view() {
-                            ValueView::Array(arr, kind) if !kind.is_itemized() => arr.to_vec(),
+                            ValueView::Array(arr, kind) if !kind.is_itemized() => {
+                                // An array source (`f(@arr)` to `+@a is raw`): each
+                                // element aliases `@arr[idx]`, as for `*@a is raw`.
+                                let source_name = indexed_varref_from_value(&remaining_positional[0])
+                                    .map(|(n, _, _)| n)
+                                    .or_else(|| {
+                                        arg_sources
+                                            .as_ref()
+                                            .and_then(|names| names.get(remaining_idx[0]))
+                                            .and_then(|n| n.clone())
+                                    })
+                                    .filter(|_| raw_alias);
+                                match source_name {
+                                    Some(source_name) => {
+                                        let mut cells = Vec::with_capacity(arr.len());
+                                        for idx in 0..arr.len() {
+                                            let Some(cell) = single.array_slot_ref(idx, true) else {
+                                                continue;
+                                            };
+                                            rw_bindings.push((
+                                                encode_slurpy_rw_param(
+                                                    &raw_alias_key,
+                                                    cells.len(),
+                                                    Some(idx),
+                                                ),
+                                                source_name.clone(),
+                                            ));
+                                            cells.push(cell);
+                                        }
+                                        cells
+                                    }
+                                    None => arr.to_vec(),
+                                }
+                            }
                             ValueView::Slip(arr) => arr.to_vec(),
                             ValueView::Seq(arr) => arr.to_vec(),
                             ValueView::Range(..)
@@ -1819,6 +1871,20 @@ impl Interpreter {
                                 flatten_into_slurpy(std::slice::from_ref(&single), &mut items);
                                 items
                             }
+                            _ if raw_alias => {
+                                let arg_source = arg_sources
+                                    .as_ref()
+                                    .and_then(|names| names.get(remaining_idx[0]))
+                                    .and_then(|n| n.as_ref());
+                                vec![self.capture_positional_container(
+                                    &remaining_positional[0],
+                                    arg_source,
+                                    Some(&raw_alias_key),
+                                    0,
+                                    &mut rw_bindings,
+                                    param_defs,
+                                )]
+                            }
                             _ => vec![single.clone()],
                         }
                     }
@@ -1828,12 +1894,27 @@ impl Interpreter {
                     // (e.g. `f(1..3, 4)` is a 2-element list, the range is not
                     // expanded). Only Slips flatten, since slips always flatten.
                     let mut items = Vec::new();
-                    for val in remaining_positional {
-                        let val = unwrap_varref_value(val);
+                    for (k, raw_val) in remaining_positional.into_iter().enumerate() {
+                        let val = unwrap_varref_value(raw_val.clone());
                         match val.view() {
                             ValueView::Pair(..) => {} // skip named args
                             ValueView::Slip(arr) => {
                                 flatten_into_slurpy(&arr, &mut items);
+                            }
+                            _ if raw_alias => {
+                                let arg_source = arg_sources
+                                    .as_ref()
+                                    .and_then(|names| names.get(remaining_idx[k]))
+                                    .and_then(|n| n.as_ref());
+                                let elem_idx = items.len();
+                                items.push(self.capture_positional_container(
+                                    &raw_val,
+                                    arg_source,
+                                    Some(&raw_alias_key),
+                                    elem_idx,
+                                    &mut rw_bindings,
+                                    param_defs,
+                                ));
                             }
                             _ => {
                                 items.push(val.clone());
