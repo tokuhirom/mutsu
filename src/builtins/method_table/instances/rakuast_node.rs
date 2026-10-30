@@ -177,7 +177,9 @@ fn origin_as_match(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
     match_attrs.insert("file".to_string(), Value::str(file));
     if let Some(source) = origin.get("source")
         && let ValueView::Instance { attributes, .. } = source.view()
-        && let Some(orig) = attributes.as_map().get(crate::rakuast::unit_source::ORIG_ATTR)
+        && let Some(orig) = attributes
+            .as_map()
+            .get(crate::rakuast::unit_source::ORIG_ATTR)
     {
         match_attrs.insert("orig".to_string(), orig.clone());
     }
