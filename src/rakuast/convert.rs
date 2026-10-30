@@ -4186,7 +4186,10 @@ pub(super) fn blockoid(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::Blockoid,
-        fields: vec![node_field(None, statement_list_inner(Statements::Shared(body))?)],
+        fields: vec![node_field(
+            None,
+            statement_list_inner(Statements::Shared(body))?,
+        )],
     })
 }
 
