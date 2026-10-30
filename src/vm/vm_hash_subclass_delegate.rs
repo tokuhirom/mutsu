@@ -252,8 +252,7 @@ impl Interpreter {
             let bound_args: std::borrow::Cow<'_, [Value]> = if from_variable
                 && !matches!(args[1].view(), ValueView::ContainerRef(_))
             {
-                let cell =
-                    crate::gc::Gc::new(crate::value::ContainerCell::new(args[1].clone()));
+                let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(args[1].clone()));
                 std::borrow::Cow::Owned(vec![args[0].clone(), Value::container_ref(cell)])
             } else {
                 std::borrow::Cow::Borrowed(args)
