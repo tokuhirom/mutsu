@@ -7,8 +7,7 @@ plan 3;
 
 {
     use BlockUseNestedInner;
-    my @names = MY::.keys.grep(/<[A..Za..z]>/).sort;
-    is-deeply @names.List, ('&inner-probe', 'BlockUseNestedInner'),
+    is-deeply MY::.keys.grep(/<[A..Za..z]>/).sort.List, ('&inner-probe', 'BlockUseNestedInner'),
         'the block lists its own import only';
     nok MY::<Test>:exists, 'the file-level use Test is not in the block pad';
 }
