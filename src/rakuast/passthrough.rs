@@ -331,6 +331,25 @@ impl VisitMut for Kept {
     // A spelling only annotates the expression it wraps (ADR-12199): an
     // executing parse builds the expression alone.
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
+        // An expression the leaf cannot carry (a bareword to classify, a
+        // regex with code, ...) is converted and lowered on its own.
+        let mut inner = &*expr;
+        while let Expr::Spelled(spelled) = inner {
+            inner = &spelled.expr;
+        }
+        if !pure::expr_node_allowed(inner) {
+            let converted = {
+                let _inspecting = Inspecting::enter();
+                super::convert::convert_expr(expr).and_then(|node| super::lower::lower_expr(&node))
+            };
+            match converted {
+                Ok(lowered) => *expr = lowered,
+                Err(err) => {
+                    self.0.get_or_insert(err);
+                }
+            }
+            return;
+        }
         while matches!(expr, Expr::Spelled(_)) {
             if let Expr::Spelled(spelled) = std::mem::replace(expr, Expr::Whatever) {
                 *expr = spelled.expr;

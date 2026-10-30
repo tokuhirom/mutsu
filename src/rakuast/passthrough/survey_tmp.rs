@@ -25,6 +25,7 @@ impl S {
 }
 impl<'ast> Visit<'ast> for S {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        if let Some(r) = super::pure::reason_of(stmt) { self.hit(&format!("REASON {r}")); }
         match stmt {
             Stmt::SubDecl { name_expr, associativity, precedence_trait, return_type, signature_alternates, export_tags, custom_traits, is_export, is_test_assertion, supersede, is_hidden_from_backtrace, param_defs, .. } => {
                 self.hit("Sub: total");

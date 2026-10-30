@@ -12,6 +12,12 @@ use crate::value::ValueView;
 
 /// Whether `stmt` may be carried, and if so whether it holds a spelling or a
 /// kept construct to undo first.
+pub(super) fn reason_of(stmt: &Stmt) -> Option<String> {
+    let mut purity = Purity::default();
+    purity.visit_stmt(stmt);
+    purity.reason
+}
+
 // Cost: O(s), s = nodes of `stmt`.
 pub(super) fn analyse_stmt(stmt: &Stmt) -> Option<bool> {
     let mut purity = Purity::default();
@@ -23,13 +29,23 @@ pub(super) fn analyse_stmt(stmt: &Stmt) -> Option<bool> {
 // Cost: O(e), e = nodes of `expr`.
 pub(super) fn analyse_expr(expr: &Expr) -> Option<bool> {
     let mut purity = Purity::default();
+    if !purity.expr_allowed(expr) {
+        return None;
+    }
     purity.visit_expr(expr);
     purity.pure.then_some(purity.fixup)
+}
+
+/// Whether the node itself (not its operands) is carried as the parser built it.
+// Cost: O(1) (a regex: O(n), n = its nodes).
+pub(super) fn expr_node_allowed(expr: &Expr) -> bool {
+    Purity::default().expr_allowed(expr)
 }
 
 struct Purity {
     pure: bool,
     fixup: bool,
+    reason: Option<String>,
 }
 
 impl Default for Purity {
@@ -37,6 +53,7 @@ impl Default for Purity {
         Purity {
             pure: true,
             fixup: false,
+            reason: None,
         }
     }
 }
@@ -48,6 +65,7 @@ impl<'ast> Visit<'ast> for Purity {
         }
         if !self.stmt_allowed(stmt) {
             self.pure = false;
+            self.reason = Some(format!("{stmt:?}").split(|c: char| !c.is_alphanumeric()).next().unwrap_or("").to_string());
             return;
         }
         walk_stmt(self, stmt);
@@ -57,8 +75,11 @@ impl<'ast> Visit<'ast> for Purity {
         if !self.pure {
             return;
         }
+        // An expression the leaf cannot carry is converted where it stands
+        // when the tree is lowered (`Kept`), so it does not hold the rest of
+        // the statement back.
         if !self.expr_allowed(expr) {
-            self.pure = false;
+            self.fixup = true;
             return;
         }
         // A regex without code holds no expression; one with code is refused.
@@ -77,6 +98,7 @@ impl<'ast> Visit<'ast> for Purity {
         }
         if !pure_param(param) {
             self.pure = false;
+            self.reason = Some("Param".to_string());
             return;
         }
         walk_param(self, param);
