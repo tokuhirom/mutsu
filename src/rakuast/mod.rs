@@ -1578,9 +1578,9 @@ pub(crate) fn anonymous_subset_declaration(node: &RakuAstNode) -> Option<(Value,
         0,
         RakuAstField {
             name: Some("name"),
-            value: RakuAstFieldValue::Node(Value::rakuast(Box::new(
-                name_parts::name_from_parts(vec![name_parts::simple_part(&name)]),
-            ))),
+            value: RakuAstFieldValue::Node(Value::rakuast(Box::new(name_parts::name_from_parts(
+                vec![name_parts::simple_part(&name)],
+            )))),
         },
     );
     named.origin = Default::default();
