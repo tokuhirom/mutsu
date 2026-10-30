@@ -1643,6 +1643,16 @@ impl Interpreter {
                 },
             ) => {
                 let left_value = left;
+                // The named arguments of a curried role are no part of the type
+                // it names (`NT[Int, :coerce(&cf)]` is `NT[Int]`, #15710).
+                let positional: Vec<Value> = rhs_args
+                    .iter()
+                    .filter(|arg| {
+                        !matches!(arg.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
+                    })
+                    .cloned()
+                    .collect();
+                let rhs_args = &positional;
                 // For Package values (type objects), check class hierarchy
                 if let ValueView::Package(_) = left_value.view() {
                     let args_str = rhs_args
