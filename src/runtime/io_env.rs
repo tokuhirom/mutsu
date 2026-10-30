@@ -301,7 +301,8 @@ impl Interpreter {
             }
             // `$*CU`: the unit being compiled, for BEGIN-time code and what
             // `use` runs while it compiles (`unit_source_text`).
-            "$*CU" | "*CU" => return crate::unit_source_text::compile_time_cu(),
+            // `$*CU` is answered by the caller (`get_env_with_main_alias_inner`),
+            // which can tell the routines the unit has imported.
             "*USER" => Self::cached_user_instance(),
             "*GROUP" => Self::cached_group_instance(),
             _ => return None,

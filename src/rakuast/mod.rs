@@ -1531,13 +1531,16 @@ pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
 /// The `RakuAST::CompUnit` of the unit being compiled, as `$*CU` answers it:
 /// [`str_dot_ast_compunit`] whose lookups carry their resolution (#15610).
 // Cost: O(n * d), n = nodes of the tree, d = scope depth.
-pub fn compile_time_compunit(source: &str) -> Result<Value, RuntimeError> {
+pub fn compile_time_compunit(
+    source: &str,
+    imported: &dyn Fn(&str) -> bool,
+) -> Result<Value, RuntimeError> {
     let cu = str_dot_ast_compunit(source)?;
     let ValueView::RakuAst(node) = cu.view() else {
         return Ok(cu);
     };
     let mut node = RakuAstNode::clone(node);
-    resolve::annotate(&mut node);
+    resolve::annotate(&mut node, imported);
     Ok(Value::rakuast(Box::new(node)))
 }
 

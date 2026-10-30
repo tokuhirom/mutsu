@@ -38,17 +38,21 @@ use crate::value::{Value, ValueView};
 
 /// The declarations visible at the node being walked, innermost scope last:
 /// the declaration node `Value` by the name it declares (`$x`, `@a`).
-struct Scopes(Vec<HashMap<String, Value>>);
+struct Scopes<'a> {
+    scopes: Vec<HashMap<String, Value>>,
+    /// Whether the interpreter knows a routine of this name (an import).
+    imported: &'a dyn Fn(&str) -> bool,
+}
 
-impl Scopes {
+impl Scopes<'_> {
     // Cost: O(d), d = scope depth.
     fn find(&self, name: &str) -> Option<&Value> {
-        self.0.iter().rev().find_map(|scope| scope.get(name))
+        self.scopes.iter().rev().find_map(|scope| scope.get(name))
     }
 
     // Cost: O(1) amortized.
     fn declare(&mut self, name: String, declaration: Value) {
-        if let Some(scope) = self.0.last_mut() {
+        if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name, declaration);
         }
     }
@@ -56,8 +60,11 @@ impl Scopes {
 
 /// Resolve every lookup of the unit tree rooted at `node`.
 // Cost: O(n * d), n = nodes of the tree, d = scope depth.
-pub(super) fn annotate(node: &mut RakuAstNode) {
-    let mut scopes = Scopes(vec![HashMap::new()]);
+pub(super) fn annotate(node: &mut RakuAstNode, imported: &dyn Fn(&str) -> bool) {
+    let mut scopes = Scopes {
+        scopes: vec![HashMap::new()],
+        imported,
+    };
     walk(node, &mut scopes);
 }
 
@@ -84,7 +91,7 @@ fn opens_scope(class: C) -> bool {
 fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     let opened = opens_scope(node.class);
     if opened {
-        scopes.0.push(HashMap::new());
+        scopes.scopes.push(HashMap::new());
         hoist(node, scopes);
     }
     let parameter_type = (node.class == C::Parameter).then(|| type_field(node));
@@ -106,7 +113,7 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
         }
     }
     if opened {
-        scopes.0.pop();
+        scopes.scopes.pop();
     }
     if let Some(resolution) = resolve(node, scopes) {
         node.origin.2 = Some(resolution);
@@ -421,7 +428,9 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
                 return external("RakuAST::Declaration::Import", &format!("&{name}"));
             }
             if !crate::runtime::Interpreter::is_builtin_function(&name) {
-                return None;
+                return (scopes.imported)(&name)
+                    .then(|| external("RakuAST::Declaration::Import", &format!("&{name}")))
+                    .flatten();
             }
             external_setting(&name)
         }

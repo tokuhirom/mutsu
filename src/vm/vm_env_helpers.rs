@@ -1803,6 +1803,17 @@ impl Interpreter {
         // qualifier, no `@`/`%` sigil), so checking first changes nothing for
         // any other name and is cheap on the actual hot-hit path (only a
         // handful of `&str` comparisons, paid only after a real env miss).
+        // `$*CU` is built with the routines the unit has imported so far, which
+        // its lookups resolve to `Declaration::Import` (#15610).
+        if matches!(name, "$*CU" | "*CU") {
+            return crate::unit_source_text::compile_time_cu(&|routine| {
+                self.resolve_function(routine).is_some()
+                    || matches!(
+                        self.resolve_code_var(routine).view(),
+                        crate::value::ValueView::Sub(_)
+                    )
+            });
+        }
         if let Some(v) = Self::lazy_magic_dynamic_var(name) {
             return Some(v);
         }
