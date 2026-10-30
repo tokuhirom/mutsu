@@ -1,8 +1,8 @@
 //! The declared-type relation of one candidate family, built once.
 //!
 //! A candidate that cannot bind a call's arguments is ordered against the
-//! others by its declared types alone ([`MultiRank::declared_narrower`]), a
-//! function of the two candidates' [`DeclaredKey`]s. A method family like
+//! others by its declared types alone ([`MultiRank::declared_narrower`](super::multi_rank::MultiRank::declared_narrower)), a
+//! function of the two candidates' [`DeclaredKey`](super::multi_rank::DeclaredKey)s. A method family like
 //! `RakuAST::Deparse`'s 267 candidates asks that for all 71k pairs on every
 //! dispatch, though the answer never depends on the arguments. The index holds,
 //! for each candidate of the family in a canonical (sorted-by-key-id) order,
